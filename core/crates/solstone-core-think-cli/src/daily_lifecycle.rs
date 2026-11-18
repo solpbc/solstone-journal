@@ -10,7 +10,7 @@ mod retained_activity_tests;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -575,7 +575,7 @@ pub(crate) fn rebuild_segment_receipts(
         &FilesystemSegmentSource,
         &context.journal,
         &context.day,
-        Utc::now(),
+        Timestamp::now(),
     )
     .map_err(|e| e.to_string())?;
     for target in targets {
@@ -1163,7 +1163,7 @@ fn blocked_segments_with_detail(
     context: &ThinkContext,
 ) -> Result<BTreeMap<SegmentIdentity, String>, String> {
     let source = FilesystemSegmentSource;
-    let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Utc::now())
+    let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Timestamp::now())
         .map_err(|error| error.to_string())?;
     let inputs = segments.into_iter().map(Into::into).collect::<Vec<_>>();
     let health = FilesystemHealthLogSource::new(&context.journal);
@@ -1207,7 +1207,7 @@ fn describe_blockers(context: &ThinkContext, blockers: &BTreeSet<SegmentIdentity
 
 fn all_segments(context: &ThinkContext) -> Result<BTreeSet<SegmentIdentity>, String> {
     let source = FilesystemSegmentSource;
-    let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Utc::now())
+    let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Timestamp::now())
         .map_err(|error| error.to_string())?;
     Ok(segments
         .into_iter()
@@ -2368,7 +2368,7 @@ mod tests {
     }
 
     fn lifecycle_rows(journal: &std::path::Path, event: &str) -> Vec<Value> {
-        let day = chrono::NaiveDate::parse_from_str(DAY, "%Y%m%d").unwrap();
+        let day = solstone_core_time::parse_day(DAY).unwrap();
         catalog_oplogs(JournalRoot::open(journal).unwrap(), &[day])
             .unwrap()
             .into_catalogued_entries()
@@ -3161,7 +3161,7 @@ mod tests {
             .unwrap();
             RunLogWriter::open(journal.path(), DAY, "segment").log(
                 "sense.complete",
-                chrono::Utc::now().timestamp_millis() + 3_600_000,
+                Timestamp::now().as_millisecond() + 3_600_000,
                 Map::from_iter([
                     ("mode".into(), Value::from("segment")),
                     ("stream".into(), Value::from("notes")),
@@ -3213,7 +3213,7 @@ mod tests {
             fs::write(segment.join("talents/activity.md"), "A garden meeting.").unwrap();
             RunLogWriter::open(journal.path(), DAY, "segment").log(
                 "sense.complete",
-                chrono::Utc::now().timestamp_millis() + 3_600_000,
+                Timestamp::now().as_millisecond() + 3_600_000,
                 Map::from_iter([
                     ("mode".into(), Value::from("segment")),
                     ("stream".into(), Value::from(stream_name)),
@@ -3317,7 +3317,7 @@ mod tests {
         };
         fs::create_dir_all(&paths.templates_dir).unwrap();
         let mut log = RunLogWriter::open(journal, DAY, "segment");
-        let now = Utc::now().timestamp_millis() + 3_600_000;
+        let now = Timestamp::now().as_millisecond() + 3_600_000;
         let coordinates =
             serde_json::json!({"mode":"segment", "stream":stream_name,"segment":"090000_300"})
                 .as_object()
@@ -3590,7 +3590,7 @@ mod tests {
             let id = reserved.map(str::to_owned).unwrap_or_else(|| {
                 solstone_core_journal_io::cortex_use::allocate_cortex_use_id(
                     &self.journal,
-                    Utc::now().timestamp_millis(),
+                    Timestamp::now().as_millisecond(),
                 )
                 .unwrap()
                 .to_string()
@@ -3693,7 +3693,7 @@ mod tests {
         ] {
             let journal = tempdir().unwrap();
             let mut context = context(journal.path())
-                .with_event_clock(Arc::new(|| Utc::now().timestamp_millis() + 3_600_000));
+                .with_event_clock(Arc::new(|| Timestamp::now().as_millisecond() + 3_600_000));
             let stream = if name == "documents" && !stale {
                 "import.document"
             } else {
@@ -3799,7 +3799,7 @@ mod tests {
         fs::write(segment.join("talents/activity.md"), "A garden meeting.").unwrap();
         RunLogWriter::open(journal.path(), DAY, "segment").log(
             "sense.complete",
-            chrono::Utc::now().timestamp_millis() + 3_600_000,
+            Timestamp::now().as_millisecond() + 3_600_000,
             Map::from_iter([
                 ("mode".to_owned(), Value::from("segment")),
                 ("stream".to_owned(), Value::from("default")),
@@ -4418,12 +4418,12 @@ mod tests {
     fn old_day_length_failure_recovers_and_runs_owed_daily_units() {
         let journal = tempdir().unwrap();
         let initial = context(journal.path());
-        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 10)
+        let now = jiff::civil::date(2026, 10, 10)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
             .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
+            .timestamp()
+            .as_millisecond();
         let mut ctx = ThinkContext::new(journal.path(), DAY.into(), initial.day_dir, now)
             .unwrap()
             .with_talent_roots(initial.talent_root, initial.apps_root);

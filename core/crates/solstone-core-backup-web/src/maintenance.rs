@@ -6,7 +6,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::{Timestamp, tz::Offset};
 use solstone_core_backup::archive_admission::ArchiveConfiguration;
 use solstone_core_journal_io::JournalRoot;
 
@@ -170,7 +170,7 @@ pub fn run_planned_offload(
                 );
             }
         };
-    let Some(at) = DateTime::<Utc>::from_timestamp(deps.clock.now_unix(), 0) else {
+    let Ok(at) = Timestamp::new(deps.clock.now_unix(), 0) else {
         begin.cancel_before_preparation(&deps.operations);
         let mut result = outcome(
             PlannedOffloadDisposition::Refused,
@@ -183,7 +183,7 @@ pub fn run_planned_offload(
         archive_worker::offload::create_planned(
             &deps.operations,
             begin,
-            at.fixed_offset(),
+            solstone_core_time::at_offset(at, Offset::UTC),
             tools.restic.invocation(),
         );
     }));

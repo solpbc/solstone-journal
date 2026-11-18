@@ -169,11 +169,12 @@ fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
 
 /// The journal's own day at this moment, in the owner's zone.
 fn today(journal: &Path, now_ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(now_ms)
-        .unwrap_or_default()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d")
-        .to_string()
+    let instant = jiff::Timestamp::from_millisecond(now_ms).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
+    solstone_core_time::day_key(
+        instant
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+            .date(),
+    )
 }
 
 /// Build the mergeable linked-device segment-arrival routes.
@@ -4261,7 +4262,7 @@ mod tests {
                 root,
                 OwnerBoundary,
                 &SearchRequest::new(text, Order::Relevance),
-                chrono::NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+                jiff::civil::date(2026, 8, 4),
             )
             .unwrap();
             assert!(
@@ -6584,7 +6585,7 @@ mod tests {
         }
 
         fn shot(captured_at: &str) -> Value {
-            let at = chrono::DateTime::parse_from_rfc3339(captured_at).unwrap();
+            let at = solstone_core_time::parse_rfc3339(captured_at).unwrap();
             let (day, segment) = solstone_core_format::screenshots::placement(&at);
             json!({
                 "day": day,

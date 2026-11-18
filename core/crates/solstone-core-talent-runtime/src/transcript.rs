@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_entity::normalize_embedding;
 use solstone_core_format::content::ConsumedOriginal;
@@ -136,7 +135,7 @@ fn imported_owner_lines(journal: &Path, composed: &Map<String, Value>) -> Option
         segment,
         layout,
         true,
-        Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     )
     .ok()?
     else {

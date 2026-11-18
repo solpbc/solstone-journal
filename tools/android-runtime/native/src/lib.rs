@@ -802,7 +802,7 @@ fn work(root: &Path, scan: bool) -> Result<Value, Box<dyn std::error::Error>> {
         root,
         OwnerBoundary,
         &request,
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 11).unwrap(),
+        jiff::civil::date(2026, 10, 11),
     )?;
     let query_ms = query_start.elapsed().as_secs_f64() * 1000.;
     let db = solstone_core_indexer_store::db::open_index_reader(root)?;

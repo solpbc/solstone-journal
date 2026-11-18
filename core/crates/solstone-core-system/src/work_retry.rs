@@ -58,8 +58,7 @@ impl Unit {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.day().len() != 8 || chrono::NaiveDate::parse_from_str(self.day(), "%Y%m%d").is_err()
-        {
+        if self.day().len() != 8 || solstone_core_time::parse_day(self.day()).is_none() {
             return Err("invalid retry day".into());
         }
         let component = |value: &str| {

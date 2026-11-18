@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -157,7 +157,7 @@ impl BodyRow {
         let instant = self
             .begins()
             .and_then(parse_source_time)
-            .map(|time| time.timestamp_millis());
+            .map(|time| time.timestamp().as_millisecond());
         (instant, self.id.as_str())
     }
 }
@@ -221,10 +221,10 @@ pub fn source_label(source: &str) -> String {
 
 /// Apple's `2026-10-10 06:31:10 -0600`, or RFC 3339, keeping the offset.
 #[must_use]
-pub fn parse_source_time(text: &str) -> Option<DateTime<FixedOffset>> {
-    DateTime::parse_from_str(text.trim(), "%Y-%m-%d %H:%M:%S %z")
+pub fn parse_source_time(text: &str) -> Option<ZonedDateTime> {
+    solstone_core_time::strptime_fixed("%Y-%m-%d %H:%M:%S %z", text.trim())
         .ok()
-        .or_else(|| DateTime::parse_from_rfc3339(text.trim()).ok())
+        .or_else(|| solstone_core_time::parse_rfc3339(text.trim()).ok())
 }
 
 /// The owner's own words on an account, per source: what the owner wrote, never
@@ -464,7 +464,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             let occurrence = row
                 .begins()
                 .and_then(parse_source_time)
-                .map(|time| time.timestamp_millis())
+                .map(|time| time.timestamp().as_millisecond())
                 .unwrap_or(0);
             Some(recorded_chunk(search_text(&row), occurrence, record))
         })
@@ -482,7 +482,7 @@ fn clock_span(row: &BodyRow) -> String {
     let format = |text: &str| {
         parse_source_time(text).map_or_else(
             || text.to_owned(),
-            |time| time.format("%Y-%m-%d %H:%M %z").to_string(),
+            |time| time.strftime("%Y-%m-%d %H:%M %z").to_string(),
         )
     };
     match (row.start.as_deref(), row.end.as_deref()) {
@@ -873,6 +873,7 @@ mod tests {
         assert!(chunk.contains("running"));
         assert!(chunk.contains("Synthetic Watch"));
         assert!(chunk.contains("8.1 km"));
+        assert!(chunk.contains("2026-10-10 06:31 -0600 to 2026-10-10 07:20 -0600"));
         assert!(!chunk.contains("4817"));
         assert!(!chunk.contains("HKDevice"));
         assert!(!chunk.contains("ABC-DEF"));

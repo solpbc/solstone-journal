@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::DateTime;
 use serde_json::Value;
 
 use super::{
@@ -53,8 +52,8 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         let occurrence = entry
             .get("timestamp")
             .and_then(Value::as_str)
-            .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-            .map(|value| value.timestamp_millis())
+            .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
+            .map(|value| value.timestamp().as_millisecond())
             .unwrap_or(0);
         chunks.push(recorded_chunk(lines.join("\n"), occurrence, entry));
     }

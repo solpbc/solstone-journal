@@ -8,9 +8,9 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use chrono::{
-    DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc,
-};
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_entity::load_all_journal_entities;
@@ -130,7 +130,7 @@ pub(crate) struct HealthNote {
 
 #[derive(Debug, Default)]
 pub(crate) struct ScanAggregate {
-    capture_hour_slots: BTreeSet<(String, u32)>,
+    capture_hour_slots: BTreeSet<(String, i8)>,
     last_segment_at: Option<i64>,
     activities_count: u64,
     activities_with_participation: u64,
@@ -150,23 +150,23 @@ struct TalentHealthScan {
     unchanged_problems: BTreeMap<String, Vec<String>>,
 }
 
-pub(crate) fn resolve_day(value: &str) -> Result<NaiveDate, HealthError> {
+pub(crate) fn resolve_day(value: &str) -> Result<Date, HealthError> {
     if value.len() != 8 || !value.as_bytes().iter().all(u8::is_ascii_digit) {
         return Err(HealthError::InvalidRequest(
             "day must match YYYYMMDD".to_owned(),
         ));
     }
-    NaiveDate::parse_from_str(value, "%Y%m%d")
-        .map_err(|_| HealthError::InvalidRequest("day must match YYYYMMDD".to_owned()))
+    solstone_core_time::parse_day(value)
+        .ok_or_else(|| HealthError::InvalidRequest("day must match YYYYMMDD".to_owned()))
 }
 
 pub(crate) fn resolve_range(
     day_from: Option<&str>,
     day_to: Option<&str>,
-    now: DateTime<impl TimeZone>,
-) -> Result<(NaiveDate, NaiveDate), HealthError> {
+    now: &ZonedDateTime,
+) -> Result<(Date, Date), HealthError> {
     let (from, to) = match (day_from, day_to) {
-        (None, None) => (now.date_naive() - Duration::days(6), now.date_naive()),
+        (None, None) => (now.date() - Span::new().days(6), now.date()),
         (Some(from), Some(to)) => (resolve_day(from)?, resolve_day(to)?),
         _ => {
             return Err(HealthError::InvalidRequest(
@@ -184,24 +184,16 @@ pub(crate) fn resolve_range(
 
 pub(crate) fn build_health_report(
     journal_root: &Path,
-    range: (NaiveDate, NaiveDate),
-    now: DateTime<impl TimeZone>,
+    range: (Date, Date),
+    now: &ZonedDateTime,
 ) -> Result<HealthReport, HealthError> {
-    let zoned = now.clone();
-    let now = now.fixed_offset();
-    let utc_now = now.with_timezone(&Utc);
-    let generated_at = now.timestamp_millis();
+    let utc_now = now.timestamp();
+    let generated_at = utc_now.as_millisecond();
     let facets = list_declared_facet_names(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    let aggregate = scan_records(journal_root, &facets, range, zoned.clone())?;
-    let (capture_health, mut notes) = build_capture_health(
-        journal_root,
-        &aggregate,
-        range,
-        &facets,
-        generated_at,
-        zoned,
-    )?;
+    let aggregate = scan_records(journal_root, &facets, range, now.time_zone())?;
+    let (capture_health, mut notes) =
+        build_capture_health(journal_root, &aggregate, range, &facets, generated_at, now)?;
     let (synthesis_health, synthesis_notes) =
         build_synthesis_health(journal_root, &aggregate, now)?;
     notes.extend(synthesis_notes);
@@ -216,8 +208,8 @@ pub(crate) fn build_health_report(
     Ok(HealthReport {
         generated_at,
         range: (
-            range.0.format("%Y%m%d").to_string(),
-            range.1.format("%Y%m%d").to_string(),
+            solstone_core_time::day_key(range.0),
+            solstone_core_time::day_key(range.1),
         ),
         facets,
         capture_health,
@@ -232,18 +224,17 @@ pub(crate) fn build_health_report(
 fn scan_records(
     journal_root: &Path,
     facets: &[String],
-    range: (NaiveDate, NaiveDate),
-    now: DateTime<impl TimeZone>,
+    range: (Date, Date),
+    zone: &TimeZone,
 ) -> Result<ScanAggregate, HealthError> {
-    let zone = now.timezone();
     let mut aggregate = ScanAggregate::default();
     for day in days_inclusive(range) {
-        let day_name = day.format("%Y%m%d").to_string();
+        let day_name = solstone_core_time::day_key(day);
         for facet in facets {
             let records = load_activity_records(journal_root, facet, &day_name, true)
                 .map_err(|error| HealthError::internal(error.to_string()))?;
             for record in records {
-                add_record(&mut aggregate, &record, day, &zone);
+                add_record(&mut aggregate, &record, day, zone);
             }
         }
     }
@@ -253,8 +244,8 @@ fn scan_records(
 fn add_record(
     aggregate: &mut ScanAggregate,
     record: &Map<String, Value>,
-    day: NaiveDate,
-    zone: &impl TimeZone,
+    day: Date,
+    zone: &TimeZone,
 ) {
     for raw_segment in values(record.get("segments")) {
         let Some(raw_segment) = raw_segment.as_str() else {
@@ -265,21 +256,23 @@ fn add_record(
         else {
             continue;
         };
-        let local_midnight = (day + Duration::days(1))
-            .and_hms_opt(0, 0, 0)
-            .expect("midnight");
+        // The last representable day has no next midnight; its end is the
+        // last representable wall time.
+        let local_midnight = day
+            .tomorrow()
+            .map_or(DateTime::MAX, |next| next.to_datetime(Time::midnight()));
         let clipped_local_end = local_end.min(local_midnight);
-        let mut hour = local_start
-            .date()
-            .and_hms_opt(local_start.hour(), 0, 0)
-            .expect("valid segment hour");
+        let mut hour = local_start.date().at(local_start.hour(), 0, 0, 0);
         while hour < clipped_local_end {
             aggregate
                 .capture_hour_slots
-                .insert((day.format("%Y%m%d").to_string(), hour.hour()));
-            hour += Duration::hours(1);
+                .insert((solstone_core_time::day_key(day), hour.hour()));
+            let Ok(next) = hour.checked_add(SignedDuration::from_hours(1)) else {
+                break;
+            };
+            hour = next;
         }
-        let end_ms = end.timestamp_millis();
+        let end_ms = end.as_millisecond();
         aggregate.last_segment_at = Some(
             aggregate
                 .last_segment_at
@@ -317,12 +310,12 @@ fn add_record(
 fn build_capture_health(
     journal_root: &Path,
     aggregate: &ScanAggregate,
-    range: (NaiveDate, NaiveDate),
+    range: (Date, Date),
     facets: &[String],
     generated_at: i64,
-    now: DateTime<impl TimeZone>,
+    now: &ZonedDateTime,
 ) -> Result<(CaptureHealth, Vec<HealthNote>), HealthError> {
-    let zone = now.timezone();
+    let zone = now.time_zone();
     let last_seen = last_segment_per_facet(journal_root, facets, now)?;
     let cutoff = generated_at - FACET_SILENT_INFO_HOURS * HOUR_MS;
     let recent = facets
@@ -369,12 +362,13 @@ fn build_capture_health(
                 };
                 if let Some(severity) = severity {
                     // Local time, in the zone the day coordinates use.
-                    let text = zone
-                        .timestamp_millis_opt(last_seen)
-                        .single()
-                        .expect("millisecond timestamp")
-                        .fixed_offset()
-                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    let text = solstone_core_time::zoned_rfc3339(
+                        &Timestamp::from_millisecond(last_seen)
+                            .expect("millisecond timestamp")
+                            .to_zoned_datetime(zone.clone()),
+                        solstone_core_time::Precision::Secs,
+                        true,
+                    );
                     notes.push(note(
                         severity,
                         "capture",
@@ -389,7 +383,7 @@ fn build_capture_health(
     Ok((
         CaptureHealth {
             hours_with_capture: aggregate.capture_hour_slots.len() as u64,
-            hours_total: ((range.1 - range.0).num_days() as u64 + 1) * 24,
+            hours_total: ((range.1 - range.0).get_days() as u64 + 1) * 24,
             coverage_ratio: None,
             facets_with_recent_capture: recent,
             facets_silent_24h: silent,
@@ -402,17 +396,19 @@ fn build_capture_health(
 fn last_segment_per_facet(
     journal_root: &Path,
     facets: &[String],
-    now: DateTime<impl TimeZone>,
+    now: &ZonedDateTime,
 ) -> Result<BTreeMap<String, Option<i64>>, HealthError> {
-    let zone = now.timezone();
+    let zone = now.time_zone();
     let mut values_by_facet = facets
         .iter()
         .cloned()
         .map(|facet| (facet, None))
         .collect::<BTreeMap<_, Option<i64>>>();
     for day_offset in (0..=7).rev() {
-        let day = now.date_naive() - Duration::days(day_offset);
-        let day_name = day.format("%Y%m%d").to_string();
+        let Ok(day) = now.date().checked_sub(Span::new().days(day_offset)) else {
+            continue;
+        };
+        let day_name = solstone_core_time::day_key(day);
         for facet in facets {
             for record in load_activity_records(journal_root, facet, &day_name, true)
                 .map_err(|error| HealthError::internal(error.to_string()))?
@@ -421,10 +417,10 @@ fn last_segment_per_facet(
                     let Some(raw) = segment.as_str() else {
                         continue;
                     };
-                    let Some((_, end, _, _)) = parse_segment_bounds(raw, day, &zone) else {
+                    let Some((_, end, _, _)) = parse_segment_bounds(raw, day, zone) else {
                         continue;
                     };
-                    let end_ms = end.timestamp_millis();
+                    let end_ms = end.as_millisecond();
                     values_by_facet.entry(facet.clone()).and_modify(|last| {
                         *last = Some(last.map_or(end_ms, |value| value.max(end_ms)));
                     });
@@ -438,9 +434,9 @@ fn last_segment_per_facet(
 pub(crate) fn build_synthesis_health(
     journal_root: &Path,
     aggregate: &ScanAggregate,
-    now: DateTime<impl TimeZone>,
+    now: &ZonedDateTime,
 ) -> Result<(SynthesisHealth, Vec<HealthNote>), HealthError> {
-    let generated_at = now.timestamp_millis();
+    let generated_at = now.timestamp().as_millisecond();
     let mut notes = vec![note(
         "info",
         "synthesis",
@@ -450,10 +446,8 @@ pub(crate) fn build_synthesis_health(
     )];
     let talents = journal_root.join("talents");
     let guard_days = [
-        now.date_naive().format("%Y%m%d").to_string(),
-        (now.date_naive() - Duration::days(1))
-            .format("%Y%m%d")
-            .to_string(),
+        solstone_core_time::day_key(now.date()),
+        solstone_core_time::day_key(now.date().yesterday().expect("the day before today")),
     ];
     let missing = guard_days
         .iter()
@@ -540,7 +534,7 @@ pub(crate) fn build_synthesis_health(
         (None, None)
     };
     let indexer_sqlite = journal_root.join("indexer/journal.sqlite");
-    let utc_now = now.with_timezone(&Utc);
+    let utc_now = now.timestamp();
     let search_eval = crate::search_index::evaluate_search_index(
         journal_root,
         &crate::search_index::FsIndexMetadata,
@@ -731,7 +725,7 @@ use solstone_core_system::processing::{
 
 pub(crate) fn read_segment_backlog_health(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<SegmentBacklogHealth, HealthError> {
     let display = solstone_core_system::processing::read_display_snapshot(journal_root);
     build_segment_backlog_health(
@@ -739,17 +733,17 @@ pub(crate) fn read_segment_backlog_health(
         now,
         display,
         display.available,
-        now.with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
+        now.to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
             .time(),
     )
 }
 
 fn build_segment_backlog_health(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     display_reading: DisplayPowersaveReading,
     display_detectable: bool,
-    local_now: NaiveTime,
+    local_now: Time,
 ) -> Result<SegmentBacklogHealth, HealthError> {
     let mut not_thought = 0usize;
     let mut not_sensed = 0usize;
@@ -899,9 +893,9 @@ fn chronicle_days(journal_root: &Path) -> Result<Vec<String>, HealthError> {
 // wall clock of the file day.
 fn parse_segment_bounds(
     raw: &str,
-    day: NaiveDate,
-    zone: &impl TimeZone,
-) -> Option<(DateTime<Utc>, DateTime<Utc>, NaiveDateTime, NaiveDateTime)> {
+    day: Date,
+    zone: &TimeZone,
+) -> Option<(Timestamp, Timestamp, DateTime, DateTime)> {
     let (clock, duration) = raw.split_once('_')?;
     if clock.len() != 6 || !clock.as_bytes().iter().all(u8::is_ascii_digit) {
         return None;
@@ -910,25 +904,25 @@ fn parse_segment_bounds(
     let minute = clock[2..4].parse().ok()?;
     let second = clock[4..6].parse().ok()?;
     let duration = duration.parse::<i64>().ok()?;
-    let local_start = day.and_hms_opt(hour, minute, second)?;
-    let local_end = local_start + Duration::seconds(duration);
-    let start = wall_instant(zone, &local_start)?;
-    let end = start + Duration::seconds(duration);
+    let local_start = day.to_datetime(Time::new(hour, minute, second, 0).ok()?);
+    let duration = SignedDuration::from_secs(duration);
+    let local_end = local_start.checked_add(duration).ok()?;
+    let start = wall_instant(zone, local_start)?;
+    let end = start.checked_add(duration).ok()?;
     Some((start, end, local_start, local_end))
 }
 
 /// The instant `zone` gives a wall time: the first one for a repeated hour, and
 /// for a wall time the clocks skip, the offset in effect just before the jump.
-fn wall_instant(zone: &impl TimeZone, local: &NaiveDateTime) -> Option<DateTime<Utc>> {
-    if let Some(value) = zone.from_local_datetime(local).earliest() {
-        return Some(value.with_timezone(&Utc));
+fn wall_instant(zone: &TimeZone, local: DateTime) -> Option<Timestamp> {
+    if let Some(value) = solstone_core_time::from_local(zone, local).earliest() {
+        return Some(value.timestamp());
     }
     let before = (1..=3).find_map(|hours| {
-        zone.from_local_datetime(&(*local - Duration::hours(hours)))
-            .earliest()
+        let earlier = local.checked_sub(SignedDuration::from_hours(hours)).ok()?;
+        solstone_core_time::from_local(zone, earlier).earliest()
     })?;
-    let offset = i64::from(before.offset().fix().local_minus_utc());
-    Some((*local - Duration::seconds(offset)).and_utc())
+    before.offset().to_timestamp(local).ok()
 }
 
 // Naive `%Y-%m-%dT%H:%M:%S` is UTC-naive by contract; schedule talent writes
@@ -953,12 +947,12 @@ fn truthy(value: &Value) -> bool {
         Value::Object(value) => !value.is_empty(),
     }
 }
-fn days_inclusive(range: (NaiveDate, NaiveDate)) -> Vec<NaiveDate> {
+fn days_inclusive(range: (Date, Date)) -> Vec<Date> {
     let mut days = Vec::new();
-    let mut current = range.0;
-    while current <= range.1 {
-        days.push(current);
-        current += Duration::days(1);
+    let mut current = Some(range.0);
+    while let Some(day) = current.filter(|day| *day <= range.1) {
+        days.push(day);
+        current = day.tomorrow().ok();
     }
     days
 }
@@ -998,8 +992,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use chrono::{Duration, FixedOffset, NaiveTime, TimeZone, Timelike, Utc};
     use filetime::{FileTime, set_file_mtime};
+    use jiff::civil::{Date, Time};
+    use jiff::tz::TimeZone;
+    use jiff::{SignedDuration, Timestamp, ZonedDateTime};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
@@ -1020,8 +1016,28 @@ mod tests {
         temporary
     }
 
-    fn now() -> chrono::DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap()
+    fn now() -> Timestamp {
+        "2026-04-10T12:00:00Z".parse().unwrap()
+    }
+
+    fn zoned() -> ZonedDateTime {
+        now().to_zoned_datetime(TimeZone::UTC)
+    }
+
+    fn today() -> Date {
+        zoned().date()
+    }
+
+    fn zone(name: &str) -> TimeZone {
+        solstone_core_time::zone(name).unwrap()
+    }
+
+    /// A whole-hour wall time at a fixed offset of `hours` from UTC.
+    fn at_offset(hours: i8, year: i16, month: i8, day: i8, hour: i8) -> ZonedDateTime {
+        jiff::civil::date(year, month, day)
+            .at(hour, 0, 0, 0)
+            .to_zoned_datetime(TimeZone::fixed(jiff::tz::offset(hours)))
+            .unwrap()
     }
 
     fn write_json(path: &Path, value: Value) {
@@ -1065,12 +1081,13 @@ mod tests {
         write_jsonl(&root.join("talents").join(format!("{day}.jsonl")), rows);
     }
 
-    fn healthy_talent_guards(root: &Path, now: chrono::DateTime<Utc>) {
-        for day in [now.date_naive(), now.date_naive() - Duration::days(1)] {
+    fn healthy_talent_guards(root: &Path, now: Timestamp) {
+        let today = now.to_zoned_datetime(TimeZone::UTC).date();
+        for day in [today, today.yesterday().unwrap()] {
             talent_rows(
                 root,
-                &day.format("%Y%m%d").to_string(),
-                &[json!({"ts":now.timestamp_millis(),"status":"ok"})],
+                &solstone_core_time::day_key(day),
+                &[json!({"ts":now.as_millisecond(),"status":"ok"})],
             );
         }
     }
@@ -1111,29 +1128,17 @@ mod tests {
     #[test]
     fn default_range_uses_the_injected_local_calendar() {
         for (stamp, zone, expected) in [
-            (
-                "2026-09-08T00:30:00Z",
-                chrono_tz::America::Denver,
-                "20260907",
-            ),
-            ("2026-09-07T23:30:00Z", chrono_tz::Asia::Tokyo, "20260908"),
-            ("2026-09-08T00:30:00Z", chrono_tz::UTC, "20260908"),
-            (
-                "2026-03-09T05:30:00Z",
-                chrono_tz::America::Denver,
-                "20260308",
-            ),
-            (
-                "2026-11-02T06:30:00Z",
-                chrono_tz::America::Denver,
-                "20261101",
-            ),
+            ("2026-09-08T00:30:00Z", "America/Denver", "20260907"),
+            ("2026-09-07T23:30:00Z", "Asia/Tokyo", "20260908"),
+            ("2026-09-08T00:30:00Z", "UTC", "20260908"),
+            ("2026-03-09T05:30:00Z", "America/Denver", "20260308"),
+            ("2026-11-02T06:30:00Z", "America/Denver", "20261101"),
         ] {
-            let instant = chrono::DateTime::parse_from_rfc3339(stamp).unwrap();
-            let local = instant.with_timezone(&zone);
-            let range = resolve_range(None, None, local).unwrap();
-            assert_eq!(range.1.format("%Y%m%d").to_string(), expected);
-            assert_eq!(range.1 - range.0, Duration::days(6));
+            let instant = solstone_core_time::parse_rfc3339(stamp).unwrap();
+            let local = instant.timestamp().to_zoned_datetime(self::zone(zone));
+            let range = resolve_range(None, None, &local).unwrap();
+            assert_eq!(solstone_core_time::day_key(range.1), expected);
+            assert_eq!(range.0.until(range.1).unwrap().get_days(), 6);
         }
     }
 
@@ -1147,31 +1152,36 @@ mod tests {
             "20260908",
             &[json!({"id":"local-morning","segments":["080000_60"]})],
         );
-        let instant = Utc.with_ymd_and_hms(2026, 9, 7, 23, 30, 0).unwrap();
-        let local = instant.with_timezone(&chrono_tz::Asia::Tokyo);
+        let instant: Timestamp = "2026-09-07T23:30:00Z".parse().unwrap();
+        let local = instant.to_zoned_datetime(zone("Asia/Tokyo"));
         let facets = vec!["work".to_owned()];
-        let values = super::last_segment_per_facet(root.path(), &facets, local).unwrap();
+        let values = super::last_segment_per_facet(root.path(), &facets, &local).unwrap();
         assert!(values["work"].is_some());
-        let utc_control = super::last_segment_per_facet(root.path(), &facets, instant).unwrap();
+        let utc_control = super::last_segment_per_facet(
+            root.path(),
+            &facets,
+            &instant.to_zoned_datetime(TimeZone::UTC),
+        )
+        .unwrap();
         assert_eq!(utc_control["work"], None);
     }
 
     #[test]
     fn synthesis_index_guards_follow_local_journal_dates() {
         for (zone, days) in [
-            (chrono_tz::America::Denver, ["20260907", "20260906"]),
-            (chrono_tz::Asia::Tokyo, ["20260908", "20260907"]),
+            ("America/Denver", ["20260907", "20260906"]),
+            ("Asia/Tokyo", ["20260908", "20260907"]),
         ] {
             let root = temporary();
-            let local = Utc
-                .with_ymd_and_hms(2026, 9, 8, 0, 30, 0)
+            let local = "2026-09-08T00:30:00Z"
+                .parse::<Timestamp>()
                 .unwrap()
-                .with_timezone(&zone);
+                .to_zoned_datetime(self::zone(zone));
             for day in days {
                 talent_rows(root.path(), day, &[]);
             }
             let (health, notes) =
-                build_synthesis_health(root.path(), &ScanAggregate::default(), local).unwrap();
+                build_synthesis_health(root.path(), &ScanAggregate::default(), &local).unwrap();
             assert_eq!(health.talent_run_failures_24h, Some(0));
             assert!(!notes.iter().any(|n| n.message.contains("logs missing")));
             fs::remove_file(
@@ -1181,24 +1191,24 @@ mod tests {
             )
             .unwrap();
             let (health, _) =
-                build_synthesis_health(root.path(), &ScanAggregate::default(), local).unwrap();
+                build_synthesis_health(root.path(), &ScanAggregate::default(), &local).unwrap();
             assert_eq!(health.talent_run_failures_24h, None);
         }
     }
 
     #[test]
     fn range_validation_rejects_one_sided_malformed_and_inverted_windows() {
-        let fixed = now();
+        let fixed = zoned();
         assert!(matches!(
-            resolve_range(Some("20260401"), None, fixed),
+            resolve_range(Some("20260401"), None, &fixed),
             Err(HealthError::InvalidRequest(message)) if message == "both endpoints or neither"
         ));
         assert!(matches!(
-            resolve_range(Some("bad"), Some("20260401"), fixed),
+            resolve_range(Some("bad"), Some("20260401"), &fixed),
             Err(HealthError::InvalidRequest(message)) if message == "day must match YYYYMMDD"
         ));
         assert!(matches!(
-            resolve_range(Some("20260402"), Some("20260401"), fixed),
+            resolve_range(Some("20260402"), Some("20260401"), &fixed),
             Err(HealthError::InvalidRequest(message)) if message == "day_from must be <= day_to"
         ));
     }
@@ -1228,8 +1238,8 @@ mod tests {
         let aggregate = scan_records(
             root,
             &["work".to_owned()],
-            (now().date_naive() - Duration::days(1), now().date_naive()),
-            now(),
+            (today().yesterday().unwrap(), today()),
+            &TimeZone::UTC,
         )
         .unwrap();
         assert_eq!(
@@ -1244,10 +1254,10 @@ mod tests {
         let (capture, _) = build_capture_health(
             root,
             &aggregate,
-            (now().date_naive() - Duration::days(1), now().date_naive()),
+            (today().yesterday().unwrap(), today()),
             &["work".to_owned()],
-            now().timestamp_millis(),
-            now(),
+            now().as_millisecond(),
+            &zoned(),
         )
         .unwrap();
         assert_eq!(capture.hours_with_capture, 2);
@@ -1255,9 +1265,10 @@ mod tests {
         assert_eq!(
             capture.last_segment_at,
             Some(
-                Utc.with_ymd_and_hms(2026, 4, 10, 2, 0, 0)
+                "2026-04-10T02:00:00Z"
+                    .parse::<Timestamp>()
                     .unwrap()
-                    .timestamp_millis()
+                    .as_millisecond()
             )
         );
     }
@@ -1277,8 +1288,8 @@ mod tests {
         let aggregate = scan_records(
             temporary.path(),
             &["work".to_owned()],
-            (now().date_naive(), now().date_naive()),
-            now(),
+            (today(), today()),
+            &TimeZone::UTC,
         )
         .unwrap();
         assert_eq!(aggregate.activities_count, 0);
@@ -1303,8 +1314,8 @@ mod tests {
         let aggregate = scan_records(
             temporary.path(),
             &["work".to_owned()],
-            (now().date_naive(), now().date_naive()),
-            now(),
+            (today(), today()),
+            &TimeZone::UTC,
         )
         .unwrap();
         assert_eq!(aggregate.activities_with_participation, 1);
@@ -1331,8 +1342,8 @@ mod tests {
         let aggregate = scan_records(
             temporary.path(),
             &["work".to_owned()],
-            (now().date_naive(), now().date_naive()),
-            now(),
+            (today(), today()),
+            &TimeZone::UTC,
         )
         .unwrap();
         assert_eq!(aggregate.activities_user_edited, 4);
@@ -1353,8 +1364,8 @@ mod tests {
         let aggregate = scan_records(
             temporary.path(),
             &["work".to_owned()],
-            (now().date_naive(), now().date_naive()),
-            now(),
+            (today(), today()),
+            &TimeZone::UTC,
         )
         .unwrap();
         assert_eq!(aggregate.activities_user_edited, 1);
@@ -1364,11 +1375,12 @@ mod tests {
         let temporary = temporary();
         let root = temporary.path();
         facet(root, "work");
-        let captured = now() - Duration::hours(hours) - Duration::minutes(1);
+        let captured = (now() - SignedDuration::from_hours(hours) - SignedDuration::from_mins(1))
+            .to_zoned_datetime(TimeZone::UTC);
         activities(
             root,
             "work",
-            &captured.format("%Y%m%d").to_string(),
+            &captured.strftime("%Y%m%d").to_string(),
             &[
                 json!({"id":"old","segments":[format!("{:02}{:02}{:02}_1", captured.hour(), captured.minute(), captured.second())]}),
             ],
@@ -1376,10 +1388,10 @@ mod tests {
         let (_, notes) = build_capture_health(
             root,
             &ScanAggregate::default(),
-            (now().date_naive(), now().date_naive()),
+            (today(), today()),
             &["work".to_owned()],
-            now().timestamp_millis(),
-            now(),
+            now().as_millisecond(),
+            &zoned(),
         )
         .unwrap();
         notes
@@ -1427,15 +1439,10 @@ mod tests {
         );
     }
 
-    fn capture_for_gap(
-        root: &Path,
-        facet_name: &str,
-        now: chrono::DateTime<chrono::FixedOffset>,
-        hours: i64,
-    ) {
+    fn capture_for_gap(root: &Path, facet_name: &str, now: &ZonedDateTime, hours: i64) {
         facet(root, facet_name);
-        let captured = now - Duration::hours(hours) - Duration::minutes(1);
-        let day = captured.format("%Y%m%d").to_string();
+        let captured = now - SignedDuration::from_hours(hours) - SignedDuration::from_mins(1);
+        let day = captured.strftime("%Y%m%d").to_string();
         let label = format!(
             "{:02}{:02}{:02}_1",
             captured.hour(),
@@ -1452,17 +1459,16 @@ mod tests {
 
     #[test]
     fn facet_silence_west_of_utc_under_twenty_four_hours_has_no_silence_note() {
-        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
-        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let now = at_offset(-6, 2026, 4, 10, 12);
         let temporary = temporary();
-        capture_for_gap(temporary.path(), "work", now, 20);
+        capture_for_gap(temporary.path(), "work", &now, 20);
         let (capture, notes) = build_capture_health(
             temporary.path(),
             &ScanAggregate::default(),
-            (now.date_naive(), now.date_naive()),
+            (now.date(), now.date()),
             &["work".to_owned()],
-            now.timestamp_millis(),
-            now,
+            now.timestamp().as_millisecond(),
+            &now,
         )
         .unwrap();
         assert!(
@@ -1480,17 +1486,16 @@ mod tests {
 
     #[test]
     fn facet_silence_east_of_utc_over_twenty_four_hours_reports_exact_gap_hours() {
-        let offset = FixedOffset::east_opt(9 * 3600).unwrap();
-        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let now = at_offset(9, 2026, 4, 10, 12);
         let temporary = temporary();
-        capture_for_gap(temporary.path(), "work", now, 30);
+        capture_for_gap(temporary.path(), "work", &now, 30);
         let (capture, notes) = build_capture_health(
             temporary.path(),
             &ScanAggregate::default(),
-            (now.date_naive(), now.date_naive()),
+            (now.date(), now.date()),
             &["work".to_owned()],
-            now.timestamp_millis(),
-            now,
+            now.timestamp().as_millisecond(),
+            &now,
         )
         .unwrap();
         assert!(capture.facets_silent_24h.contains(&"work".to_string()));
@@ -1518,8 +1523,7 @@ mod tests {
 
     #[test]
     fn capture_hour_slots_west_of_utc_remain_in_local_calendar_day() {
-        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
-        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let now = at_offset(-6, 2026, 4, 10, 12);
         let day = "20260410";
         let temporary = temporary();
         let root = temporary.path();
@@ -1533,23 +1537,19 @@ mod tests {
         let aggregate = scan_records(
             root,
             &["work".to_owned()],
-            (now.date_naive(), now.date_naive()),
-            now,
+            (now.date(), now.date()),
+            now.time_zone(),
         )
         .unwrap();
         assert!(aggregate.capture_hour_slots.contains(&(day.to_string(), 1)));
         assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 7)));
-        let expected_last_segment = offset
-            .with_ymd_and_hms(2026, 4, 10, 2, 0, 0)
-            .unwrap()
-            .timestamp_millis();
+        let expected_last_segment = at_offset(-6, 2026, 4, 10, 2).timestamp().as_millisecond();
         assert_eq!(aggregate.last_segment_at, Some(expected_last_segment));
     }
 
     #[test]
     fn capture_hour_slots_west_of_utc_clip_at_local_midnight() {
-        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
-        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let now = at_offset(-6, 2026, 4, 10, 12);
         let day = "20260410";
         let temporary = temporary();
         let root = temporary.path();
@@ -1563,8 +1563,8 @@ mod tests {
         let aggregate = scan_records(
             root,
             &["work".to_owned()],
-            (now.date_naive(), now.date_naive()),
-            now,
+            (now.date(), now.date()),
+            now.time_zone(),
         )
         .unwrap();
         assert!(
@@ -1575,10 +1575,7 @@ mod tests {
         assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 0)));
         assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 5)));
         assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 6)));
-        let expected_last_segment = offset
-            .with_ymd_and_hms(2026, 4, 11, 1, 0, 0)
-            .unwrap()
-            .timestamp_millis();
+        let expected_last_segment = at_offset(-6, 2026, 4, 11, 1).timestamp().as_millisecond();
         assert_eq!(aggregate.last_segment_at, Some(expected_last_segment));
     }
 
@@ -1586,7 +1583,7 @@ mod tests {
     fn missing_talent_guard_days_fail_closed_with_info_note() {
         let temporary = temporary();
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
         assert_eq!(health.talent_degraded_outputs_24h, None);
         assert!(
@@ -1604,12 +1601,12 @@ mod tests {
             temporary.path(),
             "20260410",
             &[
-                json!({"ts":now().timestamp_millis(),"status":"failed"}),
-                json!({"ts":now().timestamp_millis(),"status":"completed","degraded":{"output_tokens":0,"provider":"p","model":"m"},"name":"quiet","day":"20260410"}),
+                json!({"ts":now().as_millisecond(),"status":"failed"}),
+                json!({"ts":now().as_millisecond(),"status":"completed","degraded":{"output_tokens":0,"provider":"p","model":"m"},"name":"quiet","day":"20260410"}),
             ],
         );
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, Some(1));
         assert_eq!(health.talent_degraded_outputs_24h, Some(1));
         assert!(
@@ -1632,11 +1629,11 @@ mod tests {
             temporary.path(),
             "20260410",
             &[
-                json!({"ts":now().timestamp_millis(),"status":"completed","degraded":{"reason":"story_rejected","detail":"story output has invalid body","output_tokens":53},"name":"conversation","provider":"local","model":"m","day":"20260410"}),
+                json!({"ts":now().as_millisecond(),"status":"completed","degraded":{"reason":"story_rejected","detail":"story output has invalid body","output_tokens":53},"name":"conversation","provider":"local","model":"m","day":"20260410"}),
             ],
         );
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_degraded_outputs_24h, Some(1));
         assert!(
             notes
@@ -1653,11 +1650,11 @@ mod tests {
             temporary.path(),
             "20260410",
             &[
-                json!({"ts":now().timestamp_millis(),"status":"completed","degraded":{"reason":"partial_input","partial_input":{"dropped_entries":2}},"name":"sense","day":"20260410"}),
+                json!({"ts":now().as_millisecond(),"status":"completed","degraded":{"reason":"partial_input","partial_input":{"dropped_entries":2}},"name":"sense","day":"20260410"}),
             ],
         );
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_degraded_outputs_24h, Some(1));
         assert_eq!(health.talent_run_failures_24h, Some(0));
         assert!(
@@ -1683,14 +1680,14 @@ mod tests {
             .join(format!("{day}.jsonl"));
         let rows = [
             json!({
-                "ts": now().timestamp_millis(),
+                "ts": now().as_millisecond(),
                 "status": "failed",
                 "name": "facet_newsletter",
                 "facet": "work",
                 "day": day,
             }),
             json!({
-                "ts": now().timestamp_millis(),
+                "ts": now().as_millisecond(),
                 "status": "completed",
                 "degraded": {"reason": "partial_input", "activities": ["a1"]},
                 "name": "facet_newsletter",
@@ -1698,13 +1695,13 @@ mod tests {
                 "day": day,
             }),
             json!({
-                "ts": now().timestamp_millis(),
+                "ts": now().as_millisecond(),
                 "status": "failed",
                 "name": "other_talent_fail",
                 "day": day,
             }),
             json!({
-                "ts": now().timestamp_millis(),
+                "ts": now().as_millisecond(),
                 "status": "completed",
                 "degraded": {"output_tokens": 0, "provider": "p", "model": "m"},
                 "name": "other_talent_deg",
@@ -1715,7 +1712,7 @@ mod tests {
         let index_bytes = fs::read(&index_path).expect("read day index");
 
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, Some(1));
         assert_eq!(health.talent_degraded_outputs_24h, Some(1));
         assert!(
@@ -1741,10 +1738,10 @@ mod tests {
         talent_rows(
             temporary.path(),
             "20260410",
-            &[json!({"ts":now().timestamp_millis(),"status":false})],
+            &[json!({"ts":now().as_millisecond(),"status":false})],
         );
-        let scan = scan_talent_indexes(&temporary.path().join("talents"), now().timestamp_millis())
-            .unwrap();
+        let scan =
+            scan_talent_indexes(&temporary.path().join("talents"), now().as_millisecond()).unwrap();
         assert_eq!(scan.failures, 1);
     }
 
@@ -1755,7 +1752,7 @@ mod tests {
         let rows = (0..12)
             .map(|offset| {
                 json!({
-                    "ts":now().timestamp_millis() - offset * 1_000,
+                    "ts":now().as_millisecond() - offset * 1_000,
                     "status":"completed",
                     "degraded":{"output_tokens":0,"provider":"p","model":"m"},
                     "name":format!("degraded-{offset:02}"),
@@ -1765,7 +1762,7 @@ mod tests {
             .collect::<Vec<_>>();
         talent_rows(temporary.path(), "20260410", &rows);
         let (_, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         let messages = notes
             .iter()
             .filter(|note| note.message.contains("finished without a usable result"))
@@ -1801,17 +1798,17 @@ mod tests {
         talent_rows(
             temporary.path(),
             "20260410",
-            &[json!({"ts":now().timestamp_millis(),"status":"failed"})],
+            &[json!({"ts":now().as_millisecond(),"status":"failed"})],
         );
         talent_rows(
             temporary.path(),
             "20260409",
             &[
-                json!({"ts":now().timestamp_millis() - 1,"status":"completed","degraded":{"output_tokens":0},"name":"quiet","day":"20260409"}),
+                json!({"ts":now().as_millisecond() - 1,"status":"completed","degraded":{"output_tokens":0},"name":"quiet","day":"20260409"}),
             ],
         );
         let (health, _) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, Some(1));
         assert_eq!(health.talent_degraded_outputs_24h, Some(1));
     }
@@ -1823,10 +1820,10 @@ mod tests {
         talent_rows(
             temporary.path(),
             "20260409",
-            &[json!({"ts":now().timestamp_millis() - 86_400_000,"status":"failed"})],
+            &[json!({"ts":now().as_millisecond() - 86_400_000,"status":"failed"})],
         );
-        let scan = scan_talent_indexes(&temporary.path().join("talents"), now().timestamp_millis())
-            .unwrap();
+        let scan =
+            scan_talent_indexes(&temporary.path().join("talents"), now().as_millisecond()).unwrap();
         assert_eq!(scan.failures, 1);
     }
 
@@ -1836,7 +1833,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         fs::write(temporary.path().join("talents/20260408.jsonl"), "[]\n").unwrap();
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
         assert!(
             notes
@@ -1851,7 +1848,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         talent_rows(temporary.path(), "20260408", &[json!({"status":"failed"})]);
         let (health, _) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
     }
 
@@ -1862,10 +1859,10 @@ mod tests {
         talent_rows(
             temporary.path(),
             "20260410",
-            &[json!({"ts":now().timestamp_millis() + 1,"status":"failed"})],
+            &[json!({"ts":now().as_millisecond() + 1,"status":"failed"})],
         );
-        let scan = scan_talent_indexes(&temporary.path().join("talents"), now().timestamp_millis())
-            .unwrap();
+        let scan =
+            scan_talent_indexes(&temporary.path().join("talents"), now().as_millisecond()).unwrap();
         assert_eq!(scan.failures, 0);
     }
 
@@ -1875,21 +1872,21 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         fs::write(temporary.path().join("talents/20260408.jsonl"), b"{").unwrap();
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
         assert!(notes.iter().any(
             |note| note.severity == "warn" && note.message.contains("could not be fully read")
         ));
     }
 
-    fn torn_talent_index(root: &Path, day: &str, modified: chrono::DateTime<Utc>) {
+    fn torn_talent_index(root: &Path, day: &str, modified: Timestamp) {
         let path = root.join("talents").join(format!("{day}.jsonl"));
         fs::write(
             &path,
             "{\"ts\":1,\"status\":\"ok\"}\n{\"ts\":2,\"pro{\"ts\":3,\"status\":\"ok\"}mpt\":\"x\"}\n",
         )
         .unwrap();
-        set_file_mtime(&path, FileTime::from_unix_time(modified.timestamp(), 0)).unwrap();
+        set_file_mtime(&path, FileTime::from_unix_time(modified.as_second(), 0)).unwrap();
     }
 
     #[test]
@@ -1899,11 +1896,15 @@ mod tests {
         talent_rows(
             temporary.path(),
             "20260410",
-            &[json!({"ts":now().timestamp_millis(),"status":"failed"})],
+            &[json!({"ts":now().as_millisecond(),"status":"failed"})],
         );
-        torn_talent_index(temporary.path(), "20260401", now() - Duration::days(9));
+        torn_talent_index(
+            temporary.path(),
+            "20260401",
+            now() - SignedDuration::from_hours(24 * 9),
+        );
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, Some(1));
         assert_eq!(health.talent_degraded_outputs_24h, Some(0));
         let mentions = notes
@@ -1918,9 +1919,13 @@ mod tests {
     fn torn_row_in_an_older_day_index_changed_within_a_day_fails_closed() {
         let temporary = temporary();
         healthy_talent_guards(temporary.path(), now());
-        torn_talent_index(temporary.path(), "20260401", now() - Duration::hours(1));
+        torn_talent_index(
+            temporary.path(),
+            "20260401",
+            now() - SignedDuration::from_hours(1),
+        );
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
         assert_eq!(health.talent_degraded_outputs_24h, None);
         assert!(
@@ -1936,7 +1941,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         fs::write(temporary.path().join("talents/20260408.jsonl"), [0xff]).unwrap();
         let (health, _) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_degraded_outputs_24h, None);
     }
 
@@ -1946,7 +1951,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         fs::create_dir(temporary.path().join("talents/20260408.jsonl")).unwrap();
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, None);
         assert!(
             notes
@@ -1961,7 +1966,7 @@ mod tests {
         healthy_talent_guards(temporary.path(), now());
         fs::write(temporary.path().join("talents/current.jsonl"), b"{").unwrap();
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.talent_run_failures_24h, Some(0));
         assert!(
             !notes
@@ -1975,7 +1980,7 @@ mod tests {
         let temporary = temporary();
         healthy_talent_guards(temporary.path(), now());
         let (health, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(health.index_activity_at, None);
         assert!(
             notes
@@ -1994,11 +1999,11 @@ mod tests {
         let index = temporary.path().join("indexer/journal.sqlite");
         set_file_mtime(
             &index,
-            FileTime::from_unix_time((now().timestamp() - 30 * 86_400) as _, 0),
+            FileTime::from_unix_time((now().as_second() - 30 * 86_400) as _, 0),
         )
         .unwrap();
         let (synthesis, notes) =
-            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), &zoned()).unwrap();
         assert_eq!(synthesis.search_index.state, "ok");
         assert!(
             !notes
@@ -2097,11 +2102,7 @@ mod tests {
         fs::create_dir_all(temporary.path().join("config")).unwrap();
         fs::write(temporary.path().join("config/journal.json"), "{").unwrap();
         assert!(matches!(
-            build_health_report(
-                temporary.path(),
-                (now().date_naive(), now().date_naive()),
-                now(),
-            ),
+            build_health_report(temporary.path(), (today(), today()), &zoned(),),
             Err(HealthError::Internal { .. })
         ));
     }
@@ -2125,7 +2126,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_thought, 1);
@@ -2154,7 +2155,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(
@@ -2195,7 +2196,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_thought, 1, "the good day still contributes");
@@ -2221,7 +2222,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
+            Time::constant(7, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_sensed, 1);
@@ -2248,7 +2249,7 @@ mod tests {
                 debounced: true,
             },
             true,
-            NaiveTime::from_hms_opt(12, 0, 0).unwrap(),
+            Time::constant(12, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.drain_state, "window_open");
@@ -2259,7 +2260,7 @@ mod tests {
     fn segment_backlog_orchestration_uses_each_drain_state() {
         let temporary = temporary();
         let root = temporary.path();
-        let local = NaiveTime::from_hms_opt(3, 0, 0).unwrap();
+        let local = Time::constant(3, 0, 0, 0);
         let unavailable = DisplayPowersaveReading::UNAVAILABLE;
         let no_engine =
             build_segment_backlog_health(root, now(), unavailable, false, local).unwrap();
@@ -2287,7 +2288,7 @@ mod tests {
                 now(),
                 unavailable,
                 false,
-                NaiveTime::from_hms_opt(7, 0, 0).unwrap()
+                Time::constant(7, 0, 0, 0)
             )
             .unwrap()
             .drain_state,
@@ -2311,8 +2312,7 @@ mod tests {
         let root = temporary.path();
         facet(root, "zeta");
         facet(root, "alpha");
-        let report =
-            build_health_report(root, (now().date_naive(), now().date_naive()), now()).unwrap();
+        let report = build_health_report(root, (today(), today()), &zoned()).unwrap();
         let keys = report
             .notes
             .iter()
@@ -2351,11 +2351,10 @@ mod tests {
             write_json(
                 &root.join("health/processing-display.json"),
                 json!({
-                    "sampled_at":Utc::now().timestamp_millis()-age,"available":true,"asleep":true,"debounced":true
+                    "sampled_at":Timestamp::now().as_millisecond()-age,"available":true,"asleep":true,"debounced":true
                 }),
             );
-            let report =
-                build_health_report(root, (now().date_naive(), now().date_naive()), now()).unwrap();
+            let report = build_health_report(root, (today(), today()), &zoned()).unwrap();
             assert_eq!(report.segment_backlog.drain_state, expected);
         }
     }
@@ -2367,15 +2366,15 @@ mod tests {
             gate: GateSettings {
                 time_window: TimeWindowSettings {
                     enabled: true,
-                    start: NaiveTime::from_hms_opt(2, 0, 0).unwrap(),
-                    end: NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
+                    start: Time::constant(2, 0, 0, 0),
+                    end: Time::constant(6, 0, 0, 0),
                 },
                 display_powersave: DisplayPowersaveSettings { enabled: true },
             },
         };
         let gate = evaluate_drain_gate(
             settings,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
             DisplayPowersaveReading::UNAVAILABLE,
         );
         assert_eq!(derive_drain_state(settings, &gate, false), "window_open");
@@ -2394,7 +2393,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_sensed, 1);
@@ -2422,7 +2421,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(
@@ -2440,7 +2439,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(
@@ -2462,7 +2461,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_sensed, 1);
@@ -2488,7 +2487,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_sensed, 0);
@@ -2517,7 +2516,7 @@ mod tests {
             now(),
             DisplayPowersaveReading::UNAVAILABLE,
             false,
-            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+            Time::constant(3, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(health.not_sensed, 1);

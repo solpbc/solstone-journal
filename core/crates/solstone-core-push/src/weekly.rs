@@ -8,7 +8,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration as ChronoDuration, NaiveTime, Timelike};
+use jiff::civil::{DateTime, Time};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_journal_io::{
@@ -74,64 +76,79 @@ fn qualifies(journal: &Path, day: &str) -> bool {
     !memories.is_empty()
 }
 
+/// `now` read in the owner's zone, or `None` when the instant is out of range.
+fn owner_local(journal: &Path, now: OffsetDateTime) -> Option<(TimeZone, ZonedDateTime)> {
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let nanosecond = i32::try_from(now.nanosecond()).ok()?;
+    let instant = Timestamp::new(now.unix_timestamp(), nanosecond).ok()?;
+    let local = instant.to_zoned_datetime(zone.clone());
+    Some((zone, local))
+}
+
+/// The instant `target` names, or `now` when it is out of range.
+fn as_offset_date_time(target: &ZonedDateTime, now: OffsetDateTime) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp_nanos(target.timestamp().as_nanosecond()).unwrap_or(now)
+}
+
+/// The first instant with the wall-clock `target` in `zone`, or an hour after
+/// `local` when the clocks skip it.
+fn resolve_local(
+    zone: &TimeZone,
+    target: DateTime,
+    local: &ZonedDateTime,
+) -> Option<ZonedDateTime> {
+    match solstone_core_time::from_local(zone, target).earliest() {
+        Some(resolved) => Some(resolved),
+        None => local.checked_add(SignedDuration::from_hours(1)).ok(),
+    }
+}
+
 /// Compute the initial due timestamp according to the [09:00:00, 21:00:00) owner_zone window.
 pub(crate) fn initial_due(journal: &Path, now: OffsetDateTime) -> OffsetDateTime {
-    use chrono::TimeZone;
-    let zone = solstone_core_journal_config::owner_zone(journal);
-    let Some(now_utc_chrono) =
-        chrono::DateTime::<chrono::Utc>::from_timestamp(now.unix_timestamp(), now.nanosecond())
-    else {
+    let Some((zone, local)) = owner_local(journal, now) else {
         return now;
     };
-    let local = now_utc_chrono.with_timezone(&zone);
 
     let local_time = local.time();
-    let start_window = NaiveTime::from_hms_opt(9, 0, 0).expect("valid time");
-    let end_window = NaiveTime::from_hms_opt(21, 0, 0).expect("valid time");
+    let start_window = Time::constant(9, 0, 0, 0);
+    let end_window = Time::constant(21, 0, 0, 0);
 
     if local_time >= start_window && local_time < end_window {
         return now;
     }
 
     let target_date = if local_time < start_window {
-        local.date_naive()
+        local.date()
     } else {
-        local.date_naive() + ChronoDuration::days(1)
+        let Ok(tomorrow) = local.date().tomorrow() else {
+            return now;
+        };
+        tomorrow
     };
 
-    let target_naive = target_date.and_hms_opt(9, 0, 0).expect("valid naive dt");
-    let target_local = match zone.from_local_datetime(&target_naive) {
-        chrono::LocalResult::Single(dt) => dt,
-        chrono::LocalResult::Ambiguous(dt, _) => dt,
-        chrono::LocalResult::None => local + ChronoDuration::hours(1),
+    let target_naive = target_date.to_datetime(start_window);
+    let Some(target_local) = resolve_local(&zone, target_naive, &local) else {
+        return now;
     };
-
-    let target_utc = target_local.with_timezone(&chrono::Utc);
-    OffsetDateTime::from_unix_timestamp(target_utc.timestamp())
-        .unwrap_or(now)
-        .replace_nanosecond(target_utc.timestamp_subsec_nanos())
-        .unwrap_or(now)
+    as_offset_date_time(&target_local, now)
 }
 
 /// Compute the retry due timestamp at the next clock-hour boundary strictly after the attempt.
 pub(crate) fn retry_due(journal: &Path, now: OffsetDateTime) -> OffsetDateTime {
-    use chrono::TimeZone;
-    let zone = solstone_core_journal_config::owner_zone(journal);
-    let Some(now_utc_chrono) =
-        chrono::DateTime::<chrono::Utc>::from_timestamp(now.unix_timestamp(), now.nanosecond())
+    let Some((zone, local)) = owner_local(journal, now) else {
+        return now;
+    };
+
+    let Ok(next_hour_naive) = local
+        .date()
+        .at(local.hour(), 0, 0, 0)
+        .checked_add(SignedDuration::from_hours(1))
     else {
         return now;
     };
-    let local = now_utc_chrono.with_timezone(&zone);
 
-    let next_hour_naive = local
-        .date_naive()
-        .and_hms_opt(local.hour(), 0, 0)
-        .expect("valid dt")
-        + ChronoDuration::hours(1);
-
-    let start_window = NaiveTime::from_hms_opt(9, 0, 0).expect("valid time");
-    let end_window = NaiveTime::from_hms_opt(21, 0, 0).expect("valid time");
+    let start_window = Time::constant(9, 0, 0, 0);
+    let end_window = Time::constant(21, 0, 0, 0);
 
     let candidate_time = next_hour_naive.time();
 
@@ -141,22 +158,18 @@ pub(crate) fn retry_due(journal: &Path, now: OffsetDateTime) -> OffsetDateTime {
         let next_day = if candidate_time < start_window {
             next_hour_naive.date()
         } else {
-            next_hour_naive.date() + ChronoDuration::days(1)
+            let Ok(tomorrow) = next_hour_naive.date().tomorrow() else {
+                return now;
+            };
+            tomorrow
         };
-        next_day.and_hms_opt(9, 0, 0).expect("valid dt")
+        next_day.to_datetime(start_window)
     };
 
-    let target_local = match zone.from_local_datetime(&target_naive) {
-        chrono::LocalResult::Single(dt) => dt,
-        chrono::LocalResult::Ambiguous(dt, _) => dt,
-        chrono::LocalResult::None => local + ChronoDuration::hours(1),
+    let Some(target_local) = resolve_local(&zone, target_naive, &local) else {
+        return now;
     };
-
-    let target_utc = target_local.with_timezone(&chrono::Utc);
-    OffsetDateTime::from_unix_timestamp(target_utc.timestamp())
-        .unwrap_or(now)
-        .replace_nanosecond(target_utc.timestamp_subsec_nanos())
-        .unwrap_or(now)
+    as_offset_date_time(&target_local, now)
 }
 
 pub fn observe(journal: &Path, portal: &str, name: &str, day: &str, now: OffsetDateTime) {

@@ -13,7 +13,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
@@ -273,7 +273,7 @@ pub(crate) async fn confirm(
         &OwnerCentroidWriteInput {
             centroid: candidate.centroid,
             cluster_size: candidate.cluster_size,
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             evidence_tier: candidate.evidence_tier.clone(),
         },
     ) {
@@ -537,7 +537,7 @@ pub(crate) fn bootstrap_owner_from_manual_tags(root: &Path) -> Result<Value, Str
         &OwnerCentroidWriteInput {
             centroid,
             cluster_size: evidence.len() as i32,
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             evidence_tier: quality.tier.to_owned(),
         },
     )
@@ -586,7 +586,7 @@ fn rebuild_owner(root: &Path, override_regression: bool) -> Result<Value, String
         &OwnerCentroidRebuildInput {
             centroid,
             embeddings_count: evidence.len() as i32,
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             evidence_hash: hash,
             evidence_intra_cosine_p25: quality.p25 as f32,
             evidence_tier: quality.tier.to_owned(),

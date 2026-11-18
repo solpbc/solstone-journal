@@ -362,7 +362,7 @@ pub(crate) use solstone_core_think_cli::planner::FlushState;
 pub(crate) use solstone_core_think_cli::planner::PendingFlush;
 
 pub(crate) struct DailyState {
-    pub last_day: Option<chrono::NaiveDate>,
+    pub last_day: Option<jiff::civil::Date>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2174,7 +2174,7 @@ pub(crate) async fn boot_and_tick(
         processes: Vec::new(),
     };
     let wall = tick::owner_now(&journal);
-    let now = ScheduleNow::in_zone(wall.to_utc(), wall.timezone());
+    let now = ScheduleNow::in_zone(wall.timestamp(), wall.time_zone().clone());
     let scheduler = if options.no_schedule {
         None
     } else {
@@ -2188,7 +2188,7 @@ pub(crate) async fn boot_and_tick(
         let mut scheduler = match ScheduleEngine::init(
             schedule_config_path,
             journal.join("health/scheduler.json"),
-            now,
+            now.clone(),
         ) {
             Ok((scheduler, _)) => scheduler,
             Err(error) => {
@@ -2304,7 +2304,7 @@ pub(crate) async fn boot_and_tick(
         parakeet,
         flush: FlushState::default(),
         daily: DailyState {
-            last_day: Some(wall.date_naive()),
+            last_day: Some(wall.date()),
         },
         last_activity_settle_scan: Instant::now() - Duration::from_secs(60),
         last_index_todo_scan: None,
@@ -2725,7 +2725,6 @@ mod tests {
             DefaultCapResolver, ScheduleEngine, ScheduleNow, SupervisorScheduleSink,
             SystemProcessStateProbe, TaskQueue, TaskQueueOptions,
         };
-        use chrono::{Duration, TimeZone, Utc};
         use serde_json::json;
         use solstone_core_callosum::CallosumSocketServer;
         use std::{fs, sync::Arc};
@@ -2733,8 +2732,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("schedules.json");
         let state = root.path().join("scheduler.json");
-        let start = Utc.with_ymd_and_hms(2026, 8, 1, 9, 1, 0).unwrap();
-        let now = |time| ScheduleNow::in_zone(time, chrono_tz::UTC);
+        let start: jiff::Timestamp = "2026-08-01T09:01:00Z".parse().unwrap();
+        let now = |time| ScheduleNow::in_zone(time, jiff::tz::TimeZone::UTC);
         let (mut scheduler, _) = ScheduleEngine::init(&config, &state, now(start)).unwrap();
         let queue = TaskQueue::new(TaskQueueOptions {
             journal_root: root.path().to_owned(),
@@ -2763,7 +2762,7 @@ mod tests {
         )
         .unwrap();
         let report = scheduler
-            .check(now(start + Duration::minutes(1)), &sink)
+            .check(now(start + jiff::SignedDuration::from_mins(1)), &sink)
             .unwrap();
         assert_eq!(report.submitted, ["plaud"]);
         sink.server.stop().await;

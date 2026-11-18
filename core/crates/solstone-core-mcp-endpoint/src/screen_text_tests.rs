@@ -504,9 +504,7 @@ fn screen_text_large_multibyte_fixture_and_char_boundary_paging() {
             },
             crate::jsonrpc::ToolName::Fetch,
             Some(&json!({"reference": current_ref})),
-            chrono::DateTime::parse_from_rfc3339("2026-09-14T09:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
+            "2026-09-14T09:00:00Z".parse::<jiff::Timestamp>().unwrap(),
         )
         .unwrap_or_else(|error| panic!("screen-text page {page_count}: {error:?}"))
         .value;
@@ -662,7 +660,7 @@ fn screen_text_word_crossing_chunk_limit_is_searchable_by_owner_and_agent() {
             "boundarywitness",
             solstone_core_indexer_query::Order::Relevance,
         ),
-        chrono::NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+        jiff::civil::date(2026, 9, 14),
     )
     .unwrap();
     assert_eq!(owner.results.len(), 1);

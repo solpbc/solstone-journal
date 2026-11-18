@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use chrono::{FixedOffset, TimeZone};
+use jiff::ZonedDateTime;
 
 // This source remains a child of the binary-only capture module. Including it
 // here drives the exact production descriptor primitive without importing the
@@ -15,11 +15,10 @@ use chrono::{FixedOffset, TimeZone};
 #[path = "../src/service_capture_io.rs"]
 mod service_capture_io;
 
-fn instant() -> chrono::DateTime<FixedOffset> {
-    FixedOffset::east_opt(0)
-        .unwrap()
-        .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-        .single()
+fn instant() -> ZonedDateTime {
+    jiff::civil::date(2026, 8, 7)
+        .at(12, 0, 0, 0)
+        .to_zoned_datetime(jiff::tz::TimeZone::fixed(jiff::tz::Offset::UTC))
         .unwrap()
 }
 
@@ -40,7 +39,7 @@ fn redirection_writes_both_targets_to_the_service_oplog() {
     const CHILD_JOURNAL: &str = "SOLSTONE_SERVICE_CAPTURE_CHILD_JOURNAL";
     if let Ok(journal) = std::env::var(CHILD_JOURNAL) {
         let journal = PathBuf::from(journal);
-        let writer = service_capture_io::open_service_oplog(&journal, instant()).unwrap();
+        let writer = service_capture_io::open_service_oplog(&journal, &instant()).unwrap();
         fs::write(journal.join("capture-leaf"), writer.leaf_name()).unwrap();
         service_capture_io::redirect_both(&writer, None).unwrap();
         nix::unistd::write(std::io::stdout(), b"stdout bytes").unwrap();

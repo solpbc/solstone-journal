@@ -135,9 +135,7 @@ fn inspect(journal: &Path, id: &str) -> Result<Option<ImportThinking>, String> {
         if segment.stream == STRAVA_STREAM {
             continue;
         }
-        if segment.day.len() != 8
-            || chrono::NaiveDate::parse_from_str(&segment.day, "%Y%m%d").is_err()
-        {
+        if segment.day.len() != 8 || solstone_core_time::parse_day(&segment.day).is_none() {
             return Err("invalid imported day".into());
         }
         let coordinate = Coordinate {

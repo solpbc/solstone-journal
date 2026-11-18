@@ -21,7 +21,6 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_facets::{
     ActivityRecord, ActivityRecordStoreError, EDIT_LINES, EDIT_SPEAKER, OWNER_LINES_ACTOR,
@@ -33,6 +32,7 @@ use solstone_core_speaker_resolve::owner_line_labels::{
     revert_owner_line_labels_then,
 };
 use solstone_core_system::owner_ask::{AskedActivity, activities_over};
+use solstone_core_time::{Precision, utc_z};
 
 use super::{
     ACTOR_HEADER, ACTOR_OWNER, internal, not_asked, not_found, object_body, query_value,
@@ -262,11 +262,7 @@ pub(super) fn set_lines_checked(
                 },
             )
             .collect();
-    let timestamp = clock
-        .now()
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let timestamp = utc_z(clock.now().timestamp(), Precision::Secs);
     let applied = solstone_core_speaker_resolve::owner_line_labels::apply_owner_line_answers(
         root,
         day,

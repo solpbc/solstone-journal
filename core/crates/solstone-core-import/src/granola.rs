@@ -9,7 +9,8 @@ use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
@@ -185,9 +186,9 @@ struct Placement {
 fn storage<T>(_: T) -> Error {
     Error::Storage
 }
-fn instant(value: &str) -> Result<DateTime<Utc>, Error> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|t| t.with_timezone(&Utc))
+fn instant(value: &str) -> Result<Timestamp, Error> {
+    solstone_core_time::parse_rfc3339(value)
+        .map(|t| t.timestamp())
         .map_err(|_| Error::Response)
 }
 fn note_id(value: &str) -> Result<String, Error> {
@@ -439,7 +440,8 @@ fn run(
             let origin = validate_note(&note, transcript)?;
             if !state.notes.contains_key(&id) {
                 let old_id = note.web_url.rsplit('/').next().and_then(legacy_id);
-                let local = origin.with_timezone(&solstone_core_journal_config::owner_zone(root));
+                let local =
+                    origin.to_zoned_datetime(solstone_core_journal_config::owner_zone(root));
                 let end = transcript
                     .iter()
                     .map(|t| instant(&t.end_time))
@@ -447,15 +449,15 @@ fn run(
                     .into_iter()
                     .max()
                     .unwrap_or(origin);
-                let seconds = ((end - origin).num_milliseconds() + 999)
-                    .div_euclid(1000)
-                    .max(1);
+                let millis = i64::try_from(end.duration_since(origin).as_millis())
+                    .map_err(|_| Error::Response)?;
+                let seconds = (millis + 999).div_euclid(1000).max(1);
                 state.notes.insert(
                     id.clone(),
                     Placement {
-                        day: local.format("%Y%m%d").to_string(),
-                        segment: format!("{}_{seconds}", local.format("%H%M%S")),
-                        origin: origin.to_rfc3339(),
+                        day: solstone_core_time::day_key(local.date()),
+                        segment: format!("{}_{seconds}", local.strftime("%H%M%S")),
+                        origin: solstone_core_time::utc_rfc3339(origin),
                         revision: None,
                         removed: false,
                         placed: false,
@@ -481,7 +483,7 @@ fn run(
             let rows = rows(
                 &note,
                 placement,
-                solstone_core_journal_config::owner_zone(root),
+                &solstone_core_journal_config::owner_zone(root),
             )?;
             create_directory_with_mode(&directory, 0o700).map_err(storage)?;
             if !placement.placed {
@@ -514,7 +516,7 @@ fn run(
             drop(claims);
             publish(root, &id, placement, &output)?;
             placement.revision = Some(note.updated_at.clone());
-            state.last_added = Some(Utc::now().to_rfc3339());
+            state.last_added = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
             save(root, state)?;
         }
         cursor = next_cursor(page.more, page.cursor, &mut seen)?;
@@ -524,11 +526,12 @@ fn run(
     }
     // A small overlap includes edits at the strict updated_after boundary.
     if let Some(watermark) = watermark {
-        state.watermark = Some(
-            (watermark - Duration::minutes(2)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        );
+        state.watermark = Some(solstone_core_time::utc_z(
+            watermark - SignedDuration::from_mins(2),
+            solstone_core_time::Precision::Millis,
+        ));
     }
-    state.last_sync = Some(Utc::now().to_rfc3339());
+    state.last_sync = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
     Ok(())
 }
 fn fetch_note(api: &mut dyn Api, id: &str) -> Result<Note, Error> {
@@ -568,7 +571,7 @@ fn fetch_note(api: &mut dyn Api, id: &str) -> Result<Note, Error> {
     note.transcript = Some(turns);
     Ok(note)
 }
-fn validate_note(note: &Note, turns: &[Turn]) -> Result<DateTime<Utc>, Error> {
+fn validate_note(note: &Note, turns: &[Turn]) -> Result<Timestamp, Error> {
     let created = instant(&note.created_at)?;
     for person in &note.attendees {
         if !person.get("email").is_some_and(Value::is_string)
@@ -601,7 +604,7 @@ fn validate_note(note: &Note, turns: &[Turn]) -> Result<DateTime<Utc>, Error> {
         {
             return Err(Error::Response);
         }
-        start = Some(start.map_or(at, |old: DateTime<Utc>| old.min(at)));
+        start = Some(start.map_or(at, |old: Timestamp| old.min(at)));
     }
     let calendar_start = note
         .calendar_event
@@ -618,7 +621,7 @@ fn directory(root: &Path, id: &str, p: &Placement) -> Result<PathBuf, Error> {
         .path()
         .to_path_buf())
 }
-fn rows(note: &Note, placement: &Placement, zone: chrono_tz::Tz) -> Result<Vec<Value>, Error> {
+fn rows(note: &Note, placement: &Placement, zone: &TimeZone) -> Result<Vec<Value>, Error> {
     let origin = instant(&placement.origin)?;
     let mut metadata = serde_json::to_value(note).map_err(storage)?;
     metadata
@@ -626,7 +629,7 @@ fn rows(note: &Note, placement: &Placement, zone: chrono_tz::Tz) -> Result<Vec<V
         .expect("note object")
         .remove("transcript");
     let mut rows = vec![
-        json!({(solstone_core_format::content::granola::HEADER_KEY):metadata,"granola_start_ms":origin.timestamp_millis()}),
+        json!({(solstone_core_format::content::granola::HEADER_KEY):metadata,"granola_start_ms":crate::timestamp::epoch_millis(origin)}),
     ];
     for turn in note.transcript.as_ref().ok_or(Error::Transcript)? {
         let start = instant(&turn.start_time)?;
@@ -648,8 +651,8 @@ fn rows(note: &Note, placement: &Placement, zone: chrono_tz::Tz) -> Result<Vec<V
                     .unwrap_or("unknown");
                 format!("Granola: {label}")
             });
-        let clock = start.with_timezone(&zone);
-        rows.push(json!({"start":clock.format("%H:%M:%S%.3f").to_string(),"source_ms":start.timestamp_millis(),"end_ms":instant(&turn.end_time)?.timestamp_millis(),"granola_start_time":turn.start_time,"granola_end_time":turn.end_time,"speaker":speaker,"text":turn.text,"source":"granola","granola_speaker":turn.speaker}));
+        let clock = start.to_zoned_datetime(zone.clone());
+        rows.push(json!({"start":clock.strftime("%H:%M:%S%.3f").to_string(),"source_ms":crate::timestamp::epoch_millis(start),"end_ms":crate::timestamp::epoch_millis(instant(&turn.end_time)?),"granola_start_time":turn.start_time,"granola_end_time":turn.end_time,"speaker":speaker,"text":turn.text,"source":"granola","granola_speaker":turn.speaker}));
     }
     Ok(rows)
 }
@@ -734,13 +737,13 @@ mod unit_tests {
         let placement = Placement {
             day: "20261111".into(),
             segment: "000000_300".into(),
-            origin: origin.to_rfc3339(),
+            origin: solstone_core_time::utc_rfc3339(origin),
             revision: None,
             removed: false,
             legacy: false,
             placed: false,
         };
-        let saved = rows(&note, &placement, chrono_tz::UTC).unwrap();
+        let saved = rows(&note, &placement, &TimeZone::UTC).unwrap();
         for (source, row) in fixture["transcript"]
             .as_array()
             .unwrap()
@@ -760,7 +763,7 @@ mod unit_tests {
         let speaker = &mut nullable.transcript.as_mut().unwrap()[0].speaker;
         speaker["diarization_label"] = Value::Null;
         speaker["name"] = json!("");
-        let saved = rows(&nullable, &placement, chrono_tz::UTC).unwrap();
+        let saved = rows(&nullable, &placement, &TimeZone::UTC).unwrap();
         assert_eq!(saved[1]["speaker"], "Granola: them");
     }
 

@@ -87,7 +87,7 @@ pub fn run_stopped(
     }
     checkpoint()?;
     let check = || checkpoint().map_err(std::io::Error::other);
-    let now = chrono::Local::now().fixed_offset();
+    let now = jiff::ZonedDateTime::now();
     let mut owner = if request.action == Action::Reconcile {
         CreatorStageRecovery::reconcile(
             root,

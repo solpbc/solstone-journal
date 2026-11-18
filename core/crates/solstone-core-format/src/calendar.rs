@@ -15,10 +15,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use chrono::{
-    DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Timelike,
-};
+use jiff::civil::{Date, DateTime};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, ZonedDateTime};
 use serde_json::{Map, Value};
+use solstone_core_time::{parse_day, parse_rfc3339, strftime_civil};
 
 use crate::segment::{is_date_key, segment_parse};
 
@@ -132,18 +133,18 @@ impl Change {
 }
 
 /// One end of an event's time.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum When {
     /// A time in a zone, carrying its offset at that instant.
-    Zoned(DateTime<FixedOffset>),
+    Zoned(ZonedDateTime),
     /// A wall-clock time with no zone.
-    Floating(NaiveDateTime),
+    Floating(DateTime),
     /// A date, for an all-day event.
-    Date(NaiveDate),
+    Date(Date),
 }
 
 /// When an added or changed event happens.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Schedule {
     pub all_day: bool,
     pub start: When,
@@ -158,7 +159,7 @@ pub struct CalendarNote {
     /// The occurrence in its normalized form, or empty for an event that does
     /// not repeat. Equal instants written differently normalize the same.
     pub occurrence: String,
-    pub changed_at: DateTime<FixedOffset>,
+    pub changed_at: ZonedDateTime,
     /// When the event happens; absent for a removal.
     pub schedule: Option<Schedule>,
     /// The line as sent, for display.
@@ -173,7 +174,7 @@ impl CalendarNote {
 
     /// `changed_at` as milliseconds since the epoch.
     pub fn changed_at_ms(&self) -> i64 {
-        self.changed_at.timestamp_millis()
+        self.changed_at.timestamp().as_millisecond()
     }
 
     /// `changed_at` exactly as the device wrote it.
@@ -257,9 +258,7 @@ pub fn validate_import_calendar_file(
 
 /// The import a line written by the importer came from, and when that import
 /// happened.
-pub fn import_stamp(
-    record: &Map<String, Value>,
-) -> Result<(String, DateTime<FixedOffset>), String> {
+pub fn import_stamp(record: &Map<String, Value>) -> Result<(String, ZonedDateTime), String> {
     let import = match record.get("import") {
         Some(Value::String(import)) if !import.is_empty() => import.clone(),
         _ => return Err("import must be a non-empty string".to_owned()),
@@ -267,7 +266,7 @@ pub fn import_stamp(
     let imported_at = record
         .get("imported_at")
         .and_then(Value::as_str)
-        .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
+        .and_then(|text| parse_rfc3339(text).ok())
         .ok_or_else(|| "imported_at must be a time with an offset".to_owned())?;
     Ok((import, imported_at))
 }
@@ -284,7 +283,7 @@ fn check_file_name(name: &str) -> Result<(), CalendarFileError> {
 
 fn validate_lines(
     bytes: &[u8],
-    (window_start, window_end): (NaiveDateTime, NaiveDateTime),
+    (window_start, window_end): (DateTime, DateTime),
     extra: impl Fn(&CalendarNote) -> Result<(), String>,
 ) -> Result<Vec<CalendarNote>, CalendarFileError> {
     if bytes.len() > MAX_FILE_BYTES {
@@ -309,7 +308,7 @@ fn validate_lines(
         if !identities.insert((note.event.clone(), note.occurrence.clone())) {
             return Err(at("event and occurrence repeat an earlier line".to_owned()));
         }
-        let local = note.changed_at.naive_local();
+        let local = note.changed_at.datetime();
         if local < window_start || local >= window_end {
             return Err(at("changed_at falls outside the segment window".to_owned()));
         }
@@ -356,11 +355,11 @@ pub fn read_calendar_notes(text: &str) -> (Vec<(usize, CalendarNote)>, Vec<Strin
 /// The window a segment key names on its day, start inclusive and end
 /// exclusive. Only an `HHMMSS_300` key starting on the 300-second grid names
 /// one.
-pub(crate) fn segment_window(day: &str, segment: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
+pub(crate) fn segment_window(day: &str, segment: &str) -> Option<(DateTime, DateTime)> {
     if !is_date_key(day) {
         return None;
     }
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let date = parse_day(day)?;
     let times = segment_parse(segment)?;
     let (clock, length) = segment.split_once('_')?;
     if clock.len() != 6 || length != WINDOW_SECONDS.to_string() {
@@ -374,29 +373,29 @@ pub(crate) fn segment_window(day: &str, segment: &str) -> Option<(NaiveDateTime,
     if (hour * 3_600 + minute * 60 + second) % WINDOW_SECONDS != 0 {
         return None;
     }
-    let start = date.and_hms_opt(hour, minute, second)?;
-    Some((start, start + Duration::seconds(i64::from(WINDOW_SECONDS))))
+    let start = date.to_datetime(times.clock()?);
+    let end = start
+        .checked_add(SignedDuration::from_secs(i64::from(WINDOW_SECONDS)))
+        .ok()?;
+    Some((start, end))
 }
 
 /// The span any segment key names on its day: its start, and its start plus
 /// its length.
-pub fn segment_span(day: &str, segment: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
+pub fn segment_span(day: &str, segment: &str) -> Option<(DateTime, DateTime)> {
     if !is_date_key(day) {
         return None;
     }
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let date = parse_day(day)?;
     let times = segment_parse(segment)?;
     let (clock, length) = segment.split_once('_')?;
     if clock.len() != 6 {
         return None;
     }
     let length: i64 = length.parse().ok().filter(|length| *length > 0)?;
-    let start = date.and_hms_opt(
-        u32::from(times.hour),
-        u32::from(times.minute),
-        u32::from(times.second),
-    )?;
-    Some((start, start + Duration::seconds(length)))
+    let start = date.to_datetime(times.clock()?);
+    let end = start.checked_add(SignedDuration::from_secs(length)).ok()?;
+    Some((start, end))
 }
 
 /// Write calendar notes as calendar note files: compact JSON with sorted keys,
@@ -501,7 +500,7 @@ pub fn calendar_note_from_record(record: Map<String, Value>) -> Result<CalendarN
     let changed_at = record
         .get("changed_at")
         .and_then(Value::as_str)
-        .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
+        .and_then(|text| parse_rfc3339(text).ok())
         .ok_or_else(|| "changed_at must be a time with an offset".to_owned())?;
     check_display_fields(&record)?;
     let schedule = if change == Change::Removed {
@@ -592,8 +591,8 @@ fn parse_schedule(record: &Map<String, Value>) -> Result<Schedule, String> {
             return Err("start and end must be dates exactly when all_day is true".to_owned());
         }
     }
-    if let Some(end) = end {
-        let before = match (start, end) {
+    if let Some(end) = &end {
+        let before = match (&start, end) {
             (When::Zoned(start), When::Zoned(end)) => end < start,
             (When::Floating(start), When::Floating(end)) => end < start,
             (When::Date(start), When::Date(end)) => end < start,
@@ -621,21 +620,19 @@ fn is_date_shape(text: &str) -> bool {
             .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
 }
 
-fn parse_floating(text: &str) -> Option<NaiveDateTime> {
+fn parse_floating(text: &str) -> Option<DateTime> {
     let bytes = text.as_bytes();
     if bytes.len() < 19 || !is_date_shape(&text[..10]) || bytes[10] != b'T' {
         return None;
     }
-    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").ok()
+    DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", text).ok()
 }
 
 fn parse_when(text: &str) -> Option<When> {
     if is_date_shape(text) {
-        return NaiveDate::parse_from_str(text, "%Y-%m-%d")
-            .ok()
-            .map(When::Date);
+        return Date::strptime("%Y-%m-%d", text).ok().map(When::Date);
     }
-    if let Ok(zoned) = DateTime::parse_from_rfc3339(text) {
+    if let Ok(zoned) = parse_rfc3339(text) {
         return Some(When::Zoned(zoned));
     }
     parse_floating(text).map(When::Floating)
@@ -644,12 +641,12 @@ fn parse_when(text: &str) -> Option<When> {
 /// The one spelling of an occurrence, so equal instants compare equal.
 fn normalize_occurrence(text: &str) -> Option<String> {
     Some(match parse_when(text)? {
-        When::Zoned(instant) => instant
-            .naive_utc()
-            .format("%Y-%m-%dT%H:%M:%S%.fZ")
-            .to_string(),
-        When::Floating(wall) => wall.format("%Y-%m-%dT%H:%M:%S%.f").to_string(),
-        When::Date(date) => date.format("%Y-%m-%d").to_string(),
+        When::Zoned(instant) => strftime_civil(
+            Offset::UTC.to_datetime(instant.timestamp()),
+            "%Y-%m-%dT%H:%M:%S%.fZ",
+        ),
+        When::Floating(wall) => strftime_civil(wall, "%Y-%m-%dT%H:%M:%S%.f"),
+        When::Date(date) => date.strftime("%Y-%m-%d").to_string(),
     })
 }
 
@@ -657,7 +654,7 @@ fn normalize_occurrence(text: &str) -> Option<String> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Listing {
     /// Each day, in order, at most [`MAX_LISTED_DAYS`].
-    pub days: Vec<NaiveDate>,
+    pub days: Vec<Date>,
     /// The event goes on past the last listed day.
     pub continues: bool,
     /// The scheduled start's hour on the first day, for a timed event.
@@ -670,39 +667,44 @@ pub struct Listing {
 /// exclusive; a floating time is already wall-clock time in `zone`. An all-day
 /// event belongs to its own dates with no zone shift, end exclusive. A missing
 /// end, or one equal to the start, means the start day only.
-pub fn listed_days<Tz: TimeZone>(schedule: &Schedule, zone: &Tz) -> Listing {
-    let (first, last, start_hour) = match (schedule.start, schedule.end) {
+pub fn listed_days(schedule: &Schedule, zone: &TimeZone) -> Listing {
+    let hour = |wall: DateTime| Some(u32::from(wall.hour().unsigned_abs()));
+    let (first, last, start_hour) = match (&schedule.start, &schedule.end) {
         (When::Date(start), end) => {
+            let start = *start;
             let last = match end {
-                Some(When::Date(end)) if end > start => end.pred_opt().unwrap_or(start),
+                Some(When::Date(end)) if *end > start => end.yesterday().unwrap_or(start),
                 _ => start,
             };
             (start, last, None)
         }
         (When::Zoned(start), end) => {
-            let local_start = start.with_timezone(zone).naive_local();
+            let local_start = zone.to_datetime(start.timestamp());
             let last = match end {
-                Some(When::Zoned(end)) if end > start => (end - Duration::nanoseconds(1))
-                    .with_timezone(zone)
-                    .naive_local()
-                    .date(),
+                Some(When::Zoned(end)) if end > start => end
+                    .timestamp()
+                    .checked_sub(SignedDuration::from_nanos(1))
+                    .map_or(local_start.date(), |last| zone.to_datetime(last).date()),
                 _ => local_start.date(),
             };
-            (local_start.date(), last, Some(local_start.hour()))
+            (local_start.date(), last, hour(local_start))
         }
         (When::Floating(start), end) => {
+            let start = *start;
             let last = match end {
-                Some(When::Floating(end)) if end > start => (end - Duration::nanoseconds(1)).date(),
+                Some(When::Floating(end)) if *end > start => end
+                    .checked_sub(SignedDuration::from_nanos(1))
+                    .map_or(start.date(), DateTime::date),
                 _ => start.date(),
             };
-            (start.date(), last, Some(start.hour()))
+            (start.date(), last, hour(start))
         }
     };
     let mut days = Vec::new();
     let mut day = first;
     while day <= last && days.len() < MAX_LISTED_DAYS {
         days.push(day);
-        let Some(next) = day.succ_opt() else {
+        let Ok(next) = day.tomorrow() else {
             break;
         };
         day = next;
@@ -877,7 +879,7 @@ pub fn render_calendar_note(note: &CalendarNote, owner: &OwnerAddresses) -> Stri
     }
     lines.push(format!(
         "Recorded: {}",
-        describe_zoned(note.changed_at, true)
+        describe_zoned(&note.changed_at, true)
     ));
     let mut text = lines.join("\n");
     if text.len() > MAX_RENDERED_BYTES {
@@ -938,18 +940,22 @@ fn describe_attendees(record: &Map<String, Value>, owner: &OwnerAddresses) -> Op
     Some(text)
 }
 
-fn describe_date(date: NaiveDate) -> String {
+fn describe_date(date: Date) -> String {
     format!(
         "{}, {} {}, {}",
-        date.format("%A"),
-        date.format("%B"),
+        date.strftime("%A"),
+        date.strftime("%B"),
         date.day(),
         date.year()
     )
 }
 
-fn describe_clock(time: NaiveDateTime) -> String {
-    let (pm, hour) = time.hour12();
+fn describe_clock(time: DateTime) -> String {
+    let pm = time.hour() >= 12;
+    let hour = match time.hour() % 12 {
+        0 => 12,
+        hour => hour,
+    };
     format!(
         "{hour}:{:02} {}",
         time.minute(),
@@ -957,24 +963,25 @@ fn describe_clock(time: NaiveDateTime) -> String {
     )
 }
 
-fn describe_wall(time: NaiveDateTime) -> String {
+fn describe_wall(time: DateTime) -> String {
     format!("{}, {}", describe_date(time.date()), describe_clock(time))
 }
 
-fn describe_zoned(time: DateTime<FixedOffset>, with_offset: bool) -> String {
-    let wall = describe_wall(time.naive_local());
+fn describe_zoned(time: &ZonedDateTime, with_offset: bool) -> String {
+    let wall = describe_wall(time.datetime());
     if with_offset {
-        format!("{wall} ({})", time.format("%:z"))
+        format!("{wall} ({})", time.strftime("%:z"))
     } else {
         wall
     }
 }
 
 fn describe_schedule(schedule: &Schedule, zone: Option<String>) -> String {
-    let span = match (schedule.start, schedule.end) {
+    let span = match (&schedule.start, &schedule.end) {
         (When::Date(start), end) => {
+            let start = *start;
             let last = match end {
-                Some(When::Date(end)) if end > start => end.pred_opt().unwrap_or(start),
+                Some(When::Date(end)) if *end > start => end.yesterday().unwrap_or(start),
                 _ => start,
             };
             if last == start {
@@ -988,12 +995,13 @@ fn describe_schedule(schedule: &Schedule, zone: Option<String>) -> String {
             }
         }
         (When::Zoned(start), Some(When::Zoned(end))) if end > start => {
-            let (start, end) = (start.naive_local(), end.naive_local());
-            span_text(start, end)
+            span_text(start.datetime(), end.datetime())
         }
-        (When::Zoned(start), _) => describe_wall(start.naive_local()),
-        (When::Floating(start), Some(When::Floating(end))) if end > start => span_text(start, end),
-        (When::Floating(start), _) => describe_wall(start),
+        (When::Zoned(start), _) => describe_wall(start.datetime()),
+        (When::Floating(start), Some(When::Floating(end))) if end > start => {
+            span_text(*start, *end)
+        }
+        (When::Floating(start), _) => describe_wall(*start),
     };
     match zone {
         Some(zone) if !schedule.all_day => format!("{span} ({zone})"),
@@ -1001,7 +1009,7 @@ fn describe_schedule(schedule: &Schedule, zone: Option<String>) -> String {
     }
 }
 
-fn span_text(start: NaiveDateTime, end: NaiveDateTime) -> String {
+fn span_text(start: DateTime, end: DateTime) -> String {
     if start.date() == end.date() {
         format!("{} to {}", describe_wall(start), describe_clock(end))
     } else {

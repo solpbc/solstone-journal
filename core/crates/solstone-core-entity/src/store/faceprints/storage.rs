@@ -215,7 +215,8 @@ fn action(
     let mut state = read_state(&dir)?;
     let mut archive = read_archive(&dir)?.ok_or(ActionError::NoEvidence)?;
     apply_rejections(&mut archive, &state);
-    let token = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    let token =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Nanos);
     let mut previous = state.decision.clone();
     change(&mut state, &archive)?;
     for (key, _) in state
@@ -282,7 +283,7 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<Strin
         state.decision.photo = Some(ChosenPhoto {
             face: current.clone(),
             encoder: archive.envelope.encoder.clone(),
-            chosen_at: chrono::Utc::now().to_rfc3339(),
+            chosen_at: solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
             jpeg,
         });
         state.decision.dismissed_at = None;
@@ -301,7 +302,7 @@ pub fn reject(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<Strin
 pub fn dismiss(journal: &Path, entity: &str) -> ActionResult<String> {
     action(journal, entity, |state, archive| {
         state.decision.photo = None;
-        state.decision.dismissed_at = Some(chrono::Utc::now().to_rfc3339());
+        state.decision.dismissed_at = Some(solstone_core_time::utc_rfc3339(jiff::Timestamp::now()));
         state.decision.dismissed_looks =
             archive.faces.iter().map(|f| f.embedding.clone()).collect();
         Ok(())

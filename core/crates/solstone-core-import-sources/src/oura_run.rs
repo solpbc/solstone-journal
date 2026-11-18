@@ -33,8 +33,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Component, Path};
 
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
-use chrono_tz::Tz;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::{ToSpan, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -49,6 +50,7 @@ use crate::apple_health::{
 use crate::apple_health_run::{ScanCounts, ScanItem, Spill, placed_identity};
 use crate::body_stream::BodySource;
 use crate::oura::{Document, Hole, HoleReason, Shape, holes_of, read_document, read_endpoint};
+use crate::shared::epoch_millisecond;
 
 /// The index a pages folder is read by.
 pub const INDEX_FILE: &str = "index.json";
@@ -275,7 +277,7 @@ enum Verdict {
 fn instants(start: Option<&str>, end: Option<&str>) -> (Option<i64>, Option<i64>) {
     let at = |text: Option<&str>| {
         text.and_then(parse_source_time)
-            .map(|time| time.timestamp_millis())
+            .map(|time| epoch_millisecond(time.timestamp()))
     };
     (at(start), at(end))
 }
@@ -283,7 +285,7 @@ fn instants(start: Option<&str>, end: Option<&str>) -> (Option<i64>, Option<i64>
 struct Lookup<'a> {
     journal: &'a Path,
     source: &'a BodySource,
-    zone: Tz,
+    zone: TimeZone,
     days: HashMap<String, DayIndex>,
     /// A re-import's (an explicit range): what the owner deleted is no reason to
     /// leave a document out. An ordinary sync's lookup keeps it out.
@@ -294,19 +296,21 @@ struct Lookup<'a> {
     fetched: Option<&'a solstone_core_import::oura_fetched::Fetched>,
 }
 
-fn day_key(date: NaiveDate) -> String {
-    date.format("%Y%m%d").to_string()
+fn day_key(date: Date) -> String {
+    solstone_core_time::day_key(date)
 }
 
 impl Lookup<'_> {
     /// Oura's own date and the fixed-zone day of the new start, each with the days
     /// either side: Oura's dates are the wearer's, and placement is the fixed zone's.
-    fn days_for(&self, oura_day: Option<NaiveDate>, start: DateTime<FixedOffset>) -> Vec<String> {
+    fn days_for(&self, oura_day: Option<Date>, start: &ZonedDateTime) -> Vec<String> {
         let mut days = BTreeSet::new();
-        let local = start.with_timezone(&self.zone).date_naive();
+        let local = start.with_time_zone(self.zone.clone()).date();
         for center in oura_day.into_iter().chain([local]) {
-            for offset in -1..=1 {
-                days.insert(day_key(center + Duration::days(offset)));
+            for offset in -1..=1_i64 {
+                if let Ok(day) = center.checked_add(offset.days()) {
+                    days.insert(day_key(day));
+                }
             }
         }
         days.into_iter().collect()
@@ -438,20 +442,16 @@ impl Lookup<'_> {
         } else {
             WINDOW_SECONDS
         };
-        self.window_deleted(start, length)
+        self.window_deleted(&start, length)
     }
 
     /// Whether the owner deleted the body window a row starting at `start`, on
     /// windows of `length`, sits in, or the one stepped around older content.
-    fn window_deleted(
-        &self,
-        start: chrono::DateTime<chrono::FixedOffset>,
-        length: i64,
-    ) -> Result<bool, String> {
+    fn window_deleted(&self, start: &ZonedDateTime, length: i64) -> Result<bool, String> {
         if self.comes_back {
             return Ok(false);
         }
-        let (day, key) = window_id(floor_to_window(start, self.zone, length), length);
+        let (day, key) = window_id(&floor_to_window(start, &self.zone, length), length);
         let clock = key.split_once('_').map_or(key.as_str(), |(clock, _)| clock);
         let stream = stream_dir(self.journal, self.source, &day);
         for key in [key.clone(), format!("{clock}_{}", length + 1)] {
@@ -476,14 +476,17 @@ impl Lookup<'_> {
 
     /// The owner days a span is on, by the fixed zone: no more than an
     /// experience can hold.
-    fn span_days(&self, from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<String> {
-        let first = from.with_timezone(&self.zone).date_naive();
-        let last = to.with_timezone(&self.zone).date_naive();
+    fn span_days(&self, from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<String> {
+        let first = from.with_time_zone(self.zone.clone()).date();
+        let last = to.with_time_zone(self.zone.clone()).date();
         let mut days = Vec::new();
         let mut day = first;
         while day <= last && days.len() <= 15 {
             days.push(day_key(day));
-            day += Duration::days(1);
+            let Ok(next) = day.tomorrow() else {
+                break;
+            };
+            day = next;
         }
         days
     }
@@ -495,20 +498,20 @@ impl Lookup<'_> {
         first.id = id.to_owned();
         if row.kind == RowKind::Experience {
             return Ok(
-                tile_experience(self.journal, self.source, &first, self.zone)?
+                tile_experience(self.journal, self.source, &first, &self.zone)?
                     .into_iter()
                     .map(|(window, row)| (window, row.id))
                     .collect(),
             );
         }
-        Ok(vec![(row_window(&first, self.zone, false)?, first.id)])
+        Ok(vec![(row_window(&first, &self.zone, false)?, first.id)])
     }
 
     fn judge(
         &mut self,
         id: &str,
         row: &BodyRow,
-        oura_day: Option<NaiveDate>,
+        oura_day: Option<Date>,
     ) -> Result<Verdict, String> {
         let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
             return Ok(Verdict::Stage(None));
@@ -517,8 +520,8 @@ impl Lookup<'_> {
             .end
             .as_deref()
             .and_then(parse_source_time)
-            .unwrap_or(start);
-        let days = self.days_for(oura_day, start);
+            .unwrap_or_else(|| start.clone());
+        let days = self.days_for(oura_day, &start);
         for day in &days {
             self.load(day)?;
         }
@@ -547,11 +550,11 @@ impl Lookup<'_> {
                 placed.start.as_deref().and_then(parse_source_time),
                 placed.end.as_deref().and_then(parse_source_time),
             ) {
-                watched.extend(self.span_days(from, to));
+                watched.extend(self.span_days(&from, &to));
             }
         }
         let mut reach = watched.clone();
-        reach.extend(self.span_days(start, end));
+        reach.extend(self.span_days(&start, &end));
         for day in &reach {
             self.load(day)?;
         }
@@ -560,7 +563,7 @@ impl Lookup<'_> {
             return Ok(Verdict::Hold);
         }
         let length = window_seconds(row, false);
-        let new_day = day_key(start.with_timezone(&self.zone).date_naive());
+        let new_day = day_key(start.with_time_zone(self.zone.clone()).date());
         let account = format!("{}\u{1f}{id}", self.source.stream);
         if firsts.is_empty() {
             if let Some(fetched) = self.fetched
@@ -585,7 +588,7 @@ impl Lookup<'_> {
             }
             // Its own window is one the owner deleted: it stays deleted, as any new
             // row does there.
-            if self.window_deleted(start, length)? {
+            if self.window_deleted(&start, length)? {
                 return Ok(Verdict::StayedDeleted);
             }
             if row.kind == RowKind::Experience {
@@ -621,7 +624,7 @@ impl Lookup<'_> {
                     )
                     && solstone_core_format::content::body_records::copy_rank(&placed.key) > 1
             });
-            if !live_sibling && self.window_deleted(start, length)? {
+            if !live_sibling && self.window_deleted(&start, length)? {
                 return Ok(Verdict::StayedDeleted);
             }
         }
@@ -705,15 +708,17 @@ impl Lookup<'_> {
     fn stored_day(
         &mut self,
         id: &str,
-        oura_day: Option<NaiveDate>,
+        oura_day: Option<Date>,
         start: Option<&str>,
     ) -> Result<Option<String>, String> {
         let mut days: BTreeSet<String> = BTreeSet::new();
         if let Some(start) = start.and_then(parse_source_time) {
-            days.extend(self.days_for(oura_day, start));
+            days.extend(self.days_for(oura_day, &start));
         } else if let Some(day) = oura_day {
-            for offset in -1..=1 {
-                days.insert(day_key(day + Duration::days(offset)));
+            for offset in -1..=1_i64 {
+                if let Ok(day) = day.checked_add(offset.days()) {
+                    days.insert(day_key(day));
+                }
             }
         }
         let days: Vec<String> = days.into_iter().collect();
@@ -780,7 +785,7 @@ fn readable_day(day: &str) -> String {
 pub fn scan_pages(
     journal: &Path,
     source: &BodySource,
-    zone: Tz,
+    zone: &TimeZone,
     pages: &Path,
     dir: &Path,
     spill_bytes: usize,
@@ -814,7 +819,7 @@ pub fn scan_pages(
     let mut lookup = Lookup {
         journal,
         source,
-        zone,
+        zone: zone.clone(),
         days: HashMap::new(),
         comes_back: fetched.is_none(),
         fetched,
@@ -948,12 +953,12 @@ pub fn scan_pages(
                 .row
                 .begins()
                 .and_then(parse_source_time)
-                .map_or(0, |time| time.timestamp_millis());
+                .map_or(0, |time| epoch_millisecond(time.timestamp()));
             if read.row.kind == RowKind::Experience
                 && read.row.experience.as_deref() == Some("sleep")
                 && let Some(end) = read.row.end.as_deref().and_then(parse_source_time)
             {
-                nights.push((start_ms, end.timestamp_millis()));
+                nights.push((start_ms, epoch_millisecond(end.timestamp())));
             }
             let rank = u8::from(read.row.kind != RowKind::Experience);
             let bytes = read.identity.len() + content.len() + 48;

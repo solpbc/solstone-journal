@@ -87,7 +87,8 @@ pub fn hide_detected_name(
     facet: &str,
     name: &str,
 ) -> Result<HiddenNameWrite, HiddenNamesError> {
-    let hidden_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let hidden_at =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     hide_detected_name_at(journal, facet, name, &hidden_at)
 }
 

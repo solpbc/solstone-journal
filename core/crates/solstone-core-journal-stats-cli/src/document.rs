@@ -3,9 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
+use jiff::tz::Offset;
 use serde::Serialize;
 use solstone_core_system_health::BacklogView;
+use solstone_core_time::Precision;
 
 use crate::{ActivityTotals, DayScan, JournalStatsError, SCHEMA_VERSION};
 
@@ -106,7 +108,7 @@ pub(crate) fn assemble_document(
     scans: &BTreeMap<String, DayScan>,
     tokens: TokenUsage,
     backlog: BacklogView,
-    now: DateTime<Utc>,
+    now: Timestamp,
     evidence_unreadable_days: Vec<UnreadableDay>,
 ) -> StatsDocument {
     let mut days = BTreeMap::new();
@@ -161,7 +163,7 @@ pub(crate) fn assemble_document(
 
     StatsDocument {
         schema_version: SCHEMA_VERSION,
-        generated_at: now.to_rfc3339_opts(SecondsFormat::Micros, false),
+        generated_at: solstone_core_time::rfc3339(now, Offset::UTC, Precision::Micros, false),
         day_count: days.len(),
         days,
         totals,

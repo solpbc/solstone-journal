@@ -300,7 +300,7 @@ pub(crate) mod test_support {
     use std::collections::HashMap;
     use std::sync::{Arc, LazyLock, Mutex};
 
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use solstone_core_journal_io::ObjectIdentity;
     use tokio::sync::Notify;
 
@@ -309,7 +309,7 @@ pub(crate) mod test_support {
         pausers: HashMap<ObjectIdentity, Arc<dyn Fn() + Send + Sync>>,
         queued_notifies: HashMap<ObjectIdentity, Arc<Notify>>,
         queued_counts: HashMap<ObjectIdentity, usize>,
-        bound_instants: HashMap<ObjectIdentity, Vec<DateTime<Utc>>>,
+        bound_instants: HashMap<ObjectIdentity, Vec<Timestamp>>,
         run_counts: HashMap<ObjectIdentity, usize>,
     }
 
@@ -344,12 +344,12 @@ pub(crate) mod test_support {
         s.queued_counts.get(&identity).copied().unwrap_or(0)
     }
 
-    pub(crate) fn bound_instants(identity: ObjectIdentity) -> Vec<DateTime<Utc>> {
+    pub(crate) fn bound_instants(identity: ObjectIdentity) -> Vec<Timestamp> {
         let s = STATE.lock().unwrap();
         s.bound_instants.get(&identity).cloned().unwrap_or_default()
     }
 
-    pub(crate) fn record_instant(identity: ObjectIdentity, instant: DateTime<Utc>) {
+    pub(crate) fn record_instant(identity: ObjectIdentity, instant: Timestamp) {
         let mut s = STATE.lock().unwrap();
         s.bound_instants.entry(identity).or_default().push(instant);
     }
@@ -393,7 +393,7 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::{TimeZone, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::Value;
     use solstone_core_journal_io::{JournalRoot, ObjectIdentity, day_dirs, day_path};
     use solstone_core_journal_stats_cli::{DayCacheWriter, DayScan, FilesystemDayCacheWriter};
@@ -439,7 +439,7 @@ mod tests {
                 }
             }
         }
-        let walk = crate::calendar::counts_by_walk(journal, chrono::Utc::now()).unwrap();
+        let walk = crate::calendar::counts_by_walk(journal, Timestamp::now()).unwrap();
         for (stats_path, aside_path) in aside {
             std::fs::rename(&aside_path, &stats_path).unwrap();
         }
@@ -458,7 +458,7 @@ mod tests {
             std::time::SystemTime::now() + std::time::Duration::from_secs(100),
         );
         for day in days.keys() {
-            let count = day_range_count(temp.path(), day, Utc::now()).unwrap();
+            let count = day_range_count(temp.path(), day, Timestamp::now()).unwrap();
             let mut scan = DayScan::default();
             scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
             scan.stats.transcript_ranges = count.saturating_add(1_000_000);
@@ -624,7 +624,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let t0 = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+        let t0 = "2026-03-01T10:00:00Z".parse::<Timestamp>().unwrap();
         let clock_cell = Arc::new(Mutex::new(t0));
         let clock = Clock::new({
             let c = clock_cell.clone();
@@ -683,7 +683,7 @@ mod tests {
         }
 
         // Only after it is queued, set clock to T1
-        let t1 = t0 + chrono::Duration::hours(1);
+        let t1 = t0 + SignedDuration::from_hours(1);
         *clock_cell.lock().unwrap() = t1;
 
         // Release run 1

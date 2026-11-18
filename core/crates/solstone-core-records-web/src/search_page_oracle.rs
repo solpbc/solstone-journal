@@ -11,7 +11,7 @@ mod tests {
     use axum::body::to_bytes;
     use axum::http::StatusCode;
     use axum::response::{IntoResponse, Response};
-    use chrono::{Datelike, Local, NaiveDate};
+    use jiff::{ZonedDateTime, civil::Date};
     use rusqlite::params;
     use serde_json::{Map, Value, json};
     use solstone_core_convey_http::envelope::error_envelope;
@@ -197,8 +197,7 @@ mod tests {
         if !valid_day(value) {
             return Err(format!("{name} must be YYYYMMDD"));
         }
-        NaiveDate::parse_from_str(value, "%Y%m%d")
-            .map_err(|_| format!("{name} must be a real day"))?;
+        solstone_core_time::parse_day(value).ok_or_else(|| format!("{name} must be a real day"))?;
         Ok(Some(value.to_owned()))
     }
 
@@ -214,8 +213,8 @@ mod tests {
         day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
     }
 
-    fn today() -> NaiveDate {
-        Local::now().date_naive()
+    fn today() -> Date {
+        ZonedDateTime::now().date()
     }
 
     struct Facet {
@@ -246,7 +245,7 @@ mod tests {
     }
 
     fn format_date(day: &str) -> String {
-        let date = NaiveDate::parse_from_str(day, "%Y%m%d").expect("indexed day is valid");
+        let date = Date::strptime("%Y%m%d", day).expect("indexed day is valid");
         let suffix = match date.day() % 100 {
             11..=13 => "th",
             _ => match date.day() % 10 {
@@ -258,8 +257,8 @@ mod tests {
         };
         format!(
             "{} {} {}{}",
-            date.format("%A"),
-            date.format("%B"),
+            date.strftime("%A"),
+            date.strftime("%B"),
             date.day(),
             suffix
         )

@@ -370,7 +370,9 @@ fn non_notfound_stat_errors_keep_rows_then_drop_as_a_present_file_after_three_tr
     let logs = journal
         .path()
         .join("chronicle")
-        .join(chrono::Local::now().format("%Y%m%d").to_string())
+        .join(solstone_core_time::day_key(
+            jiff::ZonedDateTime::now().date(),
+        ))
         .join("health/indexer.jsonl");
     let events = fs::read_to_string(logs).unwrap();
     assert!(events.contains("injected source stat error"));
@@ -723,7 +725,9 @@ fn a_killed_claim_is_recovered_and_counted_before_it_is_processed() {
     let logs = journal
         .path()
         .join("chronicle")
-        .join(chrono::Local::now().format("%Y%m%d").to_string())
+        .join(solstone_core_time::day_key(
+            jiff::ZonedDateTime::now().date(),
+        ))
         .join("health/indexer.jsonl");
     assert!(
         fs::read_to_string(logs)
@@ -1052,7 +1056,9 @@ fn attempts(journal: &Journal) -> Vec<serde_json::Value> {
     let log = journal
         .path()
         .join("chronicle")
-        .join(chrono::Local::now().format("%Y%m%d").to_string())
+        .join(solstone_core_time::day_key(
+            jiff::ZonedDateTime::now().date(),
+        ))
         .join("health/indexer.jsonl");
     fs::read_to_string(log)
         .unwrap_or_default()
@@ -1091,7 +1097,7 @@ fn forced() -> DrainOptions {
 fn a_save_during_a_long_backlog_is_served_within_one_snapshot() {
     let journal = Journal::new();
     old_backlog(&journal, 3 * SNAPSHOT_ENTRIES, "1");
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
     let fresh = format!("{today}/desktop/120000_300/talents/activity.md");
     let saved = std::cell::Cell::new(false);
     let report = drain_with_checkpoint(journal.path(), forced(), &|| {
@@ -1375,7 +1381,7 @@ fn high_water_list_cost() {
 fn a_file_saved_again_after_its_turn_leads_the_next_drain() {
     let journal = Journal::new();
     old_backlog(&journal, 4 * SNAPSHOT_ENTRIES, "1");
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
     let hot = format!("{today}/desktop/120000_300/talents/activity.md");
     let source = journal.save(&hot, "the note the owner is editing");
     enqueue_path(journal.path(), &source).unwrap();

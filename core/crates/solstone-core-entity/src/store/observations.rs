@@ -9,7 +9,9 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use caseless::default_case_fold_str;
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
+use jiff::civil::{Date, Time};
+use jiff::tz::{Offset, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
@@ -530,9 +532,9 @@ pub fn parse_observation_file(
                 .ok()
                 .or_else(|| day_start_utc_ms(s))
                 .or_else(|| {
-                    chrono::DateTime::parse_from_rfc3339(s)
+                    solstone_core_time::parse_rfc3339(s)
                         .ok()
-                        .map(|dt| dt.timestamp_millis())
+                        .map(|dt| dt.timestamp().as_millisecond())
                 })
                 .unwrap_or(0),
             _ => obj
@@ -822,7 +824,7 @@ pub fn apply_observation_change(
             let new_row = ObservationRow {
                 id: next_id,
                 content: content.to_owned(),
-                observed_at: Utc::now().timestamp_millis(),
+                observed_at: Timestamp::now().as_millisecond(),
                 source_day: source_day.filter(|s| !s.trim().is_empty()),
                 relation: relation.filter(|v| !v.is_null()),
                 by: Some(actor.to_owned()),
@@ -1028,32 +1030,34 @@ pub fn read_live_observations(
 }
 
 /// Parse a journal day spelled `YYYYMMDD` or `YYYY-MM-DD`.
-fn normalize_day(day: &str) -> Option<chrono::NaiveDate> {
-    chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .or_else(|_| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d"))
-        .ok()
+fn normalize_day(day: &str) -> Option<Date> {
+    solstone_core_time::parse_day(day).or_else(|| Date::strptime("%Y-%m-%d", day).ok())
 }
 
 /// Midnight UTC of a day, in epoch milliseconds: the stand-in recording time
 /// for an observation stored without one.
 fn day_start_utc_ms(day: &str) -> Option<i64> {
-    normalize_day(day)?
-        .and_hms_opt(0, 0, 0)
-        .map(|value| value.and_utc().timestamp_millis())
+    let midnight = normalize_day(day)?.to_datetime(Time::midnight());
+    Offset::UTC
+        .to_timestamp(midnight)
+        .ok()
+        .map(Timestamp::as_millisecond)
 }
 
 /// The journal day an observation is about: its `source_day`, else the
 /// day it was recorded on the owner zone. `None` when it carries neither.
-fn observation_day(row: &ObservationRow, zone: chrono_tz::Tz) -> Option<String> {
+fn observation_day(row: &ObservationRow, zone: &TimeZone) -> Option<String> {
     row.source_day
         .as_deref()
         .and_then(normalize_day)
-        .map(|day| day.format("%Y%m%d").to_string())
+        .map(solstone_core_time::day_key)
         .or_else(|| {
             (row.observed_at > 0)
-                .then(|| zone.timestamp_millis_opt(row.observed_at).single())
+                .then(|| Timestamp::from_millisecond(row.observed_at).ok())
                 .flatten()
-                .map(|value| value.format("%Y%m%d").to_string())
+                .map(|value| {
+                    solstone_core_time::day_key(value.to_zoned_datetime(zone.clone()).date())
+                })
         })
 }
 
@@ -1081,16 +1085,16 @@ pub fn observation_summary(
     let latest_observed_at = live_rows.iter().map(|r| r.observed_at).max();
     let latest_day = live_rows
         .iter()
-        .filter_map(|r| observation_day(r, zone))
+        .filter_map(|r| observation_day(r, &zone))
         .max();
     // A day still to come has not been lived yet, so it never hides an earlier one.
-    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
+    let today = Timestamp::now().to_zoned_datetime(zone).date();
     let latest_source_day = live_rows
         .iter()
         .filter_map(|r| r.source_day.as_deref().and_then(normalize_day))
         .filter(|day| *day <= today)
         .max()
-        .map(|day| day.format("%Y%m%d").to_string());
+        .map(solstone_core_time::day_key);
 
     Ok(ObservationSummary {
         count,
@@ -1129,7 +1133,7 @@ pub fn observation_day_counts(
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut day_counts = BTreeMap::new();
-    for day in parsed.live_rows().filter_map(|r| observation_day(r, zone)) {
+    for day in parsed.live_rows().filter_map(|r| observation_day(r, &zone)) {
         *day_counts.entry(day).or_insert(0) += 1;
     }
     Ok(day_counts)
@@ -1359,7 +1363,7 @@ fn ensure_facet_relationship_internal(
     if !path_lexists(&target).map_err(ObservationStoreError::from)? {
         let payload = json!({
             "entity_id": entity_id,
-            "created_at": Utc::now().timestamp_millis(),
+            "created_at": Timestamp::now().as_millisecond(),
         });
         write_text(
             &target,
@@ -1480,7 +1484,7 @@ pub fn apply_ops_to_parsed(
     let mut counts = ObservationOperationCounts::default();
     let mut changed = false;
 
-    let now = Utc::now().timestamp_millis();
+    let now = Timestamp::now().as_millisecond();
     let next_id_start = rows.iter().map(|r| r.id).max().unwrap_or(0) + 1;
     let mut next_id = next_id_start;
 

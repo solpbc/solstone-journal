@@ -17,7 +17,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
@@ -1619,7 +1618,7 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
     let run = solstone_core_journal_stats_cli::run_cli(
         &args,
         &journal_root,
-        Utc::now(),
+        jiff::Timestamp::now(),
         &system_talent_root,
         &apps_root,
         &backlog_reader,
@@ -1736,7 +1735,7 @@ fn run_backfill(args: Vec<OsString>) -> ExitCode {
     let exit_code = solstone_core_backfill_cli::run(
         &args,
         &journal,
-        Utc::now(),
+        jiff::Timestamp::now(),
         &writer,
         &mut stdout.lock(),
         &mut stderr.lock(),
@@ -1870,7 +1869,7 @@ fn run_schedule(_options: ScheduleOptions) -> ExitCode {
         journal.join("config/schedules.json"),
         journal.join("health/scheduler.json"),
         solstone_core_system::schedule::ScheduleNow::in_zone(
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             solstone_core_journal_config::owner_zone(&journal),
         ),
     );
@@ -3614,7 +3613,8 @@ fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
     {
         context.windows_service_probe = Some(service_windows::doctor_registration);
     }
-    let started = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     let started_at = std::time::Instant::now();
     let results = solstone_core_doctor::run(&args, &context);
     if args.json {
@@ -3652,7 +3652,7 @@ fn run_brain_inspect(options: BrainInspectOptions) -> ExitCode {
         }
     };
     let inspection =
-        solstone_core_brain::inspect_brain_state(&line.path, &config, chrono::Utc::now());
+        solstone_core_brain::inspect_brain_state(&line.path, &config, jiff::Timestamp::now());
     let active_fingerprint = active_brain_fingerprint(
         &line.path,
         &config,
@@ -3856,7 +3856,7 @@ fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
     let bundled_runtime_fingerprint_sha256 = options.bundled_runtime_fingerprint_sha256;
     let begin = solstone_core_brain::begin_refresh(
         &line.path,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         options.run_id,
         expected.as_deref(),
         expect_absent,
@@ -3912,7 +3912,7 @@ fn run_brain_prerequisite_renewal_session(
     let expected_fingerprint_sha256 = options.expected_fingerprint_sha256;
     let begin = solstone_core_brain::begin_prerequisite_renewal(
         &line.path,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         options.run_id,
         expected_fingerprint_sha256.as_deref(),
         bundled_runtime_fingerprint_sha256.clone(),
@@ -3989,7 +3989,7 @@ fn run_refresh_session_loop(
             &journal_path,
             permit,
             outcome,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             bundled_runtime_fingerprint_sha256,
         ) {
             Ok(_) => write_refresh_projection(&journal_path),
@@ -4035,7 +4035,7 @@ fn run_prerequisite_renewal_session_loop(
                 &journal_path,
                 permit,
                 component,
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
                 bundled_runtime_fingerprint_sha256,
             ) {
                 Ok(_) => write_brain_projection(&journal_path, PREREQUISITE_RENEWAL_RESULT_SCHEMA),
@@ -4168,7 +4168,7 @@ fn read_refresh_session_input(deadline: Instant) -> RefreshSessionInput {
         if line.len() > MAX_JSON_STDIN_BYTES {
             return RefreshSessionInput::ProtocolViolation;
         }
-        match parse_refresh_session_record(&line, chrono::Utc::now()) {
+        match parse_refresh_session_record(&line, jiff::Timestamp::now()) {
             Some(record @ (RefreshSessionRecord::Probe(_) | RefreshSessionRecord::Abandon(_)))
                 if !terminal && request.is_none() =>
             {
@@ -4220,7 +4220,7 @@ fn read_prerequisite_renewal_session_input(deadline: Instant) -> PrerequisiteRen
         if line.len() > MAX_JSON_STDIN_BYTES {
             return PrerequisiteRenewalSessionInput::ProtocolViolation;
         }
-        match parse_prerequisite_renewal_session_record(&line, chrono::Utc::now()) {
+        match parse_prerequisite_renewal_session_record(&line, jiff::Timestamp::now()) {
             Some(
                 record @ (PrerequisiteRenewalSessionRecord::Probe(_)
                 | PrerequisiteRenewalSessionRecord::Abandon(_)),
@@ -4249,7 +4249,7 @@ enum PrerequisiteRenewalSessionRecord {
 
 fn parse_refresh_session_record(
     bytes: &[u8],
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<RefreshSessionRecord> {
     let object = serde_json::from_slice::<Value>(bytes)
         .ok()?
@@ -4272,7 +4272,7 @@ fn parse_refresh_session_record(
 
 fn parse_prerequisite_renewal_session_record(
     bytes: &[u8],
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Option<PrerequisiteRenewalSessionRecord> {
     let object = serde_json::from_slice::<Value>(bytes)
         .ok()?
@@ -4336,7 +4336,7 @@ fn abandon_refresh_silently(
         permit,
         "brain_refresh_timeout",
         Map::new(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         eprintln!("brain refresh abandonment failed: {error}");
     }
@@ -4372,7 +4372,7 @@ fn abandon_refresh_for_caller(
         permit,
         &reason_code,
         abandon.diagnostic,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
             Some(component) => write_session_result(json!({
@@ -4407,7 +4407,7 @@ fn abandon_prerequisite_renewal_silently(
         permit,
         "nvattest_unavailable",
         Map::new(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         bundled_runtime_fingerprint_sha256,
     ) {
         eprintln!("brain prerequisite renewal abandonment failed: {error}");
@@ -4446,7 +4446,7 @@ fn abandon_prerequisite_renewal_for_caller(
         permit,
         &reason_code,
         abandon.diagnostic,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         bundled_runtime_fingerprint_sha256,
     ) {
         Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
@@ -4505,7 +4505,7 @@ fn write_brain_projection(journal_path: &std::path::Path, result_schema: &str) -
         }
     };
     let projection =
-        solstone_core_brain::inspect_brain_state(journal_path, &config, chrono::Utc::now())
+        solstone_core_brain::inspect_brain_state(journal_path, &config, jiff::Timestamp::now())
             .projection;
     write_session_result(json!({
         "schema": result_schema,
@@ -4577,7 +4577,7 @@ fn run_brain_runtime_failure(options: BrainRuntimeFailureOptions) -> ExitCode {
         &request.component,
         &request.expected_fingerprint_sha256,
         request.diagnostic,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         request.bundled_runtime_fingerprint_sha256,
     );
     let output = json!({
@@ -5016,7 +5016,11 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
         McpTokenCommand::List => match store.list() {
             Ok(tokens) => {
                 for token in tokens {
-                    println!("{}\t{}", token.label, token.created_at.to_rfc3339());
+                    println!(
+                        "{}\t{}",
+                        token.label,
+                        solstone_core_time::utc_rfc3339(token.created_at)
+                    );
                 }
                 ExitCode::SUCCESS
             }
@@ -5125,7 +5129,10 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                     }
                     println!("Save this now. It will not be shown again and cannot be recovered:");
                     println!("{}", created.code);
-                    println!("Expires at {}.", created.expires_at.to_rfc3339());
+                    println!(
+                        "Expires at {}.",
+                        solstone_core_time::utc_rfc3339(created.expires_at)
+                    );
                     ExitCode::SUCCESS
                 }
                 Err(error) => render_oauth_store_error("pairing", "generate", &error),
@@ -5170,7 +5177,7 @@ fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
                         "{}\t{}\t{}",
                         client.client_id,
                         name,
-                        client.created_at.to_rfc3339()
+                        solstone_core_time::utc_rfc3339(client.created_at)
                     );
                 }
                 ExitCode::SUCCESS
@@ -5532,7 +5539,8 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
                         output["origin"] = origin.clone();
                     }
                     if let Some(created_at) = result.created_at.as_ref() {
-                        output["created_at"] = serde_json::json!(created_at);
+                        output["created_at"] =
+                            serde_json::json!(solstone_core_time::utc_iso(*created_at));
                     }
                     if let Some(byte_count) = result.byte_count {
                         output["byte_count"] = serde_json::json!(byte_count);
@@ -5543,7 +5551,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
                     "day": entry.day,
                     "segment": entry.segment,
                     "schema": entry.schema,
-                    "timestamp": entry.timestamp,
+                    "timestamp": solstone_core_time::utc_iso(entry.timestamp),
                     "connection": entry.connection,
                     "agent_identity": entry.agent_identity,
                     "tool": entry.tool_name.token(),
@@ -5584,7 +5592,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
     for entry in &page.entries {
         println!(
             "{}\t{}\t{}\t{}",
-            entry.timestamp.format("%Y-%m-%dT%H:%M:%SZ"),
+            entry.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
             entry.outcome.token(),
             entry.tool_name.token(),
             entry
@@ -5636,7 +5644,10 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
                 println!("    origin:  {origin}");
             }
             if let Some(created_at) = result.created_at {
-                println!("    created: {created_at}");
+                println!(
+                    "    created: {}",
+                    solstone_core_time::utc_display(created_at)
+                );
             }
             if let Some(byte_count) = result.byte_count {
                 println!("    bytes:   {byte_count}");
@@ -5756,8 +5767,8 @@ fn resolve_connection_key(
                         .filter(|g| g.client_id == *client_id)
                         .filter(|g| {
                             if let Some(created) = created_at {
-                                g.created_at.to_rfc3339() == *created
-                                    || format!("{}", g.created_at.timestamp()) == *created
+                                solstone_core_time::utc_rfc3339(g.created_at) == *created
+                                    || format!("{}", g.created_at.as_second()) == *created
                             } else {
                                 true
                             }
@@ -6575,10 +6586,10 @@ fn eprint_journal_path_error(error: JournalPathError) {
 }
 
 /// Today in the journal's owner zone, for relative dates like "yesterday".
-fn owner_today(journal: &Path) -> chrono::NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive()
+fn owner_today(journal: &Path) -> jiff::civil::Date {
+    jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date()
 }
 
 #[cfg(test)]

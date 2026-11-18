@@ -16,7 +16,8 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path};
 
-use chrono::{DateTime, Days, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::paths::{DEFAULT_STREAM, contained_path, path_lexists};
@@ -114,7 +115,7 @@ pub fn record_owner_voice_release_refused(
     segment_rel: &str,
     name: &str,
     reason: OwnerVoiceRefusal,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<(), String> {
     let resolved_dir = contained_path(journal, segment_rel).map_err(|error| error.to_string())?;
     let mut extra = Map::new();
@@ -127,7 +128,7 @@ pub fn record_owner_voice_release_refused(
     let envelope = CallosumEnvelope {
         tract: RETENTION_TRACT.to_owned(),
         event: RELEASE_REFUSED_EVENT.to_owned(),
-        ts: Some(at.timestamp_millis()),
+        ts: Some(at.as_millisecond()),
         extra,
     };
     append_durable_event(&resolved_dir, &DurableEvent::Callosum(envelope))
@@ -200,8 +201,8 @@ fn owed_filter(jsonl: &Path) -> Option<OwnerVoiceFilter> {
 
 /// The days, in the owner's zone, whose recordings have owed deletions retried: `today`
 /// and the days before it, [`OWNER_VOICE_OWED_DAYS`] in all.
-pub fn owner_voice_owed_days(today: NaiveDate) -> impl Iterator<Item = NaiveDate> {
-    (0..OWNER_VOICE_OWED_DAYS).filter_map(move |back| today.checked_sub_days(Days::new(back)))
+pub fn owner_voice_owed_days(today: Date) -> impl Iterator<Item = Date> {
+    (0..OWNER_VOICE_OWED_DAYS).filter_map(move |back| crate::logs::days_before(today, back))
 }
 
 /// What finishing an owner-voice deletion did.
@@ -236,7 +237,7 @@ pub fn finish_owner_voice_deletion(
     jsonl: &Path,
     claims: &OutputClaims,
     commit: &SegmentCommit<'_>,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> OwnerVoiceDeletion {
     finish_owner_voice_deletion_checked(journal, jsonl, claims, commit, at, &|| Ok(()))
 }
@@ -248,7 +249,7 @@ pub fn finish_owner_voice_deletion_checked(
     jsonl: &Path,
     claims: &OutputClaims,
     commit: &SegmentCommit<'_>,
-    at: DateTime<Utc>,
+    at: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> OwnerVoiceDeletion {
     if let Err(error) = checkpoint() {
@@ -347,7 +348,7 @@ fn release_proven(
     segment: &Path,
     proven: &ProvenRaw,
     name: &str,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> OwnerVoiceDeletion {
     let (outcome, _tally) = crate::door::release_raw(
         journal,
@@ -414,10 +415,10 @@ pub struct OwedRunCounts {
 /// the voice-only setting is now: deletion follows each record's saved intent.
 pub fn finish_owed_owner_voice_deletions(
     journal: &Path,
-    today: NaiveDate,
+    today: Date,
     retries: usize,
     pause: std::time::Duration,
-    now: &dyn Fn() -> DateTime<Utc>,
+    now: &dyn Fn() -> Timestamp,
 ) -> OwedRunCounts {
     finish_owed_owner_voice_deletions_checked(journal, today, retries, pause, now, &|| Ok(()))
         .unwrap_or_else(|error| {
@@ -434,17 +435,17 @@ pub fn finish_owed_owner_voice_deletions(
 /// rather than a successful empty pass.
 pub fn finish_owed_owner_voice_deletions_checked(
     journal: &Path,
-    today: NaiveDate,
+    today: Date,
     retries: usize,
     pause: std::time::Duration,
-    now: &dyn Fn() -> DateTime<Utc>,
+    now: &dyn Fn() -> Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<OwedRunCounts, String> {
     let mut counts = OwedRunCounts::default();
     let mut owed = Vec::new();
     for day in owner_voice_owed_days(today) {
         checkpoint()?;
-        let key = day.format("%Y%m%d").to_string();
+        let key = solstone_core_time::day_key(day);
         let segments = solstone_core_segment::list_segments(journal, &key)
             .map_err(|error| format!("owner voice originals: {key}: {error}"))?;
         for segment in segments {
@@ -503,7 +504,7 @@ pub fn finish_owed_owner_voice_deletions_checked(
 fn finish_one(
     journal: &Path,
     jsonl: &Path,
-    at: DateTime<Utc>,
+    at: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Option<OwnerVoiceDeletion> {
     let segment = jsonl.parent()?;

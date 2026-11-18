@@ -7,7 +7,7 @@ use std::path::Path;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use tempfile::TempDir;
@@ -205,7 +205,7 @@ async fn line_correction_uses_list_reference_and_owner_authority_and_undo_token(
             principal,
             ToolName::ListTranscripts,
             Some(&json!({"day": day})),
-            Utc::now(),
+            Timestamp::now(),
         )
         .unwrap();
         let reference = listed.value["transcripts"][0]["reference"]
@@ -217,7 +217,7 @@ async fn line_correction_uses_list_reference_and_owner_authority_and_undo_token(
                 "lines": [{"time": "09:00:10", "starts_with": "Good morning"}, {"time": "09:00:10", "starts_with": "Good"}]},
             "value": {"speaker": "ada@work"}, "basis": "owner_said", "reason": "The owner identified Ada.",
             "operation_id": "line-authority"
-        })), Utc::now()).unwrap();
+        })), Timestamp::now()).unwrap();
         assert_eq!(submitted.value["status"], "pending");
         let id = submitted.value["suggestion_id"].as_str().unwrap();
         let base = format!("/app/agents/api/suggestions/{id}");
@@ -336,7 +336,7 @@ fn test_schema_and_dark_default() {
             principal,
             ToolName::SuggestCorrection,
             Some(&json!({})),
-            Utc::now()
+            Timestamp::now()
         ),
         Err(DispatchError::InvalidInput)
     ));
@@ -374,7 +374,7 @@ fn test_schema_and_dark_default() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_with_extra),
-        Utc::now(),
+        Timestamp::now(),
     );
     assert!(matches!(result, Err(DispatchError::InvalidInput)));
 }
@@ -403,7 +403,7 @@ fn test_suggestions_off_and_unknown_target_return_message() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_unknown),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out.value["status"], "refused");
@@ -420,7 +420,7 @@ fn test_suggestions_off_and_unknown_target_return_message() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_unknown),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_off.value["status"], "suggestions_off");
@@ -474,7 +474,7 @@ fn test_already_true_and_dedup_and_cross_grant() {
         principal_a,
         ToolName::SuggestCorrection,
         Some(&args_already_true),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out.value["status"], "already_true");
@@ -494,7 +494,7 @@ fn test_already_true_and_dedup_and_cross_grant() {
         principal_a,
         ToolName::SuggestCorrection,
         Some(&args_new_alias_1),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_1.value["status"], "pending");
@@ -513,7 +513,7 @@ fn test_already_true_and_dedup_and_cross_grant() {
         principal_a,
         ToolName::SuggestCorrection,
         Some(&args_new_alias_2),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_2.value["status"], "pending");
@@ -526,7 +526,7 @@ fn test_already_true_and_dedup_and_cross_grant() {
         principal_b,
         ToolName::SuggestCorrection,
         Some(&args_new_alias_1),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_b.value["status"], "already_exists");
@@ -579,7 +579,7 @@ fn test_line_matching_and_narrow_lines() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_ambiguous),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_ambiguous.value["status"], "refused");
@@ -603,7 +603,7 @@ fn test_line_matching_and_narrow_lines() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_unique),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out_unique.value["status"], "pending");
@@ -645,7 +645,7 @@ async fn test_accept_and_undo_recording_or_activity() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out.value["status"], "pending");
@@ -732,7 +732,7 @@ async fn test_name_undo_without_history_and_later_rename_conflict() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out.value["status"], "pending");
@@ -809,7 +809,7 @@ async fn test_name_undo_without_history_and_later_rename_conflict() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_2),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let sugg_id_2 = out_2.value["suggestion_id"].as_str().unwrap();
@@ -888,7 +888,7 @@ async fn test_seams_receipt_failure_retry_and_ask_failure() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let sugg_id = out.value["suggestion_id"].as_str().unwrap();
@@ -965,7 +965,7 @@ async fn test_seams_receipt_failure_retry_and_ask_failure() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_2),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let sugg_id_2 = out_2.value["suggestion_id"].as_str().unwrap();
@@ -1022,7 +1022,7 @@ async fn test_seams_receipt_failure_retry_and_ask_failure() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args_3),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let sugg_id_3 = out_3.value["suggestion_id"].as_str().unwrap();
@@ -1138,7 +1138,7 @@ async fn test_owner_routes_and_access_control() {
             "reason": "body check",
             "operation_id": "op-rec-body-check"
         })),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let rec_id = out.value["suggestion_id"].as_str().unwrap();
@@ -1236,7 +1236,7 @@ fn test_sealed_token_still_resolves() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     assert_eq!(out.value["status"], "pending");
@@ -1246,7 +1246,7 @@ fn test_sealed_token_still_resolves() {
 fn suggest(root: &Path, kind: &str, target: &str, value: Value, operation: &str) -> Value {
     dispatch_authenticated_tool_call(root, DispatchPrincipal {connection:"bearer:test-agent",agent_identity:"bearer:test-agent"},
         ToolName::SuggestCorrection,Some(&json!({"kind":kind,"target":{"reference":target},"value":value,
-            "basis":"owner_said","reason":"The owner corrected the record.","operation_id":operation})),Utc::now()).unwrap().value
+            "basis":"owner_said","reason":"The owner corrected the record.","operation_id":operation})),Timestamp::now()).unwrap().value
 }
 
 #[tokio::test]
@@ -1318,7 +1318,7 @@ async fn owner_answers_do_not_validate_new_suggestion_guesses() {
                 json!({"playback":false}).as_object().unwrap(),
                 "owner:update",
                 "owner:update",
-                &Utc::now().to_rfc3339(),
+                &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
             )
             .unwrap();
             let result = suggest(root, kind, &target, json!({}), "guess-owner-false");
@@ -1361,7 +1361,7 @@ fn speaker_suggestion_status_uses_only_admitted_voice_evidence() {
     let call = |speaker: &str, operation: &str| {
         dispatch_authenticated_tool_call(root,
         DispatchPrincipal {connection:"bearer:test-agent",agent_identity:"bearer:test-agent"}, ToolName::SuggestCorrection,
-        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":speaker},"basis":"owner_said","reason":"A synthetic correction.","operation_id":operation})), Utc::now()).unwrap().value
+        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":speaker},"basis":"owner_said","reason":"A synthetic correction.","operation_id":operation})), Timestamp::now()).unwrap().value
     };
     let mut failures = Vec::new();
     for (i, (speaker, method, proposed, expected)) in [
@@ -1429,7 +1429,7 @@ fn anonymous_speaker_label_shapes_do_not_validate_guesses() {
             &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
                 centroid: vec![1.0, 0.0],
                 cluster_size: 8,
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
                 evidence_tier: "synthetic".to_owned(),
             },
         )
@@ -1498,7 +1498,7 @@ fn anonymous_speaker_label_shapes_do_not_validate_guesses() {
         {
             let result = dispatch_authenticated_tool_call(root,
                 DispatchPrincipal {connection:"bearer:test-agent",agent_identity:"bearer:test-agent"}, ToolName::SuggestCorrection,
-                Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A synthetic"}]},"value":{"speaker":proposed},"basis":"owner_said","reason":"A synthetic correction.","operation_id":format!("shape-{i}")})), Utc::now()).unwrap().value;
+                Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A synthetic"}]},"value":{"speaker":proposed},"basis":"owner_said","reason":"A synthetic correction.","operation_id":format!("shape-{i}")})), Timestamp::now()).unwrap().value;
             assert_eq!(
                 result["status"],
                 if (shape == "acoustic" && proposed == "ada@work")
@@ -1579,7 +1579,7 @@ async fn edited_accept_replays_current_decision_and_hidden_target_discloses_noth
         true,
         "owner:hide",
         None,
-        &Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
     )
     .unwrap();
     let refused = suggest(
@@ -1612,7 +1612,7 @@ async fn same_value_owner_answer_stales_card_and_later_account_blocks_undo() {
         json!({"playback":false}).as_object().unwrap(),
         "owner:update",
         "owner:update",
-        &Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
     )
     .unwrap();
     let (status, stale) = owner_call(
@@ -1653,7 +1653,7 @@ async fn same_value_owner_answer_stales_card_and_later_account_blocks_undo() {
             .unwrap(),
         "owner:update",
         "owner:update",
-        &Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
     )
     .unwrap();
     let before = fs::read(root.join(format!("facets/work/activities/{day}.jsonl"))).unwrap();
@@ -1851,7 +1851,7 @@ async fn oauth_switch_uses_grant_id_and_queue_only_agents_survive_revocation() {
         principal,
         ToolName::SuggestCorrection,
         Some(&args),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap()
     .value;
@@ -1876,7 +1876,7 @@ async fn oauth_switch_uses_grant_id_and_queue_only_agents_survive_revocation() {
             principal,
             ToolName::SuggestCorrection,
             Some(&new_args),
-            Utc::now()
+            Timestamp::now()
         )
         .unwrap()
         .value["status"],
@@ -1888,7 +1888,7 @@ async fn oauth_switch_uses_grant_id_and_queue_only_agents_survive_revocation() {
             principal,
             ToolName::SuggestCorrection,
             Some(&args),
-            Utc::now()
+            Timestamp::now()
         )
         .unwrap()
         .value["status"],
@@ -1923,12 +1923,10 @@ async fn pending_cap_excludes_stale_cards_but_daily_cap_counts_every_new_suggest
     set_test_suggestions_ready(true);
     let journal = init_test_journal();
     let root = journal.path();
-    let first = chrono::NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
+    let first = jiff::civil::date(2026, 9, 1);
     let mut ids = Vec::new();
     for n in 0..20 {
-        let day = (first + chrono::Duration::days(n))
-            .format("%Y%m%d")
-            .to_string();
+        let day = solstone_core_time::day_key(first + jiff::Span::new().days(n));
         setup_activity(root, "work", &day, "capacity", "Original");
         let target = crate::names::activity_name(&day, "work", "capacity").unwrap();
         let queued = suggest(
@@ -1941,9 +1939,7 @@ async fn pending_cap_excludes_stale_cards_but_daily_cap_counts_every_new_suggest
         assert_eq!(queued["status"], "pending", "{queued}");
         ids.push(queued["suggestion_id"].as_str().unwrap().to_owned());
     }
-    let day = (first + chrono::Duration::days(20))
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(first + jiff::Span::new().days(20));
     setup_activity(root, "work", &day, "capacity", "Original");
     let target = crate::names::activity_name(&day, "work", "capacity").unwrap();
     assert_eq!(
@@ -1958,7 +1954,7 @@ async fn pending_cap_excludes_stale_cards_but_daily_cap_counts_every_new_suggest
         json!({"playback":false}).as_object().unwrap(),
         "owner:update",
         "owner:update",
-        &Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
     )
     .unwrap();
     let queued = suggest(root, "recording", &target, json!({}), "capacity-20");
@@ -1979,9 +1975,7 @@ async fn pending_cap_excludes_stale_cards_but_daily_cap_counts_every_new_suggest
         );
     }
     for n in 21..50 {
-        let day = (first + chrono::Duration::days(n))
-            .format("%Y%m%d")
-            .to_string();
+        let day = solstone_core_time::day_key(first + jiff::Span::new().days(n));
         setup_activity(root, "work", &day, "capacity", "Original");
         let target = crate::names::activity_name(&day, "work", "capacity").unwrap();
         let queued = suggest(
@@ -2006,9 +2000,7 @@ async fn pending_cap_excludes_stale_cards_but_daily_cap_counts_every_new_suggest
             StatusCode::OK
         );
     }
-    let day = (first + chrono::Duration::days(50))
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(first + jiff::Span::new().days(50));
     setup_activity(root, "work", &day, "capacity", "Original");
     let target = crate::names::activity_name(&day, "work", "capacity").unwrap();
     assert_eq!(
@@ -2067,7 +2059,7 @@ async fn interrupted_stretch_accept_stays_reviewable_and_undo_preserves_failed_c
         json!({"details":"Later owner answer"}).as_object().unwrap(),
         "owner:update",
         "owner:update",
-        &Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
     )
     .unwrap();
     assert_eq!(
@@ -2127,7 +2119,7 @@ fn deleted_or_staged_recordings_refuse_new_suggestions_and_exact_retry() {
         principal,
         ToolName::ListTranscripts,
         Some(&json!({"day":day})),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap()
     .value;
@@ -2139,7 +2131,7 @@ fn deleted_or_staged_recordings_refuse_new_suggestions_and_exact_retry() {
             principal,
             ToolName::SuggestCorrection,
             Some(&args),
-            Utc::now()
+            Timestamp::now()
         )
         .unwrap()
         .value["status"],
@@ -2168,7 +2160,7 @@ fn deleted_or_staged_recordings_refuse_new_suggestions_and_exact_retry() {
                 principal,
                 ToolName::SuggestCorrection,
                 Some(&input),
-                Utc::now(),
+                Timestamp::now(),
             )
             .unwrap()
             .value;
@@ -2316,7 +2308,7 @@ async fn derived_speaker_change_stales_a_pending_line_without_changing_its_words
         principal,
         ToolName::ListTranscripts,
         Some(&json!({"day":day})),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap()
     .value;
@@ -2327,7 +2319,7 @@ async fn derived_speaker_change_stales_a_pending_line_without_changing_its_words
         principal,
         ToolName::SuggestCorrection,
         Some(&input),
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap()
     .value;
@@ -2448,7 +2440,7 @@ async fn completed_undo_replay_preserves_a_later_account_or_hidden_person_after_
                     .unwrap(),
                 "owner:update",
                 "owner:update",
-                &Utc::now().to_rfc3339(),
+                &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
             )
             .unwrap();
         }
@@ -2588,7 +2580,7 @@ async fn line_card_uses_canonical_numbers_and_only_voice_or_owner_names() {
         agent_identity: "bearer:test-agent",
     };
     let queued = dispatch_authenticated_tool_call(root, principal, ToolName::SuggestCorrection,
-        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":"ada@work"},"basis":"owner_said","reason":"The owner identified Ada.","operation_id":"displayed-speaker"})), Utc::now()).unwrap().value;
+        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":"ada@work"},"basis":"owner_said","reason":"The owner identified Ada.","operation_id":"displayed-speaker"})), Timestamp::now()).unwrap().value;
     assert_eq!(queued["status"], "pending", "{queued}");
     let record = read_record(root, queued["suggestion_id"].as_str().unwrap())
         .unwrap()
@@ -2636,7 +2628,7 @@ fn suggest_same_person(root: &Path, first: &str, second: &str, operation: &str) 
             "basis":"owner_said", "reason":"Use the person's name from the journal.",
             "operation_id":operation,
         })),
-        Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap()
     .value

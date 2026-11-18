@@ -4,7 +4,8 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff::tz::Offset;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity_matching::normalize_resolution_query;
@@ -473,7 +474,7 @@ pub(crate) fn execute(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedSuggestCorrection,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Prepared, DispatchError> {
     let line = if let ValidatedTarget::Lines { segment, .. } = &request.target {
         if crate::names::is_name(segment) {
@@ -524,7 +525,7 @@ fn execute_admitted(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedSuggestCorrection,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Prepared, DispatchError> {
     // 1. Canonical request hash
     let mut canonical_map = Map::new();
@@ -824,9 +825,10 @@ fn execute_admitted(
                 .iter()
                 .filter(|r| {
                     r.authority_id == principal.connection
-                        && chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                        && solstone_core_time::parse_rfc3339(&r.created_at)
                             .map(|dt| {
-                                dt.with_timezone(&chrono::Utc).date_naive() == now.date_naive()
+                                Offset::UTC.to_datetime(dt.timestamp()).date()
+                                    == Offset::UTC.to_datetime(now).date()
                             })
                             .unwrap_or(false)
                 })
@@ -917,8 +919,8 @@ fn execute_admitted(
                 authority_id: principal.connection.to_owned(),
                 source: memory_source_key,
                 label,
-                created_at: now.to_rfc3339(),
-                updated_at: now.to_rfc3339(),
+                created_at: solstone_core_time::utc_rfc3339(now),
+                updated_at: solstone_core_time::utc_rfc3339(now),
                 target,
                 baseline,
                 applied_stretch_id: None,
@@ -1202,9 +1204,10 @@ fn execute_admitted(
                 .iter()
                 .filter(|r| {
                     r.authority_id == principal.connection
-                        && chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                        && solstone_core_time::parse_rfc3339(&r.created_at)
                             .map(|dt| {
-                                dt.with_timezone(&chrono::Utc).date_naive() == now.date_naive()
+                                Offset::UTC.to_datetime(dt.timestamp()).date()
+                                    == Offset::UTC.to_datetime(now).date()
                             })
                             .unwrap_or(false)
                 })
@@ -1307,8 +1310,8 @@ fn execute_admitted(
                 authority_id: principal.connection.to_owned(),
                 source: memory_source_key,
                 label,
-                created_at: now.to_rfc3339(),
-                updated_at: now.to_rfc3339(),
+                created_at: solstone_core_time::utc_rfc3339(now),
+                updated_at: solstone_core_time::utc_rfc3339(now),
                 target,
                 baseline,
                 applied_stretch_id: None,
@@ -1535,8 +1538,8 @@ fn execute_admitted(
                 authority_id: principal.connection.to_owned(),
                 source: memory_source_key,
                 label,
-                created_at: now.to_rfc3339(),
-                updated_at: now.to_rfc3339(),
+                created_at: solstone_core_time::utc_rfc3339(now),
+                updated_at: solstone_core_time::utc_rfc3339(now),
                 target,
                 baseline,
                 applied_stretch_id: None,
@@ -1722,7 +1725,7 @@ fn execute_admitted(
             else {
                 return refusal;
             };
-            let stamp = now.to_rfc3339();
+            let stamp = solstone_core_time::utc_rfc3339(now);
             let record = SuggestionRecord {
                 id,
                 schema: SUGGESTION_SCHEMA,
@@ -1763,7 +1766,7 @@ fn cap_result(
     records: &[SuggestionRecord],
     connection: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Option<Prepared> {
     let pending_count = records
         .iter()
@@ -1790,8 +1793,11 @@ fn cap_result(
         .iter()
         .filter(|r| {
             r.authority_id == connection
-                && chrono::DateTime::parse_from_rfc3339(&r.created_at)
-                    .map(|dt| dt.with_timezone(&chrono::Utc).date_naive() == now.date_naive())
+                && solstone_core_time::parse_rfc3339(&r.created_at)
+                    .map(|dt| {
+                        Offset::UTC.to_datetime(dt.timestamp()).date()
+                            == Offset::UTC.to_datetime(now).date()
+                    })
                     .unwrap_or(false)
         })
         .count();

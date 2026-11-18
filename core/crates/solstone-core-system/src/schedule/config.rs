@@ -246,7 +246,7 @@ pub struct PreparedDailyTime {
 }
 
 pub fn prepare_daily_time(path: &Path, primary: &str) -> Result<PreparedDailyTime, String> {
-    if chrono::NaiveTime::parse_from_str(primary, "%H:%M").is_err() {
+    if jiff::civil::Time::strptime("%H:%M", primary).is_err() {
         return Err("invalid daily time".into());
     }
     let _lock = hold_lock(path, Default::default()).map_err(|e| e.to_string())?;
@@ -419,17 +419,16 @@ pub(crate) fn is_interval(every: &str) -> bool {
     matches!(every, "hourly" | "daily" | "weekly") || minute_interval(every).is_some()
 }
 
+/// The longest minute interval a schedule accepts: whole minutes of at most
+/// `i64::MAX` milliseconds.
+const MAX_INTERVAL_MINUTES: u64 = i64::MAX as u64 / 1_000 / 60;
+
 pub(crate) fn minute_interval(every: &str) -> Option<u64> {
     every
         .strip_suffix('m')
         .filter(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
         .and_then(|digits| digits.parse::<u64>().ok())
-        .filter(|minutes| {
-            i64::try_from(*minutes)
-                .ok()
-                .and_then(chrono::Duration::try_minutes)
-                .is_some()
-        })
+        .filter(|minutes| *minutes <= MAX_INTERVAL_MINUTES)
 }
 
 pub(crate) fn parse_duration(value: &Value) -> Option<Duration> {

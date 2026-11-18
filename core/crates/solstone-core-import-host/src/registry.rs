@@ -117,7 +117,7 @@ fn preview_size(
         dispatch.source,
         &dispatch.media,
         &dispatch.timestamp,
-        zone,
+        &zone,
         None,
     ) {
         let rendered = rendered?;
@@ -133,7 +133,7 @@ fn preview_size(
         RegistrySource::Image => image::preview_size(
             &dispatch.media,
             journal,
-            zone,
+            &zone,
             dispatch.owner_timestamp.as_deref(),
             dispatch.fallback_timestamp.as_deref(),
         )
@@ -243,10 +243,9 @@ fn claim_dispatch_id(
 /// refused re-run, an idempotent no-op) is not recorded again. Best-effort: a
 /// failure here is logged and leaves the import successful.
 pub fn record_finished_import(journal: &Path, import_id: &str, since_ms: u64) {
-    let now = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .fixed_offset();
-    if let Err(error) = record_finished_import_at(journal, import_id, since_ms, now) {
+    let now =
+        jiff::Timestamp::now().to_zoned_datetime(solstone_core_journal_config::owner_zone(journal));
+    if let Err(error) = record_finished_import_at(journal, import_id, since_ms, &now) {
         log::warn!("import {import_id} finished but was not recorded in awareness: {error}");
     }
 }
@@ -255,7 +254,7 @@ fn record_finished_import_at(
     journal: &Path,
     import_id: &str,
     since_ms: u64,
-    now: chrono::DateTime<chrono::FixedOffset>,
+    now: &jiff::ZonedDateTime,
 ) -> Result<(), String> {
     let projection = solstone_core_import::project_import_result(journal, import_id);
     let finished_now = projection
@@ -275,9 +274,9 @@ fn record_finished_import_at(
         &projection.source_type,
         Some(&projection.source_display),
         entries,
-        &now.naive_local().format("%Y%m%dT%H:%M:%S").to_string(),
-        &now.date_naive().format("%Y%m%d").to_string(),
-        now.timestamp_millis(),
+        &now.datetime().strftime("%Y%m%dT%H:%M:%S").to_string(),
+        &solstone_core_time::day_key(now.date()),
+        now.timestamp().as_millisecond(),
     )
     .map(drop)
     .map_err(|error| error.to_string())
@@ -347,7 +346,7 @@ fn run_save(
 
     let zone = solstone_core_journal_config::owner_zone(journal);
     let stamp = import_stamp(journal, import_id);
-    let rendered = match save::render(source, &dispatch.media, import_id, zone, Some(&stamp))
+    let rendered = match save::render(source, &dispatch.media, import_id, &zone, Some(&stamp))
         .expect("run_save is only dispatched for sources save renders")
     {
         Ok(rendered) if rendered.files.is_empty() => {
@@ -434,10 +433,10 @@ fn import_stamp(
     let imported_at = solstone_core_import::import_time_ms(journal, import_id, now_ms())
         .ok()
         .and_then(|ms| i64::try_from(ms).ok())
-        .and_then(chrono::DateTime::from_timestamp_millis);
+        .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok());
     solstone_core_import_sources::ics_notes::ImportStamp {
         id: import_id.to_owned(),
-        imported_at: imported_at.unwrap_or_else(chrono::Utc::now),
+        imported_at: imported_at.unwrap_or_else(jiff::Timestamp::now),
     }
 }
 
@@ -571,7 +570,9 @@ fn run_evernote(
         Err(error) => return fail(format!("{name} import failed: {error}\n")),
     };
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(zone.clone())
+        .date();
     let notebook = evernote_notebook(journal, &dispatch);
     let planned = match evernote::plan(journal, &dispatch.media, &notebook, &zone, today) {
         Ok(plan) => plan,
@@ -755,7 +756,7 @@ fn evernote_rendered(plan: &evernote::Plan) -> save::RenderedImport {
 fn install_evernote_attachments(
     journal: &Path,
     import_id: &str,
-    zone: &chrono_tz::Tz,
+    zone: &jiff::tz::TimeZone,
     seams: &SourceSeams<'_>,
     plan: &evernote::Plan,
     held: &mut Vec<tempfile::NamedTempFile>,
@@ -767,12 +768,12 @@ fn install_evernote_attachments(
         let prepared = image::prepare_image(
             &path,
             seams.image,
-            *zone,
+            zone,
             Some(&image_file.owner_timestamp),
             None,
         )
         .map_err(|error| error.to_string())?;
-        let start = prepared.timestamp.naive_local();
+        let start = prepared.timestamp.datetime();
         let installed =
             image::install_image_at(&prepared, journal, start, &NativePublicationOperations)
                 .map_err(|error| error.to_string())?;
@@ -1421,7 +1422,7 @@ fn release_misplaced_strava_pieces(
     let outcome = door::remove_segments(
         journal,
         &targets,
-        &chrono::Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         RemovalReason::ImportRunRelease,
         &format!("strava-repair:{import_id}"),
     );
@@ -1582,7 +1583,8 @@ fn run_strava_internal(
         Ok(z) => z,
         Err(_) => return failure(format!("{name} import failed: strava_zone_unrecognised\n")),
     };
-    let placement = match strava::place(journal, &workouts.workouts, post_lock_zone, fault) {
+    let placement = match strava::place(journal, &workouts.workouts, post_lock_zone.clone(), fault)
+    {
         Ok(p) => p,
         Err(e) => return failure(format!("{name} import failed: {e}\n")),
     };
@@ -1618,7 +1620,7 @@ fn run_strava_internal(
 
     // 9. create_zone_record if absent
     if post_lock_zone.is_none()
-        && let Err(error) = strava::create_zone_record(journal, placement.zone)
+        && let Err(error) = strava::create_zone_record(journal, &placement.zone)
     {
         let _ = finish(ImportTerminalInput::Failed(&[]));
         return failure(format!("{name} import failed: {error}\n"));
@@ -1725,7 +1727,7 @@ fn run_strava_internal(
             chosen: owner_chose.map(|facet| (&download, facet)),
             publishes_tiles: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &legacy_matches,
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
@@ -1785,7 +1787,7 @@ fn run_strava_internal(
     // The record writer only adds what's missing, so the next import of the
     // download finishes the job. A failure is counted and leaves the import
     // as it is.
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let mut days: Vec<&str> = live
         .values()
         .flat_map(|(_, tiles)| tiles.iter().map(|tile| tile.day.as_str()))
@@ -1907,13 +1909,13 @@ fn run_strava_internal(
         journal,
         hook.and_then(|h| h.names_model)
             .unwrap_or(&crate::strava_names::SiblingNamesModel),
-        &chrono::Utc::now,
+        &jiff::Timestamp::now,
     );
     #[cfg(not(test))]
     let names = crate::strava_names::record_strava_names(
         journal,
         &crate::strava_names::SiblingNamesModel,
-        &chrono::Utc::now,
+        &jiff::Timestamp::now,
     );
 
     let run_summary = crate::strava_summary::StravaRunSummary {
@@ -1959,8 +1961,11 @@ fn run_strava_internal(
     summary.push(' ');
     summary.push_str(&run_summary.count_keys());
     let owner_z = solstone_core_journal_config::owner_zone(journal);
-    if placement.zone.name() != owner_z.name() {
-        summary.push_str(&format!(" zone={}", placement.zone.name()));
+    if placement.zone.iana_name() != owner_z.iana_name() {
+        summary.push_str(&format!(
+            " zone={}",
+            placement.zone.iana_name().unwrap_or_default()
+        ));
     }
 
     let result = ImportResult {
@@ -2331,14 +2336,15 @@ mod tests {
             journal.path(),
         );
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-09T19:30:00-06:00").unwrap();
+        let now = solstone_core_time::parse_rfc3339("2026-08-09T19:30:00-06:00").unwrap();
 
         // An import that finished before this invocation began is not recorded.
-        super::record_finished_import_at(journal.path(), "20260809_090000", u64::MAX, now).unwrap();
+        super::record_finished_import_at(journal.path(), "20260809_090000", u64::MAX, &now)
+            .unwrap();
         let imports = solstone_core_facets::load_imports(journal.path()).unwrap();
         assert_ne!(imports["has_imported"], true, "{imports}");
 
-        super::record_finished_import_at(journal.path(), "20260809_090000", 0, now).unwrap();
+        super::record_finished_import_at(journal.path(), "20260809_090000", 0, &now).unwrap();
         let imports = solstone_core_facets::load_imports(journal.path()).unwrap();
         assert_eq!(imports["has_imported"], true);
         assert_eq!(imports["import_count"], 1);
@@ -2438,9 +2444,14 @@ mod tests {
     fn two_same_time_images_keep_separate_records_and_the_source_day() {
         let journal = tempfile::tempdir().unwrap();
         write_utc_zone(journal.path());
-        let modified = std::time::SystemTime::from(
-            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 6, 16, 12, 0, 0).unwrap(),
-        );
+        let modified = std::time::SystemTime::try_from(
+            jiff::civil::date(2026, 6, 16)
+                .at(12, 0, 0, 0)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .timestamp(),
+        )
+        .unwrap();
         let first = journal.path().join("first.png");
         let second = journal.path().join("second.png");
         fs::write(&first, TINY_PNG).unwrap();
@@ -3046,7 +3057,7 @@ mod tests {
             .unwrap();
             let stamp = import_stamp(journal.path(), id);
             assert_eq!(stamp.id, id);
-            assert_eq!(stamp.imported_at.timestamp_millis(), uploaded_ms);
+            assert_eq!(stamp.imported_at.as_millisecond(), uploaded_ms);
         }
         // A record with no upload time keeps the first save's time, so a
         // later save of the same import stamps the same time.
@@ -3058,9 +3069,9 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({"task_id": legacy})).unwrap(),
         )
         .unwrap();
-        let before = chrono::Utc::now();
+        let before = jiff::Timestamp::now();
         let first = import_stamp(journal.path(), legacy);
-        assert!(first.imported_at >= before - chrono::Duration::seconds(1));
+        assert!(first.imported_at >= before - jiff::SignedDuration::from_secs(1));
         std::thread::sleep(std::time::Duration::from_millis(5));
         let again = import_stamp(journal.path(), legacy);
         assert_eq!(again.imported_at, first.imported_at);
@@ -5718,15 +5729,15 @@ mod tests {
         write_utc_zone(journal.path());
         let csv_file = journal.path().join("activities_scale.csv");
 
-        let base_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let base_date = jiff::civil::date(2026, 1, 1);
         let mut row_data = Vec::with_capacity(500);
         let mut id_strings = Vec::with_capacity(500);
         let mut date_strings = Vec::with_capacity(500);
         let mut name_strings = Vec::with_capacity(500);
 
         for i in 1..=500 {
-            let cur_date = base_date + chrono::Duration::days((i % 100) as i64);
-            let date_str = cur_date.format("%d %b %Y, 07:00:00").to_string();
+            let cur_date = base_date + jiff::Span::new().days((i % 100) as i64);
+            let date_str = cur_date.strftime("%d %b %Y, 07:00:00").to_string();
             let id_str = format!("{}", 1000 + i);
             let name_str = format!("Workout {i}");
             id_strings.push(id_str);

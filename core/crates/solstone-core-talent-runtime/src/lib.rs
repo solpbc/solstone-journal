@@ -8,7 +8,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{
     ContentPart, GenerateRequest, GenerateResponse, OneShotClient, ReasonCodeValue, RefusedResponse,
@@ -328,7 +328,7 @@ pub fn check_segment_has_no_input(
     segment: &str,
     stream: Option<&str>,
     sources: &Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> bool {
     if !transcript::sources_are_enabled(sources) {
         return false;
@@ -787,7 +787,7 @@ pub fn execute_request(
             &unit,
             &input,
             failure,
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
             &|| crate::writers::check_cancellation(cancellation),
         )
     {
@@ -2373,7 +2373,7 @@ mod tests {
         let old = json!({"title":"STALE_PRIOR_PULSE_SENTINEL", "one_sentence":"An old plan", "full_details":"An old day", "needs_you":[]});
         let old_bytes = format!("{old}\n");
         fs::write(&old_path, &old_bytes).unwrap();
-        let home = solstone_core_home::HomeContext::new(&context.journal, chrono::Utc::now());
+        let home = solstone_core_home::HomeContext::new(&context.journal, jiff::Timestamp::now());
         assert!(
             solstone_core_home::readers::read_latest(&home, day, "pulse", 7)
                 .unwrap()
@@ -2428,7 +2428,7 @@ mod tests {
             .next()
             .unwrap()
             .trim_end_matches('.');
-        assert!(chrono::DateTime::parse_from_rfc3339(clock).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(clock).is_ok());
         assert!(!text.contains("$day_YYYYMMDD"));
         assert!(text.contains(day));
         assert_eq!(
@@ -3205,7 +3205,7 @@ mod tests {
             "090000_60",
             None,
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
         assert!(!root.path().join("chronicle").exists());
     }
@@ -3221,7 +3221,7 @@ mod tests {
             "090000_60",
             None,
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
     }
 
@@ -3251,7 +3251,7 @@ mod tests {
             "090000_60",
             None,
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
     }
 
@@ -3276,7 +3276,7 @@ mod tests {
             "090000_60",
             None,
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
     }
 
@@ -3308,7 +3308,7 @@ mod tests {
             segment,
             Some(stream),
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
 
         let unsupported_row = r#"{"v":999,"t":"desktop_activity","kind":"foreground","method":"ax","ts":1000,"end_ts":1000,"app":"A"}"#;
@@ -3324,7 +3324,7 @@ mod tests {
             segment,
             Some(stream),
             &sources,
-            Utc::now(),
+            Timestamp::now(),
         ));
     }
 
@@ -5164,7 +5164,7 @@ mod tests {
         );
         drop(lease);
 
-        let ref_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let ref_date = jiff::civil::date(2026, 1, 1);
         solstone_core_indexer_store::todo::drain(&context.journal, Default::default()).unwrap();
         let search_res = solstone_core_indexer_query::search(
             &context.journal,
@@ -5234,7 +5234,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn published_output_provenance_only_change_indexes_and_marks_changed() {
-        use chrono::TimeZone;
         use solstone_core_format::agent_memory::{Coordinate, Origin, OriginKind, SourceKey};
         use solstone_core_format::content::ConsumedOriginal;
 
@@ -5269,7 +5268,7 @@ mod tests {
                 kind: OriginKind::AgentMemory,
                 source_key,
                 creation_label: "prov test".to_owned(),
-                created_at: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 1, 2, 3).unwrap(),
+                created_at: "2026-01-01T01:02:03Z".parse::<jiff::Timestamp>().unwrap(),
                 stream: coordinate.stream.clone(),
                 segment: coordinate.segment.clone(),
             },
@@ -5353,7 +5352,7 @@ mod tests {
 }"#,
         );
         let output_path = context.journal.join("chronicle/20260101/talents/plain.md");
-        let ref_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let ref_date = jiff::civil::date(2026, 1, 1);
 
         let mut iter = 0;
         loop {

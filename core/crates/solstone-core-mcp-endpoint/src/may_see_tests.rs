@@ -504,7 +504,7 @@ fn wire(root: &Path, tool: &str, arguments: Value) -> Result<Value, DispatchErro
         PRINCIPAL,
         entry.tool_name,
         Some(&arguments),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .map(|output| output.value)
 }

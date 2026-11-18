@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
@@ -190,7 +190,7 @@ fn list_publishing_checked(
     let path = dir.join(format!(
         "{stream}-{}-{}.json",
         std::process::id(),
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        i64::try_from(Timestamp::now().as_nanosecond()).unwrap_or_default()
     ));
     let bytes = serde_json::to_vec(&Publishing { days }).ok()?;
     std::fs::create_dir_all(&dir).ok()?;
@@ -481,9 +481,7 @@ pub(crate) fn check(
 fn local_day(journal: &Path, now_ms: i64) -> String {
     solstone_core_system::daily_coverage::local_day(
         journal,
-        Utc.timestamp_millis_opt(now_ms)
-            .single()
-            .unwrap_or_else(Utc::now),
+        Timestamp::from_millisecond(now_ms).unwrap_or_else(|_| Timestamp::now()),
     )
 }
 
@@ -865,11 +863,9 @@ fn grow(
                 .map(|value| (field.to_owned(), value.clone()))
         })
         .collect::<Map<String, Value>>();
-    let timestamp = Utc
-        .timestamp_millis_opt(context.now_ms)
-        .single()
-        .unwrap_or_else(Utc::now)
-        .to_rfc3339();
+    let timestamp = solstone_core_time::utc_rfc3339(
+        Timestamp::from_millisecond(context.now_ms).unwrap_or_else(|_| Timestamp::now()),
+    );
     update_activity_record_checked(
         &context.journal,
         facet,

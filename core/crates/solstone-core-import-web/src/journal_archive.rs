@@ -11,7 +11,6 @@ use axum::{
     http::{StatusCode, header},
     response::Response,
 };
-use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
 use solstone_core_import_sources::archive::plan_journal_archive;
 use solstone_core_journal_archive::{ArchiveSource, EncodeArchiveRequest, publish_archive};
@@ -83,7 +82,8 @@ async fn export_file(root: &Path) -> Result<(tokio::fs::File, u64), String> {
         scratch.path().to_owned(),
     ))
     .map_err(|error| error.to_string())?;
-    let exported_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let exported_at =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     let request = EncodeArchiveRequest {
         source: &source,
         solstone_version: env!("CARGO_PKG_VERSION"),

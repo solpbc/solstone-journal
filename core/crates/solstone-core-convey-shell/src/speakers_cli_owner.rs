@@ -10,7 +10,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
@@ -177,7 +177,10 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         "original_method".to_owned(),
         old_method.map_or(Value::Null, Value::String),
     );
-    correction.insert("timestamp".to_owned(), json!(Utc::now().timestamp_millis()));
+    correction.insert(
+        "timestamp".to_owned(),
+        json!(Timestamp::now().as_millisecond()),
+    );
     if let Err(error) =
         solstone_core_speaker_id::corrections::append_correction(&segment, correction)
     {

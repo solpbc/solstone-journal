@@ -13,7 +13,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -27,21 +27,21 @@ const REGISTER_VERSION: u32 = 1;
 const REGISTER_FILE: &str = "retention-marks.json";
 const UNRECORDED_PROPOSAL_REASON: &str = "removal failed before a proposal was recorded";
 
-fn format_marked_at(at: DateTime<Utc>) -> String {
-    at.to_rfc3339_opts(SecondsFormat::Secs, true)
+fn format_marked_at(at: Timestamp) -> String {
+    solstone_core_time::utc_z(at, solstone_core_time::Precision::Secs)
 }
 
 #[cfg(test)]
-pub(crate) fn mark_at(label: &str) -> DateTime<Utc> {
+pub(crate) fn mark_at(label: &str) -> Timestamp {
     let raw = match label {
         "first" => "2026-08-06T12:00:00Z",
         "second" => "2026-08-06T12:00:01Z",
         "third" => "2026-08-06T12:00:02Z",
         other => other,
     };
-    match DateTime::parse_from_rfc3339(raw) {
-        Ok(when) => when.with_timezone(&Utc),
-        Err(_) => DateTime::<Utc>::UNIX_EPOCH,
+    match solstone_core_time::parse_rfc3339(raw) {
+        Ok(when) => when.timestamp(),
+        Err(_) => Timestamp::UNIX_EPOCH,
     }
 }
 
@@ -235,7 +235,7 @@ pub fn upsert_offload(
     names: Vec<String>,
     bytes: u64,
     reason: String,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Register, StoreError> {
     upsert(
         journal,
@@ -447,7 +447,7 @@ pub fn reconcile(
     journal: &Path,
     class: RemovalClass,
     proposals: &[(Target, Proposal)],
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<Register, StoreError> {
     reconcile_checked(journal, class, proposals, at, &|| Ok(()))
 }
@@ -456,7 +456,7 @@ pub fn reconcile_checked(
     journal: &Path,
     class: RemovalClass,
     proposals: &[(Target, Proposal)],
-    at: DateTime<Utc>,
+    at: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Register, StoreError> {
     let proposals = index_proposals(class, proposals)?;
@@ -516,7 +516,7 @@ pub fn upsert(
     class: RemovalClass,
     target: &Target,
     proposal: Proposal,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<Register, StoreError> {
     validate_proposal(&proposal)?;
     let id = MarkId::derive(class, target, &proposal.names);
@@ -557,7 +557,7 @@ pub fn record_failure(
     target: &Target,
     names: &[String],
     mut failure: Failure,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<Register, StoreError> {
     failure.at = format_marked_at(at);
     mutate(journal, |register| {
@@ -993,7 +993,7 @@ mod tests {
                     reason: "the staged directory needs recovery".to_owned(),
                     staged: Some(staged),
                 },
-                Utc::now(),
+                Timestamp::now(),
             )
             .unwrap();
             MarkId::derive(

@@ -22,7 +22,7 @@ workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
-chrono.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,6 +36,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-retention-client.workspace = true
+solstone-core-time.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]

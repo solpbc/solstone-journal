@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use crate::vocabulary::Platform;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 #[cfg(not(windows))]
 use solstone_core_journal::discover_home;
 use solstone_core_journal::{read_config_journal, resolve_journal_path};
@@ -55,7 +55,7 @@ pub struct CheckContext {
     pub journal_path: PathBuf,
     pub callosum_socket_path: PathBuf,
     pub platform: Platform,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     pub host_arch: String,
     pub hostname: String,
     /// The repository root, when the doctor is running from a source checkout.
@@ -128,7 +128,7 @@ impl CheckContext {
             install_bin_dir,
             journal_path,
             platform,
-            now: Utc::now(),
+            now: Timestamp::now(),
             host_arch: env::consts::ARCH.to_owned(),
             hostname,
             checkout_root,

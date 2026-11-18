@@ -6,13 +6,14 @@ mod fixture;
 
 use std::collections::HashMap;
 
-use chrono::{NaiveDateTime, TimeDelta};
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 use solstone_core_system::operational_log_parse::{
     HealthLogSinceError, ParsedHealthLogRow, parse_health_log_row, parse_health_log_since,
 };
 
-fn datetime(value: &str) -> NaiveDateTime {
-    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").expect("fixture datetime")
+fn datetime(value: &str) -> DateTime {
+    DateTime::strptime("%Y-%m-%dT%H:%M:%S", value).expect("fixture datetime")
 }
 
 #[test]
@@ -142,7 +143,7 @@ fn unicode_contract_is_exhaustive() {
         let scalar = char::from_u32(scalar).expect("fixture decimal scalar");
         assert_eq!(
             parse_health_log_since(&format!("{scalar}m"), now),
-            Ok(now - TimeDelta::try_minutes(i64::from(value)).expect("minute delta")),
+            Ok(now - SignedDuration::from_mins(i64::from(value))),
             "decimal U+{:04X}",
             scalar as u32
         );

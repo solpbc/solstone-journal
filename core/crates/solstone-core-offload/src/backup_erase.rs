@@ -27,13 +27,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_backup_runtime::engine::BackupServices;
 use solstone_core_backup_runtime::erase_paths;
 use solstone_core_backup_runtime::teardown::owned::{StorageKeeps, StorageRetention};
 use solstone_core_removals::{Action, Event, OperationId, Page, Removal, Surface};
+use solstone_core_time::Precision;
 use solstone_core_trash::backup_erase::{self, Entry, MARKER_KEY, MARKER_NAME};
 
 /// The runner's own files, beside the entries.
@@ -91,7 +92,7 @@ fn dir(journal: &Path) -> PathBuf {
 }
 
 fn now() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    solstone_core_time::utc_z(Timestamp::now(), Precision::Millis)
 }
 
 /// The runner's last word, or idle.
@@ -256,13 +257,13 @@ fn reconcile(journal: &Path, services: &BackupServices<'_>, forced: bool) {
 }
 
 /// When a failed try may come again: an hour, doubling, at most a day.
-fn next_try(attempts: u32) -> DateTime<Utc> {
+fn next_try(attempts: u32) -> Timestamp {
     let hours = 1_i64 << attempts.clamp(1, 6).saturating_sub(1);
-    Utc::now() + chrono::Duration::hours(hours.min(24))
+    Timestamp::now() + SignedDuration::from_hours(hours.min(24))
 }
 
 fn due(at: &str) -> bool {
-    DateTime::parse_from_rfc3339(at).map_or(true, |at| at.with_timezone(&Utc) <= Utc::now())
+    solstone_core_time::parse_rfc3339(at).map_or(true, |at| at.timestamp() <= Timestamp::now())
 }
 
 /// One line in the engine's own record of each outcome, with its counts.
@@ -377,7 +378,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             0
         };
         status.next_try =
-            retry.then(|| next_try(status.attempts).to_rfc3339_opts(SecondsFormat::Millis, true));
+            retry.then(|| solstone_core_time::utc_z(next_try(status.attempts), Precision::Millis));
         let (left, torn) = backup_erase::pending(journal);
         status.pending = left.len() + torn.len();
         status.updated = now();
@@ -512,7 +513,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             Held {
                 reason: reason.into(),
                 attempts,
-                next_try: next_try(attempts).to_rfc3339_opts(SecondsFormat::Millis, true),
+                next_try: solstone_core_time::utc_z(next_try(attempts), Precision::Millis),
             },
         );
     };
@@ -793,9 +794,9 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         // Durable: a run that stops before the entry is retired finds the
         // same history row again rather than writing a second. A row that
         // can't be written keeps the entry for the next run.
-        let at = DateTime::parse_from_rfc3339(&entry.erased_at)
-            .map(|at| at.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
+        let at = solstone_core_time::parse_rfc3339(&entry.erased_at)
+            .map(|at| at.timestamp())
+            .unwrap_or_else(|_| Timestamp::now());
         let written = Removal::with_id(
             journal,
             OperationId::durable(at, &format!("{}backups", entry.id)),
@@ -1001,7 +1002,7 @@ mod tests {
 
     #[test]
     fn a_failed_try_waits_an_hour_doubling_to_a_day() {
-        let hours = |attempts| (next_try(attempts) - Utc::now()).num_minutes() as f64 / 60.0;
+        let hours = |attempts| (next_try(attempts) - Timestamp::now()).as_mins() as f64 / 60.0;
         assert!((hours(1) - 1.0).abs() < 0.05);
         assert!((hours(3) - 4.0).abs() < 0.05);
         assert!((hours(40) - 24.0).abs() < 0.05);
@@ -1009,9 +1010,7 @@ mod tests {
 
     #[test]
     fn an_origin_backed_up_during_the_run_is_late_and_an_unread_listing_decides_nothing() {
-        let at = DateTime::parse_from_rfc3339("2026-11-15T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let at = "2026-11-15T12:00:00Z".parse::<Timestamp>().unwrap();
         let sent = [erase_paths::Origin {
             path: "/home/old/journal".into(),
             at,

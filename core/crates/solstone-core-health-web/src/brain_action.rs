@@ -3,7 +3,7 @@
 
 //! CLI-specific brain-health presentation for the journal-data Health API.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{
     inspect_brain_state, owner_identity_model, present_brain_inspection, provider_model_text,
@@ -12,7 +12,7 @@ use solstone_core_brain::{
 /// Build the historical `{snapshot, lines}` health-report brain payload.
 ///
 /// A failed brain inspection is a degraded report field, not a failed report.
-pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: DateTime<Utc>) -> Value {
+pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: Timestamp) -> Value {
     let Ok(config) = solstone_core_thinking::read_config(journal_root) else {
         return fallback();
     };
@@ -206,7 +206,6 @@ fn fallback() -> Value {
 mod tests {
     use std::fs;
 
-    use chrono::{TimeZone, Utc};
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -340,10 +339,8 @@ mod tests {
         let config = temporary.path().join("config/journal.json");
         fs::create_dir_all(config.parent().unwrap()).unwrap();
         fs::write(config, "{").unwrap();
-        let value = build_cli_brain_health(
-            temporary.path(),
-            Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap(),
-        );
+        let value =
+            build_cli_brain_health(temporary.path(), "2026-04-10T12:00:00Z".parse().unwrap());
         assert_eq!(value["snapshot"]["state"], "unknown");
         assert_eq!(value["snapshot"]["reason_code"], "brain_record_unavailable");
         assert_eq!(

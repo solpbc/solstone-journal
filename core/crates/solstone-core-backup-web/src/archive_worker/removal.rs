@@ -15,7 +15,7 @@ use axum::{
     Json,
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::Serialize;
 use serde_json::{Value, json};
 use solstone_core_backup::archive_admission::AdmissionError;
@@ -49,8 +49,8 @@ struct ApprovalInput {
     /// Absent only when no archive offer is selected: a local policy release.
     repository: Option<String>,
     executable: PathBuf,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 }
 
 enum UnusedRefusal {
@@ -166,8 +166,8 @@ impl ApprovalStart {
 pub fn start(
     deps: &BackupWebDeps,
     context: ReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<ApprovalStart, ApprovalStartRefusal> {
     let root: Arc<JournalRoot> = super::retained_archive_root(deps)
         .map_err(|error| ApprovalStartRefusal::Review(ReviewRefusal::Root(error)))?;
@@ -663,8 +663,8 @@ pub fn remove(
     slot: &SharedOperationSlot,
     worker: PreparedArchiveWorker,
     checked: CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) {
     // The outside owner never enters the actor's unwind boundary.
     let PreparedArchiveWorker {
@@ -823,8 +823,8 @@ fn remove_local(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     checked: CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     linked: Vec<original_trash::Linked>,
 ) {
     let ticket = ArchiveTicket(Arc::clone(&begin.ticket.0));

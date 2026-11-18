@@ -12,7 +12,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity::{EncoderIdentity, normalize_embedding};
@@ -623,7 +623,7 @@ fn propagate_speaker_correction(
             &segment.name,
             segment.layout,
             true,
-            Utc::now().timestamp_millis(),
+            Timestamp::now().as_millisecond(),
         )
         .map_err(|error| PropagationError::Failed(error.to_string()))?;
         match &outcome {
@@ -689,7 +689,7 @@ fn propagate_speaker_correction(
                         &segment.stream,
                         &segment.name,
                         &output,
-                        Utc::now().timestamp_millis(),
+                        Timestamp::now().as_millisecond(),
                     )
                     .map_err(|error| PropagationError::Failed(error.to_string()))?
                 } else {
@@ -1106,7 +1106,7 @@ fn correction(
     corrected_speaker: &str,
     original_method: Option<&str>,
 ) -> Result<(), String> {
-    solstone_core_speaker_id::corrections::append_correction(segment, json!({"sentence_id":sentence_id,"original_speaker":original_speaker,"corrected_speaker":corrected_speaker,"original_method":original_method,"timestamp":Utc::now().timestamp_millis()}).as_object().expect("correction is object").clone()).map_err(|error| error.to_string())
+    solstone_core_speaker_id::corrections::append_correction(segment, json!({"sentence_id":sentence_id,"original_speaker":original_speaker,"corrected_speaker":corrected_speaker,"original_method":original_method,"timestamp":Timestamp::now().as_millisecond()}).as_object().expect("correction is object").clone()).map_err(|error| error.to_string())
 }
 #[allow(clippy::result_large_err)]
 pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response> {
@@ -1517,9 +1517,7 @@ mod tests {
             segment("unchanged", "20261024", "121000_300"),
             segment("changed", "20261023", "120000_300"),
         ]});
-        let now = chrono::DateTime::parse_from_rfc3339("2026-10-31T12:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now: jiff::Timestamp = "2026-10-31T12:00:00Z".parse().unwrap();
         solstone_core_system::owner_ask::with_fixed_clock(now, || {
             super::ask_after_propagation(root.path(), &result);
         });

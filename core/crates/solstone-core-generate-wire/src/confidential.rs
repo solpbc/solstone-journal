@@ -1619,9 +1619,9 @@ mod tests {
         solstone_core_brain::generate_fingerprint_key(path).unwrap();
     }
 
-    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
-        let observed = now.to_rfc3339();
-        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+    fn spp_ready_evidence(now: jiff::Timestamp) -> Value {
+        let observed = solstone_core_time::utc_rfc3339(now);
+        let expires = solstone_core_time::utc_rfc3339(now + jiff::SignedDuration::from_hours(2));
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
@@ -1730,7 +1730,7 @@ mod tests {
                         let record = solstone_core_brain::inspect_brain_state(
                             &path,
                             &config,
-                            chrono::Utc::now(),
+                            jiff::Timestamp::now(),
                         )
                         .record
                         .unwrap();
@@ -1887,7 +1887,7 @@ mod tests {
                     | ConfidentialResult::AttestationNotVerified(_)
             ));
             let record =
-                solstone_core_brain::inspect_brain_state(&path, &config, chrono::Utc::now())
+                solstone_core_brain::inspect_brain_state(&path, &config, jiff::Timestamp::now())
                     .record
                     .unwrap();
             let row =
@@ -1968,7 +1968,7 @@ mod tests {
             ConfidentialResult::AttestationFailed("gateway_unreachable")
         ));
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
         assert_eq!(
@@ -2054,7 +2054,7 @@ mod tests {
             ConfidentialResult::AttestationNotVerified("nvattest_unavailable")
         ));
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
         assert_eq!(
@@ -2102,7 +2102,7 @@ mod tests {
             ConfidentialResult::AttestationFailed("tls_handshake_failed")
         ));
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "unhealthy");
         assert_eq!(
@@ -2125,7 +2125,7 @@ mod tests {
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let permit = solstone_core_brain::begin_refresh(
             &path,
             now,
@@ -2181,7 +2181,7 @@ mod tests {
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let permit = solstone_core_brain::begin_refresh(
             &path,
             now,
@@ -2217,7 +2217,7 @@ mod tests {
             ConfidentialResult::AttestationFailed("certificate_invalid")
         ));
 
-        let check_now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let check_now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, check_now);
         assert_eq!(inspection.projection.aggregate_state, "unhealthy");
         assert_eq!(

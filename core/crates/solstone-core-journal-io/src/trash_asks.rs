@@ -12,8 +12,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::Datelike;
+use jiff::Span;
 use serde_json::Value;
+use solstone_core_time::{day_key, parse_day};
 
 use crate::durability::{ArtifactId, artifact};
 
@@ -31,9 +32,11 @@ pub struct TrashPending {
 
 /// The Sunday starting the week that holds `day`.
 pub fn week_start(day: &str) -> Option<String> {
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let sunday = date - chrono::Duration::days(i64::from(date.weekday().num_days_from_sunday()));
-    Some(sunday.format("%Y%m%d").to_string())
+    let date = parse_day(day)?;
+    let sunday = date
+        .checked_sub(Span::new().days(date.weekday().to_sunday_zero_offset()))
+        .ok()?;
+    Some(day_key(sunday))
 }
 
 /// Read the trash's pending asks. No store is none pending; a store that can't

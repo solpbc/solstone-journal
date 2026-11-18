@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::TimeZone;
 #[cfg(unix)]
 use solstone_core_journal::{LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR};
 use std::{
@@ -54,7 +53,7 @@ pub(crate) fn context() -> StagedContext {
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
-            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            now: "2026-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap(),
             host_arch: "x86_64".into(),
             hostname: "test-host".into(),
             checkout_root: None,

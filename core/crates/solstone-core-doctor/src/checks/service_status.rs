@@ -268,7 +268,7 @@ pub fn fetch_observe_status(context: &CheckContext) -> Result<Value, Unavailable
                         phase: CallosumConnectionPhase::Connected,
                         ..
                     }) => {
-                        connected_watermark_ms = Some(chrono::Utc::now().timestamp_millis());
+                        connected_watermark_ms = Some(jiff::Timestamp::now().as_millisecond());
                     }
                     Some(CallosumReceiveEvent::Envelope { envelope, .. }) => {
                         let Some(watermark_ms) = connected_watermark_ms else {
@@ -277,7 +277,7 @@ pub fn fetch_observe_status(context: &CheckContext) -> Result<Value, Unavailable
                         if envelope.tract != "observe" || envelope.event != "status" {
                             continue;
                         }
-                        let now_ms = chrono::Utc::now().timestamp_millis();
+                        let now_ms = jiff::Timestamp::now().as_millisecond();
                         let Some(timestamp_ms) = envelope.ts else {
                             continue;
                         };

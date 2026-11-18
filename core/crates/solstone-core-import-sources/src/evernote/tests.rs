@@ -2,17 +2,15 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 
 use super::copy;
 use super::{
     MAX_EXPORT_BYTES, MAX_RESOURCE_BYTES, Plan, exceeds_export_ceiling, plan, proposed_notebook,
 };
 
-const TODAY: NaiveDate = match NaiveDate::from_ymd_opt(2026, 11, 9) {
-    Some(day) => day,
-    None => panic!("today"),
-};
+const TODAY: Date = jiff::civil::date(2026, 11, 9);
 
 fn journal() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
@@ -54,7 +52,7 @@ fn optional_stamp(name: &str, value: &str) -> String {
 }
 
 fn plan_at(root: &Path, path: &Path, notebook: &str) -> Plan {
-    plan(root, path, notebook, &Utc, TODAY).unwrap()
+    plan(root, path, notebook, &TimeZone::UTC, TODAY).unwrap()
 }
 
 fn keep(root: &Path, planned: &Plan) {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use solstone_core_format::content::{IndexChunk, PlaceFormatter, ProducedChunks};
 use solstone_core_journal_io::paths::Segment;
 
@@ -15,7 +15,7 @@ pub struct SegmentPlaceFormatter<'a> {
     pub tier: &'a AreaTier,
     pub packs: Option<&'a Packs>,
     pub directory: &'a dyn DeviceDirectory,
-    pub owner: Tz,
+    pub owner: &'a TimeZone,
     pub places: &'a PlaceStore,
 }
 
@@ -109,7 +109,7 @@ mod tests {
                 tier: tier(),
                 packs: None,
                 directory: &directory,
-                owner: chrono_tz::America::Denver,
+                owner: &solstone_core_time::zone("America/Denver").unwrap(),
                 places,
             };
             format_file(
@@ -160,7 +160,7 @@ mod tests {
             tier: tier(),
             packs: None,
             directory: &directory,
-            owner: chrono_tz::America::Denver,
+            owner: &solstone_core_time::zone("America/Denver").unwrap(),
             places: &places,
         };
         let result = format_file(

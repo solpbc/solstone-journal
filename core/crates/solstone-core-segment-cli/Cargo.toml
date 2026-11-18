@@ -13,13 +13,14 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
+jiff.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }

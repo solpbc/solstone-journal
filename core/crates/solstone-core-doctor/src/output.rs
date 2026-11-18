@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 use crate::vocabulary::*;
-use chrono::{SecondsFormat, Utc};
 use serde_json::json;
+use solstone_core_time::Precision;
 use std::io::Write;
 pub fn emit_json(results: &[CheckResult]) {
     println!(
@@ -77,7 +77,7 @@ pub fn emit_jsonl_to(
     duration_ms: u128,
     port: u16,
 ) {
-    let now = || Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let now = || solstone_core_time::utc_z(jiff::Timestamp::now(), Precision::Secs);
     let _ = writeln!(
         writer,
         "{}",

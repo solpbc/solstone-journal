@@ -10,7 +10,7 @@ use axum::extract::{Extension, Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::http::header::HeaderValue;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_convey_http::server_timing;
 use solstone_core_journal_io::{JournalRoot, day_dirs, day_path};
@@ -145,7 +145,7 @@ pub(crate) async fn stats(
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn counts_by_walk(
     root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<BTreeMap<String, u64>, TranscriptError> {
     day_dirs(root)
         .map_err(TranscriptError::display)?
@@ -158,7 +158,7 @@ pub(crate) fn counts_by_walk(
 pub(crate) fn day_range_count(
     root: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<u64, TranscriptError> {
     let directory = day_path(root, day, false).map_err(TranscriptError::display)?;
     if let Some(cache) = load_fresh_day_cache(&directory).map_err(TranscriptError::display)? {

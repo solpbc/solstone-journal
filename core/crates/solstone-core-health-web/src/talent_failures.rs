@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{TimeZone, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 
 /// Today's talent failures, "today" being the journal's owner-zone day.
 pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
-    today_at(root, Utc::now())
+    today_at(root, Timestamp::now())
 }
 
-fn today_at(root: &std::path::Path, now: chrono::DateTime<Utc>) -> (Vec<Value>, bool) {
+fn today_at(root: &std::path::Path, now: Timestamp) -> (Vec<Value>, bool) {
     let zone = solstone_core_journal_config::owner_zone(root);
-    let wanted = now.with_timezone(&zone).format("%Y%m%d").to_string();
+    let wanted = solstone_core_time::day_key(now.to_zoned_datetime(zone.clone()).date());
     let directory = root.join("talents");
     let Ok(entries) = std::fs::read_dir(directory) else {
         return (Vec::new(), true);
@@ -34,7 +34,7 @@ fn today_at(root: &std::path::Path, now: chrono::DateTime<Utc>) -> (Vec<Value>, 
         match std::fs::read_to_string(&path) {
             Ok(lines) => {
                 for line in lines.lines() {
-                    if let Some(value) = execution_row(line, &wanted, zone) {
+                    if let Some(value) = execution_row(line, &wanted, &zone) {
                         all.push(value);
                     }
                 }
@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for ExecutionTimestamp {
     }
 }
 
-fn execution_row(line: &str, wanted: &str, zone: Tz) -> Option<Value> {
+fn execution_row(line: &str, wanted: &str, zone: &TimeZone) -> Option<Value> {
     let timestamp = serde_json::from_str::<ExecutionTimestamp>(line).ok()?.0;
     if execution_day(timestamp.as_ref(), zone).as_deref() != Some(wanted) {
         return None;
@@ -138,14 +138,14 @@ fn timestamp(value: Option<&Value>) -> Option<i64> {
         _ => None,
     }
 }
-fn execution_day(value: Option<&Value>, zone: Tz) -> Option<String> {
+fn execution_day(value: Option<&Value>, zone: &TimeZone) -> Option<String> {
     let ts = timestamp(value)?;
     if ts <= 0 {
         return None;
     };
-    zone.timestamp_millis_opt(ts)
-        .single()
-        .map(|v| v.format("%Y%m%d").to_string())
+    Timestamp::from_millisecond(ts)
+        .ok()
+        .map(|v| solstone_core_time::day_key(v.to_zoned_datetime(zone.clone()).date()))
 }
 fn string_or_null(value: Option<&Value>) -> Value {
     value
@@ -168,7 +168,7 @@ fn use_id(value: Option<&Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{execution_day, execution_row, timestamp, use_id};
-    use chrono::{TimeZone, Utc};
+    use jiff::Timestamp;
     use serde_json::{Value, json};
 
     #[test]
@@ -183,8 +183,8 @@ mod tests {
 
     #[test]
     fn timestamp_selection_matches_full_value_parsing() {
-        let now = Utc.with_ymd_and_hms(2026, 10, 20, 0, 30, 0).unwrap();
-        let today = now.timestamp_millis();
+        let now: Timestamp = "2026-10-20T00:30:00Z".parse().unwrap();
+        let today = now.as_millisecond();
         let yesterday = today - 86_400_000;
         let lines = [
             format!(r#"{{"ts":{today},"name":"kept","status":"error"}}"#),
@@ -211,15 +211,23 @@ mod tests {
             String::new(),
         ];
         let mut selected = 0;
-        for zone in [chrono_tz::UTC, chrono_tz::America::Denver] {
+        for zone in [
+            jiff::tz::TimeZone::UTC,
+            solstone_core_time::zone("America/Denver").unwrap(),
+        ] {
             for wanted in ["20261019", "20261020"] {
                 for line in &lines {
                     let expected = serde_json::from_str::<Value>(line).ok().filter(|row| {
-                        execution_day(row.get("ts"), zone).as_deref() == Some(wanted)
+                        execution_day(row.get("ts"), &zone).as_deref() == Some(wanted)
                     });
-                    let actual = execution_row(line, wanted, zone);
+                    let actual = execution_row(line, wanted, &zone);
                     selected += usize::from(actual.is_some());
-                    assert_eq!(actual, expected, "{zone} {wanted}: {line}");
+                    assert_eq!(
+                        actual,
+                        expected,
+                        "{} {wanted}: {line}",
+                        zone.iana_name().unwrap_or_default()
+                    );
                 }
             }
         }
@@ -230,8 +238,8 @@ mod tests {
     #[test]
     fn current_execution_errors_cross_filename_days_and_keep_read_failures() {
         let root = tempfile::tempdir().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 20, 12, 0, 0).unwrap();
-        let ts = now.timestamp_millis();
+        let now: Timestamp = "2026-10-20T12:00:00Z".parse().unwrap();
+        let ts = now.as_millisecond();
         std::fs::create_dir(root.path().join("config")).unwrap();
         std::fs::write(
             root.path().join("config/journal.json"),

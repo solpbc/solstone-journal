@@ -24,7 +24,7 @@ pub struct EmbeddedSppRenewal {
 impl EmbeddedSppRenewal {
     pub fn start(journal: PathBuf) -> Self {
         let (sender, outbound) = mpsc::channel();
-        let handle = RenewalHandle::production(journal, sender, Arc::new(chrono::Utc::now));
+        let handle = RenewalHandle::production(journal, sender, Arc::new(jiff::Timestamp::now));
         if handle.startup_refresh_needed() {
             handle.startup_refresh();
         }

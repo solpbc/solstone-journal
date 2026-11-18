@@ -103,7 +103,7 @@ fn execute_fixture(
             .unwrap()
     });
     if let Some(record) = &record {
-        let home = solstone_core_home::HomeContext::new(&journal, Utc::now());
+        let home = solstone_core_home::HomeContext::new(&journal, Timestamp::now());
         let narrative = solstone_core_home::readers::load_pulse_narrative(&home, "20261105");
         assert_eq!(
             narrative.content.as_deref(),

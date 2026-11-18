@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-chrono.workspace = true
+jiff.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha1.workspace = true
@@ -19,6 +19,7 @@ thiserror.workspace = true
 ureq.workspace = true
 solstone-core-assets.workspace = true
 solstone-core-nvattest-authority.workspace = true
+solstone-core-time.workspace = true
 
 [lints]
 workspace = true

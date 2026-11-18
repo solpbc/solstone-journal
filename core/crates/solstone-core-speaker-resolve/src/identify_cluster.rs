@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, hold_entity_trust_lock, normalize_embedding,
@@ -590,8 +590,8 @@ fn plan_identify_members(
             json!({"status":"invalid_request","error":"reviewed_near_match_entity_ids is only valid for create"}),
         ));
     }
-    let planned_at = Utc::now().to_rfc3339();
-    let added_at = Utc::now().timestamp_millis();
+    let planned_at = solstone_core_time::utc_rfc3339(Timestamp::now());
+    let added_at = Timestamp::now().as_millisecond();
     // Naming a voice from a sentence the owner tapped keeps that recording's
     // voiceprints even when it overlaps; a discovered voice has no such pick.
     let owner_picked = match source {
@@ -718,7 +718,7 @@ fn execute_forward(
         );
         checkpoint_object.insert(
             "completed_at".to_owned(),
-            Value::String(Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(Timestamp::now())),
         );
         let event = event(
             request,
@@ -864,7 +864,7 @@ fn event(
         event_id,
         operation_id: operation_id.to_owned(),
         request_id: request.request_id.clone(),
-        ts: Utc::now().to_rfc3339(),
+        ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
         caller: if request.caller.is_empty() {
             CALLER.to_owned()
         } else {
@@ -1765,7 +1765,7 @@ mod tests {
         checkpoint.insert("phase_status".into(), Value::String("complete".into()));
         checkpoint.insert(
             "completed_at".into(),
-            Value::String(Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(Timestamp::now())),
         );
         append_event(
             path,
@@ -3069,7 +3069,7 @@ mod tests {
             .insert("phase_status".into(), Value::String("complete".into()));
         entity_checkpoint.fields.as_object_mut().unwrap().insert(
             "completed_at".into(),
-            Value::String(Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(Timestamp::now())),
         );
         append_event(
             &path,

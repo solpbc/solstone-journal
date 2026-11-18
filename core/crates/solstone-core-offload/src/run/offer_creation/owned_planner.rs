@@ -22,7 +22,7 @@ use super::*;
 pub struct OwnedOffloadPlanInputs {
     carrier: Arc<RootActivityCarrier>,
     planning: OffloadPlanning,
-    at: DateTime<FixedOffset>,
+    at: ZonedDateTime,
 }
 impl OwnedOffloadPlanInputs {
     pub fn carrier(&self) -> &Arc<RootActivityCarrier> {
@@ -54,12 +54,12 @@ impl OwnedOffloadPlanInputFailure {
 
 pub fn prepare_owned_offload_plan(
     original: &OwnedPreparedArchiveOperation,
-    at: DateTime<FixedOffset>,
+    at: ZonedDateTime,
 ) -> Result<OwnedOffloadPlanInputs, OwnedOffloadPlanInputFailure> {
     let carrier = Arc::clone(original.carrier());
     let mut planning = OffloadPlanning::new();
     #[cfg(any(unix, windows))]
-    let result = bound::preflight(original.as_prepared(), &mut planning, at);
+    let result = bound::preflight(original.as_prepared(), &mut planning, &at);
     #[cfg(not(any(unix, windows)))]
     let result = Err(OffloadCreationRefusal::Inputs(
         OffloadOfferRefusal::Unsupported,
@@ -436,7 +436,7 @@ pub fn create_owned_planned_offload_offers(
         let inspected = bound::inspect_plan(
             crate::run::current::CurrentArchive::Owned(admitted),
             &mut plan.planning,
-            at,
+            &at,
         );
         let selections = match inspected {
             Err(reason) => {
@@ -470,8 +470,8 @@ pub fn create_owned_planned_offload_offers(
             admitted.prepared_operation(),
             Arc::clone(&plan.carrier),
             &selections,
-            at.date_naive(),
-            at.with_timezone(&Utc),
+            at.date(),
+            at.timestamp(),
         );
         let captured = match captured {
             Ok(captured) => captured,
@@ -492,8 +492,8 @@ pub fn create_owned_planned_offload_offers(
         plan.owner = ActiveOwner::Creation(Box::new(create_owned_offload_offers(
             *admitted,
             captured,
-            at.date_naive(),
-            at.with_timezone(&Utc),
+            at.date(),
+            at.timestamp(),
         )));
         plan
     }

@@ -18,8 +18,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveDateTime};
-use chrono_tz::Tz;
+use jiff::civil::{DateTime, Time};
+use jiff::tz::TimeZone;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
 use solstone_core_format::calendar::{OwnerAddresses, When, parse_calendar_note};
@@ -53,8 +53,8 @@ pub struct ScheduledEvent {
     pub all_day: bool,
     /// Wall-clock start and end in the journal's zone. None for an all-day
     /// event; the end is None when the calendar gave none.
-    pub start: Option<NaiveDateTime>,
-    pub end: Option<NaiveDateTime>,
+    pub start: Option<DateTime>,
+    pub end: Option<DateTime>,
     /// The owner answered no.
     pub declined: bool,
     /// The known people on the invite, the owner left out, in invite order.
@@ -75,14 +75,13 @@ impl ScheduledEvent {
         let (Some(start), Some(end)) = (self.start, self.end) else {
             return false;
         };
-        let Some(midnight) = NaiveDate::parse_from_str(day, "%Y%m%d")
-            .ok()
-            .and_then(|date| date.and_hms_opt(0, 0, 0))
+        let Some(midnight) =
+            solstone_core_time::parse_day(day).map(|date| date.to_datetime(Time::midnight()))
         else {
             return false;
         };
-        let event_start = (start - midnight).num_seconds();
-        let event_end = (end - midnight).num_seconds();
+        let event_start = start.duration_since(midnight).as_secs();
+        let event_end = end.duration_since(midnight).as_secs();
         let event_length = event_end - event_start;
         if event_length <= 0 || event_length > LONGEST_ATTACHED_SECONDS {
             return false;
@@ -182,11 +181,15 @@ fn named_now(journal: &Path, entity_id: String) -> Option<InvitedPerson> {
 }
 
 /// An event as its latest note has it, with no one on it yet.
-fn scheduled_event(record: &str, zone: &Tz, owner: &OwnerAddresses) -> Option<ScheduledEvent> {
+fn scheduled_event(
+    record: &str,
+    zone: &TimeZone,
+    owner: &OwnerAddresses,
+) -> Option<ScheduledEvent> {
     let note = parse_calendar_note(record).ok()?;
     let schedule = note.schedule?;
     let wall = |when: When| match when {
-        When::Zoned(instant) => Some(instant.with_timezone(zone).naive_local()),
+        When::Zoned(instant) => Some(zone.to_datetime(instant.timestamp())),
         When::Floating(wall) => Some(wall),
         When::Date(_) => None,
     };
@@ -364,7 +367,7 @@ pub(crate) fn relink_people(
             }
         };
         // Only the title and the owner's answer matter here, not the clock.
-        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, &owner) else {
+        let Some(event) = scheduled_event(&record, &TimeZone::UTC, &owner) else {
             continue;
         };
         let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {

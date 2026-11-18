@@ -378,7 +378,7 @@ mod tests {
             vec!["raw.webm".into()],
             8,
             "legacy archive".into(),
-            chrono::DateTime::<chrono::Utc>::from_timestamp(1, 0).unwrap(),
+            jiff::Timestamp::new(1, 0).unwrap(),
         )
         .unwrap();
         segment

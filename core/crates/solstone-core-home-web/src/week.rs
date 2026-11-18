@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::Path as AxumPath;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Datelike, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::cant_open_response;
@@ -20,10 +20,12 @@ use solstone_core_home::weekly::{Said, WeekJudgment, judge, page_model, week_day
 
 use crate::Clock;
 
-fn owner_year(journal: &Path, now: DateTime<Utc>) -> i32 {
-    solstone_core_home::HomeContext::new(journal, now)
-        .local_date()
-        .year()
+fn owner_year(journal: &Path, now: Timestamp) -> i32 {
+    i32::from(
+        solstone_core_home::HomeContext::new(journal, now)
+            .local_date()
+            .year(),
+    )
 }
 
 #[derive(Deserialize)]

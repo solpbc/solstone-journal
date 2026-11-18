@@ -126,7 +126,7 @@ pub const TRASH_MOVING: &str = "a delete or recovery from imports of this kind h
 pub const TRASH_STUCK: &str = "a delete or recovery from imports of this kind stopped partway and your journal couldn't finish it, so nothing was changed. your journal keeps trying";
 
 /// How long a step may be part way before its sweep has had two tries at it.
-const STUCK_AFTER: chrono::Duration = chrono::Duration::hours(2);
+const STUCK_AFTER: jiff::SignedDuration = jiff::SignedDuration::from_hours(2);
 
 /// Whether a trash item of `source` is moving now or stopped part way. Call it
 /// holding the source's lock, before writing. A trash that can't be read counts
@@ -160,9 +160,11 @@ pub fn source_trash_held(journal: &Path, source: &str, except: &str) -> Option<&
         let since = item
             .pending
             .as_ref()
-            .and_then(|pending| chrono::DateTime::parse_from_rfc3339(&pending.at).ok())
-            .or_else(|| chrono::DateTime::parse_from_rfc3339(&item.trashed_at).ok());
-        let stuck = since.is_some_and(|since| chrono::Utc::now() - since.to_utc() > STUCK_AFTER);
+            .and_then(|pending| solstone_core_time::parse_rfc3339(&pending.at).ok())
+            .or_else(|| solstone_core_time::parse_rfc3339(&item.trashed_at).ok());
+        let stuck = since.is_some_and(|since| {
+            jiff::Timestamp::now().duration_since(since.timestamp()) > STUCK_AFTER
+        });
         if stuck {
             return Some(TRASH_STUCK);
         }

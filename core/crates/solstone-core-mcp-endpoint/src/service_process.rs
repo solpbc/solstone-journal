@@ -267,7 +267,7 @@ async fn run_endpoint_topology(
                 () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     let active = state_tls.ordinary_certificate_is_active();
                     let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
-                    if keeps_stored_state(current_state.as_ref(), active, chrono::Utc::now()) {
+                    if keeps_stored_state(current_state.as_ref(), active, jiff::Timestamp::now()) {
                         continue;
                     }
                     crate::owner_state::write_mcp_owner_state(
@@ -365,9 +365,9 @@ where
             Err(_) if shutdown_requested(shutdown) => return Ok(None),
             Err(ref error) => match first_connect_on_carrier_error(error) {
                 FirstConnectAction::StayAlive(hold, delay) => {
-                    let next_attempt = chrono::Utc::now()
-                        + chrono::Duration::from_std(delay)
-                            .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                    let next_attempt = jiff::Timestamp::now()
+                        + jiff::SignedDuration::try_from(delay)
+                            .unwrap_or(jiff::SignedDuration::from_secs(300));
                     crate::owner_state::write_mcp_hold_state(
                         journal_root,
                         hold,
@@ -377,7 +377,7 @@ where
                     );
                     let carried = crate::sme_account_replace::pending_request(
                         journal_root,
-                        chrono::Utc::now(),
+                        jiff::Timestamp::now(),
                     );
                     let mut sleep = std::pin::pin!(tokio::time::sleep(delay));
                     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -445,7 +445,7 @@ const SUBSCRIPTION_RETRY_GRACE_SECONDS: i64 = 30;
 fn keeps_stored_state(
     state: Option<&crate::owner_state::McpOwnerState>,
     certificate_active: bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> bool {
     let Some(state) = state else {
         return false;
@@ -462,7 +462,8 @@ fn keeps_stored_state(
             | "address_not_ready"
             | "address_refused"
     ) {
-        return next_attempt_at + chrono::Duration::seconds(SUBSCRIPTION_RETRY_GRACE_SECONDS) > now;
+        return next_attempt_at + jiff::SignedDuration::from_secs(SUBSCRIPTION_RETRY_GRACE_SECONDS)
+            > now;
     }
     state.certificate_leg == "not_this_week" && next_attempt_at > now && !certificate_active
 }
@@ -621,8 +622,8 @@ mod tests {
 
         let state = read_mcp_owner_state(journal.path()).expect("owner state");
         assert_eq!(state.status, status);
-        let wait = state.next_attempt_at.expect("next attempt") - chrono::Utc::now();
-        assert!((295..=300).contains(&wait.num_seconds()), "{wait}");
+        let wait = state.next_attempt_at.expect("next attempt") - jiff::Timestamp::now();
+        assert!((295..=300).contains(&wait.as_secs()), "{wait:?}");
         assert!(
             !state
                 .detail
@@ -685,7 +686,7 @@ mod tests {
             "no click, no new attempt"
         );
 
-        crate::sme_account_replace::record_request(journal.path(), chrono::Utc::now())
+        crate::sme_account_replace::record_request(journal.path(), jiff::Timestamp::now())
             .expect("click records");
         tokio::time::advance(Duration::from_secs(2)).await;
         settle().await;
@@ -705,7 +706,7 @@ mod tests {
             McpBridgeCarrierError::NeedsSubscription,
         );
         settle().await;
-        crate::sme_account_replace::record_request(journal.path(), chrono::Utc::now())
+        crate::sme_account_replace::record_request(journal.path(), jiff::Timestamp::now())
             .expect("click records");
         tokio::time::advance(Duration::from_secs(60)).await;
         settle().await;
@@ -767,7 +768,7 @@ mod tests {
     #[test]
     fn the_state_writer_leaves_a_subscription_hold_alone_while_its_retry_can_still_answer() {
         let journal = enabled_journal();
-        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        let next = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(300);
         crate::owner_state::write_mcp_hold_state(
             journal.path(),
             RegistrationHold::NeedsSubscription,
@@ -776,7 +777,7 @@ mod tests {
             next,
         );
         let state = read_mcp_owner_state(journal.path()).expect("owner state");
-        let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+        let at = |seconds: i64| next + jiff::SignedDuration::from_secs(seconds);
         assert!(
             keeps_stored_state(Some(&state), true, at(-1)),
             "hold running"
@@ -805,7 +806,7 @@ mod tests {
             RegistrationHold::AddressRefused,
         ] {
             let journal = enabled_journal();
-            let next = chrono::Utc::now() + chrono::Duration::seconds(60);
+            let next = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60);
             crate::owner_state::write_mcp_hold_state(
                 journal.path(),
                 hold,
@@ -814,7 +815,7 @@ mod tests {
                 next,
             );
             let state = read_mcp_owner_state(journal.path()).expect("owner state");
-            let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+            let at = |seconds: i64| next + jiff::SignedDuration::from_secs(seconds);
             assert!(keeps_stored_state(Some(&state), true, at(-1)), "{hold:?}");
             assert!(!keeps_stored_state(Some(&state), true, at(31)), "{hold:?}");
         }
@@ -823,7 +824,7 @@ mod tests {
     #[test]
     fn the_state_writer_leaves_a_not_accepted_hold_alone_for_the_same_window() {
         let journal = enabled_journal();
-        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        let next = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(300);
         crate::owner_state::write_mcp_hold_state(
             journal.path(),
             RegistrationHold::NotAccepted,
@@ -832,7 +833,7 @@ mod tests {
             next,
         );
         let state = read_mcp_owner_state(journal.path()).expect("owner state");
-        let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+        let at = |seconds: i64| next + jiff::SignedDuration::from_secs(seconds);
         assert!(keeps_stored_state(Some(&state), true, at(-1)));
         assert!(keeps_stored_state(Some(&state), true, at(29)));
         assert!(!keeps_stored_state(Some(&state), true, at(31)));
@@ -841,14 +842,14 @@ mod tests {
     #[test]
     fn the_certificate_allowance_hold_keeps_its_original_rules() {
         let journal = enabled_journal();
-        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        let next = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(300);
         crate::owner_state::write_mcp_rate_limit_state(
             journal.path(),
             "aaaqeaye.solstone.me",
             next,
         );
         let state = read_mcp_owner_state(journal.path()).expect("owner state");
-        let now = next - chrono::Duration::seconds(10);
+        let now = next - jiff::SignedDuration::from_secs(10);
         assert!(
             keeps_stored_state(Some(&state), false, now),
             "held while no certificate is active"
@@ -858,7 +859,11 @@ mod tests {
             "an active certificate ends the hold"
         );
         assert!(
-            !keeps_stored_state(Some(&state), false, next + chrono::Duration::seconds(1)),
+            !keeps_stored_state(
+                Some(&state),
+                false,
+                next + jiff::SignedDuration::from_secs(1)
+            ),
             "no grace after the allowance window: the subscription grace does not apply here"
         );
     }

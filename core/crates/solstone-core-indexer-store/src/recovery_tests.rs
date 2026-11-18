@@ -140,11 +140,12 @@ impl Drop for Journal {
 }
 
 fn note(index: usize) -> String {
-    let day =
-        chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + chrono::Duration::days(index as i64);
+    let day = jiff::civil::date(2026, 1, 1)
+        .checked_add(jiff::Span::new().days(index as i64))
+        .unwrap();
     format!(
         "{}/desktop/120000_300/talents/activity.md",
-        day.format("%Y%m%d")
+        solstone_core_time::day_key(day)
     )
 }
 

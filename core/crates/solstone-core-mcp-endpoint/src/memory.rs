@@ -9,7 +9,6 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use solstone_core_format::agent_memory::{
     ChainPredecessor, Coordinate, MAX_METADATA_BYTES, MAX_NOTE_BYTES, OperationRecord, Origin,
@@ -57,7 +56,7 @@ pub(crate) enum AppendResult {
 pub(crate) struct AppendReceipt {
     pub coordinate: Coordinate,
     pub origin: Origin,
-    pub created_at: DateTime<Utc>,
+    pub created_at: jiff::Timestamp,
     pub digest: String,
     pub byte_count: usize,
 }
@@ -83,7 +82,7 @@ pub(crate) fn prepare_connection_memory(
     source: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<PreparedAppend, AppendError> {
     let mut store = JournalStore::new(journal);
     store.defer_success = true;
@@ -182,7 +181,7 @@ trait AppendStore {
         operation_id: &str,
         note_digest: &str,
         byte_count: usize,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Result<AuditLocation, AdmissionFailure>;
     fn load_operation(
         &mut self,
@@ -191,7 +190,7 @@ trait AppendStore {
     fn choose_coordinate(
         &mut self,
         stream: &str,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Result<Coordinate, StoreFailure>;
     fn save_operation(
         &mut self,
@@ -235,7 +234,7 @@ trait AppendStore {
         outcome: Outcome,
         reason: Option<&str>,
         result: Option<ResultShape>,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Publication;
 }
 
@@ -264,7 +263,7 @@ pub(crate) fn append_connection_memory(
     source: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<AppendResult, AppendError> {
     append_with_source(
         &mut JournalStore::new(journal),
@@ -281,7 +280,7 @@ fn append_with<S: AppendStore>(
     verified_id: &str,
     text: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<AppendResult, AppendError> {
     let source = SourceKey::from_verified_id(verified_id);
     append_with_source(
@@ -302,7 +301,7 @@ fn append_with_source<S: AppendStore>(
     source_input: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<AppendResult, AppendError> {
     let note = text.as_bytes();
     if note.is_empty() || note.len() > MAX_NOTE_BYTES {
@@ -644,7 +643,7 @@ fn file_equals<S: AppendStore>(
 fn terminal_error<S: AppendStore>(
     store: &mut S,
     audit: &AuditLocation,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
     reason: &'static str,
     operation_id: &str,
 ) -> Result<AppendResult, AppendError> {
@@ -661,7 +660,7 @@ fn terminal_error<S: AppendStore>(
 fn write_terminal<S: AppendStore>(
     store: &mut S,
     audit: &AuditLocation,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
     outcome: Outcome,
     reason: Option<&str>,
     result: Option<ResultShape>,
@@ -925,7 +924,7 @@ impl AppendStore for JournalStore<'_> {
         operation_id: &str,
         note_digest: &str,
         byte_count: usize,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Result<AuditLocation, AdmissionFailure> {
         let mut arguments = Map::new();
         arguments.insert(
@@ -943,11 +942,11 @@ impl AppendStore for JournalStore<'_> {
             permission: None,
         };
         let zone = solstone_core_journal_config::owner_zone(self.journal);
-        match write_interaction_record(self.journal, now.with_timezone(&zone), &admission) {
+        match write_interaction_record(self.journal, &now.to_zoned_datetime(zone), &admission) {
             Ok(coordinates) => {
                 self.admission = Some(coordinates.clone());
                 Ok(AuditLocation {
-                    day: coordinates.day.format("%Y%m%d").to_string(),
+                    day: solstone_core_time::day_key(coordinates.day),
                     stream: coordinates.stream,
                     segment: coordinates.segment,
                 })
@@ -969,12 +968,12 @@ impl AppendStore for JournalStore<'_> {
     fn choose_coordinate(
         &mut self,
         stream: &str,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Result<Coordinate, StoreFailure> {
         let zone = solstone_core_journal_config::owner_zone(self.journal);
-        let owner_now = now.with_timezone(&zone);
-        let day = owner_now.format("%Y%m%d").to_string();
-        let candidate = format!("{}_1", owner_now.format("%H%M%S"));
+        let owner_now = now.to_zoned_datetime(zone);
+        let day = owner_now.strftime("%Y%m%d").to_string();
+        let candidate = format!("{}_1", owner_now.strftime("%H%M%S"));
         let parent = self.journal.join("chronicle").join(&day).join(stream);
         let occupied = self.occupied_coordinates(stream, &day)?;
         let segment = find_available_segment_with_occupied(
@@ -1198,7 +1197,7 @@ impl AppendStore for JournalStore<'_> {
         outcome: Outcome,
         reason: Option<&str>,
         result: Option<ResultShape>,
-        now: DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Publication {
         if self.defer_success
             && matches!(
@@ -1209,7 +1208,7 @@ impl AppendStore for JournalStore<'_> {
             self.pending_outcome = Some(outcome);
             return Publication::Confirmed;
         }
-        let Ok(day) = NaiveDate::parse_from_str(&location.day, "%Y%m%d") else {
+        let Some(day) = solstone_core_time::parse_day(&location.day) else {
             return Publication::NotPublished;
         };
         let coordinates = AuditCoordinates {
@@ -1304,7 +1303,7 @@ pub fn append_connection_memory_test_hook(
     verified_id: &str,
     text: &str,
     operation_id: &str,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<bool, String> {
     let source = crate::agent_state::memory_source(journal, verified_id)
         .map_err(|error| error.to_string())?;
@@ -1334,7 +1333,6 @@ pub fn append_connection_memory_test_hook(
 mod tests {
     use std::collections::{HashMap, VecDeque};
 
-    use chrono::{DateTime, TimeZone, Utc};
     use solstone_core_format::agent_memory::{
         Coordinate, OperationRecord, Readiness, SourceKey, digest,
     };
@@ -1396,7 +1394,7 @@ mod tests {
             operation_id: &str,
             note_digest: &str,
             byte_count: usize,
-            _: DateTime<Utc>,
+            _: jiff::Timestamp,
         ) -> Result<AuditLocation, AdmissionFailure> {
             self.events.push("admission".into());
             self.admissions
@@ -1426,13 +1424,13 @@ mod tests {
         fn choose_coordinate(
             &mut self,
             stream: &str,
-            now: DateTime<Utc>,
+            now: jiff::Timestamp,
         ) -> Result<Coordinate, StoreFailure> {
             self.coordinate_number += 1;
             Ok(Coordinate {
-                day: now.format("%Y%m%d").to_string(),
+                day: now.strftime("%Y%m%d").to_string(),
                 stream: stream.into(),
-                segment: format!("{}_{}", now.format("%H%M%S"), self.coordinate_number),
+                segment: format!("{}_{}", now.strftime("%H%M%S"), self.coordinate_number),
             })
         }
 
@@ -1540,7 +1538,7 @@ mod tests {
             outcome: Outcome,
             reason: Option<&str>,
             _: Option<ResultShape>,
-            _: DateTime<Utc>,
+            _: jiff::Timestamp,
         ) -> Publication {
             self.events.push("outcome".into());
             if let Some(reason) = reason {
@@ -1562,8 +1560,8 @@ mod tests {
         }
     }
 
-    fn now() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap()
+    fn now() -> jiff::Timestamp {
+        "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap()
     }
 
     #[test]
@@ -1623,7 +1621,7 @@ mod tests {
             "bearer:opaque",
             "same",
             "op",
-            now() + chrono::Duration::days(1),
+            now() + jiff::SignedDuration::from_hours(24),
         )
         .unwrap() else {
             panic!("retry append");
@@ -1752,7 +1750,7 @@ mod tests {
             },
             "note",
             "op",
-            now() + chrono::Duration::days(1),
+            now() + jiff::SignedDuration::from_hours(24),
         )
         .unwrap();
         let (AppendResult::Stored(first), AppendResult::Replayed(replay)) = (first, replay) else {
@@ -1911,7 +1909,6 @@ mod full_tests {
     use std::fs;
     use std::process::Command;
 
-    use chrono::{TimeZone, Utc};
     use solstone_core_format::agent_memory::{
         Coordinate, OperationRecord, OriginKind, Readiness, SourceKey, digest,
     };
@@ -1927,8 +1924,8 @@ mod full_tests {
             .expect("journal fixture")
     }
 
-    fn now() -> chrono::DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap()
+    fn now() -> jiff::Timestamp {
+        "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap()
     }
 
     fn authenticated<'a>(
@@ -1975,7 +1972,7 @@ mod full_tests {
             authenticated("bearer:root-alias", &source),
             "second",
             "B",
-            now() + chrono::Duration::seconds(1),
+            now() + jiff::SignedDuration::from_secs(1),
         )
         .unwrap() else {
             panic!("later append through the same root should complete");
@@ -1987,7 +1984,7 @@ mod full_tests {
                 authenticated("bearer:root-alias", &source),
                 "first",
                 "A",
-                now() + chrono::Duration::minutes(1),
+                now() + jiff::SignedDuration::from_mins(1),
             )
             .unwrap(),
             AppendResult::Replayed(first.clone())
@@ -2172,7 +2169,7 @@ mod full_tests {
         let removed = solstone_core_retention::door::remove_segments(
             journal.path(),
             std::slice::from_ref(&target),
-            &now().to_rfc3339(),
+            &solstone_core_time::utc_rfc3339(now()),
             solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
             "journal-owner",
         );
@@ -2393,7 +2390,7 @@ mod full_tests {
             authenticated("bearer:reservation", &source),
             "a",
             "A",
-            now() + chrono::Duration::minutes(5),
+            now() + jiff::SignedDuration::from_mins(5),
         )
         .unwrap() else {
             panic!("reserved operation should complete");
@@ -2450,7 +2447,7 @@ mod full_tests {
                 authenticated("bearer:marker-recovery", &source),
                 "a",
                 "A",
-                now() + chrono::Duration::minutes(1),
+                now() + jiff::SignedDuration::from_mins(1),
             ),
             Ok(AppendResult::Stored(_))
         ));

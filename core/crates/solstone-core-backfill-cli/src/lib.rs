@@ -12,7 +12,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 pub use commit::{AtomicWriter, Writer};
 
@@ -23,7 +23,7 @@ pub use commit::{AtomicWriter, Writer};
 pub fn run(
     args: &[OsString],
     journal: &Path,
-    instant: DateTime<Utc>,
+    instant: Timestamp,
     writer: &dyn Writer,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,

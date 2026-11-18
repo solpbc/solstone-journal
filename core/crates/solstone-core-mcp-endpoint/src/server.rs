@@ -865,7 +865,7 @@ fn check_connection_pause(
             let now = crate::oauth::current_time();
             if refresh_expires_at <= now {
                 return Ok(Some(ConnectionPause::Idle {
-                    refresh_expires_at: refresh_expires_at.timestamp(),
+                    refresh_expires_at: refresh_expires_at.as_second(),
                 }));
             }
         }
@@ -902,7 +902,7 @@ fn execute_tool_call(
             &authority,
             request,
             tool_name,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             tools_list_changed,
         );
     }
@@ -917,7 +917,7 @@ fn execute_tool_call(
         },
         tool_name,
         tool_arguments(request),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ) {
         Ok(output) => JsonRpcResponse::success(
             request.id.as_ref(),
@@ -3150,7 +3150,6 @@ mod tests {
 
     #[tokio::test]
     async fn memory_wire_owner_day_restart_and_immutable_notifications() {
-        use chrono::{TimeZone, Utc};
         use solstone_core_callosum::test_fixture::OneShotListener;
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(Arc::clone(&server_config)).await;
@@ -3164,7 +3163,7 @@ mod tests {
         solstone_core_indexer_store::scan::scan_journal(server.journal.path(), false).unwrap();
         crate::memory_tools::faults::set_now(
             server.journal.path(),
-            Utc.with_ymd_and_hms(2026, 9, 1, 0, 30, 0).unwrap(),
+            "2026-09-01T00:30:00Z".parse::<jiff::Timestamp>().unwrap(),
         );
         let token = server.create_unpermissioned_token("immutable original");
         let listener = OneShotListener::bind(server.journal.path().join("health/callosum.sock"));
@@ -3333,7 +3332,7 @@ mod tests {
         let removed = solstone_core_retention::door::remove_segments(
             server.journal.path(),
             &[target],
-            &chrono::Utc::now().to_rfc3339(),
+            &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
             solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
             "journal-owner",
         );
@@ -5069,7 +5068,7 @@ mod unit_tests {
             .grant_refresh_expires_at(&grant_id)
             .unwrap()
             .unwrap();
-        crate::oauth::store::set_routine_now(Some(expiry.timestamp() + 1));
+        crate::oauth::store::set_routine_now(Some(expiry.as_second() + 1));
 
         let call_idle = post(
             "tools/call",
@@ -5083,7 +5082,7 @@ mod unit_tests {
         let idle_attempts = crate::agent_state::get_attempts_for_stamp(
             journal.path(),
             &verified.id,
-            Some(&expiry.timestamp().to_string()),
+            Some(&expiry.as_second().to_string()),
         )
         .unwrap();
         assert_eq!(idle_attempts.count, 1);
@@ -5121,7 +5120,7 @@ mod unit_tests {
         let key =
             solstone_core_format::agent_memory::SourceKey::parse(format!("sha256:{hex}")).unwrap();
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let _prepared = crate::memory::prepare_connection_memory(
             journal.path(),
             crate::memory::AuthenticatedMemorySource {

@@ -783,7 +783,7 @@ mod tests {
         let record = solstone_core_brain::inspect_brain_state(
             temp.path(),
             config.config.as_ref().unwrap(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .record
         .unwrap();
@@ -943,7 +943,7 @@ mod tests {
             Some("gateway_unreachable")
         );
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let config_map = active.config.as_ref().unwrap();
         let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
@@ -986,7 +986,7 @@ mod tests {
         .unwrap_err();
         assert_deferred_reason(error, "attestation_failed");
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let config_map = active.config.as_ref().unwrap();
         let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "unhealthy");
@@ -1037,7 +1037,7 @@ mod tests {
         .unwrap_err();
         assert_deferred_reason(error, "attestation_unreachable");
 
-        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let config_map = active.config.as_ref().unwrap();
         let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
@@ -1932,7 +1932,7 @@ mod tests {
             .expect("status written");
         assert_eq!(status.reason, "nvattest_unavailable");
         assert_eq!(status.endpoint, "https://endpoint");
-        assert!(chrono::DateTime::parse_from_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
     }
 
     #[test]
@@ -1980,7 +1980,7 @@ mod tests {
             .expect("status written");
         assert_eq!(status.reason, "attestation_rejected");
         assert_eq!(status.endpoint, "not-a-url");
-        assert!(chrono::DateTime::parse_from_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
     }
 
     #[test]
@@ -2015,7 +2015,7 @@ mod tests {
             .expect("status written");
         assert_eq!(status.reason, "attestation_not_verified");
         assert_eq!(status.endpoint, "https://endpoint");
-        assert!(chrono::DateTime::parse_from_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(status.observed_at.as_ref().unwrap()).is_ok());
 
         // Active lane (spp): health/brain.json also exists
         assert!(journal_path.join("health/brain.json").exists());

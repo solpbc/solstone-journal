@@ -200,7 +200,7 @@ fn delete(root: &Path, day: &str, key: &str) {
             stream: STREAM.to_owned(),
             dir: key.to_owned(),
         }],
-        &chrono::Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         RemovalReason::OwnerSegmentDelete,
         "test",
     );
@@ -2312,7 +2312,7 @@ fn found(root: &Path, word: &str) -> Vec<String> {
         root,
         solstone_core_indexer_query::OwnerBoundary,
         &request,
-        chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap(),
+        jiff::civil::date(2026, 11, 12),
     )
     .map(|response| {
         response

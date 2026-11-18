@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use chrono::{NaiveDate, Timelike};
+use jiff::civil::{Date, Time};
 
 use crate::day::{DayLocation, Entry, LocalTime};
 use crate::places::PlaceStore;
@@ -93,14 +93,15 @@ pub fn place_at(
     days: &mut std::collections::BTreeMap<String, DayBeside>,
 ) -> Option<Beside> {
     let owner = solstone_core_journal_config::owner_zone(journal);
-    let date = chrono::DateTime::from_timestamp(instant, 0)?
-        .with_timezone(&owner)
-        .date_naive();
-    [date.pred_opt(), Some(date), date.succ_opt()]
+    let date = jiff::Timestamp::new(instant, 0)
+        .ok()?
+        .to_zoned_datetime(owner)
+        .date();
+    [date.yesterday().ok(), Some(date), date.tomorrow().ok()]
         .into_iter()
         .flatten()
         .filter_map(|date| {
-            let on = date.format("%Y%m%d").to_string();
+            let on = solstone_core_time::day_key(date);
             days.entry(on.clone())
                 .or_insert_with(|| DayBeside::read(journal, &on))
                 .at_instant(instant)
@@ -122,20 +123,20 @@ fn covered_instants(entry: &Entry, day: &str) -> Option<(i64, i64)> {
         Entry::Unreadable { .. } => return None,
     };
     let offset = first.or(last)?.offset;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let edge = |date: NaiveDate| {
-        date.and_hms_opt(0, 0, 0)?
-            .and_local_timezone(offset)
-            .single()
-            .map(|time| time.timestamp())
+    let date = solstone_core_time::parse_day(day)?;
+    let edge = |date: Date| {
+        offset
+            .to_timestamp(date.to_datetime(Time::midnight()))
+            .ok()
+            .map(|time| time.as_second())
     };
     let start = match first {
-        Some(time) => time.utc.timestamp(),
+        Some(time) => time.utc.as_second(),
         None => edge(date)?,
     };
     let end = match last {
-        Some(time) => time.utc.timestamp(),
-        None => edge(date.succ_opt()?)?,
+        Some(time) => time.utc.as_second(),
+        None => edge(date.tomorrow().ok()?)?,
     };
     (start <= end).then_some((start, end))
 }
@@ -188,7 +189,7 @@ fn covered(entry: &Entry, day: &str) -> Option<(u32, u32)> {
         } => (arrival.as_ref(), departure.as_ref()),
         Entry::Unreadable { .. } => return None,
     };
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let date = solstone_core_time::parse_day(day)?;
     let start = match first {
         None => 0,
         Some(time) => clock_on(time, date, 0)?,
@@ -202,11 +203,11 @@ fn covered(entry: &Entry, day: &str) -> Option<(u32, u32)> {
 
 /// Seconds since midnight when `time` falls on `date`; `outside` when it falls
 /// on the side of `date` that `outside` stands for; otherwise none.
-fn clock_on(time: &LocalTime, date: NaiveDate, outside: u32) -> Option<u32> {
-    let local = time.utc.with_timezone(&time.offset);
-    let on = local.date_naive();
+fn clock_on(time: &LocalTime, date: Date, outside: u32) -> Option<u32> {
+    let local = time.offset.to_datetime(time.utc);
+    let on = local.date();
     if on == date {
-        Some(local.time().num_seconds_from_midnight())
+        Some(crate::seconds_into_day(local.time()))
     } else if (on < date) == (outside == 0) {
         Some(outside)
     } else {
@@ -315,7 +316,7 @@ mod tests {
             tier(),
             None,
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         )
     }
 
@@ -334,14 +335,15 @@ mod tests {
             None,
             &PlaceStore::default(),
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         )
         .unwrap();
         // 14:02 in Denver, where the phone read near Golden; 16:02 in New York
         // and the next morning in Tokyo.
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-10-01T20:02:00Z")
+        let instant = "2026-10-01T20:02:00Z"
+            .parse::<jiff::Timestamp>()
             .unwrap()
-            .timestamp();
+            .as_second();
         for zone in ["America/Denver", "America/New_York", "Asia/Tokyo"] {
             let config = root.path().join("config/journal.json");
             std::fs::create_dir_all(config.parent().unwrap()).unwrap();

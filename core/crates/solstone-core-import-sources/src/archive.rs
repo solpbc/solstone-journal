@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -1162,7 +1162,7 @@ fn cleanup_extraction(
 }
 
 fn write_owner_metadata(path: &Path) -> Result<(), ImportSourcesError> {
-    let value = json!({"run_token": run_token(), "started_at": Utc::now().to_rfc3339()});
+    let value = json!({"run_token": run_token(), "started_at": solstone_core_time::utc_rfc3339(Timestamp::now())});
     fs::write(
         path,
         serde_json::to_vec(&value).expect("JSON value serializes"),
@@ -1482,7 +1482,7 @@ impl MergeState {
         }
     }
     fn decision(&self, state: &str, domain: &str, detail: Value) -> Result<(), ImportSourcesError> {
-        append_jsonl(&self.decision_log_path, &json!({"state": state, "domain": domain, "detail": detail, "at": Utc::now().to_rfc3339()}))
+        append_jsonl(&self.decision_log_path, &json!({"state": state, "domain": domain, "detail": detail, "at": solstone_core_time::utc_rfc3339(Timestamp::now())}))
             .map_err(|error| ImportSourcesError::DecisionLogWrite { path: self.decision_log_path.clone(), detail: error.to_string() })
     }
 }
@@ -2853,12 +2853,15 @@ fn window_span(day: &str, key: &str) -> Option<(i64, i64)> {
     if length >= 86_400 {
         return None;
     }
-    let time = chrono::NaiveTime::parse_from_str(clock, "%H%M%S").ok()?;
-    let start = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+    let time = jiff::civil::Time::strptime("%H%M%S", clock).ok()?;
+    let start = jiff::tz::Offset::UTC
+        .to_timestamp(
+            jiff::civil::Date::strptime("%Y%m%d", day)
+                .ok()?
+                .to_datetime(time),
+        )
         .ok()?
-        .and_time(time)
-        .and_utc()
-        .timestamp();
+        .as_second();
     Some((start, start + length))
 }
 

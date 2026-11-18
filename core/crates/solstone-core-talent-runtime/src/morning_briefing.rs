@@ -3,7 +3,8 @@
 
 //! Morning-briefing pre-hook.
 
-use chrono::{NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{load_activity_records, read_facet_declaration};
 use solstone_core_home::{
@@ -64,7 +65,7 @@ pub fn gate(
     if day.is_empty() {
         return Ok(GateDecision::Skip("missing day".to_owned()));
     }
-    if NaiveDate::parse_from_str(&day, "%Y%m%d").is_err() {
+    if solstone_core_time::parse_day(&day).is_none() {
         return Ok(GateDecision::Skip(format!("invalid day: {day}")));
     }
     Ok(GateDecision::Proceed)
@@ -76,10 +77,10 @@ pub fn build(
 ) -> Result<PrePostState, RuntimeOutcome> {
     let day = configured_day(prepared);
     let analysis_day =
-        NaiveDate::parse_from_str(&day, "%Y%m%d").map_err(|error| RuntimeOutcome::Skipped {
+        solstone_core_time::parse_day(&day).ok_or_else(|| RuntimeOutcome::Skipped {
             stage: "morning_briefing".into(),
             talent: prepared.name.clone(),
-            reason: format!("invalid day: {error}"),
+            reason: format!("invalid day: {day}"),
         })?;
     let state = build_briefing_state(
         &day,
@@ -242,7 +243,7 @@ fn configured_day(prepared: &PreparedTalent) -> String {
 #[cfg(test)]
 fn build_packet(
     day: &str,
-    analysis_day: NaiveDate,
+    analysis_day: Date,
     model: &str,
     context: &ExecutionContext,
 ) -> Result<Map<String, Value>, String> {
@@ -252,14 +253,14 @@ fn build_packet(
 
 fn build_briefing_state(
     day: &str,
-    analysis_day: NaiveDate,
+    analysis_day: Date,
     model: &str,
     context: &ExecutionContext,
 ) -> Result<MorningBriefingPreState, String> {
     let dates = BriefingDates::for_analysis(analysis_day).ok_or("briefing date overflow")?;
-    let presentation_day = dates.presentation.format("%Y%m%d").to_string();
+    let presentation_day = solstone_core_time::day_key(dates.presentation);
     let mut gaps = Vec::new();
-    let home = HomeContext::new(&context.journal, Utc::now());
+    let home = HomeContext::new(&context.journal, Timestamp::now());
     let facets = enabled_facet_names(&home)
         .into_iter()
         .map(|name| {
@@ -687,19 +688,15 @@ pub(crate) fn render_digest_activities(
 /// When the briefing was prepared, as a wall time on the journal's clock; home
 /// shows its hour and minute as written.
 fn generated_stamp(home: &HomeContext) -> String {
-    home.now_local().format("%Y-%m-%dT%H:%M:%S").to_string()
+    home.now_local().strftime("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
     // A pulse is never made again: on a day that lost a recording to the
     // trash, or the day after it, it may still say what that recording held.
-    let before = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .map(|date| {
-            (date - chrono::Duration::days(1))
-                .format("%Y%m%d")
-                .to_string()
-        });
+    let before = solstone_core_time::parse_day(day)
+        .and_then(|date| date.yesterday().ok())
+        .map(solstone_core_time::day_key);
     if solstone_core_segment::day_has_tombstone(&home.journal_root, day)
         || before.is_some_and(|before| {
             solstone_core_segment::day_has_tombstone(&home.journal_root, &before)
@@ -901,27 +898,20 @@ mod tests {
 
     #[test]
     fn generated_reads_the_journals_clock_not_this_computers() {
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let instant = "2026-09-30T12:00:00Z".parse::<Timestamp>().unwrap();
         let host_day = instant
-            .with_timezone(&solstone_core_journal_config::host_zone())
-            .date_naive();
-        let zone = [
-            solstone_core_journal_config::Tz::Pacific__Kiritimati,
-            solstone_core_journal_config::Tz::Etc__GMTPlus12,
+            .to_zoned_datetime(solstone_core_journal_config::host_zone())
+            .date();
+        let (zone, expected) = [
+            ("Pacific/Kiritimati", "2026-10-01T02:00:00"),
+            ("Etc/GMT+12", "2026-09-30T00:00:00"),
         ]
         .into_iter()
-        .find(|zone| instant.with_timezone(zone).date_naive() != host_day)
+        .map(|(name, expected)| (solstone_core_time::zone(name).unwrap(), expected))
+        .find(|(zone, _)| instant.to_zoned_datetime(zone.clone()).date() != host_day)
         .expect("UTC+14 and UTC-12 never share a date");
         let home = HomeContext::with_zone("journal", instant, zone);
-        assert_eq!(
-            generated_stamp(&home),
-            instant
-                .with_timezone(&zone)
-                .format("%Y-%m-%dT%H:%M:%S")
-                .to_string()
-        );
+        assert_eq!(generated_stamp(&home), expected);
     }
 
     #[test]
@@ -949,7 +939,7 @@ mod tests {
         };
         let values = build_packet(
             "20261231",
-            NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+            jiff::civil::date(2026, 12, 31),
             "test",
             &context,
         )
@@ -986,7 +976,7 @@ mod tests {
         };
         let values = build_packet(
             "20261019",
-            NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
+            jiff::civil::date(2026, 10, 19),
             "test",
             &context,
         )
@@ -1044,7 +1034,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values1 = build_packet("20261019", date, "test", &context).unwrap();
         let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
@@ -1077,7 +1067,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values1 = build_packet("20261019", date, "test", &context).unwrap();
         let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
@@ -1133,7 +1123,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values1 = build_packet("20261019", date, "test", &context).unwrap();
         let values2 = build_packet("20261019", date, "test", &context).unwrap();
         assert_eq!(
@@ -1509,7 +1499,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(digest.contains("valid_act"));
@@ -1549,7 +1539,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(
@@ -1594,7 +1584,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(digest.contains("act_valid_1"));
@@ -1639,7 +1629,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert!(
@@ -1695,7 +1685,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
         let digest = values["activity_digest"].as_str().unwrap();
         assert_eq!(digest, "(none)");
@@ -1739,7 +1729,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values = build_packet("20261019", date, "test", &context).unwrap();
 
         let metadata: Value =
@@ -1794,7 +1784,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values1 = build_packet("20261019", date, "test", &context).unwrap();
         let digest1 = values1["activity_digest"].as_str().unwrap();
         assert!(digest1.contains("source_limitation: partial_input"));
@@ -1842,7 +1832,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let date = jiff::civil::date(2026, 10, 19);
         let values1 = build_packet("20261019", date, "test", &context).unwrap();
 
         // Change only the news file

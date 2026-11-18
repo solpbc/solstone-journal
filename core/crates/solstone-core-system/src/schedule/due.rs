@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{
-    Datelike, Duration as ChronoDuration, LocalResult, NaiveDateTime, TimeZone, Timelike,
-};
-use chrono_tz::Tz;
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Map, Value};
 
 use super::config::{minute_interval, parse_weekly_day};
@@ -18,44 +17,34 @@ pub fn effective_every(every: &str) -> String {
 }
 
 /// Recompute the current hourly mark from local calendar fields.
-pub fn hour_mark(now: NaiveDateTime) -> NaiveDateTime {
-    now.date()
-        .and_hms_opt(now.hour(), 0, 0)
-        .expect("valid hour")
+pub fn hour_mark(now: DateTime) -> DateTime {
+    now.date().at(now.hour(), 0, 0, 0)
 }
 
 /// Recompute the current daily mark from local calendar fields.
-pub fn daily_mark(now: NaiveDateTime, daily_time: Option<&str>) -> NaiveDateTime {
+pub fn daily_mark(now: DateTime, daily_time: Option<&str>) -> DateTime {
     let Some((hour, minute)) = daily_time.and_then(parse_daily_time) else {
-        return now.date().and_hms_opt(0, 0, 0).expect("midnight");
+        return now.date().at(0, 0, 0, 0);
     };
-    let today = now
-        .date()
-        .and_hms_opt(hour, minute, 0)
-        .expect("valid configured time");
+    let today = now.date().at(hour, minute, 0, 0);
     if now >= today {
         today
     } else {
-        today - ChronoDuration::days(1)
+        today - SignedDuration::from_hours(24)
     }
 }
 
 /// Recompute the current weekly mark from local calendar fields.
-pub fn weekly_mark(
-    now: NaiveDateTime,
-    weekly_day: u32,
-    weekly_time: Option<&str>,
-) -> NaiveDateTime {
+pub fn weekly_mark(now: DateTime, weekly_day: u32, weekly_time: Option<&str>) -> DateTime {
     let (hour, minute) = weekly_time.and_then(parse_daily_time).unwrap_or((3, 0));
-    let days_since = (now.weekday().num_days_from_monday() + 7 - weekly_day) % 7;
-    let date = now.date() - ChronoDuration::days(i64::from(days_since));
-    let mark = date
-        .and_hms_opt(hour, minute, 0)
-        .expect("valid configured time");
+    let from_monday = u32::from(now.weekday().to_monday_zero_offset().unsigned_abs());
+    let days_since = (from_monday + 7 - weekly_day) % 7;
+    let date = now.date() - Span::new().days(i64::from(days_since));
+    let mark = date.at(hour, minute, 0, 0);
     if now >= mark {
         mark
     } else {
-        mark - ChronoDuration::weeks(1)
+        mark - SignedDuration::from_hours(24 * 7)
     }
 }
 
@@ -70,7 +59,7 @@ pub fn is_due(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,
-    now: ScheduleNow,
+    now: &ScheduleNow,
 ) -> bool {
     is_mark_due(entry, state_entry, config, now)
         || retry_at(entry, state_entry, config, now).is_some_and(|at| now.local >= at)
@@ -86,8 +75,8 @@ pub(crate) fn retry_at(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,
-    now: ScheduleNow,
-) -> Option<NaiveDateTime> {
+    now: &ScheduleNow,
+) -> Option<DateTime> {
     let mark = period_mark(entry, config, now.local)?;
     let state = state_entry?.as_object()?;
     if state
@@ -97,25 +86,22 @@ pub(crate) fn retry_at(
     {
         return None;
     }
-    let last = local_from_epoch(state.get("last_run")?.as_f64()?, now.zone)?;
+    let last = local_from_epoch(state.get("last_run")?.as_f64()?, &now.zone)?;
     if last < mark {
         return None;
     }
     let previous = state
         .get("previous_run")
         .and_then(Value::as_f64)
-        .and_then(|value| local_from_epoch(value, now.zone));
+        .and_then(|value| local_from_epoch(value, &now.zone));
     if previous.is_some_and(|previous| previous >= mark) {
         return None;
     }
-    last.checked_add_signed(ChronoDuration::seconds(FAILED_RUN_RETRY_DELAY_SECONDS))
+    last.checked_add(SignedDuration::from_secs(FAILED_RUN_RETRY_DELAY_SECONDS))
+        .ok()
 }
 
-fn period_mark(
-    entry: &ScheduleEntry,
-    config: &ScheduleConfig,
-    now: NaiveDateTime,
-) -> Option<NaiveDateTime> {
+fn period_mark(entry: &ScheduleEntry, config: &ScheduleConfig, now: DateTime) -> Option<DateTime> {
     match entry.every.as_str() {
         "daily" => Some(daily_mark(now, config.daily_time.as_deref())),
         "weekly" => {
@@ -134,7 +120,7 @@ fn is_mark_due(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,
-    now: ScheduleNow,
+    now: &ScheduleNow,
 ) -> bool {
     let Some(last_run) = state_entry
         .and_then(Value::as_object)
@@ -143,7 +129,7 @@ fn is_mark_due(
     else {
         return true;
     };
-    let Some(last) = local_from_epoch(last_run, now.zone) else {
+    let Some(last) = local_from_epoch(last_run, &now.zone) else {
         return true;
     };
     match entry.every.as_str() {
@@ -159,8 +145,8 @@ fn is_mark_due(
         }
         every => minute_interval(every).is_some_and(|minutes| {
             now.local
-                .checked_sub_signed(ChronoDuration::minutes(minutes.max(5) as i64))
-                .is_some_and(|threshold| last <= threshold)
+                .checked_sub(SignedDuration::from_mins(minutes.max(5) as i64))
+                .is_ok_and(|threshold| last <= threshold)
         }),
     }
 }
@@ -170,11 +156,11 @@ pub(crate) fn compute_next_run(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,
-    now: ScheduleNow,
+    now: &ScheduleNow,
 ) -> i64 {
     let due = is_mark_due(entry, state_entry, config, now);
     if !due && let Some(retry) = retry_at(entry, state_entry, config, now) {
-        return local_to_epoch_millis(retry, now.zone).unwrap_or(now.unix_millis);
+        return local_to_epoch_millis(retry, &now.zone).unwrap_or(now.unix_millis);
     }
     let next = match entry.every.as_str() {
         "hourly" => {
@@ -182,7 +168,7 @@ pub(crate) fn compute_next_run(
             if due {
                 mark
             } else {
-                mark + ChronoDuration::hours(1)
+                mark + SignedDuration::from_hours(1)
             }
         }
         "daily" => {
@@ -190,7 +176,7 @@ pub(crate) fn compute_next_run(
             if due {
                 mark
             } else {
-                mark + ChronoDuration::days(1)
+                mark + SignedDuration::from_hours(24)
             }
         }
         "weekly" => {
@@ -203,7 +189,7 @@ pub(crate) fn compute_next_run(
             if due {
                 mark
             } else {
-                mark + ChronoDuration::weeks(1)
+                mark + SignedDuration::from_hours(24 * 7)
             }
         }
         every => match minute_interval(every) {
@@ -212,21 +198,22 @@ pub(crate) fn compute_next_run(
                 .and_then(Value::as_object)
                 .and_then(|entry| entry.get("last_run"))
                 .and_then(Value::as_f64)
-                .and_then(|last| local_from_epoch(last, now.zone))
+                .and_then(|last| local_from_epoch(last, &now.zone))
                 .and_then(|last| {
-                    last.checked_add_signed(ChronoDuration::minutes(minutes.max(5) as i64))
+                    last.checked_add(SignedDuration::from_mins(minutes.max(5) as i64))
+                        .ok()
                 })
                 .unwrap_or(now.local),
             None => now.local,
         },
     };
-    local_to_epoch_millis(next, now.zone).unwrap_or(now.unix_millis)
+    local_to_epoch_millis(next, &now.zone).unwrap_or(now.unix_millis)
 }
 
 pub(crate) fn current_marks(
     config: &ScheduleConfig,
-    now: NaiveDateTime,
-) -> (NaiveDateTime, NaiveDateTime, NaiveDateTime) {
+    now: DateTime,
+) -> (DateTime, DateTime, DateTime) {
     let weekly_day = config
         .weekly_day
         .as_deref()
@@ -239,33 +226,37 @@ pub(crate) fn current_marks(
     )
 }
 
-pub(crate) fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_daily_time(raw: &str) -> Option<(i8, i8)> {
     let (hour, minute) = raw.split_once(':')?;
     if minute.contains(':') {
         return None;
     }
-    let hour = hour.parse().ok()?;
-    let minute = minute.parse().ok()?;
-    (hour <= 23 && minute <= 59).then_some((hour, minute))
+    let hour: u32 = hour.parse().ok()?;
+    let minute: u32 = minute.parse().ok()?;
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+    Some((i8::try_from(hour).ok()?, i8::try_from(minute).ok()?))
 }
 
-pub(crate) fn local_from_epoch(value: f64, zone: Tz) -> Option<NaiveDateTime> {
+pub(crate) fn local_from_epoch(value: f64, zone: &TimeZone) -> Option<DateTime> {
     if !value.is_finite() || value < i64::MIN as f64 || value > i64::MAX as f64 {
         return None;
     }
     let seconds = value.floor() as i64;
     let nanos = ((value - seconds as f64) * 1_000_000_000.0) as u32;
-    zone.timestamp_opt(seconds, nanos)
-        .single()
-        .map(|value| value.naive_local())
+    let nanos = i32::try_from(nanos).ok()?;
+    Timestamp::new(seconds, nanos)
+        .ok()
+        .map(|value| zone.to_datetime(value))
 }
 
-fn local_to_epoch_millis(value: NaiveDateTime, zone: Tz) -> Option<i64> {
-    match zone.from_local_datetime(&value) {
-        LocalResult::Single(value) => Some(value.timestamp_millis()),
-        LocalResult::Ambiguous(first, _) => Some(first.timestamp_millis()),
-        LocalResult::None => None,
-    }
+fn local_to_epoch_millis(value: DateTime, zone: &TimeZone) -> Option<i64> {
+    // A wall time the clocks skipped has no instant; a repeated one is its
+    // first occurrence.
+    solstone_core_time::from_local(zone, value)
+        .earliest()
+        .map(|value| value.timestamp().as_millisecond())
 }
 
 pub(crate) fn state_entry<'a>(state: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {

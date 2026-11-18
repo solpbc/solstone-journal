@@ -190,7 +190,7 @@ fn consent_matches(consent: &serde_json::Value, filesystem_type: &str, root: &Pa
         && consent["root"].as_str() == root.to_str()
         && consent["accepted_at"]
             .as_str()
-            .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
+            .is_some_and(|s| solstone_core_time::parse_rfc3339(s).is_ok())
 }
 
 #[cfg(unix)]

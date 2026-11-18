@@ -16,7 +16,7 @@ pub fn erase(args: &[String], journal: &Path) -> CliRun {
             exit_code: 2,
         };
     }
-    let swept = solstone_core_import::trash_kinds::sweep(journal, chrono::Utc::now());
+    let swept = solstone_core_import::trash_kinds::sweep(journal, jiff::Timestamp::now());
     let mut stderr = String::new();
     for failure in &swept.failed {
         stderr.push_str(&format!("trash: {failure}\n"));

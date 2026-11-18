@@ -23,18 +23,21 @@ use std::fs::{self, File};
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use chrono::{DateTime, Duration, NaiveDateTime, SecondsFormat, TimeZone};
-use chrono_tz::Tz;
+use jiff::civil::DateTime;
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, ZonedDateTime};
 use serde_json::{Value, json};
+use solstone_core_time::Precision;
 
 use solstone_core_import::RegistrySource;
 use solstone_core_ingest_resolve::segment_key_candidates;
-use solstone_core_journal_config::{owner_zone, parse_zone};
+use solstone_core_journal_config::{owner_zone, parse_zone, zone_name};
 use solstone_core_journal_io::durability::{ArtifactId, DurableObservation, observe_json_durable};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_bytes_exclusive};
 use solstone_core_segment::owner_deleted;
 
 use crate::save::{RenderedImport, SegmentFile};
+use crate::shared::epoch_second;
 
 const ACTIVITIES_CSV: &str = "activities.csv";
 const MAX_HEADER_READ_BYTES: usize = 64 * 1024;
@@ -199,7 +202,7 @@ pub struct SkipCounts {
 pub struct StravaWorkout {
     pub activity_id: u64,
     /// The row's Activity Date. Strava writes it in UTC, with no zone marker.
-    pub start_utc: NaiveDateTime,
+    pub start_utc: DateTime,
     pub activity_name: String,
     pub activity_type: String,
     pub elapsed_seconds: u64,
@@ -221,15 +224,20 @@ pub struct StravaWorkout {
 
 impl StravaWorkout {
     /// The workout's start, shown in `zone`.
-    pub fn start_in(&self, zone: Tz) -> Option<DateTime<Tz>> {
-        Some(zone.from_utc_datetime(&self.start_utc))
+    pub fn start_in(&self, zone: &TimeZone) -> Option<ZonedDateTime> {
+        Some(
+            Offset::UTC
+                .to_timestamp(self.start_utc)
+                .ok()?
+                .to_zoned_datetime(zone.clone()),
+        )
     }
 
     /// Where an earlier version placed this start: the UTC date read as wall time in
     /// `zone`. Only used to find workouts it placed at the wrong time and the
     /// deletions it recorded for them.
-    fn misread_start_in(&self, zone: Tz) -> Option<DateTime<Tz>> {
-        zone.from_local_datetime(&self.start_utc).earliest()
+    fn misread_start_in(&self, zone: &TimeZone) -> Option<ZonedDateTime> {
+        solstone_core_time::from_local(zone, self.start_utc).earliest()
     }
 }
 
@@ -254,8 +262,8 @@ pub struct ReadWorkouts {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TileSlice {
     pub index: usize,
-    pub start: DateTime<Tz>,
-    pub end: DateTime<Tz>,
+    pub start: ZonedDateTime,
+    pub end: ZonedDateTime,
     pub seconds: u64,
     pub natural_day: String,
     pub natural_key: String,
@@ -338,7 +346,7 @@ pub struct PlannedTilePublication {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Placement {
-    pub zone: Tz,
+    pub zone: TimeZone,
     /// Tiles an earlier version placed at the wrong time. They are released before
     /// the workout's tiles are written at the right time.
     pub release: Vec<PlannedTilePublication>,
@@ -625,14 +633,14 @@ fn resolve_columns(headers: &csv::ByteRecord, language: Language) -> Result<Colu
     })
 }
 
-fn parse_activity_date(raw: &str, language: Language) -> Option<NaiveDateTime> {
+fn parse_activity_date(raw: &str, language: Language) -> Option<DateTime> {
     let normalized = raw.replace(['\u{202f}', '\u{00a0}'], " ");
     let trimmed = normalized.trim();
     match language {
-        Language::English => NaiveDateTime::parse_from_str(trimmed, "%b %d, %Y, %I:%M:%S %p")
-            .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%d %b %Y, %H:%M:%S"))
+        Language::English => DateTime::strptime("%b %d, %Y, %I:%M:%S %p", trimmed)
+            .or_else(|_| DateTime::strptime("%d %b %Y, %H:%M:%S", trimmed))
             .ok(),
-        Language::German => NaiveDateTime::parse_from_str(trimmed, "%d.%m.%Y, %H:%M:%S").ok(),
+        Language::German => DateTime::strptime("%d.%m.%Y, %H:%M:%S", trimmed).ok(),
     }
 }
 
@@ -987,24 +995,28 @@ pub fn read_workouts(path: &Path, max_bytes: usize) -> Result<ReadWorkouts, Stra
     })
 }
 
-pub fn tile_workout(workout: &StravaWorkout, zone: Tz) -> Vec<TileSlice> {
+pub fn tile_workout(workout: &StravaWorkout, zone: &TimeZone) -> Vec<TileSlice> {
     let Some(start) = workout.start_in(zone) else {
         return Vec::new();
     };
     tile_from(start, workout.elapsed_seconds)
 }
 
-fn tile_from(start: DateTime<Tz>, elapsed_seconds: u64) -> Vec<TileSlice> {
+fn tile_from(start: ZonedDateTime, elapsed_seconds: u64) -> Vec<TileSlice> {
     let effective_elapsed = elapsed_seconds.max(1);
     let tile_count = effective_elapsed.div_ceil(300);
     let mut slices = Vec::with_capacity(tile_count as usize);
 
     for i in 0..tile_count {
-        let tile_start = start + Duration::seconds((300 * i) as i64);
+        let tile_start = start
+            .checked_add(SignedDuration::from_secs((300 * i) as i64))
+            .expect("a tile start is a representable time");
         let tile_seconds = 300.min(effective_elapsed - 300 * i);
-        let tile_end = tile_start + Duration::seconds(tile_seconds as i64);
-        let natural_day = tile_start.format("%Y%m%d").to_string();
-        let natural_key = format!("{}_{}", tile_start.format("%H%M%S"), tile_seconds);
+        let tile_end = tile_start
+            .checked_add(SignedDuration::from_secs(tile_seconds as i64))
+            .expect("a tile end is a representable time");
+        let natural_day = tile_start.strftime("%Y%m%d").to_string();
+        let natural_key = format!("{}_{}", tile_start.strftime("%H%M%S"), tile_seconds);
 
         slices.push(TileSlice {
             index: i as usize,
@@ -1074,11 +1086,13 @@ pub fn reopen_strava_conversion(journal: &Path) -> Result<(), String> {
 /// would have stepped to.
 #[must_use]
 pub fn misread_tile_keys(
-    start: chrono::DateTime<chrono::FixedOffset>,
+    start: &ZonedDateTime,
     elapsed_seconds: u64,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Vec<(String, String)> {
-    let Some(misread) = zone.from_local_datetime(&start.naive_utc()).earliest() else {
+    let Some(misread) =
+        solstone_core_time::from_local(zone, Offset::UTC.to_datetime(start.timestamp())).earliest()
+    else {
         return Vec::new();
     };
     tile_from(misread, elapsed_seconds)
@@ -1092,7 +1106,7 @@ pub fn misread_tile_keys(
         .collect()
 }
 
-pub fn read_zone_record(journal: &Path) -> Result<Option<Tz>, StravaError> {
+pub fn read_zone_record(journal: &Path) -> Result<Option<TimeZone>, StravaError> {
     let path = journal.join(ZONE_FILE_REL);
     if !path.exists() {
         return Ok(None);
@@ -1120,14 +1134,19 @@ pub fn read_zone_record(journal: &Path) -> Result<Option<Tz>, StravaError> {
 
 /// Refuses a zone record that already names another zone: the run placed its
 /// tiles on `zone`, and they mustn't be read on a zone they weren't placed on.
-fn held_zone_is(journal: &Path, zone: Tz) -> Result<(), StravaError> {
+fn held_zone_is(journal: &Path, zone: &TimeZone) -> Result<(), StravaError> {
     match read_zone_record(journal)? {
-        Some(held) if held != zone => Err(StravaError::ZoneChanged),
+        Some(held) if !same_zone(&held, zone) => Err(StravaError::ZoneChanged),
         _ => Ok(()),
     }
 }
 
-pub fn create_zone_record(journal: &Path, zone: Tz) -> Result<(), StravaError> {
+/// Whether two zones are the same named zone.
+fn same_zone(left: &TimeZone, right: &TimeZone) -> bool {
+    zone_name(left) == zone_name(right)
+}
+
+pub fn create_zone_record(journal: &Path, zone: &TimeZone) -> Result<(), StravaError> {
     let path = journal.join(ZONE_FILE_REL);
     if path.exists() {
         return held_zone_is(journal, zone);
@@ -1135,7 +1154,7 @@ pub fn create_zone_record(journal: &Path, zone: Tz) -> Result<(), StravaError> {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let body = format!("{{\"zone\":\"{}\"}}\n", zone.name());
+    let body = format!("{{\"zone\":\"{}\"}}\n", zone_name(zone).unwrap_or("UTC"));
     match write_bytes_exclusive(
         &path,
         body.as_bytes(),
@@ -1160,11 +1179,11 @@ struct LiveTile {
     len_num: u64,
     activity_id: u64,
     index: usize,
-    workout_start: Option<DateTime<Tz>>,
+    workout_start: Option<ZonedDateTime>,
     workout_elapsed: u64,
     import_id: String,
     zone_str: String,
-    zone: Option<Tz>,
+    zone: Option<TimeZone>,
     has_marker: bool,
     full_workout_json: Value,
 }
@@ -1180,7 +1199,7 @@ fn parse_numeric_key(day: &str, key: &str) -> Option<(u64, u64, u64)> {
 pub fn place(
     journal: &Path,
     workouts: &[StravaWorkout],
-    record_zone: Option<Tz>,
+    record_zone: Option<TimeZone>,
     fault: Option<&ReadFault>,
 ) -> Result<Placement, StravaError> {
     let days =
@@ -1354,12 +1373,11 @@ pub fn place(
                         .to_owned();
                     let zone = parse_zone(&zone_str);
 
-                    let parse_dt = |s: &str, z: Option<Tz>| -> Option<DateTime<Tz>> {
+                    let parse_dt = |s: &str, z: Option<&TimeZone>| -> Option<ZonedDateTime> {
                         let z = z?;
-                        DateTime::parse_from_rfc3339(s)
-                            .ok()?
-                            .with_timezone(&z)
-                            .into()
+                        solstone_core_time::parse_rfc3339(s)
+                            .ok()
+                            .map(|time| time.with_time_zone(z.clone()))
                     };
 
                     let workout_start_str = val
@@ -1367,7 +1385,7 @@ pub fn place(
                         .and_then(|w| w.get("start"))
                         .and_then(Value::as_str)
                         .unwrap_or("");
-                    let workout_start = parse_dt(workout_start_str, zone);
+                    let workout_start = parse_dt(workout_start_str, zone.as_ref());
                     let workout_elapsed = val
                         .get("workout")
                         .and_then(|w| w.get("elapsed_seconds"))
@@ -1424,21 +1442,22 @@ pub fn place(
         }
     }
 
-    let mut workout_zones: BTreeMap<u64, Result<Tz, ()>> = BTreeMap::new();
+    let mut workout_zones: BTreeMap<u64, Result<TimeZone, ()>> = BTreeMap::new();
     for workout in workouts {
         let matching_canonical: Vec<&LiveTile> = canonical_tiles_by_identity
             .values()
             .filter(|t| t.activity_id == workout.activity_id)
             .collect();
         if matching_canonical.is_empty() {
-            workout_zones.insert(workout.activity_id, Ok(default_zone));
+            workout_zones.insert(workout.activity_id, Ok(default_zone.clone()));
         } else {
-            let first_zone = matching_canonical[0].zone;
-            if let Some(fz) = first_zone {
-                if matching_canonical
-                    .iter()
-                    .all(|t| t.zone == first_zone && t.zone_str == matching_canonical[0].zone_str)
-                {
+            let first_zone = matching_canonical[0].zone.clone();
+            if let Some(fz) = first_zone.clone() {
+                let first_name = first_zone.as_ref().and_then(zone_name);
+                if matching_canonical.iter().all(|t| {
+                    t.zone.as_ref().and_then(zone_name) == first_name
+                        && t.zone_str == matching_canonical[0].zone_str
+                }) {
                     workout_zones.insert(workout.activity_id, Ok(fz));
                 } else {
                     workout_zones.insert(workout.activity_id, Err(()));
@@ -1455,10 +1474,10 @@ pub fn place(
     for workout in workouts {
         let zone = workout_zones
             .get(&workout.activity_id)
-            .copied()
-            .unwrap_or(Ok(default_zone))
-            .unwrap_or(default_zone);
-        if workout.start_in(zone).is_some() {
+            .and_then(|zone| zone.as_ref().ok())
+            .unwrap_or(&default_zone)
+            .clone();
+        if workout.start_in(&zone).is_some() {
             valid_workouts.push(workout.clone());
         } else {
             date_unparseable_skips += 1;
@@ -1478,21 +1497,21 @@ pub fn place(
     sorted_workouts.sort_by(|a, b| {
         let zone_a = workout_zones
             .get(&a.activity_id)
-            .copied()
-            .unwrap_or(Ok(default_zone))
-            .unwrap_or(default_zone);
+            .and_then(|zone| zone.as_ref().ok())
+            .unwrap_or(&default_zone)
+            .clone();
         let zone_b = workout_zones
             .get(&b.activity_id)
-            .copied()
-            .unwrap_or(Ok(default_zone))
-            .unwrap_or(default_zone);
+            .and_then(|zone| zone.as_ref().ok())
+            .unwrap_or(&default_zone)
+            .clone();
         let start_a = a
-            .start_in(zone_a)
-            .map(|dt| dt.timestamp())
+            .start_in(&zone_a)
+            .map(|dt| epoch_second(dt.timestamp()))
             .unwrap_or(i64::MIN);
         let start_b = b
-            .start_in(zone_b)
-            .map(|dt| dt.timestamp())
+            .start_in(&zone_b)
+            .map(|dt| epoch_second(dt.timestamp()))
             .unwrap_or(i64::MIN);
         start_a
             .cmp(&start_b)
@@ -1530,8 +1549,8 @@ pub fn place(
     for workout in &sorted_workouts {
         let zone_res = workout_zones
             .get(&workout.activity_id)
-            .copied()
-            .unwrap_or(Ok(default_zone));
+            .cloned()
+            .unwrap_or_else(|| Ok(default_zone.clone()));
 
         let workout_zone = match zone_res {
             Ok(z) => z,
@@ -1548,11 +1567,15 @@ pub fn place(
                         activity_id: workout.activity_id,
                         slice: TileSlice {
                             index: t.index,
-                            start: t.workout_start.unwrap_or_else(|| {
-                                default_zone.from_utc_datetime(&workout.start_utc)
+                            start: t.workout_start.clone().unwrap_or_else(|| {
+                                workout
+                                    .start_in(&default_zone)
+                                    .expect("a placed workout has a start")
                             }),
-                            end: t.workout_start.unwrap_or_else(|| {
-                                default_zone.from_utc_datetime(&workout.start_utc)
+                            end: t.workout_start.clone().unwrap_or_else(|| {
+                                workout
+                                    .start_in(&default_zone)
+                                    .expect("a placed workout has a start")
                             }),
                             seconds: 300,
                             natural_day: t.day.clone(),
@@ -1572,7 +1595,7 @@ pub fn place(
             }
         };
 
-        let slices = tile_workout(workout, workout_zone);
+        let slices = tile_workout(workout, &workout_zone);
         if slices.is_empty() {
             counts.incomplete_workouts += 1;
             continue;
@@ -1591,18 +1614,26 @@ pub fn place(
         // placed this workout at the wrong time. Release those tiles; the workout is
         // placed again at the right time below.
         let misread_start = workout
-            .misread_start_in(workout_zone)
-            .map(|dt| dt.timestamp());
-        let right_start = workout.start_in(workout_zone).map(|dt| dt.timestamp());
+            .misread_start_in(&workout_zone)
+            .map(|dt| epoch_second(dt.timestamp()));
+        let right_start = workout
+            .start_in(&workout_zone)
+            .map(|dt| epoch_second(dt.timestamp()));
         let misplaced = !canonical_tiles.is_empty()
             && misread_start != right_start
-            && canonical_tiles
-                .iter()
-                .all(|t| t.workout_start.map(|dt| dt.timestamp()) == misread_start);
+            && canonical_tiles.iter().all(|t| {
+                t.workout_start
+                    .as_ref()
+                    .map(|dt| epoch_second(dt.timestamp()))
+                    == misread_start
+            });
         if misplaced {
             for t in inventory.iter().filter(|t| {
                 t.activity_id == workout.activity_id
-                    && t.workout_start.map(|dt| dt.timestamp()) == misread_start
+                    && t.workout_start
+                        .as_ref()
+                        .map(|dt| epoch_second(dt.timestamp()))
+                        == misread_start
             }) {
                 release.push(PlannedTilePublication {
                     day: t.day.clone(),
@@ -1618,8 +1649,13 @@ pub fn place(
 
         if !canonical_tiles.is_empty() {
             let timing_changed = canonical_tiles.iter().any(|t| {
-                let workout_start_instant = workout.start_in(workout_zone).map(|dt| dt.timestamp());
-                let tile_start_instant = t.workout_start.map(|dt| dt.timestamp());
+                let workout_start_instant = workout
+                    .start_in(&workout_zone)
+                    .map(|dt| epoch_second(dt.timestamp()));
+                let tile_start_instant = t
+                    .workout_start
+                    .as_ref()
+                    .map(|dt| epoch_second(dt.timestamp()));
                 workout_start_instant != tile_start_instant
                     || workout.elapsed_seconds != t.workout_elapsed
             });
@@ -1633,11 +1669,15 @@ pub fn place(
                         activity_id: workout.activity_id,
                         slice: TileSlice {
                             index: t.index,
-                            start: t.workout_start.unwrap_or_else(|| {
-                                workout_zone.from_utc_datetime(&workout.start_utc)
+                            start: t.workout_start.clone().unwrap_or_else(|| {
+                                workout
+                                    .start_in(&workout_zone)
+                                    .expect("a placed workout has a start")
                             }),
-                            end: t.workout_start.unwrap_or_else(|| {
-                                workout_zone.from_utc_datetime(&workout.start_utc)
+                            end: t.workout_start.clone().unwrap_or_else(|| {
+                                workout
+                                    .start_in(&workout_zone)
+                                    .expect("a placed workout has a start")
                             }),
                             seconds: 300,
                             natural_day: t.day.clone(),
@@ -1708,10 +1748,12 @@ pub fn place(
                             .and_then(|w| w.get("start"))
                             .and_then(Value::as_str)
                             .unwrap_or("");
-                        let stored_inst = DateTime::parse_from_rfc3339(raw_st)
+                        let stored_inst = solstone_core_time::parse_rfc3339(raw_st)
                             .ok()
-                            .map(|dt| dt.timestamp());
-                        let target_inst = workout.start_in(workout_zone).map(|dt| dt.timestamp());
+                            .map(|dt| epoch_second(dt.timestamp()));
+                        let target_inst = workout
+                            .start_in(&workout_zone)
+                            .map(|dt| epoch_second(dt.timestamp()));
                         stored_inst == target_inst
                     };
 
@@ -1721,20 +1763,20 @@ pub fn place(
                             .and_then(|t| t.get("start"))
                             .and_then(Value::as_str)
                             .unwrap_or("");
-                        DateTime::parse_from_rfc3339(raw_st)
+                        solstone_core_time::parse_rfc3339(raw_st)
                             .ok()
-                            .map(|dt| dt.timestamp())
-                            == Some(slice.start.timestamp())
+                            .map(|dt| epoch_second(dt.timestamp()))
+                            == Some(epoch_second(slice.start.timestamp()))
                     };
                     let tile_end_eq = {
                         let raw_end = tile_obj
                             .and_then(|t| t.get("end"))
                             .and_then(Value::as_str)
                             .unwrap_or("");
-                        DateTime::parse_from_rfc3339(raw_end)
+                        solstone_core_time::parse_rfc3339(raw_end)
                             .ok()
-                            .map(|dt| dt.timestamp())
-                            == Some(slice.end.timestamp())
+                            .map(|dt| epoch_second(dt.timestamp()))
+                            == Some(epoch_second(slice.end.timestamp()))
                     };
 
                     // Every other column the export kept: the owner's description,
@@ -2082,7 +2124,7 @@ pub fn apply(placement: &Placement, creating_import_id: &str) -> RenderedImport 
                 let json_str = format_workout_tile(
                     creating_import_id,
                     workout.activity_id,
-                    placement.zone.name(),
+                    zone_name(&placement.zone).unwrap_or("UTC"),
                     slice.index,
                     workout.elapsed_seconds.max(1).div_ceil(300),
                     &slice.start,
@@ -2391,8 +2433,8 @@ fn format_workout_tile(
     zone_name: &str,
     tile_index: usize,
     tile_count: u64,
-    tile_start: &DateTime<Tz>,
-    tile_end: &DateTime<Tz>,
+    tile_start: &ZonedDateTime,
+    tile_end: &ZonedDateTime,
     tile_seconds: u64,
     workout: &StravaWorkout,
 ) -> String {
@@ -2407,11 +2449,19 @@ fn format_workout_tile(
     tile_map.insert("count".to_owned(), json!(tile_count));
     tile_map.insert(
         "start".to_owned(),
-        json!(tile_start.to_rfc3339_opts(SecondsFormat::Secs, false)),
+        json!(solstone_core_time::zoned_rfc3339(
+            tile_start,
+            Precision::Secs,
+            false
+        )),
     );
     tile_map.insert(
         "end".to_owned(),
-        json!(tile_end.to_rfc3339_opts(SecondsFormat::Secs, false)),
+        json!(solstone_core_time::zoned_rfc3339(
+            tile_end,
+            Precision::Secs,
+            false
+        )),
     );
     tile_map.insert("seconds".to_owned(), json!(tile_seconds));
     map.insert("tile".to_owned(), Value::Object(tile_map));
@@ -2423,8 +2473,8 @@ fn format_workout_tile(
         "start".to_owned(),
         json!(
             workout
-                .start_in(tile_start.timezone())
-                .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Secs, false))
+                .start_in(tile_start.time_zone())
+                .map(|dt| solstone_core_time::zoned_rfc3339(&dt, Precision::Secs, false))
                 .unwrap_or_default()
         ),
     );
@@ -2541,7 +2591,8 @@ pub fn format_count_summary(counts: &PlacementCounts) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use jiff::tz::TimeZone;
+    use solstone_core_journal_config::zone_name;
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -2863,10 +2914,7 @@ mod tests {
 
     #[test]
     fn test_tiler_durations_and_zero_rounding() {
-        let start_utc = NaiveDate::from_ymd_opt(2026, 3, 5)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap();
+        let start_utc = jiff::civil::date(2026, 3, 5).at(10, 0, 0, 0);
         let w_3600 = StravaWorkout {
             activity_id: 1,
             start_utc,
@@ -2886,7 +2934,7 @@ mod tests {
             strava_fields: BTreeMap::new(),
         };
 
-        let slices_3600 = tile_workout(&w_3600, Tz::UTC);
+        let slices_3600 = tile_workout(&w_3600, &TimeZone::UTC);
         assert_eq!(slices_3600.len(), 12);
         assert_eq!(slices_3600[0].seconds, 300);
         assert_eq!(slices_3600[11].seconds, 300);
@@ -2896,7 +2944,7 @@ mod tests {
             elapsed_seconds: 3650,
             ..w_3600.clone()
         };
-        let slices_3650 = tile_workout(&w_3650, Tz::UTC);
+        let slices_3650 = tile_workout(&w_3650, &TimeZone::UTC);
         assert_eq!(slices_3650.len(), 13);
         assert_eq!(slices_3650[12].seconds, 50);
         assert_eq!(slices_3650[12].natural_key, "110000_50");
@@ -2905,21 +2953,18 @@ mod tests {
             elapsed_seconds: 0,
             ..w_3600.clone()
         };
-        let slices_0 = tile_workout(&w_0, Tz::UTC);
+        let slices_0 = tile_workout(&w_0, &TimeZone::UTC);
         assert_eq!(slices_0.len(), 1);
         assert_eq!(slices_0[0].seconds, 1);
         assert_eq!(slices_0[0].natural_key, "100000_1");
 
-        let midnight_start = NaiveDate::from_ymd_opt(2026, 3, 5)
-            .unwrap()
-            .and_hms_opt(23, 58, 0)
-            .unwrap();
+        let midnight_start = jiff::civil::date(2026, 3, 5).at(23, 58, 0, 0);
         let w_midnight = StravaWorkout {
             start_utc: midnight_start,
             elapsed_seconds: 600,
             ..w_3600.clone()
         };
-        let slices_mid = tile_workout(&w_midnight, Tz::UTC);
+        let slices_mid = tile_workout(&w_midnight, &TimeZone::UTC);
         assert_eq!(slices_mid.len(), 2);
         assert_eq!(slices_mid[0].natural_day, "20260305");
         assert_eq!(slices_mid[0].natural_key, "235800_300");
@@ -2929,11 +2974,8 @@ mod tests {
 
     #[test]
     fn test_tiler_dst_fall_back_denver_oracle() {
-        let start = NaiveDate::from_ymd_opt(2026, 11, 1)
-            .unwrap()
-            .and_hms_opt(7, 30, 0)
-            .unwrap();
-        let denver = chrono_tz::America::Denver;
+        let start = jiff::civil::date(2026, 11, 1).at(7, 30, 0, 0);
+        let denver = solstone_core_time::zone("America/Denver").unwrap();
         let w = StravaWorkout {
             activity_id: 999,
             start_utc: start,
@@ -3002,14 +3044,21 @@ mod tests {
     fn a_zone_record_naming_another_zone_stops_a_run_placed_on_its_own() {
         let tmp = TempDir::new().unwrap();
         let journal = tmp.path();
-        create_zone_record(journal, chrono_tz::Asia::Tokyo).unwrap();
+        create_zone_record(journal, &solstone_core_time::zone("Asia/Tokyo").unwrap()).unwrap();
         // The same zone is what a repeat import finds: nothing to say.
-        create_zone_record(journal, chrono_tz::Asia::Tokyo).unwrap();
-        let refused = create_zone_record(journal, chrono_tz::America::Denver).unwrap_err();
+        create_zone_record(journal, &solstone_core_time::zone("Asia/Tokyo").unwrap()).unwrap();
+        let refused = create_zone_record(
+            journal,
+            &solstone_core_time::zone("America/Denver").unwrap(),
+        )
+        .unwrap_err();
         assert_eq!(refused.code(), "strava_zone_changed");
         assert_eq!(
-            read_zone_record(journal).unwrap(),
-            Some(chrono_tz::Asia::Tokyo)
+            read_zone_record(journal)
+                .unwrap()
+                .as_ref()
+                .and_then(zone_name),
+            Some("Asia/Tokyo")
         );
     }
 
@@ -3020,10 +3069,13 @@ mod tests {
 
         assert_eq!(read_zone_record(journal).unwrap(), None);
 
-        create_zone_record(journal, chrono_tz::Asia::Tokyo).unwrap();
+        create_zone_record(journal, &solstone_core_time::zone("Asia/Tokyo").unwrap()).unwrap();
         assert_eq!(
-            read_zone_record(journal).unwrap(),
-            Some(chrono_tz::Asia::Tokyo)
+            read_zone_record(journal)
+                .unwrap()
+                .as_ref()
+                .and_then(zone_name),
+            Some("Asia/Tokyo")
         );
 
         let zone_file = journal.join("imports/.strava-zone.json");
@@ -3128,10 +3180,7 @@ mod tests {
 
     #[test]
     fn test_format_workout_tile_timestamp_has_no_fractional_seconds() {
-        let start_utc = NaiveDate::from_ymd_opt(2026, 3, 5)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap();
+        let start_utc = jiff::civil::date(2026, 3, 5).at(10, 0, 0, 0);
         let w = StravaWorkout {
             activity_id: 42,
             start_utc,
@@ -3150,8 +3199,13 @@ mod tests {
             entered_by_hand: false,
             strava_fields: BTreeMap::new(),
         };
-        let start = Tz::UTC.from_utc_datetime(&start_utc);
-        let end = start + Duration::seconds(300);
+        let start = jiff::tz::Offset::UTC
+            .to_timestamp(start_utc)
+            .unwrap()
+            .to_zoned_datetime(TimeZone::UTC);
+        let end = start
+            .checked_add(jiff::SignedDuration::from_secs(300))
+            .unwrap();
         let json_str =
             format_workout_tile("20260305_120000", 42, "UTC", 1, 1, &start, &end, 300, &w);
         let v: Value = serde_json::from_str(&json_str).unwrap();
@@ -3543,18 +3597,12 @@ mod tests {
         assert_eq!(res.workouts.len(), 3);
         assert_eq!(
             res.workouts[0].start_utc,
-            NaiveDate::from_ymd_opt(2026, 9, 20)
-                .unwrap()
-                .and_hms_opt(14, 12, 12)
-                .unwrap()
+            jiff::civil::date(2026, 9, 20).at(14, 12, 12, 0)
         );
         assert_eq!(res.workouts[0].start_utc, res.workouts[1].start_utc);
         assert_eq!(
             res.workouts[2].start_utc,
-            NaiveDate::from_ymd_opt(2024, 5, 22)
-                .unwrap()
-                .and_hms_opt(8, 19, 26)
-                .unwrap()
+            jiff::civil::date(2024, 5, 22).at(8, 19, 26, 0)
         );
 
         let p_de = temp.path().join("dates_de.csv");
@@ -3573,26 +3621,20 @@ mod tests {
         assert_eq!(res_de.workouts.len(), 1);
         assert_eq!(
             res_de.workouts[0].start_utc,
-            NaiveDate::from_ymd_opt(2024, 4, 2)
-                .unwrap()
-                .and_hms_opt(14, 5, 15)
-                .unwrap()
+            jiff::civil::date(2024, 4, 2).at(14, 5, 15, 0)
         );
     }
 
     #[test]
     fn test_denver_and_tokyo_date_keys() {
-        let denver = chrono_tz::America::Denver;
-        let tokyo = chrono_tz::Asia::Tokyo;
+        let denver = solstone_core_time::zone("America/Denver").unwrap();
+        let tokyo = solstone_core_time::zone("Asia/Tokyo").unwrap();
 
         // 2026-03-05 06:30:00 UTC
         // In Denver (UTC-7): 2026-03-04 23:30:00 -> day 20260304 key 233000
         let w_denver = StravaWorkout {
             activity_id: 1,
-            start_utc: NaiveDate::from_ymd_opt(2026, 3, 5)
-                .unwrap()
-                .and_hms_opt(6, 30, 0)
-                .unwrap(),
+            start_utc: jiff::civil::date(2026, 3, 5).at(6, 30, 0, 0),
             activity_name: "Denver Wall".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 300,
@@ -3608,7 +3650,7 @@ mod tests {
             entered_by_hand: false,
             strava_fields: BTreeMap::new(),
         };
-        let slices_denver = tile_workout(&w_denver, denver);
+        let slices_denver = tile_workout(&w_denver, &denver);
         assert_eq!(slices_denver.len(), 1);
         assert_eq!(slices_denver[0].natural_day, "20260304");
         assert_eq!(slices_denver[0].natural_key, "233000_300");
@@ -3616,10 +3658,7 @@ mod tests {
         // In Tokyo (UTC+9): 2026-03-05 15:30:00 -> day 20260305 key 153000
         let w_tokyo = StravaWorkout {
             activity_id: 2,
-            start_utc: NaiveDate::from_ymd_opt(2026, 3, 5)
-                .unwrap()
-                .and_hms_opt(6, 30, 0)
-                .unwrap(),
+            start_utc: jiff::civil::date(2026, 3, 5).at(6, 30, 0, 0),
             activity_name: "Tokyo Wall".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 300,
@@ -3635,7 +3674,7 @@ mod tests {
             entered_by_hand: false,
             strava_fields: BTreeMap::new(),
         };
-        let slices_tokyo = tile_workout(&w_tokyo, tokyo);
+        let slices_tokyo = tile_workout(&w_tokyo, &tokyo);
         assert_eq!(slices_tokyo.len(), 1);
         assert_eq!(slices_tokyo[0].natural_day, "20260305");
         assert_eq!(slices_tokyo[0].natural_key, "153000_300");
@@ -3794,7 +3833,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let journal = temp.path();
 
-        let base_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let base_date = jiff::civil::date(2026, 1, 1);
         let mut workouts = Vec::with_capacity(500);
         let mut total_expected_tiles = 0;
 
@@ -3804,8 +3843,10 @@ mod tests {
             let tile_count = elapsed_seconds.max(1).div_ceil(300) as usize;
             total_expected_tiles += tile_count;
 
-            let cur_date = base_date + Duration::days((i % 100) as i64);
-            let start_utc = cur_date.and_hms_opt(7, 0, 0).unwrap();
+            let cur_date = base_date
+                .checked_add(jiff::Span::new().days((i % 100) as i64))
+                .unwrap();
+            let start_utc = cur_date.at(7, 0, 0, 0);
 
             workouts.push(StravaWorkout {
                 activity_id: 1000 + i as u64,
@@ -3830,7 +3871,7 @@ mod tests {
         let start_time = std::time::Instant::now();
 
         // First place
-        let placement1 = place(journal, &workouts, Some(Tz::UTC), None).unwrap();
+        let placement1 = place(journal, &workouts, Some(TimeZone::UTC), None).unwrap();
         assert_eq!(placement1.counts.created_tiles, total_expected_tiles);
         assert_eq!(placement1.counts.new_workouts, 500);
 
@@ -3840,7 +3881,7 @@ mod tests {
         assert_eq!(written1.created.len(), total_expected_tiles);
 
         // Second place: all unchanged
-        let placement2 = place(journal, &workouts, Some(Tz::UTC), None).unwrap();
+        let placement2 = place(journal, &workouts, Some(TimeZone::UTC), None).unwrap();
         assert_eq!(placement2.counts.created_tiles, 0);
         assert_eq!(placement2.counts.unchanged_tiles, total_expected_tiles);
         assert_eq!(placement2.counts.present_unchanged, 500);
@@ -3860,10 +3901,7 @@ mod tests {
         }
         StravaWorkout {
             activity_id: 77,
-            start_utc: NaiveDate::from_ymd_opt(2026, 10, 4)
-                .unwrap()
-                .and_hms_opt(7, 0, 0)
-                .unwrap(),
+            start_utc: jiff::civil::date(2026, 10, 4).at(7, 0, 0, 0),
             activity_name: "Hill repeats".to_owned(),
             activity_type: "Run".to_owned(),
             elapsed_seconds: 600,
@@ -3887,7 +3925,13 @@ mod tests {
         journal: &Path,
         workout: &StravaWorkout,
     ) -> (Placement, Vec<PlannedTilePublication>) {
-        let placement = place(journal, std::slice::from_ref(workout), Some(Tz::UTC), None).unwrap();
+        let placement = place(
+            journal,
+            std::slice::from_ref(workout),
+            Some(TimeZone::UTC),
+            None,
+        )
+        .unwrap();
         let rendered = apply(&placement, "20261005_090000");
         let written = crate::save::write_rendered(journal, Some("20261005_090000"), &rendered);
         assert!(written.error.is_none());

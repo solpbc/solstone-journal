@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use jiff::Timestamp;
 use serde::Deserialize;
 use solstone_core_backup::archive_activity::PreparedArchiveOperation;
 use solstone_core_backup::archive_admission::{
@@ -850,7 +851,6 @@ fn parent_fixture_for(
 // observable before the present second selected member's processing refusal.
 fn parent_selected_processing_entry(input: &Input, root: Arc<JournalRoot>) -> TestResult {
     use crate::remove_marked::{ReviewedRemovalRefusal, remove_reviewed_approved_with_test_hook};
-    use chrono::TimeZone;
 
     assert_eq!(input.marks.len(), 2);
     let mut groups = Vec::new();
@@ -960,11 +960,12 @@ fn parent_selected_processing_entry(input: &Input, root: Arc<JournalRoot>) -> Te
     assert_eq!(changed.sidecar.record, offered.processing.record);
     assert!(!changed.sidecar.has_analysis_row);
     assert!(offered.processing.has_analysis_row);
-    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 10)
+    let today = jiff::civil::Date::new(2026, 10, 10)
+        .ok()
         .ok_or_else(|| invalid("actual control date missing"))?;
-    let now = chrono::Utc
-        .with_ymd_and_hms(2026, 10, 10, 12, 0, 0)
-        .single()
+    let now = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 10, 10).at(12, 0, 0, 0))
+        .ok()
         .ok_or_else(|| invalid("actual control time missing"))?;
     let mut checkpoints = Vec::new();
     let result =
@@ -1198,7 +1199,6 @@ fn packaged_archive_parent_entry() -> TestResult {
         ReviewedCheckpoint, ReviewedRemovalRefusal, remove_reviewed_approved,
         remove_reviewed_approved_with_test_hook,
     };
-    use chrono::TimeZone;
 
     let input: Input = serde_json::from_slice(&fs::read(
         std::env::var_os("ARCHIVE_APPROVAL_PROBE_JSON")
@@ -1210,11 +1210,12 @@ fn packaged_archive_parent_entry() -> TestResult {
     }
     let mut fixture = parent_fixture(&input, &root)?;
     let original = parent_raw_observations(&fixture)?;
-    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 10)
+    let today = jiff::civil::Date::new(2026, 10, 10)
+        .ok()
         .ok_or_else(|| invalid("fixture date missing"))?;
-    let now = chrono::Utc
-        .with_ymd_and_hms(2026, 10, 10, 12, 0, 0)
-        .single()
+    let now = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 10, 10).at(12, 0, 0, 0))
+        .ok()
         .ok_or_else(|| invalid("fixture time missing"))?;
     if input.case == "parent_legacy_young" {
         fixture.mark.offload = None;
@@ -2120,7 +2121,6 @@ mod owned_finish_qualification {
         ArchiveReadState, OwnedReviewedArchiveFinish, ReviewedArchiveFinishRefusal,
         ReviewedFileRemoval, ReviewedRemovalRefusal, remove_reviewed_with_owned_archive,
     };
-    use chrono::{Datelike, TimeZone};
     use serde_json::{Value, json};
     use solstone_core_backup::archive_activity::OwnedPreparedArchiveOperation;
     use solstone_core_backup::archive_readback::ReadbackError;
@@ -2139,10 +2139,15 @@ mod owned_finish_qualification {
     struct NativeClock;
     impl Clock for NativeClock {
         fn now_unix(&self) -> i64 {
-            chrono::Utc::now().timestamp()
+            Timestamp::now().as_second()
         }
         fn iso_week(&self) -> u8 {
-            chrono::Utc::now().iso_week().week() as u8
+            jiff::tz::Offset::UTC
+                .to_datetime(Timestamp::now())
+                .date()
+                .iso_week_date()
+                .week()
+                .unsigned_abs()
         }
     }
 
@@ -2435,11 +2440,12 @@ mod owned_finish_qualification {
             "package_admission_version":env!("CARGO_PKG_VERSION")}),
         )?;
         parent_observer_cut(&input, b"admitted")?;
-        let today =
-            chrono::NaiveDate::from_ymd_opt(2026, 10, 11).ok_or_else(|| invalid("date missing"))?;
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 10, 11, 12, 0, 0)
-            .single()
+        let today = jiff::civil::Date::new(2026, 10, 11)
+            .ok()
+            .ok_or_else(|| invalid("date missing"))?;
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+            .ok()
             .ok_or_else(|| invalid("time missing"))?;
         let run = remove_reviewed_with_owned_archive(checked, read, today, now);
         assert!(Arc::ptr_eq(run.archive_journal_root(), &root));
@@ -2708,7 +2714,6 @@ mod owned_offer_qualification {
     };
     use crate::mark_mutation::BoundMutationOutcome;
     use crate::remove_marked::ArchiveReadState;
-    use chrono::{Datelike, TimeZone};
     use serde_json::json;
     use solstone_core_backup::archive_activity::OwnedPreparedArchiveOperation;
     use solstone_core_backup::archive_readback::ReadbackError;
@@ -2723,10 +2728,15 @@ mod owned_offer_qualification {
     struct NativeClock;
     impl Clock for NativeClock {
         fn now_unix(&self) -> i64 {
-            chrono::Utc::now().timestamp()
+            Timestamp::now().as_second()
         }
         fn iso_week(&self) -> u8 {
-            chrono::Utc::now().iso_week().week() as u8
+            jiff::tz::Offset::UTC
+                .to_datetime(Timestamp::now())
+                .date()
+                .iso_week_date()
+                .week()
+                .unsigned_abs()
         }
     }
 
@@ -2799,11 +2809,12 @@ mod owned_offer_qualification {
             clock.clone(),
         )
         .map_err(|e| invalid(&format!("actual original preparation: {:?}", e.reason())))?;
-        let today =
-            chrono::NaiveDate::from_ymd_opt(2026, 10, 11).ok_or_else(|| invalid("date missing"))?;
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 10, 11, 12, 0, 0)
-            .single()
+        let today = jiff::civil::Date::new(2026, 10, 11)
+            .ok()
+            .ok_or_else(|| invalid("date missing"))?;
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+            .ok()
             .ok_or_else(|| invalid("time missing"))?;
         let observed = capture_offload_offers(
             operation.as_prepared(),

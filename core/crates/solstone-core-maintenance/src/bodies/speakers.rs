@@ -63,7 +63,7 @@ pub(crate) fn backfill_labels(args: &[String], journal: &Path) -> CliRun {
         commit: true,
         reattribute: false,
         accumulation: false,
-        now_ms: chrono::Utc::now().timestamp_millis(),
+        now_ms: jiff::Timestamp::now().as_millisecond(),
     };
     match solstone_core_speaker_resolve::backfill_coordinator::run_backfill_blocking(
         journal, &request,

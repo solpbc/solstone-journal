@@ -139,7 +139,7 @@ pub mod test_support {
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use solstone_core_cli::THINK_USAGE;
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_segment::SUPERVISOR_MESSAGE;
@@ -184,7 +184,7 @@ pub fn run_cli(
     sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> CliRun {
     let event_clock: Arc<dyn Fn() -> i64 + Send + Sync> =
-        Arc::new(|| chrono::Utc::now().timestamp_millis());
+        Arc::new(|| jiff::Timestamp::now().as_millisecond());
     let start_clock = Arc::clone(&event_clock);
     run_cli_with_event_clock(
         args,
@@ -192,9 +192,9 @@ pub fn run_cli(
         |name| std::env::var(name).ok(),
         || solstone_core_segment::is_solstone_up(journal),
         || {
-            chrono::Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-                .date_naive()
+            jiff::Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+                .date()
         },
         move || start_clock(),
         Some(event_clock),
@@ -236,7 +236,7 @@ pub fn requires_daily_lifecycle(raw_args: &[String]) -> bool {
         return false;
     }
     if let Some(day) = parsed.day.as_deref()
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
+        && solstone_core_time::parse_day(day).is_none()
     {
         return false;
     }
@@ -279,7 +279,7 @@ pub fn run_cli_with<E, C, N, M, P, R, B>(
 where
     E: Fn(&str) -> Option<String>,
     C: FnOnce() -> bool,
-    N: Fn() -> NaiveDate,
+    N: Fn() -> Date,
     M: Fn() -> i64,
     P: Fn() -> Option<usize>,
     R: Fn() -> (bool, LocalEndpointResolution),
@@ -317,7 +317,7 @@ fn run_cli_with_event_clock<E, C, N, M, P, R, B>(
 where
     E: Fn(&str) -> Option<String>,
     C: FnOnce() -> bool,
-    N: Fn() -> NaiveDate,
+    N: Fn() -> Date,
     M: Fn() -> i64,
     P: Fn() -> Option<usize>,
     R: Fn() -> (bool, LocalEndpointResolution),
@@ -450,9 +450,9 @@ fn format_cli_run(result: Result<CliRun, CliError>) -> CliRun {
 
 /// Select the same owner day as the native command before constructing a
 /// hosted context. Parsing here never creates a day or changes journal state.
-pub fn hosted_command_day(raw_args: &[String], today: NaiveDate) -> Result<String, String> {
+pub fn hosted_command_day(raw_args: &[String], today: Date) -> Result<String, String> {
     let selected = match args::parse(raw_args)? {
-        args::ParseOutcome::Help => today.format("%Y%m%d").to_string(),
+        args::ParseOutcome::Help => solstone_core_time::day_key(today),
         args::ParseOutcome::Args(parsed) => day::selected_day(
             parsed.day.as_deref(),
             parsed.cadence || parsed.settle,
@@ -477,19 +477,15 @@ pub fn hosted_inspection(journal: &Path, raw_args: &[String]) -> Option<CliRun> 
             exit_code: 0,
         }),
         args::ParseOutcome::Args(parsed) if parsed.updated => {
-            let today = chrono::Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-                .date_naive();
+            let today = jiff::Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+                .date();
             Some(format_cli_run(updated_run(journal, today, &parsed)))
         }
         _ => None,
     }
 }
-fn updated_run(
-    journal: &Path,
-    today: NaiveDate,
-    parsed: &args::ThinkArgs,
-) -> Result<CliRun, CliError> {
+fn updated_run(journal: &Path, today: Date, parsed: &args::ThinkArgs) -> Result<CliRun, CliError> {
     let offenders = args::updated_offenders(parsed);
     if !offenders.is_empty() {
         return Err(CliError::Usage {
@@ -524,9 +520,9 @@ pub fn run_hosted_command(
             context
                 .checkpoint()
                 .map_err(|message| CliError::InvalidDay { message })?;
-            let today = chrono::Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(&context.journal))
-                .date_naive();
+            let today = jiff::Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(&context.journal))
+                .date();
             return updated_run(&context.journal, today, &parsed);
         }
 
@@ -718,7 +714,7 @@ fn execute_parsed_command(
             &source,
             &context.journal,
             &context.day,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         ) {
             Ok((_, _, entries)) => entries
                 .into_iter()
@@ -1189,7 +1185,6 @@ mod tests {
     use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 
-    use chrono::NaiveDate;
     use filetime::{FileTime, set_file_mtime};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use serde_json::{Map, Value};
@@ -1346,7 +1341,7 @@ mod tests {
     }
 
     fn oplog_records(journal: &Path, day: &str, run: &str) -> Vec<Value> {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let day = solstone_core_time::parse_day(day).unwrap();
         catalog_oplogs(JournalRoot::open(journal).unwrap(), &[day])
             .unwrap()
             .into_catalogued_entries()
@@ -1433,8 +1428,8 @@ mod tests {
             .clone()
     }
 
-    fn today() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 8, 14).unwrap()
+    fn today() -> Date {
+        jiff::civil::date(2026, 8, 14)
     }
 
     fn run_at(journal: &Path, args: &[&str]) -> CliRun {
@@ -1564,7 +1559,7 @@ mod tests {
             journal,
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
-            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            || jiff::civil::date(2026, 1, 1),
             move || now_ms,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
@@ -1633,18 +1628,18 @@ mod tests {
     }
 
     fn write_health_event(journal: &Path, day: &str, event: &str) {
-        let instant = NaiveDate::parse_from_str(day, "%Y%m%d")
+        let instant = solstone_core_time::parse_day(day)
             .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .fixed_offset();
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .unwrap();
+        let instant = solstone_core_time::at_offset(instant.timestamp(), jiff::tz::Offset::UTC);
         let mut writer = create_oplog_at(
             JournalRoot::open(journal).unwrap(),
             "think",
             "test",
             OplogFormat::Jsonl,
-            instant,
+            &instant,
         )
         .unwrap();
         writer.write_all(event.as_bytes()).unwrap();
@@ -1875,12 +1870,12 @@ mod tests {
     fn weekly_reflection_uses_the_week_start_output_and_prompt_only_for_that_key() {
         let journal = tempdir().unwrap();
         // The run starts the next day, as a scheduled run does.
-        let started = NaiveDate::from_ymd_opt(2026, 8, 14)
+        let started = jiff::civil::date(2026, 8, 14)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
             .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
+            .timestamp()
+            .as_millisecond();
         let (context, recorder) = recorder_context(journal.path(), "20260813", started);
         let runtime = dispatch::runtime().unwrap();
         let mut reflection = talent(Map::from_iter([(
@@ -1945,7 +1940,6 @@ mod tests {
     /// returns the week start the request carries after checking that its
     /// day, `SOL_DAY` and output path agree.
     fn dispatched_weekly_reflection_start(day: &str, started: &str) -> String {
-        use chrono::TimeZone;
         let journal = tempdir().unwrap();
         let config_path = journal.path().join("config/journal.json");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
@@ -1954,12 +1948,15 @@ mod tests {
             r#"{"identity":{"timezone":"America/Denver"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
         )
         .unwrap();
-        let started = chrono::NaiveDateTime::parse_from_str(started, "%Y%m%d %H:%M").unwrap();
-        let now_ms = chrono_tz::America::Denver
-            .from_local_datetime(&started)
-            .single()
-            .unwrap()
-            .timestamp_millis();
+        let started = jiff::civil::DateTime::strptime("%Y%m%d %H:%M", started).unwrap();
+        let now_ms = solstone_core_time::from_local(
+            &solstone_core_time::zone("America/Denver").unwrap(),
+            started,
+        )
+        .single()
+        .unwrap()
+        .timestamp()
+        .as_millisecond();
         let (context, recorder) = recorder_context(journal.path(), day, now_ms);
         let runtime = dispatch::runtime().unwrap();
         let mut reflection = talent(Map::from_iter([(
@@ -2028,7 +2025,7 @@ mod tests {
     fn scheduled_sunday_weekly_reflection_covers_the_week_that_just_ended() {
         // The schedule runs `think --weekly` with no `--day` early on Sunday,
         // so the think day is yesterday's Saturday, which has ended.
-        let sunday = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
+        let sunday = jiff::civil::date(2026, 10, 25);
         let day = day::selected_day(None, false, sunday);
         assert_eq!(day, "20261024");
         assert_eq!(
@@ -3455,7 +3452,7 @@ mod tests {
                 journal.path(),
                 move |name| env.and_then(|(key, value)| (name == key).then(|| value.to_owned())),
                 move || up,
-                || NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+                || jiff::civil::date(2026, 8, 14),
                 || 1_785_000_000_000,
                 || Some(8),
                 || (false, LocalEndpointResolution::Bundled),
@@ -3485,7 +3482,7 @@ mod tests {
             journal.path(),
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
-            || NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+            || jiff::civil::date(2026, 8, 14),
             || 1_785_000_000_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
@@ -3515,7 +3512,7 @@ mod tests {
 
     #[test]
     fn day_defaulting_uses_injected_clock_for_cadence_and_daily() {
-        let today = NaiveDate::from_ymd_opt(2026, 8, 14).unwrap();
+        let today = jiff::civil::date(2026, 8, 14);
         assert_eq!(day::selected_day(None, true, today), "20260814");
         assert_eq!(day::selected_day(None, false, today), "20260813");
     }
@@ -3736,7 +3733,7 @@ mod tests {
         assert_eq!(first.exit_code, 1);
         assert_eq!(second.exit_code, 1);
 
-        let day = today().pred_opt().unwrap();
+        let day = today().yesterday().unwrap();
         let snapshot = catalog_oplogs(JournalRoot::open(root.path()).unwrap(), &[day]).unwrap();
         let mut leaves = snapshot
             .into_catalogued_entries()
@@ -4895,7 +4892,7 @@ mod tests {
                 journal.path(),
                 |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
                 || false,
-                || NaiveDate::from_ymd_opt(2026, 8, 13).unwrap(),
+                || jiff::civil::date(2026, 8, 13),
                 || 1_786_615_200_000,
                 || Some(8),
                 || (false, LocalEndpointResolution::Bundled),
@@ -6577,7 +6574,7 @@ mod tests {
             journal.path(),
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
-            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            || jiff::civil::date(2026, 1, 1),
             || 1_767_225_600_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
@@ -6596,7 +6593,7 @@ mod tests {
             journal.path(),
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
-            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            || jiff::civil::date(2026, 1, 1),
             || 1_767_225_600_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
@@ -6653,12 +6650,12 @@ mod tests {
         );
         let day_dir = day::create_day(journal.path(), "20260813").unwrap();
         // The run starts the next day, as a scheduled run does.
-        let started = NaiveDate::from_ymd_opt(2026, 8, 14)
+        let started = jiff::civil::date(2026, 8, 14)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
             .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
+            .timestamp()
+            .as_millisecond();
         let context = context::ThinkContext::new(
             journal.path(),
             "20260813".to_owned(),
@@ -6870,12 +6867,11 @@ mod tests {
         runtime.block_on(async {
             use axum::body::{Body, to_bytes};
             use axum::http::Request;
-            use chrono::TimeZone;
             use tower::ServiceExt;
             let app = solstone_core_transcripts_web::router(
                 journal.to_path_buf(),
                 solstone_core_transcripts_web::Clock::fixed(
-                    chrono::Utc.with_ymd_and_hms(2026, 8, 13, 12, 0, 0).unwrap(),
+                    "2026-08-13T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
                 ),
                 transcripts_shell,
             );
@@ -7550,7 +7546,7 @@ mod tests {
         roots: &Path,
     ) -> (context::ThinkContext, Arc<Recorder>) {
         let (context, recorder) = floor_context(journal, roots);
-        let later = chrono::Utc::now().timestamp_millis() + 3_600_000;
+        let later = jiff::Timestamp::now().as_millisecond() + 3_600_000;
         (context.with_event_clock(Arc::new(move || later)), recorder)
     }
 
@@ -7791,7 +7787,7 @@ mod tests {
                 &solstone_core_system_health::FilesystemSegmentSource,
                 journal.path(),
                 "20260813",
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             )
             .unwrap();
             let progress = solstone_core_system_health::read_segment_progress(

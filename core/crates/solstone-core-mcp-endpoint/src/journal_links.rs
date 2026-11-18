@@ -46,7 +46,7 @@ impl Recordings {
         segment: &str,
     ) {
         let listed = self.days.entry(day.to_owned()).or_insert_with(|| {
-            match day_segment_list(journal, day, chrono::Utc::now()) {
+            match day_segment_list(journal, day, jiff::Timestamp::now()) {
                 Ok(listed) => listed,
                 Err(_) => {
                     log::warn!(
@@ -141,7 +141,7 @@ mod tests {
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("meeting_transcript.md"), "a readable line").unwrap();
         }
-        assert!(day_segment_list(root, "20260304", chrono::Utc::now()).is_err());
+        assert!(day_segment_list(root, "20260304", jiff::Timestamp::now()).is_err());
         let mut links = Recordings::default();
         let original = json!({"reference":"kept", "entries":["a readable line"]});
         let mut failed = original.clone();

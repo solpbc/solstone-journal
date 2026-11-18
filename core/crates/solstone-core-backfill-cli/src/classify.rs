@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
     DirEntry, DirEntryKind, PathOrDay, SegmentIdentityError, day_dirs, iter_segments,
@@ -141,7 +141,7 @@ pub(crate) struct Eligible {
     pub(crate) segment_stream: String,
     pub(crate) raw_path: PathBuf,
     pub(crate) input_size: u64,
-    pub(crate) instant: DateTime<Utc>,
+    pub(crate) instant: Timestamp,
     pub(crate) parent_binding: std::sync::Arc<solstone_core_journal_io::JournalRoot>,
 }
 
@@ -192,7 +192,7 @@ pub(crate) fn refuse_ambiguous_named_default(
 pub(crate) fn plan(
     journal: &Path,
     requested_day: Option<&str>,
-    instant: DateTime<Utc>,
+    instant: Timestamp,
     stderr: &mut dyn Write,
 ) -> Result<Report, SegmentIdentityError> {
     let days = match day_dirs(journal) {
@@ -205,10 +205,7 @@ pub(crate) fn plan(
     let selected = select_days(days, requested_day, stderr);
     // The day still being written is the owner's today, the same one the
     // supervisor holds back from processing.
-    let current_day = instant
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d")
-        .to_string();
+    let current_day = solstone_core_journal_config::owner_day(journal, instant);
     let mut report = Report::default();
 
     for (day, day_path) in selected {
@@ -308,7 +305,7 @@ pub(crate) fn classify(
     segment_stream: &str,
     candidate: &DirEntry,
     entries: &[DirEntry],
-    instant: DateTime<Utc>,
+    instant: Timestamp,
 ) -> Result<Eligible, Outcome> {
     let name = candidate.name.to_string_lossy();
     let Some(modality) = modality_for(&name) else {

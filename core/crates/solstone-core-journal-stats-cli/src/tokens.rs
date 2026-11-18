@@ -3,14 +3,14 @@
 
 use std::{fs, path::Path};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::document::TokenUsage;
 
 pub(crate) fn scan_tokens(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     use_cache: bool,
     diagnostics: &mut Vec<String>,
 ) -> TokenUsage {
@@ -19,7 +19,7 @@ pub(crate) fn scan_tokens(
 
 pub(crate) fn scan_tokens_with_checkpoint(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     use_cache: bool,
     diagnostics: &mut Vec<String>,
     checkpoint: Option<&dyn Fn() -> Result<(), String>>,
@@ -28,7 +28,7 @@ pub(crate) fn scan_tokens_with_checkpoint(
     if !tokens_dir.is_dir() {
         return TokenUsage::default();
     }
-    let today = now.format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(jiff::tz::Offset::UTC.to_datetime(now).date());
     let Ok(entries) = fs::read_dir(&tokens_dir) else {
         diagnostics.push(format!(
             "Token directory read failed: {}",

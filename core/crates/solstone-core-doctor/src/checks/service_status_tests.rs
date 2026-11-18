@@ -39,7 +39,7 @@ fn matching(_: &CheckContext) -> WindowsServiceRegistration {
 fn context() -> test_support::StagedContext {
     let mut staged = test_support::context();
     staged.context.platform = Platform::Windows;
-    staged.context.now = chrono::Utc::now();
+    staged.context.now = jiff::Timestamp::now();
     staged.context.service_status_timeout = Duration::from_secs(1);
     staged.context.windows_service_probe = Some(matching);
     fs::create_dir_all(staged.journal_path.join("health")).unwrap();
@@ -117,7 +117,7 @@ impl Bus {
                             }
                             let mode = observe.load(Ordering::SeqCst);
                             if mode != 0 {
-                                let now = chrono::Utc::now().timestamp_millis();
+                                let now = jiff::Timestamp::now().as_millisecond();
                                 assert!(server.broadcast(CallosumEnvelope {
                                     tract: "observe".into(), event: "status".into(),
                                     ts: match mode {1 => Some(now - 60_000), 2 => Some(now + 60_000), _ => None},

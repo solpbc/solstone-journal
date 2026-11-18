@@ -14,9 +14,9 @@ workspace = true
 
 [dependencies]
 base64 = "0.22.1"
-chrono.workspace = true
 getrandom.workspace = true
 image.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,6 +36,7 @@ solstone-core-talent-config.workspace = true
 solstone-core-sense.workspace = true
 solstone-core-system.workspace = true
 solstone-core-spp-ratls.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"

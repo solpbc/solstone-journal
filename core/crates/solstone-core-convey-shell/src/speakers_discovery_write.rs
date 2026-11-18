@@ -12,7 +12,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -390,7 +390,7 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         Ok(members) => members,
         Err(detail) => return command(detail, StatusCode::INTERNAL_SERVER_ERROR),
     };
-    let ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let ts = solstone_core_time::utc_z(Timestamp::now(), solstone_core_time::Precision::Secs);
     let canonical = json!({"disposition":disposition,"members":members,"ts":ts});
     let mut hasher = Sha256::new();
     hasher.update(serde_json::to_string(&canonical).expect("json"));

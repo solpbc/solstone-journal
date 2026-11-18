@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::extract::Extension;
-use chrono::Utc;
+use jiff::Timestamp;
 use ring::rand::SecureRandom;
 use russh::server::Server;
 use serde_json::{Value, json};
@@ -1045,7 +1045,7 @@ async fn stalled_relay_auth_does_not_block_admission_withdrawal_or_shutdown() {
     let server_handle = running_rx.await.unwrap();
     *BYO_TEST_SEAM.relay_dial_addr_override.write().unwrap() = Some(address);
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Admitted, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Admitted, Timestamp::now()),
         vec!["127.0.0.1".to_string()],
     ));
     let (acme_tx, mut acme_rx) = mpsc::unbounded_channel();
@@ -1176,7 +1176,7 @@ async fn test_lifetime() {
 
     // Admit DNS override
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Admitted, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Admitted, Timestamp::now()),
         vec!["127.0.0.1".to_string()],
     ));
 
@@ -1414,7 +1414,7 @@ async fn test_lifetime() {
 
     // 4. Set DNS to non-admitted verdict and run one tick that unbinds
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Cname, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Cname, Timestamp::now()),
         Vec::new(),
     ));
     let unbind_state = notify_tick_and_wait(&root, |s| s.relay_state == "none").await;
@@ -1451,7 +1451,7 @@ async fn test_lifetime() {
         .ingress_dial_hold
         .store(false, Ordering::SeqCst);
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Admitted, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Admitted, Timestamp::now()),
         vec!["127.0.0.1".to_string()],
     ));
 
@@ -1480,7 +1480,7 @@ async fn test_lifetime() {
     // connecting -> relay_connecting
     let mut conn_state = connected_state.clone();
     conn_state.relay_state = "connecting".to_string();
-    conn_state.observed_at = Utc::now();
+    conn_state.observed_at = Timestamp::now();
     write_byo_door_state(&root, &conn_state);
 
     let resp_conn = byo_relay_check(Extension(journal.clone())).await;
@@ -1494,7 +1494,7 @@ async fn test_lifetime() {
     // unreachable -> unreachable
     let mut unreach_state = connected_state.clone();
     unreach_state.relay_state = "unreachable".to_string();
-    unreach_state.observed_at = Utc::now();
+    unreach_state.observed_at = Timestamp::now();
     write_byo_door_state(&root, &unreach_state);
 
     let resp_unreach = byo_relay_check(Extension(journal.clone())).await;
@@ -1511,7 +1511,7 @@ async fn test_lifetime() {
 
     // A current connected file whose observed_at is 10s old projects state.byo.relay.state none and byo_relay_check dials
     let mut stale_state = connected_state.clone();
-    stale_state.observed_at = Utc::now() - chrono::Duration::seconds(10);
+    stale_state.observed_at = Timestamp::now() - jiff::SignedDuration::from_secs(10);
     write_byo_door_state(&root, &stale_state);
 
     let val_st = crate::owner_web::state_value(&root).unwrap();
@@ -1533,7 +1533,7 @@ async fn test_lifetime() {
     // After a non-admitted DNS verdict the next file has relay_state none and the check dials.
     // An idle accepted forwarded-tcpip does not delay unbind. One tick closes the session and releases the ingress listener.
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Cname, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Cname, Timestamp::now()),
         Vec::new(),
     ));
 
@@ -1575,7 +1575,7 @@ async fn test_lifetime() {
 
     // Restore admitted DNS
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Admitted, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Admitted, Timestamp::now()),
         vec!["127.0.0.1".to_string()],
     ));
 
@@ -1925,7 +1925,7 @@ async fn test_hostile_server() {
 
     // 2. Door and tunnel session
     *TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-        DnsVerdict::new(DnsVerdictCode::Admitted, Utc::now()),
+        DnsVerdict::new(DnsVerdictCode::Admitted, Timestamp::now()),
         vec!["127.0.0.1".to_string()],
     ));
     BYO_TEST_SEAM.tick_hold.store(true, Ordering::SeqCst);
@@ -2119,7 +2119,7 @@ async fn test_hostile_server() {
     );
 
     // Plant disconnect description with marker
-    let event_before = Utc::now();
+    let event_before = Timestamp::now();
     let _ = tunnel_handle
         .disconnect(
             russh::Disconnect::ByApplication,

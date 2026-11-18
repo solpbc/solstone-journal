@@ -5,7 +5,8 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use jiff::civil::Date;
+use jiff::{Timestamp, ZonedDateTime};
 use serde::Serialize;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
@@ -82,10 +83,10 @@ struct ExhaustedSegments {
 }
 
 impl PipelineReport {
-    fn new(day: String, now: DateTime<Utc>) -> Self {
+    fn new(day: String, now: Timestamp) -> Self {
         Self {
             day,
-            generated_at: now.timestamp_millis(),
+            generated_at: now.as_millisecond(),
             status: "healthy".to_owned(),
             anomalies: Vec::new(),
             runs: PipelineRuns::default(),
@@ -108,25 +109,25 @@ impl PipelineReport {
     }
 }
 
-pub(crate) fn resolve_pipeline_day(value: &str) -> Result<NaiveDate, HealthError> {
+pub(crate) fn resolve_pipeline_day(value: &str) -> Result<Date, HealthError> {
     if value.len() != 8 || !value.as_bytes().iter().all(u8::is_ascii_digit) {
         return Err(HealthError::InvalidRequest(
             "day must be a calendar date in YYYYMMDD format".to_owned(),
         ));
     }
-    NaiveDate::parse_from_str(value, "%Y%m%d").map_err(|_| {
+    solstone_core_time::parse_day(value).ok_or_else(|| {
         HealthError::InvalidRequest("day must be a calendar date in YYYYMMDD format".to_owned())
     })
 }
 
 pub(crate) fn summarize_pipeline_day(
     journal_root: &Path,
-    date: NaiveDate,
-    now: DateTime<impl TimeZone>,
+    date: Date,
+    now: &ZonedDateTime,
 ) -> Result<PipelineReport, HealthError> {
-    let today = now.date_naive();
-    let now = now.with_timezone(&Utc);
-    let day = date.format("%Y%m%d").to_string();
+    let today = now.date();
+    let now = now.timestamp();
+    let day = solstone_core_time::day_key(date);
     let mut summary = PipelineReport::new(day.clone(), now);
     let health_dir = journal_root.join("chronicle").join(&day).join("health");
     if !health_dir.is_dir() {
@@ -258,7 +259,7 @@ pub(crate) fn summarize_pipeline_day(
 
 fn scan_health_logs(
     journal_root: &Path,
-    date: NaiveDate,
+    date: Date,
     day: &str,
     summary: &mut PipelineReport,
 ) -> Result<(), &'static str> {
@@ -344,7 +345,7 @@ fn pipeline_mode(run: &str) -> Option<&'static str> {
 fn completion_for_day(
     journal_root: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<solstone_core_system_health::SegmentCompletion, HealthError> {
     let health = FilesystemHealthLogSource::new(journal_root);
     let progress = read_segment_progress(&health, day)
@@ -386,7 +387,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
-    use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
+    use jiff::civil::Date;
+    use jiff::tz::{Offset, TimeZone};
+    use jiff::{Timestamp, ZonedDateTime};
     use serde_json::{Value, json};
     use solstone_core_journal_io::{
         JournalRoot,
@@ -402,23 +405,37 @@ mod tests {
         TempDir::new().unwrap()
     }
 
-    fn now() -> chrono::DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap()
+    fn now() -> ZonedDateTime {
+        "2026-04-10T12:00:00Z"
+            .parse::<Timestamp>()
+            .unwrap()
+            .to_zoned_datetime(TimeZone::UTC)
+    }
+
+    fn yesterday() -> Date {
+        now().date().yesterday().unwrap()
+    }
+
+    fn zone(name: &str) -> TimeZone {
+        solstone_core_time::zone(name).unwrap()
+    }
+
+    /// Noon of `day` at UTC, as a fixed-offset time.
+    fn noon_utc(day: &str) -> ZonedDateTime {
+        let day = solstone_core_time::parse_day(day).unwrap();
+        solstone_core_time::from_local(&TimeZone::fixed(Offset::UTC), day.at(12, 0, 0, 0))
+            .single()
+            .unwrap()
     }
 
     fn write_log(root: &Path, day: &str, run: &str, rows: &[Value]) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
-            .single()
-            .unwrap();
+        let opened = noon_utc(day);
         let mut writer = create_oplog_at(
             JournalRoot::open(root).unwrap(),
             "think",
             run,
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         writeln!(
@@ -447,8 +464,11 @@ mod tests {
         }
         let report = summarize_pipeline_day(
             root.path(),
-            NaiveDate::from_ymd_opt(2026, 9, 6).unwrap(),
-            Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap(),
+            jiff::civil::date(2026, 9, 6),
+            &"2026-09-06T12:00:00Z"
+                .parse::<Timestamp>()
+                .unwrap()
+                .to_zoned_datetime(TimeZone::UTC),
         )
         .unwrap();
         assert_eq!(report.status, "healthy");
@@ -457,18 +477,13 @@ mod tests {
     }
 
     fn write_invalid_log(root: &Path, day: &str) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
-            .single()
-            .unwrap();
+        let opened = noon_utc(day);
         let mut writer = create_oplog_at(
             JournalRoot::open(root).unwrap(),
             "think",
             "daily",
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         writer.write_all(&[0xff]).unwrap();
@@ -542,7 +557,7 @@ mod tests {
             }
             write_log(root, day, mode, &rows);
         }
-        let report = value(&summarize_pipeline_day(root, now().date_naive(), now()).unwrap());
+        let report = value(&summarize_pipeline_day(root, now().date(), &now()).unwrap());
         assert_eq!(report["status"], "healthy");
         for (mode, duration) in [
             ("segment", 10),
@@ -578,7 +593,7 @@ mod tests {
             .collect::<Vec<_>>();
         write_log(temporary.path(), day, "daily", &rows);
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "warning");
         assert_eq!(report["talents"]["failed"], 21);
         assert_eq!(report["talents"]["outstanding_failed"], 21);
@@ -603,18 +618,9 @@ mod tests {
     #[test]
     fn past_day_with_segments_and_no_health_directory_is_unknown_and_returns_early() {
         let temporary = temporary();
-        let day = (now().date_naive() - Duration::days(1))
-            .format("%Y%m%d")
-            .to_string();
+        let day = solstone_core_time::day_key(yesterday());
         screen_segment(temporary.path(), &day, "120000_60");
-        let report = value(
-            &summarize_pipeline_day(
-                temporary.path(),
-                now().date_naive() - Duration::days(1),
-                now(),
-            )
-            .unwrap(),
-        );
+        let report = value(&summarize_pipeline_day(temporary.path(), yesterday(), &now()).unwrap());
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
@@ -628,8 +634,8 @@ mod tests {
     #[test]
     fn no_health_directory_completion_failure_degrades_to_unknown_scan_failed() {
         let temporary = temporary();
-        let date = now().date_naive() - Duration::days(1);
-        let day = date.format("%Y%m%d").to_string();
+        let date = yesterday();
+        let day = solstone_core_time::day_key(date);
         let blocked = temporary
             .path()
             .join("chronicle")
@@ -637,7 +643,7 @@ mod tests {
             .join("blocked");
         fs::create_dir_all(&blocked).unwrap();
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
+        let report = value(&summarize_pipeline_day(temporary.path(), date, &now()).unwrap());
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(report["status"], "unknown");
         assert_eq!(
@@ -649,17 +655,17 @@ mod tests {
     #[test]
     fn a_day_too_large_to_scan_says_so_rather_than_reporting_a_day_state() {
         let temporary = temporary();
-        let date = now().date_naive() - Duration::days(1);
+        let date = yesterday();
         let health = temporary
             .path()
             .join("chronicle")
-            .join(date.format("%Y%m%d").to_string())
+            .join(solstone_core_time::day_key(date))
             .join("health");
         fs::create_dir_all(&health).unwrap();
         for index in 0..=OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS {
             fs::write(health.join(format!("{index}.marker")), b"").unwrap();
         }
-        let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
+        let report = value(&summarize_pipeline_day(temporary.path(), date, &now()).unwrap());
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
@@ -672,7 +678,7 @@ mod tests {
         let temporary = temporary();
         write_invalid_log(temporary.path(), "20260410");
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
@@ -697,7 +703,7 @@ mod tests {
             &[json!({"event":"activity.detected","day":day,"mode":"activity"})],
         );
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "stale");
         assert!(
             report["anomalies"]
@@ -724,7 +730,7 @@ mod tests {
         );
 
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "stale");
         assert_eq!(
             report["anomalies"],
@@ -748,7 +754,7 @@ mod tests {
         );
 
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "healthy");
         assert_eq!(report["anomalies"], json!([]));
     }
@@ -773,7 +779,7 @@ mod tests {
             ],
         );
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "healthy");
         assert_eq!(report["activities"]["talents_fired"], true);
         assert!(
@@ -788,15 +794,15 @@ mod tests {
     #[test]
     fn past_health_day_without_daily_run_degrades_to_stale() {
         let temporary = temporary();
-        let date = now().date_naive() - Duration::days(1);
-        let day = date.format("%Y%m%d").to_string();
+        let date = yesterday();
+        let day = solstone_core_time::day_key(date);
         write_log(
             temporary.path(),
             &day,
             "segment",
             &[json!({"event":"run.complete","day":day,"mode":"segment"})],
         );
-        let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
+        let report = value(&summarize_pipeline_day(temporary.path(), date, &now()).unwrap());
         assert_eq!(report["status"], "stale");
         assert!(
             report["anomalies"]
@@ -822,7 +828,7 @@ mod tests {
             ],
         );
         let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+            value(&summarize_pipeline_day(temporary.path(), now().date(), &now()).unwrap());
         assert_eq!(report["status"], "healthy");
         assert_eq!(
             report["exhausted_segments"],
@@ -831,16 +837,12 @@ mod tests {
     }
     #[test]
     fn daily_warning_waits_for_the_local_day_to_end() {
-        for zone in [
-            chrono_tz::America::Denver,
-            chrono_tz::Asia::Tokyo,
-            chrono_tz::UTC,
-        ] {
+        for zone in [zone("America/Denver"), zone("Asia/Tokyo"), TimeZone::UTC] {
             // Include both Denver daylight-saving transition days.
             for (year, month, day) in [(2026, 9, 7), (2026, 3, 8), (2026, 11, 1)] {
                 let root = temporary();
-                let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
-                let day = date.format("%Y%m%d").to_string();
+                let date = jiff::civil::date(year, month, day);
+                let day = solstone_core_time::day_key(date);
                 write_log(
                     root.path(),
                     &day,
@@ -848,19 +850,18 @@ mod tests {
                     &[json!({"event":"run.complete","day":day,"mode":"segment"})],
                 );
                 for hour in [17, 23] {
-                    let before = zone
-                        .from_local_datetime(&date.and_hms_opt(hour, 59, 59).unwrap())
+                    let before = solstone_core_time::from_local(&zone, date.at(hour, 59, 59, 0))
                         .single()
                         .unwrap();
-                    let report = summarize_pipeline_day(root.path(), date, before).unwrap();
+                    let report = summarize_pipeline_day(root.path(), date, &before).unwrap();
                     assert_eq!(report.status, "healthy", "{before}");
-                    assert_eq!(report.generated_at, before.timestamp_millis());
+                    assert_eq!(report.generated_at, before.timestamp().as_millisecond());
                 }
-                let after = zone
-                    .from_local_datetime(&date.succ_opt().unwrap().and_hms_opt(0, 0, 0).unwrap())
-                    .single()
-                    .unwrap();
-                let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+                let after =
+                    solstone_core_time::from_local(&zone, date.tomorrow().unwrap().at(0, 0, 0, 0))
+                        .single()
+                        .unwrap();
+                let report = summarize_pipeline_day(root.path(), date, &after).unwrap();
                 assert_eq!(report.status, "stale", "{after}");
                 assert!(
                     report
@@ -874,7 +875,7 @@ mod tests {
                     "daily",
                     &[json!({"event":"run.complete","day":day,"mode":"daily"})],
                 );
-                let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+                let report = summarize_pipeline_day(root.path(), date, &after).unwrap();
                 assert_eq!(report.status, "healthy", "completed day at {after}");
             }
         }
@@ -883,15 +884,20 @@ mod tests {
     #[test]
     fn absent_health_directory_uses_the_same_local_day_boundary() {
         let root = temporary();
-        let zone = chrono_tz::America::Denver;
-        let date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let zone = zone("America/Denver");
+        let date = jiff::civil::date(2026, 9, 7);
         screen_segment(root.path(), "20260907", "120000_60");
-        let before = zone.with_ymd_and_hms(2026, 9, 7, 18, 0, 0).unwrap();
-        assert_ne!(date, before.with_timezone(&Utc).date_naive());
-        let report = summarize_pipeline_day(root.path(), date, before).unwrap();
+        let before = solstone_core_time::from_local(&zone, date.at(18, 0, 0, 0))
+            .single()
+            .unwrap();
+        assert_ne!(date, before.with_time_zone(TimeZone::UTC).date());
+        let report = summarize_pipeline_day(root.path(), date, &before).unwrap();
         assert_eq!(report.status, "healthy");
-        let after = zone.with_ymd_and_hms(2026, 9, 8, 0, 0, 0).unwrap();
-        let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+        let after =
+            solstone_core_time::from_local(&zone, jiff::civil::date(2026, 9, 8).at(0, 0, 0, 0))
+                .single()
+                .unwrap();
+        let report = summarize_pipeline_day(root.path(), date, &after).unwrap();
         assert_eq!(report.status, "unknown");
         assert_eq!(
             report.anomalies,

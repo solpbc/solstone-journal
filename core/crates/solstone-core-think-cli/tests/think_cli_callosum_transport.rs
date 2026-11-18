@@ -5,7 +5,6 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::os::unix::net::UnixListener;
 
-use chrono::NaiveDate;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{JournalRoot, operational_log::catalog_oplogs};
 
@@ -94,7 +93,7 @@ fn segment_dispatch_uses_one_timestamp_for_callosum_and_the_run_log() {
         .read_to_string(&mut received)
         .expect("read segment dispatch");
     let callosum: Value = serde_json::from_str(received.trim_end()).expect("Callosum JSON");
-    let day = NaiveDate::parse_from_str("20260813", "%Y%m%d").unwrap();
+    let day = jiff::civil::date(2026, 8, 13);
     let dispatch = catalog_oplogs(JournalRoot::open(journal.path()).unwrap(), &[day])
         .unwrap()
         .into_catalogued_entries()

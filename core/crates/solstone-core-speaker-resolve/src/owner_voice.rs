@@ -18,9 +18,10 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
+use solstone_core_time::utc_rfc3339;
 
 use crate::backfill_coordinator::{
     StartBackfillRequest, backfill_status, run_backfill_blocking_checked, start_backfill,
@@ -93,20 +94,22 @@ pub fn update_voiceprint_state_checked(
 /// Days left before a rejected voice's cooldown ends, if one is running.
 pub fn cooldown_days_remaining(state: &BTreeMap<String, Value>) -> Option<i64> {
     let rejected_at = rejected_at(state)?;
-    let elapsed = Utc::now().signed_duration_since(rejected_at).num_days();
+    let elapsed = Timestamp::now().duration_since(rejected_at).as_hours() / 24;
     (elapsed < COOLDOWN_DAYS).then_some(COOLDOWN_DAYS - elapsed)
 }
 
 /// When the journal looks for the owner's voice again after a rejection.
-pub fn next_look_after(state: &BTreeMap<String, Value>) -> Option<DateTime<Utc>> {
+pub fn next_look_after(state: &BTreeMap<String, Value>) -> Option<Timestamp> {
     cooldown_days_remaining(state)?;
-    Some(rejected_at(state)? + Duration::days(COOLDOWN_DAYS))
+    rejected_at(state)?
+        .checked_add(SignedDuration::from_hours(24 * COOLDOWN_DAYS))
+        .ok()
 }
 
-fn rejected_at(state: &BTreeMap<String, Value>) -> Option<DateTime<Utc>> {
+fn rejected_at(state: &BTreeMap<String, Value>) -> Option<Timestamp> {
     let value = state.get("rejected_at")?.as_str()?;
-    DateTime::parse_from_rfc3339(value)
-        .map(|time| time.with_timezone(&Utc))
+    solstone_core_time::parse_rfc3339(value)
+        .map(|time| time.timestamp())
         .ok()
 }
 
@@ -161,7 +164,7 @@ pub fn record_owner_voice_saved(
 ) -> Result<Value, String> {
     update_voiceprint_state(
         root,
-        json!({"status":"confirmed","cluster_size":cluster_size,"confirmed_at":Utc::now().to_rfc3339(),"evidence_tier":evidence_tier,"source":kind}),
+        json!({"status":"confirmed","cluster_size":cluster_size,"confirmed_at":utc_rfc3339(Timestamp::now()),"evidence_tier":evidence_tier,"source":kind}),
     )?;
     Ok(start_relabel(root, kind))
 }
@@ -182,7 +185,7 @@ pub fn reject_owner_candidate(root: &Path, version: &str) -> Result<Value, Owner
     {
         return Err(OwnerVoiceError::StaleCandidate);
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let rejected = remember_rejected_voice(
         &state,
         state.get("candidate_cluster_id").and_then(Value::as_i64),
@@ -192,11 +195,11 @@ pub fn reject_owner_candidate(root: &Path, version: &str) -> Result<Value, Owner
     clear_owner_candidate_in_lock(root).map_err(failed)?;
     update_voiceprint_state(
         root,
-        json!({"status":"rejected","rejected_at":now.to_rfc3339(),"detected_at":null,"samples":null,"candidate_cluster_id":null,"rejected_candidates":rejected}),
+        json!({"status":"rejected","rejected_at":utc_rfc3339(now),"detected_at":null,"samples":null,"candidate_cluster_id":null,"rejected_candidates":rejected}),
     )
     .map_err(OwnerVoiceError::Failed)?;
     Ok(
-        json!({"status":"rejected","cooldown_days":COOLDOWN_DAYS,"next_look_after":(now + Duration::days(COOLDOWN_DAYS)).to_rfc3339()}),
+        json!({"status":"rejected","cooldown_days":COOLDOWN_DAYS,"next_look_after":utc_rfc3339(now + SignedDuration::from_hours(24 * COOLDOWN_DAYS))}),
     )
 }
 
@@ -220,7 +223,9 @@ pub fn undo_owner_voice(root: &Path) -> Result<Value, OwnerVoiceError> {
     remove_owner_centroid(root, &principal).map_err(failed)?;
     let state = voiceprint_state(root);
     let rejected = match &centroid {
-        Some(centroid) => remember_rejected_voice(&state, None, &centroid.centroid, Utc::now()),
+        Some(centroid) => {
+            remember_rejected_voice(&state, None, &centroid.centroid, Timestamp::now())
+        }
         None => state
             .get("rejected_candidates")
             .cloned()
@@ -228,7 +233,7 @@ pub fn undo_owner_voice(root: &Path) -> Result<Value, OwnerVoiceError> {
     };
     update_voiceprint_state(
         root,
-        json!({"status":"none","undone_at":Utc::now().to_rfc3339(),"confirmed_at":null,"cluster_size":null,"evidence_tier":null,"streams_represented":null,"recommendation":null,"detected_at":null,"samples":null,"source":null,"candidate_cluster_id":null,"rejected_candidates":rejected}),
+        json!({"status":"none","undone_at":utc_rfc3339(Timestamp::now()),"confirmed_at":null,"cluster_size":null,"evidence_tier":null,"streams_represented":null,"recommendation":null,"detected_at":null,"samples":null,"source":null,"candidate_cluster_id":null,"rejected_candidates":rejected}),
     )
     .map_err(OwnerVoiceError::Failed)?;
     Ok(json!({"status":"none","relabel":start_relabel(root, "undo")}))
@@ -238,14 +243,14 @@ fn remember_rejected_voice(
     state: &BTreeMap<String, Value>,
     cluster_id: Option<i64>,
     centroid: &[f32],
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Value {
     let mut voices = state
         .get("rejected_candidates")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    voices.push(json!({"cluster_id":cluster_id,"centroid":centroid,"rejected_at":at.to_rfc3339()}));
+    voices.push(json!({"cluster_id":cluster_id,"centroid":centroid,"rejected_at":utc_rfc3339(at)}));
     let excess = voices.len().saturating_sub(REJECTED_VOICES_KEPT);
     Value::Array(voices.split_off(excess))
 }
@@ -256,7 +261,7 @@ fn relabel_request(operation_id: Option<String>) -> StartBackfillRequest {
         commit: true,
         reattribute: true,
         accumulation: false,
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: Timestamp::now().as_millisecond(),
     }
 }
 
@@ -265,7 +270,7 @@ fn relabel_request(operation_id: Option<String>) -> StartBackfillRequest {
 /// The request is recorded first, so an update that cannot start now is
 /// started by the next scheduled look.
 fn start_relabel(root: &Path, kind: &str) -> Value {
-    let requested = json!({"kind":kind,"requested_at":Utc::now().to_rfc3339()});
+    let requested = json!({"kind":kind,"requested_at":utc_rfc3339(Timestamp::now())});
     if let Err(error) = update_voiceprint_state(root, json!({"relabel":requested})) {
         log::error!("owner voice: could not record the past-label update: {error}");
         return json!({"kind":kind,"state":"waiting"});
@@ -414,7 +419,7 @@ pub enum NotYetReason {
     /// What has been heard is too short, or too mixed with other voices.
     TooShortOrMixed,
     /// The owner said no to a voice; the journal looks again after this time.
-    Declined { next_look_after: DateTime<Utc> },
+    Declined { next_look_after: Timestamp },
 }
 
 /// Read where owner-voice setup stands. Never writes.
@@ -567,7 +572,7 @@ mod tests {
             &OwnerCentroidWriteInput {
                 centroid: voice(axis),
                 cluster_size: 36,
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: utc_rfc3339(Timestamp::now()),
                 evidence_tier: "standard".to_owned(),
             },
         )

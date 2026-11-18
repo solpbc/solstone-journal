@@ -66,7 +66,7 @@ fn a_sleep_reads_as_a_night_from_bedtime_start_with_every_field_kept() {
     assert_eq!(fields, whole(&pages[0]));
     assert_eq!(fields["sleep_analysis_reason"], Value::Null);
     assert!(values.is_empty() && words.is_empty() && value.is_none());
-    assert_eq!(night.oura_day, NaiveDate::from_ymd_opt(2026, 1, 2));
+    assert_eq!(night.oura_day, jiff::civil::Date::new(2026, 1, 2).ok());
     assert_eq!(
         night.identity,
         "oura\u{1f}sleep\u{1f}synthetic-sleep-2026-01-02"
@@ -193,7 +193,7 @@ fn a_tag_is_logged_by_its_start_alone_or_with_its_end_and_keeps_the_owners_words
     // A null end means no duration.
     assert!(coffee.row.end.is_none());
     assert_eq!(coffee.row.words, ["second cup"]);
-    assert_eq!(coffee.oura_day, NaiveDate::from_ymd_opt(2026, 1, 2));
+    assert_eq!(coffee.oura_day, jiff::civil::Date::new(2026, 1, 2).ok());
     assert_eq!(coffee.row.fields, whole(&pages[0]));
 
     let sauna = row("enhanced_tag", &pages[1]).row;

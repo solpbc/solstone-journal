@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{FixedOffset, NaiveDate};
-use chrono_tz::Tz;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -46,15 +46,19 @@ fn without(line: &str, key: &str) -> String {
     Value::Object(record).to_string()
 }
 
-fn date(text: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+fn date(text: &str) -> Date {
+    Date::strptime("%Y-%m-%d", text).unwrap()
+}
+
+fn zone(name: &str) -> TimeZone {
+    solstone_core_time::zone(name).unwrap()
 }
 
 fn days(listing: &Listing) -> Vec<String> {
     listing
         .days
         .iter()
-        .map(|day| day.format("%Y%m%d").to_string())
+        .map(|day| day.strftime("%Y%m%d").to_string())
         .collect()
 }
 
@@ -154,6 +158,21 @@ fn identity_normalizes_z_offset_and_fractional_seconds() {
             .unwrap()
             .occurrence;
     assert_eq!(floating, "2026-10-21T09:00:00");
+    // A fraction is kept in three, six or nine digits, as few as hold it.
+    for (spelling, identity) in [
+        ("2026-10-21T09:00:00.5-06:00", "2026-10-21T15:00:00.500Z"),
+        ("2026-10-21T15:00:00.000123Z", "2026-10-21T15:00:00.000123Z"),
+        ("2026-10-21T09:00:00.25", "2026-10-21T09:00:00.250"),
+        (
+            "2026-10-21T09:00:00.123456789",
+            "2026-10-21T09:00:00.123456789",
+        ),
+    ] {
+        let occurrence = parse_calendar_note(&with(golden(1), "occurrence", json!(spelling)))
+            .unwrap()
+            .occurrence;
+        assert_eq!(occurrence, identity, "{spelling}");
+    }
 
     // Two lines whose occurrences only spell the same instant differently are
     // one identity, so the file is refused.
@@ -307,8 +326,8 @@ fn the_window_is_read_in_each_line_s_own_offset() {
 
 #[test]
 fn a_timed_event_lists_each_local_day_it_overlaps_end_exclusive() {
-    let denver: Tz = "America/Denver".parse().unwrap();
-    let tokyo: Tz = "Asia/Tokyo".parse().unwrap();
+    let denver = zone("America/Denver");
+    let tokyo = zone("Asia/Tokyo");
     let meeting = schedule_of(golden(0));
     let listing = listed_days(&meeting, &denver);
     assert_eq!(days(&listing), ["20261027"]);
@@ -347,7 +366,7 @@ fn a_timed_event_lists_each_local_day_it_overlaps_end_exclusive() {
 
 #[test]
 fn days_across_a_daylight_saving_change_are_counted_by_the_calendar() {
-    let denver: Tz = "America/Denver".parse().unwrap();
+    let denver = zone("America/Denver");
     // Saturday 23:00 to Monday 00:00 spans the 23-hour Sunday the clocks go
     // forward. Counting 24-hour steps would miss or add a day.
     let spring = schedule_of(&timed(
@@ -368,8 +387,8 @@ fn days_across_a_daylight_saving_change_are_counted_by_the_calendar() {
 
 #[test]
 fn a_floating_event_is_wall_clock_time_in_the_journal_zone() {
-    let denver: Tz = "America/Denver".parse().unwrap();
-    let tokyo: Tz = "Asia/Tokyo".parse().unwrap();
+    let denver = zone("America/Denver");
+    let tokyo = zone("Asia/Tokyo");
     let line = timed("2026-10-21T23:30:00", json!("2026-10-22T01:00:00"));
     let line = with(&line, "time_zone", Value::Null);
     let floating = schedule_of(&line);
@@ -385,8 +404,8 @@ fn a_floating_event_is_wall_clock_time_in_the_journal_zone() {
 
 #[test]
 fn an_all_day_event_lists_its_own_dates_with_no_zone_shift() {
-    let tokyo: Tz = "Asia/Tokyo".parse().unwrap();
-    let honolulu: Tz = "Pacific/Honolulu".parse().unwrap();
+    let tokyo = zone("Asia/Tokyo");
+    let honolulu = zone("Pacific/Honolulu");
     let halloween = schedule_of(golden(2));
     let birthday = schedule_of(golden(3));
     for zone in [&tokyo, &honolulu] {
@@ -407,7 +426,7 @@ fn an_all_day_event_lists_its_own_dates_with_no_zone_shift() {
 
 #[test]
 fn an_event_lists_at_most_366_days_and_says_it_continues() {
-    let utc = FixedOffset::east_opt(0).unwrap();
+    let utc = TimeZone::fixed(jiff::tz::Offset::UTC);
     let long = schedule_of(&all_day("2026-01-01", json!("2028-01-01")));
     let listing = listed_days(&long, &utc);
     assert_eq!(listing.days.len(), MAX_LISTED_DAYS);
@@ -450,6 +469,11 @@ fn a_note_reads_as_plain_text_with_absent_fields_left_out() {
     ] {
         assert!(meeting.contains(expected), "{expected} in {meeting}");
     }
+    let lines = meeting.lines().collect::<Vec<_>>();
+    assert!(
+        lines.contains(&"When: Tuesday, October 27, 2026, 10:00 AM to 11:00 AM (America/Denver)")
+    );
+    assert!(lines.contains(&"Recorded: Monday, October 19, 2026, 9:42 AM (-06:00)"));
     let birthday = render_calendar_note(
         &parse_calendar_note(golden(3)).unwrap(),
         &OwnerAddresses::default(),
@@ -665,7 +689,7 @@ fn an_import_line_must_name_its_import_and_when_it_happened() {
         import_stamp(&notes[0].record).unwrap(),
         (
             "20261020_223100".to_owned(),
-            DateTime::parse_from_rfc3339("2026-10-21T08:00:00-06:00").unwrap()
+            parse_rfc3339("2026-10-21T08:00:00-06:00").unwrap()
         )
     );
     let other = imported(&base, "20250101_000000", "2026-12-01T09:00:00-07:00");

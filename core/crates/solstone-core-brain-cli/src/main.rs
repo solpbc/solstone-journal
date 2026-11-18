@@ -6,7 +6,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, json};
 use solstone_core_brain::{
     InspectionStatus, brain_state_path, inspect_brain_state, read_journal_config,
@@ -36,7 +36,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         .map_err(|error| CliError::Runtime(format!("failed to read journal config: {error}")))?
         .config
         .unwrap_or_else(Map::new);
-    let inspection = inspect_brain_state(&journal, &config, Utc::now());
+    let inspection = inspect_brain_state(&journal, &config, Timestamp::now());
     let status = match inspection.status {
         InspectionStatus::Ok => "ok",
         InspectionStatus::Corrupt => "corrupt",

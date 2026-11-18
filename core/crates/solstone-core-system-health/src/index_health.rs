@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use solstone_core_indexer_store::db::IndexBuildLifecycle;
 use solstone_core_indexer_store::status::{
@@ -122,7 +122,7 @@ pub struct IndexHealth {
 }
 
 /// Measure the index and fold recent failed updates into one value.
-pub fn evaluate_index_health(journal: &Path, now: DateTime<Utc>) -> IndexHealth {
+pub fn evaluate_index_health(journal: &Path, now: Timestamp) -> IndexHealth {
     evaluate_index_health_with(journal, &read_indexing_observations(journal, now))
 }
 
@@ -556,10 +556,10 @@ mod tests {
     #[test]
     fn a_damaged_index_says_it_is_being_checked_ahead_of_unreadable() {
         let journal = indexed_journal_with_damage();
-        let unreported = evaluate_index_health(journal.path(), Utc::now());
+        let unreported = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(unreported.failure, Some(IndexFailure::Unreadable));
         solstone_core_indexer_store::recovery::report_index_damage(journal.path());
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.state, IndexHealthState::Failing);
         assert_eq!(health.failure, Some(IndexFailure::DamageCheck));
         assert_eq!(health.text, INDEX_TEXT_DAMAGE_CHECK);
@@ -591,7 +591,7 @@ mod tests {
     fn health_reads_true_through_a_recovery_and_notes_a_second() {
         let journal = indexed_journal_with_damage();
         recover(journal.path());
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.failure, None, "{health:?}");
         assert_eq!(health.state, IndexHealthState::Ok);
         assert_eq!(health.text, INDEX_TEXT_OK);
@@ -603,7 +603,7 @@ mod tests {
             .unwrap();
         std::fs::write(&db, [0x5a; 8192]).unwrap();
         recover(journal.path());
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.state, IndexHealthState::Ok);
         assert!(
             health.text.contains(INDEX_TEXT_REPEATED_REBUILD),
@@ -618,13 +618,13 @@ mod tests {
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(&source, "kestrel").unwrap();
         solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
-        let before = evaluate_index_health(journal.path(), Utc::now());
+        let before = evaluate_index_health(journal.path(), Timestamp::now());
         solstone_core_indexer_store::todo::enqueue_token(
             journal.path(),
             solstone_core_indexer_store::todo::Token::Edges,
         )
         .unwrap();
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.queued, 0);
         assert_ne!(health.state, IndexHealthState::Behind);
         assert_eq!(health.state, before.state);
@@ -665,10 +665,10 @@ mod tests {
                 .keys
                 .is_empty()
         );
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.failure, Some(IndexFailure::FailedFiles));
         assert!(health.failed > 0);
-        let observations = read_indexing_observations(journal.path(), Utc::now());
+        let observations = read_indexing_observations(journal.path(), Timestamp::now());
         assert!(
             observations
                 .outcomes
@@ -678,7 +678,7 @@ mod tests {
                     && entry.cause.is_some())
         );
         solstone_core_indexer_store::todo::drain(journal.path(), Default::default()).unwrap();
-        assert!(evaluate_index_health(journal.path(), Utc::now()).failed > 0);
+        assert!(evaluate_index_health(journal.path(), Timestamp::now()).failed > 0);
         std::fs::write(&source, "repaired kestrel").unwrap();
         // Setting a time needs a writable handle on Windows.
         std::fs::OpenOptions::new()
@@ -689,7 +689,10 @@ mod tests {
             .unwrap();
         let check = solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
         assert_eq!((check.indexed, check.failed), (1, 0));
-        assert_eq!(evaluate_index_health(journal.path(), Utc::now()).failed, 0);
+        assert_eq!(
+            evaluate_index_health(journal.path(), Timestamp::now()).failed,
+            0
+        );
     }
 
     #[test]
@@ -768,7 +771,7 @@ mod tests {
     #[test]
     fn a_daily_check_that_runs_without_finishing_for_two_days_reads_behind() {
         let journal = checked_journal(72 * HOUR, Some(2 * HOUR));
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert!(health.check_overdue);
         assert_eq!(health.state, IndexHealthState::Behind);
         assert_eq!(health.text, INDEX_TEXT_CHECK_OVERDUE);
@@ -779,16 +782,16 @@ mod tests {
         // Off over a weekend: the last run is the one that finished the check.
         for run in [Some(72 * HOUR - 60_000), None] {
             let journal = checked_journal(72 * HOUR, run);
-            let health = evaluate_index_health(journal.path(), Utc::now());
+            let health = evaluate_index_health(journal.path(), Timestamp::now());
             assert!(!health.check_overdue, "{run:?}");
             assert_eq!(health.state, IndexHealthState::Ok, "{run:?}");
         }
         // A run that failed after a check under two days old is not yet overdue.
         let recent = checked_journal(30 * HOUR, Some(2 * HOUR));
-        assert!(!evaluate_index_health(recent.path(), Utc::now()).check_overdue);
+        assert!(!evaluate_index_health(recent.path(), Timestamp::now()).check_overdue);
         // A new journal has no finished check to be late on.
         let fresh = tempfile::tempdir().unwrap();
-        assert!(!evaluate_index_health(fresh.path(), Utc::now()).check_overdue);
+        assert!(!evaluate_index_health(fresh.path(), Timestamp::now()).check_overdue);
     }
 
     #[test]
@@ -816,11 +819,11 @@ mod tests {
         write_entry("@edges", "edges", now - 24 * HOUR as u64, 0);
         write_entry("@reclassify", "reclassify", now - 24 * HOUR as u64, 3);
         assert_eq!(
-            evaluate_index_health(journal.path(), Utc::now()).oldest_queued_age_ms,
+            evaluate_index_health(journal.path(), Timestamp::now()).oldest_queued_age_ms,
             None
         );
         write_entry("imports/fixture/summary.md", "path", now - 600_000, 0);
-        let age = evaluate_index_health(journal.path(), Utc::now())
+        let age = evaluate_index_health(journal.path(), Timestamp::now())
             .oldest_queued_age_ms
             .unwrap();
         assert!((600_000..3_600_000).contains(&age), "{age}");
@@ -848,11 +851,11 @@ mod tests {
         // A connections refresh, and a token that has failed only twice, do not.
         write_entry("@edges", "edges", 3);
         write_entry("@scan-full", "scan-full", 2);
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_ne!(health.failure, Some(IndexFailure::FailedWork));
         assert_ne!(health.state, IndexHealthState::Failing);
         write_entry("@scan-full", "scan-full", 3);
-        let health = evaluate_index_health(journal.path(), Utc::now());
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.failure, Some(IndexFailure::FailedWork));
         assert_eq!(health.state, IndexHealthState::Failing);
         assert_eq!(health.text, INDEX_TEXT_FAILED_FILES);

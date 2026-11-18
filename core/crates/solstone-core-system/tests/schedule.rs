@@ -8,8 +8,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{NaiveDate, TimeZone};
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_system::cap::{CapResolver, DefaultCapResolver};
 use solstone_core_system::partition::partition_for;
@@ -83,22 +82,22 @@ impl ScheduleSubmissionSink for Sink {
 }
 
 /// Every schedule fixture reads its wall times in one fixed zone.
-const ZONE: Tz = Tz::America__Denver;
+fn zone() -> TimeZone {
+    solstone_core_time::zone("America/Denver").expect("fixture zone")
+}
 
-fn now(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> ScheduleNow {
-    let local = NaiveDate::from_ymd_opt(year, month, day)
-        .expect("date")
-        .and_hms_opt(hour, minute, 0)
-        .expect("time");
-    let unix_millis = ZONE
-        .from_local_datetime(&local)
+fn now(year: i16, month: i8, day: i8, hour: i8, minute: i8) -> ScheduleNow {
+    let local = jiff::civil::date(year, month, day).at(hour, minute, 0, 0);
+    let zone = zone();
+    let unix_millis = solstone_core_time::from_local(&zone, local)
         .earliest()
         .expect("representable local time")
-        .timestamp_millis();
+        .timestamp()
+        .as_millisecond();
     ScheduleNow {
         local,
         unix_millis,
-        zone: ZONE,
+        zone,
     }
 }
 
@@ -106,7 +105,7 @@ fn state(last_run: f64) -> Value {
     json!({"last_run": last_run})
 }
 
-fn local_epoch(value: ScheduleNow) -> f64 {
+fn local_epoch(value: &ScheduleNow) -> f64 {
     value.unix_millis as f64 / 1_000.0
 }
 
@@ -268,51 +267,51 @@ fn ac7_ac10_mark_intervals_are_strict_and_minute_interval_is_inclusive() {
     };
     assert!(is_due(
         &entry("hourly"),
-        Some(&state(local_epoch(now(2026, 3, 22, 9, 59)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 9, 59)))),
         &config,
-        current
+        &current
     ));
     assert!(!is_due(
         &entry("hourly"),
-        Some(&state(local_epoch(now(2026, 3, 22, 10, 0)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 10, 0)))),
         &config,
-        current
+        &current
     ));
     assert!(is_due(
         &entry("daily"),
-        Some(&state(local_epoch(now(2026, 3, 21, 2, 59)))),
+        Some(&state(local_epoch(&now(2026, 3, 21, 2, 59)))),
         &config,
-        current
+        &current
     ));
     assert!(!is_due(
         &entry("daily"),
-        Some(&state(local_epoch(now(2026, 3, 22, 3, 0)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 3, 0)))),
         &config,
-        current
+        &current
     ));
     assert!(is_due(
         &entry("weekly"),
-        Some(&state(local_epoch(now(2026, 3, 15, 2, 59)))),
+        Some(&state(local_epoch(&now(2026, 3, 15, 2, 59)))),
         &config,
-        current
+        &current
     ));
     assert!(!is_due(
         &entry("weekly"),
-        Some(&state(local_epoch(now(2026, 3, 22, 3, 0)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 3, 0)))),
         &config,
-        current
+        &current
     ));
     assert!(is_due(
         &entry("5m"),
-        Some(&state(local_epoch(now(2026, 3, 22, 9, 55)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 9, 55)))),
         &config,
-        current
+        &current
     ));
     assert!(!is_due(
         &entry("5m"),
-        Some(&state(local_epoch(now(2026, 3, 22, 9, 56)))),
+        Some(&state(local_epoch(&now(2026, 3, 22, 9, 56)))),
         &config,
-        current
+        &current
     ));
 }
 
@@ -321,36 +320,30 @@ fn ac11_ac12_missing_and_corrupt_last_run_follow_python_due_fallback() {
     let current = now(2026, 3, 22, 10, 0);
     let config = ScheduleConfig::default();
     // Python `_is_due` makes an absent last_run immediately due.
-    assert!(is_due(&entry("hourly"), None, &config, current));
+    assert!(is_due(&entry("hourly"), None, &config, &current));
     // Python's OSError/ValueError from datetime.fromtimestamp also makes it due.
     assert!(is_due(
         &entry("hourly"),
         Some(&state(f64::MAX)),
         &config,
-        current
+        &current
     ));
     let unknown = entry("nonsense");
     assert!(!is_due(
         &unknown,
-        Some(&state(local_epoch(current))),
+        Some(&state(local_epoch(&current))),
         &config,
-        current
+        &current
     ));
 }
 
 #[test]
 fn ac12_dst_marks_are_recomputed_from_naive_local_fields() {
     // The invariant is field-wise local comparison: repeated wall-clock hours
-    // are not made DST-safe by a monotonic or UTC scheduler. NaiveDateTime
-    // cannot encode which DST occurrence a wall-clock time belongs to.
-    let first_occurrence = NaiveDate::from_ymd_opt(2026, 11, 1)
-        .expect("date")
-        .and_hms_opt(1, 15, 0)
-        .expect("time");
-    let second_occurrence = NaiveDate::from_ymd_opt(2026, 11, 1)
-        .expect("date")
-        .and_hms_opt(1, 45, 0)
-        .expect("time");
+    // are not made DST-safe by a monotonic or UTC scheduler. A zone-less
+    // date-time cannot encode which DST occurrence a wall-clock time belongs to.
+    let first_occurrence = jiff::civil::date(2026, 11, 1).at(1, 15, 0, 0);
+    let second_occurrence = jiff::civil::date(2026, 11, 1).at(1, 45, 0, 0);
     assert_eq!(hour_mark(first_occurrence), hour_mark(second_occurrence));
     assert_eq!(
         daily_mark(first_occurrence, None),
@@ -467,8 +460,8 @@ fn ac17_ac19_edge_checks_retry_coarse_only_and_catch_up_is_bounded() {
     fs::write(
         bed.state(),
         serde_json::to_vec(&json!({
-            "hour": state(local_epoch(now(2026, 3, 22, 9, 0))),
-            "minute": state(local_epoch(now(2026, 3, 22, 9, 55)))
+            "hour": state(local_epoch(&now(2026, 3, 22, 9, 0))),
+            "minute": state(local_epoch(&now(2026, 3, 22, 9, 55)))
         }))
         .expect("state"),
     )
@@ -777,7 +770,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
     engine
         .record_completion(
             "weekly-agents",
-            local_epoch(now(2026, 3, 22, 3, 20)),
+            local_epoch(&now(2026, 3, 22, 3, 20)),
             "error",
             "first",
         )
@@ -785,7 +778,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
     engine
         .record_completion(
             "ok-weekly",
-            local_epoch(now(2026, 3, 22, 3, 20)),
+            local_epoch(&now(2026, 3, 22, 3, 20)),
             "ok",
             "ok",
         )
@@ -793,7 +786,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
     engine
         .record_completion(
             "empty-weekly",
-            local_epoch(now(2026, 3, 22, 3, 20)),
+            local_epoch(&now(2026, 3, 22, 3, 20)),
             "empty",
             "nothing to do",
         )
@@ -840,7 +833,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
     engine
         .record_completion(
             "weekly-agents",
-            local_epoch(now(2026, 3, 22, 4, 25)),
+            local_epoch(&now(2026, 3, 22, 4, 25)),
             "error",
             "retry",
         )
@@ -876,7 +869,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
     engine
         .record_completion(
             "weekly-agents",
-            local_epoch(now(2026, 3, 29, 3, 20)),
+            local_epoch(&now(2026, 3, 29, 3, 20)),
             "timeout",
             "next",
         )
@@ -899,7 +892,7 @@ fn a_failed_daily_run_shows_its_retry_as_the_next_run() {
     engine
         .record_completion(
             "heartbeat",
-            local_epoch(now(2026, 3, 22, 0, 20)),
+            local_epoch(&now(2026, 3, 22, 0, 20)),
             "shutdown",
             "r",
         )

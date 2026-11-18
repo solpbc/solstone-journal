@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::owner_zone;
 
@@ -27,7 +27,7 @@ pub fn record_generate_usage(
     context: &str,
     usage: &Value,
 ) -> io::Result<()> {
-    record_generate_usage_at(journal_path, model, context, usage, Utc::now())
+    record_generate_usage_at(journal_path, model, context, usage, Timestamp::now())
 }
 
 fn record_generate_usage_at(
@@ -35,7 +35,7 @@ fn record_generate_usage_at(
     model: &str,
     context: &str,
     usage: &Value,
-    now: chrono::DateTime<Utc>,
+    now: Timestamp,
 ) -> io::Result<()> {
     record_usage_at(
         UsageRecord {
@@ -67,18 +67,16 @@ pub fn record_usage(
             entry_type,
             segment,
         },
-        Utc::now(),
+        Timestamp::now(),
     )
 }
 
-fn record_usage_at(record: UsageRecord<'_>, now: chrono::DateTime<Utc>) -> io::Result<()> {
+fn record_usage_at(record: UsageRecord<'_>, now: Timestamp) -> io::Result<()> {
     let _lock = TOKEN_LOG_LOCK.lock().expect("token log lock poisoned");
     let mut entry = serde_json::Map::from_iter([
         (
             "timestamp".into(),
-            json!(
-                now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1_000_000_000.0
-            ),
+            json!(now.as_second() as f64 + f64::from(now.subsec_nanosecond()) / 1_000_000_000.0),
         ),
         ("model".into(), json!(record.model)),
         ("context".into(), json!(record.context)),
@@ -93,7 +91,8 @@ fn record_usage_at(record: UsageRecord<'_>, now: chrono::DateTime<Utc>) -> io::R
     let directory = record.journal_path.join("tokens");
     fs::create_dir_all(&directory)?;
     let zone = owner_zone(record.journal_path);
-    let path = directory.join(now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl");
+    let path =
+        directory.join(solstone_core_time::day_key(now.to_zoned_datetime(zone).date()) + ".jsonl");
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     let written = file.write(&line)?;
     if written == line.len() {
@@ -157,7 +156,6 @@ pub fn usage_for_log(usage: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
     use serde_json::json;
 
     use super::*;
@@ -172,9 +170,9 @@ mod tests {
         "api_key_override",
     ];
 
-    fn fixed_utc() -> chrono::DateTime<Utc> {
-        Utc.with_ymd_and_hms(2020, 1, 2, 3, 4, 5)
-            .single()
+    fn fixed_utc() -> Timestamp {
+        "2020-01-02T03:04:05Z"
+            .parse::<Timestamp>()
             .expect("fixed utc timestamp")
     }
 
@@ -210,7 +208,7 @@ mod tests {
         let zone = owner_zone(&directory);
         let path = directory
             .join("tokens")
-            .join(now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl");
+            .join(now.to_zoned_datetime(zone).strftime("%Y%m%d").to_string() + ".jsonl");
         let text = fs::read_to_string(path).unwrap();
         let lines = text.lines().collect::<Vec<_>>();
         assert_eq!(lines.len(), 2);
@@ -241,7 +239,7 @@ mod tests {
         )
         .unwrap();
         let zone = owner_zone(&wrapper_directory);
-        let name = now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl";
+        let name = now.to_zoned_datetime(zone).strftime("%Y%m%d").to_string() + ".jsonl";
         assert_eq!(
             fs::read(wrapper_directory.join("tokens").join(&name)).unwrap(),
             fs::read(generic_directory.join("tokens").join(name)).unwrap()
@@ -260,9 +258,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = chrono::DateTime::parse_from_rfc3339("2026-09-30T20:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let now = "2026-09-30T20:00:00Z".parse::<Timestamp>().unwrap();
         let usage = json!({"input_tokens": 10, "output_tokens": 5, "total_tokens": 15});
         record_usage_at(
             UsageRecord {

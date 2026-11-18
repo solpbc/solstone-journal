@@ -20,8 +20,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, NaiveTime, Offset, TimeZone, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::civil::Time;
+use jiff::tz::{Offset, TimeZone};
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, Segment, StreamLocation, iter_segments};
 
 use crate::accuracy::{Packs, StopWords};
@@ -120,24 +121,21 @@ pub struct Device {
 /// An instant with the wall-clock reading the device was keeping.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LocalTime {
-    pub utc: DateTime<Utc>,
-    pub offset: FixedOffset,
+    pub utc: Timestamp,
+    pub offset: Offset,
 }
 
 impl LocalTime {
     pub fn clock(&self) -> String {
-        self.utc
-            .with_timezone(&self.offset)
-            .format("%H:%M")
+        self.offset
+            .to_datetime(self.utc)
+            .strftime("%H:%M")
             .to_string()
     }
 
     /// The local calendar day, `YYYYMMDD`.
     pub fn day(&self) -> String {
-        self.utc
-            .with_timezone(&self.offset)
-            .format("%Y%m%d")
-            .to_string()
+        solstone_core_time::day_key(self.offset.to_datetime(self.utc).date())
     }
 }
 
@@ -199,7 +197,7 @@ pub enum Entry {
 }
 
 impl Entry {
-    fn sort_time(&self) -> Option<DateTime<Utc>> {
+    fn sort_time(&self) -> Option<Timestamp> {
         match self {
             Self::Readings { first, .. } | Self::Stay { first, .. } => Some(first.utc),
             Self::Visit {
@@ -276,7 +274,7 @@ pub trait DeviceDirectory {
 struct LocatedSegment {
     source: SourceRef,
     path: PathBuf,
-    start_wall: Option<NaiveTime>,
+    start_wall: Option<Time>,
 }
 
 fn located(day: &str, segment: &Segment) -> Option<LocatedSegment> {
@@ -294,7 +292,7 @@ fn located(day: &str, segment: &Segment) -> Option<LocatedSegment> {
         .key()
         .split('_')
         .next()
-        .and_then(|hhmmss| NaiveTime::parse_from_str(hhmmss, "%H%M%S").ok());
+        .and_then(|hhmmss| Time::strptime("%H%M%S", hhmmss).ok());
     Some(LocatedSegment {
         source: SourceRef {
             day: day.to_owned(),
@@ -320,18 +318,22 @@ fn word_for(platform: Platform, device_type: Option<&str>) -> &'static str {
     }
 }
 
-fn offset_for(context: &SegmentContext, owner: Tz, at: DateTime<Utc>) -> FixedOffset {
-    if let Some(zone) = context
-        .tz
-        .as_deref()
-        .and_then(|name| name.parse::<Tz>().ok())
-    {
-        return zone.offset_from_utc_datetime(&at.naive_utc()).fix();
+/// A device-reported offset, when it is less than a day either way.
+fn reported_offset(seconds: i32) -> Option<Offset> {
+    (-86_399..=86_399)
+        .contains(&seconds)
+        .then(|| Offset::from_seconds(seconds).ok())
+        .flatten()
+}
+
+fn offset_for(context: &SegmentContext, owner: &TimeZone, at: Timestamp) -> Offset {
+    if let Some(zone) = context.tz.as_deref().and_then(solstone_core_time::zone) {
+        return zone.to_offset(at);
     }
-    if let Some(offset) = context.utc_offset_seconds.and_then(FixedOffset::east_opt) {
+    if let Some(offset) = context.utc_offset_seconds.and_then(reported_offset) {
         return offset;
     }
-    owner.offset_from_utc_datetime(&at.naive_utc()).fix()
+    owner.to_offset(at)
 }
 
 struct Observation {
@@ -383,7 +385,7 @@ pub fn read_day(
     tier: &AreaTier,
     packs: Option<&Packs>,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> DayLocation {
     read_days(journal, &[day.to_owned()], tier, packs, directory, owner)
         .pop()
@@ -400,7 +402,7 @@ pub fn read_segment_text(
     tier: &AreaTier,
     packs: Option<&Packs>,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> Result<DayLocation, String> {
     let located =
         located(day, segment).ok_or_else(|| "location segment has no coordinate".to_owned())?;
@@ -428,7 +430,7 @@ pub fn read_days(
     tier: &AreaTier,
     packs: Option<&Packs>,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> Vec<DayLocation> {
     let read = |day: &str| {
         let (located_segments, files) = read_segments(journal, day, directory);
@@ -443,10 +445,9 @@ pub fn read_days(
         {
             continue;
         }
-        let Some(next) = chrono::NaiveDate::parse_from_str(&views[index].day, "%Y%m%d")
-            .ok()
-            .and_then(|date| date.succ_opt())
-            .map(|date| date.format("%Y%m%d").to_string())
+        let Some(next) = solstone_core_time::parse_day(&views[index].day)
+            .and_then(|date| date.tomorrow().ok())
+            .map(solstone_core_time::day_key)
         else {
             continue;
         };
@@ -460,7 +461,7 @@ pub fn read_days(
 }
 
 /// The arrival and position of a visit the phone has reported only on arrival.
-fn arrival_only(entry: &Entry) -> Option<(usize, DateTime<Utc>, Point)> {
+fn arrival_only(entry: &Entry) -> Option<(usize, Timestamp, Point)> {
     match entry {
         Entry::Visit {
             device,
@@ -474,7 +475,7 @@ fn arrival_only(entry: &Entry) -> Option<(usize, DateTime<Utc>, Point)> {
 }
 
 /// Whether `entry` is the complete report of an arrival-only visit.
-fn completes(entry: &Entry, arrived: DateTime<Utc>, at: &Point) -> bool {
+fn completes(entry: &Entry, arrived: Timestamp, at: &Point) -> bool {
     let Entry::Visit {
         arrival: Some(arrival),
         departure: Some(_),
@@ -484,7 +485,7 @@ fn completes(entry: &Entry, arrived: DateTime<Utc>, at: &Point) -> bool {
     else {
         return false;
     };
-    let later = (arrival.utc - arrived).num_seconds();
+    let later = (arrival.utc - arrived).as_secs();
     (0..=TWIN_ARRIVAL_SECONDS).contains(&later)
         && crate::pack::distance_m(at.latitude, at.longitude, point.latitude, point.longitude)
             <= TWIN_DISTANCE_M
@@ -602,7 +603,7 @@ fn assemble(
     tier: &AreaTier,
     packs: Option<&Packs>,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> DayLocation {
     let mut devices: Vec<Device> = Vec::new();
     let mut observations = Vec::new();
@@ -656,7 +657,7 @@ fn assemble(
                 devices[device].interrupted_segments += 1;
             }
         }
-        let local = |at: DateTime<Utc>| LocalTime {
+        let local = |at: Timestamp| LocalTime {
             utc: at,
             offset: offset_for(context, owner, at),
         };
@@ -691,21 +692,17 @@ fn assemble(
         }
         if file.unreadable_file || bad_lines > 0 {
             let at = segment.start_wall.and_then(|wall| {
-                let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-                let naive = date.and_time(wall);
+                let date = solstone_core_time::parse_day(day)?;
+                let wall = date.to_datetime(wall);
                 let offset = context
                     .utc_offset_seconds
-                    .and_then(FixedOffset::east_opt)
+                    .and_then(reported_offset)
                     .unwrap_or_else(|| {
-                        owner
-                            .offset_from_local_datetime(&naive)
+                        solstone_core_time::from_local(owner, wall)
                             .earliest()
-                            .map_or_else(|| FixedOffset::east_opt(0).unwrap(), |o| o.fix())
+                            .map_or(Offset::UTC, |zoned| zoned.offset())
                     });
-                let utc = offset
-                    .from_local_datetime(&naive)
-                    .single()?
-                    .with_timezone(&Utc);
+                let utc = offset.to_timestamp(wall).ok()?;
                 Some(LocalTime { utc, offset })
             });
             unreadable.push(Entry::Unreadable {
@@ -755,7 +752,7 @@ fn assemble(
     for observation in visits {
         let key = (
             observation.device,
-            observation.visit.arrival.map(|arrival| arrival.timestamp()),
+            observation.visit.arrival.map(|arrival| arrival.as_second()),
             (observation.visit.latitude * 1e5).round() as i64,
             (observation.visit.longitude * 1e5).round() as i64,
         );
@@ -854,7 +851,7 @@ fn assemble(
         let samples: Vec<Sample> = indexes
             .iter()
             .map(|&i| Sample {
-                seconds: kept[i].time.utc.timestamp(),
+                seconds: kept[i].time.utc.as_second(),
                 latitude: kept[i].point.latitude,
                 longitude: kept[i].point.longitude,
                 accuracy_m: kept[i].point.accuracy_m,
@@ -957,8 +954,7 @@ fn assemble(
         );
         let extends = match &run {
             Some((Entry::Readings { last, .. }, key)) => {
-                key == &run_key
-                    && (observation.time.utc - last.utc).num_seconds() <= RUN_BREAK_SECONDS
+                key == &run_key && (observation.time.utc - last.utc).as_secs() <= RUN_BREAK_SECONDS
             }
             _ => false,
         };
@@ -1117,7 +1113,7 @@ pub(crate) mod tests {
             tier(),
             None,
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         )
     }
 
@@ -1435,7 +1431,7 @@ pub(crate) mod tests {
             tier(),
             None,
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         );
         assert_eq!(
             visits_of(&second),
@@ -1534,7 +1530,7 @@ pub(crate) mod tests {
             tier(),
             None,
             &directory,
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         );
         assert_eq!(day.visits(), 2);
     }
@@ -1796,7 +1792,7 @@ pub(crate) mod tests {
             tier(),
             None,
             &directory,
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         );
         let phrases: Vec<String> = (0..day.devices.len())
             .map(|i| day.device_phrase(i))

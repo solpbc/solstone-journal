@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use ndarray::Array2;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -79,7 +79,7 @@ pub fn detect_owner_candidate_checked(
             .unwrap_or_else(|| json!(0));
         update_voiceprint_state_checked(
             root,
-            json!({"status":"confirmed","cluster_size":centroid.cluster_size,"confirmed_at":Utc::now().to_rfc3339(),"evidence_tier":centroid.evidence_tier.clone().unwrap_or_else(|| "standard".to_owned())}),
+            json!({"status":"confirmed","cluster_size":centroid.cluster_size,"confirmed_at":solstone_core_time::utc_rfc3339(Timestamp::now()),"evidence_tier":centroid.evidence_tier.clone().unwrap_or_else(|| "standard".to_owned())}),
             checkpoint,
         )?;
         return Ok(
@@ -195,7 +195,7 @@ pub fn detect_owner_candidate_checked(
     } else {
         "single_stream"
     };
-    let version = Utc::now().to_rfc3339();
+    let version = solstone_core_time::utc_rfc3339(Timestamp::now());
     let samples = candidate_samples(&expansion.rows, &centroid, &version);
     let snapshot = OwnerCandidate {
         centroid,
@@ -614,7 +614,7 @@ fn candidate_low_quality(
 ) -> Result<Value, String> {
     update_voiceprint_state_checked(
         root,
-        json!({"status":"low_quality","source":"candidate_pool","low_quality_reason":value.reason,"observed_value":value.observed,"threshold_value":value.threshold,"evidence_tier":value.tier,"intra_cosine_p25_bound":value.bound,"segments_checked":value.segments,"attempted_at":Utc::now().to_rfc3339()}),
+        json!({"status":"low_quality","source":"candidate_pool","low_quality_reason":value.reason,"observed_value":value.observed,"threshold_value":value.threshold,"evidence_tier":value.tier,"intra_cosine_p25_bound":value.bound,"segments_checked":value.segments,"attempted_at":solstone_core_time::utc_rfc3339(Timestamp::now())}),
         checkpoint,
     )?;
     Ok(
@@ -631,7 +631,7 @@ fn no_cluster(
 ) -> Result<Value, String> {
     update_voiceprint_state_checked(
         root,
-        json!({"status":"no_cluster","reason":reason,"attempted_at":Utc::now().to_rfc3339()}),
+        json!({"status":"no_cluster","reason":reason,"attempted_at":solstone_core_time::utc_rfc3339(Timestamp::now())}),
         checkpoint,
     )?;
     Ok(
@@ -837,7 +837,7 @@ mod tests {
             &OwnerCentroidWriteInput {
                 centroid,
                 cluster_size: 40,
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 evidence_tier: "standard".to_owned(),
             },
         )

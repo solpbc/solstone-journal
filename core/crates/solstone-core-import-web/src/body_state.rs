@@ -130,10 +130,10 @@ pub(crate) fn failing_windows(root: &Path, import_id: &str) -> Option<usize> {
 /// A start time as the owner reads it, in the journal's zone.
 fn when(root: &Path, started_ms: u64) -> String {
     let zone = solstone_core_journal_config::owner_zone(root);
-    chrono::DateTime::from_timestamp_millis(i64::try_from(started_ms).unwrap_or(i64::MAX))
+    jiff::Timestamp::from_millisecond(i64::try_from(started_ms).unwrap_or(i64::MAX))
         .map(|at| {
-            at.with_timezone(&zone)
-                .format("%b %-d, %-I:%M %p")
+            zone.to_datetime(at)
+                .strftime("%b %-d, %-I:%M %p")
                 .to_string()
         })
         .unwrap_or_default()

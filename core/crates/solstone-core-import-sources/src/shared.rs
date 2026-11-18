@@ -9,7 +9,9 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use zip::ZipArchive;
 
@@ -206,7 +208,7 @@ impl std::error::Error for SourceError {
 }
 
 pub(crate) struct ParsedEntry {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub speaker: String,
     pub text: String,
     pub model_slug: Option<String>,
@@ -224,7 +226,7 @@ pub(crate) fn plan_entries(
     entries: Vec<ParsedEntry>,
     skipped: Vec<SkippedEntry>,
     threads: Vec<String>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
 ) -> ImportPlan {
     let item_count = u64::try_from(entries.len()).unwrap_or(u64::MAX);
     let windows = window(
@@ -254,7 +256,7 @@ pub(crate) fn plan_entries(
                         speaker: entry.speaker,
                         text: entry.text,
                         thread: entry.thread,
-                        source_ms: timestamp.timestamp_millis(),
+                        source_ms: epoch_millisecond(timestamp),
                     })
                     .collect(),
                 day: window.day,
@@ -283,8 +285,8 @@ pub(crate) fn plan_entries(
 pub(crate) struct Window<T> {
     pub day: String,
     pub segment_key: String,
-    pub start: DateTime<Utc>,
-    pub items: Vec<(DateTime<Utc>, T)>,
+    pub start: Timestamp,
+    pub items: Vec<(Timestamp, T)>,
 }
 
 pub(crate) const WINDOW_SECONDS: i64 = 300;
@@ -297,37 +299,26 @@ pub(crate) const WINDOW_SECONDS: i64 = 300;
 /// Length is not an occurrence: readers use explicit source_ms when present,
 /// and otherwise hour/minute/second plus start, while clamped_segment_end_seconds
 /// only bounds the segment end.
-pub(crate) fn window<T>(
-    items: Vec<(DateTime<Utc>, T)>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> Vec<Window<T>> {
+pub(crate) fn window<T>(items: Vec<(Timestamp, T)>, zone: &TimeZone) -> Vec<Window<T>> {
     windows(items, zone, false)
 }
 
 /// Windows as [`window`] makes them, each also closed where the zone's offset
 /// changes, so every time in one window reads in a single offset. A window
 /// with no offset change inside it keeps the same key.
-pub(crate) fn window_by_offset<T>(
-    items: Vec<(DateTime<Utc>, T)>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> Vec<Window<T>> {
+pub(crate) fn window_by_offset<T>(items: Vec<(Timestamp, T)>, zone: &TimeZone) -> Vec<Window<T>> {
     windows(items, zone, true)
 }
 
-fn windows<T>(
-    mut items: Vec<(DateTime<Utc>, T)>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-    by_offset: bool,
-) -> Vec<Window<T>> {
-    use chrono::Offset;
-    let offset = |timestamp: DateTime<Utc>| timestamp.with_timezone(zone).offset().fix();
+fn windows<T>(mut items: Vec<(Timestamp, T)>, zone: &TimeZone, by_offset: bool) -> Vec<Window<T>> {
+    let offset = |timestamp: Timestamp| zone.to_offset(timestamp);
     items.sort_by_key(|(timestamp, _)| *timestamp);
     let mut windows: Vec<Window<T>> = Vec::new();
     for (timestamp, item) in items {
         let day = day_key(timestamp, zone);
         let open = windows.last_mut().filter(|window| {
             window.day == day
-                && (timestamp - window.start).num_seconds() < WINDOW_SECONDS
+                && (timestamp - window.start).as_secs() < WINDOW_SECONDS
                 && (!by_offset || offset(timestamp) == offset(window.start))
         });
         match open {
@@ -335,7 +326,7 @@ fn windows<T>(
             None => windows.push(Window {
                 segment_key: format!(
                     "{}_{WINDOW_SECONDS}",
-                    timestamp.with_timezone(zone).format("%H%M%S")
+                    timestamp.to_zoned_datetime(zone.clone()).strftime("%H%M%S")
                 ),
                 day,
                 start: timestamp,
@@ -347,8 +338,8 @@ fn windows<T>(
     for window in &mut windows {
         let wall_hhmmss = window
             .start
-            .with_timezone(zone)
-            .format("%H%M%S")
+            .to_zoned_datetime(zone.clone())
+            .strftime("%H%M%S")
             .to_string();
         let key = (window.day.clone(), wall_hhmmss.clone());
         let count = counts.entry(key).or_insert(0);
@@ -360,8 +351,8 @@ fn windows<T>(
     windows
 }
 
-fn clock_offset(offset: chrono::TimeDelta) -> String {
-    let offset = offset.num_seconds().max(0);
+fn clock_offset(offset: SignedDuration) -> String {
+    let offset = offset.as_secs().max(0);
     format!(
         "{:02}:{:02}:{:02}",
         offset / 3600,
@@ -370,11 +361,18 @@ fn clock_offset(offset: chrono::TimeDelta) -> String {
     )
 }
 
-pub(crate) fn day_key(
-    timestamp: DateTime<Utc>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> String {
-    timestamp.with_timezone(zone).format("%Y%m%d").to_string()
+pub(crate) fn day_key(timestamp: Timestamp, zone: &TimeZone) -> String {
+    solstone_core_time::day_key(timestamp.to_zoned_datetime(zone.clone()).date())
+}
+
+/// Whole seconds since 1970-01-01T00:00:00Z, rounded towards the past.
+pub(crate) fn epoch_second(instant: Timestamp) -> i64 {
+    instant.as_second() - i64::from(instant.subsec_nanosecond() < 0)
+}
+
+/// Whole milliseconds since 1970-01-01T00:00:00Z, rounded towards the past.
+pub(crate) fn epoch_millisecond(instant: Timestamp) -> i64 {
+    instant.as_millisecond() - i64::from(instant.as_nanosecond() % 1_000_000 < 0)
 }
 
 pub(crate) fn source_io(
@@ -513,15 +511,15 @@ pub(crate) fn read_zip_member(
     Ok(Some(bytes))
 }
 
-pub(crate) fn parse_iso_utc(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|timestamp| timestamp.with_timezone(&Utc))
+pub(crate) fn parse_iso_utc(value: &str) -> Option<Timestamp> {
+    solstone_core_time::parse_rfc3339(value)
+        .map(|timestamp| timestamp.timestamp())
         .ok()
         .or_else(|| {
-            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-                .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f"))
+            DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", value)
+                .or_else(|_| DateTime::strptime("%Y-%m-%d %H:%M:%S%.f", value))
                 .ok()
-                .map(|timestamp| timestamp.and_utc())
+                .and_then(|timestamp| jiff::tz::Offset::UTC.to_timestamp(timestamp).ok())
         })
 }
 

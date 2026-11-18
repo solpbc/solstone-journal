@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use solstone_core_format::audio_archive::{
     AUDIO_ARCHIVE_PLACEMENT_FILENAME, AudioArchivePlacement,
@@ -106,7 +106,7 @@ pub fn holds_location_file(dir: &Path) -> bool {
 pub fn is_location_only(
     dir: &Path,
     stream_parent_name: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<bool, HealthError> {
     if !holds_location_file(dir) {
         return Ok(false);
@@ -119,14 +119,14 @@ pub fn list_location_only_segments<S: SegmentSource>(
     source: &S,
     journal: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Vec<LocationSegmentRow>, HealthError> {
     let day_path = solstone_core_journal_io::day_path(journal, day, false)?;
     if !day_path.is_dir() {
         return Ok(Vec::new());
     }
-    let _day_date = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
+    let _day_date = solstone_core_time::parse_day(day)
+        .ok_or_else(|| HealthError::InvalidDay(day.to_owned()))?;
     let mut rows = Vec::new();
 
     for segment in source.segments(journal, day)? {
@@ -175,14 +175,14 @@ pub fn scan_day<S: SegmentSource>(
     source: &S,
     journal: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> ScanResult {
     let day_path = solstone_core_journal_io::day_path(journal, day, false)?;
     if !day_path.is_dir() {
         return Ok((Vec::new(), Vec::new(), Vec::new()));
     }
-    let _day_date = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
+    let _day_date = solstone_core_time::parse_day(day)
+        .ok_or_else(|| HealthError::InvalidDay(day.to_owned()))?;
     let mut audio_slots = BTreeSet::new();
     let mut screen_slots = BTreeSet::new();
     let mut segments = Vec::new();
@@ -260,7 +260,7 @@ pub fn scan_day<S: SegmentSource>(
 pub(crate) fn detect_data_state(
     segment_path: &Path,
     stream_parent_name: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(DataStateMap, BTreeMap<String, Option<i64>>), HealthError> {
     let files = segment_files(segment_path)?;
     if is_markdown_only_body_card_segment(stream_parent_name, &files) {
@@ -410,7 +410,7 @@ fn aggregate_screen_state(
     segment_path: &Path,
     raw_paths: &[&PathBuf],
     retained_outputs: &[PathBuf],
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DataState {
     let state_for = |output: &PathBuf, has_raw| {
         let record = if has_raw {
@@ -465,7 +465,7 @@ fn aggregate_screen_state(
 fn archive_audio_state(
     directory: &Path,
     placement: &AudioArchivePlacement,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DataState {
     let mut states = Vec::new();
     for part in &placement.parts {
@@ -604,7 +604,7 @@ fn is_browser_jsonl(path: &Path) -> bool {
 pub fn unclaimed_image_state(
     segment_path: &Path,
     stream_parent_name: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<UnclaimedImageState, HealthError> {
     if stream_parent_name.starts_with("import.") {
         return Ok(UnclaimedImageState {
@@ -628,7 +628,7 @@ pub fn unclaimed_image_state(
 fn aggregate_image_state(
     segment_path: &Path,
     image_raw_paths: &[PathBuf],
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DataState {
     if image_raw_paths.is_empty() {
         return DataState::Absent;
@@ -720,7 +720,8 @@ fn newest_input_mtime_ms(paths: &[&PathBuf]) -> Option<i64> {
     paths
         .iter()
         .filter_map(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
-        .map(|modified| DateTime::<Utc>::from(modified).timestamp_millis())
+        .filter_map(|modified| Timestamp::try_from(modified).ok())
+        .map(Timestamp::as_millisecond)
         .max()
 }
 
@@ -808,7 +809,6 @@ mod tests {
     use std::path::Path;
     use std::time::SystemTime;
 
-    use chrono::{DateTime, Utc};
     use tempfile::TempDir;
 
     use super::*;
@@ -893,7 +893,7 @@ mod tests {
         assert!(streams.contains(&"import.oura"));
 
         let day = "20990202";
-        let now = DateTime::<Utc>::from(std::time::SystemTime::now());
+        let now = Timestamp::now();
 
         for stream in &streams {
             let temporary = TempDir::new().unwrap();
@@ -1033,7 +1033,7 @@ mod tests {
             solstone_core_depict::run_with_clients(&image, false, &RefusingWire, &SilentDetector)
                 .is_err()
         );
-        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let now = Timestamp::UNIX_EPOCH;
         let (states, _) = detect_data_state(&segment_dir, "field", now).unwrap();
         assert_eq!(states.0.get("image").map(String::as_str), Some("failed"));
     }
@@ -1068,7 +1068,7 @@ mod tests {
 
     #[test]
     fn a_transcript_named_after_any_recording_completes_its_speech() {
-        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let now = Timestamp::UNIX_EPOCH;
         let (_temporary, segment_dir) = note_segment(NOTE_TRANSCRIPT);
         let (states, _) = detect_data_state(&segment_dir, "device_audio", now).unwrap();
         assert_eq!(states.0.get("audio").map(String::as_str), Some("analyzed"));
@@ -1085,7 +1085,7 @@ mod tests {
         // An early desktop recording: `capture.m4a`, transcribed before the
         // processing record into `capture.jsonl`, beside a screen video that
         // never finished writing.
-        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let now = Timestamp::UNIX_EPOCH;
         let temporary = tempfile::tempdir().unwrap();
         let segment_dir = temporary.path().join("093732_305");
         fs::create_dir_all(&segment_dir).unwrap();
@@ -1138,7 +1138,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260101";
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let loc_dir = root
             .join("chronicle")
@@ -1187,7 +1187,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260101";
-        let now = Utc::now();
+        let now = Timestamp::now();
         let stream = "phone";
 
         // 1. location.jsonl alone -> location-only
@@ -1221,7 +1221,7 @@ mod tests {
         write_file(&d3, ".analyzing_audio", "{}\n");
         filetime::set_file_mtime(
             &marker,
-            filetime::FileTime::from_system_time(SystemTime::from(now)),
+            filetime::FileTime::from_system_time(SystemTime::try_from(now).unwrap()),
         )
         .unwrap();
 
@@ -1299,7 +1299,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260101";
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let default_named = root
             .join("chronicle")
@@ -1332,7 +1332,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260101";
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let direct = root.join("chronicle").join(day).join("120000_60");
         fs::create_dir_all(&direct).unwrap();
@@ -1353,7 +1353,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260101";
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let invalid = root
             .join("chronicle")
@@ -1378,7 +1378,7 @@ mod tests {
             .path()
             .join("chronicle/20260811/import.archive/120000_300");
         fs::create_dir_all(&segment_dir).unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // 1. Two raws and a two-part placement, one "start" jsonl -> audio not analyzed
         let raw1 = segment_dir.join("p0000_0123456789abcdef.opus");
@@ -1475,7 +1475,7 @@ mod tests {
             .with_extension("jsonl");
         fs::write(&first, format!("{header}\n")).unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Utc::now()),
+            archive_audio_state(directory, &placement, Timestamp::now()),
             DataState::Pending
         );
         let second = directory
@@ -1487,12 +1487,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Utc::now()),
+            archive_audio_state(directory, &placement, Timestamp::now()),
             DataState::Analyzed
         );
         fs::write(&second, format!("{header}\n")).unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Utc::now()),
+            archive_audio_state(directory, &placement, Timestamp::now()),
             DataState::Empty
         );
     }
@@ -1502,7 +1502,7 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         let day = "20260910";
-        let now = Utc::now();
+        let now = Timestamp::now();
         let act_dir = root
             .join("chronicle")
             .join(day)
@@ -1557,7 +1557,7 @@ mod tests {
 mod multi_file_tests {
     use std::{fs, path::Path};
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use tempfile::TempDir;
 
     use crate::{FilesystemSegmentSource, scan_day, segment_fully_sensed};
@@ -1589,7 +1589,7 @@ mod multi_file_tests {
 
     fn scan(root: &Path) -> crate::DaySegment {
         let (_, _, mut segments) =
-            scan_day(&FilesystemSegmentSource, root, DAY, Utc::now()).unwrap();
+            scan_day(&FilesystemSegmentSource, root, DAY, Timestamp::now()).unwrap();
         assert_eq!(segments.len(), 1);
         segments.remove(0)
     }
@@ -1623,7 +1623,7 @@ mod multi_file_tests {
             fs::write(direct.join("raw.jsonl"), format!("{header}\n{rows}")).unwrap();
 
             let (_, _, found) =
-                scan_day(&FilesystemSegmentSource, root.path(), DAY, Utc::now()).unwrap();
+                scan_day(&FilesystemSegmentSource, root.path(), DAY, Timestamp::now()).unwrap();
             assert_eq!(
                 found.len(),
                 1,
@@ -1639,7 +1639,7 @@ mod multi_file_tests {
                 DAY,
                 "120000_300",
                 Some("device"),
-                Utc::now(),
+                Timestamp::now(),
             );
             assert!(!named_state.0.contains_key("audio"));
             assert!(segment_fully_sensed(&named_state));
@@ -1664,7 +1664,7 @@ mod multi_file_tests {
                     DAY,
                     "120000_300",
                     Some("device"),
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .0["audio"],
                 "pending"
@@ -1758,7 +1758,7 @@ mod multi_file_tests {
                 &FilesystemSegmentSource,
                 root.path(),
                 1,
-                Utc::now() + chrono::Duration::days(2),
+                Timestamp::now() + jiff::SignedDuration::from_hours(24 * 2),
             )
             .unwrap();
             assert_eq!(view.days.len(), 1);

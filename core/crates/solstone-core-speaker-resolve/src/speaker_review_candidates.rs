@@ -6,13 +6,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use solstone_core_entity::{EntityTrustLockError, hold_entity_trust_lock};
 use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock, write_jsonl,
 };
+use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -268,7 +269,7 @@ fn create_parent(path: &Path) -> Result<(), SpeakerReviewCandidateError> {
 }
 
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+    utc_z(Timestamp::now(), Precision::Secs)
 }
 
 #[cfg(test)]

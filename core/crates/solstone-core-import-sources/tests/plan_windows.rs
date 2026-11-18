@@ -6,7 +6,7 @@ mod support;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{FixedOffset, TimeZone, Utc};
+use jiff::tz::{Offset, TimeZone};
 use serde_json::{Value, json};
 use solstone_core_format::content::{
     Family, OccurrenceTimeMs, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks,
@@ -18,8 +18,8 @@ use support::{TempTree, write_zip};
 #[test]
 fn conversation_entries_keep_roles_timestamps_and_five_minute_windows() {
     let tree = TempTree::new();
-    let claude_plan = claude::plan(&support::claude_archive(&tree), &Utc).unwrap();
-    let chatgpt_plan = chatgpt::plan(&support::chatgpt_archive(&tree), &Utc).unwrap();
+    let claude_plan = claude::plan(&support::claude_archive(&tree), &TimeZone::UTC).unwrap();
+    let chatgpt_plan = chatgpt::plan(&support::chatgpt_archive(&tree), &TimeZone::UTC).unwrap();
     for plan in [&claude_plan, &chatgpt_plan] {
         assert_eq!(
             plan.date_range,
@@ -40,17 +40,17 @@ fn imported_user_messages_reach_talent_sources_as_the_owner() {
     let cases = [
         (
             RegistrySource::Chatgpt,
-            chatgpt::plan(&support::chatgpt_archive(&tree), &Utc).unwrap(),
+            chatgpt::plan(&support::chatgpt_archive(&tree), &TimeZone::UTC).unwrap(),
             vec![("You", "Hello"), ("Assistant", "Hi")],
         ),
         (
             RegistrySource::Claude,
-            claude::plan(&support::claude_archive(&tree), &Utc).unwrap(),
+            claude::plan(&support::claude_archive(&tree), &TimeZone::UTC).unwrap(),
             vec![("You", "Hello"), ("Assistant", "Hi")],
         ),
         (
             RegistrySource::Gemini,
-            gemini::plan(&support::gemini_archive(&tree), &Utc).unwrap(),
+            gemini::plan(&support::gemini_archive(&tree), &TimeZone::UTC).unwrap(),
             vec![
                 ("You", "prompt only"),
                 ("Assistant", "response only &\u{a0}!?"),
@@ -117,7 +117,7 @@ fn claude_unfamiliar_or_missing_senders_are_not_assigned_to_either_participant()
             .into_bytes(),
         )],
     );
-    let plan = claude::plan(&path, &Utc).unwrap();
+    let plan = claude::plan(&path, &TimeZone::UTC).unwrap();
     let rendered = conversations::render(RegistrySource::Claude, plan, "unknown-test");
     let rows = rendered.files[0]
         .contents
@@ -164,7 +164,7 @@ fn a_message_lands_on_the_day_and_minute_of_the_zone_it_is_planned_in() {
 
     // Late evening in the owner's zone is the next morning in UTC. The journal is kept in
     // the owner's local time, so the owner's zone decides the day.
-    let pacific = FixedOffset::west_opt(8 * 3600).unwrap();
+    let pacific = TimeZone::fixed(Offset::from_seconds(-8 * 3600).unwrap());
     let local = claude::plan(&path, &pacific).unwrap();
     assert_eq!(
         local.date_range,
@@ -173,7 +173,7 @@ fn a_message_lands_on_the_day_and_minute_of_the_zone_it_is_planned_in() {
     assert_eq!(local.segments[0].day, "20260311");
     assert_eq!(local.segments[0].segment_key, "233000_300");
 
-    let utc = claude::plan(&path, &Utc).unwrap();
+    let utc = claude::plan(&path, &TimeZone::UTC).unwrap();
     assert_eq!(utc.segments[0].day, "20260312");
     assert_eq!(utc.segments[0].segment_key, "073000_300");
 }
@@ -242,16 +242,26 @@ fn chatgpt_fall_back_allocates_stepped_window_and_preserves_instants() {
     let tree = TempTree::new();
     let journal = setup_journal(&tree, "America/Denver");
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(8, 58, 0, 0))
+        .unwrap();
     let messages = [
-        (t1.timestamp(), "user", "earlier"),
-        (t2.timestamp(), "assistant", "later"),
+        (t1.as_second(), "user", "earlier"),
+        (t2.as_second(), "assistant", "later"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-chatgpt", zone, None)
-        .unwrap()
-        .unwrap();
+    let rendered = save::render(
+        RegistrySource::Chatgpt,
+        &archive,
+        "imp-chatgpt",
+        &zone,
+        None,
+    )
+    .unwrap()
+    .unwrap();
 
     assert_eq!(rendered.files.len(), 2);
     assert_eq!(rendered.files[0].day, "20261101");
@@ -316,7 +326,7 @@ fn chatgpt_fall_back_allocates_stepped_window_and_preserves_instants() {
     let prod0 = produce_chunks(Family::AiChat, &rel0, &text0);
     assert_eq!(
         prod0.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t1.timestamp_millis())),
+        Some(OccurrenceTimeMs(t1.as_millisecond())),
     );
 
     let text1 = fs::read_to_string(&outcome.created[1].path).unwrap();
@@ -327,7 +337,7 @@ fn chatgpt_fall_back_allocates_stepped_window_and_preserves_instants() {
     let prod1 = produce_chunks(Family::AiChat, &rel1, &text1);
     assert_eq!(
         prod1.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t2.timestamp_millis())),
+        Some(OccurrenceTimeMs(t2.as_millisecond())),
     );
 }
 
@@ -336,20 +346,26 @@ fn ordinary_day_control_groups_first_two_and_steps_third() {
     let tree = TempTree::new();
     let journal = setup_journal(&tree, "America/Denver");
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 3, 11, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 3, 11, 8, 1, 0).unwrap();
-    let t3 = Utc.with_ymd_and_hms(2026, 3, 11, 8, 3, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 11).at(7, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 11).at(8, 1, 0, 0))
+        .unwrap();
+    let t3 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 11).at(8, 3, 0, 0))
+        .unwrap();
     let messages = [
-        (t1.timestamp(), "user", "first"),
-        (t2.timestamp(), "assistant", "second"),
-        (t3.timestamp(), "user", "third"),
+        (t1.as_second(), "user", "first"),
+        (t2.as_second(), "assistant", "second"),
+        (t3.as_second(), "user", "third"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
     let rendered = save::render(
         RegistrySource::Chatgpt,
         &archive,
         "imp-ordinary",
-        zone,
+        &zone,
         None,
     )
     .unwrap()
@@ -376,11 +392,11 @@ fn ordinary_day_control_groups_first_two_and_steps_third() {
     let prod0 = produce_chunks(Family::AiChat, &rel0, &text0);
     assert_eq!(
         prod0.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t1.timestamp_millis())),
+        Some(OccurrenceTimeMs(t1.as_millisecond())),
     );
     assert_eq!(
         prod0.chunks[1].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t2.timestamp_millis())),
+        Some(OccurrenceTimeMs(t2.as_millisecond())),
     );
 
     let rows1 = rows_from_file(&outcome.created[1].path);
@@ -394,7 +410,7 @@ fn ordinary_day_control_groups_first_two_and_steps_third() {
     let prod1 = produce_chunks(Family::AiChat, &rel1, &text1);
     assert_eq!(
         prod1.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t3.timestamp_millis())),
+        Some(OccurrenceTimeMs(t3.as_millisecond())),
     );
 }
 
@@ -403,14 +419,18 @@ fn spring_pair_inside_one_window_keeps_both_instants() {
     let tree = TempTree::new();
     let journal = setup_journal(&tree, "America/Denver");
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 3, 8, 8, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 3, 8, 9, 1, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 8).at(8, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 8).at(9, 1, 0, 0))
+        .unwrap();
     let messages = [
-        (t1.timestamp(), "user", "first"),
-        (t2.timestamp(), "assistant", "second"),
+        (t1.as_second(), "user", "first"),
+        (t2.as_second(), "assistant", "second"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-spring", zone, None)
+    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-spring", &zone, None)
         .unwrap()
         .unwrap();
 
@@ -433,11 +453,11 @@ fn spring_pair_inside_one_window_keeps_both_instants() {
     let prod = produce_chunks(Family::AiChat, &rel0, &text0);
     assert_eq!(
         prod.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t1.timestamp_millis())),
+        Some(OccurrenceTimeMs(t1.as_millisecond())),
     );
     assert_eq!(
         prod.chunks[1].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t2.timestamp_millis())),
+        Some(OccurrenceTimeMs(t2.as_millisecond())),
     );
 }
 
@@ -446,18 +466,22 @@ fn reimport_leaves_paths_source_ms_and_sibling_marker_unchanged() {
     let tree = TempTree::new();
     let journal = setup_journal(&tree, "America/Denver");
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(8, 58, 0, 0))
+        .unwrap();
     let messages = [
-        (t1.timestamp(), "user", "earlier"),
-        (t2.timestamp(), "assistant", "later"),
+        (t1.as_second(), "user", "earlier"),
+        (t2.as_second(), "assistant", "later"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
     let rendered = save::render(
         RegistrySource::Chatgpt,
         &archive,
         "imp-reimport",
-        zone,
+        &zone,
         None,
     )
     .unwrap()
@@ -555,16 +579,20 @@ fn a_removed_key_comes_back_and_a_removal_in_progress_skips_only_that_key() {
         let tree = TempTree::new();
         let journal = setup_journal(&tree, "America/Denver");
         let zone = solstone_core_journal_config::owner_zone(&journal);
-        let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-        let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+        let t1 = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
+            .unwrap();
+        let t2 = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 11, 1).at(8, 58, 0, 0))
+            .unwrap();
         let archive = chatgpt_archive_with_conversations(
             &tree,
             &[
-                &[(t1.timestamp(), "user", "earlier")],
-                &[(t2.timestamp(), "user", "later")],
+                &[(t1.as_second(), "user", "earlier")],
+                &[(t2.as_second(), "user", "later")],
             ],
         );
-        let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", zone, None)
+        let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", &zone, None)
             .unwrap()
             .unwrap();
 
@@ -615,8 +643,12 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
     let tree = TempTree::new();
     let journal = setup_journal(&tree, "America/Denver");
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(8, 58, 0, 0))
+        .unwrap();
 
     // Claude
     let claude_path = tree.path().join("claude-fallback.zip");
@@ -640,7 +672,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
         RegistrySource::Claude,
         &claude_path,
         "imp-claude",
-        zone,
+        &zone,
         None,
     )
     .unwrap()
@@ -657,7 +689,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
     let c_prod0 = produce_chunks(Family::AiChat, &c_rel0, &c_text0);
     assert_eq!(
         c_prod0.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t1.timestamp_millis())),
+        Some(OccurrenceTimeMs(t1.as_millisecond())),
     );
     let c_text1 = fs::read_to_string(&claude_outcome.created[1].path).unwrap();
     let c_rel1 = format!(
@@ -667,7 +699,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
     let c_prod1 = produce_chunks(Family::AiChat, &c_rel1, &c_text1);
     assert_eq!(
         c_prod1.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t2.timestamp_millis())),
+        Some(OccurrenceTimeMs(t2.as_millisecond())),
     );
 
     // Gemini
@@ -693,7 +725,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
         RegistrySource::Gemini,
         &gemini_path,
         "imp-gemini",
-        zone,
+        &zone,
         None,
     )
     .unwrap()
@@ -710,7 +742,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
     let g_prod0 = produce_chunks(Family::AiChat, &g_rel0, &g_text0);
     assert_eq!(
         g_prod0.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t1.timestamp_millis())),
+        Some(OccurrenceTimeMs(t1.as_millisecond())),
     );
     let g_text1 = fs::read_to_string(&gemini_outcome.created[1].path).unwrap();
     let g_rel1 = format!(
@@ -720,7 +752,7 @@ fn claude_and_gemini_fall_back_archives_render_distinct_keys_and_instants() {
     let g_prod1 = produce_chunks(Family::AiChat, &g_rel1, &g_text1);
     assert_eq!(
         g_prod1.chunks[0].occurrence_time_ms,
-        Some(OccurrenceTimeMs(t2.timestamp_millis())),
+        Some(OccurrenceTimeMs(t2.as_millisecond())),
     );
 }
 
@@ -743,11 +775,15 @@ fn owner_zone_beats_the_host_zone_for_repeated_clocks() {
     let tree = TempTree::new();
     let journal_denver = setup_journal(&tree, "America/Denver");
     let zone_denver = solstone_core_journal_config::owner_zone(&journal_denver);
-    let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+    let t1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
+        .unwrap();
+    let t2 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(8, 58, 0, 0))
+        .unwrap();
     let messages = [
-        (t1.timestamp(), "user", "earlier"),
-        (t2.timestamp(), "assistant", "later"),
+        (t1.as_second(), "user", "earlier"),
+        (t2.as_second(), "assistant", "later"),
     ];
     let archive = chatgpt_archive_with_messages(&tree, &messages);
 
@@ -755,7 +791,7 @@ fn owner_zone_beats_the_host_zone_for_repeated_clocks() {
         RegistrySource::Chatgpt,
         &archive,
         "imp-denver",
-        zone_denver,
+        &zone_denver,
         None,
     )
     .unwrap()
@@ -769,9 +805,15 @@ fn owner_zone_beats_the_host_zone_for_repeated_clocks() {
     let journal_utc = tree_utc.path().join("journal");
     fs::create_dir_all(&journal_utc).unwrap();
     let zone_utc = solstone_core_journal_config::owner_zone(&journal_utc);
-    let rendered_utc = save::render(RegistrySource::Chatgpt, &archive, "imp-utc", zone_utc, None)
-        .unwrap()
-        .unwrap();
+    let rendered_utc = save::render(
+        RegistrySource::Chatgpt,
+        &archive,
+        "imp-utc",
+        &zone_utc,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(rendered_utc.files.len(), 2);
     assert_eq!(rendered_utc.files[0].segment, "075800_300");
     assert_eq!(rendered_utc.files[1].segment, "085800_300");

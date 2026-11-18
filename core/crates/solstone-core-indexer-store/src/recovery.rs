@@ -565,13 +565,14 @@ fn queue_fresh_full_pass(journal: &Path) -> io::Result<()> {
 }
 
 fn record_recovery(journal: &Path) {
-    let now = chrono::Local::now();
+    let now = jiff::ZonedDateTime::now();
     let log_path = journal.join(artifact(ArtifactId::IndexAttempts).path.replacen(
         '*',
-        &now.format("%Y%m%d").to_string(),
+        &solstone_core_time::day_key(now.date()),
         1,
     ));
-    let event = serde_json::json!({"event": "index.recovery", "ts": now.timestamp_millis()});
+    let event =
+        serde_json::json!({"event": "index.recovery", "ts": now.timestamp().as_millisecond()});
     if let Err(error) = append_jsonl(&log_path, &event) {
         log::warn!(target: "solstone::indexer", "index recovery not logged: {error}");
     }

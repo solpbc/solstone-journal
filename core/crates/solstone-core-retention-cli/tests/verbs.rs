@@ -18,18 +18,16 @@ use std::process::{Child, Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
-fn mark_at(label: &str) -> DateTime<Utc> {
+fn mark_at(label: &str) -> Timestamp {
     let raw = match label {
         "first" => "2026-08-06T12:00:00Z",
         "second" => "2026-08-06T12:00:01Z",
         "third" => "2026-08-06T12:00:02Z",
         other => other,
     };
-    DateTime::parse_from_rfc3339(raw)
-        .unwrap()
-        .with_timezone(&Utc)
+    solstone_core_time::parse_rfc3339(raw).unwrap().timestamp()
 }
 
 use serde_json::{Value, json};
@@ -1865,9 +1863,10 @@ fn release_raw_records_owner_event_in_events_jsonl() {
     assert_eq!(row["class"], "owner_raw_release");
     assert_eq!(
         row["ts"],
-        DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
+        solstone_core_time::parse_rfc3339("2026-08-06T12:00:00Z")
             .unwrap()
-            .timestamp_millis()
+            .timestamp()
+            .as_millisecond()
     );
 }
 

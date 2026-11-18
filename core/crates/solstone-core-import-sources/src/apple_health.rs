@@ -15,8 +15,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, FixedOffset, TimeZone, Timelike};
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::body_records::{
@@ -24,7 +24,7 @@ use solstone_core_format::content::body_records::{
     plain_words, sort_rows, source_words,
 };
 use solstone_core_import::BodyIngestError;
-use solstone_core_journal_config::{owner_zone, parse_zone};
+use solstone_core_journal_config::{owner_zone, parse_zone, zone_name};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
 
 use crate::apple_export::scan_apple_export;
@@ -33,6 +33,7 @@ use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
 use crate::body_stream::{APPLE, BodySource, SpanPolicy, TileIds};
 use crate::save::{RenderedImport, SegmentFile};
+use crate::shared::{epoch_millisecond, epoch_second};
 
 pub const STREAM: &str = APPLE.stream;
 /// What an Apple export's rows name as their source, and what their identities
@@ -186,7 +187,7 @@ pub(crate) fn sha256_hex(text: &str) -> String {
 }
 
 fn instant_ms(text: Option<&String>) -> Option<i64> {
-    parse_source_time(text?).map(|time| time.timestamp_millis())
+    parse_source_time(text?).map(|time| epoch_millisecond(time.timestamp()))
 }
 
 fn fields_of(element: &AppleElement, core: &[&str]) -> BTreeMap<String, Value> {
@@ -260,7 +261,7 @@ impl Reader {
         let start_ms = row
             .begins()
             .and_then(parse_source_time)
-            .map_or(0, |time| time.timestamp_millis());
+            .map_or(0, |time| epoch_millisecond(time.timestamp()));
         *self.export.read.entry(row.label.clone()).or_default() += 1;
         let rank = u8::from(row.kind != RowKind::Experience);
         self.held.push(Held {
@@ -285,11 +286,11 @@ impl Reader {
             self.refuse("time");
             return None;
         };
-        if to < from {
+        if to.timestamp() < from.timestamp() {
             self.refuse("end_before_start");
             return None;
         }
-        if (to - from).num_seconds() > MAX_EXPERIENCE_SECONDS {
+        if to.timestamp().duration_since(from.timestamp()).as_secs() > MAX_EXPERIENCE_SECONDS {
             self.refuse("span_too_long");
             return None;
         }
@@ -455,14 +456,14 @@ impl Reader {
             row.start
                 .as_deref()
                 .and_then(parse_source_time)
-                .map(|time| time.timestamp())
+                .map(|time| epoch_second(time.timestamp()))
                 .unwrap_or_default()
         };
         let end_of = |row: &BodyRow| {
             row.end
                 .as_deref()
                 .and_then(parse_source_time)
-                .map(|time| time.timestamp())
+                .map(|time| epoch_second(time.timestamp()))
                 .unwrap_or_default()
         };
         rows.sort_by_key(|row| (start_of(row), row.id.clone()));
@@ -615,7 +616,7 @@ pub fn preview_export(source: &Path) -> Result<ApplePreview, BodyIngestError> {
         let Some(time) = start.and_then(|text| parse_source_time(text)) else {
             return false;
         };
-        let day = time.date_naive().format("%Y-%m-%d").to_string();
+        let day = time.date().strftime("%Y-%m-%d").to_string();
         span = Some(match span.take() {
             Some((first, last)) => (first.min(day.clone()), last.max(day)),
             None => (day.clone(), day),
@@ -649,7 +650,7 @@ pub fn preview_export(source: &Path) -> Result<ApplePreview, BodyIngestError> {
                             .attributes
                             .get(key)
                             .and_then(|text| parse_source_time(text))
-                            .map(|time| time.timestamp())
+                            .map(|time| epoch_second(time.timestamp()))
                     };
                     if let (Some(begin), Some(end)) = (at("startDate"), at("endDate")) {
                         let by = element
@@ -720,7 +721,7 @@ pub(crate) fn number_events(workout: &str, events: Vec<BodyRow>) -> Vec<BodyRow>
         let at = event.start.as_deref().map_or_else(String::new, |start| {
             parse_source_time(start).map_or_else(
                 || start.to_owned(),
-                |time| time.timestamp_millis().to_string(),
+                |time| epoch_millisecond(time.timestamp()).to_string(),
             )
         });
         by_identity
@@ -742,7 +743,7 @@ pub(crate) fn number_events(workout: &str, events: Vec<BodyRow>) -> Vec<BodyRow>
 
 /// The zone fixed at this source's first import, so importing again under a later
 /// owner zone writes the same coordinates.
-pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<Tz, String> {
+pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<TimeZone, String> {
     let path = journal.join(source.zone_rel);
     if let Ok(bytes) = fs::read(&path) {
         let value: Value = serde_json::from_slice(&bytes).map_err(|_| source.zone_unrecognised)?;
@@ -753,7 +754,7 @@ pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<Tz, St
             .ok_or_else(|| source.zone_unrecognised.to_owned());
     }
     let zone = owner_zone(journal);
-    let body = format!("{{\"zone\":\"{}\"}}\n", zone.name());
+    let body = format!("{{\"zone\":\"{}\"}}\n", zone_name(&zone).unwrap_or("UTC"));
     match write_bytes_exclusive(
         &path,
         body.as_bytes(),
@@ -766,53 +767,61 @@ pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<Tz, St
 
 pub type WindowId = (String, String);
 
-pub(crate) fn floor_to_window(time: DateTime<FixedOffset>, zone: Tz, length: i64) -> DateTime<Tz> {
-    let local = time.with_timezone(&zone);
-    let into_window = i64::from(local.num_seconds_from_midnight()) % length;
-    zone.timestamp_opt(local.timestamp() - into_window, 0)
-        .single()
-        .expect("a timestamp maps to one zone time")
+pub(crate) fn floor_to_window(time: &ZonedDateTime, zone: &TimeZone, length: i64) -> ZonedDateTime {
+    let local = time.with_time_zone(zone.clone());
+    let into_day =
+        i64::from(local.hour()) * 3600 + i64::from(local.minute()) * 60 + i64::from(local.second());
+    let into_window = into_day % length;
+    Timestamp::from_second(epoch_second(local.timestamp()) - into_window)
+        .expect("a window start is a representable time")
+        .to_zoned_datetime(zone.clone())
 }
 
-pub(crate) fn window_id(time: DateTime<Tz>, length: i64) -> WindowId {
+pub(crate) fn window_id(time: &ZonedDateTime, length: i64) -> WindowId {
     (
-        time.format("%Y%m%d").to_string(),
-        format!("{}_{length}", time.format("%H%M%S")),
+        time.strftime("%Y%m%d").to_string(),
+        format!("{}_{length}", time.strftime("%H%M%S")),
     )
 }
 
 /// The windows a span covers, in order. An end on a window's first second doesn't
 /// reach into it.
 pub(crate) fn windows_of(
-    start: DateTime<FixedOffset>,
-    end: DateTime<FixedOffset>,
-    zone: Tz,
+    start: &ZonedDateTime,
+    end: &ZonedDateTime,
+    zone: &TimeZone,
     length: i64,
 ) -> Vec<WindowId> {
     let mut windows = Vec::new();
     let mut at = floor_to_window(start, zone, length);
     loop {
-        windows.push(window_id(at, length));
-        at += Duration::seconds(length);
-        if at.timestamp() >= end.timestamp() {
+        windows.push(window_id(&at, length));
+        at = at
+            .checked_add(SignedDuration::from_secs(length))
+            .expect("a window end is a representable time");
+        if epoch_second(at.timestamp()) >= epoch_second(end.timestamp()) {
             return windows;
         }
     }
 }
 
 /// The window an ordinary row sits in, before any step around older content.
-pub(crate) fn row_window(row: &BodyRow, zone: Tz, covered: bool) -> Result<WindowId, String> {
+pub(crate) fn row_window(
+    row: &BodyRow,
+    zone: &TimeZone,
+    covered: bool,
+) -> Result<WindowId, String> {
     if let Some(date) = &row.date {
-        let date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        let date = jiff::civil::Date::strptime("%Y-%m-%d", date)
             .map_err(|_| "a kept dated row has no valid date")?;
-        return Ok((date.format("%Y%m%d").to_string(), DATED_WINDOW.to_owned()));
+        return Ok((date.strftime("%Y%m%d").to_string(), DATED_WINDOW.to_owned()));
     }
     let time = row
         .begins()
         .and_then(parse_source_time)
         .ok_or("a kept row has no time")?;
     let length = window_seconds(row, covered);
-    Ok(window_id(floor_to_window(time, zone, length), length))
+    Ok(window_id(&floor_to_window(&time, zone, length), length))
 }
 
 /// An experience's first row and its tiles, each with the window it sits in.
@@ -822,7 +831,7 @@ pub(crate) fn tile_experience(
     journal: &Path,
     source: &BodySource,
     experience: &BodyRow,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Result<Vec<(WindowId, BodyRow)>, String> {
     let length = window_seconds(experience, false);
     let start = experience
@@ -837,7 +846,7 @@ pub(crate) fn tile_experience(
         .ok_or("a kept experience has no end")?;
     let mut first = experience.clone();
     if source.span == SpanPolicy::Union {
-        let first_window = window_id(floor_to_window(start, zone, length), length);
+        let first_window = window_id(&floor_to_window(&start, zone, length), length);
         // A file that can't be read says nothing of what's stored, and a shorter end
         // staged on that silence would stand once it reads again.
         let family = stored_grid_rows(journal, source, &first_window)?;
@@ -846,13 +855,13 @@ pub(crate) fn tile_experience(
             .flat_map(|(_, rows)| rows)
             .find(|row| row.id == experience.id && row.kind != RowKind::Moved)
             && let Some(stored_end) = stored.end.as_deref().and_then(parse_source_time)
-            && stored_end > end
+            && stored_end.timestamp() > end.timestamp()
         {
             end = stored_end;
             first.end.clone_from(&stored.end);
         }
     }
-    let tiles = windows_of(start, end, zone, length);
+    let tiles = windows_of(&start, &end, zone, length);
     let count = tiles.len() as u64;
     let mut placed = Vec::with_capacity(tiles.len());
     for (index, window) in tiles.into_iter().enumerate() {
@@ -1049,7 +1058,7 @@ fn at_instants(value: &mut Value) {
     match value {
         Value::String(text) => {
             if let Some(time) = parse_source_time(text) {
-                *value = json!(time.timestamp_millis());
+                *value = json!(epoch_millisecond(time.timestamp()));
             }
         }
         Value::Array(items) => items.iter_mut().for_each(at_instants),
@@ -1248,7 +1257,7 @@ pub fn settle_readings(
     journal: &Path,
     source: &BodySource,
     day: &str,
-    zone: Tz,
+    zone: &TimeZone,
     windows: DayRows,
 ) -> Result<(DayRows, u64), String> {
     settle_readings_noting(journal, source, day, zone, windows)
@@ -1262,7 +1271,7 @@ pub fn settle_readings_noting(
     journal: &Path,
     source: &BodySource,
     day: &str,
-    zone: Tz,
+    zone: &TimeZone,
     windows: DayRows,
 ) -> Result<(DayRows, u64, Vec<BodyRow>), String> {
     let mut by_key: BTreeMap<String, BTreeMap<String, BodyRow>> = windows
@@ -1322,7 +1331,7 @@ pub fn settle_readings_noting(
                 WINDOW_SECONDS
             };
             let (other_day, raw) =
-                window_id(floor_to_window(time, zone, other_length), other_length);
+                window_id(&floor_to_window(&time, zone, other_length), other_length);
             if other_day != day {
                 continue;
             }
@@ -1387,7 +1396,7 @@ pub fn settle_readings_noting(
 pub fn plan(
     journal: &Path,
     export: &AppleExport,
-    zone: Tz,
+    zone: &TimeZone,
     facet: Option<&str>,
     repair: bool,
 ) -> Result<Plan, String> {
@@ -1400,7 +1409,7 @@ pub fn plan(
 pub(crate) fn plan_with(
     journal: &Path,
     export: &AppleExport,
-    zone: Tz,
+    zone: &TimeZone,
     facet: Option<&str>,
     repair: bool,
 ) -> Result<Plan, String> {
@@ -1415,7 +1424,7 @@ pub(crate) fn plan_with(
     };
     let millis = |text: Option<&str>| {
         text.and_then(parse_source_time)
-            .map(|time| time.timestamp_millis())
+            .map(|time| epoch_millisecond(time.timestamp()))
     };
     let mut sessions = Vec::new();
     for experience in &export.experiences {
@@ -1795,7 +1804,7 @@ pub fn summary_text(
     source: &BodySource,
     counts: &SummaryCounts,
     facet: Option<&str>,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> String {
     let source = source_words(source.source);
     // What stayed deleted is said only when something did: a re-import brings
@@ -1814,7 +1823,7 @@ pub fn summary_text(
             1 => " 1 reading wasn't added, because the part of the journal it belongs to couldn't be read.".to_owned(),
             n => format!(" {n} readings weren't added, because the part of the journal they belong to couldn't be read."),
         },
-        zone.name()
+        zone_name(zone).unwrap_or("UTC")
     );
     match facet {
         Some(facet) => {

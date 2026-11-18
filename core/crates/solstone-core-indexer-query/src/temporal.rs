@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Datelike, Duration, NaiveDate};
+use jiff::Span;
+use jiff::civil::Date;
 
 /// The temporal portion removed from a raw query before FTS compilation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -19,7 +20,7 @@ enum Handler {
     ThisWeek,
     LastMonth,
     ThisMonth,
-    LastDay(u32),
+    LastDay(i8),
     Weekend,
 }
 
@@ -30,7 +31,7 @@ struct Match {
 }
 
 /// Extract the first unquoted temporal phrase using a caller-supplied date.
-pub fn extract_temporal_references(query: &str, reference_date: NaiveDate) -> TemporalExtraction {
+pub fn extract_temporal_references(query: &str, reference_date: Date) -> TemporalExtraction {
     if query.is_empty() {
         return TemporalExtraction {
             remaining_text: String::new(),
@@ -222,63 +223,46 @@ fn collapse_whitespace_runs(text: &str) -> String {
     output
 }
 
-fn resolve(handler: Handler, reference: NaiveDate) -> (String, String) {
-    let format = |date: NaiveDate| date.format("%Y%m%d").to_string();
+fn resolve(handler: Handler, reference: Date) -> (String, String) {
+    let format = solstone_core_time::day_key;
+    let days = |n: i8| Span::new().days(n);
     let range = match handler {
         Handler::Yesterday => {
-            let day = reference - Duration::days(1);
+            let day = reference - days(1);
             (day, day)
         }
         Handler::Today => (reference, reference),
         Handler::LastWeek => {
-            let monday_this =
-                reference - Duration::days(reference.weekday().num_days_from_monday().into());
-            let monday_last = monday_this - Duration::days(7);
-            (monday_last, monday_last + Duration::days(6))
+            let monday_this = reference - days(reference.weekday().to_monday_zero_offset());
+            let monday_last = monday_this - days(7);
+            (monday_last, monday_last + days(6))
         }
         Handler::ThisWeek => {
-            let monday =
-                reference - Duration::days(reference.weekday().num_days_from_monday().into());
-            (monday, monday + Duration::days(6))
+            let monday = reference - days(reference.weekday().to_monday_zero_offset());
+            (monday, monday + days(6))
         }
         Handler::LastMonth => {
-            let first_this = NaiveDate::from_ymd_opt(reference.year(), reference.month(), 1)
-                .expect("reference month has a first day");
-            let last_previous = first_this - Duration::days(1);
-            (
-                NaiveDate::from_ymd_opt(last_previous.year(), last_previous.month(), 1)
-                    .expect("previous month has a first day"),
-                last_previous,
-            )
+            let last_previous = reference.first_of_month() - days(1);
+            (last_previous.first_of_month(), last_previous)
         }
-        Handler::ThisMonth => {
-            let first = NaiveDate::from_ymd_opt(reference.year(), reference.month(), 1)
-                .expect("reference month has a first day");
-            let next_month = if reference.month() == 12 {
-                NaiveDate::from_ymd_opt(reference.year() + 1, 1, 1)
-            } else {
-                NaiveDate::from_ymd_opt(reference.year(), reference.month() + 1, 1)
-            }
-            .expect("next month has a first day");
-            (first, next_month - Duration::days(1))
-        }
+        Handler::ThisMonth => (reference.first_of_month(), reference.last_of_month()),
         Handler::LastDay(target) => {
-            let current = reference.weekday().num_days_from_monday();
+            let current = reference.weekday().to_monday_zero_offset();
             let mut days_back = (current + 7 - target) % 7;
             if days_back == 0 {
                 days_back = 7;
             }
-            let day = reference - Duration::days(days_back.into());
+            let day = reference - days(days_back);
             (day, day)
         }
         Handler::Weekend => {
-            let weekday = reference.weekday().num_days_from_monday();
+            let weekday = reference.weekday().to_monday_zero_offset();
             let saturday = if weekday >= 5 {
-                reference - Duration::days((weekday - 5).into())
+                reference - days(weekday - 5)
             } else {
-                reference - Duration::days((weekday + 2).into())
+                reference - days(weekday + 2)
             };
-            (saturday, saturday + Duration::days(1))
+            (saturday, saturday + days(1))
         }
     };
     (format(range.0), format(range.1))

@@ -16,8 +16,8 @@ full-tests = []
 solstone-core-format.workspace = true
 solstone-core-indexer-todo.workspace = true
 axum = { workspace = true }
-chrono.workspace = true
 image.workspace = true
+jiff.workspace = true
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -30,6 +30,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-io = { workspace = true }
 solstone-core-segment = { workspace = true }
 solstone-core-sol-link = { workspace = true, features = ["host"] }
+solstone-core-time.workspace = true
 time = { version = "0.3.54", features = ["formatting"] }
 tower-http = { workspace = true }
 

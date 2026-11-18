@@ -212,12 +212,12 @@ unsafe extern "C" fn provider(context: *mut c_void, destination: *const c_char) 
     state.destination = Some(destination.to_path_buf());
     fs::create_dir(destination.join("empty")).unwrap();
     fs::write(destination.join("MyActivity.json"), GEMINI_ACTIVITY).unwrap();
-    let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
+    let modified: jiff::Timestamp = "2026-10-14T09:00:00Z".parse().unwrap();
     fs::File::open(destination.join("MyActivity.json"))
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(modified.timestamp().try_into().unwrap()),
+                + Duration::from_secs(modified.as_second().try_into().unwrap()),
         ))
         .unwrap();
     if let Some(entered) = state.entered.take() {

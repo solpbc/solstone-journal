@@ -9,7 +9,7 @@ use axum::extract::{Path as AxumPath, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_speaker_resolve::owner_line_labels::{
@@ -481,8 +481,8 @@ pub async fn accept_suggestion(
                 .into_response();
         }
 
-        let now_dt = Utc::now();
-        let now_str = now_dt.to_rfc3339();
+        let now_dt = Timestamp::now();
+        let now_str = solstone_core_time::utc_rfc3339(now_dt);
 
         let (receipt, asked, ask_reason) = match record.kind.as_str() {
             "recording" | "what_happened" => {
@@ -923,7 +923,7 @@ pub async fn accept_suggestion(
         return refusal("storage_error", err, StatusCode::INTERNAL_SERVER_ERROR);
     }
     record.status = "accepted".to_string();
-    record.updated_at = Utc::now().to_rfc3339();
+    record.updated_at = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
 
     if let Err(err) = save_record(&journal, &record) {
         return refusal("storage_error", err, StatusCode::INTERNAL_SERVER_ERROR);
@@ -968,7 +968,7 @@ pub async fn dismiss_suggestion(
     }
 
     record.status = "dismissed".to_string();
-    record.updated_at = Utc::now().to_rfc3339();
+    record.updated_at = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
 
     if let Err(err) = save_record(&journal, &record) {
         return refusal("storage_error", err, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1017,7 +1017,7 @@ pub async fn undo_suggestion(
     if let Err(error) = save_record(&journal, &record) {
         return refusal("storage_error", error, StatusCode::INTERNAL_SERVER_ERROR);
     }
-    let now = Utc::now().to_rfc3339();
+    let now = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
     let day = receipt.day.as_deref().unwrap_or("");
     let activities = affected_activities(&journal, &record, &receipt);
     let mut owner_conflict = false;
@@ -2172,7 +2172,7 @@ fn reconcile_pending_effect(root: &Path, record: &mut SuggestionRecord) -> Resul
     record.value = value;
     record.receipt = Some(receipt);
     record.status = "accepted".to_owned();
-    record.updated_at = Utc::now().to_rfc3339();
+    record.updated_at = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
     save_record(root, record).map_err(|error| error.to_string())
 }
 

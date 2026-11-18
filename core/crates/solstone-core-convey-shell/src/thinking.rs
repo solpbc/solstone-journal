@@ -1394,7 +1394,7 @@ pub(crate) fn send_brain_refresh_request(journal_root: &Path) -> bool {
         "ref".to_owned(),
         json!(format!(
             "brain-refresh:thinking:{}-{counter}",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            i64::try_from(jiff::Timestamp::now().as_nanosecond()).unwrap_or(0)
         )),
     );
     let envelope = CallosumEnvelope {
@@ -1536,7 +1536,7 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
         let mut result = result.as_object().cloned().unwrap_or_default();
         result.insert(
             "timestamp".to_owned(),
-            Value::String(chrono::Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(jiff::Timestamp::now())),
         );
         Value::Object(result)
     });
@@ -2367,9 +2367,10 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::{Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use solstone_core_brain::{begin_refresh, finish_refresh};
+    use solstone_core_time::utc_rfc3339;
     use tower::ServiceExt;
 
     use super::{
@@ -2700,8 +2701,8 @@ mod tests {
     async fn invalid_brain_record_degrades_the_brain_read_projections() {
         let root = temporary_journal("invalid-brain");
         fs::write(root.join("config/journal.json"), br#"{"env":{"OPENAI_API_KEY":"key"},"providers":{"active":{"model":"gpt-5","provider":"openai"}},"setup":{"completed_at":1767225600}}"#).expect("config writes");
-        let now = Utc::now();
-        let evidence = json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now + Duration::days(1)).to_rfc3339()});
+        let now = Timestamp::now();
+        let evidence = json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))});
         let permit = begin_refresh(&root, now, None, None, false, None)
             .expect("refresh starts")
             .expect("permit");

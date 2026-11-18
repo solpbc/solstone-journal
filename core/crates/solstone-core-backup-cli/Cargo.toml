@@ -16,7 +16,7 @@ unsafe_code = "deny"
 
 [dependencies]
 solstone-core-removals.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 serde_json.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
@@ -24,6 +24,7 @@ solstone-core-installed-payload.workspace = true
 solstone-core-offload.workspace = true
 # Restic's own reason reaches the owner, so it is sanitized before it is printed.
 solstone-core-system-health.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 solstone-core-retention.workspace = true

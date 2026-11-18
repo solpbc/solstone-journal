@@ -6,7 +6,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate};
+use jiff::civil::Date;
+use jiff::{Span, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
     activity_value_or_empty, list_declared_facet_names, load_activity_records,
@@ -22,7 +23,7 @@ pub(crate) fn compute_cadence(
     journal_root: &Path,
     entity_id: &str,
     include_mentions: bool,
-    now: DateTime<FixedOffset>,
+    now: &ZonedDateTime,
 ) -> ProfileResult<(Cadence, Vec<ActivitySourceRef>)> {
     let roles = if include_mentions {
         ["attendee", "heard", "mentioned"].as_slice()
@@ -80,14 +81,14 @@ pub(crate) fn compute_cadence(
         .count() as i64;
 
     let (avg_interval_days, gone_quiet_since) = if distinct_days.len() >= 2 {
-        let first = day_ordinal(
+        let first = day_date(
             distinct_days
                 .first()
                 .expect("at least two distinct interaction days"),
         );
-        let last = day_ordinal(&last_seen);
-        let average = f64::from(last - first) / (distinct_days.len() - 1) as f64;
-        let quiet_gap = day_ordinal(&today_day(now)) - last;
+        let last = day_date(&last_seen);
+        let average = f64::from(days_between(first, last)) / (distinct_days.len() - 1) as f64;
+        let quiet_gap = days_between(last, day_date(&today_day(now)));
         let gone_quiet = (f64::from(quiet_gap) > average * 2.0).then_some(i64::from(quiet_gap));
         (Some(average), gone_quiet)
     } else {
@@ -115,7 +116,7 @@ pub(crate) fn compute_cadence(
 pub(crate) fn list_active_entity_ids(
     journal_root: &Path,
     window_days: i64,
-    now: DateTime<FixedOffset>,
+    now: &ZonedDateTime,
 ) -> ProfileResult<Vec<String>> {
     let mut entity_ids = BTreeSet::new();
     for (facet, day) in activity_window(journal_root, now, window_days)? {
@@ -150,14 +151,14 @@ pub(crate) fn list_active_entity_ids(
 
 fn activity_window(
     journal_root: &Path,
-    now: DateTime<FixedOffset>,
+    now: &ZonedDateTime,
     window_days: i64,
 ) -> ProfileResult<Vec<(String, String)>> {
     if window_days <= 0 {
         return Ok(Vec::new());
     }
     let facets = list_declared_facet_names(journal_root).map_err(ProfileError::internal)?;
-    let today = now.date_naive();
+    let today = now.date();
     let mut window = Vec::with_capacity(
         usize::try_from(window_days)
             .ok()
@@ -165,9 +166,15 @@ fn activity_window(
             .unwrap_or(0),
     );
     for offset in (0..window_days).rev() {
-        let day = (today - Duration::days(offset))
-            .format("%Y%m%d")
-            .to_string();
+        // A day before the earliest representable date has no activity file.
+        let Some(date) = Span::new()
+            .try_days(offset)
+            .ok()
+            .and_then(|span| today.checked_sub(span).ok())
+        else {
+            continue;
+        };
+        let day = solstone_core_time::day_key(date);
         for facet in &facets {
             window.push((facet.clone(), day.clone()));
         }
@@ -213,34 +220,45 @@ fn record_created_at(record: &Map<String, Value>) -> i64 {
 }
 
 /// Activity days are local days, so "today" is the local date of `now`.
-fn today_day(now: DateTime<FixedOffset>) -> String {
-    now.date_naive().format("%Y%m%d").to_string()
+fn today_day(now: &ZonedDateTime) -> String {
+    solstone_core_time::day_key(now.date())
 }
 
-fn day_minus(now: DateTime<FixedOffset>, days: i64) -> String {
-    (now.date_naive() - Duration::days(days))
-        .format("%Y%m%d")
-        .to_string()
+fn day_minus(now: &ZonedDateTime, days: i64) -> String {
+    let date = now
+        .date()
+        .checked_sub(Span::new().days(days))
+        .expect("the recent window starts on a representable day");
+    solstone_core_time::day_key(date)
 }
 
-fn day_ordinal(day: &str) -> i32 {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
+fn day_date(day: &str) -> Date {
+    solstone_core_time::parse_day(day)
         .expect("activity window and activity filenames use valid calendar days")
-        .num_days_from_ce()
+}
+
+/// Whole calendar days from `from` to `to`.
+fn days_between(from: Date, to: Date) -> i32 {
+    (to - from).get_days()
 }
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeZone, Utc};
+    use jiff::ZonedDateTime;
+    use jiff::tz::{Offset, TimeZone};
     use serde_json::json;
 
     use super::{compute_cadence, day_minus, list_active_entity_ids, today_day};
     use crate::test_support::{journal, write_json, write_jsonl};
 
-    fn now() -> chrono::DateTime<chrono::FixedOffset> {
-        Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0)
-            .unwrap()
-            .fixed_offset()
+    fn utc(text: &str) -> ZonedDateTime {
+        text.parse::<jiff::Timestamp>()
+            .expect("timestamp")
+            .to_zoned_datetime(TimeZone::UTC)
+    }
+
+    fn now() -> ZonedDateTime {
+        utc("2026-04-10T12:00:00Z")
     }
 
     fn facet(root: &std::path::Path, name: &str, muted: bool) {
@@ -265,23 +283,19 @@ mod tests {
 
     #[test]
     fn utc_day_math() {
-        let boundary = Utc
-            .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
-            .unwrap()
-            .fixed_offset();
-        assert_eq!(today_day(boundary), "20260101");
-        assert_eq!(day_minus(boundary, 1), "20251231");
+        let boundary = utc("2026-01-01T00:00:00Z");
+        assert_eq!(today_day(&boundary), "20260101");
+        assert_eq!(day_minus(&boundary, 1), "20251231");
     }
 
     #[test]
     fn day_math_uses_the_local_date_of_the_instant() {
         // 00:30 UTC on Jan 1 is still Dec 31 at UTC-6.
-        let evening = Utc
-            .with_ymd_and_hms(2026, 1, 1, 0, 30, 0)
-            .unwrap()
-            .with_timezone(&chrono::FixedOffset::west_opt(6 * 3600).unwrap());
-        assert_eq!(today_day(evening), "20251231");
-        assert_eq!(day_minus(evening, 1), "20251230");
+        let evening = utc("2026-01-01T00:30:00Z").with_time_zone(TimeZone::fixed(
+            Offset::from_seconds(-6 * 3600).expect("offset"),
+        ));
+        assert_eq!(today_day(&evening), "20251231");
+        assert_eq!(day_minus(&evening, 1), "20251230");
     }
 
     #[test]
@@ -289,7 +303,7 @@ mod tests {
         let temporary = journal();
         facet(temporary.path(), "work", false);
         let (zero, zero_sources) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("zero cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("zero cadence");
         assert_eq!(zero.recent_interactions_count_30d, 0);
         assert_eq!(zero.last_seen, None);
         assert!(zero_sources.is_empty());
@@ -301,7 +315,7 @@ mod tests {
             &[interaction("single", 1, "pat", "attendee")],
         );
         let (single, _) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("single cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("single cadence");
         assert_eq!(single.last_seen.as_deref(), Some("20260408"));
         assert_eq!(single.avg_interval_days, None);
         assert_eq!(single.gone_quiet_since, None);
@@ -325,7 +339,7 @@ mod tests {
             &[interaction("last", 4, "pat", "attendee")],
         );
         let (multiple, sources) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("multi cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("multi cadence");
         assert_eq!(multiple.recent_interactions_count_30d, 4);
         assert_eq!(multiple.last_seen.as_deref(), Some("20260410"));
         assert_eq!(multiple.avg_interval_days, Some(10.0 / 3.0));
@@ -360,7 +374,7 @@ mod tests {
             &[interaction("four", 4, "pat", "attendee")],
         );
         let (boundary, _) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("boundary cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("boundary cadence");
         assert_eq!(boundary.recent_interactions_count_30d, 4);
         assert_eq!(boundary.avg_interval_days, Some(5.0));
         assert_eq!(boundary.gone_quiet_since, None);
@@ -372,7 +386,7 @@ mod tests {
             &[interaction("five", 5, "pat", "attendee")],
         );
         let (quiet, _) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("quiet cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("quiet cadence");
         assert_eq!(quiet.last_seen.as_deref(), Some("20260405"));
         assert_eq!(quiet.avg_interval_days, Some(2.5));
         assert_eq!(quiet.gone_quiet_since, None);
@@ -395,7 +409,7 @@ mod tests {
             ],
         );
         let (gone_quiet, _) =
-            compute_cadence(temporary.path(), "quiet", false, now()).expect("quiet cadence");
+            compute_cadence(temporary.path(), "quiet", false, &now()).expect("quiet cadence");
         assert_eq!(gone_quiet.avg_interval_days, Some(2.0));
         assert_eq!(gone_quiet.gone_quiet_since, Some(8));
 
@@ -405,7 +419,7 @@ mod tests {
             "20260409",
             &[interaction("recent", 6, "other", "attendee")],
         );
-        let active = list_active_entity_ids(temporary.path(), 30, now()).expect("active IDs");
+        let active = list_active_entity_ids(temporary.path(), 30, &now()).expect("active IDs");
         assert_eq!(active, vec!["other", "pat", "quiet"]);
     }
 
@@ -420,13 +434,13 @@ mod tests {
             &[interaction("mention", 1, "pat", "mentioned")],
         );
         let (without_mentions, _) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("cadence");
         let (with_mentions, _) =
-            compute_cadence(temporary.path(), "pat", true, now()).expect("cadence");
+            compute_cadence(temporary.path(), "pat", true, &now()).expect("cadence");
         assert_eq!(without_mentions.recent_interactions_count_30d, 0);
         assert_eq!(with_mentions.recent_interactions_count_30d, 1);
         assert!(
-            list_active_entity_ids(temporary.path(), 30, now())
+            list_active_entity_ids(temporary.path(), 30, &now())
                 .expect("active IDs")
                 .is_empty()
         );
@@ -446,19 +460,20 @@ mod tests {
             ],
         );
         let (without_mentions, _) =
-            compute_cadence(temporary.path(), "pat", false, now()).expect("cadence");
+            compute_cadence(temporary.path(), "pat", false, &now()).expect("cadence");
         let (with_mentions, _) =
-            compute_cadence(temporary.path(), "pat", true, now()).expect("cadence");
+            compute_cadence(temporary.path(), "pat", true, &now()).expect("cadence");
         assert_eq!(without_mentions.recent_interactions_count_30d, 1);
         assert_eq!(with_mentions.recent_interactions_count_30d, 1);
         assert_eq!(
-            list_active_entity_ids(temporary.path(), 30, now()).expect("active IDs"),
+            list_active_entity_ids(temporary.path(), 30, &now()).expect("active IDs"),
             vec!["pat"]
         );
 
         let (vis_without, _) =
-            compute_cadence(temporary.path(), "vis", false, now()).expect("cadence");
-        let (vis_with, _) = compute_cadence(temporary.path(), "vis", true, now()).expect("cadence");
+            compute_cadence(temporary.path(), "vis", false, &now()).expect("cadence");
+        let (vis_with, _) =
+            compute_cadence(temporary.path(), "vis", true, &now()).expect("cadence");
         assert_eq!(vis_without.recent_interactions_count_30d, 0);
         assert_eq!(vis_with.recent_interactions_count_30d, 0);
     }

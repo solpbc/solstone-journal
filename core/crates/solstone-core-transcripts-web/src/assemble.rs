@@ -139,7 +139,6 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::{TimeZone, Utc};
     use serde_json::{Value, json};
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -174,7 +173,7 @@ mod tests {
         .unwrap();
         let app = router_with_delete_window(
             root.path().to_path_buf(),
-            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap()),
+            Clock::fixed("2026-08-12T12:00:00Z".parse().unwrap()),
             || axum::response::Response::new(Body::from("shell")),
             Duration::from_secs(600),
         );
@@ -252,7 +251,7 @@ mod tests {
     async fn read_markdown(root: &std::path::Path, uri: &str) -> String {
         let app = router_with_delete_window(
             root.to_path_buf(),
-            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap()),
+            Clock::fixed("2026-08-12T12:00:00Z".parse().unwrap()),
             || axum::response::Response::new(Body::from("shell")),
             Duration::from_secs(600),
         );

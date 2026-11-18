@@ -18,7 +18,6 @@ use axum::{
     body::Bytes,
     routing::{get, post},
 };
-use chrono::{Datelike, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{
     Destination, HostedBinding, generate_daily_key, get_destination, get_keys, load_hosted_binding,
@@ -134,7 +133,12 @@ impl Clock for ProductionClock {
     }
 
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        jiff::tz::Offset::UTC
+            .to_datetime(jiff::Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 

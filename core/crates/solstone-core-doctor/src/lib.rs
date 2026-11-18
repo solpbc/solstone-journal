@@ -97,7 +97,6 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use std::{
         fs,
         sync::atomic::{AtomicUsize, Ordering},
@@ -119,7 +118,7 @@ mod tests {
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
-            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            now: "2026-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap(),
             host_arch: "x86_64".into(),
             hostname: "test-host".into(),
             checkout_root: None,

@@ -279,7 +279,7 @@ mod current {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use chrono::{DateTime, FixedOffset, Utc};
+    use jiff::ZonedDateTime;
     use serde_json::{Map, Value};
     use solstone_core_backup_runtime::{AdmittedArchive, ArchiveError, OwnedAdmittedArchive};
     use solstone_core_journal_io::journal_root::JournalRoot;
@@ -696,23 +696,23 @@ mod current {
     pub fn inspect_current_offload(
         operation: &mut AdmittedArchive<'_>,
         expected: &[Mark],
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
     ) -> CurrentOffloadDecision {
-        inspect(CurrentArchive::Generic(operation), expected, at)
+        inspect(CurrentArchive::Generic(operation), expected, &at)
     }
 
     pub fn inspect_owned_current_offload(
         operation: &mut OwnedAdmittedArchive,
         expected: &[Mark],
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
     ) -> CurrentOffloadDecision {
-        inspect(CurrentArchive::Owned(operation), expected, at)
+        inspect(CurrentArchive::Owned(operation), expected, &at)
     }
 
     pub(super) fn inspect(
         operation: CurrentArchive<'_, '_>,
         expected: &[Mark],
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
     ) -> CurrentOffloadDecision {
         let root = Arc::clone(operation.journal_root());
         let mut decision = CurrentOffloadDecision {
@@ -733,7 +733,7 @@ mod current {
             let now = operation
                 .current_time()
                 .map_err(|_| CurrentOffloadRefusalReason::AdmissionChanged)?;
-            if at.timestamp() > now {
+            if at.timestamp().as_second() > now {
                 return Err(CurrentOffloadRefusalReason::AdmissionChanged);
             }
             CurrentPolicyObservation::capture(&root, now)
@@ -857,7 +857,7 @@ mod current {
         root: &Arc<JournalRoot>,
         marks: &[Arc<Mark>],
         layout: SegmentLayout,
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
         decision: &mut CurrentOffloadDecision,
     ) -> Result<Option<CurrentGroupObservation>, CurrentOffloadRefusalReason> {
         let Some(first) = marks.first() else {
@@ -915,8 +915,8 @@ mod current {
             target,
             layout,
             policy,
-            at.date_naive(),
-            at.with_timezone(&Utc),
+            at.date(),
+            at.timestamp(),
             DecisionPurpose::OffloadProposal,
         );
         let mut hashes: BTreeMap<String, MediaObservation> = BTreeMap::new();
@@ -1156,9 +1156,9 @@ mod tests {
     use std::io;
 
     #[cfg(any(unix, windows))]
-    use chrono::DateTime;
+    use jiff::Timestamp;
     #[cfg(all(unix, feature = "full-tests"))]
-    use chrono::FixedOffset;
+    use jiff::ZonedDateTime;
     use serde_json::json;
     #[cfg(unix)]
     use sha2::{Digest, Sha256};
@@ -1556,13 +1556,13 @@ mod tests {
             )
             .unwrap();
             let policy = policy_from_journal_config(&serde_json::Map::new());
-            let at = DateTime::from_timestamp(CURRENT_NOW, 0).unwrap();
+            let at = Timestamp::new(CURRENT_NOW, 0).unwrap();
             let inspected = solstone_core_retention::grouped::inspect_grouped(
                 &scan,
                 &target,
                 layout,
                 &policy,
-                at.date_naive(),
+                jiff::tz::Offset::UTC.to_datetime(at).date(),
                 at,
                 solstone_core_retention::grouped::DecisionPurpose::OffloadProposal,
             );
@@ -1725,13 +1725,13 @@ mod tests {
                 100,
             )
             .unwrap();
-            let at = DateTime::from_timestamp(CURRENT_NOW, 0).unwrap();
+            let at = Timestamp::new(CURRENT_NOW, 0).unwrap();
             let grouped = solstone_core_retention::grouped::inspect_grouped(
                 &scan,
                 &target,
                 layout,
                 &policy_from_journal_config(&serde_json::Map::new()),
-                at.date_naive(),
+                jiff::tz::Offset::UTC.to_datetime(at).date(),
                 at,
                 solstone_core_retention::grouped::DecisionPurpose::OffloadProposal,
             );
@@ -1792,9 +1792,10 @@ mod tests {
             let decision = inspect_current_offload(
                 &mut operation,
                 expected,
-                DateTime::from_timestamp(CURRENT_NOW, 0)
-                    .unwrap()
-                    .fixed_offset(),
+                solstone_core_time::at_offset(
+                    Timestamp::new(CURRENT_NOW, 0).unwrap(),
+                    jiff::tz::Offset::UTC,
+                ),
             );
             // Each inspection is its own admission; retire its root activity
             // carrier so the next admission's census starts clean.
@@ -2403,7 +2404,7 @@ mod tests {
         let decision = inspect_current_offload(
             &mut operation,
             &[],
-            DateTime::from_timestamp(100, 0).unwrap().fixed_offset(),
+            solstone_core_time::at_offset(Timestamp::new(100, 0).unwrap(), jiff::tz::Offset::UTC),
         );
         assert_eq!(
             decision.availability(),

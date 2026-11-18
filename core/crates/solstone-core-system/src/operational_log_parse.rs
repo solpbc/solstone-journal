@@ -8,12 +8,13 @@ mod fixture;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Weekday};
+use jiff::SignedDuration;
+use jiff::civil::{Date, DateTime, ISOWeekDate, Time, Weekday};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedHealthLogRow {
-    pub timestamp: NaiveDateTime,
+    pub timestamp: DateTime,
     pub service: String,
     pub stream: String,
     pub message: String,
@@ -125,48 +126,53 @@ fn ascii_number(chars: &[char]) -> Option<u32> {
     })
 }
 
-fn parse_time(chars: &[char], date: NaiveDate) -> Option<NaiveDateTime> {
+/// A parsed field as jiff's narrow field type; a value that does not fit is
+/// out of range for every field it fills.
+fn field<T: TryFrom<u32>>(chars: &[char]) -> Option<T> {
+    T::try_from(ascii_number(chars)?).ok()
+}
+
+fn parse_time(chars: &[char], date: Date) -> Option<DateTime> {
     if chars[13] != ':' || chars[16] != ':' {
         return None;
     }
-    let hour = ascii_number(&chars[11..13])?;
-    let minute = ascii_number(&chars[14..16])?;
-    let second = ascii_number(&chars[17..19])?;
+    let hour = field::<i8>(&chars[11..13])?;
+    let minute = field::<i8>(&chars[14..16])?;
+    let second = field::<i8>(&chars[17..19])?;
     if hour == 24 {
         return (minute == 0 && second == 0)
-            .then(|| date.succ_opt()?.and_hms_opt(0, 0, 0))
+            .then(|| Some(date.tomorrow().ok()?.at(0, 0, 0, 0)))
             .flatten();
     }
-    date.and_hms_opt(hour, minute, second)
+    Some(date.to_datetime(Time::new(hour, minute, second, 0).ok()?))
 }
 
-fn parse_timestamp(prefix: &str) -> Option<NaiveDateTime> {
+fn parse_timestamp(prefix: &str) -> Option<DateTime> {
     let chars = prefix.chars().collect::<Vec<_>>();
     if chars.len() != 19 {
         return None;
     }
     let date = if chars[4] == '-' && chars[7] == '-' {
-        NaiveDate::from_ymd_opt(
-            ascii_number(&chars[0..4])? as i32,
-            ascii_number(&chars[5..7])?,
-            ascii_number(&chars[8..10])?,
-        )?
+        Date::new(
+            field(&chars[0..4])?,
+            field(&chars[5..7])?,
+            field(&chars[8..10])?,
+        )
+        .ok()?
     } else if chars[4] == '-' && chars[5] == 'W' && chars[8] == '-' {
         let weekday = match ascii_number(&chars[9..10])? {
-            1 => Weekday::Mon,
-            2 => Weekday::Tue,
-            3 => Weekday::Wed,
-            4 => Weekday::Thu,
-            5 => Weekday::Fri,
-            6 => Weekday::Sat,
-            7 => Weekday::Sun,
+            1 => Weekday::Monday,
+            2 => Weekday::Tuesday,
+            3 => Weekday::Wednesday,
+            4 => Weekday::Thursday,
+            5 => Weekday::Friday,
+            6 => Weekday::Saturday,
+            7 => Weekday::Sunday,
             _ => return None,
         };
-        NaiveDate::from_isoywd_opt(
-            ascii_number(&chars[0..4])? as i32,
-            ascii_number(&chars[6..8])?,
-            weekday,
-        )?
+        ISOWeekDate::new(field(&chars[0..4])?, field(&chars[6..8])?, weekday)
+            .ok()?
+            .date()
     } else {
         return None;
     };
@@ -203,9 +209,9 @@ pub fn parse_health_log_row(input: &str) -> Option<ParsedHealthLogRow> {
 
 fn parse_relative(
     spec: &str,
-    supplied_local_now: NaiveDateTime,
+    supplied_local_now: DateTime,
     digits: &HashMap<char, u8>,
-) -> Option<Result<NaiveDateTime, HealthLogSinceError>> {
+) -> Option<Result<DateTime, HealthLogSinceError>> {
     let chars = spec.chars().collect::<Vec<_>>();
     let (&unit, number) = chars.split_last()?;
     if number.is_empty() || !matches!(unit, 'm' | 'h' | 'd') {
@@ -231,9 +237,11 @@ fn parse_relative(
         return Some(Err(overflow()));
     };
     let duration = match unit {
-        'm' => TimeDelta::try_minutes(amount),
-        'h' => TimeDelta::try_hours(amount),
-        'd' => TimeDelta::try_days(amount),
+        'm' => SignedDuration::try_from_mins(amount),
+        'h' => SignedDuration::try_from_hours(amount),
+        'd' => amount
+            .checked_mul(24)
+            .and_then(SignedDuration::try_from_hours),
         _ => unreachable!("unit was matched above"),
     };
     let Some(duration) = duration else {
@@ -241,13 +249,13 @@ fn parse_relative(
     };
     Some(
         supplied_local_now
-            .checked_sub_signed(duration)
-            .ok_or_else(overflow),
+            .checked_sub(duration)
+            .map_err(|_| overflow()),
     )
 }
 
-fn parse_12_hour_time(value: &str, format: &str, has_minutes: bool) -> Option<NaiveTime> {
-    if let Ok(time) = NaiveTime::parse_from_str(value, format) {
+fn parse_12_hour_time(value: &str, format: &str, has_minutes: bool) -> Option<Time> {
+    if let Ok(time) = Time::strptime(format, value) {
         return Some(time);
     }
     let meridiem = value.get(value.len().checked_sub(2)?..)?;
@@ -277,13 +285,13 @@ fn parse_12_hour_time(value: &str, format: &str, has_minutes: bool) -> Option<Na
         (12, "PM") => 12,
         _ => return None,
     };
-    NaiveTime::from_hms_opt(hour, minute, 0)
+    Time::new(i8::try_from(hour).ok()?, i8::try_from(minute).ok()?, 0, 0).ok()
 }
 
 pub fn parse_health_log_since(
     spec: &str,
-    supplied_local_now: NaiveDateTime,
-) -> Result<NaiveDateTime, HealthLogSinceError> {
+    supplied_local_now: DateTime,
+) -> Result<DateTime, HealthLogSinceError> {
     let lookup = unicode_lookup();
     let spec = trim(spec, &lookup.whitespace);
     if let Some(result) = parse_relative(spec, supplied_local_now, &lookup.digits) {
@@ -292,9 +300,9 @@ pub fn parse_health_log_since(
     let upper = spec.to_uppercase();
     let time = parse_12_hour_time(&upper, "%I:%M%p", true)
         .or_else(|| parse_12_hour_time(&upper, "%I%p", false))
-        .or_else(|| NaiveTime::parse_from_str(&upper, "%H:%M").ok());
+        .or_else(|| Time::strptime("%H:%M", &upper).ok());
     if let Some(time) = time {
-        return Ok(supplied_local_now.date().and_time(time));
+        return Ok(supplied_local_now.date().to_datetime(time));
     }
     Err(HealthLogSinceError::InvalidTime {
         input: spec.to_owned(),

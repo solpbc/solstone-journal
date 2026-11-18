@@ -6,7 +6,8 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_backup::archive_activity::PreparedArchiveOperation;
 use solstone_core_journal_io::JournalRoot;
 
@@ -127,8 +128,8 @@ impl OffloadReconciliationFailure {
 /// withdrawn; no archive or raw file changes.
 pub fn reconcile_offload_empty(
     operation: &PreparedArchiveOperation<'_>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<OffloadReconciliation, OffloadReconciliationFailure> {
     #[cfg(any(unix, windows))]
     {
@@ -340,8 +341,8 @@ pub(crate) mod unix {
         selection: &OffloadOfferSelection,
         policy: &ReviewedPolicy,
         marks: &[Mark],
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
     ) -> Result<Vec<PlannedMarkMutation>, OffloadOfferRefusal> {
         let inspection = inspect_grouped(
             scan,
@@ -433,8 +434,8 @@ pub(crate) mod unix {
         operation: &PreparedArchiveOperation<'_>,
         selection: &OffloadOfferSelection,
         marks: &[Mark],
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
         hooks: &mut Hooks,
     ) -> Result<OffloadReconciliationDisposition, OffloadOfferRefusal> {
         let claimed = super::super::acquire_claims(
@@ -512,8 +513,8 @@ pub(crate) mod unix {
 
     pub(super) fn reconcile(
         operation: &PreparedArchiveOperation<'_>,
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
         hooks: &mut Hooks,
     ) -> Result<OffloadReconciliation, OffloadReconciliationFailure> {
         let mut failure = OffloadReconciliationFailure {
@@ -611,8 +612,8 @@ pub(crate) mod unix {
     #[cfg(all(test, unix, feature = "full-tests"))]
     pub(crate) fn reconcile_with_test_hook(
         operation: &PreparedArchiveOperation<'_>,
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
         hook: Box<dyn FnMut()>,
     ) -> Result<OffloadReconciliation, OffloadReconciliationFailure> {
         reconcile(

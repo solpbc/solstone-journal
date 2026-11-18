@@ -33,7 +33,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{FacetEntityCreateOutcome, create_facet_entity_if_absent};
@@ -222,7 +223,7 @@ impl LiveWorkout {
 pub fn record_strava_names(
     journal: &Path,
     model: &dyn NamesModel,
-    clock: &dyn Fn() -> DateTime<Utc>,
+    clock: &dyn Fn() -> Timestamp,
 ) -> StravaNamesOutcome {
     record_strava_names_keeping(journal, model, clock, &|activity_id, hash, names| {
         keep_names(journal, SAVE_WAIT, activity_id, hash, names)
@@ -251,7 +252,7 @@ fn keep_names(
 fn record_strava_names_keeping(
     journal: &Path,
     model: &dyn NamesModel,
-    clock: &dyn Fn() -> DateTime<Utc>,
+    clock: &dyn Fn() -> Timestamp,
     keep: Keep<'_>,
 ) -> StravaNamesOutcome {
     let mut outcome = StravaNamesOutcome::default();
@@ -488,7 +489,7 @@ fn record_strava_names_keeping(
 
 /// Whether import work may call a model now: the thinking lane admits import
 /// work, and processing runs now, live or in its open window.
-fn names_gate(journal: &Path, now: DateTime<Utc>) -> Result<(), NamesWait> {
+fn names_gate(journal: &Path, now: Timestamp) -> Result<(), NamesWait> {
     let policy = WorkPolicy::read(journal).map_err(|_| NamesWait::SettingsUnreadable)?;
     if !policy.permits(WorkBand::Import) {
         return Err(NamesWait::LaneUnavailable);
@@ -670,7 +671,7 @@ fn promote_strava_names(
     lines: &StravaNames,
     live: &BTreeMap<String, LiveWorkout>,
     hidden: &HiddenDays,
-    now: DateTime<Utc>,
+    now: Timestamp,
     outcome: &mut StravaNamesOutcome,
 ) {
     let mut tallies = BTreeMap::<(String, String, String), Tally>::new();
@@ -709,8 +710,8 @@ fn promote_strava_names(
         }
     }
     let as_of = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     // A muted facet is one the owner set aside: nothing new is made in it.
     let enabled = match solstone_core_facets::observe_declared_facet_inventory(journal) {
         Ok(inventory) => inventory.enabled,
@@ -730,7 +731,7 @@ fn promote_strava_names(
             continue;
         }
         let day = |day: Option<&String>| {
-            day.and_then(|day| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
+            day.and_then(|day| solstone_core_time::parse_day(day))
                 .unwrap_or(as_of)
         };
         let description = workouts_description(
@@ -755,13 +756,8 @@ fn promote_strava_names(
 
 /// A promoted entity's description in its facet, written once when it is
 /// created: how many workouts named it, over which months, as of when.
-fn workouts_description(
-    workouts: usize,
-    first: NaiveDate,
-    last: NaiveDate,
-    as_of: NaiveDate,
-) -> String {
-    let month = |date: NaiveDate| date.format("%B %Y").to_string();
+fn workouts_description(workouts: usize, first: Date, last: Date, as_of: Date) -> String {
+    let month = |date: Date| date.strftime("%B %Y").to_string();
     let span = if month(first) == month(last) {
         format!("in {}", month(first))
     } else {
@@ -769,7 +765,7 @@ fn workouts_description(
     };
     format!(
         "named in {workouts} of your Strava workouts, {span}, as of {}",
-        as_of.format("%B %-d, %Y")
+        as_of.strftime("%B %-d, %Y")
     )
 }
 

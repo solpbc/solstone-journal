@@ -16,7 +16,8 @@ use std::process::{Child, Command, ExitStatus, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::{FixedOffset, NaiveDate, TimeZone};
+use jiff::civil::date;
+use jiff::tz::{Offset, TimeZone};
 use solstone_core_journal_io::atomic::{
     atomic_replace_detailed, run_with_windows_detailed_atomic_backoffs,
     run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
@@ -2092,12 +2093,13 @@ fn refs_cortex_use_receipt() {
 }
 
 fn operational_log_discovery_receipt(root: &Path) {
-    let instant = FixedOffset::east_opt(0)
-        .unwrap()
-        .with_ymd_and_hms(2026, 9, 3, 12, 0, 0)
-        .single()
-        .unwrap();
-    let day = NaiveDate::from_ymd_opt(2026, 9, 3).unwrap();
+    let instant = solstone_core_time::from_local(
+        &TimeZone::fixed(Offset::UTC),
+        date(2026, 9, 3).at(12, 0, 0, 0),
+    )
+    .single()
+    .unwrap();
+    let day = date(2026, 9, 3);
     let mut writers = Vec::new();
     for (source, run, format, payload) in [
         (
@@ -2130,7 +2132,7 @@ fn operational_log_discovery_receipt(root: &Path) {
             source,
             run,
             format,
-            instant,
+            &instant,
         )
         .unwrap();
         writer.write_all(payload).unwrap();

@@ -6,7 +6,6 @@
 
 use super::*;
 use crate::tests::tempfile_dir;
-use chrono::Duration;
 use solstone_core_removals::Page;
 use std::fs;
 
@@ -204,7 +203,8 @@ fn the_timer_follows_the_setting() {
     for (setting, want) in [(Some(true), 1), (Some(false), 0), (None, 0)] {
         let (_dir, root) = journal(true, setting);
         trash_segment(&root);
-        let later = Utc::now() + Duration::days(i64::from(MAX_ERASE_AFTER_DAYS) + 1);
+        let later = Timestamp::now()
+            + SignedDuration::from_hours(24 * (i64::from(MAX_ERASE_AFTER_DAYS) + 1));
         let swept = sweep(&root, &[&Kind1], later);
         assert_eq!(swept.erased, 1);
         assert_eq!(pending_ids(&root).len(), want, "setting {setting:?}");
@@ -216,7 +216,8 @@ fn the_timer_never_guesses_the_choice_from_settings_it_cant_read() {
     let (_dir, root) = journal(true, Some(true));
     let item = trash_segment(&root);
     fs::write(root.join("config/journal.json"), b"{ not json").unwrap();
-    let later = Utc::now() + Duration::days(i64::from(MAX_ERASE_AFTER_DAYS) + 1);
+    let later =
+        Timestamp::now() + SignedDuration::from_hours(24 * (i64::from(MAX_ERASE_AFTER_DAYS) + 1));
     let swept = sweep(&root, &[&Kind1], later);
     assert_eq!(swept.erased, 0, "{swept:?}");
     assert!(!swept.failed.is_empty(), "the sweep says why: {swept:?}");
@@ -238,12 +239,12 @@ fn a_resumed_erase_keeps_the_owners_choice() {
     marked.pending = Some(Pending {
         action: Action::Erase,
         surface: web(),
-        at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        at: utc_z(Timestamp::now(), Precision::Millis),
         operation: None,
         backups: true,
     });
     publish(&root, &marked).unwrap();
-    let swept = sweep(&root, &[&Kind1], Utc::now());
+    let swept = sweep(&root, &[&Kind1], Timestamp::now());
     assert_eq!(swept.resumed, 1);
     assert_eq!(pending_ids(&root), vec![item.id.clone()]);
     // Retiring is idempotent.

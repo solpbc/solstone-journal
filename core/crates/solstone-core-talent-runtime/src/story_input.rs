@@ -520,21 +520,23 @@ fn segment_heading(day: &str, key: &str) -> Result<String, String> {
     let (clock, length) = key
         .split_once('_')
         .ok_or_else(|| format!("invalid Work source segment: {key}"))?;
-    let start = chrono::NaiveDateTime::parse_from_str(&format!("{day} {clock}"), "%Y%m%d %H%M%S")
+    let start = jiff::civil::DateTime::strptime("%Y%m%d %H%M%S", format!("{day} {clock}"))
         .map_err(|error| format!("invalid Work source interval: {error}"))?;
     let seconds = length
         .parse::<i64>()
         .map_err(|error| format!("invalid Work source duration: {error}"))?;
-    let duration = chrono::Duration::try_seconds(seconds)
-        .ok_or_else(|| "Work source duration is out of range".to_owned())?;
+    // A duration holds whole milliseconds in an `i64`.
+    if !(-(i64::MAX / 1000)..=i64::MAX / 1000).contains(&seconds) {
+        return Err("Work source duration is out of range".to_owned());
+    }
     let end = start
-        .checked_add_signed(duration)
-        .ok_or_else(|| "Work source interval is out of range".to_owned())?;
+        .checked_add(jiff::SignedDuration::from_secs(seconds))
+        .map_err(|_| "Work source interval is out of range".to_owned())?;
     // Use the same observation-entry coordinates the native fitter recognizes.
     Ok(format!(
         "## {} - {}",
-        start.format("%Y-%m-%d %H:%M:%S"),
-        end.format("%H:%M:%S")
+        start.strftime("%Y-%m-%d %H:%M:%S"),
+        end.strftime("%H:%M:%S")
     ))
 }
 

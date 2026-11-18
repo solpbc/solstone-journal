@@ -28,7 +28,7 @@ mod journal_stats;
 
 use std::{collections::BTreeMap, path::Path};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_system_health::{HealthLogSource, SegmentSource};
 
@@ -50,7 +50,7 @@ pub use run::{CliRun, run_cli, run_cli_with_cache, run_cli_with_cache_checked};
 /// its optional cache sidecar. A day is the local calendar day of the write.
 pub fn scan_token_usage_by_day(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> BTreeMap<String, BTreeMap<String, BTreeMap<String, i64>>> {
     let mut diagnostics = Vec::new();
     tokens::scan_tokens(journal_root, now, false, &mut diagnostics).by_day
@@ -60,7 +60,7 @@ pub fn scan_token_usage_by_day(
 pub struct DayScanRequest<'a, S, H, W> {
     pub journal_root: &'a Path,
     pub day: &'a str,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     pub system_talent_root: &'a Path,
     pub apps_root: &'a Path,
     pub talent_overrides: Option<&'a Map<String, Value>>,
@@ -106,8 +106,8 @@ where
     if let Some(checkpoint) = checkpoint {
         checkpoint().map_err(JournalStatsError::Validation)?;
     }
-    NaiveDate::parse_from_str(request.day, "%Y%m%d")
-        .map_err(|_| JournalStatsError::InvalidDay(request.day.to_owned()))?;
+    solstone_core_time::parse_day(request.day)
+        .ok_or_else(|| JournalStatsError::InvalidDay(request.day.to_owned()))?;
     let day_dir = solstone_core_journal_io::day_path(request.journal_root, request.day, false)?;
     if !day_dir.is_dir() {
         return Ok(ScanDayOutcome {

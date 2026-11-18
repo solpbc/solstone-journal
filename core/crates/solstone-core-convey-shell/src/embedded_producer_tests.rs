@@ -6,7 +6,6 @@
 use super::*;
 use axum::Json;
 use axum::extract::State;
-use chrono::Timelike;
 use serde_json::json;
 use std::path::Path;
 use std::sync::Mutex;
@@ -91,7 +90,7 @@ synthetic completion"#,
                 ("prompt".into(), json!("synthetic completed week")),
             ]),
             &generate,
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
             &|| false,
         )
         .unwrap();
@@ -151,7 +150,12 @@ async fn weekly_fixture() -> (
     let root = tempfile::tempdir().unwrap();
     // Put the controlled journal inside the existing delivery window at the
     // real test clock; no test changes the product's window or its clock.
-    let offset = 12_i32 - chrono::Utc::now().hour() as i32;
+    let offset = 12_i32
+        - i32::from(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .hour(),
+        );
     let zone = format!("Etc/GMT{:+}", -offset);
     write(root.path(), "config/journal.json", json!({"identity":{"timezone":zone},"providers":{"active":{"provider":"test","model":"test-model"}}}).to_string());
     let ca = solstone_core_sol_link::ca::generate_ca().unwrap();
@@ -164,7 +168,10 @@ async fn weekly_fixture() -> (
         json!({"instance_id":id,"home_label":"synthetic"}).to_string(),
     );
     let cid = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let registered_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let registered_at = solstone_core_time::utc_z(
+        jiff::Timestamp::now(),
+        solstone_core_time::Precision::Millis,
+    );
     let mut ledger = solstone_core_sol_link::ledger::AuthorizationLedger::new(root.path());
     ledger
         .add(solstone_core_sol_link::ledger::ClientEntry::new(

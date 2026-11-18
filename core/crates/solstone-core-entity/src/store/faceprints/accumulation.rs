@@ -371,7 +371,7 @@ pub fn reconcile_activity_with_entities(
                             face_w: f["box"][2].as_f64().ok_or("face width missing")? as f32,
                             category: text(f, "category").into(),
                             crop,
-                            added_at: chrono::Utc::now().to_rfc3339(),
+                            added_at: solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
                             rejected: false,
                         };
                         let pool = desired.entry(entity).or_default();

@@ -3,7 +3,6 @@
 
 use std::path::Path;
 
-use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use solstone_core_format::calendar::validate_import_calendar_file;
 
@@ -11,14 +10,14 @@ use super::*;
 use crate::save::{RenderedImport, SegmentFile};
 use crate::zip_names::fixtures::{ascii, build_zip};
 
-const DENVER: Tz = Tz::America__Denver;
+fn denver() -> TimeZone {
+    solstone_core_time::zone("America/Denver").unwrap()
+}
 
 fn stamp(id: &str, at: &str) -> ImportStamp {
     ImportStamp {
         id: id.to_owned(),
-        imported_at: DateTime::parse_from_rfc3339(at)
-            .unwrap()
-            .with_timezone(&Utc),
+        imported_at: at.parse::<Timestamp>().unwrap(),
     }
 }
 
@@ -44,18 +43,18 @@ fn calendar(name: Option<&str>, events: &[&str]) -> String {
     text
 }
 
-fn render_file(path: &Path, zone: Tz, stamp: &ImportStamp) -> RenderedImport {
-    crate::ics::render_with_notes(path, &zone, Some(stamp)).unwrap()
+fn render_file(path: &Path, zone: &TimeZone, stamp: &ImportStamp) -> RenderedImport {
+    crate::ics::render_with_notes(path, zone, Some(stamp)).unwrap()
 }
 
-fn render(text: &str, zone: Tz, stamp: &ImportStamp) -> RenderedImport {
+fn render(text: &str, zone: &TimeZone, stamp: &ImportStamp) -> RenderedImport {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("calendar.ics");
     std::fs::write(&path, text).unwrap();
     render_file(&path, zone, stamp)
 }
 
-fn render_zip(members: &[(&str, &str)], zone: Tz, stamp: &ImportStamp) -> RenderedImport {
+fn render_zip(members: &[(&str, &str)], zone: &TimeZone, stamp: &ImportStamp) -> RenderedImport {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("export.zip");
     let members = members
@@ -138,7 +137,7 @@ fn identity_comes_from_uid_and_recurrence_id() {
     ";
     let rendered = render(
         &calendar(Some("Work"), &[WEEKLY_STANDUP, override_text, one_off]),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -181,7 +180,7 @@ fn an_event_with_no_uid_keeps_one_identity_across_imports() {
     ";
     let text = calendar(None, &[first, second]);
     let events = |stamp: &ImportStamp| {
-        notes_of(&render(&text, DENVER, stamp))
+        notes_of(&render(&text, &denver(), stamp))
             .iter()
             .map(|line| line["event"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>()
@@ -238,7 +237,7 @@ fn fields_map_from_the_file() {
     ";
     let rendered = render(
         &calendar(Some("Work"), &[meeting, utc, all_day, floating]),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -324,13 +323,13 @@ fn the_calendar_name_comes_from_the_file_then_the_export_member() {
             ("Family.ics", &calendar(None, &[&event("a")])),
             ("Team.ics", &calendar(Some("Work"), &[&event("b")])),
         ],
-        DENVER,
+        &denver(),
         &october(),
     );
     let lines = notes_of(&rendered);
     assert_eq!(of_event(&lines, "a")[0]["calendar"], "Family");
     assert_eq!(of_event(&lines, "b")[0]["calendar"], "Work");
-    let rendered = render(&calendar(None, &[&event("c")]), DENVER, &october());
+    let rendered = render(&calendar(None, &[&event("c")]), &denver(), &october());
     assert_eq!(notes_of(&rendered)[0]["calendar"], Value::Null);
 }
 
@@ -386,7 +385,7 @@ fn each_rule_shape_expands() {
         let event = format!(
             "UID:series\nSUMMARY:series\nDTSTART;TZID=America/Denver:20261020T090000\nRRULE:{rule}\nLAST-MODIFIED:20261019T154200Z"
         );
-        let rendered = render(&calendar(None, &[&event]), DENVER, &october());
+        let rendered = render(&calendar(None, &[&event]), &denver(), &october());
         assert_valid(&rendered);
         let lines = notes_of(&rendered);
         assert_eq!(occurrences(&of_event(&lines, "series")), expected, "{rule}");
@@ -396,7 +395,7 @@ fn each_rule_shape_expands() {
 
 #[test]
 fn a_weekly_series_keeps_its_local_time_across_the_daylight_saving_change() {
-    let rendered = render(&calendar(None, &[WEEKLY_STANDUP]), DENVER, &october());
+    let rendered = render(&calendar(None, &[WEEKLY_STANDUP]), &denver(), &october());
     let lines = notes_of(&rendered);
     let standup = of_event(&lines, "standup-1");
     assert_eq!(
@@ -443,7 +442,7 @@ fn zone_sensitive_bytes() -> Vec<String> {
     ";
     let rendered = render(
         &calendar(None, &[WEEKLY_STANDUP, floating, all_day]),
-        DENVER,
+        &denver(),
         &october(),
     );
     calendar_files(&rendered)
@@ -505,21 +504,23 @@ fn a_long_daily_series_keeps_its_most_recent_dates_into_the_next_year() {
         RRULE:FREQ=DAILY
         LAST-MODIFIED:20261019T154200Z
     ";
-    let rendered = render(&calendar(None, &[event, shorter]), DENVER, &october());
+    let rendered = render(&calendar(None, &[event, shorter]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     let daily = of_event(&lines, "daily");
     assert_eq!(daily.len(), MAX_SERIES_OCCURRENCES);
     // The import was on 2026-10-20 at noon; a year on, 08:00 on 2027-10-20
     // is the last date.
-    let last = NaiveDate::from_ymd_opt(2027, 10, 20).unwrap();
-    let first = last - Duration::days(MAX_SERIES_OCCURRENCES as i64 - 1);
-    let at_eight = |date: NaiveDate| {
-        DENVER
-            .from_local_datetime(&date.and_hms_opt(8, 0, 0).unwrap())
-            .unwrap()
-            .with_timezone(&Utc)
-            .format("%Y-%m-%dT%H:%M:%SZ")
+    let last = jiff::civil::date(2027, 10, 20);
+    let first = last
+        .checked_sub(jiff::Span::new().days(MAX_SERIES_OCCURRENCES as i64 - 1))
+        .unwrap();
+    let at_eight = |date: Date| {
+        solstone_core_time::from_local(&denver(), date.at(8, 0, 0, 0))
+            .single()
+            .expect("one 08:00")
+            .timestamp()
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
             .to_string()
     };
     let occurrences = occurrences(&daily);
@@ -535,7 +536,10 @@ fn a_long_daily_series_keeps_its_most_recent_dates_into_the_next_year() {
     assert_eq!(short[0]["occurrence"], "2026-01-01T15:00:00Z");
     assert_eq!(
         short.len(),
-        (last - NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()).num_days() as usize + 1
+        last.since(jiff::civil::date(2026, 1, 1))
+            .unwrap()
+            .get_days() as usize
+            + 1
     );
     assert_eq!(rendered.calendar_counts.truncated_series, 1);
     assert_eq!(rendered.calendar_counts.skipped(), 0);
@@ -557,7 +561,7 @@ fn a_rule_that_cannot_be_expanded_writes_its_first_date() {
         RRULE:FREQ=WEEKLY;BYDAY=XX
         LAST-MODIFIED:20261019T154200Z
     ";
-    let rendered = render(&calendar(None, &[first, second]), DENVER, &october());
+    let rendered = render(&calendar(None, &[first, second]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     assert_eq!(
@@ -585,7 +589,7 @@ fn changed_at_is_the_placing_instant_in_the_journal_offset_beside_its_transcript
         DTSTART:20270101T160000Z
         CREATED:20261215T170000Z
     ";
-    let rendered = render(&calendar(None, &[autumn, winter]), DENVER, &october());
+    let rendered = render(&calendar(None, &[autumn, winter]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     assert_eq!(
@@ -613,7 +617,11 @@ fn changed_at_is_the_placing_instant_in_the_journal_offset_beside_its_transcript
         );
     }
     // The same instants in Tokyo's offset, for a journal kept there.
-    let tokyo = render(&calendar(None, &[autumn]), Tz::Asia__Tokyo, &october());
+    let tokyo = render(
+        &calendar(None, &[autumn]),
+        &solstone_core_time::zone("Asia/Tokyo").unwrap(),
+        &october(),
+    );
     assert_eq!(
         notes_of(&tokyo)[0]["changed_at"],
         "2026-10-20T00:42:00+09:00"
@@ -632,7 +640,7 @@ fn a_file_is_checked_against_its_real_segment_and_a_utc_twin_fails() {
         DTSTART:20261101T160000Z
         LAST-MODIFIED:20261019T154200Z
     ";
-    let rendered = render(&calendar(None, &[event]), DENVER, &october());
+    let rendered = render(&calendar(None, &[event]), &denver(), &october());
     let file = calendar_files(&rendered)[0];
     assert!(
         validate_import_calendar_file(
@@ -662,7 +670,7 @@ fn two_series_of_7000_dates_split_into_two_valid_consecutive_files() {
     };
     let rendered = render(
         &calendar(None, &[&series("left"), &series("right")]),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -695,7 +703,7 @@ fn one_event_in_two_calendars_is_written_once() {
             ("Work.ics", &calendar(None, &[event])),
             ("Home.ics", &calendar(None, &[event])),
         ],
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -714,7 +722,7 @@ fn one_event_in_two_calendars_is_written_once() {
             .iter()
             .map(|(name, text)| (*name, text.as_str()))
             .collect::<Vec<_>>();
-        let rendered = render_zip(&members, DENVER, &october());
+        let rendered = render_zip(&members, &denver(), &october());
         let lines = notes_of(&rendered);
         let shared = of_event(&lines, "shared");
         assert_eq!(shared.len(), 1);
@@ -756,7 +764,7 @@ fn a_windows_zone_name_is_mapped_and_an_unknown_one_is_skipped_and_counted() {
     ";
     let rendered = render(
         &calendar(None, &[pacific, tokyo, custom, undated, unscheduled]),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -874,7 +882,7 @@ fn excluded_and_added_dates_overrides_and_cancellations() {
                 cancelled_event,
             ],
         ),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -932,7 +940,7 @@ fn an_override_in_utc_against_a_zoned_series_replaces_its_one_date() {
         let moved = format!(
             "UID:standup-1\nSUMMARY:moved\n{recurrence_id}\nDTSTART;TZID=America/Denver:20261028T140000\nLAST-MODIFIED:20261019T160000Z"
         );
-        let rendered = render(&calendar(None, &[&series, &moved]), DENVER, &october());
+        let rendered = render(&calendar(None, &[&series, &moved]), &denver(), &october());
         assert_valid(&rendered);
         let lines = notes_of(&rendered);
         let at = of_event(&lines, "standup-1")
@@ -949,7 +957,7 @@ fn an_override_in_utc_against_a_zoned_series_replaces_its_one_date() {
 #[test]
 fn a_cancelled_series_removes_every_date() {
     let series = format!("{WEEKLY_STANDUP}\nSTATUS:CANCELLED");
-    let rendered = render(&calendar(None, &[&series]), DENVER, &october());
+    let rendered = render(&calendar(None, &[&series]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     let standup = of_event(&lines, "standup-1");
@@ -975,7 +983,7 @@ fn only_lines_expanded_from_a_rule_are_marked_expanded() {
     ";
     let rendered = render(
         &calendar(None, &[WEEKLY_STANDUP, moved, one_off]),
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_valid(&rendered);
@@ -1016,7 +1024,7 @@ fn an_until_with_no_z_ends_the_series_in_its_own_frame() {
         ),
     ];
     for (event, expected) in cases {
-        let rendered = render(&calendar(None, &[event]), DENVER, &october());
+        let rendered = render(&calendar(None, &[event]), &denver(), &october());
         assert_valid(&rendered);
         let lines = notes_of(&rendered);
         let mut written = occurrences(&lines.iter().collect::<Vec<_>>());
@@ -1047,7 +1055,7 @@ fn an_override_that_writes_no_line_leaves_its_date_to_the_series() {
     ] {
         let rendered = render(
             &calendar(None, &[WEEKLY_STANDUP, override_text]),
-            DENVER,
+            &denver(),
             &october(),
         );
         assert_valid(&rendered);
@@ -1071,7 +1079,7 @@ fn a_series_of_added_dates_alone_keeps_its_own_start() {
         RDATE;TZID=America/Denver:20261028T090000
         LAST-MODIFIED:20261019T154200Z
     ";
-    let rendered = render(&calendar(None, &[event]), DENVER, &october());
+    let rendered = render(&calendar(None, &[event]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     let mut written = occurrences(&of_event(&lines, "dates"));
@@ -1102,7 +1110,7 @@ fn an_import_writes_at_most_its_line_limit_and_counts_the_rest() {
     std::fs::write(&path, text).unwrap();
     for (cap, written, over) in [(9, vec!["first", "second"], 1), (4, vec!["first"], 2)] {
         let rendered =
-            crate::ics::render_with_line_cap(&path, &DENVER, Some(&october()), cap).unwrap();
+            crate::ics::render_with_line_cap(&path, &denver(), Some(&october()), cap).unwrap();
         assert_valid(&rendered);
         let lines = notes_of(&rendered);
         let mut events = lines
@@ -1128,7 +1136,7 @@ fn an_unreadable_change_time_is_skipped_and_never_stamped_with_the_start() {
             format!("UID:broken\nSUMMARY:broken\nDTSTART:20261105T160000Z\n{field}:{other}");
         let good =
             "UID:fine\nSUMMARY:fine\nDTSTART:20261106T160000Z\nLAST-MODIFIED:20261019T154200Z";
-        let rendered = render(&calendar(None, &[&event, good]), DENVER, &october());
+        let rendered = render(&calendar(None, &[&event, good]), &denver(), &october());
         let lines = notes_of(&rendered);
         assert!(of_event(&lines, "broken").is_empty(), "{field}");
         assert_eq!(of_event(&lines, "fine").len(), 1);
@@ -1137,7 +1145,7 @@ fn an_unreadable_change_time_is_skipped_and_never_stamped_with_the_start() {
     }
     // An unreadable LAST-MODIFIED is not replaced by CREATED either.
     let both = "UID:both\nSUMMARY:both\nDTSTART:20261105T160000Z\nLAST-MODIFIED:garbage\nCREATED:20261001T120000Z";
-    let rendered = render(&calendar(None, &[both]), DENVER, &october());
+    let rendered = render(&calendar(None, &[both]), &denver(), &october());
     assert!(notes_of(&rendered).is_empty());
     assert_eq!(rendered.calendar_counts.no_change_time, 1);
 }
@@ -1156,7 +1164,7 @@ fn a_window_never_spans_a_daylight_saving_change() {
         };
         let rendered = render(
             &calendar(None, &[&event("before", before), &event("after", after)]),
-            DENVER,
+            &denver(),
             &october(),
         );
         assert_valid(&rendered);
@@ -1174,15 +1182,19 @@ fn windows_zone_names_map_to_current_iana_names() {
         ("Nepal Standard Time", "Asia/Kathmandu"),
         ("Pacific Standard Time", "America/Los_Angeles"),
     ] {
-        assert_eq!(resolve_zone(windows).unwrap().name(), iana);
+        assert_eq!(resolve_zone(windows).unwrap().iana_name().unwrap(), iana);
     }
     for line in WINDOWS_ZONES.lines().filter(|line| !line.starts_with('#')) {
         let (windows, iana) = line.split_once('\t').unwrap();
         // A Windows name that is itself an IANA name ("UTC") is read as one.
-        if windows.parse::<Tz>().is_ok() {
+        if solstone_core_time::zone(windows).is_some() {
             continue;
         }
-        assert_eq!(resolve_zone(windows).unwrap().name(), iana, "{windows}");
+        assert_eq!(
+            resolve_zone(windows).unwrap().iana_name().unwrap(),
+            iana,
+            "{windows}"
+        );
     }
 }
 
@@ -1194,7 +1206,7 @@ fn a_line_too_large_for_a_file_is_skipped_and_counted() {
     );
     let small =
         "UID:small\nSUMMARY:small\nDTSTART:20261106T160000Z\nLAST-MODIFIED:20261019T154200Z";
-    let rendered = render(&calendar(None, &[&event, small]), DENVER, &october());
+    let rendered = render(&calendar(None, &[&event, small]), &denver(), &october());
     assert_valid(&rendered);
     let lines = notes_of(&rendered);
     assert!(of_event(&lines, "huge").is_empty());
@@ -1210,7 +1222,7 @@ fn a_series_in_two_export_members_is_counted_once() {
     let member = calendar(None, &[long, odd, undated]);
     let rendered = render_zip(
         &[("Work.ics", &member), ("Home.ics", &member)],
-        DENVER,
+        &denver(),
         &october(),
     );
     assert_eq!(
@@ -1258,7 +1270,7 @@ fn a_windows_zone_gives_the_transcript_its_time_too() {
         DTEND;TZID=Tokyo Standard Time:20261023T093000
         LAST-MODIFIED:20261019T160000Z
     ";
-    let rendered = render(&calendar(None, &[pacific, tokyo]), DENVER, &october());
+    let rendered = render(&calendar(None, &[pacific, tokyo]), &denver(), &october());
     let transcript = |title: &str| {
         rendered
             .files
@@ -1280,4 +1292,102 @@ fn a_windows_zone_gives_the_transcript_its_time_too() {
         tokyo.contains("2026-10-22 06:00 PM") && tokyo.contains("(30 min)"),
         "{tokyo}"
     );
+}
+
+// Series expansion through `expand`, as recorded for rules of each start kind,
+// across daylight-saving changes, with each form of `UNTIL`.
+enum Start {
+    Date(i16, i8, i8),
+    Floating(i16, i8, i8, i8, i8),
+    Utc(i16, i8, i8, i8, i8),
+    Zoned(&'static str, i16, i8, i8, i8, i8),
+}
+
+fn start_time(start: &Start) -> Option<IcsTime> {
+    let at = |y, mo, d, h, mi| jiff::civil::date(y, mo, d).at(h, mi, 0, 0);
+    Some(match *start {
+        Start::Date(y, mo, d) => IcsTime::Date(jiff::civil::date(y, mo, d)),
+        Start::Floating(y, mo, d, h, mi) => IcsTime::Floating(at(y, mo, d, h, mi)),
+        Start::Utc(y, mo, d, h, mi) => IcsTime::Utc(
+            jiff::tz::Offset::UTC
+                .to_timestamp(at(y, mo, d, h, mi))
+                .unwrap(),
+        ),
+        Start::Zoned(zone, y, mo, d, h, mi) => IcsTime::Zoned(zone_time(
+            &solstone_core_time::zone(zone).unwrap(),
+            at(y, mo, d, h, mi),
+        )?),
+    })
+}
+
+#[test]
+fn series_expand_as_recorded() {
+    #[rustfmt::skip]
+    #[allow(clippy::type_complexity)]
+    let cases: &[(&str, Start, &str, Option<(bool, usize, &[&str])>)] = &[
+        ("FREQ=WEEKLY;BYDAY=TU;COUNT=4", Start::Zoned("America/Denver", 2026, 10, 20, 9, 0), "2026-10-20T18:00:00Z", Some((false, 4, &["2026-10-20T15:00:00Z|2026-10-20T09:00:00-06:00", "2026-10-27T15:00:00Z|2026-10-27T09:00:00-06:00", "2026-11-03T16:00:00Z|2026-11-03T09:00:00-07:00", "2026-11-10T16:00:00Z|2026-11-10T09:00:00-07:00"]))),
+        ("FREQ=DAILY;COUNT=3", Start::Zoned("America/Denver", 2026, 3, 7, 2, 30), "2026-03-01T00:00:00Z", Some((false, 3, &["2026-03-07T09:30:00Z|2026-03-07T02:30:00-07:00", "2026-03-08T09:30:00Z|2026-03-08T03:30:00-06:00", "2026-03-09T08:30:00Z|2026-03-09T02:30:00-06:00"]))),
+        ("FREQ=DAILY;COUNT=3", Start::Zoned("America/Denver", 2026, 10, 31, 1, 30), "2026-10-01T00:00:00Z", Some((false, 3, &["2026-10-31T07:30:00Z|2026-10-31T01:30:00-06:00", "2026-11-01T07:30:00Z|2026-11-01T01:30:00-06:00", "2026-11-02T08:30:00Z|2026-11-02T01:30:00-07:00"]))),
+        ("FREQ=DAILY;COUNT=3", Start::Zoned("America/Denver", 2026, 3, 8, 2, 30), "2026-03-01T00:00:00Z", Some((false, 3, &["2026-03-08T09:30:00Z|2026-03-08T03:30:00-06:00", "2026-03-09T09:30:00Z|2026-03-09T03:30:00-06:00", "2026-03-10T09:30:00Z|2026-03-10T03:30:00-06:00"]))),
+        ("FREQ=WEEKLY;UNTIL=20261110T090000", Start::Zoned("America/Denver", 2026, 10, 27, 9, 0), "2026-10-20T18:00:00Z", Some((false, 3, &["2026-10-27T15:00:00Z|2026-10-27T09:00:00-06:00", "2026-11-03T16:00:00Z|2026-11-03T09:00:00-07:00", "2026-11-10T16:00:00Z|2026-11-10T09:00:00-07:00"]))),
+        ("FREQ=WEEKLY;UNTIL=20261110", Start::Date(2026, 10, 27), "2026-10-20T18:00:00Z", Some((false, 3, &["2026-10-27|2026-10-27", "2026-11-03|2026-11-03", "2026-11-10|2026-11-10"]))),
+        ("FREQ=WEEKLY;UNTIL=20261110T090000", Start::Floating(2026, 10, 27, 9, 0), "2026-10-20T18:00:00Z", Some((false, 3, &["2026-10-27T09:00:00|2026-10-27T09:00:00", "2026-11-03T09:00:00|2026-11-03T09:00:00", "2026-11-10T09:00:00|2026-11-10T09:00:00"]))),
+        ("FREQ=MONTHLY;BYDAY=-1FR;until=20270301T000000Z", Start::Utc(2026, 10, 30, 16, 0), "2026-10-20T18:00:00Z", Some((false, 5, &["2026-10-30T16:00:00Z|2026-10-30T16:00:00Z", "2026-11-27T16:00:00Z|2026-11-27T16:00:00Z", "2026-12-25T16:00:00Z|2026-12-25T16:00:00Z", "2027-01-29T16:00:00Z|2027-01-29T16:00:00Z", "2027-02-26T16:00:00Z|2027-02-26T16:00:00Z"]))),
+        ("FREQ=DAILY;BYHOUR=1,2;BYMINUTE=30", Start::Zoned("Europe/London", 2027, 3, 26, 1, 30), "2026-04-01T00:00:00Z", Some((false, 12, &["2027-03-26T01:30:00Z|2027-03-26T01:30:00+00:00", "2027-03-26T02:30:00Z|2027-03-26T02:30:00+00:00", "2027-03-27T01:30:00Z|2027-03-27T01:30:00+00:00", "2027-03-27T02:30:00Z|2027-03-27T02:30:00+00:00", "2027-03-30T00:30:00Z|2027-03-30T01:30:00+01:00", "2027-03-30T01:30:00Z|2027-03-30T02:30:00+01:00", "2027-03-31T00:30:00Z|2027-03-31T01:30:00+01:00", "2027-03-31T01:30:00Z|2027-03-31T02:30:00+01:00"]))),
+        ("FREQ=HOURLY;INTERVAL=7", Start::Zoned("Pacific/Chatham", 2027, 4, 2, 0, 45), "2026-04-05T00:00:00Z", Some((false, 13, &["2027-04-01T11:00:00Z|2027-04-02T00:45:00+13:45", "2027-04-01T18:00:00Z|2027-04-02T07:45:00+13:45", "2027-04-02T01:00:00Z|2027-04-02T14:45:00+13:45", "2027-04-02T08:00:00Z|2027-04-02T21:45:00+13:45", "2027-04-04T03:00:00Z|2027-04-04T15:45:00+12:45", "2027-04-04T10:00:00Z|2027-04-04T22:45:00+12:45", "2027-04-04T17:00:00Z|2027-04-05T05:45:00+12:45", "2027-04-05T00:00:00Z|2027-04-05T12:45:00+12:45"]))),
+        ("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", Start::Floating(2020, 2, 29, 9, 0), "2027-12-01T00:00:00Z", Some((false, 3, &["2020-02-29T09:00:00|2020-02-29T09:00:00", "2024-02-29T09:00:00|2024-02-29T09:00:00", "2028-02-29T09:00:00|2028-02-29T09:00:00"]))),
+        ("FREQ=DAILY;UNTIL=20261019T000000Z", Start::Zoned("America/Denver", 2026, 10, 20, 9, 0), "2026-10-20T18:00:00Z", None),
+        ("FREQ=DAILY;UNTIL=garbage", Start::Zoned("America/Denver", 2026, 10, 20, 9, 0), "2026-10-20T18:00:00Z", None),
+        ("FREQ=FORTNIGHTLY", Start::Zoned("America/Denver", 2026, 10, 20, 9, 0), "2026-10-20T18:00:00Z", None),
+        ("FREQ=MINUTELY", Start::Utc(2026, 10, 20, 9, 0), "2026-10-20T18:00:00Z", None),
+    ];
+    for (rule, start, imported, expected) in cases {
+        let start = start_time(start).unwrap();
+        let bound = imported.parse::<jiff::Timestamp>().unwrap()
+            + jiff::SignedDuration::from_hours(24 * 365);
+        let got = expand(rule, &start, bound).ok().map(|expansion| {
+            let lines: Vec<_> = expansion
+                .starts
+                .iter()
+                .map(|s| format!("{}|{}", s.occurrence(), s.written()))
+                .collect();
+            let shown: Vec<_> = if lines.len() <= 8 {
+                lines.clone()
+            } else {
+                lines[..4]
+                    .iter()
+                    .chain(&lines[lines.len() - 4..])
+                    .cloned()
+                    .collect()
+            };
+            (expansion.truncated, lines.len(), shown)
+        });
+        let expected = expected.map(|(truncated, count, shown)| {
+            (
+                truncated,
+                count,
+                shown.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>(),
+            )
+        });
+        assert_eq!(got, expected, "{rule}");
+    }
+}
+
+#[test]
+fn a_rule_whose_set_position_never_picks_ends_quickly() {
+    // Each second-long period has one candidate, so position 2 never picks.
+    let event = "UID:never\nSUMMARY:never\nDTSTART:20261020T090000Z\nRRULE:FREQ=SECONDLY;BYSECOND=0;BYSETPOS=2\nLAST-MODIFIED:20261019T154200Z";
+    let started = std::time::Instant::now();
+    let rendered = render(&calendar(None, &[event]), &denver(), &october());
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(60),
+        "took {:?}",
+        started.elapsed()
+    );
+    let lines = notes_of(&rendered);
+    assert_eq!(
+        occurrences(&of_event(&lines, "never")),
+        ["2026-10-20T09:00:00Z"]
+    );
+    assert_eq!(rendered.calendar_counts, CalendarNoteCounts::default());
 }

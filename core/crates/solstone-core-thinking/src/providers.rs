@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{
     CredentialValidationWitness, FingerprintKeyMaterial, StoredCredentialBinding,
@@ -857,7 +856,7 @@ pub fn persist_key_validations(
         let mut result = result.as_object().cloned().unwrap_or_default();
         result.insert(
             "timestamp".to_owned(),
-            Value::String(Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(jiff::Timestamp::now())),
         );
         let result = Value::Object(result);
         computed.insert(provider.to_string(), result.clone());
@@ -4820,9 +4819,9 @@ mod tests {
         assert_eq!(model_result["reason_code"], "provider_quota_exceeded");
     }
 
-    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
-        let observed = now.to_rfc3339();
-        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+    fn spp_ready_evidence(now: jiff::Timestamp) -> Value {
+        let observed = solstone_core_time::utc_rfc3339(now);
+        let expires = solstone_core_time::utc_rfc3339(now + jiff::SignedDuration::from_hours(2));
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
@@ -4867,7 +4866,7 @@ mod tests {
         .unwrap();
         solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let ready_permit = solstone_core_brain::begin_refresh(
             ready_path,
             now,
@@ -4928,7 +4927,7 @@ mod tests {
             "certificate_invalid",
         );
 
-        let check_now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let check_now = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1);
         let inspection =
             solstone_core_brain::inspect_brain_state(mid_check_path, &config_map, check_now);
         assert_eq!(inspection.projection.aggregate_state, "unhealthy");
@@ -5122,7 +5121,7 @@ mod tests {
         solstone_core_brain::generate_fingerprint_key(journal).unwrap();
         let permit = solstone_core_brain::begin_refresh(
             journal,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             Some("spp-test".to_owned()),
             None,
             false,
@@ -5138,7 +5137,7 @@ mod tests {
                 "lane_prerequisites":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
                 "generate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"}
             }),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             None,
         );
         solstone_core_brain::record_confidential_attestation_refusal(
@@ -5872,7 +5871,7 @@ mod refresh_dispatch {
         }
         let error = solstone_core_brain::begin_refresh(
             &journal,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             Some("run".to_owned()),
             None,
             false,

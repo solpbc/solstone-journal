@@ -11,7 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use ring::rand::{SecureRandom as _, SystemRandom};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -46,7 +46,7 @@ pub struct CreatedToken {
 pub struct TokenSummary {
     pub id: String,
     pub label: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 /// The current identity resolved for a verified bearer token.
@@ -192,7 +192,8 @@ struct StoredToken {
     id: String,
     label: String,
     verifier: String,
-    created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: Timestamp,
 }
 
 /// A crate-private source of complete random byte sequences.
@@ -264,7 +265,7 @@ impl TokenStore {
             id: URL_SAFE_NO_PAD.encode(id_bytes),
             label: label.clone(),
             verifier,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
         });
         self.write_store(&path, &store)?;
         Ok(CreatedToken { label, token })

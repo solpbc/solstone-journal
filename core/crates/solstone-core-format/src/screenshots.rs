@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use chrono::{DateTime, FixedOffset, Timelike};
+use jiff::ZonedDateTime;
 use serde_json::{Map, Value};
 
 /// The ingest source a screenshots stream is bound to.
@@ -65,7 +65,7 @@ pub enum TakenFrom {
 /// The checked capture facts of one screenshot.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScreenshotMeta {
-    pub captured_at: DateTime<FixedOffset>,
+    pub captured_at: ZonedDateTime,
     pub taken_from: TakenFrom,
 }
 
@@ -87,9 +87,9 @@ fn invalid(detail: impl Into<String>) -> ScreenshotError {
 
 /// The segment key a screenshot taken at `captured_at` belongs in: the day and
 /// clock time in the capture's own offset, one second long.
-pub fn placement(captured_at: &DateTime<FixedOffset>) -> (String, String) {
+pub fn placement(captured_at: &ZonedDateTime) -> (String, String) {
     (
-        captured_at.format("%Y%m%d").to_string(),
+        solstone_core_time::day_key(captured_at.date()),
         format!(
             "{:02}{:02}{:02}_{SCREENSHOT_SEGMENT_SECONDS}",
             captured_at.hour(),
@@ -119,7 +119,7 @@ pub fn validate_screenshot_meta(
     let Some(Value::String(captured_at)) = screenshot.get("captured_at") else {
         return Err(invalid("meta.screenshot.captured_at is required"));
     };
-    let captured_at = DateTime::parse_from_rfc3339(captured_at)
+    let captured_at = solstone_core_time::parse_rfc3339(captured_at)
         .map_err(|_| invalid("meta.screenshot.captured_at must be RFC 3339 with an offset"))?;
     let taken_from = match screenshot.get("taken_from") {
         Some(Value::String(value)) if value == "platform" => TakenFrom::Platform,
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn a_screenshot_belongs_at_its_capture_second_in_its_own_offset() {
-        let at = DateTime::parse_from_rfc3339("2026-11-10T14:32:07-07:00").unwrap();
+        let at = solstone_core_time::parse_rfc3339("2026-11-10T14:32:07-07:00").unwrap();
         assert_eq!(
             placement(&at),
             ("20261110".to_owned(), "143207_1".to_owned())

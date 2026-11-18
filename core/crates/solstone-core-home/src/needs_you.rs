@@ -259,7 +259,7 @@ fn classify_owner_tier_reason(reason: OwnerTierReason) -> OwnerVoiceClass {
 pub fn classify_owner_voice_needs(
     outcome: OwnerTierOutcome,
     setup: impl FnOnce() -> OwnerVoiceSetup,
-    next_look_after: impl Fn(&chrono::DateTime<chrono::Utc>) -> String,
+    next_look_after: impl Fn(&jiff::Timestamp) -> String,
 ) -> Option<Value> {
     match outcome {
         OwnerTierOutcome::Confirmed(_) | OwnerTierOutcome::IdentityInvalid => None,
@@ -499,8 +499,11 @@ mod tests {
         OwnerVoiceSetup::NotYet(NotYetReason::NeedsMoreAudio)
     }
 
-    fn day(at: &chrono::DateTime<chrono::Utc>) -> String {
-        at.format("%b %-d").to_string()
+    fn day(at: &jiff::Timestamp) -> String {
+        jiff::tz::Offset::UTC
+            .to_datetime(*at)
+            .strftime("%b %-d")
+            .to_string()
     }
 
     #[test]
@@ -550,9 +553,7 @@ mod tests {
 
     #[test]
     fn owner_voice_needs_names_when_a_declined_voice_is_looked_for_again() {
-        let at = chrono::DateTime::parse_from_rfc3339("2026-10-25T12:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let at: jiff::Timestamp = "2026-10-25T12:00:00Z".parse().unwrap();
         let item = classify_owner_voice_needs(
             OwnerTierOutcome::None(OwnerTierReason::ConfirmedAbsent),
             || {

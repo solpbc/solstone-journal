@@ -6,7 +6,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use chrono::{Duration, TimeZone, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Map, json};
     use tempfile::TempDir;
 
@@ -72,7 +72,7 @@ mod tests {
         .unwrap();
         // The twin: a day with an ordinary capture segment.
         fs::create_dir_all(root.join("chronicle/20990102/mic/100000_300")).unwrap();
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view = read_backlog_view(
             &FilesystemHealthLogSource::new(root),
             &FilesystemSegmentSource,
@@ -107,7 +107,7 @@ mod tests {
         configure_daily_work(root_control, None);
         fs::create_dir_all(root_control.join("chronicle").join(day)).unwrap();
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view_control = read_backlog_view(
             &FilesystemHealthLogSource::new(root_control),
             &FilesystemSegmentSource,
@@ -200,7 +200,7 @@ mod tests {
             &[&fail1.to_string(), &fail2.to_string()],
         );
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view = read_backlog_view(
             &FilesystemHealthLogSource::new(root),
             &FilesystemSegmentSource,
@@ -328,7 +328,7 @@ mod tests {
             &[&fail.to_string(), &complete_other.to_string()],
         );
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view = read_backlog_view(
             &FilesystemHealthLogSource::new(root),
             &FilesystemSegmentSource,
@@ -391,7 +391,7 @@ mod tests {
         record.failure_count = 1;
         solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view = read_backlog_view(
             &FilesystemHealthLogSource::new(root),
             &FilesystemSegmentSource,
@@ -427,7 +427,7 @@ mod tests {
         fs::create_dir_all(&day_dir).unwrap();
 
         let failing_source = FailingHealthOnDayRecords;
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view =
             read_backlog_view(&failing_source, &FilesystemSegmentSource, root, 1, now).unwrap();
 
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn acceptance_3_summary_freshness_and_age_formatting() {
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
 
         // Absent (None) -> Unknown
         assert_eq!(summary_freshness(None, now), SummaryFreshness::Unknown);
@@ -452,31 +452,31 @@ mod tests {
             SummaryFreshness::Unknown
         );
         // +10 min -> Unknown
-        let t_plus_10m = (now + Duration::minutes(10)).to_rfc3339();
+        let t_plus_10m = solstone_core_time::utc_rfc3339(now + SignedDuration::from_mins(10));
         assert_eq!(
             summary_freshness(Some(&t_plus_10m), now),
             SummaryFreshness::Unknown
         );
         // +2 min -> Fresh
-        let t_plus_2m = (now + Duration::minutes(2)).to_rfc3339();
+        let t_plus_2m = solstone_core_time::utc_rfc3339(now + SignedDuration::from_mins(2));
         assert_eq!(
             summary_freshness(Some(&t_plus_2m), now),
             SummaryFreshness::Fresh
         );
         // 35h -> Fresh
-        let t_35h = (now - Duration::hours(35)).to_rfc3339();
+        let t_35h = solstone_core_time::utc_rfc3339(now - SignedDuration::from_hours(35));
         assert_eq!(
             summary_freshness(Some(&t_35h), now),
             SummaryFreshness::Fresh
         );
         // exactly 36h -> Fresh
-        let t_36h = (now - Duration::hours(36)).to_rfc3339();
+        let t_36h = solstone_core_time::utc_rfc3339(now - SignedDuration::from_hours(36));
         assert_eq!(
             summary_freshness(Some(&t_36h), now),
             SummaryFreshness::Fresh
         );
         // 37h -> Stale
-        let t_37h = (now - Duration::hours(37)).to_rfc3339();
+        let t_37h = solstone_core_time::utc_rfc3339(now - SignedDuration::from_hours(37));
         assert_eq!(
             summary_freshness(Some(&t_37h), now),
             SummaryFreshness::Stale
@@ -484,22 +484,34 @@ mod tests {
 
         // format_summary_age:
         // 30s -> 1 minute
-        assert_eq!(format_summary_age(Duration::seconds(30)), "1 minute");
+        assert_eq!(
+            format_summary_age(SignedDuration::from_secs(30)),
+            "1 minute"
+        );
         // 59 min -> 59 minutes
-        assert_eq!(format_summary_age(Duration::minutes(59)), "59 minutes");
+        assert_eq!(
+            format_summary_age(SignedDuration::from_mins(59)),
+            "59 minutes"
+        );
         // 1h -> 1 hour
-        assert_eq!(format_summary_age(Duration::hours(1)), "1 hour");
+        assert_eq!(format_summary_age(SignedDuration::from_hours(1)), "1 hour");
         // 47h -> 47 hours
-        assert_eq!(format_summary_age(Duration::hours(47)), "47 hours");
+        assert_eq!(
+            format_summary_age(SignedDuration::from_hours(47)),
+            "47 hours"
+        );
         // 48h -> 2 days
-        assert_eq!(format_summary_age(Duration::hours(48)), "2 days");
+        assert_eq!(format_summary_age(SignedDuration::from_hours(48)), "2 days");
         // 9d -> 9 days
-        assert_eq!(format_summary_age(Duration::days(9)), "9 days");
+        assert_eq!(
+            format_summary_age(SignedDuration::from_hours(24 * 9)),
+            "9 days"
+        );
 
         // parse_summary_time validation
         assert_eq!(
             parse_summary_time("2026-09-22T20:00:00Z"),
-            Some(Utc.with_ymd_and_hms(2026, 9, 22, 20, 0, 0).unwrap())
+            Some("2026-09-22T20:00:00Z".parse::<Timestamp>().unwrap())
         );
         assert_eq!(parse_summary_time("   "), None);
     }
@@ -571,7 +583,7 @@ mod tests {
         configure_daily_work(root_control, None);
         fs::create_dir_all(root_control.join("chronicle").join(day1)).unwrap();
         fs::create_dir_all(root_control.join("chronicle").join(day2)).unwrap();
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::new(1_800_000_000, 0).unwrap();
         let view_control = read_backlog_view(
             &FilesystemHealthLogSource::new(root_control),
             &FilesystemSegmentSource,

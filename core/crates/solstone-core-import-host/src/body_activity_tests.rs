@@ -646,14 +646,15 @@ fn a_record_naming_a_misplaced_key_counts_as_sensed() {
     let journal = strava_journal();
     let root = journal.path();
     let (start, elapsed) = (
-        chrono::DateTime::parse_from_rfc3339("2026-10-10T07:00:00-06:00").unwrap(),
+        solstone_core_time::parse_rfc3339("2026-10-10T07:00:00-06:00").unwrap(),
         720,
     );
     let zone = solstone_core_journal_config::placed_zone(root, STRAVA_SOURCE).expect("placed zone");
-    let (day, key) = solstone_core_import_sources::strava::misread_tile_keys(start, elapsed, zone)
-        .into_iter()
-        .next()
-        .expect("a misplaced key");
+    let (day, key) =
+        solstone_core_import_sources::strava::misread_tile_keys(&start, elapsed, &zone)
+            .into_iter()
+            .next()
+            .expect("a misplaced key");
     sense_record(root, "body", &day, "import.strava", &[&key]);
     assert_eq!(write_strava_records(root, DAY).sensed, 1);
 }

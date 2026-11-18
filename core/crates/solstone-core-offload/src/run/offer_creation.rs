@@ -3,7 +3,8 @@
 
 //! Owning archive-offer creation. Returned resources still require settlement.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_backup::archive_activity::PreparedArchiveOperation;
 use solstone_core_backup::archive_readback::{
     ReadOperation, ReadbackAdmissionError, ReadbackError,
@@ -264,8 +265,8 @@ pub fn create_offload_offers<'clock>(
     operation: PreparedArchiveOperation<'clock>,
     services: &BackupServices<'clock>,
     selections: &[OffloadOfferSelection],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> OffloadCreation<'clock> {
     #[cfg(any(unix, windows))]
     {
@@ -753,8 +754,8 @@ mod native {
         operation: PreparedArchiveOperation<'clock>,
         services: &BackupServices<'clock>,
         selections: &[OffloadOfferSelection],
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
     ) -> OffloadCreation<'clock> {
         let mut resources = Resources::default();
         let planning = (|| {
@@ -1020,9 +1021,9 @@ mod native {
         root: &Arc<JournalRoot>,
         resources: &mut Resources,
         writes: Vec<WitnessWrite>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), OffloadCreationRefusal> {
-        let time = match u64::try_from(now.timestamp()) {
+        let time = match u64::try_from(now.as_second()) {
             Ok(time) => time,
             Err(_) => {
                 return Err(OffloadCreationRefusal::Metadata);
@@ -1049,8 +1050,8 @@ mod native {
         mut admitted: AdmittedArchive<'clock>,
         mut resources: Resources,
         catalog: JournalCatalog,
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
     ) -> OffloadCreation<'clock> {
         let plan = match archive_groups(
             ArchiveBorrow::Generic(&mut admitted),

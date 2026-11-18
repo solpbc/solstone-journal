@@ -12,7 +12,6 @@ use axum::{
     body::{Body, to_bytes},
     http::Request,
 };
-use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::Path;
@@ -336,7 +335,7 @@ fn ac7_filename_day_fold_and_stats_rollup_agree() {
             assert_eq!(usage("/app/stats/api/usage?day=20260810").await["total"]["tokens"], 0);
             let by_day = solstone_core_journal_stats_cli::scan_token_usage_by_day(
                 root.path(),
-                Utc.with_ymd_and_hms(2026, 8, 10, 1, 0, 0).unwrap(),
+                "2026-08-10T01:00:00Z".parse::<jiff::Timestamp>().unwrap(),
             );
             assert!(by_day.contains_key("20260809"));
             assert!(!by_day.contains_key("20260810"));

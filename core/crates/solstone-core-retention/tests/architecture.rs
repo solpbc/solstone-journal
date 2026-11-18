@@ -274,7 +274,12 @@ const LAYOUT: &str = "layout";
 /// ⛔ A retention decision that reads the clock cannot be pinned by a test or
 /// reproduced from a receipt: the same segment and policy must yield the same verdict
 /// for a given instant. Every entry point takes the instant as an argument instead.
-const CLOCK_READS: &[&str] = &["Utc::now", "Local::now", "SystemTime::now", "Instant::now"];
+const CLOCK_READS: &[&str] = &[
+    "Timestamp::now",
+    "ZonedDateTime::now",
+    "SystemTime::now",
+    "Instant::now",
+];
 
 /// Production source only -- everything before the `#[cfg(test)]` module.
 ///

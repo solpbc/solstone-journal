@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde_json::Value;
 use solstone_core_format::content::body_records::BODY_RECORD_STREAMS;
 
@@ -99,7 +99,7 @@ pub struct OldBundle {
 fn valid_day(text: &str) -> bool {
     text.len() == 8
         && text.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(text, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(text).is_some()
 }
 
 fn read_manifest(path: &Path) -> Option<serde_json::Map<String, Value>> {
@@ -434,8 +434,8 @@ pub fn covers_on_day(journal: &Path, day: &str, only: Option<OldSource>) -> Vec<
 /// A `YYYY-MM` month as a person says it: "March 2026".
 #[must_use]
 pub fn month_words(month: &str) -> Option<String> {
-    let date = NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").ok()?;
-    Some(date.format("%B %Y").to_string())
+    let date = Date::strptime("%Y-%m-%d", format!("{month}-01")).ok()?;
+    Some(date.strftime("%B %Y").to_string())
 }
 
 #[cfg(test)]

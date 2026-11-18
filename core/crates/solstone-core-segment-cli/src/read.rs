@@ -3,13 +3,14 @@
 
 use std::path::Path;
 
-use chrono::{Duration, NaiveDate, NaiveTime};
+use jiff::civil::Time;
 use serde_json::{Value, json};
 use solstone_core_format::segment::{is_date_key, segment_parse};
 use solstone_core_segment::{
     DEFAULT_STREAM, DirEntryKind, Segment, SegmentIdentityError, StreamLocation, list_days,
     list_dir_entries, list_segments, list_segments_in, read_stream_record, read_text,
 };
+use solstone_core_time::{day_key, parse_day};
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
 use crate::location::SegmentLocation;
@@ -71,14 +72,20 @@ fn times(segment: &str) -> (Option<String>, Option<String>) {
     };
     let seconds = time.hour as u64 * 3600 + time.minute as u64 * 60 + time.second as u64;
     let end = (seconds + segment_duration(segment)) % 86_400;
-    let start = NaiveTime::from_num_seconds_from_midnight_opt(seconds as u32, 0)
-        .expect("parsed time is valid");
-    let end = NaiveTime::from_num_seconds_from_midnight_opt(end as u32, 0)
-        .expect("bounded time is valid");
+    let start = time_of_day(seconds).expect("parsed time is valid");
+    let end = time_of_day(end).expect("bounded time is valid");
     (
-        Some(start.format("%H:%M:%S").to_string()),
-        Some(end.format("%H:%M:%S").to_string()),
+        Some(start.strftime("%H:%M:%S").to_string()),
+        Some(end.strftime("%H:%M:%S").to_string()),
     )
+}
+
+/// The time of day `seconds` after midnight; none for a day or more.
+fn time_of_day(seconds: u64) -> Option<Time> {
+    let hour = i8::try_from(seconds / 3600).ok()?;
+    let minute = i8::try_from(seconds / 60 % 60).ok()?;
+    let second = i8::try_from(seconds % 60).ok()?;
+    Time::new(hour, minute, second, 0).ok()
 }
 
 #[derive(Default)]
@@ -161,9 +168,9 @@ fn events_summary(path: &Path) -> Value {
 }
 
 fn next_day(day: &str) -> Option<String> {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .map(|date| (date + Duration::days(1)).format("%Y%m%d").to_string())
+    parse_day(day)
+        .and_then(|date| date.tomorrow().ok())
+        .map(day_key)
 }
 
 fn require_discovered(day: &str, segment: &Segment) -> Result<SegmentLocation, String> {
@@ -725,4 +732,30 @@ pub(crate) fn day_segments(journal: &Path, day: &str) -> Result<Vec<SegmentLocat
             .then(left.stream.cmp(&right.stream))
     });
     Ok(segments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{next_day, times};
+
+    #[test]
+    fn times_wrap_past_midnight() {
+        assert_eq!(
+            times("235930_60"),
+            (Some("23:59:30".to_owned()), Some("00:00:30".to_owned()))
+        );
+        assert_eq!(
+            times("080000_300"),
+            (Some("08:00:00".to_owned()), Some("08:05:00".to_owned()))
+        );
+        assert_eq!(times("not-a-segment"), (None, None));
+    }
+
+    #[test]
+    fn next_day_steps_the_calendar() {
+        assert_eq!(next_day("20261231").as_deref(), Some("20270101"));
+        assert_eq!(next_day("20240228").as_deref(), Some("20240229"));
+        assert_eq!(next_day("20230228").as_deref(), Some("20230301"));
+        assert_eq!(next_day("2026-11-17"), None);
+    }
 }

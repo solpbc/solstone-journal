@@ -7,8 +7,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
-use chrono_tz::Tz;
 use serde_json::json;
 use solstone_core_import::RegistrySource;
 use solstone_core_import_sources::ics_notes::ImportStamp;
@@ -65,15 +63,13 @@ impl Journal {
         fs::write(&source, calendar).unwrap();
         let stamp = ImportStamp {
             id: id.to_owned(),
-            imported_at: DateTime::parse_from_rfc3339(imported_at)
-                .unwrap()
-                .with_timezone(&Utc),
+            imported_at: imported_at.parse::<jiff::Timestamp>().unwrap(),
         };
         let rendered = save::render(
             RegistrySource::Ics,
             &source,
             id,
-            Tz::America__Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
             Some(&stamp),
         )
         .unwrap()

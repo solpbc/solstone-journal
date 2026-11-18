@@ -37,13 +37,12 @@
 //! content look *older*, and is contained by the policy's minimum-age floor, which
 //! is anchored on the immutable captured date.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::Value;
+use solstone_core_time::{parse_day, parse_rfc3339};
 
 use crate::policy::SegmentAge;
-
-/// The day-directory format, matching the reference's `%Y%m%d`.
-const DAY_FORMAT: &str = "%Y%m%d";
 
 /// The record field naming when the processing attempt began.
 const ATTEMPTED_AT: &str = "attempted_at";
@@ -52,9 +51,9 @@ const ATTEMPTED_AT: &str = "attempted_at";
 ///
 /// `None` when the day directory is not a date, which fails closed: an
 /// unparseable day is not a young segment, it is an unmeasurable one.
-pub fn captured_age_days(day: &str, today: NaiveDate) -> Option<u32> {
-    let captured = NaiveDate::parse_from_str(day, DAY_FORMAT).ok()?;
-    let elapsed = today.signed_duration_since(captured).num_days();
+pub fn captured_age_days(day: &str, today: Date) -> Option<u32> {
+    let captured = parse_day(day)?;
+    let elapsed = today.duration_since(captured).as_hours() / 24;
     // Measured from the end of the captured day, and clamped at zero so a
     // future-dated directory -- clock skew, or a hand-made one -- reads as the
     // youngest possible segment rather than an absurdly old one.
@@ -65,12 +64,10 @@ pub fn captured_age_days(day: &str, today: NaiveDate) -> Option<u32> {
 ///
 /// `None` when the record is absent, carries no `attempted_at`, or carries one that
 /// is not an RFC 3339 instant. All three fail closed.
-pub fn processed_age_days(record: Option<&Value>, now: DateTime<Utc>) -> Option<u32> {
+pub fn processed_age_days(record: Option<&Value>, now: Timestamp) -> Option<u32> {
     let stamped = record?.get(ATTEMPTED_AT)?.as_str()?;
-    let attempted = DateTime::parse_from_rfc3339(stamped).ok()?;
-    let elapsed = now
-        .signed_duration_since(attempted.with_timezone(&Utc))
-        .num_days();
+    let attempted = parse_rfc3339(stamped).ok()?;
+    let elapsed = now.duration_since(attempted.timestamp()).as_hours() / 24;
     Some(u32::try_from(elapsed.max(0)).unwrap_or(u32::MAX))
 }
 
@@ -89,8 +86,8 @@ pub fn processed_age_days(record: Option<&Value>, now: DateTime<Utc>) -> Option<
 pub fn segment_age(
     day: &str,
     records: &[Option<&Value>],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> SegmentAge {
     let mut youngest: Option<u32> = None;
     let mut every_file_answered = true;
@@ -125,14 +122,12 @@ pub fn segment_age(
 mod tests {
     use super::*;
 
-    fn date(text: &str) -> NaiveDate {
-        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    fn date(text: &str) -> Date {
+        Date::strptime("%Y-%m-%d", text).unwrap()
     }
 
-    fn instant(text: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(text)
-            .unwrap()
-            .with_timezone(&Utc)
+    fn instant(text: &str) -> Timestamp {
+        parse_rfc3339(text).unwrap().timestamp()
     }
 
     fn record(stamp: &str) -> Value {
@@ -157,7 +152,7 @@ mod tests {
     fn the_start_of_day_reading_would_break_the_promise() {
         let captured = date("2026-08-04");
         let fires_on = date("2026-08-11");
-        let naive = fires_on.signed_duration_since(captured).num_days();
+        let naive = fires_on.duration_since(captured).as_hours() / 24;
         assert_eq!(naive, 7, "the start-of-day reading calls this seven days");
         assert_eq!(
             captured_age_days("20260804", fires_on),

@@ -13,7 +13,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::EntityResolutionEntity;
 use solstone_core_facets::{
@@ -21,6 +20,7 @@ use solstone_core_facets::{
     read_detected_entities,
 };
 use solstone_core_format::content::{Family, produce_chunks_by_shape};
+use solstone_core_time::{Precision, day_key, utc_z};
 
 use crate::{Clock, http};
 
@@ -84,7 +84,7 @@ async fn activities_workspace_route() -> Response {
 }
 
 fn today(clock: &Clock) -> String {
-    clock.now().date_naive().format("%Y%m%d").to_string()
+    day_key(clock.now().date())
 }
 
 async fn activities_today_redirect(
@@ -188,9 +188,11 @@ async fn create(
     }
     // The journal holds what has happened: an activity can't be on a day that
     // has begun nowhere yet. Anywhere, so no time zone refuses a real today.
-    let today_anywhere = (clock.now().with_timezone(&Utc) + chrono::Duration::hours(14))
-        .format("%Y%m%d")
-        .to_string();
+    let today_anywhere = day_key(
+        jiff::tz::Offset::UTC
+            .to_datetime(clock.now().timestamp() + jiff::SignedDuration::from_hours(14))
+            .date(),
+    );
     if day > today_anywhere {
         return invalid("day must not be after today");
     }
@@ -210,7 +212,7 @@ async fn create(
             vec![Value::String(activity_value_string(value))],
         ),
         _ => (
-            format!("user_{}", clock.now().timestamp_millis()),
+            format!("user_{}", clock.now().timestamp().as_millisecond()),
             Vec::new(),
         ),
     };
@@ -243,7 +245,7 @@ async fn create(
     record.insert("active_entities".to_owned(), json!([]));
     record.insert(
         "created_at".to_owned(),
-        json!(clock.now().timestamp_millis()),
+        json!(clock.now().timestamp().as_millisecond()),
     );
     record.insert("source".to_owned(), json!(source));
     record.insert("hidden".to_owned(), json!(false));
@@ -252,7 +254,7 @@ async fn create(
         record.insert("participation".to_owned(), Value::Array(participation));
         fields.push("participation");
     }
-    record.insert("edits".to_owned(), json!([{"timestamp":clock.now().with_timezone(&Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":"cli:create","fields":fields,"note":"created"}]));
+    record.insert("edits".to_owned(), json!([{"timestamp":utc_z(clock.now().timestamp(), Precision::Secs),"actor":"cli:create","fields":fields,"note":"created"}]));
     match solstone_core_facets::append_activity_record(&root, &facet, &day, record) {
         Ok(AppendOutcome::Written(record)) => {
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
@@ -367,7 +369,7 @@ fn request_correction_thinking(
             day,
             activities,
             true,
-            Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         )
         .map(|_| ())
     }
@@ -448,11 +450,7 @@ async fn remove_edit(
     ) else {
         return invalid("position, timestamp and actor name the edit to remove");
     };
-    let removed_at = clock
-        .now()
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let removed_at = utc_z(clock.now().timestamp(), Precision::Secs);
     if let Some(response) = lines::remove_lines_edit(
         &root,
         &facet,
@@ -615,11 +613,7 @@ async fn mutate_update(
         return invalid("playback must be true or false");
     }
     let note = activity_value_or_empty(body.get("note"));
-    let timestamp = clock
-        .now()
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let timestamp = utc_z(clock.now().timestamp(), Precision::Secs);
     // Words on a body record in a group the owner hid through another member
     // are hidden with it, in the same write, so they never reach search.
     let joins_hidden = match joins_a_hidden_group(root, &facet, &day, &span_id) {
@@ -780,11 +774,7 @@ async fn separate(
             StatusCode::CONFLICT,
         );
     }
-    let timestamp = clock
-        .now()
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let timestamp = utc_z(clock.now().timestamp(), Precision::Secs);
     if let Err(error) =
         solstone_core_location::body_records::separate_account(&root, &record, &others, &timestamp)
     {
@@ -865,11 +855,7 @@ fn set_hidden_in_facet(
     let (facet, day, span_id) = (facet.to_owned(), day.to_owned(), span_id.to_owned());
     let body = object_body(&body);
     let reason = body.get("reason").and_then(Value::as_str);
-    let timestamp = clock
-        .now()
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let timestamp = utc_z(clock.now().timestamp(), Precision::Secs);
     match solstone_core_facets::set_activity_hidden(
         root, &facet, &day, &span_id, hidden, actor, reason, &timestamp,
     ) {
@@ -1212,7 +1198,7 @@ mod tests {
         // 18:00 in Denver on the 10th is already the 11th east of it; the 12th
         // has begun nowhere.
         let evening = Clock::new(|| {
-            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+            solstone_core_time::parse_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
         });
         let (status, body) = request(
             gated(root.path(), evening.clone()),
@@ -1248,7 +1234,7 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         // 18:00 at UTC-6 is midnight UTC the next day.
         let evening = Clock::new(|| {
-            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+            solstone_core_time::parse_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
         });
         let uri = "/app/activities/api/day/20260510/records?facet=work";
         let (status, created) = request(
@@ -1259,9 +1245,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-05-11T00:00:00Z").unwrap();
+        let instant = solstone_core_time::parse_timestamp("2026-05-11T00:00:00Z").unwrap();
         let created = &created["record"];
-        assert_eq!(created["created_at"], instant.timestamp_millis());
+        assert_eq!(created["created_at"], instant.as_millisecond());
         assert_eq!(created["edits"][0]["timestamp"], "2026-05-11T00:00:00Z");
 
         let id = created["id"].as_str().expect("id");
@@ -2461,8 +2447,8 @@ mod tests {
     #[tokio::test]
     async fn activities_today_redirect_preserves_query_and_uses_injected_clock() {
         let root = phase_root("established_empty");
-        let dt = chrono::DateTime::parse_from_rfc3339("2026-10-15T23:30:00-07:00").unwrap();
-        let clock = Clock::new(move || dt);
+        let dt = solstone_core_time::parse_rfc3339("2026-10-15T23:30:00-07:00").unwrap();
+        let clock = Clock::new(move || dt.clone());
         let app = gated(root.path(), clock);
 
         // 302 redirect with query preserved

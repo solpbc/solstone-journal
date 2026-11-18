@@ -536,7 +536,7 @@ fn start_trash_sweep(journal_root: &Path) {
 }
 
 fn finish_trash_sweep(journal_root: &Path) {
-    let swept = solstone_core_import::trash_kinds::sweep(journal_root, chrono::Utc::now());
+    let swept = solstone_core_import::trash_kinds::sweep(journal_root, jiff::Timestamp::now());
     for failure in &swept.failed {
         log::warn!("trash: {failure}");
     }

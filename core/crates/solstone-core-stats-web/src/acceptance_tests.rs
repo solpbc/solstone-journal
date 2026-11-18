@@ -7,7 +7,7 @@ mod tests {
         body::{Body, to_bytes},
         http::Request,
     };
-    use chrono::{DateTime, Duration, TimeZone, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use std::fs;
     use std::path::Path;
@@ -19,7 +19,7 @@ mod tests {
         FilesystemBacklogViewReader, FilesystemDocumentWriter, run_cli,
     };
 
-    fn make_clock(utc: DateTime<Utc>) -> Clock {
+    fn make_clock(utc: Timestamp) -> Clock {
         Clock::new(move || utc)
     }
 
@@ -70,7 +70,7 @@ mod tests {
         ]);
         fs::write(
             root.join("stats.json"),
-            json!({"generated_at": Utc::now().to_rfc3339(), "backlog": {"stuck_days": 2, "days": days}}).to_string(),
+            json!({"generated_at": solstone_core_time::utc_rfc3339(Timestamp::now()), "backlog": {"stuck_days": 2, "days": days}}).to_string(),
         )
         .unwrap();
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -78,7 +78,7 @@ mod tests {
             .build()
             .unwrap();
         let body: Value = rt.block_on(async {
-            let resp = routes(root.to_path_buf(), make_clock(Utc::now()))
+            let resp = routes(root.to_path_buf(), make_clock(Timestamp::now()))
                 .oneshot(
                     Request::get("/app/stats/api/stats")
                         .body(Body::empty())
@@ -122,7 +122,7 @@ mod tests {
         fs::create_dir_all(root_control.join("chronicle").join(day)).unwrap();
 
         let t_secs = 1_800_000_000i64;
-        let t = Utc.timestamp_opt(t_secs, 0).unwrap();
+        let t = Timestamp::new(t_secs, 0).unwrap();
         let (talent_root, apps_root) =
             solstone_core_system::daily_coverage::package_roots().unwrap();
 
@@ -166,7 +166,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let now_shortly = t + Duration::seconds(10);
+        let now_shortly = t + SignedDuration::from_secs(10);
         rt.block_on(async {
             // Control check
             let ctrl_router = routes(root_control.to_path_buf(), make_clock(now_shortly));
@@ -208,7 +208,10 @@ mod tests {
             assert_eq!(status["unfinished_activities"]["oldest_day"], "20990101");
 
             // +2h -> returns same verdict text
-            let r2 = routes(root.to_path_buf(), make_clock(t + Duration::hours(2)));
+            let r2 = routes(
+                root.to_path_buf(),
+                make_clock(t + SignedDuration::from_hours(2)),
+            );
             let resp = r2
                 .oneshot(
                     Request::get("/app/stats/api/stats")
@@ -227,7 +230,10 @@ mod tests {
             );
 
             // +40h -> stale, unclear with 40 hours
-            let r40 = routes(root.to_path_buf(), make_clock(t + Duration::hours(40)));
+            let r40 = routes(
+                root.to_path_buf(),
+                make_clock(t + SignedDuration::from_hours(40)),
+            );
             let resp = r40
                 .oneshot(
                     Request::get("/app/stats/api/stats")
@@ -276,7 +282,7 @@ mod tests {
 
             // One pending day in a 40-hour-old summary uses the unclear sentence with 40 hours, not 1 day is still catching up.
             let stats_40h = json!({
-                "generated_at": (t - Duration::hours(40)).to_rfc3339(),
+                "generated_at": solstone_core_time::utc_rfc3339(t - SignedDuration::from_hours(40)),
                 "backlog": {
                     "pending_days": 1,
                     "oldest_pending_day": "20990101",
@@ -321,9 +327,7 @@ mod tests {
         .unwrap();
 
         // 20:00 UTC on 2026-09-30 is 2026-10-01 in Tokyo
-        let t = chrono::DateTime::parse_from_rfc3339("2026-09-30T20:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let t = "2026-09-30T20:00:00Z".parse::<Timestamp>().unwrap();
 
         let tokens_dir = root.join("tokens");
         fs::create_dir_all(&tokens_dir).unwrap();
@@ -367,20 +371,18 @@ mod tests {
 
     #[test]
     fn journal_status_matches_system_health() {
-        let now = DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let now = "2026-09-30T12:00:00Z".parse::<Timestamp>().unwrap();
         let host_tz = solstone_core_journal_config::host_zone();
-        let host_date = now.with_timezone(&host_tz).date_naive();
-        let kiritimati: chrono_tz::Tz = "Pacific/Kiritimati".parse().unwrap();
-        let gmt_minus_12: chrono_tz::Tz = "Etc/GMT+12".parse().unwrap();
-        let chosen_tz = if now.with_timezone(&kiritimati).date_naive() != host_date {
+        let host_date = now.to_zoned_datetime(host_tz.clone()).date();
+        let kiritimati = solstone_core_time::zone("Pacific/Kiritimati").unwrap();
+        let gmt_minus_12 = solstone_core_time::zone("Etc/GMT+12").unwrap();
+        let chosen_tz = if now.to_zoned_datetime(kiritimati.clone()).date() != host_date {
             kiritimati
         } else {
             gmt_minus_12
         };
 
-        for tz_name in [chosen_tz.name(), host_tz.name()] {
+        for tz_name in [chosen_tz.iana_name().unwrap(), host_tz.iana_name().unwrap()] {
             let temp = TempDir::new().unwrap();
             let root = temp.path();
             fs::create_dir_all(root.join("config")).unwrap();
@@ -391,7 +393,7 @@ mod tests {
             .unwrap();
 
             let stats_val = json!({
-                "generated_at": (now - Duration::hours(2)).to_rfc3339(),
+                "generated_at": solstone_core_time::utc_rfc3339(now - SignedDuration::from_hours(2)),
                 "backlog": {
                     "pending_days": 0,
                     "stuck_days": 0,
@@ -420,7 +422,7 @@ mod tests {
             });
 
             let zone = solstone_core_journal_config::owner_zone(root);
-            let owner_local = now.with_timezone(&zone).naive_local();
+            let owner_local = now.to_zoned_datetime(zone).datetime();
             let not_yet = solstone_core_system_health::summary_not_yet(root, owner_local);
             let expected_eval = match not_yet {
                 Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
@@ -446,7 +448,7 @@ mod tests {
     fn journal_status_reflects_saved_thinking_lane() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        let now = Utc::now();
+        let now = Timestamp::now();
         fs::create_dir_all(root.join("config")).unwrap();
         fs::write(
             root.join("config/journal.json"),

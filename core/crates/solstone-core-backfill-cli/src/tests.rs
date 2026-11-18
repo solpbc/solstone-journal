@@ -7,9 +7,9 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
-use solstone_core_journal_config::Tz;
+use solstone_core_journal_config::TimeZone;
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_processing_record::media::expected_handler;
 use solstone_core_processing_record::predicate::{TerminalProofOutcome, evaluate_terminal_proof};
@@ -45,26 +45,28 @@ impl Fixture {
     }
 }
 
-fn instant() -> DateTime<Utc> {
+fn instant() -> Timestamp {
     INSTANT.parse().expect("test instant is valid")
 }
 
 /// A home zone on a different date from this computer's at the test instant.
-fn owner_zone_off_the_host_date() -> Tz {
+fn owner_zone_off_the_host_date() -> TimeZone {
     let host_day = instant()
-        .with_timezone(&solstone_core_journal_config::host_zone())
-        .date_naive();
-    [Tz::Pacific__Kiritimati, Tz::Etc__GMTPlus12]
+        .to_zoned_datetime(solstone_core_journal_config::host_zone())
+        .date();
+    ["Pacific/Kiritimati", "Etc/GMT+12"]
         .into_iter()
-        .find(|zone| instant().with_timezone(zone).date_naive() != host_day)
+        .map(|name| solstone_core_time::zone(name).expect("bundled zone"))
+        .find(|zone| instant().to_zoned_datetime(zone.clone()).date() != host_day)
         .expect("UTC+14 and UTC-12 never share a date")
 }
 
 fn owner_current_day() -> String {
-    instant()
-        .with_timezone(&owner_zone_off_the_host_date())
-        .format("%Y%m%d")
-        .to_string()
+    solstone_core_time::day_key(
+        instant()
+            .to_zoned_datetime(owner_zone_off_the_host_date())
+            .date(),
+    )
 }
 
 fn args(values: &[&str]) -> Vec<OsString> {
@@ -115,7 +117,7 @@ fn setup_fixture() -> Fixture {
     fs::create_dir_all(journal.join("config")).expect("create config directory");
     fs::write(
         journal.join("config/journal.json"),
-        json!({"identity": {"timezone": owner_zone_off_the_host_date().name()}}).to_string(),
+        json!({"identity": {"timezone": owner_zone_off_the_host_date().iana_name()}}).to_string(),
     )
     .expect("write journal zone");
 

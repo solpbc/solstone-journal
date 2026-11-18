@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 #[cfg(any(not(windows), test))]
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 #[cfg(any(not(windows), test))]
 use solstone_core_local::install::status::InstallStatus;
@@ -52,7 +52,7 @@ pub(crate) struct ParakeetFollowInput<'a> {
     pub blocked: bool,
     pub model_installed_before: bool,
     pub record: Option<&'a InstallStatus>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 pub(crate) struct ParakeetFollow {
@@ -89,7 +89,7 @@ impl ParakeetFollow {
             blocked: false,
             model_installed_before,
             record: record.as_ref(),
-            now: Utc::now(),
+            now: Timestamp::now(),
         };
         self.observe_at(
             journal,
@@ -282,10 +282,8 @@ mod tests {
         r
     }
 
-    fn dummy_now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-10-08T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc)
+    fn dummy_now() -> Timestamp {
+        "2026-10-08T12:00:00Z".parse().unwrap()
     }
 
     #[test]

@@ -461,7 +461,7 @@ fn registration_response(
         token_endpoint_auth_method: "none",
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        client_id_issued_at: client.created_at.timestamp(),
+        client_id_issued_at: client.created_at.as_second(),
     };
     HttpResponse::json(
         status,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Datelike, TimeZone, Utc};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 
@@ -110,13 +109,15 @@ fn runs(root: &Path, failures: usize) {
         ],
     );
     // The corpus owner's zone is UTC, and health reads "today" in that zone.
-    let now = Utc::now();
-    let today = now.format("%Y%m%d").to_string();
-    let noon = Utc
-        .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 12)
-        .single()
+    let now = jiff::Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC);
+    let today = now.strftime("%Y%m%d").to_string();
+    let noon = now
+        .date()
+        .at(0, 0, 12, 0)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .expect("today")
-        .timestamp_millis();
+        .timestamp()
+        .as_millisecond();
     let entries=(0..failures).map(|i|json!({"name":format!("failed_talent_{}",i+1),"provider":"openai","reason_code":"provider_error","status":"error","ts":noon+i as i64,"use_id":format!("capture-failure-{}",i+1)})).collect::<Vec<_>>();
     jsonl(root.join(format!("talents/{today}.jsonl")), &entries);
 }

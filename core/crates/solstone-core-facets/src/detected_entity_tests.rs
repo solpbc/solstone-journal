@@ -5,7 +5,7 @@
 
 use std::fs;
 
-use chrono::{FixedOffset, TimeZone};
+use jiff::tz::{Offset, TimeZone};
 use serde_json::{Value, json};
 
 use crate::store::{cutoff_day, exclusion_tier};
@@ -454,16 +454,18 @@ fn exclusion_candidates_preserve_relationship_emails() {
 
 #[test]
 fn cutoff_uses_the_supplied_local_date_not_its_utc_calendar_day() {
-    let offset = FixedOffset::west_opt(8 * 60 * 60).unwrap();
-    let local = offset
-        .with_ymd_and_hms(2026, 1, 1, 23, 30, 0)
-        .single()
-        .unwrap();
+    let offset = Offset::from_seconds(-8 * 60 * 60).unwrap();
+    let local = solstone_core_time::from_local(
+        &TimeZone::fixed(offset),
+        jiff::civil::date(2026, 1, 1).at(23, 30, 0, 0),
+    )
+    .single()
+    .unwrap();
     assert_eq!(
-        local.with_timezone(&chrono::Utc).date_naive().to_string(),
+        local.with_time_zone(TimeZone::UTC).date().to_string(),
         "2026-01-02"
     );
-    assert_eq!(cutoff_day(local.date_naive(), 1), "20251231");
+    assert_eq!(cutoff_day(local.date(), 1), "20251231");
 }
 
 #[test]

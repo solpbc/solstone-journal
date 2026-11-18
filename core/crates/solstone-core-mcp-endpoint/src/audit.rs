@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::json;
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_mcp_audit::{
@@ -22,11 +22,12 @@ const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 /// journal day directory, and keeps the UTC instant.
 pub(crate) fn write_admitted_interaction(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     admission: &Admission<'_>,
 ) -> Result<AuditCoordinates, AuditWriteError> {
     let zone = solstone_core_journal_config::owner_zone(journal_root);
-    let coordinates = write_interaction_record(journal_root, now.with_timezone(&zone), admission)?;
+    let coordinates =
+        write_interaction_record(journal_root, &now.to_zoned_datetime(zone), admission)?;
     emit_observed(journal_root, &coordinates);
     Ok(coordinates)
 }
@@ -40,7 +41,7 @@ pub(crate) fn write_admitted_interaction(
 pub(crate) fn write_outcome(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
-    now: DateTime<Utc>,
+    now: Timestamp,
     outcome: Outcome,
     reason: Option<&str>,
     result: Option<ResultShape>,
@@ -51,7 +52,7 @@ pub(crate) fn write_outcome(
 pub(crate) fn write_outcome_paused(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
-    now: DateTime<Utc>,
+    now: Timestamp,
     reason: Option<&str>,
 ) -> Result<(), AuditWriteError> {
     solstone_core_mcp_audit::write_outcome_record_with_paused(
@@ -69,7 +70,7 @@ fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
     let Ok(line) = serde_json::to_string(&json!({
         "tract": "observe",
         "event": "observed",
-        "day": coordinates.day.format("%Y%m%d").to_string(),
+        "day": solstone_core_time::day_key(coordinates.day),
         "stream": coordinates.stream,
         "segment": coordinates.segment,
     })) else {
@@ -84,7 +85,6 @@ fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
 mod tests {
     use solstone_core_callosum::test_fixture::OneShotListener;
 
-    use chrono::{TimeZone, Utc};
     use serde_json::json;
     use solstone_core_mcp_audit::{Admission, ToolName};
 
@@ -103,10 +103,10 @@ mod tests {
             json!({"identity": {"timezone": "Pacific/Honolulu"}}).to_string(),
         )
         .unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 31, 0, 34, 56).unwrap();
+        let now: jiff::Timestamp = "2026-08-31T00:34:56Z".parse().unwrap();
         let zone = solstone_core_journal_config::owner_zone(journal.path());
-        let owner_dt = now.with_timezone(&zone);
-        assert_eq!(owner_dt.format("%Y%m%d").to_string(), "20260830");
+        let owner_dt = now.to_zoned_datetime(zone);
+        assert_eq!(owner_dt.strftime("%Y%m%d").to_string(), "20260830");
 
         write_admitted_interaction(
             journal.path(),
@@ -126,9 +126,9 @@ mod tests {
             json!({
                 "tract": "observe",
                 "event": "observed",
-                "day": owner_dt.format("%Y%m%d").to_string(),
+                "day": owner_dt.strftime("%Y%m%d").to_string(),
                 "stream": "mcp.agent",
-                "segment": owner_dt.format("%H%M%S_1").to_string(),
+                "segment": owner_dt.strftime("%H%M%S_1").to_string(),
             })
         );
     }

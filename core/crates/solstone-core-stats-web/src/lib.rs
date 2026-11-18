@@ -4,7 +4,6 @@
 //! Native stats workspace and its read-only token-usage APIs.
 
 use axum::{Json, Router, extract::Query, http::StatusCode, response::IntoResponse, routing::get};
-use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
@@ -73,7 +72,7 @@ async fn usage(
 ) -> axum::response::Response {
     let day = query.day.unwrap_or_else(|| {
         let zone = solstone_core_journal_config::owner_zone(&root);
-        let local = clock.now().with_timezone(&zone);
+        let local = clock.now().to_zoned_datetime(zone);
         format!("{:04}{:02}{:02}", local.year(), local.month(), local.day())
     });
     if !digits(&day, 8) {
@@ -214,7 +213,7 @@ async fn stats_data(
             .and_then(Value::as_str);
         let bl_obj = response["stats"].get("backlog").and_then(Value::as_object);
         let zone = solstone_core_journal_config::owner_zone(&root);
-        let owner_local = utc_now.with_timezone(&zone).naive_local();
+        let owner_local = utc_now.to_zoned_datetime(zone).datetime();
         let not_yet = solstone_core_system_health::summary_not_yet(&root, owner_local);
         let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),

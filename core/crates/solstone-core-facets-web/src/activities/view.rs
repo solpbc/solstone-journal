@@ -120,10 +120,9 @@ fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {
 pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, String> {
     let declared = list_declared_facet_names(root).map_err(|e| e.to_string())?;
     // Body faces under this day and the day before (a night's), once per facet.
-    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.pred_opt())
-        .map(|date| date.format("%Y%m%d").to_string());
+    let previous = solstone_core_time::parse_day(day)
+        .and_then(|date| date.yesterday().ok())
+        .map(solstone_core_time::day_key);
     let around: BTreeMap<&String, Faces> = declared
         .iter()
         .map(|f| {
@@ -336,7 +335,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 }
             }
             let mut item = solstone_core_location::body_records::face_json(&face);
-            place_body_item(&mut item, &face, zone, day);
+            place_body_item(&mut item, &face, &zone, day);
             if let Some(span) = solstone_core_location::body_records::shown_span(&face) {
                 // A record with nothing still there sits beside nothing, either way.
                 let there = solstone_core_location::body_records::face_still_there(&face);
@@ -730,7 +729,7 @@ fn query_value(query: Option<&str>, key: &str) -> Option<String> {
 fn place_body_item(
     item: &mut Value,
     face: &solstone_core_location::body_records::Face,
-    zone: chrono_tz::Tz,
+    zone: &jiff::tz::TimeZone,
     day: &str,
 ) {
     // What kind it is, where an activity says its type.
@@ -743,19 +742,51 @@ fn place_body_item(
     let Some((start, end)) = solstone_core_location::body_records::shown_span(face) else {
         return;
     };
-    let Some(midnight) = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .and_then(|naive| naive.and_local_timezone(zone).earliest())
-        .map(|midnight| midnight.timestamp())
-    else {
+    let Some(date) = solstone_core_time::parse_day(day) else {
         return;
     };
-    let minute = |at: i64| ((at - midnight).div_euclid(60)).clamp(0, 1440);
+    let minute = |at: i64| wall_minute(zone, date, at);
     let (start_min, end_min) = (minute(start), minute(end));
     let clock = |minutes: i64| format!("{:02}:{:02}", (minutes % 1440) / 60, minutes % 60);
     item["start_min"] = Value::from(start_min);
     item["end_min"] = Value::from(end_min.max(start_min));
     item["start"] = Value::String(clock(start_min));
     item["end"] = Value::String(clock(end_min.max(start_min)));
+}
+
+/// Minutes into `day` on the wall clock in `zone` at the instant `at` (Unix
+/// seconds), the grid segment activities are placed on: a day the clocks
+/// change on keeps both aligned. Before the day is 0, after it 1440.
+fn wall_minute(zone: &jiff::tz::TimeZone, day: jiff::civil::Date, at: i64) -> i64 {
+    let Ok(at) = jiff::Timestamp::from_second(at) else {
+        return 0;
+    };
+    let wall = zone.to_datetime(at);
+    match wall.date().cmp(&day) {
+        std::cmp::Ordering::Less => 0,
+        std::cmp::Ordering::Greater => 1440,
+        std::cmp::Ordering::Equal => i64::from(wall.hour()) * 60 + i64::from(wall.minute()),
+    }
+}
+
+#[cfg(test)]
+mod wall_minute_tests {
+    use super::wall_minute;
+    use jiff::civil::date;
+
+    #[test]
+    fn a_body_item_sits_at_its_wall_clock_minute_on_a_day_the_clocks_change() {
+        let denver = solstone_core_time::zone("America/Denver").unwrap();
+        let spring = date(2026, 3, 8);
+        // 10:00 MDT, after the clocks went forward: 16:00 UTC.
+        assert_eq!(wall_minute(&denver, spring, 1_772_985_600), 600);
+        // 01:00 MST, before the change: 08:00 UTC.
+        assert_eq!(wall_minute(&denver, spring, 1_772_956_800), 60);
+        let autumn = date(2026, 11, 1);
+        // 10:00 MST, after the clocks went back: 17:00 UTC.
+        assert_eq!(wall_minute(&denver, autumn, 1_793_552_400), 600);
+        // The day before and after clamp to the day's ends.
+        assert_eq!(wall_minute(&denver, spring, 1_772_870_400), 0);
+        assert_eq!(wall_minute(&denver, spring, 1_773_100_800), 1440);
+    }
 }

@@ -12,7 +12,6 @@ use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 use caseless::default_case_fold_str;
-use chrono::{Duration, NaiveDate};
 use serde_json::{Map, Value};
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ReviewState {
@@ -26,12 +25,13 @@ fn format_name_key(name: &str) -> (String, String) {
 }
 
 fn review_days(day: &str) -> Vec<String> {
-    let Ok(day) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(day) = solstone_core_time::parse_day(day) else {
         return Vec::new();
     };
     (1..=REVIEW_WINDOW_DAYS)
         .rev()
-        .map(|offset| (day - Duration::days(offset)).format("%Y%m%d").to_string())
+        .filter_map(|offset| day.checked_sub(jiff::Span::new().days(offset)).ok())
+        .map(solstone_core_time::day_key)
         .collect()
 }
 
@@ -1126,7 +1126,7 @@ pub fn prepare_publication(
             batch: solstone_core_entity::prepare_merge_proposals(journal, &proposals)?,
         });
     }
-    let mut outcome = serde_json::json!({"promoted":promoted,"aliased":aliased,"merges":proposals.len(),"skipped":skipped,"errored":0,"error":null,"ts":chrono::Utc::now().timestamp_millis()});
+    let mut outcome = serde_json::json!({"promoted":promoted,"aliased":aliased,"merges":proposals.len(),"skipped":skipped,"errored":0,"error":null,"ts":jiff::Timestamp::now().as_millisecond()});
     crate::partial_input::copy_marker(output, outcome.as_object_mut().expect("outcome object"));
     let path = journal
         .join("facets")
@@ -1383,7 +1383,7 @@ fn write_outcome(
     );
     payload.insert(
         "ts".to_owned(),
-        Value::from(chrono::Utc::now().timestamp_millis()),
+        Value::from(jiff::Timestamp::now().as_millisecond()),
     );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;

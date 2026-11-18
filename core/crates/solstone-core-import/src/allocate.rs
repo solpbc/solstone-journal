@@ -10,7 +10,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use chrono::NaiveDateTime;
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
     DirEntryKind, contained_path, create_directory_with_mode, list_dir_entries, path_lexists,
@@ -520,13 +521,14 @@ fn contained_import_dir(
 }
 
 fn shift_timestamp(source: &Timestamp, offset_seconds: u32) -> Result<Timestamp, ImportError> {
-    let naive = NaiveDateTime::parse_from_str(source.as_str(), "%Y%m%d_%H%M%S").map_err(|_| {
-        ImportError::InvalidImportId {
-            import_id: source.as_str().to_owned(),
-        }
-    })?;
-    let shifted = naive + chrono::Duration::seconds(i64::from(offset_seconds));
-    let raw = shifted.format("%Y%m%d_%H%M%S").to_string();
+    let invalid = || ImportError::InvalidImportId {
+        import_id: source.as_str().to_owned(),
+    };
+    let naive = DateTime::strptime("%Y%m%d_%H%M%S", source.as_str()).map_err(|_| invalid())?;
+    let shifted = naive
+        .checked_add(SignedDuration::from_secs(i64::from(offset_seconds)))
+        .map_err(|_| invalid())?;
+    let raw = shifted.strftime("%Y%m%d_%H%M%S").to_string();
     validate_timestamp(&raw).map_err(|_| ImportError::InvalidImportId { import_id: raw })
 }
 

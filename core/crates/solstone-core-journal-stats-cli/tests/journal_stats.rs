@@ -9,7 +9,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_system_health::{BACKLOG_DEFAULT_WINDOW, BacklogView, HealthError};
 use tempfile::TempDir;
@@ -170,8 +170,8 @@ fn checked_stats_parent_replacement_at_native_stage() {
     checked_stats_native_stage_control(true);
 }
 
-fn now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 1, 6, 12, 0, 0).unwrap()
+fn now() -> Timestamp {
+    "2026-01-06T12:00:00Z".parse().unwrap()
 }
 
 fn words(values: &[&str]) -> Vec<OsString> {
@@ -214,7 +214,7 @@ impl BacklogViewReader for EmptyBacklog {
     fn read_backlog_view(
         &self,
         _journal_root: &Path,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
         _system_talent_root: &Path,
         _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
@@ -228,7 +228,7 @@ impl BacklogViewReader for FailingBacklog {
     fn read_backlog_view(
         &self,
         _journal_root: &Path,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
         _system_talent_root: &Path,
         _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
@@ -505,7 +505,7 @@ fn ac4_token_miss_uses_filename_day_and_tolerates_bad_entries() {
     fs::create_dir_all(&tokens).unwrap();
     // now() is 2026-01-06 12:00 UTC. A UTC re-bucket would file these under
     // 20260106. The filename is 20260105; filename wins.
-    let timestamp = now().timestamp();
+    let timestamp = now().as_second();
     fs::write(
         tokens.join("20260105.jsonl"),
         format!(
@@ -554,7 +554,7 @@ fn ac5_token_hit_assigns_file_stem_and_soft_fails_cache_io() {
     let root = temporary.path();
     let tokens = root.join("tokens");
     fs::create_dir_all(&tokens).unwrap();
-    let timestamp = now().timestamp() - 86_400;
+    let timestamp = now().as_second() - 86_400;
     let source = tokens.join("20260105.jsonl");
     fs::write(
         &source,
@@ -608,7 +608,7 @@ fn ac6_token_cache_and_cold_scan_agree_on_filename_day() {
         tokens.join("20260105.jsonl"),
         format!(
             "{{\"timestamp\":{},\"model\":\"model\",\"usage\":{{\"input\":4}}}}\n",
-            now().timestamp() - 172_800
+            now().as_second() - 172_800
         ),
     )
     .unwrap();
@@ -643,7 +643,7 @@ fn ac7_no_cache_bypasses_day_and_token_caches() {
 
     let tokens = root.join("tokens");
     fs::create_dir_all(&tokens).unwrap();
-    let timestamp = now().timestamp() - 86_400;
+    let timestamp = now().as_second() - 86_400;
     let source = tokens.join("20260105.jsonl");
     fs::write(
         &source,
@@ -1147,7 +1147,7 @@ fn overlapping_summary_producers_serialize_before_scanning_and_publish_the_last_
         fn read_backlog_view(
             &self,
             _: &Path,
-            _: DateTime<Utc>,
+            _: Timestamp,
             _: &Path,
             _: &Path,
         ) -> Result<BacklogView, HealthError> {

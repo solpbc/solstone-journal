@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +79,7 @@ pub fn audio_archive_record_path(journal_root: &Path, import_id: &str) -> PathBu
 /// Convert a computed plan into the serializable initial run record.
 pub fn plan_to_record(plan: &AudioArchivePlan) -> AudioArchiveRecord {
     let settings = AudioArchiveRecordSettings {
-        owner_zone: plan.owner_zone.name().to_owned(),
+        owner_zone: plan.owner_zone.iana_name().unwrap_or_default().to_owned(),
         window_ms: AUDIO_ARCHIVE_WINDOW_MS,
         stream: plan.stream.clone(),
         qualifier: plan.settings.qualifier.clone(),
@@ -181,7 +181,7 @@ fn validate_part(part: &AudioArchiveRecordPart) -> Result<(), AudioArchiveError>
 pub(crate) fn validate_coordinates(day: &str, key: &str) -> Result<(), AudioArchiveError> {
     if day.len() != 8
         || !day.bytes().all(|byte| byte.is_ascii_digit())
-        || chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
+        || solstone_core_time::parse_day(day).is_none()
         || solstone_core_format::segment::segment_parse(key).is_none()
         || !key.ends_with("_300")
     {
@@ -446,7 +446,7 @@ impl ArchiveStore {
                 .map_err(|error| AudioArchiveError::ClaimDatabaseCorrupt(error.to_string()))?;
         if stream != settings.stream
             || stream == "import.audio"
-            || settings.owner_zone.parse::<Tz>().is_err()
+            || solstone_core_time::zone(&settings.owner_zone).is_none()
             || settings.window_ms != AUDIO_ARCHIVE_WINDOW_MS
             || settings.len != AUDIO_ARCHIVE_LEN_SECONDS
         {
@@ -853,15 +853,15 @@ fn read_counter(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> 
 /// Validate that a resumed run's settings match caller inputs exactly.
 pub fn validate_resume_settings(
     record: &AudioArchiveRecord,
-    owner_zone: Tz,
+    owner_zone: &TimeZone,
     settings: &AudioArchiveSettings,
     stream: &str,
 ) -> Result<(), AudioArchiveError> {
-    if record.settings.owner_zone != owner_zone.name() {
+    let requested = owner_zone.iana_name().unwrap_or_default();
+    if record.settings.owner_zone != requested {
         return Err(AudioArchiveError::SettingsMismatch(format!(
             "owner zone mismatch: saved '{}', requested '{}'",
-            record.settings.owner_zone,
-            owner_zone.name()
+            record.settings.owner_zone, requested
         )));
     }
     if record.settings.stream != stream {

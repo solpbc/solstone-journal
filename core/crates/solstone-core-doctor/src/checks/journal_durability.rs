@@ -471,7 +471,7 @@ mod tests {
             journal_path,
             callosum_socket_path: std::path::PathBuf::new(),
             platform: crate::vocabulary::Platform::Linux,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             host_arch: String::new(),
             hostname: "host".to_owned(),
             checkout_root: None,

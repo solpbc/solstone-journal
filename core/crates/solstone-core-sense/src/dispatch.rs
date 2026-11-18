@@ -1014,7 +1014,7 @@ impl SenseDispatcher {
                 let envelope = solstone_core_callosum::CallosumEnvelope {
                     tract: "observe".to_string(),
                     event: "interrupted".to_string(),
-                    ts: Some(chrono::Utc::now().timestamp_millis()),
+                    ts: Some(jiff::Timestamp::now().as_millisecond()),
                     extra,
                 };
                 if self.execution_cancelled() {
@@ -1455,7 +1455,7 @@ fn run_job(
         worker_context.verbose,
         worker_context.debug,
     );
-    let reference = chrono::Utc::now().timestamp_millis().to_string();
+    let reference = jiff::Timestamp::now().as_millisecond().to_string();
     let _ = outbound.send(Outbound {
         tract: "observe",
         event: "detected",

@@ -17,7 +17,7 @@ crate-type = ["staticlib", "rlib"]
 journal-mobile-qwen-engine = { path = "../../mobile-qwen-engine", optional = true }
 serde_json = "1"
 sha2 = "0.10"
-chrono = "0.4"
+jiff = { version = "1.0.0", features = ["serde", "tzdb-bundle-always"] }
 libc = "0.2"
 log = "0.4"
 journal-mobile-serving = { path = "../../mobile-serving", features = ["processing", "rfdetr-native", "in-process-pdf"] }

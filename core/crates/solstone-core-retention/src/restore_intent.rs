@@ -126,7 +126,7 @@ impl RestoreLocator {
     }
 
     fn validate(&self) -> Result<(), RepairHold> {
-        if chrono::NaiveDate::parse_from_str(&self.target.day, "%Y%m%d").is_err()
+        if solstone_core_time::parse_day(&self.target.day).is_none()
             || self.target.day.len() != 8
             || !plain_name(&self.target.stream)
             || !plain_name(&self.target.dir)

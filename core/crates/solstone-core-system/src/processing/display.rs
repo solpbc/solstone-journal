@@ -81,7 +81,7 @@ pub fn publish_display_snapshot(journal: &Path) {
         std::fs::create_dir_all(journal.join("health")).map_err(|e| e.to_string())?;
         solstone_core_journal_io::write_json(
             journal.join("health/processing-display.json"),
-            &serde_json::json!({"sampled_at": chrono::Utc::now().timestamp_millis(), "available": reading.available, "asleep": reading.asleep, "debounced": reading.debounced}),
+            &serde_json::json!({"sampled_at": jiff::Timestamp::now().as_millisecond(), "available": reading.available, "asleep": reading.asleep, "debounced": reading.debounced}),
             solstone_core_journal_io::JsonWriteOptions::default(),
         ).map_err(|e| e.to_string())
     };
@@ -96,8 +96,8 @@ pub fn read_display_snapshot(journal: &Path) -> DisplayPowersaveReading {
             &std::fs::read(journal.join("health/processing-display.json")).ok()?,
         )
         .ok()?;
-        let age = chrono::Utc::now()
-            .timestamp_millis()
+        let age = jiff::Timestamp::now()
+            .as_millisecond()
             .checked_sub(value.get("sampled_at")?.as_i64()?)?;
         if !(0..=30_000).contains(&age) {
             return None;

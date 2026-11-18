@@ -8,6 +8,19 @@ pub struct SegmentTimes {
     pub second: u8,
 }
 
+impl SegmentTimes {
+    /// The time of day these name, if it is one.
+    pub(crate) fn clock(self) -> Option<jiff::civil::Time> {
+        jiff::civil::Time::new(
+            i8::try_from(self.hour).ok()?,
+            i8::try_from(self.minute).ok()?,
+            i8::try_from(self.second).ok()?,
+            0,
+        )
+        .ok()
+    }
+}
+
 pub fn is_date_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }

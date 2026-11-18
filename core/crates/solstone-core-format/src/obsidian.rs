@@ -10,7 +10,8 @@
 
 use std::fmt;
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Timelike};
+use jiff::ZonedDateTime;
+use jiff::civil::DateTime;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -86,15 +87,15 @@ pub struct NoteChange {
     pub vault: String,
     pub path: String,
     pub previous_path: Option<String>,
-    pub changed_at: DateTime<FixedOffset>,
-    pub observed_at: DateTime<FixedOffset>,
+    pub changed_at: ZonedDateTime,
+    pub observed_at: ZonedDateTime,
     pub text: Option<String>,
     pub content_hash: Option<String>,
 }
 
 impl NoteChange {
     pub fn changed_at_ms(&self) -> i64 {
-        self.changed_at.timestamp_millis()
+        self.changed_at.timestamp().as_millisecond()
     }
 }
 
@@ -172,7 +173,7 @@ pub fn validate_obsidian_file(
 
 fn parse_line(
     line: &str,
-    (window_start, window_end): (NaiveDateTime, NaiveDateTime),
+    (window_start, window_end): (DateTime, DateTime),
 ) -> Result<NoteChange, String> {
     let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
         return Err("line is not a JSON object".to_owned());
@@ -200,7 +201,7 @@ fn parse_line(
     let previous_path = optional_string(&record, "previous_path")?;
     let changed_at = time(&record, "changed_at")?;
     let observed_at = time(&record, "observed_at")?;
-    let local = changed_at.naive_local();
+    let local = changed_at.datetime();
     if local < window_start || local >= window_end {
         return Err("changed_at falls outside the segment window".to_owned());
     }
@@ -264,11 +265,11 @@ fn optional_string(record: &Map<String, Value>, key: &str) -> Result<Option<Stri
     }
 }
 
-fn time(record: &Map<String, Value>, key: &str) -> Result<DateTime<FixedOffset>, String> {
+fn time(record: &Map<String, Value>, key: &str) -> Result<ZonedDateTime, String> {
     let text = string(record, key)?;
-    let parsed = DateTime::parse_from_rfc3339(&text)
+    let parsed = solstone_core_time::parse_rfc3339(&text)
         .map_err(|_| format!("{key} must be RFC 3339 with an offset"))?;
-    if parsed.nanosecond() != 0 {
+    if parsed.subsec_nanosecond() != 0 {
         return Err(format!("{key} must be whole seconds"));
     }
     Ok(parsed)

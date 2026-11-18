@@ -459,7 +459,7 @@ fn segment_start_ts_ms(
     segment_key: &str,
 ) -> Result<i64, AccumulationError> {
     let timezone = owner_timezone(journal_root).map_err(AccumulationError::Config)?;
-    crate::voiceprint_metadata::segment_start_ts_ms(timezone, day, segment_key)
+    crate::voiceprint_metadata::segment_start_ts_ms(&timezone, day, segment_key)
         .ok_or_else(|| AccumulationError::Invalid("invalid segment day or key".to_owned()))
 }
 

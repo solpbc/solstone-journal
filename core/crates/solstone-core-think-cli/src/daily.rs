@@ -94,7 +94,7 @@ pub(crate) fn run(
     }
     solstone_core_system::daily_coverage::activate_daily_inputs(
         &context.journal,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )?;
     if context.rebuild.is_some() {
         let mut rebuild_targets = Vec::new();
@@ -321,7 +321,7 @@ fn queue_daily(
         result.applicable_units.insert(unit.clone());
     }
     let today =
-        solstone_core_system::daily_coverage::local_day(&context.journal, chrono::Utc::now());
+        solstone_core_system::daily_coverage::local_day(&context.journal, jiff::Timestamp::now());
     let evidence_day = if config.key == "daily_schedule" {
         &today
     } else {
@@ -398,9 +398,8 @@ fn queue_daily(
                 &evidence,
                 solstone_core_system::daily_coverage::local_now(
                     &context.journal,
-                    chrono::TimeZone::timestamp_millis_opt(&chrono::Utc, context.now_ms)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
+                    jiff::Timestamp::from_millisecond(context.now_ms)
+                        .unwrap_or_else(|_| jiff::Timestamp::now()),
                 ),
             );
             if let Some(kept) = reuse {
@@ -1053,12 +1052,12 @@ pub(crate) fn log_daily_terminal(
                         let day = if let Some(day) = record.attempt_day.as_ref() {
                             day.clone()
                         } else {
-                            let instant = if let Some(instant) =
-                                chrono::DateTime::from_timestamp_millis(record.updated_at_ms)
+                            let instant = if let Ok(instant) =
+                                jiff::Timestamp::from_millisecond(record.updated_at_ms)
                             {
                                 instant
-                            } else if let Some(instant) =
-                                chrono::DateTime::from_timestamp_millis(context.event_now_ms())
+                            } else if let Ok(instant) =
+                                jiff::Timestamp::from_millisecond(context.event_now_ms())
                             {
                                 instant
                             } else {
@@ -1191,14 +1190,13 @@ mod tests {
         save_daily_unit_record,
     };
 
-    fn at(day: &str, hour: u32, minute: u32) -> chrono::NaiveDateTime {
-        chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+    fn at(day: &str, hour: i8, minute: i8) -> jiff::civil::DateTime {
+        solstone_core_time::parse_day(day)
             .unwrap()
-            .and_hms_opt(hour, minute, 0)
-            .unwrap()
+            .at(hour, minute, 0, 0)
     }
 
-    fn at_midnight(day: &str) -> chrono::NaiveDateTime {
+    fn at_midnight(day: &str) -> jiff::civil::DateTime {
         at(day, 0, 0)
     }
 
@@ -1668,7 +1666,7 @@ mod tests {
         )
         .unwrap();
 
-        let instant = chrono::DateTime::from_timestamp_millis(1_789_453_800_000).unwrap();
+        let instant = jiff::Timestamp::from_millisecond(1_789_453_800_000).unwrap();
         let today = solstone_core_system::daily_coverage::local_day(root, instant);
         assert_eq!(today, "20260914");
 
@@ -1886,9 +1884,10 @@ mod tests {
                 record.owner_conflict_kind = Some("merge_proposals_changed".into());
                 record.failure_count = count;
                 record.attempt_day = attempt_day.map(str::to_owned);
-                record.updated_at_ms = chrono::DateTime::parse_from_rfc3339("2026-09-15T05:30:00Z")
+                record.updated_at_ms = "2026-09-15T05:30:00Z"
+                    .parse::<jiff::Timestamp>()
                     .unwrap()
-                    .timestamp_millis();
+                    .as_millisecond();
                 save_daily_unit_record(root, &record).unwrap();
                 reserve_daily_attempt(
                     root,
@@ -2299,7 +2298,7 @@ mod tests {
             root,
             day.into(),
             root.join("chronicle").join(day),
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         )
         .unwrap()
         .with_talent_roots(talent.clone(), apps.clone())
@@ -2341,11 +2340,13 @@ mod tests {
         let mut record = load_daily_unit_record(root, &identity).unwrap().unwrap();
         // Model the persisted record crossing midnight; all following admission,
         // preparation, model execution and publication use the ordinary run.
-        record.attempt_day = Some(
-            (chrono::Utc::now().date_naive() - chrono::Duration::days(1))
-                .format("%Y%m%d")
-                .to_string(),
-        );
+        record.attempt_day = Some(solstone_core_time::day_key(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date()
+                .yesterday()
+                .unwrap(),
+        ));
         save_daily_unit_record(root, &record).unwrap();
         let rows_before =
             solstone_core_entity::load_merge_candidates(root, Some("work"), None).unwrap();
@@ -2386,7 +2387,7 @@ mod tests {
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::write(root.join("config/journal.json"),r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
         // Today's briefing is never frozen, so new evidence always re-owes it.
-        let day = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
+        let day = solstone_core_system::daily_coverage::local_day(root, jiff::Timestamp::now());
         let day = day.as_str();
         let talent = root.join("payload/talent");
         let apps = root.join("payload/apps");
@@ -2943,7 +2944,7 @@ cat "${0%/*}/review-response.json"
         std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
         // Keep one real historical unit independently current when maintenance fails.
         std::fs::write(talent.join("morning_briefing.md"), format!("{}\nBRIEFING_PROOF: $briefing_metadata $activity_digest", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":2,"output":"json","hook":{"pre":"morning_briefing"},"load":{"transcripts":false}})).unwrap())).unwrap();
-        let today = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
+        let today = solstone_core_system::daily_coverage::local_day(root, jiff::Timestamp::now());
         std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/090000_600"))
             .unwrap();
         let stub = root.join("generate-stub.sh");
@@ -3100,11 +3101,11 @@ esac
             r#"{"identity":{"timezone":"UTC"}}"#,
         )
         .unwrap();
-        let current_day = chrono::Utc::now().date_naive();
-        let today = current_day.format("%Y%m%d").to_string();
-        let previous = (current_day - chrono::Duration::days(1))
-            .format("%Y%m%d")
-            .to_string();
+        let current_day = jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date();
+        let today = solstone_core_time::day_key(current_day);
+        let previous = solstone_core_time::day_key(current_day.yesterday().unwrap());
         let make_packet = |day: &str| {
             solstone_core_talent_runtime::daily_prepare::freeze(
                 solstone_core_talent_runtime::PreparedTalent::new("daily_schedule".into(), json!({
@@ -4050,7 +4051,7 @@ esac
             pending.len()
         };
         let frozen_skips = || {
-            let day = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+            let day = jiff::civil::date(2026, 1, 1);
             solstone_core_journal_io::operational_log::catalog_oplogs(
                 solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
                 &[day],
@@ -4637,11 +4638,15 @@ esac
             .unwrap()
             .config
             .unwrap();
-        solstone_core_journal_config::daily_input_since(&config, "location", "location-words-1")
+        solstone_core_time::day_key(
+            solstone_core_journal_config::daily_input_since(
+                &config,
+                "location",
+                "location-words-1",
+            )
             .unwrap()
-            .unwrap()
-            .format("%Y%m%d")
-            .to_string()
+            .unwrap(),
+        )
     }
 
     fn briefing_packet(root: &std::path::Path) -> Value {
@@ -4744,7 +4749,7 @@ esac
             );
             Err("stop".into())
         })));
-        let before = chrono::Utc::now();
+        let before = jiff::Timestamp::now();
         let context = ThinkContext::new(
             root,
             day.to_owned(),
@@ -4754,7 +4759,7 @@ esac
         .unwrap();
         let mut log = RunLogWriter::open(root, day, "daily");
         run(&context, &mut log, None, false, 1).unwrap();
-        let after = chrono::Utc::now();
+        let after = jiff::Timestamp::now();
         assert!(calls.get() >= 1);
         let zone = solstone_core_journal_config::owner_zone(root);
         let early = solstone_core_system::daily_coverage::daily_input_since_day(before, &zone, 7);

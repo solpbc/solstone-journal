@@ -23,7 +23,6 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_retention::made_from::MadeFrom;
@@ -144,9 +143,14 @@ impl MadeFromIt {
 
 /// The week page holding `day`: `reflections/weekly/<sunday>.md`.
 fn week_page(day: &str) -> Option<String> {
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let sunday = date - chrono::Duration::days(i64::from(date.weekday().num_days_from_sunday()));
-    Some(format!("reflections/weekly/{}.md", sunday.format("%Y%m%d")))
+    let date = solstone_core_time::parse_day(day)?;
+    let sunday = date
+        .checked_sub(jiff::Span::new().days(date.weekday().to_sunday_zero_offset()))
+        .ok()?;
+    Some(format!(
+        "reflections/weekly/{}.md",
+        solstone_core_time::day_key(sunday)
+    ))
 }
 
 /// The segments, by day, as `(stream, key)`: a record names segments by key,
@@ -534,7 +538,7 @@ impl MadeFromIt {
             operation,
             item,
             activities,
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         )
         .map_err(|error| format!("the day was not asked to be made again: {error}"))?;
         owner_ask::wake(journal, day);
@@ -546,7 +550,7 @@ impl MadeFromIt {
 /// fields held just before: they can hold what a model wrote from a recording
 /// now erased. What the edit set stays, so the correction stays; its undo
 /// then says it can't be undone. Whether anything changed.
-fn drop_old_words(record: &mut Map<String, Value>, before: chrono::DateTime<chrono::Utc>) -> bool {
+fn drop_old_words(record: &mut Map<String, Value>, before: jiff::Timestamp) -> bool {
     // The owner's own record holds no model words.
     if record.get("source").and_then(Value::as_str) == Some("user") {
         return false;
@@ -561,8 +565,8 @@ fn drop_old_words(record: &mut Map<String, Value>, before: chrono::DateTime<chro
         let earlier = !edit
             .get("timestamp")
             .and_then(Value::as_str)
-            .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-            .is_some_and(|at| at.with_timezone(&chrono::Utc) > before);
+            .and_then(|at| solstone_core_time::parse_rfc3339(at).ok())
+            .is_some_and(|at| at.timestamp() > before);
         if earlier && edit.remove(solstone_core_facets::EDIT_BEFORE).is_some() {
             changed = true;
         }

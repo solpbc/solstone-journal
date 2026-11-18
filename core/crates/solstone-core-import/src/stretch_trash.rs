@@ -28,7 +28,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{Duration, NaiveDateTime};
+use jiff::SignedDuration;
+use jiff::civil::{DateTime, Time};
 use serde::Serialize;
 use solstone_core_removals::{Action, Surface, Unit};
 use solstone_core_trash::{Chosen, SetResult, Stretch, TrashError};
@@ -68,9 +69,9 @@ pub struct Found {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub import: Option<String>,
     #[serde(skip)]
-    pub start: NaiveDateTime,
+    pub start: DateTime,
     #[serde(skip)]
-    pub end: NaiveDateTime,
+    pub end: DateTime,
 }
 
 impl Found {
@@ -141,15 +142,15 @@ impl Plan {
 }
 
 /// Read a wall-clock bound: `YYYY-MM-DDTHH:MM`, seconds optional.
-pub fn parse_wall(value: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(value, WALL)
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M"))
+pub fn parse_wall(value: &str) -> Option<DateTime> {
+    DateTime::strptime(WALL, value)
+        .or_else(|_| DateTime::strptime("%Y-%m-%dT%H:%M", value))
+        .or_else(|_| DateTime::strptime("%Y-%m-%d %H:%M", value))
         .ok()
 }
 
-fn wall(at: NaiveDateTime) -> String {
-    at.format(WALL).to_string()
+fn wall(at: DateTime) -> String {
+    at.strftime(WALL).to_string()
 }
 
 /// What deleting `from`..`to`, owner wall-clock times, would take.
@@ -159,11 +160,11 @@ fn wall(at: NaiveDateTime) -> String {
 /// widening: the bounds shown are the span taken, and everything in the
 /// journal from then is in it or named as staying. Each pass only adds what
 /// overlaps the last, so it ends; it never widens past [`MAX_DAYS`].
-pub fn plan(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Result<Plan, Refused> {
+pub fn plan(journal: &Path, from: DateTime, to: DateTime) -> Result<Plan, Refused> {
     if to <= from {
         return Err(Refused::Backwards);
     }
-    if to - from > Duration::days(MAX_DAYS) {
+    if to.duration_since(from) > SignedDuration::from_hours(24 * MAX_DAYS) {
         return Err(Refused::TooLong);
     }
     let (mut lo, mut hi) = (from, to);
@@ -189,7 +190,7 @@ pub fn plan(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Result<Pl
         }
         // Widening past the most one delete takes would show a span no pass
         // read whole: refused, as a stretch asked that long is.
-        if next_hi - next_lo > Duration::days(MAX_DAYS) {
+        if next_hi.duration_since(next_lo) > SignedDuration::from_hours(24 * MAX_DAYS) {
             return Err(Refused::TooLong);
         }
         lo = next_lo;
@@ -198,16 +199,16 @@ pub fn plan(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Result<Pl
 }
 
 /// One reading of `from`..`to`.
-fn plan_once(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Plan {
+fn plan_once(journal: &Path, from: DateTime, to: DateTime) -> Plan {
     let listing = segment_trash::listing(journal);
     let mut running: BTreeMap<String, bool> = BTreeMap::new();
     let mut segments = Vec::new();
     let mut left_out = Vec::new();
     let mut in_trash = false;
     // A segment that began the day before can run past midnight into it.
-    let mut day = from.date() - Duration::days(1);
+    let mut day = from.date().yesterday().unwrap_or(from.date());
     while day <= to.date() {
-        let key = day.format("%Y%m%d").to_string();
+        let key = solstone_core_time::day_key(day);
         for (stream, segment, clock) in day_segments(journal, &key) {
             if stream.starts_with(AGENT_MEMORY_STREAM_PREFIX) {
                 continue;
@@ -236,7 +237,9 @@ fn plan_once(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Plan {
             };
             let why = if import_running {
                 Some(Why::ImportRunning)
-            } else if end - start >= Duration::days(1) && !(from <= start && end <= to) {
+            } else if end.duration_since(start) >= SignedDuration::from_hours(24)
+                && !(from <= start && end <= to)
+            {
                 Some(Why::WholeDay)
             } else {
                 in_flight(&place)
@@ -261,7 +264,10 @@ fn plan_once(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Plan {
                 end,
             });
         }
-        day += Duration::days(1);
+        let Ok(next) = day.tomorrow() else {
+            break;
+        };
+        day = next;
     }
     segments.sort_by(|left, right| {
         (left.start, &left.stream, &left.key).cmp(&(right.start, &right.stream, &right.key))
@@ -368,30 +374,31 @@ fn sole_lister(listing: &BTreeMap<String, BTreeSet<String>>, rel: &str) -> Optio
 /// The span a segment key names on its day: its start, and its start plus its
 /// length. A `_0` key is one instant (a photo, a document), so its span is
 /// that instant alone.
-fn span(day: &str, key: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+fn span(day: &str, key: &str) -> Option<(DateTime, DateTime)> {
+    let date = solstone_core_time::parse_day(day)?;
     let times = solstone_core_format::segment::segment_parse(key)?;
     let (clock, length) = key.split_once('_')?;
     if clock.len() != 6 {
         return None;
     }
     let length: i64 = length.parse().ok()?;
-    let start = date.and_hms_opt(
-        u32::from(times.hour),
-        u32::from(times.minute),
-        u32::from(times.second),
-    )?;
-    Some((start, start + Duration::seconds(length)))
+    let time = Time::new(
+        i8::try_from(times.hour).ok()?,
+        i8::try_from(times.minute).ok()?,
+        i8::try_from(times.second).ok()?,
+        0,
+    )
+    .ok()?;
+    let start = date.to_datetime(time);
+    Some((
+        start,
+        start.checked_add(SignedDuration::from_secs(length)).ok()?,
+    ))
 }
 
 /// Whether a segment spanning `start`..`end` overlaps the stretch: any time in
 /// common, or, for an instant, the instant inside it.
-fn overlaps(
-    start: NaiveDateTime,
-    end: NaiveDateTime,
-    from: NaiveDateTime,
-    to: NaiveDateTime,
-) -> bool {
+fn overlaps(start: DateTime, end: DateTime, from: DateTime, to: DateTime) -> bool {
     if start == end {
         from <= start && start < to
     } else {
@@ -535,8 +542,8 @@ pub struct RefusedSegment {
 /// so what moves is what the journal holds at the moment the owner confirms.
 pub fn trash(
     journal: &Path,
-    from: NaiveDateTime,
-    to: NaiveDateTime,
+    from: DateTime,
+    to: DateTime,
     surface: Surface,
     erase: bool,
 ) -> Result<Result<Outcome, Refused>, TrashError> {
@@ -547,8 +554,8 @@ pub fn trash(
 /// stretch from their backups.
 pub fn trash_with(
     journal: &Path,
-    from: NaiveDateTime,
-    to: NaiveDateTime,
+    from: DateTime,
+    to: DateTime,
     surface: Surface,
     erase: bool,
     backups: bool,

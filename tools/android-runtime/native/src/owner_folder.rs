@@ -211,9 +211,9 @@ unsafe fn copy_folder(
             None => {
                 owner.root.revalidate_canonical_binding().map_err(|_| ())?;
                 let zone = solstone_core_journal_config::owner_zone(owner.root.canonical_path());
-                generated = chrono::Utc::now()
-                    .with_timezone(&zone)
-                    .format("%Y%m%d_%H%M%S")
+                generated = jiff::Timestamp::now()
+                    .to_zoned_datetime(zone)
+                    .strftime("%Y%m%d_%H%M%S")
                     .to_string();
                 &generated
             }
@@ -260,7 +260,7 @@ unsafe fn copy_folder(
             #[cfg(all(test, feature = "full-tests"))]
             tests::before_registration(root, folder);
             solstone_core_import_web::register_admitted_folder(
-                root, folder, source, display, reference, &timestamp, zone,
+                root, folder, source, display, reference, &timestamp, &zone,
             )
             .map_err(|error| error.to_string())
         },

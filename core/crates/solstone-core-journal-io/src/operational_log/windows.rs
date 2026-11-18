@@ -273,7 +273,8 @@ mod windows_tests {
     use std::os::windows::fs::symlink_file;
     use std::time::Duration;
 
-    use chrono::DateTime;
+    use jiff::ZonedDateTime;
+    use solstone_core_time::parse_rfc3339;
 
     use super::super::create::{
         OPLOG_CREATE_ATTEMPTS, create_oplog_with_test_timing, run_with_oplog_file_ids,
@@ -292,12 +293,12 @@ mod windows_tests {
     const SOURCE: &str = "cortex";
     const RUN: &str = "daily-think";
 
-    fn instant() -> DateTime<chrono::FixedOffset> {
-        DateTime::parse_from_rfc3339("2026-09-01T16:42:33.381904Z").unwrap()
+    fn instant() -> ZonedDateTime {
+        parse_rfc3339("2026-09-01T16:42:33.381904Z").unwrap()
     }
 
     fn dest_for(file_id: [u8; 16]) -> String {
-        let (_, opened) = derive_day_key_and_opened_field(instant());
+        let (_, opened) = derive_day_key_and_opened_field(&instant());
         format_oplog_name(&oplog_name_from_parts(
             SOURCE,
             RUN,
@@ -308,7 +309,7 @@ mod windows_tests {
     }
 
     fn health_dir(root: &std::path::Path) -> std::path::PathBuf {
-        let (day, _) = derive_day_key_and_opened_field(instant());
+        let (day, _) = derive_day_key_and_opened_field(&instant());
         root.join("chronicle").join(day).join("health")
     }
 
@@ -316,7 +317,7 @@ mod windows_tests {
     fn eight_collisions_leave_one_stage_and_no_handle_disposition_delete() {
         let temporary = tempfile::TempDir::new().unwrap();
         let root = temporary.path();
-        let (day, _) = derive_day_key_and_opened_field(instant());
+        let (day, _) = derive_day_key_and_opened_field(&instant());
         admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap();
         let dir = health_dir(root);
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
@@ -331,7 +332,7 @@ mod windows_tests {
                 SOURCE,
                 RUN,
                 OplogFormat::Log,
-                instant(),
+                &instant(),
                 ZERO,
                 ZERO,
             )
@@ -386,7 +387,7 @@ mod windows_tests {
             SOURCE,
             RUN,
             OplogFormat::Log,
-            instant(),
+            &instant(),
             ZERO,
             ZERO,
         )
@@ -429,7 +430,7 @@ mod windows_tests {
     fn reparse_point_at_candidate_is_destination_inspection_not_a_foreign_collision() {
         let temporary = tempfile::TempDir::new().unwrap();
         let root = temporary.path();
-        let (day, _) = derive_day_key_and_opened_field(instant());
+        let (day, _) = derive_day_key_and_opened_field(&instant());
         admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap();
         let dir = health_dir(root);
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
@@ -449,7 +450,7 @@ mod windows_tests {
                 SOURCE,
                 RUN,
                 OplogFormat::Log,
-                instant(),
+                &instant(),
                 ZERO,
                 ZERO,
             )

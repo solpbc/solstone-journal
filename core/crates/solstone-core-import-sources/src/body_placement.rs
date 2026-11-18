@@ -210,7 +210,7 @@ impl<'a> DayPlacement<'a> {
             let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
                 continue;
             };
-            let day = start.with_timezone(&zone).format("%Y%m%d").to_string();
+            let day = start.with_time_zone(zone).strftime("%Y%m%d").to_string();
             if day == self.day {
                 continue;
             }

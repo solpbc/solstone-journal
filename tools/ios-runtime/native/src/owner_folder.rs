@@ -127,7 +127,7 @@ unsafe fn copy_folder(
                 .and_then(solstone_core_journal_config::parse_zone)
                 .unwrap_or_else(solstone_core_journal_config::host_zone);
             solstone_core_import_web::register_admitted_folder(
-                root, folder, source, display, reference, &timestamp, zone,
+                root, folder, source, display, reference, &timestamp, &zone,
             )
             .map_err(|error| error.to_string())
         },

@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError, mpsc};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
@@ -82,7 +82,7 @@ fn is_repair_active(journal_root: &Path, operation_id: &str) -> bool {
 }
 
 fn mint_repair_operation_id() -> String {
-    format!("repair_{}", Utc::now().timestamp_millis())
+    format!("repair_{}", Timestamp::now().as_millisecond())
 }
 
 fn metadata_map(metadata: Option<&ResolveMetadata>) -> Map<String, Value> {
@@ -333,7 +333,7 @@ fn execute_repair_commit(
 
     if !inventory.complete {
         if is_resume || prior_state.as_ref().map(|s| s.is_accepted).unwrap_or(false) {
-            let attempt_id = format!("attempt_{}", Utc::now().timestamp_millis());
+            let attempt_id = format!("attempt_{}", Timestamp::now().as_millisecond());
             let _ = append_repair_event(
                 journal_root,
                 &RepairEvent::AttemptFailed {
@@ -343,7 +343,7 @@ fn execute_repair_commit(
                     stage: "re_inventory".to_owned(),
                     detail: "re-inventory incomplete with gaps".to_owned(),
                     retryable: true,
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             );
         }
@@ -370,7 +370,7 @@ fn execute_repair_commit(
         }));
     }
 
-    let attempt_id = format!("attempt_{}", Utc::now().timestamp_millis());
+    let attempt_id = format!("attempt_{}", Timestamp::now().as_millisecond());
 
     // Append accepted if not already accepted
     if prior_state.as_ref().map(|s| !s.is_accepted).unwrap_or(true) {
@@ -379,7 +379,7 @@ fn execute_repair_commit(
             &RepairEvent::Accepted {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: operation_id.to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .map_err(|e| e.to_string())?;
@@ -391,7 +391,7 @@ fn execute_repair_commit(
             schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
             operation_id: operation_id.to_owned(),
             attempt_id: attempt_id.clone(),
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
         },
     )
     .map_err(|e| e.to_string())?;
@@ -446,7 +446,7 @@ fn record_unrecorded_failure(
             stage: "execution".to_owned(),
             detail: detail.to_owned(),
             retryable: true,
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
         },
     ) {
         log::error!("speaker repair {operation_id} could not record its failure: {error}");
@@ -477,7 +477,7 @@ fn run_attempt(
                             removal.entity_id, err
                         ),
                         retryable: false,
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 );
                 return Err(format!(
@@ -507,7 +507,7 @@ fn run_attempt(
                         removal.entity_id, memory_dir, expected_dir
                     ),
                     retryable: false,
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             );
             return Err(format!(
@@ -541,7 +541,7 @@ fn run_attempt(
                                 removal.entity_id, err
                             ),
                             retryable: false,
-                            timestamp: Utc::now().to_rfc3339(),
+                            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                         },
                     );
                     return Err(format!(
@@ -585,7 +585,7 @@ fn run_attempt(
                                 delta.skipped_reasons.metadata_mismatch,
                             ),
                             retryable: false,
-                            timestamp: Utc::now().to_rfc3339(),
+                            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                         },
                     );
                     return Err(format!(
@@ -607,7 +607,7 @@ fn run_attempt(
                             removal.entity_id, err
                         ),
                         retryable: false,
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 );
                 return Err(format!(
@@ -639,7 +639,7 @@ fn run_attempt(
             operation_id: operation_id.to_owned(),
             attempt_id: attempt_id.clone(),
             planned_segments: planned_snapshots.clone(),
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
         },
     )
     .map_err(|e| e.to_string())?;
@@ -692,7 +692,7 @@ fn run_attempt(
                         stream_layout: plan.stream_layout,
                         stream: plan.stream.clone(),
                         segment_name: plan.segment_name.clone(),
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 )
                 .map_err(|e| e.to_string())?;
@@ -764,7 +764,7 @@ fn run_attempt(
                             expected_corrections_sha256: c0.clone(),
                             intended_payload_sha256: new_intended_sha.clone(),
                             intended_payload: payload_val.clone(),
-                            timestamp: Utc::now().to_rfc3339(),
+                            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                         },
                     )
                     .map_err(|e| e.to_string())?;
@@ -792,7 +792,7 @@ fn run_attempt(
                         stream_layout: plan.stream_layout,
                         stream: plan.stream.clone(),
                         segment_name: plan.segment_name.clone(),
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 )
                 .map_err(|e| e.to_string())?;
@@ -810,7 +810,7 @@ fn run_attempt(
                             plan.segment_name, current_label_sha, h0, ha, current_corr_sha, c0
                         ),
                         retryable: true,
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 );
                 return Err(format!(
@@ -835,7 +835,7 @@ fn run_attempt(
                             plan.segment_name
                         ),
                         retryable: true,
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 );
                 return Err(format!(
@@ -905,7 +905,7 @@ fn run_attempt(
                     expected_corrections_sha256: current_corr_sha.clone(),
                     intended_payload_sha256: intended_sha.clone(),
                     intended_payload: payload_val.clone(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .map_err(|e| e.to_string())?;
@@ -931,7 +931,7 @@ fn run_attempt(
                     stream_layout: plan.stream_layout,
                     stream: plan.stream.clone(),
                     segment_name: plan.segment_name.clone(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .map_err(|e| e.to_string())?;
@@ -954,7 +954,7 @@ fn run_attempt(
             operation_id: operation_id.to_owned(),
             attempt_id,
             summary: summary.clone(),
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
         },
     )
     .map_err(|e| e.to_string())?;
@@ -1227,7 +1227,7 @@ mod tests {
             &RepairEvent::Accepted {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: op_id.to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1238,7 +1238,7 @@ mod tests {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: op_id.to_owned(),
                 attempt_id: att_id.to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1257,7 +1257,7 @@ mod tests {
                     label_sha256: label_sha.clone(),
                     corrections_sha256: corr_sha.clone(),
                 }],
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1278,7 +1278,7 @@ mod tests {
                 expected_corrections_sha256: corr_sha,
                 intended_payload_sha256: "intended_sha_placeholder".to_owned(),
                 intended_payload: serde_json::json!({"labels": []}),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1354,7 +1354,7 @@ mod tests {
             &RepairEvent::Accepted {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: op_id.to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1365,7 +1365,7 @@ mod tests {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: op_id.to_owned(),
                 attempt_id: "att_prev".to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1381,7 +1381,7 @@ mod tests {
                 stream_layout: SegmentLayout::Named,
                 stream: "mic".to_owned(),
                 segment_name: "093000_300_a".to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();
@@ -1542,7 +1542,7 @@ mod tests {
                 &RepairEvent::Accepted {
                     schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                     operation_id: op_id.to_owned(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1564,7 +1564,7 @@ mod tests {
                     expected_corrections_sha256: current_corr_sha.clone(),
                     intended_payload_sha256: current_label_sha.clone(),
                     intended_payload: serde_json::json!({}),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1612,7 +1612,7 @@ mod tests {
                 &RepairEvent::Accepted {
                     schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                     operation_id: op_id.to_owned(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1633,7 +1633,7 @@ mod tests {
                     expected_corrections_sha256: current_corr_sha.clone(),
                     intended_payload_sha256: "will_be_recalculated".to_owned(),
                     intended_payload: serde_json::json!({}),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1678,7 +1678,7 @@ mod tests {
                 &RepairEvent::Accepted {
                     schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                     operation_id: op_id.to_owned(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1699,7 +1699,7 @@ mod tests {
                     expected_corrections_sha256: current_corr_sha.clone(),
                     intended_payload_sha256: "stale_hash_that_differs".to_owned(),
                     intended_payload: serde_json::json!({}),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1741,7 +1741,7 @@ mod tests {
                 &RepairEvent::Accepted {
                     schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                     operation_id: op_id.to_owned(),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1762,7 +1762,7 @@ mod tests {
                     expected_corrections_sha256: "0".repeat(64),
                     intended_payload_sha256: "1".repeat(64),
                     intended_payload: serde_json::json!({}),
-                    timestamp: Utc::now().to_rfc3339(),
+                    timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 },
             )
             .unwrap();
@@ -1800,7 +1800,7 @@ mod tests {
             &RepairEvent::Accepted {
                 schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
                 operation_id: op_id.to_owned(),
-                timestamp: Utc::now().to_rfc3339(),
+                timestamp: solstone_core_time::utc_rfc3339(Timestamp::now()),
             },
         )
         .unwrap();

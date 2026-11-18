@@ -288,7 +288,7 @@ fn a_recover_a_stop_left_part_way_is_finished_even_with_its_import_in_the_trash(
     stopped.pending = Some(solstone_core_trash::Pending {
         action: Action::Recover,
         surface: surface(),
-        at: chrono::Utc::now().to_rfc3339(),
+        at: solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         operation: None,
         backups: false,
     });
@@ -298,7 +298,7 @@ fn a_recover_a_stop_left_part_way_is_finished_even_with_its_import_in_the_trash(
         .join(&first.id)
         .join("item.json");
     fs::write(&record, serde_json::to_vec(&stopped).unwrap()).unwrap();
-    let swept = crate::trash_kinds::sweep(root.path(), chrono::Utc::now());
+    let swept = crate::trash_kinds::sweep(root.path(), jiff::Timestamp::now());
     assert_eq!(swept.failed, Vec::<String>::new());
     assert!(
         solstone_core_trash::item(root.path(), &first.id)

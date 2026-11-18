@@ -14,7 +14,6 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use chrono::TimeZone;
 use serde_json::{Map, Value, json};
 
 use crate::{
@@ -369,6 +368,22 @@ pub(crate) fn source_display(name: &str) -> Option<String> {
     source(name).map(|item| item.display_name.to_owned())
 }
 
+/// The zone names an audio archive can be placed in, in byte order: every name
+/// in the bundled time zone database, each of which the journal reads, except
+/// `Factory`, which names no place.
+fn time_zone_names() -> &'static [String] {
+    static NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
+        let mut names: Vec<String> = jiff::tz::TimeZoneDatabase::bundled()
+            .available()
+            .map(|name| name.as_str().to_owned())
+            .filter(|name| name != "Factory")
+            .collect();
+        names.sort();
+        names
+    });
+    &NAMES
+}
+
 /// Sources the journal on a phone doesn't take: an Apple Health export is
 /// brought in by a journal on a computer.
 const DESKTOP_ONLY: &[&str] = &["apple_health"];
@@ -388,7 +403,7 @@ pub(crate) async fn sources(State(state): State<AppState>) -> Response {
             value["too_big_words"] = json!(solstone_core_import_sources::body_status::too_big_to_upload_words());
         }
         if item.name == "audio_archive" {
-            value["time_zones"] = json!(chrono_tz::TZ_VARIANTS.iter().map(|zone| zone.name()).collect::<Vec<_>>());
+            value["time_zones"] = json!(time_zone_names());
         }
         value
     }).collect();
@@ -674,12 +689,11 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         .attempt
         .as_ref()
         .and_then(|attempt| attempt.finished_at_ms)
-        .and_then(|ms| {
-            solstone_core_journal_config::owner_zone(&state.root)
-                .timestamp_millis_opt(ms as i64)
-                .single()
+        .and_then(|ms| jiff::Timestamp::from_millisecond(ms as i64).ok())
+        .map(|time| {
+            let local = solstone_core_journal_config::owner_zone(&state.root).to_datetime(time);
+            json!(local.strftime("%Y-%m-%dT%H:%M:%S").to_string())
         })
-        .map(|time| json!(time.naive_local().format("%Y-%m-%dT%H:%M:%S").to_string()))
         .or_else(|| {
             recorded("processing_completed")
                 .or_else(|| recorded("processing_failed"))
@@ -886,6 +900,23 @@ mod tests {
             assert_eq!(body["pages"], expected_total);
             assert_eq!(body["imports"].as_array().unwrap().len(), 1);
             assert_eq!(body["imports"][0]["source_type"], expected_source);
+        }
+    }
+
+    #[test]
+    fn every_offered_time_zone_is_one_the_journal_reads() {
+        let names = time_zone_names();
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(!names.iter().any(|name| name == "Factory"));
+        for expected in ["America/Denver", "Asia/Calcutta", "US/Mountain", "UTC"] {
+            assert!(names.iter().any(|name| name == expected), "{expected}");
+        }
+        for name in names {
+            let zone = solstone_core_journal_config::parse_zone(name);
+            assert_eq!(
+                zone.as_ref().and_then(jiff::tz::TimeZone::iana_name),
+                Some(name.as_str())
+            );
         }
     }
 

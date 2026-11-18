@@ -509,7 +509,7 @@ fn save(root: &Path, open: bool) -> Result<(), String> {
     if open {
         entry.insert(
             "opened_with_consent_at".into(),
-            Value::String(chrono::Utc::now().to_rfc3339()),
+            Value::String(solstone_core_time::utc_rfc3339(jiff::Timestamp::now())),
         );
     }
     solstone_core_journal_config_write::mutate_journal_config(root, Default::default(), |config| {

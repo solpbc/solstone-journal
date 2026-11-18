@@ -8,7 +8,8 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, NaiveDate};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{
@@ -35,7 +36,7 @@ struct CatalogSource {
 impl OplogSnapshotSource for CatalogSource {
     fn snapshot(
         &self,
-        days: &[NaiveDate],
+        days: &[Date],
     ) -> Result<solstone_core_journal_io::operational_log::OplogCatalogSnapshot, OplogCatalogError>
     {
         let root = JournalRoot::open(&self.root).map_err(|_| OplogCatalogError::root())?;
@@ -46,8 +47,8 @@ impl OplogSnapshotSource for CatalogSource {
 struct LocalClock;
 
 impl OplogClock for LocalClock {
-    fn today(&self) -> NaiveDate {
-        Local::now().date_naive()
+    fn today(&self) -> Date {
+        ZonedDateTime::now().date()
     }
 }
 
@@ -90,7 +91,7 @@ pub fn run_follow_from_snapshot(
         output,
         is_tty,
         &std::thread::sleep,
-        &|| Local::now().date_naive(),
+        &|| ZonedDateTime::now().date(),
     )
 }
 
@@ -101,7 +102,7 @@ fn run_follow_from_snapshot_with_sleep(
     output: &mut dyn Write,
     is_tty: bool,
     sleep: &dyn Fn(std::time::Duration),
-    today: &dyn Fn() -> NaiveDate,
+    today: &dyn Fn() -> Date,
 ) -> Result<(), FollowFatalError> {
     let source_slug = snapshot.source_slug().to_owned();
     let mut follower = RawOplogFollower::from_catalogued_frontiers(
@@ -162,15 +163,11 @@ impl RawOplogFollower {
         })
     }
 
-    fn tick(
-        &mut self,
-        journal_root: &Path,
-        today: NaiveDate,
-    ) -> Result<Vec<Vec<u8>>, FollowFatalError> {
+    fn tick(&mut self, journal_root: &Path, today: Date) -> Result<Vec<Vec<u8>>, FollowFatalError> {
         let days = raw_follow_days(today);
         self.tracked.retain(|tracked| {
             days.iter()
-                .any(|day| day.format("%Y%m%d").to_string() == tracked.entry.day())
+                .any(|day| solstone_core_time::day_key(*day) == tracked.entry.day())
         });
 
         let mut appended = Vec::new();
@@ -214,9 +211,10 @@ fn matches_raw_source(entry: &OplogCatalogEntry, source_slug: &str) -> bool {
     entry.name().source().display_slug() == source_slug && entry.name().format() == OplogFormat::Log
 }
 
-fn raw_follow_days(today: NaiveDate) -> Vec<NaiveDate> {
+fn raw_follow_days(today: Date) -> Vec<Date> {
     today
-        .pred_opt()
+        .yesterday()
+        .ok()
         .map_or_else(|| vec![today], |previous| vec![previous, today])
 }
 
@@ -346,7 +344,6 @@ fn output_error(source: io::Error) -> FollowFatalError {
 mod tests {
     use std::cell::Cell;
 
-    use chrono::TimeZone;
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog};
 
     use crate::collect::collect_source_tail_snapshot;
@@ -426,18 +423,19 @@ mod tests {
         }
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = Local::now().fixed_offset();
+        let local = ZonedDateTime::now();
+        let opened = solstone_core_time::at_offset(local.timestamp(), local.offset());
         let mut writer = solstone_core_journal_io::operational_log::create_oplog_at(
             JournalRoot::open(temporary.path()).unwrap(),
             "service",
             "supervisor",
             OplogFormat::Log,
-            opened,
+            &opened,
         )
         .unwrap();
         writeln!(writer, "before").unwrap();
         let snapshot =
-            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 1024)
+            collect_source_tail_snapshot(temporary.path(), opened.datetime(), "service", 1024)
                 .unwrap();
         assert_eq!(snapshot.tail(), b"before\n");
         writeln!(writer, "after").unwrap();
@@ -454,7 +452,7 @@ mod tests {
             &mut output,
             false,
             &|_| {},
-            &|| opened.date_naive(),
+            &|| opened.date(),
         )
         .unwrap();
         assert_eq!(output.bytes, b"after\n");
@@ -480,18 +478,19 @@ mod tests {
         }
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = Local::now().fixed_offset();
+        let local = ZonedDateTime::now();
+        let opened = solstone_core_time::at_offset(local.timestamp(), local.offset());
         let mut writer = solstone_core_journal_io::operational_log::create_oplog_at(
             JournalRoot::open(temporary.path()).unwrap(),
             "service",
             "supervisor",
             OplogFormat::Log,
-            opened,
+            &opened,
         )
         .unwrap();
         writer.write_all(b"before\xff").unwrap();
         let snapshot =
-            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 1024)
+            collect_source_tail_snapshot(temporary.path(), opened.datetime(), "service", 1024)
                 .unwrap();
         assert_eq!(snapshot.tail(), b"before\xff");
 
@@ -512,7 +511,7 @@ mod tests {
             &mut output,
             false,
             &|_| {},
-            &|| opened.date_naive(),
+            &|| opened.date(),
         )
         .unwrap();
 
@@ -543,36 +542,36 @@ mod tests {
         }
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = chrono::FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 23, 59, 59)
-            .single()
-            .unwrap();
+        let opened = solstone_core_time::at_offset(
+            jiff::tz::Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 8, 7).at(23, 59, 59, 0))
+                .unwrap(),
+            jiff::tz::Offset::UTC,
+        );
         let mut before = solstone_core_journal_io::operational_log::create_oplog_at(
             JournalRoot::open(temporary.path()).unwrap(),
             "service",
             "supervisor",
             OplogFormat::Log,
-            opened,
+            &opened,
         )
         .unwrap();
         before.write_all(b"before midnight\n").unwrap();
         let snapshot =
-            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 1024)
+            collect_source_tail_snapshot(temporary.path(), opened.datetime(), "service", 1024)
                 .unwrap();
 
-        let next_day = opened.date_naive().succ_opt().unwrap();
-        let next_opened = opened
-            .offset()
-            .from_local_datetime(&next_day.and_hms_opt(0, 0, 1).unwrap())
-            .single()
-            .unwrap();
+        let next_day = opened.date().tomorrow().unwrap();
+        let next_opened =
+            solstone_core_time::from_local(opened.time_zone(), next_day.at(0, 0, 1, 0))
+                .single()
+                .unwrap();
         let mut after = solstone_core_journal_io::operational_log::create_oplog_at(
             JournalRoot::open(temporary.path()).unwrap(),
             "service",
             "supervisor",
             OplogFormat::Log,
-            next_opened,
+            &next_opened,
         )
         .unwrap();
         after.write_all(b"after midnight\n").unwrap();

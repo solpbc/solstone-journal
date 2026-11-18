@@ -15,7 +15,6 @@ use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveDate, SecondsFormat, Utc};
 #[cfg(not(target_os = "ios"))]
 use serde_json::Value;
 use serde_json::json;
@@ -526,7 +525,7 @@ fn indexer_status_report(
 ) -> Result<String, solstone_core_indexer_store::StoreError> {
     let status = solstone_core_indexer_store::status::inspect_index(journal)?;
     let observations =
-        solstone_core_system_health::read_indexing_observations(journal, chrono::Utc::now());
+        solstone_core_system_health::read_indexing_observations(journal, jiff::Timestamp::now());
     let health =
         solstone_core_system_health::evaluate_index_health_of(journal, &status, &observations);
     if json_output {
@@ -658,9 +657,9 @@ fn run_one_indexer_query(
     request.stream = options.stream.clone();
     request.counts = true;
     request.body_owner_words = true;
-    let today = Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+    let today = solstone_core_journal_config::owner_zone(journal)
+        .to_datetime(jiff::Timestamp::now())
+        .date();
     let response = search(journal, OwnerBoundary, &request, today).map_err(index_query_error)?;
     let counts = response.counts.unwrap_or_default();
     Ok(format_indexer_query(
@@ -869,7 +868,8 @@ fn archive_export(args: &[OsString]) -> Outcome {
         Ok(source) => source,
         Err(error) => return archive_error("archive export", &error.to_string()),
     };
-    let exported_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let exported_at =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     let output = match output {
         Some(path) => path,
         None => match default_export_path(source.canonical_source(), &exported_at) {
@@ -3350,7 +3350,7 @@ mod indexer_status_tests {
 
     /// The command's JSON and human reports, each checked against Health's value.
     fn assert_reports_agree_with_health(journal: &Path) -> IndexHealth {
-        let health = evaluate_index_health(journal, chrono::Utc::now());
+        let health = evaluate_index_health(journal, jiff::Timestamp::now());
         let json: serde_json::Value =
             serde_json::from_str(&indexer_status_report(journal, true).unwrap()).unwrap();
         // How long the oldest entry has waited is read from the clock, so two
@@ -4078,7 +4078,7 @@ fn safe_component(value: &str) -> bool {
 fn valid_day(value: &str) -> bool {
     value.len() == 8
         && value.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(value).is_some()
 }
 
 fn journal_root(token: &str) -> Result<PathBuf, Outcome> {
@@ -4148,7 +4148,7 @@ fn transaction_id() -> String {
     format!(
         "{}-{}",
         std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        i64::try_from(jiff::Timestamp::now().as_nanosecond()).unwrap_or_default()
     )
 }
 

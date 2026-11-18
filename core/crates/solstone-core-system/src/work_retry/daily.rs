@@ -37,7 +37,7 @@ pub fn evidence_with_roots(
         .iter()
         .find(|c| c.key == id.name)
         .ok_or("daily talent is no longer enabled")?;
-    let today = crate::daily_coverage::local_day(journal, chrono::Utc::now());
+    let today = crate::daily_coverage::local_day(journal, jiff::Timestamp::now());
     solstone_core_indexer::daily_evidence::compute_daily_evidence(
         journal,
         if id.name == "daily_schedule" {
@@ -126,7 +126,7 @@ fn observe_using_checked(
             journal,
             &record,
             &evidence,
-            crate::daily_coverage::local_now(journal, chrono::Utc::now()),
+            crate::daily_coverage::local_now(journal, jiff::Timestamp::now()),
         )
         .is_some()
     {
@@ -144,7 +144,7 @@ fn observe_using_checked(
                 &record,
                 &evidence.revision,
                 &evidence.contract,
-                &crate::daily_coverage::local_day(journal, chrono::Utc::now()),
+                &crate::daily_coverage::local_day(journal, jiff::Timestamp::now()),
                 journal,
             )
     };
@@ -197,7 +197,7 @@ fn request_using(
         journal,
         &record,
         &evidence,
-        crate::daily_coverage::local_now(journal, chrono::Utc::now()),
+        crate::daily_coverage::local_now(journal, jiff::Timestamp::now()),
     )
     .is_some()
     {

@@ -205,7 +205,7 @@ impl DailyUnitRecord {
             failure_count: 0,
             environmental_retry_day: None,
             attempt_day: None,
-            updated_at_ms: chrono::Utc::now().timestamp_millis(),
+            updated_at_ms: jiff::Timestamp::now().as_millisecond(),
         }
     }
 
@@ -438,7 +438,7 @@ fn validate_identity(identity: &DailyUnitIdentity) -> Result<(), DailyUnitError>
     } else {
         identity.day.len() == 8
             && identity.day.bytes().all(|b| b.is_ascii_digit())
-            && chrono::NaiveDate::parse_from_str(&identity.day, "%Y%m%d").is_ok()
+            && solstone_core_time::parse_day(&identity.day).is_some()
     };
     if !valid_day || identity.name.is_empty() || identity.facet.as_deref() == Some("") {
         return Err(DailyUnitError::Malformed(

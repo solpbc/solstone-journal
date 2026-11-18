@@ -131,7 +131,7 @@ fn path(journal: &Path) -> PathBuf {
 fn valid_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|c| c.is_ascii_digit())
-        && chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(day).is_some()
 }
 
 /// The identity rule activity work applies to its own records.
@@ -371,7 +371,7 @@ pub fn think_again(
         day,
         activities,
         thaw,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     )?;
     wake(journal, day);
     Ok(ask)
@@ -394,7 +394,7 @@ pub fn ask_corrected(root: &Path, day: &str, activities: &[AskedActivity]) -> Re
             day,
             activities,
             true,
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         )?;
         Ok(())
     }
@@ -497,12 +497,12 @@ pub const RECENT_DAYS: i64 = 7;
 /// A failed ask is logged and never fails the change.
 pub fn ask_after_relabel(journal: &Path, changed: &[RelabelledSegment]) {
     let today = now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
-    let earliest = today - chrono::Duration::days(RECENT_DAYS);
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
+    let earliest = today - jiff::Span::new().days(RECENT_DAYS);
     let mut by_day = BTreeMap::<&str, BTreeSet<(String, String)>>::new();
     for segment in changed {
-        let Ok(date) = chrono::NaiveDate::parse_from_str(&segment.day, "%Y%m%d") else {
+        let Some(date) = solstone_core_time::parse_day(&segment.day) else {
             continue;
         };
         if date < earliest || date > today {
@@ -532,26 +532,26 @@ pub fn ask_after_relabel(journal: &Path, changed: &[RelabelledSegment]) {
 
 #[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
-    static FIXED_NOW: std::cell::Cell<Option<chrono::DateTime<chrono::Utc>>> =
+    static FIXED_NOW: std::cell::Cell<Option<jiff::Timestamp>> =
         const { std::cell::Cell::new(None) };
 }
 
 /// Run `body` with [`ask_after_relabel`]'s clock fixed at `now` on this
 /// thread. Its asks are then recorded without waking work discovery.
 #[cfg(any(test, feature = "test-hooks"))]
-pub fn with_fixed_clock<T>(now: chrono::DateTime<chrono::Utc>, body: impl FnOnce() -> T) -> T {
+pub fn with_fixed_clock<T>(now: jiff::Timestamp, body: impl FnOnce() -> T) -> T {
     let previous = FIXED_NOW.replace(Some(now));
     let result = body();
     FIXED_NOW.set(previous);
     result
 }
 
-fn now() -> chrono::DateTime<chrono::Utc> {
+fn now() -> jiff::Timestamp {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(now) = FIXED_NOW.get() {
         return now;
     }
-    chrono::Utc::now()
+    jiff::Timestamp::now()
 }
 
 fn ask_again(
@@ -561,7 +561,7 @@ fn ask_again(
 ) -> Result<OwnerAsk, AskError> {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(now) = FIXED_NOW.get() {
-        return record(journal, day, activities, false, now.timestamp_millis());
+        return record(journal, day, activities, false, now.as_millisecond());
     }
     think_again(journal, day, activities, false)
 }
@@ -798,7 +798,7 @@ mod tests {
     }
 
     /// 03:00 UTC on 1 November is still 31 October in Denver.
-    fn denver_journal() -> (tempfile::TempDir, chrono::DateTime<chrono::Utc>) {
+    fn denver_journal() -> (tempfile::TempDir, jiff::Timestamp) {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         std::fs::write(
@@ -806,9 +806,7 @@ mod tests {
             serde_json::json!({"identity":{"timezone":"America/Denver"}}).to_string(),
         )
         .unwrap();
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-01T03:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now: jiff::Timestamp = "2026-11-01T03:00:00Z".parse().unwrap();
         (root, now)
     }
 
@@ -861,7 +859,7 @@ mod tests {
             asks[0].to_seed,
             BTreeSet::from([asked("work", "kept"), asked("home", "other_facet")])
         );
-        assert_eq!(asks[0].created_at_ms, now.timestamp_millis());
+        assert_eq!(asks[0].created_at_ms, now.as_millisecond());
     }
 
     #[test]

@@ -156,8 +156,10 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
                     .get("source_ms")?
                     .as_i64()
                     .filter(|ms| *ms >= 0)
-                    .and_then(chrono::DateTime::from_timestamp_millis)?
-                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .map(|ts| {
+                        solstone_core_time::utc_z(ts, solstone_core_time::Precision::Millis)
+                    })?;
                 Some((format!("{framing} in a message dated {sent}"), text))
             })
             .collect()
@@ -658,7 +660,7 @@ pub(crate) fn apply_story_cancellable(
         &patch,
         "story",
         "",
-        &chrono::Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         || crate::writers::check_cancellation(cancellation),
     )
     .map_err(|error| error.to_string())?

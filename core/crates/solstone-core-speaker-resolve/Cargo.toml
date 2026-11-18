@@ -41,11 +41,10 @@ test-hooks = []
 solstone-core-removals.workspace = true
 solstone-core-system.workspace = true
 getrandom.workspace = true
+jiff.workspace = true
 percent-encoding = "2.3.2"
 log.workspace = true
 ndarray = "=0.17.2"
-chrono.workspace = true
-chrono-tz.workspace = true
 rapidfuzz.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -63,6 +62,7 @@ solstone-core-processing-record.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-speaker-id.workspace = true
+solstone-core-time.workspace = true
 solstone-core-transcripts.workspace = true
 solstone-core-trash.workspace = true
 zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }

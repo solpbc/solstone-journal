@@ -4,7 +4,7 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone};
+use jiff::ZonedDateTime;
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogFormat, OplogWriter, create_oplog_at},
@@ -46,11 +46,11 @@ impl DailyLogWriter {
                 (true, day, instant)
             }
             None => {
-                let instant = Local::now().fixed_offset();
-                (false, instant.format("%Y%m%d").to_string(), instant)
+                let instant = ZonedDateTime::now();
+                (false, solstone_core_time::day_key(instant.date()), instant)
             }
         };
-        let writer = open_writer(&journal_root, &name, &reference, instant)?;
+        let writer = open_writer(&journal_root, &name, &reference, &instant)?;
         Ok(Self {
             journal_root,
             reference,
@@ -73,13 +73,13 @@ impl DailyLogWriter {
     /// Keep drain threads alive: rollover and write I/O errors are best effort.
     pub fn write(&mut self, message: &str) {
         if !self.pinned {
-            let instant = Local::now().fixed_offset();
-            let day_now = instant.format("%Y%m%d").to_string();
+            let instant = ZonedDateTime::now();
+            let day_now = solstone_core_time::day_key(instant.date());
             if day_now != self.current_day {
                 // Open before closing: a failure leaves the old lease and writer
                 // usable, so the next drain retries the rollover.
                 if let Ok(new_writer) =
-                    open_writer(&self.journal_root, &self.name, &self.reference, instant)
+                    open_writer(&self.journal_root, &self.name, &self.reference, &instant)
                 {
                     let old_writer = std::mem::replace(&mut self.writer, new_writer);
                     self.current_day = day_now;
@@ -97,7 +97,7 @@ fn open_writer(
     root: &std::path::Path,
     source: &str,
     run: &str,
-    instant: DateTime<FixedOffset>,
+    instant: &ZonedDateTime,
 ) -> io::Result<OplogWriter> {
     let root = JournalRoot::open(root).map_err(oplog_io)?;
     create_oplog_at(root, source, run, OplogFormat::Log, instant).map_err(oplog_io)
@@ -107,13 +107,13 @@ fn oplog_io(error: impl std::error::Error) -> io::Error {
     io::Error::other(error.to_string())
 }
 
-fn noon_in_local_fixed_offset(day: &str) -> io::Result<DateTime<FixedOffset>> {
-    let day = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| invalid_day())?;
-    let offset = Local::now().fixed_offset().offset().to_owned();
+fn noon_in_local_fixed_offset(day: &str) -> io::Result<ZonedDateTime> {
+    let day = solstone_core_time::parse_day(day).ok_or_else(invalid_day)?;
+    let offset = ZonedDateTime::now().offset();
     offset
-        .from_local_datetime(&day.and_hms_opt(12, 0, 0).expect("valid noon"))
-        .single()
-        .ok_or_else(invalid_day)
+        .to_timestamp(day.at(12, 0, 0, 0))
+        .map(|noon| solstone_core_time::at_offset(noon, offset))
+        .map_err(|_| invalid_day())
 }
 
 fn validate_component(kind: &str, value: &str) -> io::Result<()> {
@@ -128,9 +128,9 @@ fn validate_component(kind: &str, value: &str) -> io::Result<()> {
 
 fn validate_day(day: &str) -> io::Result<()> {
     validate_component("day", day)?;
-    NaiveDate::parse_from_str(day, "%Y%m%d")
+    solstone_core_time::parse_day(day)
         .map(|_| ())
-        .map_err(|_| invalid_day())
+        .ok_or_else(invalid_day)
 }
 
 fn invalid_day() -> io::Error {
@@ -172,7 +172,7 @@ mod tests {
             DailyLogWriter::new(root.path(), "ref", "process", Some("19990101".to_owned()))
                 .expect("old-day writer");
         writer.pinned = false;
-        let today = Local::now().format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(ZonedDateTime::now().date());
         fs::write(
             root.path().join(CHRONICLE_DIR).join(&today),
             "not a directory",
@@ -236,7 +236,7 @@ mod tests {
             !root
                 .path()
                 .join("chronicle")
-                .join(Local::now().format("%Y%m%d").to_string())
+                .join(solstone_core_time::day_key(ZonedDateTime::now().date()))
                 .join("health")
                 .exists()
         );

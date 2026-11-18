@@ -2635,7 +2635,7 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
         if let Some(model) = &promotion.model {
             header.insert("_solstone_thinking".to_owned(), json!({"model":model}));
         }
-        let mut record = json!({"schema":vocab::SCHEMA,"state":promotion.state,"reason_code":promotion.reason,"handler":vocab::HANDLER_DESCRIBE,"attempted_at":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),"input_size":promotion.input_size});
+        let mut record = json!({"schema":vocab::SCHEMA,"state":promotion.state,"reason_code":promotion.reason,"handler":vocab::HANDLER_DESCRIBE,"attempted_at":solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs),"input_size":promotion.input_size});
         stamp_processing(&mut record, promotion.attempt)?;
         if promotion.state == vocab::STATE_FAILED {
             record["attempts"] = json!(promotion.previous_attempts + 1);
@@ -2784,8 +2784,10 @@ fn keep_existing_reading(
         record["state"] = json!(promotion.state);
         record["reason_code"] = json!(promotion.reason);
     }
-    record["attempted_at"] =
-        json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    record["attempted_at"] = json!(solstone_core_time::utc_z(
+        jiff::Timestamp::now(),
+        solstone_core_time::Precision::Secs
+    ));
     record["attempts"] = json!(promotion.previous_attempts + 1);
     stamp_failed(&mut record, promotion.input, promotion.attempt)?;
     header["_solstone_processing"] = record;

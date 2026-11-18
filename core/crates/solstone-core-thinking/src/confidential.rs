@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use std::task::{Poll, Waker};
 use std::time::Instant;
 
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::derive_active_brain_lane;
@@ -615,7 +614,7 @@ pub fn provision_confidential_handoff(
         let credential = values["credential"].as_str().expect("validated credential");
         let next_local = json!({"endpoint_url":values["endpoint_url"],"served_model_id":values["served_model_id"],"credential":credential});
         let next_active = json!({"provider":"local","model":LOCAL_MODEL});
-        let next_service = json!({"account_id":values["account_id"],"endpoint_url":values["endpoint_url"],"served_model_id":values["served_model_id"],"credential_created_at":values["created_at"],"enabled_at":Utc::now().to_rfc3339(),CREDENTIAL_FINGERPRINT_FIELD:fingerprint(credential),"prior_active":prior_active,"prior_local_endpoint":prior_local});
+        let next_service = json!({"account_id":values["account_id"],"endpoint_url":values["endpoint_url"],"served_model_id":values["served_model_id"],"credential_created_at":values["created_at"],"enabled_at":solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),CREDENTIAL_FINGERPRINT_FIELD:fingerprint(credential),"prior_active":prior_active,"prior_local_endpoint":prior_local});
         let changed = existing_providers.and_then(|providers| providers.get("local")) != Some(&next_local)
             || existing_providers.and_then(|providers| providers.get("active")) != Some(&next_active)
             || config.get("services").and_then(Value::as_object).and_then(|services| services.get("confidential")) != Some(&next_service);

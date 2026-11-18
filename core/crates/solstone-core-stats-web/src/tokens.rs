@@ -411,7 +411,7 @@ mod tests {
         rt.block_on(async {
             let response = crate::routes(
                 root.to_path_buf(),
-                crate::Clock::new(|| chrono::DateTime::UNIX_EPOCH),
+                crate::Clock::new(|| jiff::Timestamp::UNIX_EPOCH),
             )
             .oneshot(Request::get(path).body(Body::empty()).expect("request"))
             .await

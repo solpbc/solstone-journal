@@ -13,17 +13,20 @@ use solstone_core_sol_link::ledger::TransportRefusal;
 /// paired.
 const RECENT_DAYS: i64 = 7;
 
-fn is_recent(refusal: &TransportRefusal, now: chrono::DateTime<chrono::Utc>) -> bool {
-    chrono::DateTime::parse_from_rfc3339(&refusal.latest)
-        .map(|latest| now.signed_duration_since(latest) <= chrono::Duration::days(RECENT_DAYS))
+fn is_recent(refusal: &TransportRefusal, now: jiff::Timestamp) -> bool {
+    solstone_core_time::parse_rfc3339(&refusal.latest)
+        .map(|latest| {
+            now.duration_since(latest.timestamp())
+                <= jiff::SignedDuration::from_hours(24 * RECENT_DAYS)
+        })
         // An unreadable date is shown rather than hidden.
         .unwrap_or(true)
 }
 
 fn refusal_date(refusal: &TransportRefusal) -> String {
-    chrono::DateTime::parse_from_rfc3339(&refusal.latest)
+    solstone_core_time::parse_rfc3339(&refusal.latest)
         .ok()
-        .map(|timestamp| timestamp.format("%Y-%m-%d").to_string())
+        .map(|timestamp| timestamp.strftime("%Y-%m-%d").to_string())
         .unwrap_or_else(|| "unknown".into())
 }
 

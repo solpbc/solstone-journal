@@ -237,7 +237,7 @@ fn invoke_native_library_paths(journal: &std::path::Path) {
         "20260101",
         "120000_60",
         None,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let _ = solstone_core_system_health::find_segment_dir(journal, "20260101", "120000_60", None);
     let mut machine = ActivityStateMachine::hydrate(Some(journal), None);

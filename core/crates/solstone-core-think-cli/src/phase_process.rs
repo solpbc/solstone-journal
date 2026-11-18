@@ -108,7 +108,7 @@ impl PhaseProcessRunner for HostedPhaseRunner {
                 let run = solstone_core_journal_stats_cli::run_cli_with_cache_checked(
                     &[],
                     journal,
-                    chrono::Utc::now(),
+                    jiff::Timestamp::now(),
                     &self.talent_root,
                     &self.apps_root,
                     &backlog,

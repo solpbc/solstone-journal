@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
@@ -20,11 +19,14 @@ use crossterm::terminal::{
     enable_raw_mode, size,
 };
 use crossterm::{execute, queue};
+use jiff::Timestamp;
+use jiff::tz::Offset;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection, read_journal_config};
 use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
 use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_path};
 use solstone_core_system_health::sanitize_os_bytes_for_terminal;
+use solstone_core_time::civil_display;
 
 use crate::{
     TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopState, TopTerminal,
@@ -116,7 +118,7 @@ impl TopClock for ProductionClock {
         self.started.elapsed().as_secs_f64()
     }
     fn datetime(&self) -> Value {
-        json!({"datetime": Utc::now().naive_utc().to_string()})
+        json!({"datetime": civil_display(Offset::UTC.to_datetime(Timestamp::now()))})
     }
     fn sleep(&mut self, seconds: f64) -> Result<(), String> {
         std::thread::sleep(Duration::from_secs_f64(seconds.max(0.0)));
@@ -138,8 +140,8 @@ impl TopBrainSource for ProductionBrain {
             .map_err(|error| error.to_string())?
             .config
             .unwrap_or_default();
-        let inspection = inspect_brain_state(&self.journal, &config, Utc::now());
-        let presentation = present_brain_inspection(&inspection, Utc::now());
+        let inspection = inspect_brain_state(&self.journal, &config, Timestamp::now());
+        let presentation = present_brain_inspection(&inspection, Timestamp::now());
         let mut lines = vec![presentation.headline];
         if !presentation.reason_text.is_empty() {
             lines.push(format!("  {}", presentation.reason_text));

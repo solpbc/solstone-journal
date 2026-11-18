@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 use solstone_core_indexer_store::db::{db_path, open_index};
@@ -984,7 +983,10 @@ fn reference_day_defaults_to_owner_zone_time() {
     let zone = solstone_core_journal_config::owner_zone(&root);
     assert_eq!(
         response.reference_day,
-        Utc::now().with_timezone(&zone).format("%Y%m%d").to_string()
+        jiff::Timestamp::now()
+            .to_zoned_datetime(zone)
+            .strftime("%Y%m%d")
+            .to_string()
     );
     cleanup(root);
 }

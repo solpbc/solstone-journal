@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_system_health::{
     BACKLOG_DEFAULT_WINDOW, BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK,
@@ -19,8 +19,8 @@ use tempfile::TempDir;
 
 const NOW_MS: i64 = 1_800_000_000_000;
 
-fn now() -> DateTime<Utc> {
-    DateTime::from_timestamp_millis(NOW_MS).unwrap()
+fn now() -> Timestamp {
+    Timestamp::from_millisecond(NOW_MS).unwrap()
 }
 
 fn health(root: &Path, day: &str, lines: &[&str]) {

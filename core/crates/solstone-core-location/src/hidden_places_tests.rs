@@ -84,7 +84,7 @@ fn day(root: &Path) -> DayLocation {
         tier(),
         None,
         &directory(),
-        chrono_tz::America::Denver,
+        &solstone_core_time::zone("America/Denver").unwrap(),
     )
 }
 
@@ -247,11 +247,7 @@ fn an_instant_at_a_hidden_place_finds_nothing_beside_it() {
     let mut reconciler = Reconciler::default();
     let report = reconcile(root.path(), &mut reconciler);
     assert!(report.failures.is_empty(), "{report:?}");
-    let instant = |iso: &str| {
-        chrono::DateTime::parse_from_rfc3339(iso)
-            .unwrap()
-            .timestamp()
-    };
+    let instant = |iso: &str| iso.parse::<jiff::Timestamp>().unwrap().as_second();
     let visit = instant("2026-10-01T21:30:00Z");
     let golden = instant("2026-10-01T20:02:00Z");
     let mut days = std::collections::BTreeMap::new();
@@ -290,7 +286,13 @@ fn a_damaged_places_store_describes_nothing_beside_an_activity() {
 }
 
 fn reconcile(root: &Path, reconciler: &mut Reconciler) -> crate::projection::ReconcileReport {
-    reconciler.reconcile(root, tier(), None, &directory(), chrono_tz::America::Denver)
+    reconciler.reconcile(
+        root,
+        tier(),
+        None,
+        &directory(),
+        &solstone_core_time::zone("America/Denver").unwrap(),
+    )
 }
 
 /// Visits to one spot on two days, which make a place.

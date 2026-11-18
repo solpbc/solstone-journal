@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chrono::{TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_convey_shell::recovery_drain::{pause_admitted_work, register_recovery_hooks};
@@ -97,7 +97,7 @@ async fn test_barrier_restore_ordering() {
     );
 
     let now_ref = Arc::new(Mutex::new(
-        Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+        "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap(),
     ));
     let now_c = now_ref.clone();
     let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -151,7 +151,7 @@ async fn test_barrier_restore_ordering() {
     let _hook_guard = WaitHookGuard;
 
     // The parked read is itself a full pass, so a reset-before-drain can stamp.
-    *now_ref.lock().unwrap() += chrono::Duration::hours(2);
+    *now_ref.lock().unwrap() += SignedDuration::from_hours(2);
 
     let root_coord = Arc::clone(&root);
     let (paused_tx, paused_rx) = std::sync::mpsc::channel();
@@ -241,7 +241,7 @@ async fn test_restore_notification() {
     .await
     .expect("client connected to callosum socket server");
 
-    let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+    let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
     let app =
         solstone_core_transcripts_web::router(temp.path().to_path_buf(), Clock::fixed(now), || {
             axum::response::Response::new(Body::empty())

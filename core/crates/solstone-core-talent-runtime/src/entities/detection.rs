@@ -479,7 +479,7 @@ pub(crate) fn apply_result_cancellable(
         "dropped": counts.dropped,
         "errored": counts.errored,
         "error": error,
-        "ts": chrono::Utc::now().timestamp_millis(),
+        "ts": jiff::Timestamp::now().as_millisecond(),
     });
     crate::writers::check_cancellation(cancellation)?;
     crate::partial_input::copy_marker(output, payload.as_object_mut().expect("outcome object"));

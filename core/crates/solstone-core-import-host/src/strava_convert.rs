@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     BodyMoveOutcome, BodyRecordPlace, LineRemoval, StravaConvertedLine, activity_value_truthy,
@@ -204,8 +205,8 @@ pub(crate) struct ConversionScope<'a> {
     pub publishes_tiles: bool,
 }
 
-fn now_text(now: DateTime<Utc>) -> String {
-    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+fn now_text(now: Timestamp) -> String {
+    solstone_core_time::utc_z(now, solstone_core_time::Precision::Secs)
 }
 
 /// Every Strava-stream record in every day file, and how many files couldn't
@@ -448,11 +449,11 @@ fn live_workouts(journal: &Path) -> (Vec<Workout>, u64) {
                 .and_then(parse_source_time)
                 .zip(workout.row.end.as_deref().and_then(parse_source_time));
             if let Some((start, end)) = span {
-                for at in strava_cut(start, end, zone) {
+                for at in strava_cut(&start, &end, zone.as_ref()) {
                     workout.keys.entry(at).or_insert(Rank::Cut);
                 }
-                if let Some(zone) = zone {
-                    add_misplaced(&mut workout, start, end, zone);
+                if let Some(zone) = &zone {
+                    add_misplaced(&mut workout, &start, &end, zone);
                 }
             }
             workout
@@ -501,11 +502,11 @@ fn refresh_workouts(journal: &Path, workouts: &mut [Workout], component: &Compon
 
 fn add_misplaced(
     workout: &mut Workout,
-    start: DateTime<FixedOffset>,
-    end: DateTime<FixedOffset>,
-    zone: chrono_tz::Tz,
+    start: &ZonedDateTime,
+    end: &ZonedDateTime,
+    zone: &TimeZone,
 ) {
-    let elapsed = u64::try_from((end - start).num_seconds()).unwrap_or(1);
+    let elapsed = u64::try_from(end.duration_since(start).as_secs()).unwrap_or(1);
     for at in misread_tile_keys(start, elapsed, zone) {
         workout.keys.entry(at).or_insert(Rank::Misplaced);
     }
@@ -929,7 +930,7 @@ fn write_workout(
         Some((first.day.as_str(), first.key.as_str())),
     )
     .ok_or("a workout's component has no line for it")?;
-    let arrived = now.get(..10).unwrap_or("").replace('-', "");
+    let arrived = arrived_day(journal, now);
     let fresh = record_for(STRAVA_STREAM, &key, &workout.row, &arrived);
     write_body_record_with(journal, &place, &record_id(&key), |current| {
         let base = match current {
@@ -1097,7 +1098,7 @@ pub(crate) fn convert_held(
     journal: &Path,
     held: &FileLock,
     scope: ConversionScope<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> ConversionCounts {
     let legacy = legacy_matches(journal);
     convert_held_with_matches(journal, held, scope, now, &legacy)
@@ -1107,7 +1108,7 @@ pub(crate) fn convert_held_with_matches(
     journal: &Path,
     held: &FileLock,
     scope: ConversionScope<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     legacy: &LegacyMatches,
 ) -> ConversionCounts {
     let mut counts = ConversionCounts::default();
@@ -1432,13 +1433,13 @@ fn finish_open_moves(journal: &Path, counts: &mut ConversionCounts) {
 /// releasing the Strava lock between them so a delete or a card never waits on
 /// the whole walk. Best effort: anything left waits for the next pass.
 pub fn sweep_strava_conversions(journal: &Path) {
-    let counts = sweep(journal, Utc::now());
+    let counts = sweep(journal, Timestamp::now());
     if counts != ConversionCounts::default() {
         log::info!("Strava conversion: {counts:?}");
     }
 }
 
-pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
+pub(crate) fn sweep(journal: &Path, now: Timestamp) -> ConversionCounts {
     let mut counts = ConversionCounts::default();
     // It publishes tiles: not while a Strava delete or recovery is part way. The
     // next start or import carries on.
@@ -1522,3 +1523,34 @@ fn write_marker_if_finished(journal: &Path, lock_options: LockOptions) {
 #[cfg(test)]
 #[path = "strava_convert_tests.rs"]
 mod tests;
+
+/// The owner's day a converted workout arrived on, as the other body sources
+/// record it: `now` (an RFC 3339 instant) read in the owner zone.
+fn arrived_day(journal: &Path, now: &str) -> String {
+    solstone_core_time::parse_rfc3339(now)
+        .map(|at| solstone_core_journal_config::owner_day(journal, at.timestamp()))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod arrived_day_tests {
+    #[test]
+    fn a_workout_arrives_on_the_owners_day() {
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"identity":{"timezone":"America/Denver"}}"#,
+        )
+        .unwrap();
+        // 03:30 UTC on the 17th is the evening of the 16th in Denver.
+        assert_eq!(
+            super::arrived_day(journal.path(), "2026-11-17T03:30:00Z"),
+            "20261116"
+        );
+        assert_eq!(
+            super::arrived_day(journal.path(), "2026-11-17T07:30:00Z"),
+            "20261117"
+        );
+    }
+}

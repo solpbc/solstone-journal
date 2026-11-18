@@ -79,7 +79,7 @@ impl CortexBoundary for HistoryCortex {
         reserved: Option<&str>,
         prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
     ) -> Result<String, DispatchFailure> {
-        let now = Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         let id = reserved.map(str::to_owned).unwrap_or_else(|| {
             solstone_core_journal_io::cortex_use::allocate_cortex_use_id(&self.root, now)
                 .unwrap()
@@ -296,12 +296,12 @@ fn history_qualification(held_output: Option<&'static str>) {
         &root,
         DAY.into(),
         root.join("chronicle").join(DAY),
-        Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         payload.join("talent"),
         payload.join("apps"),
         cortex.clone(),
         Arc::new(LocalIndex),
-        Arc::new(|| Utc::now().timestamp_millis()),
+        Arc::new(|| jiff::Timestamp::now().as_millisecond()),
         None,
         Arc::new(|| false),
     );
@@ -393,9 +393,9 @@ fn history_qualification(held_output: Option<&'static str>) {
         assert_eq!(std::fs::read(&provenance).unwrap(), old_receipt);
         assert!(crate::activity_work::rebuild_receipts(&context, DAY).is_err());
         let calls = cortex.calls.lock().unwrap().clone();
-        let resumed = context
-            .clone()
-            .with_event_clock(Arc::new(|| Utc::now().timestamp_millis() + 3_600_000));
+        let resumed = context.clone().with_event_clock(Arc::new(|| {
+            jiff::Timestamp::now().as_millisecond() + 3_600_000
+        }));
         let blocked =
             crate::activity::run(&resumed, &mut log, &writing_id, "home", false, false, 1).unwrap();
         assert!(blocked.failed > 0);
@@ -785,9 +785,9 @@ fn exercise_owner_interruption(
     let accepted = cortex.calls.lock().unwrap()[start..].to_vec();
     // Reconciliation refuses the retained partial work; the ordinary owner
     // resumes its durable uses and owes only units not accepted before Stop.
-    let resumed = base
-        .clone()
-        .with_event_clock(Arc::new(|| Utc::now().timestamp_millis() + 3_600_000));
+    let resumed = base.clone().with_event_clock(Arc::new(|| {
+        jiff::Timestamp::now().as_millisecond() + 3_600_000
+    }));
     assert!(crate::activity_work::reconcile_retained(&resumed, &mut log, 1).is_err());
     assert_eq!(cortex.calls.lock().unwrap()[start..], accepted);
     let result =

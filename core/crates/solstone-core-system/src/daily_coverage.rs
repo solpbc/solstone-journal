@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::{DateTime, Time};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_indexer::daily_evidence::{DailyEvidence, DayProjectionCache};
@@ -77,8 +78,8 @@ pub fn package_roots() -> Result<(PathBuf, PathBuf), String> {
 }
 
 /// The owner's day (`YYYYMMDD`) at `now`, in the journal's owner zone.
-pub fn local_day(journal: &Path, now: DateTime<Utc>) -> String {
-    local_now(journal, now).format("%Y%m%d").to_string()
+pub fn local_day(journal: &Path, now: Timestamp) -> String {
+    solstone_core_time::day_key(local_now(journal, now).date())
 }
 
 /// The first owner-local day admitted by a registered input policy.
@@ -86,27 +87,27 @@ pub fn local_day(journal: &Path, now: DateTime<Utc>) -> String {
 /// That day is the owner's calendar date at `now`, minus
 /// the policy lookback. The chronicle is not scanned.
 pub fn daily_input_since_day(
-    now: DateTime<Utc>,
-    zone: &solstone_core_journal_config::Tz,
+    now: Timestamp,
+    zone: &solstone_core_journal_config::TimeZone,
     lookback_closed_days: i64,
 ) -> String {
-    now.with_timezone(zone)
-        .date_naive()
-        .checked_sub_signed(chrono::Duration::days(lookback_closed_days))
-        .expect("a calendar date minus the registered lookback")
-        .format("%Y%m%d")
-        .to_string()
+    let since = now
+        .to_zoned_datetime(zone.clone())
+        .date()
+        .checked_sub(jiff::Span::new().days(lookback_closed_days))
+        .expect("a calendar date minus the registered lookback");
+    solstone_core_time::day_key(since)
 }
 
 /// Initialize registered input cutoffs before automatic or explicit coverage.
 /// Reads remain pure; this coordinator delegates persistence to the config owner.
-pub fn activate_daily_inputs(journal: &Path, now: DateTime<Utc>) -> Result<(), String> {
+pub fn activate_daily_inputs(journal: &Path, now: Timestamp) -> Result<(), String> {
     activate_daily_inputs_checked(journal, now, &|| Ok(()))
 }
 
 pub fn activate_daily_inputs_checked(
     journal: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     checkpoint()?;
@@ -126,9 +127,9 @@ pub fn activate_daily_inputs_checked(
 }
 
 /// The owner's wall-clock time at `now`, in the journal's owner zone.
-pub fn local_now(journal: &Path, now: DateTime<Utc>) -> chrono::NaiveDateTime {
-    now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .naive_local()
+pub fn local_now(journal: &Path, now: Timestamp) -> DateTime {
+    now.to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .datetime()
 }
 
 /// The hour of the owner's day at which a morning briefing's morning is over.
@@ -223,7 +224,7 @@ pub fn accepted_reuse(
     journal: &Path,
     record: &solstone_core_journal_io::DailyUnitRecord,
     evidence: &DailyEvidence,
-    now: chrono::NaiveDateTime,
+    now: DateTime,
 ) -> Option<Option<AcceptedReuse>> {
     if record.evidence_revision == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
         && record.contract_digest == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
@@ -266,21 +267,27 @@ pub fn accepted_reuse(
     {
         return None;
     }
-    let day = chrono::NaiveDate::parse_from_str(&record.identity.day, "%Y%m%d").ok()?;
+    let day = solstone_core_time::parse_day(&record.identity.day)?;
     let today = now.date();
     // The briefing for day D is presented on the morning of D+1, and its
     // morning is over at noon.
     if record.identity.name == "morning_briefing"
-        && (day + chrono::Duration::days(1))
-            .and_hms_opt(BRIEFING_MORNING_ENDS_HOUR, 0, 0)
-            .is_some_and(|noon| now >= noon)
+        && day
+            .tomorrow()
+            .ok()
+            .zip(
+                i8::try_from(BRIEFING_MORNING_ENDS_HOUR)
+                    .ok()
+                    .and_then(|hour| Time::new(hour, 0, 0, 0).ok()),
+            )
+            .is_some_and(|(next, noon)| now >= next.to_datetime(noon))
     {
         if crate::owner_ask::thawed(journal, &record.identity.day) {
             return None;
         }
         return Some(Some(AcceptedReuse::FrozenBriefing));
     }
-    if day < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS)
+    if day < today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS)
         && evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision
     {
         return Some(Some(AcceptedReuse::EarlierContract));
@@ -329,7 +336,7 @@ fn read_daily_coverage_with_cache(
     for config in configs {
         // Global maintenance is reported independently of historical evidence coverage.
         if config.key == "daily_schedule" {
-            let today = local_day(journal, Utc::now());
+            let today = local_day(journal, Timestamp::now());
             maintenance = Some(match read_unit_coverage(journal, &today, &config, None) {
                 Ok(mut unit) => {
                     if unit.state == CoverageState::HistoricalUnverified {
@@ -390,7 +397,7 @@ fn read_daily_coverage_with_cache(
     Ok(DailyCoverage {
         maintenance,
         day: day.to_owned(),
-        as_of_ms: Utc::now().timestamp_millis(),
+        as_of_ms: Timestamp::now().as_millisecond(),
         state,
         units,
     })
@@ -445,7 +452,7 @@ fn read_unit_coverage_cached(
         Err(error) => return Err(error),
     };
     let (e, contract) = (evidence.revision.clone(), evidence.contract.clone());
-    let now = local_now(journal, Utc::now());
+    let now = local_now(journal, Timestamp::now());
     let record = observe_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
     let mut reason = None;
     let mut earlier_version = None;
@@ -682,10 +689,9 @@ pub fn conflict_attempt_day(
     journal: &Path,
 ) -> Option<String> {
     match record.attempt_day.as_deref() {
-        Some(day) => chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        Some(day) => solstone_core_time::parse_day(day).map(|_| day.to_owned()),
+        None => Timestamp::from_millisecond(record.updated_at_ms)
             .ok()
-            .map(|_| day.to_owned()),
-        None => chrono::DateTime::from_timestamp_millis(record.updated_at_ms)
             .map(|instant| local_day(journal, instant)),
     }
 }
@@ -1242,15 +1248,10 @@ mod tests {
     /// Days before the journal's real today; the coverage reader ages units
     /// against the wall clock, so these fixtures do too.
     fn closed_days(journal: &Path, count: i64) -> Vec<String> {
-        let today =
-            chrono::NaiveDate::parse_from_str(&local_day(journal, Utc::now()), "%Y%m%d").unwrap();
+        let today = solstone_core_time::parse_day(&local_day(journal, Timestamp::now())).unwrap();
         (1..=count)
             .rev()
-            .map(|back| {
-                (today - chrono::Duration::days(back))
-                    .format("%Y%m%d")
-                    .to_string()
-            })
+            .map(|back| solstone_core_time::day_key(today - jiff::Span::new().days(back)))
             .collect()
     }
 
@@ -1325,7 +1326,7 @@ mod tests {
             .iter()
             .map(|day| unit_state(root, day, &talent, &apps))
             .collect();
-        let today = local_day(root, Utc::now());
+        let today = local_day(root, Timestamp::now());
         solstone_core_journal_config_write::insert_daily_input_since(
             root,
             "location",
@@ -1395,11 +1396,9 @@ mod tests {
             unit_state(root, &days[0], &talent, &apps).state,
             CoverageState::Current
         );
-        let today =
-            chrono::NaiveDate::parse_from_str(&local_day(root, Utc::now()), "%Y%m%d").unwrap();
-        let cutoff = (today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS))
-            .format("%Y%m%d")
-            .to_string();
+        let today = solstone_core_time::parse_day(&local_day(root, Timestamp::now())).unwrap();
+        let cutoff =
+            solstone_core_time::day_key(today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS));
         solstone_core_journal_config_write::insert_daily_input_since(
             root,
             "location",
@@ -1460,11 +1459,9 @@ mod tests {
             assert_eq!(unit.state, CoverageState::Current, "{day} is frozen");
             assert_eq!(unit.earlier_version, Some(AcceptedReuse::FrozenBriefing));
         }
-        let today =
-            chrono::NaiveDate::parse_from_str(&local_day(root, Utc::now()), "%Y%m%d").unwrap();
-        let cutoff = (today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS))
-            .format("%Y%m%d")
-            .to_string();
+        let today = solstone_core_time::parse_day(&local_day(root, Timestamp::now())).unwrap();
+        let cutoff =
+            solstone_core_time::day_key(today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS));
         solstone_core_journal_config_write::insert_daily_input_since(
             root,
             "location",
@@ -1556,11 +1553,9 @@ mod tests {
 
     #[test]
     fn daily_input_since_day_is_local_midnight_minus_seven() {
-        let zone: solstone_core_journal_config::Tz = "America/Denver".parse().unwrap();
-        let before_midnight =
-            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 12, 5, 59, 59).unwrap();
-        let at_midnight =
-            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 12, 6, 0, 0).unwrap();
+        let zone = solstone_core_time::zone("America/Denver").unwrap();
+        let before_midnight: Timestamp = "2026-10-12T05:59:59Z".parse().unwrap();
+        let at_midnight: Timestamp = "2026-10-12T06:00:00Z".parse().unwrap();
         assert_eq!(daily_input_since_day(before_midnight, &zone, 7), "20261004");
         assert_eq!(daily_input_since_day(at_midnight, &zone, 7), "20261005");
     }
@@ -1580,17 +1575,13 @@ mod tests {
         let (dir, talent, apps) = fixture();
         let root = dir.path();
         utc_journal(root, serde_json::json!({}));
-        let zone: solstone_core_journal_config::Tz = "UTC".parse().unwrap();
-        let now = chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 12, 15, 0, 0).unwrap();
-        let today = now.date_naive();
-        let wall = now.naive_utc();
+        let zone = solstone_core_time::zone("UTC").unwrap();
+        let now: Timestamp = "2026-10-12T15:00:00Z".parse().unwrap();
+        let wall = jiff::tz::Offset::UTC.to_datetime(now);
+        let today = wall.date();
         let days: Vec<String> = (1..=120)
             .rev()
-            .map(|back| {
-                (today - chrono::Duration::days(back))
-                    .format("%Y%m%d")
-                    .to_string()
-            })
+            .map(|back| solstone_core_time::day_key(today - jiff::Span::new().days(back)))
             .collect();
         for day in &days {
             source(root, day, "# Flow\nMeeting.");
@@ -1601,16 +1592,12 @@ mod tests {
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
         )
         .unwrap();
-        let briefing_day = (today - chrono::Duration::days(3))
-            .format("%Y%m%d")
-            .to_string();
+        let briefing_day = solstone_core_time::day_key(today - jiff::Span::new().days(3));
         accept_named(root, &briefing_day, "morning_briefing", &talent, &apps);
         let cutoff = daily_input_since_day(now, &zone, 7);
         assert_eq!(
             cutoff,
-            (today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS))
-                .format("%Y%m%d")
-                .to_string()
+            solstone_core_time::day_key(today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS))
         );
         assert_eq!(
             solstone_core_journal_config_write::insert_daily_input_since(
@@ -1648,8 +1635,8 @@ mod tests {
                 .unwrap();
             let current = evidence(suggestion, day);
             let reuse = accepted_reuse(root, &record, &current, wall);
-            let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-            if date >= chrono::NaiveDate::parse_from_str(&cutoff, "%Y%m%d").unwrap() {
+            let date = solstone_core_time::parse_day(day).unwrap();
+            if date >= solstone_core_time::parse_day(&cutoff).unwrap() {
                 assert_eq!(reuse, None, "{day}");
                 reowed.push(day.clone());
             } else {
@@ -1675,7 +1662,7 @@ mod tests {
             ),
             Some(Some(AcceptedReuse::FrozenBriefing))
         );
-        let later = now + chrono::Duration::days(3);
+        let later = now + jiff::SignedDuration::from_hours(24 * 3);
         let later_cutoff = daily_input_since_day(later, &zone, 7);
         assert_ne!(later_cutoff, cutoff);
         assert_eq!(
@@ -1713,7 +1700,7 @@ mod tests {
             accepted_reuse(root, &recent_record, &evidence(suggestion, recent), wall),
             None
         );
-        let open = today.format("%Y%m%d").to_string();
+        let open = solstone_core_time::day_key(today);
         source(root, &open, "# Flow\nMeeting.");
         accept_named(root, &open, SUGGEST, &talent, &apps);
         fs::write(
@@ -1732,8 +1719,8 @@ mod tests {
                 .unwrap();
             let current = evidence(suggestion, day);
             let reuse = accepted_reuse(root, &record, &current, wall);
-            let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-            if date < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS) {
+            let date = solstone_core_time::parse_day(day).unwrap();
+            if date < today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS) {
                 assert_eq!(reuse, Some(Some(AcceptedReuse::EarlierContract)), "{day}");
             } else {
                 assert_eq!(reuse, None, "{day}");
@@ -1775,13 +1762,8 @@ mod tests {
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("facet.json"), format!(r#"{{"title":"{facet}"}}"#)).unwrap();
         }
-        let today =
-            chrono::NaiveDate::parse_from_str(&local_day(root, Utc::now()), "%Y%m%d").unwrap();
-        let day = |back: i64| {
-            (today - chrono::Duration::days(back))
-                .format("%Y%m%d")
-                .to_string()
-        };
+        let today = solstone_core_time::parse_day(&local_day(root, Timestamp::now())).unwrap();
+        let day = |back: i64| solstone_core_time::day_key(today - jiff::Span::new().days(back));
         let write = |rel: String, text: &str| {
             let path = root.join(rel);
             fs::create_dir_all(path.parent().unwrap()).unwrap();

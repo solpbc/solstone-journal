@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{AppendError, append_text_checked};
 
@@ -131,7 +131,7 @@ fn append_journal_action_log_with_hint_boundary(
         .and_then(Value::as_str)
         .and_then(solstone_core_journal_config::parse_zone)
         .unwrap_or_else(solstone_core_journal_config::host_zone);
-    let day = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
+    let day = solstone_core_time::day_key(Timestamp::now().to_zoned_datetime(zone).date());
     let check = || check_actions().map_err(|error| error.to_string());
     append_text_bound_checked(
         &actions,
@@ -178,10 +178,11 @@ pub fn append_action_log_checked(
     params: Value,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), AppendError> {
-    let day = Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(
+        Timestamp::now()
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+            .date(),
+    );
     append_action_log_at_day(
         journal_root,
         facet,
@@ -256,7 +257,10 @@ fn action_record(
     params: Value,
 ) -> Value {
     let mut record = serde_json::Map::new();
-    record.insert("timestamp".to_owned(), json!(Utc::now().to_rfc3339()));
+    record.insert(
+        "timestamp".to_owned(),
+        json!(solstone_core_time::utc_rfc3339(Timestamp::now())),
+    );
     record.insert("source".to_owned(), json!(source));
     record.insert("actor".to_owned(), json!(actor));
     record.insert("action".to_owned(), json!(action));
@@ -523,10 +527,8 @@ mod tests {
         )
         .expect("action log");
         let zone = solstone_core_journal_config::owner_zone(root.path());
-        let day = chrono::Utc::now()
-            .with_timezone(&zone)
-            .format("%Y%m%d")
-            .to_string();
+        let day =
+            solstone_core_time::day_key(jiff::Timestamp::now().to_zoned_datetime(zone).date());
         let line = fs::read_to_string(
             root.path()
                 .join("facets/work/logs")

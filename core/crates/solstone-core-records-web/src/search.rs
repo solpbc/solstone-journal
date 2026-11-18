@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use chrono::{Datelike, NaiveDate};
+use jiff::{Timestamp, civil::Date};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -501,7 +501,7 @@ fn parse_day_bound(name: &str, value: Option<&str>) -> Result<Option<String>, St
     if !valid_day(value) {
         return Err(format!("{name} must be YYYYMMDD"));
     }
-    NaiveDate::parse_from_str(value, "%Y%m%d").map_err(|_| format!("{name} must be a real day"))?;
+    solstone_core_time::parse_day(value).ok_or_else(|| format!("{name} must be a real day"))?;
     Ok(Some(value.to_owned()))
 }
 
@@ -518,14 +518,14 @@ fn valid_day(day: &str) -> bool {
 }
 
 /// Today in the journal's owner zone.
-fn today(journal: &std::path::Path) -> NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive()
+fn today(journal: &std::path::Path) -> Date {
+    Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date()
 }
 
 fn today_day(journal: &std::path::Path) -> String {
-    today(journal).format("%Y%m%d").to_string()
+    solstone_core_time::day_key(today(journal))
 }
 
 struct Facet {
@@ -580,7 +580,7 @@ fn facets(journal_root: &std::path::Path) -> BTreeMap<String, Facet> {
 }
 
 fn format_date(day: &str) -> String {
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").expect("indexed day is valid");
+    let date = Date::strptime("%Y%m%d", day).expect("indexed day is valid");
     let suffix = match date.day() % 100 {
         11..=13 => "th",
         _ => match date.day() % 10 {
@@ -592,8 +592,8 @@ fn format_date(day: &str) -> String {
     };
     format!(
         "{} {} {}{}",
-        date.format("%A"),
-        date.format("%B"),
+        date.strftime("%A"),
+        date.strftime("%B"),
         date.day(),
         suffix
     )

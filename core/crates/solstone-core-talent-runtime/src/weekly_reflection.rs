@@ -40,7 +40,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
+use jiff::Timestamp;
+use jiff::civil::{Date, Weekday};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -57,24 +58,24 @@ use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, stage_
 
 #[cfg(test)]
 thread_local! {
-    static PINNED_STAGE_NOW: Cell<Option<DateTime<Utc>>> = const { Cell::new(None) };
+    static PINNED_STAGE_NOW: Cell<Option<Timestamp>> = const { Cell::new(None) };
 }
 
 #[cfg(test)]
-pub(crate) fn set_pinned_stage_now(now: Option<DateTime<Utc>>) {
+pub(crate) fn set_pinned_stage_now(now: Option<Timestamp>) {
     PINNED_STAGE_NOW.with(|cell| cell.set(now));
 }
 
 #[cfg(test)]
-fn pinned_or_utc_now() -> DateTime<Utc> {
+fn pinned_or_utc_now() -> Timestamp {
     PINNED_STAGE_NOW
         .with(|cell| cell.get())
-        .unwrap_or_else(Utc::now)
+        .unwrap_or_else(Timestamp::now)
 }
 
 #[cfg(not(test))]
-fn pinned_or_utc_now() -> DateTime<Utc> {
-    Utc::now()
+fn pinned_or_utc_now() -> Timestamp {
+    Timestamp::now()
 }
 
 static PLACEHOLDER_RE: OnceLock<Regex> = OnceLock::new();
@@ -137,7 +138,7 @@ const SAID_PER_DAY: usize = 3;
 pub struct WeeklyReflectionState {
     pub start_day: String,
     pub end_day: String,
-    pub today: NaiveDate,
+    pub today: Date,
     pub generated_at: String,
     pub day_reports: Vec<DayReport>,
     pub slots: Vec<Slot>,
@@ -251,19 +252,27 @@ pub fn build(
     context: &ExecutionContext,
 ) -> Result<PrePostState, RuntimeOutcome> {
     let utc = pinned_or_utc_now();
-    let zoned = utc.with_timezone(&solstone_core_journal_config::owner_zone(&context.journal));
-    let today = zoned.date_naive();
+    let zoned = utc.to_zoned_datetime(solstone_core_journal_config::owner_zone(&context.journal));
+    let today = zoned.date();
     // Milliseconds, so the time a page was built compares exactly with the
-    // time an owner asked for it; a whole second prints as before.
-    let generated_at = zoned
-        .with_nanosecond(zoned.timestamp_subsec_millis() * 1_000_000)
-        .unwrap_or(zoned)
-        .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
+    // time an owner asked for it; a whole second prints as before. A wall
+    // clock the zone shows twice keeps its full fraction.
+    let instant = zoned.timestamp();
+    let truncated = jiff::Timestamp::new(
+        instant.as_second(),
+        instant.subsec_nanosecond() / 1_000_000 * 1_000_000,
+    )
+    .map_or_else(
+        |_| zoned.clone(),
+        |at| at.to_zoned_datetime(zoned.time_zone().clone()),
+    );
+    let generated_at =
+        solstone_core_time::zoned_rfc3339(&truncated, solstone_core_time::Precision::AutoSi, true);
 
     let day_str = configured_day(prepared);
-    let start_date = match NaiveDate::parse_from_str(&day_str, "%Y%m%d") {
-        Ok(date) => date,
-        Err(_) => {
+    let start_date = match solstone_core_time::parse_day(&day_str) {
+        Some(date) => date,
+        None => {
             return Err(RuntimeOutcome::StageFailed(stage_error(
                 "build",
                 "weekly_reflection",
@@ -273,7 +282,7 @@ pub fn build(
         }
     };
 
-    if start_date.weekday() != chrono::Weekday::Sun {
+    if start_date.weekday() != Weekday::Sunday {
         return Err(RuntimeOutcome::StageFailed(stage_error(
             "build",
             "weekly_reflection",
@@ -282,7 +291,14 @@ pub fn build(
         )));
     }
 
-    let end_date = start_date + Duration::days(6);
+    let Ok(end_date) = start_date.checked_add(jiff::Span::new().days(6)) else {
+        return Err(RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "weekly_reflection",
+            prepared,
+            format!("invalid or unparseable day: '{day_str}'"),
+        )));
+    };
     if end_date >= today {
         return Err(RuntimeOutcome::StageFailed(stage_error(
             "build",
@@ -292,8 +308,8 @@ pub fn build(
         )));
     }
 
-    let start_day = start_date.format("%Y%m%d").to_string();
-    let end_day = end_date.format("%Y%m%d").to_string();
+    let start_day = solstone_core_time::day_key(start_date);
+    let end_day = solstone_core_time::day_key(end_date);
 
     let mut day_reports = Vec::new();
     let mut slots = Vec::new();
@@ -317,7 +333,7 @@ pub fn build(
 
     let mut curr = start_date;
     while curr <= end_date {
-        let curr_str = curr.format("%Y%m%d").to_string();
+        let curr_str = solstone_core_time::day_key(curr);
         let (mut classif, candidates) = assess_day(&context.journal, &curr_str);
         said.extend(said_on_day(
             &context.journal,
@@ -383,7 +399,10 @@ pub fn build(
             });
         }
 
-        curr += Duration::days(1);
+        let Ok(next) = curr.tomorrow() else {
+            break;
+        };
+        curr = next;
     }
 
     let kept = existing
@@ -1106,19 +1125,19 @@ pub fn normalize_markdown_text(text: &str) -> String {
     trimmed.to_owned()
 }
 
-fn english_weekday(weekday: chrono::Weekday) -> &'static str {
+fn english_weekday(weekday: Weekday) -> &'static str {
     match weekday {
-        chrono::Weekday::Mon => "monday",
-        chrono::Weekday::Tue => "tuesday",
-        chrono::Weekday::Wed => "wednesday",
-        chrono::Weekday::Thu => "thursday",
-        chrono::Weekday::Fri => "friday",
-        chrono::Weekday::Sat => "saturday",
-        chrono::Weekday::Sun => "sunday",
+        Weekday::Monday => "monday",
+        Weekday::Tuesday => "tuesday",
+        Weekday::Wednesday => "wednesday",
+        Weekday::Thursday => "thursday",
+        Weekday::Friday => "friday",
+        Weekday::Saturday => "saturday",
+        Weekday::Sunday => "sunday",
     }
 }
 
-fn english_month(month: u32) -> &'static str {
+fn english_month(month: i8) -> &'static str {
     match month {
         1 => "january",
         2 => "february",
@@ -1270,7 +1289,7 @@ pub fn assemble_reflection(
             if idx > 0 {
                 md.push_str("\n\n");
             }
-            let date = NaiveDate::parse_from_str(&cand.day, "%Y%m%d").unwrap_or(state.today);
+            let date = solstone_core_time::parse_day(&cand.day).unwrap_or(state.today);
             let weekday = english_weekday(date.weekday());
             let month = english_month(date.month());
             let day_num = date.day();
@@ -1291,7 +1310,7 @@ pub fn assemble_reflection(
         for said in &state.said {
             if said.day != heading_day {
                 heading_day = &said.day;
-                let date = NaiveDate::parse_from_str(&said.day, "%Y%m%d").unwrap_or(state.today);
+                let date = solstone_core_time::parse_day(&said.day).unwrap_or(state.today);
                 markdown_str.push_str(&format!(
                     "\n\n{}, {} {}",
                     english_weekday(date.weekday()),
@@ -1560,11 +1579,7 @@ mod tests {
     }
 
     fn pin_stage_now(dt_str: &str) -> StageClockGuard {
-        set_pinned_stage_now(Some(
-            DateTime::parse_from_rfc3339(dt_str)
-                .unwrap()
-                .with_timezone(&Utc),
-        ));
+        set_pinned_stage_now(Some(dt_str.parse::<Timestamp>().unwrap()));
         StageClockGuard
     }
 
@@ -2045,10 +2060,12 @@ mod tests {
         assert_eq!(after["selection"], before["selection"]);
         assert_eq!(after["said"], json!([]));
         let built = |page: &Value| {
-            DateTime::parse_from_rfc3339(page["generated_at"].as_str().unwrap()).unwrap()
+            solstone_core_time::parse_rfc3339(page["generated_at"].as_str().unwrap())
+                .unwrap()
+                .timestamp()
         };
         assert!(built(&after) > built(&before));
-        assert_eq!(built(&after).timestamp_subsec_millis(), 250);
+        assert_eq!(built(&after).subsec_millisecond(), 250);
     }
 
     #[test]
@@ -2399,7 +2416,7 @@ mod tests {
         let state = WeeklyReflectionState {
             start_day: "20260308".to_owned(),
             end_day: "20260314".to_owned(),
-            today: NaiveDate::from_ymd_opt(2026, 3, 16).unwrap(),
+            today: jiff::civil::date(2026, 3, 16),
             generated_at: "2026-03-15T18:00:00Z".to_owned(),
             day_reports: vec![],
             slots: vec![],
@@ -2761,7 +2778,7 @@ mod tests {
         let mut state = WeeklyReflectionState {
             start_day: "20260308".to_owned(),
             end_day: "20260314".to_owned(),
-            today: NaiveDate::from_ymd_opt(2026, 3, 16).unwrap(),
+            today: jiff::civil::date(2026, 3, 16),
             generated_at: "2026-03-15T18:00:00Z".to_owned(),
             day_reports: vec![],
             slots: vec![],

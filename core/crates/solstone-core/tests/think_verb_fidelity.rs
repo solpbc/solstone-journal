@@ -7,7 +7,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-use chrono::{Duration, Utc};
+use jiff::Timestamp;
 use tempfile::TempDir;
 
 fn command(args: &[&str], journal: &TempDir) -> Command {
@@ -217,11 +217,9 @@ fn updated_ignores_invalid_segment_workers_and_dry_run_is_native() {
     let (journal, prior, updated) = loop {
         let journal = TempDir::new().unwrap();
         let zone = solstone_core_journal_config::owner_zone(journal.path());
-        let sampled_today = Utc::now().with_timezone(&zone).date_naive();
-        let prior = (sampled_today - Duration::days(1))
-            .format("%Y%m%d")
-            .to_string();
-        let today = sampled_today.format("%Y%m%d").to_string();
+        let sampled_today = Timestamp::now().to_zoned_datetime(zone.clone()).date();
+        let prior = solstone_core_time::day_key(sampled_today.yesterday().unwrap());
+        let today = solstone_core_time::day_key(sampled_today);
         fs::create_dir_all(journal.path().join(format!("chronicle/{prior}/health"))).unwrap();
         fs::create_dir_all(journal.path().join(format!("chronicle/{today}/health"))).unwrap();
         fs::write(
@@ -241,7 +239,7 @@ fn updated_ignores_invalid_segment_workers_and_dry_run_is_native() {
         let updated = command(&["think", "--updated", "--segment-workers", "99"], &journal)
             .output()
             .unwrap();
-        if Utc::now().with_timezone(&zone).date_naive() == sampled_today {
+        if Timestamp::now().to_zoned_datetime(zone.clone()).date() == sampled_today {
             break (journal, prior, updated);
         }
     };

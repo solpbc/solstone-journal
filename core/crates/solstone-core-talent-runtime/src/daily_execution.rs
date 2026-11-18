@@ -148,7 +148,7 @@ pub(crate) fn execute_with_paths(
     let Some(day) = request.get("day").and_then(Value::as_str) else {
         return RuntimeOutcome::StageFailed(failure(name, "missing daily attempt day"));
     };
-    if day.len() != 8 || chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_err() {
+    if day.len() != 8 || solstone_core_time::parse_day(day).is_none() {
         return RuntimeOutcome::StageFailed(failure(name, "invalid daily attempt day"));
     }
     let facet = request
@@ -639,7 +639,7 @@ fn publish(
     record.status = status;
     record.reason_code = None;
     record.error_detail = None;
-    record.updated_at_ms = chrono::Utc::now().timestamp_millis();
+    record.updated_at_ms = jiff::Timestamp::now().as_millisecond();
     record.accepted = Some(AcceptedDailyResult {
         evidence_revision: record.evidence_revision.clone(),
         contract_digest: record.contract_digest.clone(),
@@ -798,7 +798,7 @@ mod tests {
                         "saved daily searchable",
                         Default::default(),
                     ),
-                    chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                    jiff::civil::date(2026, 1, 1),
                 )
                 .unwrap();
                 assert_eq!(results.results.len(), 1);

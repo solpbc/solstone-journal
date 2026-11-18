@@ -19,7 +19,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, ToSpan as _, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{
@@ -325,17 +326,17 @@ impl Sensed {
             .zip(row.end.as_deref().and_then(parse_source_time));
         if let Some((start, end)) = span {
             let zone = solstone_core_journal_config::placed_zone(journal, STRAVA_SOURCE);
-            for (on, key) in strava_cut(start, end, zone) {
+            for (on, key) in strava_cut(&start, &end, zone.as_ref()) {
                 keys.entry(on).or_default().insert(key);
             }
             // A record an earlier version filed at a key it misplaced counts too.
-            if let Some(zone) = zone {
-                let elapsed = u64::try_from((end - start).num_seconds()).unwrap_or(1);
-                for (on, key) in misread_tile_keys(start, elapsed, zone) {
+            if let Some(zone) = &zone {
+                let elapsed = u64::try_from(end.duration_since(&start).as_secs()).unwrap_or(1);
+                for (on, key) in misread_tile_keys(&start, elapsed, zone) {
                     keys.entry(on).or_default().insert(key);
                 }
             }
-            for on in covered_days(day, end, zone) {
+            for on in covered_days(day, &end, zone.as_ref()) {
                 let tiles = self
                     .tiles
                     .entry(on.clone())
@@ -385,18 +386,18 @@ fn strava_tiles(journal: &Path, day: &str) -> BTreeMap<String, BTreeSet<String>>
 /// five minutes from its start, keyed by its clock and length on the zone its
 /// first import fixed, or on the start's own offset with none.
 pub(crate) fn strava_cut(
-    start: DateTime<FixedOffset>,
-    end: DateTime<FixedOffset>,
-    zone: Option<chrono_tz::Tz>,
+    start: &ZonedDateTime,
+    end: &ZonedDateTime,
+    zone: Option<&TimeZone>,
 ) -> Vec<(String, String)> {
-    let elapsed = (end - start).num_seconds().max(1);
+    let elapsed = end.duration_since(start).as_secs().max(1);
     (0..(elapsed + STRAVA_TILE_SECONDS - 1) / STRAVA_TILE_SECONDS)
         .map(|index| {
-            let at = start + Duration::seconds(index * STRAVA_TILE_SECONDS);
+            let at = start + SignedDuration::from_secs(index * STRAVA_TILE_SECONDS);
             let seconds = STRAVA_TILE_SECONDS.min(elapsed - index * STRAVA_TILE_SECONDS);
             let clock = |format: &str| match zone {
-                Some(zone) => at.with_timezone(&zone).format(format).to_string(),
-                None => at.format(format).to_string(),
+                Some(zone) => at.with_time_zone(zone.clone()).strftime(format).to_string(),
+                None => at.strftime(format).to_string(),
             };
             (clock("%Y%m%d"), format!("{}_{seconds}", clock("%H%M%S")))
         })
@@ -404,21 +405,21 @@ pub(crate) fn strava_cut(
 }
 
 /// `day` and every later day a span ending at `end` reaches.
-fn covered_days(day: &str, end: DateTime<FixedOffset>, zone: Option<chrono_tz::Tz>) -> Vec<String> {
-    let Ok(first) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+fn covered_days(day: &str, end: &ZonedDateTime, zone: Option<&TimeZone>) -> Vec<String> {
+    let Some(first) = solstone_core_time::parse_day(day) else {
         return vec![day.to_owned()];
     };
     // The last second it covers.
-    let last = end - Duration::seconds(1);
+    let last = end - SignedDuration::from_secs(1);
     let last = match zone {
-        Some(zone) => last.with_timezone(&zone).date_naive(),
-        None => last.date_naive(),
+        Some(zone) => last.with_time_zone(zone.clone()).date(),
+        None => last.date(),
     };
     first
-        .iter_days()
+        .series(1.day())
         .take_while(|on| *on <= last.max(first))
         .take(15)
-        .map(|on| on.format("%Y%m%d").to_string())
+        .map(solstone_core_time::day_key)
         .collect()
 }
 
@@ -480,7 +481,7 @@ pub(crate) fn write_records_at(
     journal: &Path,
     source: &BodySource,
     day: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: Timestamp,
     move_listed: bool,
 ) -> RecordCounts {
     write_stream_records_at(
@@ -550,7 +551,7 @@ pub(crate) fn listed_elsewhere(
 pub(crate) fn write_strava_records_at(
     journal: &Path,
     day: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: Timestamp,
     held_back: &BTreeSet<String>,
 ) -> RecordCounts {
     write_stream_records_at(journal, &STRAVA, day, now, held_back, false, None)
@@ -559,7 +560,7 @@ pub(crate) fn write_strava_records_at(
 pub(crate) fn write_strava_records_with_matches(
     journal: &Path,
     day: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: Timestamp,
     held_back: &BTreeSet<String>,
     legacy: &crate::strava_convert::LegacyMatches,
 ) -> RecordCounts {
@@ -570,7 +571,7 @@ fn write_stream_records_at(
     journal: &Path,
     source: &RecordSource,
     day: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: Timestamp,
     held_back: &BTreeSet<String>,
     move_listed: bool,
     legacy: Option<&crate::strava_convert::LegacyMatches>,
@@ -586,10 +587,10 @@ fn write_stream_records_at(
             return counts;
         }
     };
-    let arrived = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d")
-        .to_string();
+    let arrived = solstone_core_time::day_key(
+        now.to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+            .date(),
+    );
     let mut sensed = legacy.map_or_else(Sensed::default, Sensed::with_matches);
     for window in windows {
         let Some((facet, experiences)) = window_experiences(&window, source.file) else {
@@ -718,9 +719,12 @@ fn write_stream_records_at(
 /// The one clock tests read a record's arrival from: noon in Denver, 2026-11-04.
 /// The wall clock would move a record's arrival day when a run crosses midnight.
 #[cfg(test)]
-pub(crate) fn test_clock() -> chrono::DateTime<chrono::Utc> {
-    use chrono::TimeZone as _;
-    chrono::Utc.with_ymd_and_hms(2026, 11, 4, 19, 0, 0).unwrap()
+pub(crate) fn test_clock() -> Timestamp {
+    jiff::civil::date(2026, 11, 4)
+        .at(19, 0, 0, 0)
+        .to_zoned_datetime(TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 /// [`write_records_at`] on [`test_clock`].

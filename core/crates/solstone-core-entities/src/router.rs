@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
@@ -60,7 +60,8 @@ fn has_voiceprint_in_entity_dir(journal_root: &Path, entity_dir: &str) -> bool {
 
 fn valid_last_seen_day(relationship: &Value) -> Option<&str> {
     let last_seen = relationship.get("last_seen")?.as_str()?;
-    (last_seen.len() == 8 && chrono::NaiveDate::parse_from_str(last_seen, "%Y%m%d").is_ok())
+    solstone_core_time::parse_day(last_seen)
+        .is_some()
         .then_some(last_seen)
 }
 
@@ -84,7 +85,7 @@ fn scoped_activity_ts(
     observations: Option<&solstone_core_facets::ObservationSummary>,
     detected_day: Option<&str>,
     today: &str,
-    zone: chrono_tz::Tz,
+    zone: &solstone_core_journal_config::TimeZone,
 ) -> Option<i64> {
     let established = link_established_day(relationship, observations, today);
     let best_day = established.into_iter().chain(detected_day).max()?;
@@ -116,7 +117,7 @@ fn insert_link_fields(object: &mut serde_json::Map<String, Value>, relationship:
 fn insert_activity(
     object: &mut serde_json::Map<String, Value>,
     activity_ts: Option<i64>,
-    zone: chrono_tz::Tz,
+    zone: &solstone_core_journal_config::TimeZone,
 ) {
     object.insert("last_active_ts".to_owned(), json!(activity_ts));
     object.insert(
@@ -1075,10 +1076,8 @@ async fn facet_route(
         let entities = solstone_core_facets::list_scoped_facet_entities(&root, &f, d, k)?;
         let faces_enabled = crate::photos::enabled_for_lists(&root);
         let zone = solstone_core_journal_config::owner_zone(&root);
-        let today = chrono::Utc::now()
-            .with_timezone(&zone)
-            .format("%Y%m%d")
-            .to_string();
+        let today =
+            solstone_core_time::day_key(Timestamp::now().to_zoned_datetime(zone.clone()).date());
         let summaries: Vec<_> = entities
             .iter()
             .map(|entity| {
@@ -1111,7 +1110,7 @@ async fn facet_route(
                 summary.as_ref(),
                 detected_day,
                 &today,
-                zone,
+                &zone,
             );
             let voiceprint = has_voiceprint_in_entity_dir(&root, &entity.entity_dir);
             let mut value = entity.identity;
@@ -1132,7 +1131,7 @@ async fn facet_route(
                 )),
             );
             insert_link_fields(object, &entity.relationship);
-            insert_activity(object, activity_ts, zone);
+            insert_activity(object, activity_ts, &zone);
             attached.push(value);
         }
         // When what the facet hides can't be read, no detection is listed
@@ -2096,10 +2095,8 @@ pub(crate) fn assemble_journal_entity_records(
         .collect();
     let mut records = Vec::new();
     let zone = solstone_core_journal_config::owner_zone(root);
-    let today = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d")
-        .to_string();
+    let today =
+        solstone_core_time::day_key(Timestamp::now().to_zoned_datetime(zone.clone()).date());
     for entity_dir in groups.groups.into_values().flatten() {
         if only.is_some_and(|requested| requested != entity_dir.as_str()) {
             continue;
@@ -2111,7 +2108,7 @@ pub(crate) fn assemble_journal_entity_records(
         let value = identity.value();
         let identity_last_seen_ts = valid_last_seen_day(value)
             .filter(|&day| day <= today.as_str())
-            .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
+            .and_then(|day| solstone_core_entity::journal_day_start_ms(day, &zone));
         let entity_id = winner_by_folder
             .get(&entity_dir)
             .cloned()
@@ -2207,7 +2204,7 @@ pub(crate) fn assemble_journal_entity_records(
                 .get(&scoped.relationship_dir)
                 .map(String::as_str);
             let activity_ts =
-                scoped_activity_ts(relationship, summary.as_ref(), detected_day, &today, zone);
+                scoped_activity_ts(relationship, summary.as_ref(), detected_day, &today, &zone);
             let mut facet = json!({
                 "name": facet_dir,
                 "title": title,
@@ -2223,7 +2220,7 @@ pub(crate) fn assemble_journal_entity_records(
             insert_activity(
                 facet.as_object_mut().expect("facet record is an object"),
                 activity_ts,
-                zone,
+                &zone,
             );
             if scoped.detached {
                 facet
@@ -2272,7 +2269,7 @@ pub(crate) fn assemble_journal_entity_records(
                 json!(observation_count)
             },
         );
-        insert_activity(object, activity_ts, zone);
+        insert_activity(object, activity_ts, &zone);
     }
     Ok(records)
 }
@@ -4844,10 +4841,9 @@ async fn entity_detail_route(
                 },
             );
             let zone = solstone_core_journal_config::owner_zone(&root);
-            let today = chrono::Utc::now()
-                .with_timezone(&zone)
-                .format("%Y%m%d")
-                .to_string();
+            let today = solstone_core_time::day_key(
+                Timestamp::now().to_zoned_datetime(zone.clone()).date(),
+            );
             let summary =
                 solstone_core_facets::observation_summary(&root, &facet, &row.relationship_dir).ok();
             let established_day =
@@ -4871,7 +4867,7 @@ async fn entity_detail_route(
                 summary.as_ref(),
                 detected_day,
                 &today,
-                zone,
+                &zone,
             );
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
@@ -4880,7 +4876,7 @@ async fn entity_detail_route(
             object.insert("has_photo".to_owned(), json!(crate::photos::has_photo_in_dir(&root, &row.entity_dir, crate::photos::enabled_for_lists(&root))));
             object.insert("photo_state".to_owned(), json!(photo_state));
             insert_link_fields(object, &row.relationship);
-            insert_activity(object, activity_ts, zone);
+            insert_activity(object, activity_ts, &zone);
             match obs_result {
                 Ok(page) => {
                     object.insert("observation_count".to_owned(), json!(page.total));
@@ -5820,9 +5816,7 @@ fn entity_ids_detected_since(
 }
 
 fn is_entity_search_day(value: &str) -> bool {
-    NaiveDate::parse_from_str(value, "%Y%m%d")
-        .ok()
-        .is_some_and(|day| day.format("%Y%m%d").to_string() == value)
+    solstone_core_time::parse_day(value).is_some()
 }
 
 fn detected_hit_entity_id(
@@ -5885,13 +5879,13 @@ fn entity_search_work(
     root: &Path,
     params: &EntitySearchParams,
 ) -> Result<Value, EntitySearchFailure> {
-    entity_search_work_at(root, params, Utc::now())
+    entity_search_work_at(root, params, Timestamp::now())
 }
 
 pub(crate) fn entity_search_work_at(
     root: &Path,
     params: &EntitySearchParams,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, EntitySearchFailure> {
     let coverage_response =
         coverage(root, QueryBoundary::Owner).map_err(entity_search_index_access_failure)?;
@@ -5923,8 +5917,8 @@ pub(crate) fn entity_search_work_at(
         .collect();
 
     let today = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(root))
-        .date_naive();
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(root))
+        .date();
     let (entity_hits, detected_hits) = if let Some(query) = params.query.as_deref() {
         let mut entity_request = SearchRequest::new(query, Order::Relevance);
         entity_request.limit = usize::MAX;

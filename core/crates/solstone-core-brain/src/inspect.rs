@@ -6,7 +6,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 #[cfg(unix)]
 use nix::errno::Errno;
 #[cfg(unix)]
@@ -160,7 +160,7 @@ pub fn probe_file_lease_held(path: &Path) -> std::io::Result<bool> {
 pub fn inspect_brain_state(
     journal_path: &Path,
     config: &Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> BrainInspection {
     inspect_brain_state_with_clock(journal_path, config, || now)
 }
@@ -168,7 +168,7 @@ pub fn inspect_brain_state(
 pub fn inspect_brain_state_with_clock(
     journal_path: &Path,
     config: &Map<String, Value>,
-    clock: impl FnOnce() -> DateTime<Utc>,
+    clock: impl FnOnce() -> Timestamp,
 ) -> BrainInspection {
     let resolution = derive_active_brain_lane(config);
     let credential;
@@ -244,7 +244,7 @@ pub fn inspect_brain_state_with_clock(
 fn inspect_durable_brain_state_with_clock(
     journal_path: &Path,
     config: &Map<String, Value>,
-    clock: impl FnOnce() -> DateTime<Utc>,
+    clock: impl FnOnce() -> Timestamp,
     bound: Option<&Result<crate::writer::BoundBrainInspection, crate::WriterError>>,
 ) -> BrainInspection {
     // Sample after the read: a concurrent renewal may be newer than the time
@@ -419,7 +419,7 @@ pub fn project_brain_state(
     refresh_permit_active: bool,
     hmac_key: Option<&[u8; 32]>,
     runtime_health: Option<&RuntimeRecordInspection>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> BrainProjection {
     project_brain_state_with_journal(
         record,
@@ -438,7 +438,7 @@ pub fn project_brain_state_with_journal(
     refresh_permit_active: bool,
     hmac_key: Option<&[u8; 32]>,
     runtime_health: Option<&RuntimeRecordInspection>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     journal: Option<&Path>,
 ) -> BrainProjection {
     let resolution = derive_active_brain_lane(config);
@@ -874,7 +874,7 @@ fn runtime_transition_in_progress(lane: &str, runtime: Option<&RuntimeRecordInsp
     }) || reason == Some("install-in-progress")
 }
 
-fn record_timestamp_invalid(record: &BrainStateRecord, now: DateTime<Utc>) -> bool {
+fn record_timestamp_invalid(record: &BrainStateRecord, now: Timestamp) -> bool {
     record.updated_at > now
         || record
             .checking
@@ -987,9 +987,9 @@ mod tests {
 
     fn project(write_hash: &str, desired: &str) -> BrainProjection {
         let fixture = crate::fixture::projection_fixture();
-        let now = DateTime::parse_from_rfc3339(&fixture.now)
+        let now = solstone_core_time::parse_rfc3339(&fixture.now)
             .unwrap()
-            .with_timezone(&Utc);
+            .timestamp();
         let key: [u8; 32] = (0..fixture.hmac_key_hex.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&fixture.hmac_key_hex[i..i + 2], 16).unwrap())
@@ -1062,10 +1062,10 @@ mod tests {
         );
     }
 
-    fn fixture_now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(&crate::fixture::projection_fixture().now)
+    fn fixture_now() -> Timestamp {
+        solstone_core_time::parse_rfc3339(&crate::fixture::projection_fixture().now)
             .expect("fixture now")
-            .with_timezone(&Utc)
+            .timestamp()
     }
 
     fn fixture_key() -> [u8; 32] {

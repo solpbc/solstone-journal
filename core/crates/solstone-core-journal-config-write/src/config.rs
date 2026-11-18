@@ -150,7 +150,7 @@ pub fn insert_daily_input_since_checked(
         return Err(InsertDailyInputSinceError::Caller(DailyInputSinceError));
     }
     let date = parse_daily_input_day(day).map_err(InsertDailyInputSinceError::Caller)?;
-    let canonical = date.format("%Y%m%d").to_string();
+    let canonical = solstone_core_time::day_key(date);
     let transaction =
         mutate_journal_config_checked(journal, LockOptions::default(), checkpoint, |config| {
             let stored = solstone_core_journal_config::daily_input_since(config, id, version);
@@ -161,7 +161,7 @@ pub fn insert_daily_input_since_checked(
                 },
                 Ok(Some(date)) => JournalConfigMutation {
                     changed: false,
-                    value: Ok(date.format("%Y%m%d").to_string()),
+                    value: Ok(solstone_core_time::day_key(date)),
                 },
                 Ok(None) => {
                     let inputs = config

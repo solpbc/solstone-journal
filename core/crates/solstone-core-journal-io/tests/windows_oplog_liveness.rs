@@ -13,7 +13,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use chrono::{FixedOffset, TimeZone};
+use jiff::ZonedDateTime;
+use jiff::civil::date;
+use jiff::tz::{Offset, TimeZone};
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogCreatePrimitive, OplogFormat, OplogWriter, admit_day_health_directory,
@@ -41,12 +43,13 @@ fn io_error(context: &str) -> std::io::Error {
     std::io::Error::other(format!("{context}: {}", std::io::Error::last_os_error()))
 }
 
-fn fixed_instant() -> chrono::DateTime<FixedOffset> {
-    FixedOffset::east_opt(0)
-        .expect("UTC offset")
-        .with_ymd_and_hms(2026, 9, 2, 16, 0, 0)
-        .single()
-        .expect("fixed receipt instant")
+fn fixed_instant() -> ZonedDateTime {
+    solstone_core_time::from_local(
+        &TimeZone::fixed(Offset::UTC),
+        date(2026, 9, 2).at(16, 0, 0, 0),
+    )
+    .single()
+    .expect("fixed receipt instant")
 }
 
 /// Create one product oplog writer under a fresh temporary journal and return it
@@ -63,7 +66,7 @@ fn create_and_publish(
         "id",
         "liveness",
         OplogFormat::Log,
-        fixed_instant(),
+        &fixed_instant(),
         Duration::ZERO,
         Duration::ZERO,
     )
@@ -559,7 +562,7 @@ fn after_admission_before_publish_is_reachable_lease_phase_primitives_are_not() 
                     "id",
                     "trace",
                     OplogFormat::Log,
-                    fixed_instant(),
+                    &fixed_instant(),
                     Duration::ZERO,
                     Duration::ZERO,
                 )

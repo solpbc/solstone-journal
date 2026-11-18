@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 
 use crate::{
@@ -40,16 +39,14 @@ fn replay_convey_home_corpus() {
         asserted += 1;
     }
     for case in groups["briefing_lateness"].as_array().unwrap() {
-        let now = Utc
-            .with_ymd_and_hms(
-                2026,
-                5,
-                14,
-                case["input"]["now_hour"].as_u64().unwrap() as u32,
-                case["input"]["now_minute"].as_u64().unwrap() as u32,
-                0,
-            )
-            .unwrap();
+        let now = crate::test_time::utc_at(
+            2026,
+            5,
+            14,
+            case["input"]["now_hour"].as_u64().unwrap() as u32,
+            case["input"]["now_minute"].as_u64().unwrap() as u32,
+            0,
+        );
         eq(
             &briefing::lateness_state(now, case["input"]["phase"].as_str().unwrap()),
             &case["output"],
@@ -195,7 +192,7 @@ fn replay_convey_home_corpus() {
         let backlog = backlog(input["backlog"].as_str().unwrap());
         let capture = capture(input["capture"].as_str().unwrap());
         let brain = brain(input["brain"].as_str().unwrap());
-        let now = Utc.with_ymd_and_hms(2026, 5, 14, 15, 30, 0).unwrap();
+        let now = crate::test_time::utc_at(2026, 5, 14, 15, 30, 0);
         let actual = health_glance::build_health_glance(
             &capture,
             input["last_observe_relative"].as_str(),

@@ -3,7 +3,8 @@
 
 //! Shared independent group decisions and advisory proposal inspection.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_journal_io::paths::SegmentLayout;
 
 use crate::age::segment_age;
@@ -41,8 +42,8 @@ pub(crate) fn decide_side(
     classifier: &dyn MediaClassifier,
     policy: &Policy,
     target: &Target,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     purpose: DecisionPurpose,
 ) -> SideDecision {
     if side.is_empty() {
@@ -171,8 +172,8 @@ pub fn inspect_grouped(
     target: &Target,
     layout: SegmentLayout,
     policy: &Policy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     purpose: DecisionPurpose,
 ) -> GroupedInspection {
     let (empty, ordinary) = partition_empty_audio(observed.found.clone(), &ClosedHandlerSet);
@@ -234,7 +235,6 @@ mod tests {
     use crate::content::ContentName;
     use crate::eligibility::SidecarFacts;
     use crate::policy::{Days, Rule, policy_from_journal_config, policy_from_retention};
-    use chrono::TimeZone;
     use serde_json::json;
 
     fn file(name: &str, state: &str, empty: bool, backfill: bool, rows: bool) -> FoundContent {
@@ -267,7 +267,7 @@ mod tests {
             stream: "_default".into(),
             dir: "prefix_120000_60_suffix".into(),
         };
-        let now = Utc.with_ymd_and_hms(2026, 10, 10, 1, 0, 0).unwrap();
+        let now = "2026-10-10T01:00:00Z".parse::<Timestamp>().unwrap();
         inspect_grouped(
             &CheckedSegment {
                 found: files,
@@ -276,7 +276,7 @@ mod tests {
             &target,
             SegmentLayout::Direct,
             policy,
-            now.date_naive(),
+            jiff::tz::Offset::UTC.to_datetime(now).date(),
             now,
             purpose,
         )

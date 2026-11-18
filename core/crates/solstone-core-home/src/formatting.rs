@@ -3,11 +3,10 @@
 
 //! Pure presentation helpers for the home surface.
 
-use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 
 pub fn format_date(day: &str) -> String {
-    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(date) = solstone_core_time::parse_day(day) else {
         return day.to_owned();
     };
     let suffix = match date.day() {
@@ -21,8 +20,8 @@ pub fn format_date(day: &str) -> String {
     };
     format!(
         "{} {} {}{}",
-        date.format("%A"),
-        date.format("%B"),
+        date.strftime("%A"),
+        date.strftime("%B"),
         date.day(),
         suffix
     )

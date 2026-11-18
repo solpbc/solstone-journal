@@ -21,7 +21,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 
@@ -70,7 +70,7 @@ impl RetiredFacet {
             id,
             successor: None,
             title,
-            at: Some(Utc::now().to_rfc3339()),
+            at: Some(solstone_core_time::utc_rfc3339(Timestamp::now())),
         }
     }
 
@@ -80,7 +80,7 @@ impl RetiredFacet {
             id,
             successor: Some(successor),
             title,
-            at: Some(Utc::now().to_rfc3339()),
+            at: Some(solstone_core_time::utc_rfc3339(Timestamp::now())),
         }
     }
 
@@ -90,7 +90,7 @@ impl RetiredFacet {
             id,
             successor: Some(successor),
             title: None,
-            at: Some(Utc::now().to_rfc3339()),
+            at: Some(solstone_core_time::utc_rfc3339(Timestamp::now())),
         }
     }
 

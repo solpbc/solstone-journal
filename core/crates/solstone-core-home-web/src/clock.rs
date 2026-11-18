@@ -3,21 +3,21 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
+pub struct Clock(Arc<dyn Fn() -> Timestamp + Send + Sync>);
 
 impl Clock {
     pub fn system() -> Self {
-        Self(Arc::new(Utc::now))
+        Self(Arc::new(Timestamp::now))
     }
 
-    pub fn fixed(now: DateTime<Utc>) -> Self {
+    pub fn fixed(now: Timestamp) -> Self {
         Self(Arc::new(move || now))
     }
 
-    pub fn now(&self) -> DateTime<Utc> {
+    pub fn now(&self) -> Timestamp {
         (self.0)()
     }
 }

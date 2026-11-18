@@ -7,7 +7,9 @@
 #![cfg(unix)]
 
 use super::*;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff::tz::Offset;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -166,8 +168,8 @@ enum Dispatch<'clock> {
 fn dispatch<'clock>(
     verified: VerifiedOffloadOffers<'clock>,
     receipts: Vec<Result<LedgerWriteReceipt, LedgerWriteRefusal>>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     publication_calls: &mut usize,
 ) -> Dispatch<'clock> {
     let confirmed = !receipts.is_empty()
@@ -256,8 +258,8 @@ fn packaged_offer_creation_entry() -> TestResult {
     .map_err(|e| invalid(format!("actual original preparation: {e:?}")))?;
     let carrier = Arc::clone(operation.carrier());
     let activity = Arc::clone(operation.activity());
-    let today = NaiveDate::from_ymd_opt(2026, 10, 10).ok_or_else(|| invalid("date"))?;
-    let now = DateTime::from_timestamp(started, 0).ok_or_else(|| invalid("time"))?;
+    let today = Date::new(2026, 10, 10).map_err(|_| invalid("date"))?;
+    let now = Timestamp::new(started, 0).map_err(|_| invalid("time"))?;
     let observed = capture_offload_offers(&operation, &[selection], today, now)
         .map_err(|e| invalid(format!("actual capture: {e:?}")))?;
     assert!(Arc::ptr_eq(observed.journal_root(), &root));
@@ -497,7 +499,6 @@ mod caller_qualification {
         OffloadCreationOwner, OffloadCreationRefusal, OffloadLedgerEffect, OffloadLedgerSync,
         OffloadLedgerWrite, create_offload_offers,
     };
-    use chrono::Datelike;
     use solstone_core_backup_runtime::{
         BackupServices, NativeJournalMaintenance, SystemToolRunner, ToolOutput, ToolRequest,
         ToolRunner, UreqHttpTransport,
@@ -529,10 +530,15 @@ mod caller_qualification {
     struct NativeClock;
     impl Clock for NativeClock {
         fn now_unix(&self) -> i64 {
-            Utc::now().timestamp()
+            jiff::Timestamp::now().as_second()
         }
         fn iso_week(&self) -> u8 {
-            Utc::now().iso_week().week() as u8
+            jiff::tz::Offset::UTC
+                .to_datetime(jiff::Timestamp::now())
+                .date()
+                .iso_week_date()
+                .week()
+                .unsigned_abs()
         }
     }
 
@@ -649,8 +655,8 @@ mod caller_qualification {
             .collect::<io::Result<Vec<_>>>()?;
         let configuration = fs::read(input.journal.join("config/journal.json"))?;
         let clock = NativeClock;
-        let now = Utc::now();
-        let today = NaiveDate::from_ymd_opt(2026, 10, 10).ok_or_else(|| invalid("date"))?;
+        let now = Timestamp::now();
+        let today = Date::new(2026, 10, 10).map_err(|_| invalid("date"))?;
         let budget = ArchiveBudget::new_cancellable(&clock, ArchiveCancellation::new())?;
         let budget_seconds = budget.remaining(&clock)?.as_secs();
         let operation = PreparedArchiveOperation::prepare(Arc::clone(&root), budget, &clock)
@@ -694,7 +700,7 @@ mod caller_qualification {
                     .collect(),
             };
             proof.validate()?;
-            let receipt = append_archive_witness(&root, &proof, u64::try_from(now.timestamp())?)
+            let receipt = append_archive_witness(&root, &proof, u64::try_from(now.as_second())?)
                 .map_err(|error| invalid(format!("actual orphan seed writer: {error:?}")))?;
             assert!(matches!(receipt.effect(),LedgerWriteEffect::Appended {bytes} if bytes>0));
             assert_eq!(receipt.durability(), [LedgerSync::Confirmed; 4]);
@@ -949,7 +955,8 @@ mod caller_qualification {
         println!(
             "OFFER_CALLER_EVIDENCE {}",
             json!({"case":input.case,"publication":publication,
-            "carrier":carrier.diagnostic_path(),"budget_seconds_before_prepare":budget_seconds,"now":now,
+            "carrier":carrier.diagnostic_path(),"budget_seconds_before_prepare":budget_seconds,
+            "now":solstone_core_time::utc_iso(now),
             "source_copies":source_facts,"reads":reads,"marks":verified.marks(),"raw":raw,
             "ledger_sha256":format!("{:x}",Sha256::digest(&ledger)),"receipt":receipt,"requests":*requests,
             "seed":seed.as_ref().map(|(proof,receipt,bytes,_)|json!({"label":"SYNTHETIC RECORDED ORPHAN; real pinned archived bytes/live capture; no prior caller completion", "proof":proof,
@@ -1035,7 +1042,7 @@ mod caller_qualification {
                 .collect::<io::Result<Vec<_>>>()?;
             let configuration = fs::read(input.journal.join("config/journal.json"))?;
             let clock = NativeClock;
-            let at = Utc::now().fixed_offset();
+            let at = solstone_core_time::at_offset(Timestamp::now(), Offset::UTC);
             let budget = ArchiveBudget::new_cancellable(&clock, ArchiveCancellation::new())?;
             let budget_seconds = budget.remaining(&clock)?.as_secs();
             let operation = PreparedArchiveOperation::prepare(Arc::clone(&root), budget, &clock)
@@ -1060,11 +1067,11 @@ mod caller_qualification {
             cut(&mut control, b"prepared")?;
             let (creation, consumed) = if input.case == PlannerCase::PlannerPayloadCapacityRefused {
                 with_payload_capacity_fault(|| {
-                    create_planned_offload_offers(operation, &services, at)
+                    create_planned_offload_offers(operation, &services, at.clone())
                 })
             } else {
                 (
-                    create_planned_offload_offers(operation, &services, at),
+                    create_planned_offload_offers(operation, &services, at.clone()),
                     false,
                 )
             };
@@ -1309,7 +1316,8 @@ mod caller_qualification {
             println!(
                 "OFFER_PLANNER_EVIDENCE {}",
                 json!({"case":input.case,"publication":publication,
-                "carrier":carrier.diagnostic_path(),"budget_seconds_before_prepare":budget_seconds,"at":at,
+                "carrier":carrier.diagnostic_path(),"budget_seconds_before_prepare":budget_seconds,
+                "at":solstone_core_time::zoned_rfc3339(&at, solstone_core_time::Precision::AutoSi, true),
                 "phase":format!("{:?}",planning.phase()),"projection":{"local_bytes":projection.local.total_bytes,
                     "local_files":projection.local.total_files,"eligible_bytes":projection.eligible_bytes,
                     "eligible_files":projection.eligible_files,"projected_local_bytes":projection.projected_local_bytes},
@@ -1363,7 +1371,6 @@ mod owned_creation_qualification {
         OwnedOffloadCreationFinish, OwnedOffloadCreationFinishRefusal, OwnedOffloadCreationOwner,
         create_owned_offload_offers, prepare_owned_offload_inputs, with_source_cleanup_fault,
     };
-    use chrono::Datelike;
     use solstone_core_backup::archive_activity::OwnedPreparedArchiveOperation;
     use solstone_core_backup_runtime::{
         DirectReadFinishState, OwnedDirectReadFinish,
@@ -1404,10 +1411,15 @@ mod owned_creation_qualification {
     struct ActualClock;
     impl Clock for ActualClock {
         fn now_unix(&self) -> i64 {
-            Utc::now().timestamp()
+            jiff::Timestamp::now().as_second()
         }
         fn iso_week(&self) -> u8 {
-            Utc::now().iso_week().week() as u8
+            jiff::tz::Offset::UTC
+                .to_datetime(jiff::Timestamp::now())
+                .date()
+                .iso_week_date()
+                .week()
+                .unsigned_abs()
         }
     }
     fn prepared_cut(control: &mut UnixStream) -> TestResult {
@@ -1557,8 +1569,8 @@ mod owned_creation_qualification {
         let original_carrier_identity = directory_fact(&original_carrier)?;
         let mut control = UnixStream::connect(&input.control)?;
         prepared_cut(&mut control)?;
-        let today = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
-        let now = Utc::now();
+        let today = jiff::civil::date(2026, 10, 10);
+        let now = Timestamp::now();
         let inputs = match prepare_owned_offload_inputs(
             &original,
             std::slice::from_ref(&selection),
@@ -1975,7 +1987,6 @@ mod owned_planner_qualification {
         OwnedOffloadPlanFinish, OwnedOffloadPlanFinishRefusal, OwnedOffloadPlanOwner,
         create_owned_planned_offload_offers, prepare_owned_offload_plan,
     };
-    use chrono::Datelike;
     use solstone_core_backup::archive_activity::OwnedPreparedArchiveOperation;
     use solstone_core_backup_runtime::{
         DirectReadFinishState, OwnedDirectReadFinish,
@@ -2010,10 +2021,15 @@ mod owned_planner_qualification {
     struct ActualClock;
     impl Clock for ActualClock {
         fn now_unix(&self) -> i64 {
-            Utc::now().timestamp()
+            jiff::Timestamp::now().as_second()
         }
         fn iso_week(&self) -> u8 {
-            Utc::now().iso_week().week() as u8
+            jiff::tz::Offset::UTC
+                .to_datetime(jiff::Timestamp::now())
+                .date()
+                .iso_week_date()
+                .week()
+                .unsigned_abs()
         }
     }
     fn directory_fact(path: &Path) -> TestResult<Value> {
@@ -2213,7 +2229,10 @@ mod owned_planner_qualification {
         let mut ack = [0];
         control.read_exact(&mut ack)?;
         assert_eq!(ack, [b'a']);
-        let inputs = match prepare_owned_offload_plan(&original, Utc::now().fixed_offset()) {
+        let inputs = match prepare_owned_offload_plan(
+            &original,
+            solstone_core_time::at_offset(Timestamp::now(), Offset::UTC),
+        ) {
             Ok(inputs) => inputs,
             Err(failure) => {
                 let closed = original.into_owned_hold();

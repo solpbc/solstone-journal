@@ -12,12 +12,13 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::entry::sync_dir;
 use solstone_core_removals::{Surface, Unit};
+use solstone_core_time::{Precision, utc_z};
 
 use crate::{Item, TRASH_DIR, TrashError};
 
@@ -123,7 +124,7 @@ pub(crate) fn write(journal: &Path, item: &Item) -> Result<(), TrashError> {
         trash_path: format!("{TRASH_DIR}/{}", item.id),
         trashed_at: item.trashed_at.clone(),
         settled_at: item.settled_at.clone(),
-        erased_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        erased_at: utc_z(Timestamp::now(), Precision::Millis),
         // Which backup it drains to. One that can't be read stops the erase,
         // for the sweep to try again, rather than leave an entry bound to none.
         destination: solstone_core_backup::destination_identity(journal)

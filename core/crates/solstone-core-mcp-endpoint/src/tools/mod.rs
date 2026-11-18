@@ -38,17 +38,16 @@ pub(crate) fn normalize_day(value: Option<String>) -> Result<Option<String>, Too
     let Some(value) = value else {
         return Ok(None);
     };
-    let format = if value.len() == 10 {
-        "%Y-%m-%d"
-    } else {
-        "%Y%m%d"
-    };
     if !(value.len() == 8 || value.len() == 10) || !value.is_ascii() {
         return Err(ToolError::InvalidInput);
     }
-    chrono::NaiveDate::parse_from_str(&value, format)
-        .map(|day| Some(day.format("%Y%m%d").to_string()))
-        .map_err(|_| ToolError::InvalidInput)
+    let day = if value.len() == 10 {
+        jiff::civil::Date::strptime("%Y-%m-%d", &value).ok()
+    } else {
+        solstone_core_time::parse_day(&value)
+    };
+    day.map(|day| Some(solstone_core_time::day_key(day)))
+        .ok_or(ToolError::InvalidInput)
 }
 
 pub(crate) fn optional_string_within_limit(value: &Option<String>, maximum: usize) -> bool {
@@ -195,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_refused_combination_names_the_arguments_instead_of_blaming_a_valid_day() {
-        let zone = "UTC".parse().expect("UTC parses");
+        let zone = solstone_core_time::zone("UTC").expect("UTC parses");
         for (arguments, named) in [
             (json!({"day": "20261005", "from": "20261001"}), "from"),
             (json!({"day": "20261005", "to": "20261006"}), "to"),

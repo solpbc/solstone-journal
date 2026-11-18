@@ -3,10 +3,10 @@
 
 //! Default task classification; explicit import and owner intents override it.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
 
-pub fn classify(command: &[String], today: NaiveDate) -> WorkPriority {
+pub fn classify(command: &[String], today: Date) -> WorkPriority {
     let argument = |flag: &str| {
         command
             .windows(2)
@@ -14,7 +14,7 @@ pub fn classify(command: &[String], today: NaiveDate) -> WorkPriority {
             .map(|pair| pair[1].as_str())
     };
     let date = argument("--day")
-        .and_then(|day| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
+        .and_then(solstone_core_time::parse_day)
         .unwrap_or_else(|| {
             if command
                 .iter()
@@ -22,10 +22,10 @@ pub fn classify(command: &[String], today: NaiveDate) -> WorkPriority {
             {
                 today
             } else {
-                today - chrono::Duration::days(1)
+                today - jiff::Span::new().days(1)
             }
         });
-    let age = today.signed_duration_since(date).num_days();
+    let age = today.duration_since(date).as_hours() / 24;
     let band = if command.iter().any(|arg| arg == "--from-scratch") {
         WorkBand::Waiting
     } else if command
@@ -52,9 +52,7 @@ pub fn classify(command: &[String], today: NaiveDate) -> WorkPriority {
         .filter(|time| time.bytes().all(|byte| byte.is_ascii_digit()))
         .and_then(|time| time.parse::<u64>().ok())
         .unwrap_or(0);
-    let source_time = date
-        .format("%Y%m%d")
-        .to_string()
+    let source_time = solstone_core_time::day_key(date)
         .parse::<u64>()
         .unwrap_or(0)
         * 1_000_000
@@ -91,7 +89,7 @@ impl PriorityIntent {
             .chain(other.explicit)
             .min_by_key(|priority| priority.sort_key());
     }
-    pub(crate) fn resolve(self, command: &[String], today: NaiveDate) -> WorkPriority {
+    pub(crate) fn resolve(self, command: &[String], today: Date) -> WorkPriority {
         self.explicit
             .into_iter()
             .chain(self.derived.then(|| classify(command, today)))
@@ -106,7 +104,7 @@ mod tests {
 
     #[test]
     fn dated_modes_and_owner_override_share_one_order() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 11).unwrap();
+        let today = jiff::civil::date(2026, 10, 11);
         let command = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
         for (args, band) in [
             (
@@ -153,7 +151,7 @@ mod tests {
             "120000_300",
         ]
         .map(str::to_owned);
-        let date = |day| NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        let date = |day| jiff::civil::date(2026, 10, day);
         let mut intent = PriorityIntent::default();
         assert_eq!(
             intent.resolve(&command, date(11)).to_string(),
@@ -190,7 +188,7 @@ mod tests {
 
     #[test]
     fn undated_priority_matches_the_executed_think_day() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 11).unwrap();
+        let today = jiff::civil::date(2026, 10, 11);
         for (mode, date, band) in [
             ("", 20261010000000, WorkBand::Waiting),
             ("--flush", 20261010000000, WorkBand::Waiting),

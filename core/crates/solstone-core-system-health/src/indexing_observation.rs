@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, TimeDelta, TimeZone, Utc};
+use jiff::{SignedDuration, Span, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_format::paths::relative_to_journal;
@@ -120,23 +120,22 @@ pub fn normalize_indexing_identity(journal: &Path, raw_path: &str) -> String {
 /// Start is local midnight of (today - 29 days) in the owner zone,
 /// choosing the earlier offset when ambiguous and the later offset in a gap.
 /// End is `now` as epoch milliseconds.
-pub fn indexing_window_bounds(journal: &Path, now: DateTime<Utc>) -> (i64, i64) {
+pub fn indexing_window_bounds(journal: &Path, now: Timestamp) -> (i64, i64) {
     let zone = owner_zone(journal);
-    let today = now.with_timezone(&zone).date_naive();
+    let today = now.to_zoned_datetime(zone.clone()).date();
     let start_day = today
-        .checked_sub_signed(TimeDelta::days((BACKLOG_DEFAULT_WINDOW - 1) as i64))
+        .checked_sub(Span::new().days((BACKLOG_DEFAULT_WINDOW - 1) as i64))
         .unwrap_or(today);
-    let midnight = start_day.and_hms_opt(0, 0, 0).unwrap();
-    let start_dt = zone
-        .from_local_datetime(&midnight)
+    let midnight = start_day.to_datetime(jiff::civil::Time::midnight());
+    let window_start_ms = solstone_core_time::from_local(&zone, midnight)
         .earliest()
         .or_else(|| {
-            zone.from_local_datetime(&(midnight + TimeDelta::hours(1)))
-                .earliest()
+            let later = midnight.checked_add(SignedDuration::from_hours(1)).ok()?;
+            solstone_core_time::from_local(&zone, later).earliest()
         })
-        .unwrap_or_else(|| now.with_timezone(&zone));
-    let window_start_ms = start_dt.timestamp_millis();
-    let window_end_ms = now.timestamp_millis();
+        .map_or(now, |start| start.timestamp())
+        .as_millisecond();
+    let window_end_ms = now.as_millisecond();
     (window_start_ms, window_end_ms)
 }
 
@@ -751,7 +750,7 @@ fn fold_indexing_attempts(
 
 fn read_indexing_observations_with(
     journal: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     use_cache: bool,
 ) -> IndexingObservations {
     if use_cache {
@@ -924,17 +923,14 @@ fn read_indexing_observations_with(
 /// - A thinking use which never finishes has no day-index row in `talents/<day>.jsonl`.
 /// - This landing does not retain index failures past inspected history and does not
 ///   make publication notification crash-atomic.
-pub fn read_indexing_observations(journal: &Path, now: DateTime<Utc>) -> IndexingObservations {
+pub fn read_indexing_observations(journal: &Path, now: Timestamp) -> IndexingObservations {
     read_indexing_observations_with(journal, now, true)
 }
 
 // Independent pre-cache reader: keep parsing and folding separate from the
 // production cache path so shared refactor errors cannot satisfy the oracle.
 #[cfg(all(test, feature = "full-tests"))]
-fn read_indexing_observations_reference(
-    journal: &Path,
-    now: DateTime<Utc>,
-) -> IndexingObservations {
+fn read_indexing_observations_reference(journal: &Path, now: Timestamp) -> IndexingObservations {
     let mut partial = false;
     let mut detail_lines = Vec::new();
     let (window_start_ms, window_end_ms) = indexing_window_bounds(journal, now);
@@ -1389,6 +1385,12 @@ fn read_indexing_observations_reference(
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
+
+    fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(year, month, day).at(hour, minute, second, 0))
+            .unwrap()
+    }
     use tempfile::tempdir;
 
     fn setup_utc_journal(dir: &Path) {
@@ -1405,11 +1407,11 @@ mod tests {
     fn window_start_and_now_boundaries() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let (start, end) = indexing_window_bounds(dir.path(), now);
-        let start_dt = Utc.with_ymd_and_hms(2026, 9, 6, 0, 0, 0).unwrap();
-        assert_eq!(start, start_dt.timestamp_millis());
-        assert_eq!(end, now.timestamp_millis());
+        let start_dt = utc(2026, 9, 6, 0, 0, 0);
+        assert_eq!(start, start_dt.as_millisecond());
+        assert_eq!(end, now.as_millisecond());
 
         // Chronicle day with health log
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
@@ -1470,11 +1472,11 @@ mod tests {
     fn equal_timestamp_and_multi_outcome_progression() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
 
-        let base_ts = now.timestamp_millis() - 50_000;
+        let base_ts = now.as_millisecond() - 50_000;
         // 1. Equal ts failed + indexed stays failed
         let row1 = serde_json::json!({"event":"index.attempt","ts":base_ts,"path":"20261005/a.md","outcome":"indexed"});
         let row2 = serde_json::json!({"event":"index.attempt","ts":base_ts,"path":"20261005/a.md","outcome":"failed","cause":"bad"});
@@ -1543,11 +1545,11 @@ mod tests {
     fn path_identity_equivalence_and_missing_file_display() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
 
-        let base_ts = now.timestamp_millis() - 50_000;
+        let base_ts = now.as_millisecond() - 50_000;
         let abs = dir
             .path()
             .join("chronicle")
@@ -1592,7 +1594,7 @@ mod tests {
     fn talents_file_old_name_with_attempt_inside_window() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let talents_dir = dir.path().join("talents");
         fs::create_dir_all(&talents_dir).unwrap();
 
@@ -1605,7 +1607,7 @@ mod tests {
             "status": "completed",
             "index_attempts": [
                 {
-                    "ts": now.timestamp_millis() - 5000,
+                    "ts": now.as_millisecond() - 5000,
                     "path": "20261005/talents/flow.md",
                     "outcome": "failed",
                     "warnings": [],
@@ -1650,7 +1652,7 @@ mod tests {
     fn unreadable_sibling_health_log_keeps_failure_and_sets_partial() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
 
@@ -1659,7 +1661,7 @@ mod tests {
             &readable,
             serde_json::json!({
                 "event": "index.attempt",
-                "ts": now.timestamp_millis() - 1000,
+                "ts": now.as_millisecond() - 1000,
                 "path": "20261005/note.md",
                 "outcome": "failed",
                 "cause": "unreadable test"
@@ -1692,7 +1694,7 @@ mod tests {
     fn thirty_first_oldest_chronicle_directory_is_unobserved() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
 
         // Create 31 chronicle days: 20260901 through 20261001 (31 days)
         for d in 1..=31 {
@@ -1701,7 +1703,7 @@ mod tests {
             fs::create_dir_all(&health_dir).unwrap();
             let row = serde_json::json!({
                 "event": "index.attempt",
-                "ts": now.timestamp_millis() - 1000,
+                "ts": now.as_millisecond() - 1000,
                 "path": format!("{day_str}/note.md"),
                 "outcome": "failed"
             });
@@ -1731,7 +1733,7 @@ mod tests {
     fn cold_and_cached_public_reads_match_reference() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let (window_start_ms, _) = indexing_window_bounds(dir.path(), now);
 
         // 31 chronicle days so oldest is omitted
@@ -1741,7 +1743,7 @@ mod tests {
             fs::create_dir_all(&health_dir).unwrap();
             let row = serde_json::json!({
                 "event": "index.attempt",
-                "ts": now.timestamp_millis() - 1000,
+                "ts": now.as_millisecond() - 1000,
                 "path": format!("{day_str}/note.md"),
                 "outcome": "indexed"
             });
@@ -1831,8 +1833,8 @@ mod tests {
     fn mutation_visibility_on_next_call_compared_to_reference() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
-        let ts = now.timestamp_millis() - 5000;
+        let now = utc(2026, 10, 5, 12, 0, 0);
+        let ts = now.as_millisecond() - 5000;
 
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
@@ -1978,7 +1980,7 @@ mod tests {
     fn later_now_and_zone_change_without_reparse() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now1 = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now1 = utc(2026, 10, 5, 12, 0, 0);
         let (start1, end1) = indexing_window_bounds(dir.path(), now1);
 
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
@@ -1999,7 +2001,7 @@ mod tests {
         let p_count0 = PARSE_COUNTER.with(|c| c.get());
 
         // Later now includes row2
-        let now2 = Utc.with_ymd_and_hms(2026, 10, 5, 12, 1, 0).unwrap();
+        let now2 = utc(2026, 10, 5, 12, 1, 0);
         let obs2 = read_indexing_observations(dir.path(), now2);
         assert_eq!(obs2.outcomes.len(), 2);
         assert_eq!(PARSE_COUNTER.with(|c| c.get()), p_count0);
@@ -2017,11 +2019,11 @@ mod tests {
             obs3.diagnostics.window_start_ms,
             start1 + 4 * 60 * 60 * 1000
         );
-        assert_eq!(obs3.diagnostics.window_end_ms, now2.timestamp_millis());
+        assert_eq!(obs3.diagnostics.window_end_ms, now2.as_millisecond());
         assert_eq!(obs3.outcomes.len(), 1);
         assert_eq!(obs3.outcomes[0].identity, "20261005/2.md");
         let zone = solstone_core_journal_config::owner_zone(dir.path());
-        assert_eq!(zone.name(), "America/New_York");
+        assert_eq!(zone.iana_name(), Some("America/New_York"));
     }
 
     #[test]
@@ -2030,11 +2032,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health = dir.path().join("chronicle/20261005/health");
         fs::create_dir_all(&health).unwrap();
         let path = health.join("think.jsonl");
-        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/a.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/a.md","outcome":"indexed"}).to_string()).unwrap();
         assert_eq!(
             read_indexing_observations(dir.path(), now).outcomes.len(),
             1
@@ -2087,11 +2089,11 @@ mod tests {
     fn expiry_clock_at_60s_reparses_before_serving() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
         let path = health_dir.join("think.jsonl");
-        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/old.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/old.md","outcome":"indexed"}).to_string()).unwrap();
 
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         EXPIRY_OVERRIDE.with(|c| *c.borrow_mut() = Some(t0));
@@ -2099,7 +2101,7 @@ mod tests {
         let _ = read_indexing_observations(dir.path(), now);
         let p0 = PARSE_COUNTER.with(|c| c.get());
 
-        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/new.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(&path, serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/new.md","outcome":"indexed"}).to_string()).unwrap();
         // Emulate an identical stamp on filesystems with weaker change metadata.
         with_observation_cache(|cache| {
             cache
@@ -2129,16 +2131,16 @@ mod tests {
     fn paused_parse_returns_pre_mutation_and_next_read_returns_post_mutation() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
         let file_path = health_dir.join("think.jsonl");
 
-        let row1 = serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis() - 100,"path":"20261005/pre.md","outcome":"failed"});
+        let row1 = serde_json::json!({"event":"index.attempt","ts":now.as_millisecond() - 100,"path":"20261005/pre.md","outcome":"failed"});
         fs::write(&file_path, format!("{}\n", row1)).unwrap();
 
         let mutate_target = file_path.clone();
-        let row2 = serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis() - 50,"path":"20261005/post.md","outcome":"indexed"});
+        let row2 = serde_json::json!({"event":"index.attempt","ts":now.as_millisecond() - 50,"path":"20261005/post.md","outcome":"indexed"});
         PAUSE_HOOK.with(|c| {
             *c.borrow_mut() = Some(Box::new(move || {
                 let mut f = fs::OpenOptions::new()
@@ -2181,7 +2183,7 @@ mod tests {
         let dir_b = tempdir().unwrap();
         setup_utc_journal(dir_a.path());
         setup_utc_journal(dir_b.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
 
         let h_a = dir_a
             .path()
@@ -2196,8 +2198,8 @@ mod tests {
         fs::create_dir_all(&h_a).unwrap();
         fs::create_dir_all(&h_b).unwrap();
 
-        fs::write(h_a.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/a.md","outcome":"failed"}).to_string()).unwrap();
-        fs::write(h_b.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/b.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(h_a.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/a.md","outcome":"failed"}).to_string()).unwrap();
+        fs::write(h_b.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/b.md","outcome":"indexed"}).to_string()).unwrap();
 
         let obs_a1 = read_indexing_observations(dir_a.path(), now);
         let obs_b1 = read_indexing_observations(dir_b.path(), now);
@@ -2236,10 +2238,10 @@ mod tests {
     fn second_read_of_unchanged_files_does_not_increment_parse_counter() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
         let health_dir = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&health_dir).unwrap();
-        fs::write(health_dir.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/1.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(health_dir.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/1.md","outcome":"indexed"}).to_string()).unwrap();
 
         let _ = read_indexing_observations(dir.path(), now);
         let p0 = PARSE_COUNTER.with(|c| c.get());
@@ -2254,14 +2256,14 @@ mod tests {
     fn selection_prune_drops_files_outside_newest_30_and_deleted_journals() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 5, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 5, 12, 0, 0);
 
         // 30 chronicle days: 20260902..=20261001
         for d in 2..=31 {
             let day_str = format!("202609{:02}", d);
             let health_dir = dir.path().join("chronicle").join(&day_str).join("health");
             fs::create_dir_all(&health_dir).unwrap();
-            fs::write(health_dir.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":format!("{day_str}/1.md"),"outcome":"indexed"}).to_string()).unwrap();
+            fs::write(health_dir.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":format!("{day_str}/1.md"),"outcome":"indexed"}).to_string()).unwrap();
         }
 
         let _ = read_indexing_observations(dir.path(), now);
@@ -2271,7 +2273,7 @@ mod tests {
         // Add 20261005 (newer day) -> 20260902 is now 31st and pushed out of newest 30
         let new_day = dir.path().join("chronicle").join("20261005").join("health");
         fs::create_dir_all(&new_day).unwrap();
-        fs::write(new_day.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/1.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(new_day.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/1.md","outcome":"indexed"}).to_string()).unwrap();
 
         let _ = read_indexing_observations(dir.path(), now);
         let files_after = observation_cache_files(dir.path());
@@ -2293,7 +2295,7 @@ mod tests {
             .join("20261005")
             .join("health");
         fs::create_dir_all(&h2).unwrap();
-        fs::write(h2.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.timestamp_millis(),"path":"20261005/2.md","outcome":"indexed"}).to_string()).unwrap();
+        fs::write(h2.join("think.jsonl"), serde_json::json!({"event":"index.attempt","ts":now.as_millisecond(),"path":"20261005/2.md","outcome":"indexed"}).to_string()).unwrap();
 
         let _ = read_indexing_observations(dir2.path(), now);
         assert!(observation_cache_journals().contains(&dir2.path().to_path_buf()));

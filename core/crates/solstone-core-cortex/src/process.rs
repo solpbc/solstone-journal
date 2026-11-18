@@ -369,8 +369,6 @@ pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
-    use chrono::TimeZone;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -499,17 +497,19 @@ mod tests {
         let marker = directory.path().join("marker");
 
         write_valid_test_journal(directory.path());
-        let cycle_now = chrono::Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap();
+        let cycle_now = "2026-08-06T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
         let brain_path = directory.path().join("health/brain.json");
         let mut brain: Value = serde_json::from_slice(&fs::read(&brain_path).unwrap()).unwrap();
         let adapter = BrainAdapter::new(directory.path().to_path_buf());
         brain["fingerprint_sha256"] = Value::String(adapter.active_fingerprint().unwrap().unwrap());
-        brain["updated_at"] = Value::String(cycle_now.to_rfc3339());
+        brain["updated_at"] = Value::String(solstone_core_time::utc_rfc3339(cycle_now));
         for component in ["configuration", "generate", "lane_prerequisites"] {
-            brain["evidence"][component]["observed_at"] =
-                Value::String((cycle_now - chrono::Duration::minutes(9)).to_rfc3339());
-            brain["evidence"][component]["expires_at"] =
-                Value::String((cycle_now + chrono::Duration::seconds(30)).to_rfc3339());
+            brain["evidence"][component]["observed_at"] = Value::String(
+                solstone_core_time::utc_rfc3339(cycle_now - jiff::SignedDuration::from_mins(9)),
+            );
+            brain["evidence"][component]["expires_at"] = Value::String(
+                solstone_core_time::utc_rfc3339(cycle_now + jiff::SignedDuration::from_secs(30)),
+            );
         }
         fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
 
@@ -527,9 +527,11 @@ mod tests {
             &Map::from_iter([("ref".into(), Value::String(reference.clone()))]),
         );
         for component in ["configuration", "generate", "lane_prerequisites"] {
-            brain["evidence"][component]["observed_at"] = Value::String(cycle_now.to_rfc3339());
-            brain["evidence"][component]["expires_at"] =
-                Value::String((cycle_now + chrono::Duration::minutes(10)).to_rfc3339());
+            brain["evidence"][component]["observed_at"] =
+                Value::String(solstone_core_time::utc_rfc3339(cycle_now));
+            brain["evidence"][component]["expires_at"] = Value::String(
+                solstone_core_time::utc_rfc3339(cycle_now + jiff::SignedDuration::from_mins(10)),
+            );
         }
         fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
         renewal.handle_supervisor(
@@ -645,7 +647,6 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     mod full_tests {
         use super::*;
-        use chrono::Utc;
         use solstone_core_system_health::read_indexing_observations;
 
         fn setup_utc_journal(journal: &Path) {
@@ -700,8 +701,8 @@ mod tests {
                 r#"{"event":"index.attempt","path":"20261005/talents/flow.md","outcome":"failed","cause":"disk full","warnings":["w1"]}"#.into(),
             );
 
-            let now = Utc::now();
-            let explicit_ts = (now - chrono::Duration::seconds(10)).timestamp_millis();
+            let now = jiff::Timestamp::now();
+            let explicit_ts = (now - jiff::SignedDuration::from_secs(10)).as_millisecond();
             handle_stdout(
                 &state,
                 &work,
@@ -779,7 +780,7 @@ mod tests {
                 identity: old_identity,
                 request: old_request.clone(),
             };
-            let old_attempt_ts = (now - chrono::Duration::seconds(5)).timestamp_millis();
+            let old_attempt_ts = (now - jiff::SignedDuration::from_secs(5)).as_millisecond();
             handle_stdout(
                 &state,
                 &old_work,

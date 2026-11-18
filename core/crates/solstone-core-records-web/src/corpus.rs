@@ -452,12 +452,14 @@ fn seeded_journal() -> Fixture {
         r##"{"title":"Work","color":"#336699","emoji":"🧪"}"##,
     );
     let today = today_day();
-    let base = chrono::NaiveDate::parse_from_str(&today, "%Y%m%d")
-        .expect("today")
-        .and_hms_opt(9, 0, 0)
+    let base = jiff::tz::Offset::UTC
+        .to_timestamp(
+            solstone_core_time::parse_day(&today)
+                .expect("today")
+                .at(9, 0, 0, 0),
+        )
         .expect("time")
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     let events = [
         json!({"kind":"owner_message","ts":base,"text":"Please summarize the seeded record.","app":"chat","path":format!("/app/chat/{today}"),"facet":"work"}),
         json!({"kind":"sol_chat_request","ts":base+1000,"request_id":"seeded-threaded-request","summary":"Offer a seeded follow-up.","message":"A seeded request is ready.","category":"follow_up","dedupe":"seeded-threaded","dedupe_window":"24h","since_ts":base,"trigger_talent":"flow"}),
@@ -568,7 +570,11 @@ fn write(path: &Path, source: &str) {
 }
 /// Today in the seeded journal's configured zone, UTC.
 fn today_day() -> String {
-    chrono::Utc::now().format("%Y%m%d").to_string()
+    solstone_core_time::day_key(
+        jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date(),
+    )
 }
 
 #[tokio::test]

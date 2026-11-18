@@ -6,7 +6,6 @@
 
 use super::*;
 use crate::tests::tempfile_dir;
-use chrono::Duration;
 use solstone_core_removals::Page;
 use std::fs;
 
@@ -109,9 +108,9 @@ fn trash_import(root: &Path) -> Item {
 }
 
 /// Rewrite an item's erase date, as a setting changed between two deletes.
-fn redate(root: &Path, id: &str, at: DateTime<Utc>) {
+fn redate(root: &Path, id: &str, at: Timestamp) {
     let mut item = read_item(root, id).unwrap().unwrap();
-    item.erase_at = at.to_rfc3339_opts(SecondsFormat::Millis, true);
+    item.erase_at = utc_z(at, Precision::Millis);
     publish(root, &item).unwrap();
 }
 
@@ -120,15 +119,15 @@ fn a_segment_names_what_it_needs_and_its_import_never_erases_first() {
     let (_dir, root) = journal();
     let first = trash_first(&root);
     assert_eq!(first.needs, vec![RECORD.to_owned()]);
-    let later = Utc::now() + Duration::days(30);
+    let later = Timestamp::now() + SignedDuration::from_hours(24 * 30);
     redate(&root, &first.id, later);
     let import = trash_import(&root);
     assert!(import.needs.is_empty());
     assert_eq!(import.erase_at().unwrap(), first_erase_at(&root, &first.id));
-    assert!(import.erase_at().unwrap() > Utc::now() + Duration::days(29));
+    assert!(import.erase_at().unwrap() > Timestamp::now() + SignedDuration::from_hours(24 * 29));
 }
 
-fn first_erase_at(root: &Path, id: &str) -> DateTime<Utc> {
+fn first_erase_at(root: &Path, id: &str) -> Timestamp {
     read_item(root, id).unwrap().unwrap().erase_at().unwrap()
 }
 
@@ -136,9 +135,13 @@ fn first_erase_at(root: &Path, id: &str) -> DateTime<Utc> {
 fn an_import_waiting_longer_keeps_its_own_date() {
     let (_dir, root) = journal();
     let first = trash_first(&root);
-    redate(&root, &first.id, Utc::now() + Duration::hours(1));
+    redate(
+        &root,
+        &first.id,
+        Timestamp::now() + SignedDuration::from_hours(1),
+    );
     let import = trash_import(&root);
-    assert!(import.erase_at().unwrap() > Utc::now() + Duration::days(6));
+    assert!(import.erase_at().unwrap() > Timestamp::now() + SignedDuration::from_hours(24 * 6));
 }
 
 #[test]
@@ -177,8 +180,16 @@ fn the_timer_erases_the_segment_before_the_import() {
     let import = trash_import(&root);
     // Dated apart, as two deletes a day apart are.
     let segment_due = first.erase_at().unwrap();
-    redate(&root, &import.id, segment_due + Duration::days(1));
-    let swept = sweep(&root, &[&Needing], segment_due + Duration::hours(1));
+    redate(
+        &root,
+        &import.id,
+        segment_due + SignedDuration::from_hours(24),
+    );
+    let swept = sweep(
+        &root,
+        &[&Needing],
+        segment_due + SignedDuration::from_hours(1),
+    );
     assert_eq!(swept.failed, Vec::<String>::new());
     assert!(read_item(&root, &first.id).unwrap().is_none());
     assert!(read_item(&root, &import.id).unwrap().is_some());
@@ -220,7 +231,7 @@ fn the_import_falling_due_first_erases_its_segment_and_the_sweep_reports_nothing
     // Both due, the import first: its erase takes the segment, which the sweep
     // then meets already gone.
     let due = first.erase_at().unwrap();
-    redate(&root, &import.id, due - Duration::hours(1));
+    redate(&root, &import.id, due - SignedDuration::from_hours(1));
     let swept = sweep(&root, &[&Needing], due);
     assert_eq!(swept.failed, Vec::<String>::new());
     assert_eq!(
@@ -253,7 +264,7 @@ fn an_erase_now_stopped_part_way_leaves_what_needs_it_erasing_for_the_sweep() {
     );
     assert_eq!(waiting.pending.unwrap().action, Action::Erase);
     fs::set_permissions(&held, fs::Permissions::from_mode(0o700)).unwrap();
-    let swept = sweep(&root, &[&Needing], Utc::now());
+    let swept = sweep(&root, &[&Needing], Timestamp::now());
     assert_eq!(swept.failed, Vec::<String>::new());
     assert!(read_item(&root, &first.id).unwrap().is_none());
     assert!(read_item(&root, &import.id).unwrap().is_none());

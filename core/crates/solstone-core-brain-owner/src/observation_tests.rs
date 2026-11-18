@@ -47,8 +47,8 @@ fn spp_journal() -> tempfile::TempDir {
 
 struct ReadySpp;
 impl OwnerSppPrerequisite for ReadySpp {
-    fn assess(&self, _: &Path, _: &Map<String, Value>, now: DateTime<Utc>) -> Value {
-        json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now+Duration::days(1)).to_rfc3339()})
+    fn assess(&self, _: &Path, _: &Map<String, Value>, now: Timestamp) -> Value {
+        json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))})
     }
 }
 
@@ -368,9 +368,10 @@ fn renewal_fallback_and_safe_renewal_retain_the_explicit_context() {
 #[test]
 fn observed_busy_has_no_invented_permit_or_publication() {
     let temp = cloud_journal();
-    let held = solstone_core_brain::begin_refresh(temp.path(), Utc::now(), None, None, false, None)
-        .unwrap()
-        .unwrap();
+    let held =
+        solstone_core_brain::begin_refresh(temp.path(), Timestamp::now(), None, None, false, None)
+            .unwrap()
+            .unwrap();
     let before = std::fs::read(brain_state_path(temp.path())).unwrap();
     let (sink, mut rows) = sink();
     let observation = sink.begin(ObservationCaller::MobileRefresh).unwrap();

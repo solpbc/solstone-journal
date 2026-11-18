@@ -13,7 +13,8 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
+use jiff::civil::{Date, DateTime};
+use jiff::{SignedDuration, Span, ZonedDateTime};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
@@ -21,7 +22,7 @@ use solstone_core_format::content::body_records::{
     render_row,
 };
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_TILE_FILE, strava_rows};
-use solstone_core_journal_config::Tz;
+use solstone_core_journal_config::TimeZone;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
 };
@@ -174,9 +175,8 @@ impl BodyHides {
     fn reaching(&self, day: &str) -> Option<&BTreeSet<String>> {
         let days = self.days.days()?;
         let date = day_date(day)?;
-        let reach = (date - chrono::Duration::days(HIDE_REACH_DAYS))
-            .format("%Y%m%d")
-            .to_string();
+        let reach =
+            solstone_core_time::day_key(date.checked_sub(Span::new().days(HIDE_REACH_DAYS)).ok()?);
         days.range(reach..day.to_owned()).next().map(|_| days)
     }
 
@@ -289,7 +289,7 @@ impl BodyHides {
 }
 
 /// The zone that placed a body stream's windows, when its source fixed one.
-fn source_zone(journal_root: &Path, stream: &str) -> Option<Tz> {
+fn source_zone(journal_root: &Path, stream: &str) -> Option<TimeZone> {
     stream
         .strip_prefix("import.")
         .and_then(|source| solstone_core_journal_config::placed_zone(journal_root, source))
@@ -588,39 +588,40 @@ type Keyed = (i64, String, String, String);
 /// import, whatever offset a row states, so a row is found and ordered by its instant
 /// against that zone. A source with no such record goes by each row's stated clock,
 /// and a row's place stays inside its window either way, so no read can lose it.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Clock {
-    date: NaiveDate,
-    zone: Option<Tz>,
+    date: Date,
+    zone: Option<TimeZone>,
 }
 
 impl Clock {
-    fn new(journal_root: &Path, stream: &str, date: NaiveDate) -> Self {
+    fn new(journal_root: &Path, stream: &str, date: Date) -> Self {
         let zone = source_zone(journal_root, stream);
         Self { date, zone }
     }
 
     /// A time's place in order, comparable with `bound`.
-    fn order(self, time: DateTime<FixedOffset>) -> i64 {
+    fn order(&self, time: &ZonedDateTime) -> i64 {
         match self.zone {
-            Some(_) => time.timestamp_millis(),
-            None => time.naive_local().and_utc().timestamp_millis(),
+            Some(_) => instant_millis(time),
+            None => civil_millis(time.datetime()),
         }
     }
 
     /// Where `seconds` into the day falls in order: the first time the clock shows
     /// it, or the last for a window's end, since an hour can repeat in the fall. A
     /// clock time skipped in the spring falls where the clock resumes.
-    fn bound(self, seconds: u32, last: bool) -> i64 {
-        let local = self
-            .date
-            .and_hms_opt(0, 0, 0)
-            .expect("midnight exists as a clock time")
-            + chrono::Duration::seconds(i64::from(seconds));
-        let Some(zone) = self.zone else {
-            return local.and_utc().timestamp_millis();
+    fn bound(&self, seconds: u32, last: bool) -> i64 {
+        let midnight = self.date.to_datetime(jiff::civil::Time::midnight());
+        let into = SignedDuration::from_secs(i64::from(seconds));
+        let Ok(local) = midnight.checked_add(into) else {
+            // Past the last representable clock time: the plain clock reading.
+            return civil_millis(midnight) + i64::from(seconds) * 1000;
         };
-        let found = zone.from_local_datetime(&local);
+        let Some(zone) = &self.zone else {
+            return civil_millis(local);
+        };
+        let found = solstone_core_time::from_local(zone, local);
         let found = if last {
             found.latest()
         } else {
@@ -628,47 +629,69 @@ impl Clock {
         };
         found
             .or_else(|| {
-                zone.from_local_datetime(&(local + chrono::Duration::hours(1)))
-                    .earliest()
+                local
+                    .checked_add(SignedDuration::from_hours(1))
+                    .ok()
+                    .and_then(|later| solstone_core_time::from_local(zone, later).earliest())
             })
-            .map_or_else(
-                || local.and_utc().timestamp_millis(),
-                |time| time.timestamp_millis(),
-            )
+            .map_or_else(|| civil_millis(local), |time| instant_millis(&time))
     }
 
     /// Milliseconds into the day on this clock, for reading against a span an agent
     /// asked for. A time on an earlier day reads as the day's start, and one on a
     /// later day as its end.
-    fn into_day(self, time: DateTime<FixedOffset>) -> i64 {
-        let local = match self.zone {
-            Some(zone) => time.with_timezone(&zone).naive_local(),
-            None => time.naive_local(),
+    fn millis_into_day(&self, time: &ZonedDateTime) -> i64 {
+        let local = match &self.zone {
+            Some(zone) => time.with_time_zone(zone.clone()).datetime(),
+            None => time.datetime(),
         };
         match local.date().cmp(&self.date) {
             std::cmp::Ordering::Less => 0,
             std::cmp::Ordering::Greater => 86_400_000,
             std::cmp::Ordering::Equal => {
-                i64::from(local.time().num_seconds_from_midnight()) * 1000
-                    + i64::from(local.time().nanosecond() / 1_000_000)
+                let time = local.time();
+                (i64::from(time.hour()) * 3600
+                    + i64::from(time.minute()) * 60
+                    + i64::from(time.second()))
+                    * 1000
+                    + i64::from(time.subsec_nanosecond() / 1_000_000)
             }
         }
     }
 }
 
-fn day_date(day: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(day, "%Y%m%d").ok()
+fn day_date(day: &str) -> Option<Date> {
+    solstone_core_time::parse_day(day)
+}
+
+/// Whole milliseconds since the Unix epoch, rounded toward the past.
+fn floor_millis(nanos: i128) -> i64 {
+    i64::try_from(nanos.div_euclid(1_000_000)).unwrap_or(i64::MAX)
+}
+
+/// The instant `time` names, as [`floor_millis`].
+fn instant_millis(time: &ZonedDateTime) -> i64 {
+    floor_millis(time.timestamp().as_nanosecond())
+}
+
+/// A clock reading taken as if it were UTC, as [`floor_millis`].
+fn civil_millis(local: DateTime) -> i64 {
+    floor_millis(
+        local
+            .duration_since(DateTime::constant(1970, 1, 1, 0, 0, 0, 0))
+            .as_nanos(),
+    )
 }
 
 /// Whether a row in `window` belongs to a read of `from..to`, in milliseconds into
 /// the day: a timed row inside it, or one whose interval or experience overlaps it.
 /// A row's start is taken inside its window, which it's stored in by that start. A
 /// row with no time states something about the date, so it always belongs.
-fn within(row: &BodyRow, clock: Clock, window: &Window, from: i64, to: i64) -> bool {
+fn within(row: &BodyRow, clock: &Clock, window: &Window, from: i64, to: i64) -> bool {
     let Some(begin) = row.begins().and_then(parse_source_time) else {
         return true;
     };
-    let begin = clock.into_day(begin).clamp(
+    let begin = clock.millis_into_day(&begin).clamp(
         i64::from(window.start_seconds) * 1000,
         i64::from(window.end_seconds) * 1000 - 1,
     );
@@ -676,7 +699,7 @@ fn within(row: &BodyRow, clock: Clock, window: &Window, from: i64, to: i64) -> b
         .end
         .as_deref()
         .and_then(parse_source_time)
-        .map_or(begin, |end| clock.into_day(end));
+        .map_or(begin, |end| clock.millis_into_day(&end));
     if end > begin {
         begin < to && end > from
     } else {
@@ -744,7 +767,7 @@ fn ids_in_a_better_copy(
 /// before `from`, reached by looking back, only intervals that run into it belong.
 fn window_rows(
     window: &Window,
-    clock: Clock,
+    clock: &Clock,
     from: i64,
     to: i64,
     kind: Option<&str>,
@@ -777,7 +800,7 @@ fn window_rows(
                     .begins()
                     .and_then(parse_source_time)
                     .map_or(start, |time| {
-                        clock.order(time).clamp(start, (end - 1).max(start))
+                        clock.order(&time).clamp(start, (end - 1).max(start))
                     });
                 rows.push((at, window.name.clone(), row.id.clone(), render_row(&row)));
             }
@@ -889,7 +912,7 @@ pub(crate) fn list_source(
     let ranged = in_range.clone();
     let clock = day_date(day).map(|date| Clock::new(journal_root, stream, date));
     let mut unreadable = 0_u64;
-    let in_range: Vec<&Window> = match (kind, clock) {
+    let in_range: Vec<&Window> = match (kind, clock.as_ref()) {
         (Some(kind), Some(clock)) => in_range
             .into_iter()
             .filter(|window| {
@@ -916,7 +939,7 @@ pub(crate) fn list_source(
     // the list reads as it would without a kind, and with a window that couldn't
     // say, the count stands in for the note.
     let holds_entries = || {
-        clock.is_some_and(|clock| {
+        clock.as_ref().is_some_and(|clock| {
             ranged.iter().any(|window| {
                 window_rows(
                     window,
@@ -932,7 +955,7 @@ pub(crate) fn list_source(
     // With nothing to list, an interval from before the range is still in it. A
     // window reached only by looking back isn't listed, so the answer says so.
     let mut began_earlier = false;
-    if let (true, Some(clock)) = (in_range.is_empty(), clock) {
+    if let (true, Some(clock)) = (in_range.is_empty(), clock.as_ref()) {
         for window in &behind {
             match window_rows(
                 window,
@@ -1198,7 +1221,7 @@ pub(crate) fn read_source_span(
                 break;
             }
             reached += 1;
-            let rows = window_rows(window, clock, from_ms, to_ms, kind);
+            let rows = window_rows(window, &clock, from_ms, to_ms, kind);
             // Under a kind, a window holding none of it doesn't count toward the cap.
             if kind.is_none() || rows.as_ref().is_ok_and(|rows| !rows.is_empty()) {
                 visited += 1;

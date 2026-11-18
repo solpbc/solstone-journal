@@ -18,8 +18,9 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
-use chrono_tz::Tz;
+use jiff::ZonedDateTime;
+use jiff::civil::{Date, DateTime};
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
@@ -49,23 +50,23 @@ pub(crate) async fn day_route(
     }
 }
 
-fn on_clock(time: DateTime<FixedOffset>, zone: Option<Tz>) -> NaiveDateTime {
+fn on_clock(time: &ZonedDateTime, zone: Option<&TimeZone>) -> DateTime {
     zone.map_or_else(
-        || time.naive_local(),
-        |zone| time.with_timezone(&zone).naive_local(),
+        || time.datetime(),
+        |zone| zone.to_datetime(time.timestamp()),
     )
 }
 
 /// A row's own time as the owner reads it: the date only when it isn't this day.
-fn time_words(text: Option<&str>, day: NaiveDate, zone: Option<Tz>) -> Option<String> {
-    let local = on_clock(parse_source_time(text?)?, zone);
+fn time_words(text: Option<&str>, day: Date, zone: Option<&TimeZone>) -> Option<String> {
+    let local = on_clock(&parse_source_time(text?)?, zone);
     let label = clock(local);
     if local.date() == day {
         Some(label)
     } else {
         Some(format!(
             "{}, {label}",
-            local.format("%b %-d").to_string().to_lowercase()
+            local.strftime("%b %-d").to_string().to_lowercase()
         ))
     }
 }
@@ -100,23 +101,28 @@ fn owner_titles(root: &Path, day: &str) -> BTreeMap<(String, String), String> {
 #[derive(Default)]
 struct Tally {
     count: u64,
-    first: Option<DateTime<FixedOffset>>,
-    last: Option<DateTime<FixedOffset>>,
+    first: Option<ZonedDateTime>,
+    last: Option<ZonedDateTime>,
 }
 
 impl Tally {
     fn add(&mut self, row: &BodyRow) {
         self.count += 1;
         if let Some(time) = row.begins().and_then(parse_source_time) {
-            self.first = Some(self.first.map_or(time, |first| first.min(time)));
-            self.last = Some(self.last.map_or(time, |last| last.max(time)));
+            self.first = Some(match self.first.take() {
+                Some(first) => first.min(time.clone()),
+                None => time.clone(),
+            });
+            self.last = Some(match self.last.take() {
+                Some(last) => last.max(time),
+                None => time,
+            });
         }
     }
 
-    fn time_labels(&self, zone: Option<Tz>) -> (Option<String>, Option<String>) {
-        let label =
-            |time: Option<DateTime<FixedOffset>>| time.map(|time| clock(on_clock(time, zone)));
-        (label(self.first), label(self.last))
+    fn time_labels(&self, zone: Option<&TimeZone>) -> (Option<String>, Option<String>) {
+        let label = |time: Option<&ZonedDateTime>| time.map(|time| clock(on_clock(time, zone)));
+        (label(self.first.as_ref()), label(self.last.as_ref()))
     }
 }
 
@@ -131,8 +137,8 @@ struct CountSum {
 
 fn experience_item(
     row: &BodyRow,
-    day: NaiveDate,
-    zone: Option<Tz>,
+    day: Date,
+    zone: Option<&TimeZone>,
     title: Option<&String>,
     continuing: bool,
 ) -> Value {
@@ -167,8 +173,8 @@ fn source_section(
     stream: &str,
     source: &str,
     rows: &[BodyRow],
-    day: NaiveDate,
-    zone: Option<Tz>,
+    day: Date,
+    zone: Option<&TimeZone>,
     titles: &BTreeMap<(String, String), String>,
 ) -> Value {
     let starts_today: BTreeSet<&str> = rows
@@ -241,8 +247,9 @@ fn source_section(
             RowKind::Event | RowKind::Moved => {}
         }
     }
-    experiences.sort_by_key(|(time, _)| time.map(|time| time.timestamp_millis()));
-    continuing.sort_by_key(|(time, _)| time.map(|time| time.timestamp_millis()));
+    experiences
+        .sort_by_key(|(time, _)| time.as_ref().map(|time| time.timestamp().as_millisecond()));
+    continuing.sort_by_key(|(time, _)| time.as_ref().map(|time| time.timestamp().as_millisecond()));
     let experiences = continuing
         .into_iter()
         .chain(experiences)
@@ -350,7 +357,14 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
             let source = stream.strip_prefix("import.").unwrap_or(stream);
             let rows = by_source.get(source)?;
             let zone = solstone_core_journal_config::placed_zone(root, source);
-            Some(source_section(stream, source, rows, date, zone, &titles))
+            Some(source_section(
+                stream,
+                source,
+                rows,
+                date,
+                zone.as_ref(),
+                &titles,
+            ))
         })
         .collect::<Vec<_>>();
     let has_data = !sources.is_empty() || !strava.is_empty() || unreadable > 0;

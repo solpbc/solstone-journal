@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use solstone_core_journal_io::{AtomicWriteOptions, day_path, write_bytes_exclusive};
 
 use crate::{ApplyError, FailedPlan, IngestFile};
@@ -28,7 +28,7 @@ pub fn quarantine_failed(
     plan: &FailedPlan,
     files: &[IngestFile<'_>],
 ) -> Result<QuarantineReceipt, ApplyError> {
-    let timestamp_millis = Utc::now().timestamp_millis();
+    let timestamp_millis = Timestamp::now().as_millisecond();
     let base = day_path(journal_root, day, false)
         .map_err(ApplyError::Path)?
         .join("observer")

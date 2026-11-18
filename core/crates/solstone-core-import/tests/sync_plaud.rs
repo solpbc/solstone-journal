@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use chrono::{DateTime, Duration, Local, TimeZone};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
@@ -137,7 +138,7 @@ impl ImportPipeline for CheckpointPipeline {
 
 #[derive(Default)]
 struct ImportedPipeline {
-    instants: RefCell<Vec<Option<DateTime<chrono::Utc>>>>,
+    instants: RefCell<Vec<Option<Timestamp>>>,
     calls: RefCell<Vec<(Option<String>, PipelineAuto<'static>)>>,
 }
 impl ImportPipeline for ImportedPipeline {
@@ -427,15 +428,15 @@ fn save_keeps_past_and_near_future_timestamps_without_fallback() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;
     let clock = Clock;
-    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let fixed_now: Timestamp = "2026-08-11T12:00:00+00:00".parse().unwrap();
     let past = fixed_now
-        .checked_sub_signed(Duration::seconds(1))
+        .checked_sub(SignedDuration::from_secs(1))
         .unwrap()
-        .timestamp();
+        .as_second();
     let near_future = fixed_now
-        .checked_add_signed(Duration::seconds(172_799))
+        .checked_add(SignedDuration::from_secs(172_799))
         .unwrap()
-        .timestamp();
+        .as_second();
     let mut catalogue = Catalogue {
         files: vec![
             file("past", past as f64, 60_000.0),
@@ -471,7 +472,7 @@ fn save_keeps_past_and_near_future_timestamps_without_fallback() {
             .instants
             .borrow()
             .iter()
-            .map(|instant| instant.unwrap().timestamp())
+            .map(|instant| instant.unwrap().as_second())
             .collect::<Vec<_>>(),
         [near_future, past]
     );
@@ -487,11 +488,13 @@ fn save_trusts_timestamp_exactly_48_hours_ahead() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;
     let clock = Clock;
-    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
-    let boundary = fixed_now.checked_add_signed(Duration::hours(48)).unwrap();
-    assert_eq!(boundary.timestamp(), 1_786_622_400);
+    let fixed_now: Timestamp = "2026-08-11T12:00:00+00:00".parse().unwrap();
+    let boundary = fixed_now
+        .checked_add(SignedDuration::from_hours(48))
+        .unwrap();
+    assert_eq!(boundary.as_second(), 1_786_622_400);
     let mut catalogue = Catalogue {
-        files: vec![file("boundary", boundary.timestamp() as f64, 60_000.0)],
+        files: vec![file("boundary", boundary.as_second() as f64, 60_000.0)],
         fail: false,
     };
     let matches = Matches(BTreeMap::new());
@@ -519,7 +522,7 @@ fn save_trusts_timestamp_exactly_48_hours_ahead() {
     let entry = &outcome.state.root()["files"]["boundary"];
     assert_eq!(
         entry["import_timestamp"],
-        device_timestamp(boundary.timestamp())
+        device_timestamp(boundary.as_second())
     );
     assert!(entry.get("import_timestamp_fallback").is_none());
 }
@@ -531,12 +534,12 @@ fn save_falls_back_for_timestamp_more_than_48_hours_ahead() {
     configure_utc(tree.path());
     let credential = Credential;
     let clock = Clock;
-    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let fixed_now: Timestamp = "2026-08-11T12:00:00+00:00".parse().unwrap();
     let future = fixed_now
-        .checked_add_signed(Duration::hours(48) + Duration::seconds(1))
+        .checked_add(SignedDuration::from_hours(48) + SignedDuration::from_secs(1))
         .unwrap();
     let mut catalogue = Catalogue {
-        files: vec![file("future", future.timestamp() as f64, 60_000.0)],
+        files: vec![file("future", future.as_second() as f64, 60_000.0)],
         fail: false,
     };
     let matches = Matches(BTreeMap::new());
@@ -577,15 +580,15 @@ fn save_disambiguates_same_run_fallback_timestamps() {
     configure_utc(tree.path());
     let credential = Credential;
     let clock = Clock;
-    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let fixed_now: Timestamp = "2026-08-11T12:00:00+00:00".parse().unwrap();
     let first_future = fixed_now
-        .checked_add_signed(Duration::hours(49))
+        .checked_add(SignedDuration::from_hours(49))
         .unwrap()
-        .timestamp();
+        .as_second();
     let second_future = fixed_now
-        .checked_add_signed(Duration::hours(50))
+        .checked_add(SignedDuration::from_hours(50))
         .unwrap()
-        .timestamp();
+        .as_second();
     let mut catalogue = Catalogue {
         files: vec![
             file("first", first_future as f64, 60_000.0),
@@ -944,11 +947,10 @@ fn file(id: &str, start_time: f64, duration: f64) -> PlaudFile {
 }
 
 fn device_timestamp(seconds: i64) -> String {
-    Local
-        .timestamp_opt(seconds, 0)
-        .single()
+    Timestamp::new(seconds, 0)
         .unwrap()
-        .format("%Y%m%d_%H%M%S")
+        .to_zoned_datetime(TimeZone::system())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string()
 }
 

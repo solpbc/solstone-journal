@@ -11,7 +11,9 @@ use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode, header},
 };
-use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
+use jiff::civil::Date;
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use solstone_core_journal_io::{
@@ -65,32 +67,34 @@ impl Fixture {
         );
     }
 
-    fn talent_guards(&self, now: chrono::DateTime<Utc>) {
-        for day in [now.date_naive(), now.date_naive() - Duration::days(1)] {
+    fn talent_guards(&self, now: Timestamp) {
+        let today = utc_date(now);
+        for day in [today, today.yesterday().expect("yesterday")] {
             write_jsonl(
                 &self
                     .root
                     .path()
                     .join("talents")
-                    .join(format!("{}.jsonl", day.format("%Y%m%d"))),
-                &[json!({"ts":now.timestamp_millis(),"status":"ok"})],
+                    .join(format!("{}.jsonl", day.strftime("%Y%m%d"))),
+                &[json!({"ts":now.as_millisecond(),"status":"ok"})],
             );
         }
     }
 
     fn health_log(&self, day: &str, run: &str, rows: &[Value]) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").expect("health-log day");
-        let opened = FixedOffset::east_opt(0)
-            .expect("UTC")
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).expect("noon"))
-            .single()
-            .expect("unambiguous UTC instant");
+        let day = Date::strptime("%Y%m%d", day).expect("health-log day");
+        let opened = solstone_core_time::at_offset(
+            Offset::UTC
+                .to_timestamp(day.at(12, 0, 0, 0))
+                .expect("UTC instant"),
+            Offset::UTC,
+        );
         let mut writer = create_oplog_at(
             JournalRoot::open(self.root.path()).expect("journal root"),
             "think",
             run,
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .expect("canonical health log");
         for row in rows {
@@ -333,12 +337,20 @@ async fn pipeline_rejects_non_calendar_day() {
     );
 }
 
+fn utc_date(now: Timestamp) -> Date {
+    Offset::UTC.to_datetime(now).date()
+}
+
+fn utc_day(now: Timestamp) -> String {
+    utc_date(now).strftime("%Y%m%d").to_string()
+}
+
 /// The fixture journal is configured for UTC, so its "now" and days are UTC.
-fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Utc>, String) {
+fn prepared_report_fixture() -> (Fixture, Timestamp, String) {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
-    let day = now.format("%Y%m%d").to_string();
+    let now = Timestamp::now();
+    let day = utc_day(now);
     fixture.talent_guards(now);
     fixture.facet("work");
     fixture.facet("personal");
@@ -347,7 +359,7 @@ fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Utc>, String) {
         &day,
         &[json!({
             "id":"work-rich",
-            "created_at":(now - Duration::days(20)).timestamp_millis(),
+            "created_at":(now - SignedDuration::from_hours(24 * 20)).as_millisecond(),
             "segments":["000000_3600"],
             "participation":true,
             "story":{"summary":"done"},
@@ -377,11 +389,10 @@ async fn rich_fixture_matches_the_complete_report_contract() {
     assert_eq!(status, StatusCode::OK);
     let mut body = body_json(&bytes);
     normalize_report(&mut body);
-    let last_segment = Utc
-        .from_local_datetime(&now.date_naive().and_hms_opt(2, 0, 0).unwrap())
-        .single()
+    let last_segment = Offset::UTC
+        .to_timestamp(utc_date(now).at(2, 0, 0, 0))
         .unwrap()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(
         body,
         json!({
@@ -461,8 +472,8 @@ async fn activity_fixture_variation_changes_only_synthesis_fields() {
 async fn entity_fixture_variation_changes_only_consumer_signal_fields() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
-    let day = now.format("%Y%m%d").to_string();
+    let now = Timestamp::now();
+    let day = utc_day(now);
     fixture.talent_guards(now);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
     write_json(
@@ -485,8 +496,8 @@ async fn entity_fixture_variation_changes_only_consumer_signal_fields() {
 async fn segment_fixture_variation_changes_only_backlog_fields() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
-    let day = now.format("%Y%m%d").to_string();
+    let now = Timestamp::now();
+    let day = utc_day(now);
     fixture.talent_guards(now);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
     fixture.screen_segment(&day, "120000_60");
@@ -514,7 +525,7 @@ async fn segment_fixture_variation_changes_only_backlog_fields() {
 async fn pipeline_route_returns_fixture_values_not_zero_defaults() {
     let fixture = Fixture::new();
     fixture.established();
-    let day = Utc::now().format("%Y%m%d").to_string();
+    let day = utc_day(Timestamp::now());
     fixture.health_log(
         &day,
         "daily",
@@ -553,8 +564,8 @@ async fn pipeline_route_returns_fixture_values_not_zero_defaults() {
 async fn degraded_report_inputs_stay_200_but_internal_failures_are_safe_500s() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
-    let day = now.format("%Y%m%d").to_string();
+    let now = Timestamp::now();
+    let day = utc_day(now);
     fixture.talent_guards(now);
     fs::write(fixture.root.path().join("talents/20260401.jsonl"), b"{").unwrap();
     let (status, _, bytes) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
@@ -571,8 +582,10 @@ async fn degraded_report_inputs_stay_200_but_internal_failures_are_safe_500s() {
             .any(|note| note["severity"] == "warn")
     );
 
-    let past = (now.date_naive() - Duration::days(1))
-        .format("%Y%m%d")
+    let past = utc_date(now)
+        .yesterday()
+        .unwrap()
+        .strftime("%Y%m%d")
         .to_string();
     fixture.screen_segment(&past, "120000_60");
     let (status, _, bytes) = get(&format!("/api/health/pipeline?day={past}"), &fixture).await;

@@ -790,9 +790,9 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), 200);
-        let day = chrono::Utc::now()
-            .with_timezone(&solstone_core_journal_config::owner_zone(root.path()))
-            .format("%Y%m%d")
+        let day = jiff::Timestamp::now()
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(root.path()))
+            .strftime("%Y%m%d")
             .to_string();
         let log = fs::read_to_string(
             root.path()

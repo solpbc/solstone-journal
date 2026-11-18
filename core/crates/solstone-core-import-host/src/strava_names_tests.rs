@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_generate::{GeneratedResponse, RefusalReason, RefusedResponse};
 use solstone_core_import::strava_names::{STRAVA_LOCK, STRAVA_NAMES_FILE};
@@ -16,8 +15,12 @@ use super::*;
 const LIVE: &str = r#"{"providers":{"active":{"provider":"local"}}}"#;
 
 /// Noon in the owner's zone, which no test window holds.
-fn noon() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 8, 19, 0, 0).unwrap()
+fn noon() -> Timestamp {
+    jiff::civil::date(2026, 11, 8)
+        .at(19, 0, 0, 0)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 /// A journal with the facets `body` and `other`, its zone and owner, and
@@ -697,11 +700,7 @@ fn words_read_when_the_facets_cant_be_read_after_are_kept_and_said_so() {
 }
 
 /// A clock that reads `open` the first `times` times, and `closed` after.
-fn clock_closing_after(
-    times: usize,
-    open: DateTime<Utc>,
-    closed: DateTime<Utc>,
-) -> impl Fn() -> DateTime<Utc> {
+fn clock_closing_after(times: usize, open: Timestamp, closed: Timestamp) -> impl Fn() -> Timestamp {
     let read = std::cell::Cell::new(0);
     move || {
         read.set(read.get() + 1);
@@ -720,7 +719,7 @@ fn no_call_is_made_once_the_window_closes_part_way() {
     let model = Model::answering(json!([person("Sam", "with Sam")]));
     // Noon in the owner's zone for the first call, then two in the afternoon,
     // after the window.
-    let clock = clock_closing_after(1, noon(), noon() + chrono::Duration::hours(2));
+    let clock = clock_closing_after(1, noon(), noon() + jiff::SignedDuration::from_hours(2));
 
     let outcome = record_strava_names(root, &model, &clock);
 

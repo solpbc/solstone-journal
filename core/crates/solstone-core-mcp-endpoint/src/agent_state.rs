@@ -8,13 +8,14 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_format::agent_memory::SourceKey;
 use solstone_core_journal_io::{
     AtomicWriteError, JsonWriteOptions, LockError, LockOptions, PathError,
     create_directory_with_mode, hold_lock, write_json,
 };
+use solstone_core_time::Precision;
 
 use crate::tokens::RandomSource;
 
@@ -362,7 +363,7 @@ fn random_hex_16(random: &dyn RandomSource) -> Result<String, AgentStateError> {
 pub(crate) fn set_owner_pause(
     journal_root: &Path,
     connection: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     random: &dyn RandomSource,
 ) -> Result<String, AgentStateError> {
     set_owner_pause_with_options(
@@ -377,7 +378,7 @@ pub(crate) fn set_owner_pause(
 pub(crate) fn set_owner_pause_with_options(
     journal_root: &Path,
     connection: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     random: &dyn RandomSource,
     lock_options: LockOptions,
 ) -> Result<String, AgentStateError> {
@@ -395,7 +396,7 @@ pub(crate) fn set_owner_pause_with_options(
     }
 
     let pause_id = random_hex_16(random)?;
-    let since = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let since = solstone_core_time::utc_z(now, Precision::Secs);
     store
         .entries
         .push(AgentStateEntry::OwnerPause(OwnerPauseRecord {
@@ -439,7 +440,7 @@ pub(crate) fn bump_attempts(
     journal_root: &Path,
     connection: &str,
     stamp: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), AgentStateError> {
     bump_attempts_with_options(
         journal_root,
@@ -455,7 +456,7 @@ pub(crate) fn bump_attempts_with_options(
     journal_root: &Path,
     connection: &str,
     stamp: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     lock_options: LockOptions,
     on_hold: &dyn Fn(),
 ) -> Result<(), AgentStateError> {
@@ -465,7 +466,7 @@ pub(crate) fn bump_attempts_with_options(
     let mut store = read_store_from_path(&path)?;
     on_hold();
 
-    let now_str = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let now_str = solstone_core_time::utc_z(now, Precision::Secs);
     let mut found = false;
     for entry in &mut store.entries {
         if let AgentStateEntry::Attempts(attempts) = entry
@@ -599,7 +600,6 @@ pub(crate) fn find_connection_by_memory_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use tempfile::TempDir;
 
     #[test]
@@ -642,7 +642,7 @@ mod tests {
         assert_eq!(paused.since, "2026-11-01T00:00:00Z");
 
         let random = crate::tokens::SystemRandomSource;
-        let now = Utc.with_ymd_and_hms(2026, 11, 2, 0, 0, 0).unwrap();
+        let now = "2026-11-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let second_pause_id = set_owner_pause(dir.path(), "test:conn", now, &random).unwrap();
         assert_eq!(second_pause_id, "0123456789abcdef0123456789abcdef");
 
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn same_datetime_pause_re_pause_different_id_and_attempts_preserved() {
         let dir = TempDir::new_in(crate::test_scratch()).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap();
+        let now = "2026-11-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let random = crate::tokens::SystemRandomSource;
         let conn = "test:repause";
 
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn idle_pause_bump_hold_does_not_lose_or_double_count() {
-        let now = Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap();
+        let now = "2026-11-01T12:00:00Z".parse::<Timestamp>().unwrap();
 
         // 1. Uncontended probe: one bump with timeout zero on a fresh journal must succeed.
         let probe_dir = TempDir::new_in(crate::test_scratch()).unwrap();

@@ -7,13 +7,14 @@ license.workspace = true
 publish = false
 
 [dependencies]
-chrono = { workspace = true }
 getrandom = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2.workspace = true
 solstone-core-journal = { workspace = true }
+solstone-core-time = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

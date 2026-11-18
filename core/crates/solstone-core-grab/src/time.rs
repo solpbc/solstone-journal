@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use jiff::SignedDuration;
+use jiff::civil::{DateTime, Time};
 use serde_json::Value;
 use solstone_core_format::segment::segment_parse;
 
@@ -9,12 +10,12 @@ use crate::error::GrabFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SegmentWindow {
-    pub start: NaiveDateTime,
-    pub end: NaiveDateTime,
+    pub start: DateTime,
+    pub end: DateTime,
 }
 
 pub(crate) fn segment_window(day: &str, segment: &str) -> Result<SegmentWindow, GrabFailure> {
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| {
+    let date = solstone_core_time::parse_day(day).ok_or_else(|| {
         GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
     })?;
     let times = segment_parse(segment).ok_or_else(|| {
@@ -31,31 +32,29 @@ pub(crate) fn segment_window(day: &str, segment: &str) -> Result<SegmentWindow, 
     let seconds = duration.parse::<i64>().map_err(|_| {
         GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
     })?;
-    let start = date.and_time(
-        NaiveTime::from_hms_opt(
-            u32::from(times.hour),
-            u32::from(times.minute),
-            u32::from(times.second),
+    let start = date.to_datetime(
+        Time::new(
+            i8::try_from(times.hour).expect("segment_parse validates clock"),
+            i8::try_from(times.minute).expect("segment_parse validates clock"),
+            i8::try_from(times.second).expect("segment_parse validates clock"),
+            0,
         )
         .expect("segment_parse validates clock"),
     );
     let candidate = start
-        .checked_add_signed(Duration::seconds(seconds))
-        .ok_or_else(|| {
+        .checked_add(SignedDuration::from_secs(seconds))
+        .map_err(|_| {
             GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
         })?;
     let end = if candidate.date() > date {
-        date.and_hms_opt(23, 59, 59).expect("valid clamp time")
+        date.at(23, 59, 59, 0)
     } else {
         candidate
     };
     Ok(SegmentWindow { start, end })
 }
 
-pub(crate) fn frame_abs_time(
-    start: NaiveDateTime,
-    timestamp: &Value,
-) -> Result<String, GrabFailure> {
+pub(crate) fn frame_abs_time(start: DateTime, timestamp: &Value) -> Result<String, GrabFailure> {
     let seconds = python_seconds(timestamp)?;
     if !seconds.is_finite() {
         return Err(GrabFailure::runtime("timestamp must be finite"));
@@ -67,12 +66,12 @@ pub(crate) fn frame_abs_time(
         return Err(GrabFailure::runtime("timestamp is out of range"));
     }
     let value = start
-        .checked_add_signed(Duration::microseconds(micros as i64))
-        .ok_or_else(|| GrabFailure::runtime("timestamp is out of range"))?;
-    if value.nanosecond() == 0 {
-        Ok(value.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .checked_add(SignedDuration::from_micros(micros as i64))
+        .map_err(|_| GrabFailure::runtime("timestamp is out of range"))?;
+    if value.subsec_nanosecond() == 0 {
+        Ok(value.strftime("%Y-%m-%dT%H:%M:%S").to_string())
     } else {
-        Ok(value.format("%Y-%m-%dT%H:%M:%S%.6f").to_string())
+        Ok(value.strftime("%Y-%m-%dT%H:%M:%S%.6f").to_string())
     }
 }
 
@@ -99,13 +98,15 @@ fn python_seconds(timestamp: &Value) -> Result<f64, GrabFailure> {
 mod tests {
     use serde_json::json;
 
+    use solstone_core_time::civil_display;
+
     use super::{frame_abs_time, segment_window};
 
     #[test]
     fn segment_end_clamps_but_frame_time_rolls_over() {
         let window = segment_window("20260809", "235900_300").unwrap();
-        assert_eq!(window.start.to_string(), "2026-08-09 23:59:00");
-        assert_eq!(window.end.to_string(), "2026-08-09 23:59:59");
+        assert_eq!(civil_display(window.start), "2026-08-09 23:59:00");
+        assert_eq!(civil_display(window.end), "2026-08-09 23:59:59");
         assert_eq!(
             frame_abs_time(window.start, &json!(90)).unwrap(),
             "2026-08-10T00:00:30"

@@ -227,8 +227,9 @@ pub fn extract_meeting_participants_with_gaps(
 /// A segment's span in seconds from its day's midnight.
 fn segment_seconds(day: &str, segment_key: &str) -> Option<(u32, u32)> {
     let (start, end) = solstone_core_format::calendar::segment_span(day, segment_key)?;
-    let midnight = start.date().and_hms_opt(0, 0, 0)?;
-    let seconds = |at: chrono::NaiveDateTime| u32::try_from((at - midnight).num_seconds()).ok();
+    let midnight = start.start_of_day();
+    let seconds =
+        |at: jiff::civil::DateTime| u32::try_from(at.duration_since(midnight).as_secs()).ok();
     Some((seconds(start)?, seconds(end)?))
 }
 

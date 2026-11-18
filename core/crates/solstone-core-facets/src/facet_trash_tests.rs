@@ -102,7 +102,7 @@ fn recover(
 }
 
 fn sweep(root: &Path, kind: &dyn Kind) -> solstone_core_trash::Swept {
-    solstone_core_trash::sweep(root, &[kind], chrono::Utc::now())
+    solstone_core_trash::sweep(root, &[kind], jiff::Timestamp::now())
 }
 
 fn state(root: &Path, id: &str) -> Option<State> {

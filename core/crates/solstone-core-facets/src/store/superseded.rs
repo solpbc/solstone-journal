@@ -13,7 +13,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{Duration, NaiveDate};
 use serde_json::Value;
 use solstone_core_format::content::is_strava_reading;
 
@@ -72,7 +71,7 @@ fn folded_strava_lines(
 /// Every line key a code record says it holds, on the days around `day`.
 fn converted_keys_around(root: &Path, day: &str) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
-    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(date) = solstone_core_time::parse_day(day) else {
         return keys;
     };
     let Ok(facets) = std::fs::read_dir(root.join("facets")) else {
@@ -85,7 +84,10 @@ fn converted_keys_around(root: &Path, day: &str) -> BTreeSet<String> {
         .map(|entry| entry.path().join("activities"))
         .collect::<Vec<_>>();
     for offset in -DAYS_AROUND..=DAYS_AROUND {
-        let name = format!("{}.jsonl", (date + Duration::days(offset)).format("%Y%m%d"));
+        let Ok(near) = date.checked_add(jiff::Span::new().days(offset)) else {
+            continue;
+        };
+        let name = format!("{}.jsonl", solstone_core_time::day_key(near));
         for folder in &folders {
             let Ok(bytes) = std::fs::read(folder.join(&name)) else {
                 continue;

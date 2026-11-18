@@ -1140,33 +1140,31 @@ async fn shell_api_clock_is_fresh_per_request_without_rebuilding_router() {
     assert_ne!(shell1["clock"], shell2["clock"]);
 
     // 4. A zone on a different date from this computer's -> that zone's today
-    let before = chrono::Utc::now();
+    let before = jiff::Timestamp::now();
     let host_day = before
-        .with_timezone(&solstone_core_journal_config::host_zone())
-        .date_naive();
-    let zone = [
-        solstone_core_journal_config::Tz::Pacific__Kiritimati,
-        solstone_core_journal_config::Tz::Etc__GMTPlus12,
-    ]
-    .into_iter()
-    .find(|zone| before.with_timezone(zone).date_naive() != host_day)
-    .expect("UTC+14 and UTC-12 never share a date");
+        .to_zoned_datetime(solstone_core_journal_config::host_zone())
+        .date();
+    let zone = ["Pacific/Kiritimati", "Etc/GMT+12"]
+        .into_iter()
+        .map(|name| solstone_core_time::zone(name).expect("zone"))
+        .find(|zone| before.to_zoned_datetime(zone.clone()).date() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date");
     journal.write_config(
         format!(
             r#"{{"setup":{{"completed_at":1767225600}},"identity":{{"timezone":"{}"}}}}"#,
-            zone.name()
+            zone.iana_name().expect("named zone")
         )
         .as_bytes(),
     );
     let (status, _, _, body) = get(app.clone(), "/api/shell").await;
-    let after = chrono::Utc::now();
+    let after = jiff::Timestamp::now();
     assert_eq!(status, StatusCode::OK);
     let shell4: Value = serde_json::from_slice(&body).expect("json");
     let today = shell4["clock"]["today"].as_str().expect("today");
     assert!(
         [before, after].iter().any(|instant| instant
-            .with_timezone(&zone)
-            .format("%Y%m%d")
+            .to_zoned_datetime(zone.clone())
+            .strftime("%Y%m%d")
             .to_string()
             == today),
         "{today}"
@@ -1182,9 +1180,9 @@ async fn speakers_state_uses_the_owner_zone_today_semantics() {
     assert_eq!(
         state["today"],
         Value::String(
-            chrono::Utc::now()
-                .with_timezone(&zone)
-                .format("%Y%m%d")
+            jiff::Timestamp::now()
+                .to_zoned_datetime(zone)
+                .strftime("%Y%m%d")
                 .to_string()
         )
     );

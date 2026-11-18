@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use ring::rand::SecureRandom;
 use russh::keys::PublicKeyBase64;
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ pub struct KnownHostPin {
 pub struct RelayStatus {
     pub state: &'static str,
     pub detail: Option<String>,
-    pub observed_at: Option<DateTime<Utc>>,
+    pub observed_at: Option<Timestamp>,
 }
 
 impl Default for RelayStatus {
@@ -1084,7 +1084,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "auth_refused",
                     detail: Some("no_client_key".to_string()),
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
@@ -1099,7 +1099,7 @@ pub async fn run_byo_relay_tunnel(
         let _ = status_tx.send(RelayStatus {
             state: "connecting",
             detail: None,
-            observed_at: Some(Utc::now()),
+            observed_at: Some(Timestamp::now()),
         });
 
         let key_verdict = Arc::new(Mutex::new(None));
@@ -1145,7 +1145,7 @@ pub async fn run_byo_relay_tunnel(
                     let _ = status_tx.send(RelayStatus {
                         state: "host_key_changed",
                         detail: Some("host_key_mismatch".to_string()),
-                        observed_at: Some(Utc::now()),
+                        observed_at: Some(Timestamp::now()),
                     });
                     // Do not retry host_key_changed inside the tunnel task. Wait for shutdown.
                     tokio::select! {
@@ -1157,7 +1157,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "unreachable",
                     detail: Some("tcp_unreachable".to_string()),
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
@@ -1171,7 +1171,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "unreachable",
                     detail: Some("tcp_unreachable".to_string()),
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
@@ -1197,7 +1197,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "auth_refused",
                     detail: Some("auth_failed".to_string()),
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
@@ -1227,7 +1227,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "connected",
                     detail: None,
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
 
                 let mut pinned = std::pin::pin!(handle);
@@ -1248,7 +1248,7 @@ pub async fn run_byo_relay_tunnel(
                         let _ = status_tx.send(RelayStatus {
                             state: "unreachable",
                             detail: Some("tcp_unreachable".to_string()),
-                            observed_at: Some(Utc::now()),
+                            observed_at: Some(Timestamp::now()),
                         });
                         let _ = res;
                         tokio::select! {
@@ -1265,7 +1265,7 @@ pub async fn run_byo_relay_tunnel(
                 let _ = status_tx.send(RelayStatus {
                     state: "forward_refused",
                     detail: Some("forward_rejected".to_string()),
-                    observed_at: Some(Utc::now()),
+                    observed_at: Some(Timestamp::now()),
                 });
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,

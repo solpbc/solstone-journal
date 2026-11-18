@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::fixture::local_contract;
@@ -26,10 +26,7 @@ pub struct BrainPresentation {
 }
 
 /// Render the stable owner-facing words for an inspected brain state.
-pub fn present_brain_inspection(
-    inspection: &BrainInspection,
-    now: DateTime<Utc>,
-) -> BrainPresentation {
+pub fn present_brain_inspection(inspection: &BrainInspection, now: Timestamp) -> BrainPresentation {
     let projection = &inspection.projection;
     let reason = projection.reason_code.as_deref();
     // A local model still downloading or starting is setup under way, not a fault.
@@ -254,14 +251,14 @@ fn component_for_reason(reason: Option<&str>) -> Option<String> {
         })
 }
 
-fn brain_age(now: DateTime<Utc>, observed_at: Option<&str>) -> (Option<i64>, Option<String>) {
+fn brain_age(now: Timestamp, observed_at: Option<&str>) -> (Option<i64>, Option<String>) {
     let Some(observed) = observed_at
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-        .map(|value| value.with_timezone(&Utc))
+        .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
+        .map(|value| value.timestamp())
     else {
         return (None, None);
     };
-    let seconds = (now - observed).num_seconds().max(0);
+    let seconds = now.duration_since(observed).as_secs().max(0);
     let text = if seconds < 60 {
         format!("{seconds}s")
     } else if seconds < 3_600 {
@@ -276,7 +273,8 @@ fn brain_age(now: DateTime<Utc>, observed_at: Option<&str>) -> (Option<i64>, Opt
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
+    use jiff::SignedDuration;
+    use jiff::tz::Offset;
     use serde_json::json;
 
     use super::{brain_age, present_brain_inspection};
@@ -302,7 +300,9 @@ mod tests {
         };
         let view = present_brain_inspection(
             &inspection,
-            chrono::Utc.with_ymd_and_hms(2026, 1, 1, 1, 1, 0).unwrap(),
+            Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 1, 1).at(1, 1, 0, 0))
+                .unwrap(),
         );
         assert_eq!(view.headline, "thinking needs attention");
         assert_ne!(view.reason_text, "configuration_invalid".replace('_', " "));
@@ -327,7 +327,9 @@ mod tests {
         };
         present_brain_inspection(
             &inspection,
-            chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 1, 1).at(0, 0, 0, 0))
+                .unwrap(),
         )
     }
 
@@ -414,7 +416,9 @@ mod tests {
 
     #[test]
     fn brain_age_uses_the_shared_second_minute_hour_and_day_boundaries() {
-        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 4, 0, 0, 0).unwrap();
+        let now = Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 1, 4).at(0, 0, 0, 0))
+            .unwrap();
         for (seconds, expected) in [
             (30, "30s"),
             (59, "59s"),
@@ -427,13 +431,13 @@ mod tests {
             (71 * 3_600, "2d"),
             (72 * 3_600, "3d"),
         ] {
-            let observed = now - chrono::Duration::seconds(seconds);
-            let (_, text) = brain_age(now, Some(&observed.to_rfc3339()));
+            let observed = now - SignedDuration::from_secs(seconds);
+            let (_, text) = brain_age(now, Some(&solstone_core_time::utc_rfc3339(observed)));
             assert_eq!(text.as_deref(), Some(expected));
         }
-        let future = now + chrono::Duration::seconds(30);
+        let future = now + SignedDuration::from_secs(30);
         assert_eq!(
-            brain_age(now, Some(&future.to_rfc3339())),
+            brain_age(now, Some(&solstone_core_time::utc_rfc3339(future))),
             (Some(0), Some("0s".to_owned()))
         );
     }

@@ -15,18 +15,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
-fn mark_at(label: &str) -> DateTime<Utc> {
+fn mark_at(label: &str) -> Timestamp {
     let raw = match label {
         "first" => "2026-08-06T12:00:00Z",
         "second" => "2026-08-06T12:00:01Z",
         "third" => "2026-08-06T12:00:02Z",
         other => other,
     };
-    DateTime::parse_from_rfc3339(raw)
-        .unwrap()
-        .with_timezone(&Utc)
+    solstone_core_time::parse_rfc3339(raw).unwrap().timestamp()
 }
 
 use serde_json::json;

@@ -28,10 +28,11 @@ fn prepare<'a>(fixture: &CurrentFixture, clock: &'a TestClock) -> PreparedArchiv
     .unwrap()
 }
 
-fn at() -> DateTime<FixedOffset> {
-    DateTime::from_timestamp(CURRENT_NOW, 0)
-        .unwrap()
-        .fixed_offset()
+fn at() -> ZonedDateTime {
+    solstone_core_time::at_offset(
+        jiff::Timestamp::new(CURRENT_NOW, 0).unwrap(),
+        jiff::tz::Offset::UTC,
+    )
 }
 
 #[test]

@@ -13,8 +13,7 @@ workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 log.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -30,6 +29,7 @@ solstone-core-location.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-time.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [dev-dependencies]

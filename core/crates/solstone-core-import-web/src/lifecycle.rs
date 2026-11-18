@@ -16,8 +16,7 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use chrono::Utc;
-use chrono_tz::Tz;
+use jiff::{Timestamp, tz::TimeZone};
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
     ImportError, ImportMetadata, ManifestMatch, SourceHash, allocate_import_id,
@@ -48,14 +47,13 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-fn import_timestamp(zone: Tz) -> String {
-    Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+fn import_timestamp(zone: &TimeZone) -> String {
+    zone.to_datetime(Timestamp::now())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string()
 }
 
-fn deterministic_timestamp(path: &Path, filename: &str, zone: Tz) -> Option<String> {
+fn deterministic_timestamp(path: &Path, filename: &str, zone: &TimeZone) -> Option<String> {
     solstone_core_import_sources::image::detected_creation_stamp(path, Some(filename), zone)
         .map(|ts| ts.as_str().to_owned())
 }
@@ -66,7 +64,7 @@ fn deterministic_timestamp(path: &Path, filename: &str, zone: Tz) -> Option<Stri
 fn timestamp_for_upload(
     path: &Path,
     filename: &str,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> (String, &'static str, Option<&'static str>) {
     // A PDF's worker chooses its dates after inspecting the document. A filename alone
     // cannot promise an override before it has been compared with creation metadata.
@@ -573,7 +571,12 @@ pub(crate) fn owner_timestamp_choice(data: &Value, metadata: &ImportMetadata) ->
     .then(|| timestamp.to_owned())
 }
 
-fn resolved_summary(mut response: Value, path: &Path, filename: Option<&str>, zone: Tz) -> Value {
+fn resolved_summary(
+    mut response: Value,
+    path: &Path,
+    filename: Option<&str>,
+    zone: &TimeZone,
+) -> Value {
     response["resolved_timestamp"] = solstone_core_import_sources::image::detected_creation_stamp(
         path,
         filename.or_else(|| path.file_name().and_then(|name| name.to_str())),
@@ -752,7 +755,7 @@ struct StagedMetadata<'a> {
     data: &'a Value,
     is_local_path: bool,
     method: &'a str,
-    zone: Tz,
+    zone: &'a TimeZone,
 }
 
 fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
@@ -781,7 +784,9 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
         ("upload_timestamp".to_owned(), json!(upload_timestamp)),
         (
             "upload_datetime".to_owned(),
-            json!(Utc::now().with_timezone(&zone).naive_local().to_string()),
+            json!(solstone_core_time::civil_display(
+                zone.to_datetime(Timestamp::now())
+            )),
         ),
         ("user_timestamp".to_owned(), json!(timestamp)),
         ("timestamp_detection_method".to_owned(), json!(method)),
@@ -830,7 +835,7 @@ pub fn register_admitted_folder(
     original_filename: &str,
     client_item_id: &str,
     source_timestamp: &solstone_core_import::Timestamp,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Result<Value, solstone_core_import::FolderAdmitError> {
     use solstone_core_import::FolderAdmitError;
     // These are the supported picked-folder routes. Body setup remains held.
@@ -1086,7 +1091,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                         } => Some(original_filename.as_str()),
                         Incoming::Paste { .. } => None,
                     },
-                    solstone_core_journal_config::owner_zone(&state.root),
+                    &solstone_core_journal_config::owner_zone(&state.root),
                 ),
             );
         }
@@ -1121,7 +1126,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                     } => Some(original_filename.as_str()),
                     Incoming::Paste { .. } => None,
                 },
-                solstone_core_journal_config::owner_zone(&state.root),
+                &solstone_core_journal_config::owner_zone(&state.root),
             ),
         );
     }
@@ -1137,7 +1142,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     let (semantic, method, no_match_reason) = timestamp_for_upload(
         &source_path,
         if is_photo { "" } else { original_for_timestamp },
-        solstone_core_journal_config::owner_zone(&state.root),
+        &solstone_core_journal_config::owner_zone(&state.root),
     );
     let import_id = match claim_import_directory(&state.root, &semantic) {
         Ok(import_id) => import_id,
@@ -1187,7 +1192,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         }
     };
     let mut metadata = staged_metadata(StagedMetadata {
-        zone: solstone_core_journal_config::owner_zone(&state.root),
+        zone: &solstone_core_journal_config::owner_zone(&state.root),
         timestamp: &semantic,
         original_filename: &original_filename,
         file_path: file_path.display().to_string(),
@@ -1273,7 +1278,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
                     replay_summary(&existing),
                     local,
                     None,
-                    solstone_core_journal_config::owner_zone(&state.root),
+                    &solstone_core_journal_config::owner_zone(&state.root),
                 ),
             );
         }
@@ -1295,7 +1300,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
                 summary(&existing),
                 local,
                 None,
-                solstone_core_journal_config::owner_zone(&state.root),
+                &solstone_core_journal_config::owner_zone(&state.root),
             ),
         );
     }
@@ -1305,7 +1310,8 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_owned();
-    let (semantic, method, no_match_reason) = timestamp_for_upload(local, &original_filename, zone);
+    let (semantic, method, no_match_reason) =
+        timestamp_for_upload(local, &original_filename, &zone);
     let method = if method == "upload_fallback" {
         "path_fallback"
     } else {
@@ -1316,7 +1322,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         Err(error) => return metadata_failed(error),
     };
     let mut metadata = staged_metadata(StagedMetadata {
-        zone,
+        zone: &zone,
         timestamp: &semantic,
         original_filename: &original_filename,
         file_path: local_path,
@@ -2723,7 +2729,7 @@ fn run_inprocess_import(
 #[cfg(test)]
 mod tests {
     use super::{SendSeam, TaskIdHook, inprocess_producer_request};
-    use chrono_tz::Tz;
+    use jiff::tz::TimeZone;
     use std::io::Write;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -2966,7 +2972,7 @@ mod tests {
         let owner = root.path().join("owner.txt");
         fs::write(&owner, b"owner bytes").unwrap();
         let zone = solstone_core_journal_config::owner_zone(root.path());
-        let occupied_name = super::import_timestamp(zone);
+        let occupied_name = super::import_timestamp(&zone);
         fs::create_dir_all(root.path().join("imports")).unwrap();
         let occupied = root.path().join("imports").join(&occupied_name);
         fs::write(&occupied, b"keep").unwrap();
@@ -3483,7 +3489,7 @@ mod tests {
         let (timestamp, method, reason) = super::timestamp_for_upload(
             std::path::Path::new("notes.txt"),
             "notes_20260801_120000.txt",
-            Tz::UTC,
+            &TimeZone::UTC,
         );
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
@@ -3496,7 +3502,7 @@ mod tests {
         let path = root.path().join("payload.bin");
         fs::write(&path, b"not an image and not exif").unwrap();
         let (timestamp, method, reason) =
-            super::timestamp_for_upload(&path, "notes_20260801_120000.txt", Tz::UTC);
+            super::timestamp_for_upload(&path, "notes_20260801_120000.txt", &TimeZone::UTC);
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
         assert_eq!(reason, None);
@@ -3624,24 +3630,29 @@ mod tests {
         }
 
         let cases = [
-            (&jpeg_path, "photo.jpg", Tz::UTC, "20260510_143000"),
-            (&m4a_path, "audio.m4a", Tz::UTC, "20260510_120000"),
-            (&mp4_path, "video.mp4", Tz::UTC, "20260510_120000"),
-            (&txt_path, "20260704_090000.txt", Tz::UTC, "20260704_090000"),
+            (&jpeg_path, "photo.jpg", TimeZone::UTC, "20260510_143000"),
+            (&m4a_path, "audio.m4a", TimeZone::UTC, "20260510_120000"),
+            (&mp4_path, "video.mp4", TimeZone::UTC, "20260510_120000"),
+            (
+                &txt_path,
+                "20260704_090000.txt",
+                TimeZone::UTC,
+                "20260704_090000",
+            ),
             (
                 &wav_path,
                 "limitless_pendant_2026-01-15T03-30-00_to_2026-01-15T04-00-00.wav",
-                Tz::America__New_York,
+                solstone_core_time::zone("America/New_York").unwrap(),
                 "20260114_223000",
             ),
         ];
 
         for (path, filename, zone, expected_stamp) in cases {
-            let (upload_stamp, method, reason) = super::timestamp_for_upload(path, filename, zone);
+            let (upload_stamp, method, reason) = super::timestamp_for_upload(path, filename, &zone);
             let detected = solstone_core_import_sources::image::detected_creation_stamp(
                 path,
                 Some(filename),
-                zone,
+                &zone,
             );
             assert_eq!(
                 detected.as_ref().map(|t| t.as_str()),
@@ -3657,14 +3668,14 @@ mod tests {
         }
 
         let (upload_stamp, method, reason) =
-            super::timestamp_for_upload(&nodate_path, "nodate.bin", Tz::UTC);
+            super::timestamp_for_upload(&nodate_path, "nodate.bin", &TimeZone::UTC);
         assert_eq!(method, "upload_fallback");
         assert_eq!(reason, Some("no_deterministic_match"));
         assert!(!upload_stamp.starts_with("20240101"));
         let detected_none = solstone_core_import_sources::image::detected_creation_stamp(
             &nodate_path,
             Some("nodate.bin"),
-            Tz::UTC,
+            &TimeZone::UTC,
         );
         assert_eq!(detected_none, None);
     }

@@ -227,7 +227,7 @@ fn owner_setup_status(root: &Path) -> Result<Value, OwnerStatusError> {
                     "segments_with_embeddings": diagnostics.segments_with_embeddings,
                     "reason": "cooldown",
                     "days_remaining": cooldown,
-                    "next_look_after": next_look_after(&voiceprint).map(|time| time.to_rfc3339()),
+                    "next_look_after": next_look_after(&voiceprint).map(solstone_core_time::utc_rfc3339),
                     "next_step": "wait_for_cooldown",
                     "guidance": OWNER_REJECTION_COOLDOWN_GUIDANCE,
                 }));

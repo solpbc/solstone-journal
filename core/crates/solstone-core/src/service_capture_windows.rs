@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, FixedOffset, Local};
+use jiff::ZonedDateTime;
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogFormat, OplogWriter, create_oplog_at},
@@ -157,7 +157,7 @@ fn set_standard(which: u32, handle: HANDLE) -> io::Result<()> {
     Ok(())
 }
 
-fn open_log(journal: &Path, opened: DateTime<FixedOffset>) -> Result<OplogWriter, String> {
+fn open_log(journal: &Path, opened: &ZonedDateTime) -> Result<OplogWriter, String> {
     let root = JournalRoot::open(journal).map_err(|error| error.to_string())?;
     create_oplog_at(root, "service", "supervisor", OplogFormat::Log, opened)
         .map_err(|error| error.to_string())
@@ -167,7 +167,7 @@ fn drain(
     mut input: File,
     journal: PathBuf,
     mut log: OplogWriter,
-    mut day: chrono::NaiveDate,
+    mut day: jiff::civil::Date,
 ) -> Result<(), String> {
     let mut bytes = [0_u8; 8192];
     let mut rollover_error = None;
@@ -179,12 +179,12 @@ fn drain(
             Err(error) if error.kind() == io::ErrorKind::BrokenPipe => break,
             Err(error) => return Err(format!("windows service capture read failed: {error}")),
         };
-        let now = Local::now().fixed_offset();
-        if now.date_naive() != day {
-            match open_log(&journal, now) {
+        let now = ZonedDateTime::now();
+        if now.date() != day {
+            match open_log(&journal, &now) {
                 Ok(next) => {
                     log = next;
-                    day = now.date_naive();
+                    day = now.date();
                 }
                 Err(error) => rollover_error = Some(error), // retain old writer and bytes
             }
@@ -221,15 +221,15 @@ impl ServiceCapture {
         let started = (|| {
             owner.diagnostic =
                 duplicate_diagnostic(original_stderr).map_err(|error| error.to_string())?;
-            let opened = Local::now().fixed_offset();
-            let log = open_log(journal, opened)?;
+            let opened = ZonedDateTime::now();
+            let log = open_log(journal, &opened)?;
             let (read, write) = pipe().map_err(|error| error.to_string())?;
             owner.writer = Some(write);
             let journal = journal.to_path_buf();
             owner.worker = Some(
                 std::thread::Builder::new()
                     .name("service-capture".into())
-                    .spawn(move || drain(read, journal, log, opened.date_naive()))
+                    .spawn(move || drain(read, journal, log, opened.date()))
                     .map_err(|error| error.to_string())?,
             );
             // These Rust locks serialize Rust writers, not private CRT fd tables.
@@ -448,11 +448,15 @@ pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> 
         "rollover" => {
             use solstone_core_journal_io::operational_log::validate_oplog_admission;
 
-            let yesterday = Local::now().fixed_offset() - chrono::Duration::days(1);
-            let mut log = open_log(journal, yesterday)?;
+            let now = ZonedDateTime::now();
+            let yesterday = solstone_core_time::at_offset(
+                now.timestamp() - jiff::SignedDuration::from_hours(24),
+                now.offset(),
+            );
+            let mut log = open_log(journal, &yesterday)?;
             let old = journal
                 .join("chronicle")
-                .join(yesterday.format("%Y%m%d").to_string())
+                .join(solstone_core_time::day_key(yesterday.date()))
                 .join("health")
                 .join(log.leaf_name());
             log.write_all(b"before rollover")
@@ -462,7 +466,7 @@ pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> 
                 .write_all(b"after rollover")
                 .map_err(|error| error.to_string())?;
             drop(write);
-            drain(read, journal.to_path_buf(), log, yesterday.date_naive())?;
+            drain(read, journal.to_path_buf(), log, yesterday.date())?;
             let old_bytes = std::fs::read(&old).map_err(|error| error.to_string())?;
             let old_admission = validate_oplog_admission(
                 old.file_name().ok_or("rollover old leaf missing")?,

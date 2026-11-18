@@ -132,7 +132,7 @@ pub fn plan_retroactive_confirm(
         let Ok(Some(file)) = load_embeddings_file(&dir.join(format!("{kind}.npz"))) else {
             continue;
         };
-        let Some(last_seen_ts) = segment_start_ts_ms(timezone, day, segment_key) else {
+        let Some(last_seen_ts) = segment_start_ts_ms(&timezone, day, segment_key) else {
             continue;
         };
         let ids = o

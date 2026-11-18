@@ -26,8 +26,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Days, NaiveDate, TimeZone as _, Utc};
-use chrono_tz::Tz;
+use jiff::civil::{Date, Time};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Timestamp, ToSpan as _, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -54,18 +55,18 @@ pub const OLD_LOCK_TIMEOUT: Duration = solstone_core_journal_io::DEFAULT_LOCK_TI
 const HEARTRATE: &str = "heartrate";
 /// Oura documents no longest range for date endpoints; a year at a time is what
 /// the earlier sync asked.
-const DATE_CHUNK_DAYS: u64 = 364;
+const DATE_CHUNK_DAYS: i64 = 364;
 /// Oura refuses a heartrate span whose dates are more than 30 apart.
-const HEARTRATE_CHUNK_DAYS: u64 = 30;
+const HEARTRATE_CHUNK_DAYS: i64 = 30;
 const MOST_HEARTRATE_DATES: i64 = 30;
 const MOST_PAGES_PER_CHUNK: usize = 1_000;
 /// How many times one run answers a 401, adopting another path's refresh or
 /// making its own, before it stops.
 const MOST_RENEWALS: u32 = 4;
 /// A run with no range asks again from this many days before what it last covered.
-const TRAILING_DAYS: u64 = 7;
+const TRAILING_DAYS: i64 = 7;
 /// The first day a run with no range asks about.
-const HISTORY_FLOOR: (i32, u32, u32) = (2015, 1, 1);
+const HISTORY_FLOOR: (i16, i8, i8) = (2015, 1, 1);
 const INDEX_FILE: &str = "index.json";
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 /// Oura's scopes, as its API names them.
@@ -257,67 +258,74 @@ pub(crate) struct FetchState {
 
 /// What a run's request says about its fetch, for the writer.
 pub(crate) struct FetchInput<'a> {
-    pub(crate) range: Option<(NaiveDate, NaiveDate)>,
+    pub(crate) range: Option<(Date, Date)>,
     pub(crate) transport: RefCell<&'a mut dyn OuraHttp>,
     pub(crate) auth: OuraAuth,
     pub(crate) old_lock_timeout: Duration,
 }
 
-fn day_text(date: NaiveDate) -> String {
-    date.format("%Y-%m-%d").to_string()
+fn day_text(date: Date) -> String {
+    date.strftime("%Y-%m-%d").to_string()
 }
 
-fn parse_day(text: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()
+fn parse_day(text: &str) -> Option<Date> {
+    Date::strptime("%Y-%m-%d", text).ok()
 }
 
-fn parse_instant(text: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(text)
+fn parse_instant(text: &str) -> Option<Timestamp> {
+    solstone_core_time::parse_rfc3339(text)
         .ok()
-        .map(|instant| instant.to_utc())
+        .map(|instant| instant.timestamp())
 }
 
 /// The first instant of an owner day on the fixed zone, which a zone that skips
 /// midnight starts later.
-fn start_of_day(date: NaiveDate, zone: Tz) -> DateTime<Tz> {
+fn start_of_day(date: Date, zone: &TimeZone) -> ZonedDateTime {
     (0..24)
         .find_map(|hour| {
-            zone.from_local_datetime(&date.and_hms_opt(hour, 0, 0)?)
-                .earliest()
+            let wall = date.to_datetime(Time::new(hour, 0, 0, 0).ok()?);
+            solstone_core_time::from_local(zone, wall).earliest()
         })
-        .unwrap_or_else(|| zone.from_utc_datetime(&date.and_time(chrono::NaiveTime::MIN)))
+        .unwrap_or_else(|| {
+            Offset::UTC
+                .to_timestamp(date.to_datetime(Time::midnight()))
+                .unwrap_or(Timestamp::MIN)
+                .to_zoned_datetime(zone.clone())
+        })
 }
 
-fn instant_text(instant: DateTime<Tz>) -> String {
-    instant.format("%Y-%m-%dT%H:%M:%S%:z").to_string()
+fn instant_text(instant: &ZonedDateTime) -> String {
+    solstone_core_time::zoned_rfc3339(instant, solstone_core_time::Precision::Secs, false)
 }
 
 /// How many dates apart two instants are, as written with their offsets and in
 /// UTC, whichever is more: Oura's documentation doesn't say which it counts.
-fn dates_apart(from: DateTime<Tz>, to: DateTime<Tz>) -> i64 {
-    let written = (to.date_naive() - from.date_naive()).num_days();
-    let utc = (to.to_utc().date_naive() - from.to_utc().date_naive()).num_days();
-    written.max(utc)
+fn dates_apart(from: &ZonedDateTime, to: &ZonedDateTime) -> i64 {
+    let days = |from: Date, to: Date| from.duration_until(to).as_hours() / 24;
+    let utc = |instant: &ZonedDateTime| Offset::UTC.to_datetime(instant.timestamp()).date();
+    let written = days(from.date(), to.date());
+    written.max(days(utc(from), utc(to)))
 }
 
 /// Heartrate's chunks over owner days `from` to `to`: instants from `from` 00:00
 /// to `to` 24:00 on the fixed zone, in half-open spans of 30 days that meet end to
 /// start, each a day shorter where a change of offset would put its ends more than
 /// 30 dates apart.
-fn heartrate_chunks(from: NaiveDate, to: NaiveDate, zone: Tz) -> Vec<[String; 2]> {
+fn heartrate_chunks(from: Date, to: Date, zone: &TimeZone) -> Vec<[String; 2]> {
     let mut chunks = Vec::new();
-    let end = to + Days::new(1);
+    let end = to + 1.day();
     let mut day = from;
     while day < end {
-        let mut next = (day + Days::new(HEARTRATE_CHUNK_DAYS)).min(end);
-        while next > day + Days::new(1)
-            && dates_apart(start_of_day(day, zone), start_of_day(next, zone)) > MOST_HEARTRATE_DATES
+        let mut next = (day + HEARTRATE_CHUNK_DAYS.days()).min(end);
+        while next > day + 1.day()
+            && dates_apart(&start_of_day(day, zone), &start_of_day(next, zone))
+                > MOST_HEARTRATE_DATES
         {
-            next = next - Days::new(1);
+            next -= 1.day();
         }
         chunks.push([
-            instant_text(start_of_day(day, zone)),
-            instant_text(start_of_day(next, zone)),
+            instant_text(&start_of_day(day, zone)),
+            instant_text(&start_of_day(next, zone)),
         ]);
         day = next;
     }
@@ -325,13 +333,13 @@ fn heartrate_chunks(from: NaiveDate, to: NaiveDate, zone: Tz) -> Vec<[String; 2]
 }
 
 /// A date endpoint's chunks over Oura days `from` to `to`, a year at a time.
-fn date_chunks(from: NaiveDate, to: NaiveDate) -> Vec<[String; 2]> {
+fn date_chunks(from: Date, to: Date) -> Vec<[String; 2]> {
     let mut chunks = Vec::new();
     let mut first = from;
     while first <= to {
-        let last = (first + Days::new(DATE_CHUNK_DAYS - 1)).min(to);
+        let last = (first + (DATE_CHUNK_DAYS - 1).days()).min(to);
         chunks.push([day_text(first), day_text(last)]);
-        first = last + Days::new(1);
+        first = last + 1.day();
     }
     chunks
 }
@@ -339,10 +347,10 @@ fn date_chunks(from: NaiveDate, to: NaiveDate) -> Vec<[String; 2]> {
 /// What a new run asks for: the range named, or for each endpoint every stretch
 /// since the floor that coverage doesn't hold, and its trailing week.
 pub(crate) fn plan(
-    range: Option<(NaiveDate, NaiveDate)>,
+    range: Option<(Date, Date)>,
     coverage: &Coverage,
-    today: NaiveDate,
-    zone: Tz,
+    today: Date,
+    zone: &TimeZone,
 ) -> Result<FetchState, String> {
     if let Some((from, to)) = range
         && from > to
@@ -392,12 +400,12 @@ pub(crate) fn plan(
 fn unheld_spans(
     coverage: &Coverage,
     endpoint: &str,
-    today: NaiveDate,
-    zone: Tz,
-) -> Result<Vec<(NaiveDate, NaiveDate)>, String> {
+    today: Date,
+    zone: &TimeZone,
+) -> Result<Vec<(Date, Date)>, String> {
     let (year, month, day) = HISTORY_FLOOR;
-    let floor = NaiveDate::from_ymd_opt(year, month, day).ok_or("the floor isn't a day")?;
-    let trailing = (today - Days::new(TRAILING_DAYS)).max(floor);
+    let floor = Date::new(year, month, day).map_err(|_| "the floor isn't a day")?;
+    let trailing = (today - TRAILING_DAYS.days()).max(floor);
     coverage.unheld_spans(endpoint, floor, trailing, today, zone)
 }
 
@@ -405,9 +413,9 @@ fn unheld_spans(
 /// writes nothing and asks Oura nothing.
 pub(crate) fn endpoint_plan_lines(
     journal: &Path,
-    range: Option<(NaiveDate, NaiveDate)>,
-    today: NaiveDate,
-    zone: Tz,
+    range: Option<(Date, Date)>,
+    today: Date,
+    zone: &TimeZone,
 ) -> Result<String, String> {
     let coverage = crate::oura_coverage::read_coverage(journal)?;
     plan(range, &coverage, today, zone)?;
@@ -438,7 +446,7 @@ pub(crate) fn endpoint_plan_lines(
 impl FetchState {
     /// Whether a request carries this fetch on: one naming no range carries on
     /// whatever the stopped run asked; one naming a range, only the same range.
-    pub(crate) fn resumed_by(&self, range: Option<(NaiveDate, NaiveDate)>) -> bool {
+    pub(crate) fn resumed_by(&self, range: Option<(Date, Date)>) -> bool {
         range.is_none_or(|(from, to)| self.asked == Some([day_text(from), day_text(to)]))
     }
 
@@ -500,7 +508,7 @@ impl FetchState {
     }
 
     /// Each endpoint's result, in the order Oura is asked.
-    pub(crate) fn reports(&self, zone: Tz) -> Vec<EndpointReport> {
+    pub(crate) fn reports(&self, zone: &TimeZone) -> Vec<EndpointReport> {
         ENDPOINTS
             .iter()
             .filter_map(|endpoint| {
@@ -511,7 +519,7 @@ impl FetchState {
     }
 
     /// The summary's section of results.
-    pub(crate) fn summary_section(&self, zone: Tz) -> String {
+    pub(crate) fn summary_section(&self, zone: &TimeZone) -> String {
         let mut text = String::from("## From Oura\n\n");
         for report in self.reports(zone) {
             let _ = writeln!(text, "{}", report.line());
@@ -522,11 +530,15 @@ impl FetchState {
 }
 
 /// The last day a chunk asked for, as its result names it.
-fn chunk_last_day(endpoint: &str, chunk: &[String; 2], zone: Tz) -> String {
+fn chunk_last_day(endpoint: &str, chunk: &[String; 2], zone: &TimeZone) -> String {
     if endpoint == HEARTRATE {
         parse_instant(&chunk[1])
             .map(|end| {
-                day_text((end.with_timezone(&zone) - chrono::Duration::seconds(1)).date_naive())
+                day_text(
+                    (end - SignedDuration::from_secs(1))
+                        .to_zoned_datetime(zone.clone())
+                        .date(),
+                )
             })
             .unwrap_or_else(|| chunk[1].clone())
     } else {
@@ -534,7 +546,12 @@ fn chunk_last_day(endpoint: &str, chunk: &[String; 2], zone: Tz) -> String {
     }
 }
 
-fn report(endpoint: &str, plan: &EndpointPlan, outcome: &Outcome, zone: Tz) -> EndpointReport {
+fn report(
+    endpoint: &str,
+    plan: &EndpointPlan,
+    outcome: &Outcome,
+    zone: &TimeZone,
+) -> EndpointReport {
     let days = if endpoint == HEARTRATE {
         format!("{} to {}", plan.from, plan.to)
     } else {
@@ -746,7 +763,7 @@ struct Tokens<'j> {
 }
 
 impl<'j> Tokens<'j> {
-    fn load(journal: &'j Path, input: &FetchInput<'_>, zone: Tz) -> Result<Self, Fault> {
+    fn load(journal: &'j Path, input: &FetchInput<'_>, zone: &TimeZone) -> Result<Self, Fault> {
         let (settings, refreshed) = match input.auth {
             OuraAuth::Journal => (load_settings(journal)?, false),
             // Nothing to renew: a 401 from a recorded answer ends the run.
@@ -757,7 +774,7 @@ impl<'j> Tokens<'j> {
                     access_token: "none".to_owned(),
                     refresh_token: String::new(),
                     token_type: "Bearer".to_owned(),
-                    timezone: zone.name().to_owned(),
+                    timezone: zone.iana_name().unwrap_or_default().to_owned(),
                 },
                 true,
             ),
@@ -858,8 +875,8 @@ fn chunk_query(endpoint: &str, chunk: &[String; 2]) -> BTreeMap<String, String> 
     } else {
         // One day past the chunk's last: right whether Oura reads the end as
         // inclusive or not, since a document seen twice is read once.
-        let end = parse_day(&chunk[1])
-            .map_or_else(|| chunk[1].clone(), |last| day_text(last + Days::new(1)));
+        let end =
+            parse_day(&chunk[1]).map_or_else(|| chunk[1].clone(), |last| day_text(last + 1.day()));
         BTreeMap::from([
             ("start_date".to_owned(), chunk[0].clone()),
             ("end_date".to_owned(), end),
@@ -913,7 +930,7 @@ fn staged_count(endpoint: &str, index: &Index, pages: &Path) -> Result<u64, Stri
 pub(crate) struct FetchRun<'r> {
     pub(crate) journal: &'r Path,
     pub(crate) pages: PathBuf,
-    pub(crate) zone: Tz,
+    pub(crate) zone: &'r TimeZone,
     /// Called at each named point; the run stops there when it says so.
     pub(crate) point: &'r dyn Fn(&str) -> Result<(), Stop>,
 }

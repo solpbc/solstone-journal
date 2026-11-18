@@ -228,11 +228,10 @@ impl TeardownOperation {
                 .remaining()
                 .map_err(TeardownRemoteRefusal::Operation)?
                 .min(RETENTION_CHECK_TIMEOUT);
-            let amz_date =
-                chrono::DateTime::<chrono::Utc>::from_timestamp(self.clock.now_unix(), 0)
-                    .ok_or(TeardownRemoteRefusal::Timestamp)?
-                    .format("%Y%m%dT%H%M%SZ")
-                    .to_string();
+            let amz_date = jiff::Timestamp::new(self.clock.now_unix(), 0)
+                .map_err(|_| TeardownRemoteRefusal::Timestamp)?
+                .strftime("%Y%m%dT%H%M%SZ")
+                .to_string();
             #[cfg(target_os = "android")]
             let retention_transport = RetentionTransport(self);
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -280,9 +279,9 @@ impl TeardownOperation {
             .remaining()
             .map_err(TeardownRemoteRefusal::Operation)?
             .min(RETENTION_CHECK_TIMEOUT);
-        let amz_date = chrono::DateTime::<chrono::Utc>::from_timestamp(self.clock.now_unix(), 0)
-            .ok_or(TeardownRemoteRefusal::Timestamp)?
-            .format("%Y%m%dT%H%M%SZ")
+        let amz_date = jiff::Timestamp::new(self.clock.now_unix(), 0)
+            .map_err(|_| TeardownRemoteRefusal::Timestamp)?
+            .strftime("%Y%m%dT%H%M%SZ")
             .to_string();
         let retention_transport = RetentionTransport(self);
         self.report.storage_retention = Some(super::retention::observe(

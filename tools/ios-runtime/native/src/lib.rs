@@ -5,7 +5,6 @@ mod owner_folder;
 mod owner_response;
 mod root_privacy;
 mod saved_sources;
-use chrono::NaiveDate;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_query::{
@@ -208,7 +207,7 @@ impl log::Log for DoorWarnings {
             let _ = writeln!(
                 std::io::stderr().lock(),
                 "ios-log time_ms={} pid={} {} {}: {}",
-                chrono::Utc::now().timestamp_millis(),
+                jiff::Timestamp::now().as_millisecond(),
                 std::process::id(),
                 record.target(),
                 record.level(),
@@ -241,7 +240,7 @@ fn query_with(root: &Path, limit: usize, reuse: bool) -> Result<Value, String> {
         limit,
         ..Default::default()
     };
-    let date = NaiveDate::from_ymd_opt(2026, 10, 12).unwrap();
+    let date = jiff::civil::date(2026, 10, 12);
     let response = if reuse {
         let mut guard = QUERY.lock().map_err(|e| e.to_string())?;
         if guard.is_none() {

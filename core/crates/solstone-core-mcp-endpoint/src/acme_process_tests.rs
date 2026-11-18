@@ -60,7 +60,7 @@ impl HttpClient for RecordingClient {
             let result = inner.request(req).await;
             let event = match &result {
                 Ok(response) => json!({
-                    "at": chrono::Utc::now().to_rfc3339(), "method": method, "uri": uri,
+                    "at": solstone_core_time::utc_rfc3339(jiff::Timestamp::now()), "method": method, "uri": uri,
                     "status": response.parts.status.as_u16(),
                     "location": response.parts.headers.get("location").and_then(|v| v.to_str().ok()),
                     "retry_after": response.parts.headers.get("retry-after").and_then(|v| v.to_str().ok()),
@@ -69,7 +69,7 @@ impl HttpClient for RecordingClient {
                     "replaces": payload.as_ref().and_then(|v| v.get("replaces")),
                 }),
                 Err(_) => {
-                    json!({"at": chrono::Utc::now().to_rfc3339(), "method": method, "uri": uri, "transport_error": true})
+                    json!({"at": solstone_core_time::utc_rfc3339(jiff::Timestamp::now()), "method": method, "uri": uri, "transport_error": true})
                 }
             };
             {

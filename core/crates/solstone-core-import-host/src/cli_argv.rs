@@ -8,8 +8,9 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{Local, NaiveDateTime};
 use ffmpeg_next as ffmpeg;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::Value;
 use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
@@ -140,7 +141,8 @@ pub fn preview_arguments_with(
                 "--preview-zone".to_owned(),
                 options.preview_zone.unwrap_or_else(|| {
                     solstone_core_journal_config::owner_zone(journal)
-                        .name()
+                        .iana_name()
+                        .unwrap_or_default()
                         .to_owned()
                 }),
             ];
@@ -223,7 +225,7 @@ pub fn force_day_notice_with(
         solstone_core_import_sources::image::detected_creation_stamp(
             media,
             media.file_name().and_then(|name| name.to_str()),
-            zone,
+            &zone,
         )
     };
     let Some(fresh) = fresh else {
@@ -760,11 +762,9 @@ fn run_import_accepted(
             "the following arguments are required: media".to_owned(),
         ));
     };
-    if options
-        .preview_zone
-        .as_deref()
-        .is_some_and(|zone| zone != solstone_core_journal_config::owner_zone(journal_path).name())
-    {
+    if options.preview_zone.as_deref().is_some_and(|zone| {
+        Some(zone) != solstone_core_journal_config::owner_zone(journal_path).iana_name()
+    }) {
         return rendered(failure(
             "",
             "the time zone changed after preview; preview again before importing\n",
@@ -1044,10 +1044,7 @@ pub(crate) fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), S
 /// way to say the second occurrence of a repeated hour. It becomes the journal's own
 /// `YYYYMMDD_HHMMSS` here, so every importer reads one form, and the instant is returned for
 /// the imports that place elapsed time. A `YYYYMMDD_HHMMSS` value is left as it was.
-fn owner_instant(
-    options: &mut Options,
-    journal: &Path,
-) -> Result<Option<chrono::DateTime<chrono::Utc>>, CliRun> {
+fn owner_instant(options: &mut Options, journal: &Path) -> Result<Option<Timestamp>, CliRun> {
     let Some(raw) = options.timestamp.as_deref() else {
         return Ok(None);
     };
@@ -1057,7 +1054,7 @@ fn owner_instant(
         return Ok(None);
     }
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let Some(stamp) = solstone_core_import::owner_instant(raw, zone) else {
+    let Some(stamp) = solstone_core_import::owner_instant(raw, &zone) else {
         return Err(failure(
             "",
             "timestamp must be YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00\n",
@@ -1070,7 +1067,7 @@ fn owner_instant(
 
 fn with_owner_instant(
     timestamp: solstone_core_import::Timestamp,
-    instant: Option<chrono::DateTime<chrono::Utc>>,
+    instant: Option<Timestamp>,
 ) -> solstone_core_import::Timestamp {
     match instant {
         Some(instant) => timestamp.with_source_instant(instant),
@@ -1140,16 +1137,16 @@ fn run_audio(
             Ok(value) => value,
             Err(error) => return (failure("", &format!("{error}\n"), 1), timestamp.to_owned()),
         };
-        let base_timestamp = match NaiveDateTime::parse_from_str(semantic.as_str(), "%Y%m%d_%H%M%S")
-        {
-            Ok(value) => value,
-            Err(error) => return (failure("", &format!("{error}\n"), 1), timestamp.to_owned()),
-        };
+        let base_timestamp =
+            match jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", semantic.as_str()) {
+                Ok(value) => value,
+                Err(error) => return (failure("", &format!("{error}\n"), 1), timestamp.to_owned()),
+            };
         let request = AudioImportRequest {
             source_instant: semantic.source_instant(),
             source_media: PathBuf::from(media),
             journal_root: journal_path.to_path_buf(),
-            day: base_timestamp.format("%Y%m%d").to_string(),
+            day: solstone_core_time::day_key(base_timestamp.date()),
             base_timestamp,
             import_id: timestamp.to_owned(),
             stream: "import.audio".to_owned(),
@@ -1192,7 +1189,7 @@ fn run_audio(
     let import_id = bound.import_id.as_str().to_owned();
     let source_timestamp = bound.source_timestamp;
     let base_timestamp =
-        match NaiveDateTime::parse_from_str(source_timestamp.as_str(), "%Y%m%d_%H%M%S") {
+        match jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", source_timestamp.as_str()) {
             Ok(value) => value,
             Err(_) => {
                 return (
@@ -1517,7 +1514,7 @@ fn resolve(
         // The resolver seam stays no_registry_claim so selection is not applied twice.
         claims: no_registry_claim,
         deterministic_detector: |path: &Path, name: Option<&str>| {
-            solstone_core_import_sources::image::detected_creation_stamp(path, name, zone)
+            solstone_core_import_sources::image::detected_creation_stamp(path, name, &zone)
                 .map(solstone_core_import::DetectedTimestamp::new)
         },
         model_detector: unavailable_model_timestamp,
@@ -1526,9 +1523,9 @@ fn resolve(
         manifest_lookup: no_manifest_match,
         generated_timestamp: || {
             solstone_core_import::validate_timestamp(
-                &chrono::Utc::now()
-                    .with_timezone(&zone)
-                    .format("%Y%m%d_%H%M%S")
+                &Timestamp::now()
+                    .to_zoned_datetime(zone.clone())
+                    .strftime("%Y%m%d_%H%M%S")
                     .to_string(),
             )
             .expect("current local timestamp is valid")
@@ -1797,7 +1794,7 @@ impl ImportPipeline for GenericAudioPipeline<'_> {
         let fallback_timestamp = if request.timestamp.is_none() {
             file_mtime_stamp(
                 request.source,
-                solstone_core_journal_config::owner_zone(self.journal_path),
+                &solstone_core_journal_config::owner_zone(self.journal_path),
             )
         } else {
             None
@@ -1848,11 +1845,12 @@ impl ImportPipeline for GenericAudioPipeline<'_> {
 }
 
 /// A file's last-modified time, as a wall-clock stamp in the owner zone.
-fn file_mtime_stamp(path: &Path, zone: chrono_tz::Tz) -> Option<String> {
+fn file_mtime_stamp(path: &Path, zone: &TimeZone) -> Option<String> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let stamp = chrono::DateTime::<chrono::Utc>::from(modified)
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+    let stamp = Timestamp::try_from(modified)
+        .ok()?
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string();
     solstone_core_import::validate_timestamp(&stamp)
         .ok()
@@ -1879,7 +1877,11 @@ struct SystemSyncClock;
 
 impl SyncClock for SystemSyncClock {
     fn now(&self) -> String {
-        Local::now().to_rfc3339()
+        solstone_core_time::zoned_rfc3339(
+            &jiff::ZonedDateTime::now(),
+            solstone_core_time::Precision::AutoSi,
+            false,
+        )
     }
 }
 

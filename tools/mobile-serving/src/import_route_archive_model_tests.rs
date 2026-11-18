@@ -54,7 +54,7 @@ fn ordinary_archive_uses_shared_speech_and_has_owner_readable_output() {
         "picked speech archive",
         "ordinary-archive-speech",
         &stamp,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     let mut request = json!({"path":saved["path"],"timestamp":saved["source_timestamp"],"import_id":folder.import_id.as_str(),"source_zone":"UTC"});

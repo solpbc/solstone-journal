@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_removals::{Event, Page};
 
 use super::*;
@@ -63,8 +63,8 @@ fn proof(name: &str, size: u64) -> ProvenRaw {
     ProvenRaw::for_test(classifier, DAY, STREAM, DIR, name, size).unwrap()
 }
 
-fn at() -> DateTime<Utc> {
-    Utc::now()
+fn at() -> Timestamp {
+    Timestamp::now()
 }
 
 fn web() -> Surface {
@@ -290,7 +290,7 @@ fn a_release_part_way_keeps_the_item_waiting_until_it_is_resolved() {
     // finds the journal's name is the trash's file, and drops its own.
     fs::rename(stage.join("removal-original"), bed.segment().join("a.flac")).unwrap();
     fs::remove_dir_all(&stage).unwrap();
-    solstone_core_trash::sweep(&bed.0, &[&Originals], Utc::now());
+    solstone_core_trash::sweep(&bed.0, &[&Originals], Timestamp::now());
     assert!(solstone_core_trash::item(&bed.0, &id).unwrap().is_none());
     assert_eq!(fs::read(bed.segment().join("a.flac")).unwrap(), b"audio1");
     assert!(history(&bed).is_empty());

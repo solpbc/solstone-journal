@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::DateTime;
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::engine::{BackupServices, Runtime, restic, run_program, runtime};
@@ -127,7 +127,7 @@ fn read_origins(file: &Path) -> std::io::Result<Vec<Value>> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Origin {
     pub path: String,
-    pub at: DateTime<chrono::Utc>,
+    pub at: Timestamp,
 }
 
 /// The places restores recorded, in restic's tree form. Unreadable reads as
@@ -142,9 +142,7 @@ pub fn origins(journal: &Path) -> Vec<Origin> {
             let at = origin.get("at").and_then(Value::as_str)?;
             Some(Origin {
                 path: path.to_owned(),
-                at: DateTime::parse_from_rfc3339(at)
-                    .ok()?
-                    .with_timezone(&chrono::Utc),
+                at: solstone_core_time::parse_rfc3339(at).ok()?.timestamp(),
             })
         })
         .filter(|origin| origin.path.starts_with('/'))
@@ -173,8 +171,8 @@ pub fn quiet_origins(origins: &[Origin], listing: &[Value]) -> Vec<String> {
         let after = snapshot
             .get("time")
             .and_then(Value::as_str)
-            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
-            .is_none_or(|time| time.with_timezone(&chrono::Utc) > origin.at);
+            .and_then(|time| solstone_core_time::parse_rfc3339(time).ok())
+            .is_none_or(|time| time.timestamp() > origin.at);
         here && after
     };
     origins
@@ -288,9 +286,9 @@ impl Destination {
         }
         let repository = &self.runtime.destination.repository;
         if repository.starts_with("s3:") || repository.starts_with("b2:") {
-            let Some(amz_date) =
-                DateTime::<chrono::Utc>::from_timestamp(services.clock.now_unix(), 0)
-                    .map(|now| now.format("%Y%m%dT%H%M%SZ").to_string())
+            let Some(amz_date) = Timestamp::new(services.clock.now_unix(), 0)
+                .ok()
+                .map(|now| now.strftime("%Y%m%dT%H%M%SZ").to_string())
             else {
                 return StorageRetention::Unknown;
             };

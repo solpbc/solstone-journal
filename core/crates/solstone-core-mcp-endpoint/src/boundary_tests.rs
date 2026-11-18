@@ -34,7 +34,6 @@ const PATH: &str = "20260914/default/090000_300/talents/brief.md";
 #[test]
 fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() {
     use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
-    use chrono::TimeZone;
     let journal = tempfile::Builder::new()
         .prefix("ordinary-memory-grant-")
         .tempdir_in(crate::test_scratch())
@@ -51,7 +50,7 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
         },
         "crossmemoryneedle other agent original",
         "ordinary-grant-operation",
-        chrono::Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+        "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
     )
     .unwrap() else {
         panic!("fixture writer must store");
@@ -101,7 +100,7 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
         CONNECTION,
         "reader-credential",
         crate::memory_recall::RecallArgs::default(),
-        chrono::NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+        jiff::civil::date(2026, 1, 2),
     );
     assert!(own.complete);
     assert!(own.notes.is_empty());
@@ -526,7 +525,7 @@ fn dispatch_output(
         },
         entry.tool_name,
         Some(&arguments),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap()
 }
@@ -4749,13 +4748,11 @@ fn list_pagination_walks_and_limits_over_100_items() {
 
     // Exercise real admission and outcomes with a distinct synthetic instant
     // per call; a rapid page walk must not depend on random audit-name collisions.
-    let start = chrono::DateTime::parse_from_rfc3339("2026-03-09T12:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let start = "2026-03-09T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
     let mut call_number = 0;
     let mut call = |tool: &str, arguments: Value| {
         let entry = crate::registry::tool_by_wire_name(tool).unwrap();
-        let now = start + chrono::Duration::seconds(call_number);
+        let now = start + jiff::SignedDuration::from_secs(call_number);
         call_number += 1;
         crate::dispatch::dispatch_authenticated_tool_call(
             journal.path(),
@@ -9309,8 +9306,8 @@ fn write_segment_transcript(
 fn list_activities_range_order_and_pagination() {
     let journal = base_activity_journal();
     let oz = solstone_core_journal_config::owner_zone(journal.path());
-    assert_eq!(oz.name(), "America/New_York");
-    let expected_zone = solstone_core_journal_config::zone_label(Some(oz), 0);
+    assert_eq!(oz.iana_name(), Some("America/New_York"));
+    let expected_zone = solstone_core_journal_config::zone_label(Some(&oz), 0);
 
     write_activity_line(
         journal.path(),
@@ -12017,7 +12014,6 @@ fn list_activities_normalized_hidden_matches_include_hidden_and_fetch_finds_none
 #[test]
 fn search_derived_flags_across_record_types() {
     use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
-    use chrono::TimeZone;
 
     let journal = base_activity_journal();
     let day = "20260308";
@@ -12072,7 +12068,7 @@ fn search_derived_flags_across_record_types() {
         },
         "agentmemoryneedle note content",
         "test-op",
-        chrono::Utc.with_ymd_and_hms(2026, 3, 8, 12, 0, 0).unwrap(),
+        "2026-03-08T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
     )
     .unwrap() else {
         panic!("failed to store memory");

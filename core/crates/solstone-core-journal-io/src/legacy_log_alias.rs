@@ -10,7 +10,7 @@ use std::fs::{self, Metadata};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use chrono::NaiveDate;
+use solstone_core_time::parse_day;
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
@@ -448,7 +448,7 @@ fn is_valid_day(name: &OsStr) -> bool {
     let Some(day) = name.to_str() else {
         return false;
     };
-    is_day_key(day) && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+    is_day_key(day) && parse_day(day).is_some()
 }
 
 fn talent_directory_from_alias(name: &OsStr) -> Option<OsString> {

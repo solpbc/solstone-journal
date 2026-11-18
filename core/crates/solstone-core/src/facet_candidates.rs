@@ -79,10 +79,10 @@ pub(crate) fn run(journal_path: &Path) -> ExitCode {
         }
     }
 
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal_path))
-        .date_naive();
-    let day = today.format("%Y%m%d").to_string();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_path))
+        .date();
+    let day = solstone_core_time::day_key(today);
     let candidates = match solstone_core_facets::aggregate_speculative_facets(
         journal_path,
         today,

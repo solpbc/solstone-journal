@@ -16,7 +16,6 @@ use crate::marks::{MarkState, Proposal, Register};
 use crate::review_context::{
     CheckedReviewContext, check_review_context, load_at_root, read_review_context,
 };
-use chrono::TimeZone;
 use serde_json::json;
 use solstone_core_journal_io::media::{
     Cleanup, Durability, MediaPrimitive, RemovalEffect, run_with_media_hook,
@@ -163,7 +162,7 @@ impl Fixture {
         check_review_context(Arc::clone(&self.root), &ctx).unwrap()
     }
     fn run(&self, checked: CheckedReviewContext) -> ReviewedRemoval {
-        remove_reviewed(checked, NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(), now())
+        remove_reviewed(checked, jiff::civil::date(2026, 8, 6), now())
     }
     fn with(
         &self,
@@ -184,7 +183,7 @@ impl Fixture {
         };
         if let Err(error) = execute_reviewed_with(
             &checked,
-            NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(),
+            jiff::civil::date(2026, 8, 6),
             now(),
             &mut execution,
             hook,
@@ -194,8 +193,8 @@ impl Fixture {
         ReviewedRemoval { checked, execution }
     }
 }
-fn now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap()
+fn now() -> Timestamp {
+    "2026-08-06T00:00:00Z".parse::<Timestamp>().unwrap()
 }
 
 #[test]
@@ -427,8 +426,8 @@ fn current_config_age_groups_and_layouts_govern() {
     let mark = f.mark(target, &["audio.flac"], RemovalClass::PolicyRawRelease);
     let result = remove_reviewed(
         f.checked(&[mark]),
-        NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
-        Utc.with_ymd_and_hms(2026, 7, 1, 0, 0, 0).single().unwrap(),
+        jiff::civil::date(2026, 7, 1),
+        "2026-07-01T00:00:00Z".parse::<Timestamp>().unwrap(),
     );
     assert!(raw.exists());
     assert_eq!(result.outcome().removed_paths().count(), 0);

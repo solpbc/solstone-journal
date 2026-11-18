@@ -3,9 +3,11 @@
 
 //! Pure derived facts for already-loaded journal entity records.
 
-use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone};
-use chrono_tz::Tz;
+use jiff::civil::Time;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
+use solstone_core_time::{day_key, from_local, parse_day, parse_rfc3339};
 
 /// Fields that record when something happened to an entity record.
 const ACTIVITY_FIELDS: [&str; 3] = ["updated_at", "attached_at", "created_at"];
@@ -18,7 +20,7 @@ const ACTIVITY_FIELDS: [&str; 3] = ["updated_at", "attached_at", "created_at"];
 /// as epoch milliseconds or as RFC 3339 text, depending on which release
 /// wrote them, and both count. A record with no usable activity returns
 /// `None`, so no surface shows a date the journal does not have.
-pub fn entity_last_active_ts(entity: &Value, zone: Tz) -> Option<i64> {
+pub fn entity_last_active_ts(entity: &Value, zone: &TimeZone) -> Option<i64> {
     let last_seen = valid_last_seen(entity).and_then(|day| journal_day_start_ms(day, zone));
     ACTIVITY_FIELDS
         .iter()
@@ -28,14 +30,14 @@ pub fn entity_last_active_ts(entity: &Value, zone: Tz) -> Option<i64> {
 }
 
 /// Convert an epoch-millisecond timestamp to its day on the given time zone.
-pub fn last_active_day_for_ts(ts_ms: i64, zone: Tz) -> Option<String> {
-    zone.timestamp_millis_opt(ts_ms)
-        .single()
-        .map(|value| value.format("%Y%m%d").to_string())
+pub fn last_active_day_for_ts(ts_ms: i64, zone: &TimeZone) -> Option<String> {
+    Timestamp::from_millisecond(ts_ms)
+        .ok()
+        .map(|value| day_key(value.to_zoned_datetime(zone.clone()).date()))
 }
 
 /// Return the entity's activity day on the given time zone, when it has one.
-pub fn entity_last_active_day(entity: &Value, zone: Tz) -> Option<String> {
+pub fn entity_last_active_day(entity: &Value, zone: &TimeZone) -> Option<String> {
     entity_last_active_ts(entity, zone).and_then(|ts| last_active_day_for_ts(ts, zone))
 }
 
@@ -43,9 +45,9 @@ pub fn entity_last_active_day(entity: &Value, zone: Tz) -> Option<String> {
 pub(crate) fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
     match value? {
         Value::Number(number) => number.as_i64().filter(|value| *value > 0),
-        Value::String(text) => DateTime::parse_from_rfc3339(text)
+        Value::String(text) => parse_rfc3339(text)
             .ok()
-            .map(|value| value.timestamp_millis())
+            .map(|value| value.timestamp().as_millisecond())
             .filter(|value| *value > 0),
         _ => None,
     }
@@ -54,17 +56,15 @@ pub(crate) fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
 /// The first instant of a `YYYYMMDD` day on the given time zone, in epoch milliseconds.
 ///
 /// A day whose midnight a daylight-saving change skips starts an hour later.
-pub fn journal_day_start_ms(day: &str, zone: Tz) -> Option<i64> {
-    let midnight = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()?
-        .and_hms_opt(0, 0, 0)?;
-    zone.from_local_datetime(&midnight)
+pub fn journal_day_start_ms(day: &str, zone: &TimeZone) -> Option<i64> {
+    let midnight = parse_day(day)?.to_datetime(Time::midnight());
+    from_local(zone, midnight)
         .earliest()
         .or_else(|| {
-            zone.from_local_datetime(&(midnight + TimeDelta::hours(1)))
-                .earliest()
+            let hour_later = midnight.checked_add(SignedDuration::from_hours(1)).ok()?;
+            from_local(zone, hour_later).earliest()
         })
-        .map(|value| value.timestamp_millis())
+        .map(|value| value.timestamp().as_millisecond())
 }
 
 /// Validate the raw entity type spelling accepted by the Rust entity reader.
@@ -97,6 +97,5 @@ pub fn entity_matches_identity_name(
 
 fn valid_last_seen(entity: &Value) -> Option<&str> {
     let last_seen = entity.get("last_seen")?.as_str()?;
-    (last_seen.len() == 8 && NaiveDate::parse_from_str(last_seen, "%Y%m%d").is_ok())
-        .then_some(last_seen)
+    (last_seen.len() == 8 && parse_day(last_seen).is_some()).then_some(last_seen)
 }

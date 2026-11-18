@@ -616,7 +616,10 @@ pub fn record_deleted_entity(
     let value = json!({
         "state": "deleted",
         "dir": entity_dir,
-        "at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "at": solstone_core_time::utc_z(
+            jiff::Timestamp::now(),
+            solstone_core_time::Precision::Secs,
+        ),
     });
     ids.insert(identity_id.to_owned(), value);
     write_json(

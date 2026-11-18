@@ -247,10 +247,13 @@ pub fn correct_over_stretch(
                                 && edit
                                     .get("timestamp")
                                     .and_then(Value::as_str)
-                                    .and_then(|time| {
-                                        chrono::DateTime::parse_from_rfc3339(time).ok()
-                                    })
-                                    .zip(chrono::DateTime::parse_from_rfc3339(timestamp).ok())
+                                    .and_then(|time| solstone_core_time::parse_rfc3339(time).ok())
+                                    .map(|edit| edit.timestamp())
+                                    .zip(
+                                        solstone_core_time::parse_rfc3339(timestamp)
+                                            .ok()
+                                            .map(|original| original.timestamp()),
+                                    )
                                     .is_some_and(|(edit, original)| edit > original)
                         })
                 {

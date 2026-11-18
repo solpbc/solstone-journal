@@ -233,7 +233,7 @@ pub fn bootstrap_voiceprints(
                 &entity_id,
             ))
         });
-        let Some(last_seen_ts) = segment_start_ts_ms(timezone, &segment.day, &segment.key) else {
+        let Some(last_seen_ts) = segment_start_ts_ms(&timezone, &segment.day, &segment.key) else {
             continue;
         };
         for source in &segment.sources {
@@ -345,7 +345,7 @@ pub fn seed_from_imports(
             continue;
         }
         stats.segments_with_speakers += 1;
-        let Some(last_seen_ts) = segment_start_ts_ms(timezone, &segment.day, &segment.key) else {
+        let Some(last_seen_ts) = segment_start_ts_ms(&timezone, &segment.day, &segment.key) else {
             continue;
         };
 

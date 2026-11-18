@@ -16,10 +16,9 @@ workspace = true
 full-tests = []
 
 [dependencies]
-chrono.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 log.workspace = true
 lzma-rs.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -32,6 +31,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
+solstone-core-time.workspace = true
 solstone-core-trash.workspace = true
 
 [target.'cfg(unix)'.dependencies]

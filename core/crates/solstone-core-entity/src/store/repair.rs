@@ -11,7 +11,7 @@ use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::AtomicWriteError;
@@ -23,6 +23,7 @@ use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
 use solstone_core_journal_io::write_json;
+use solstone_core_time::{Precision, utc_z};
 
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
@@ -345,7 +346,7 @@ fn completion_marker_path(journal_root: &Path) -> Result<PathBuf, PathError> {
 
 fn completion_marker_value(report: &EntityIdentityRepairReport) -> Value {
     serde_json::to_value(serde_json::json!({
-        "completed_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        "completed_at": utc_z(Timestamp::now(), Precision::Secs),
         "report": report,
     }))
     .expect("identity repair marker contains only serializable values")

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 #[cfg(not(windows))]
 use std::time::Duration;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 #[cfg(not(windows))]
@@ -112,15 +112,15 @@ impl SpeakersAnalyzeOwnerView {
     /// Age of an available owner record relative to `now`.
     ///
     /// Missing, unparsable, or future `started_at` values yield `None`.
-    pub fn age(&self, now: DateTime<Utc>) -> Option<chrono::TimeDelta> {
+    pub fn age(&self, now: Timestamp) -> Option<SignedDuration> {
         let Self::Available { started_at, .. } = self else {
             return None;
         };
-        let started = DateTime::parse_from_rfc3339(started_at)
+        let started = solstone_core_time::parse_rfc3339(started_at)
             .ok()?
-            .with_timezone(&Utc);
-        let age = now.signed_duration_since(started);
-        (age >= chrono::TimeDelta::zero()).then_some(age)
+            .timestamp();
+        let age = now.duration_since(started);
+        (age >= SignedDuration::ZERO).then_some(age)
     }
 }
 
@@ -826,8 +826,10 @@ fn process_started_at(instance: &ProcessInstance) -> Option<String> {
         seconds = seconds.checked_add(1)?;
         nanoseconds = 0;
     }
-    DateTime::<Utc>::from_timestamp(seconds, nanoseconds)
-        .map(|value| value.to_rfc3339_opts(SecondsFormat::Nanos, true))
+    let nanoseconds = i32::try_from(nanoseconds).ok()?;
+    Timestamp::new(seconds, nanoseconds)
+        .ok()
+        .map(|value| solstone_core_time::utc_z(value, solstone_core_time::Precision::Nanos))
 }
 
 /// The first token of every generation-contention refusal.
@@ -847,11 +849,8 @@ fn generation_contention_error(journal: &Path) -> CliError {
                 started_at: started_at.clone(),
                 install_generation_id: install_generation_id.clone(),
             }
-            .age(Utc::now())
-            .map_or_else(
-                || "unavailable".to_owned(),
-                |age| age.num_seconds().to_string(),
-            );
+            .age(Timestamp::now())
+            .map_or_else(|| "unavailable".to_owned(), |age| age.as_secs().to_string());
             format!(
                 "{GENERATION_CONTENDED}: owner_role={} owner_pid={pid} owner_started_at={started_at} install_generation_id={install_generation_id} owner_age_seconds={age}; use the supervised path or stop that process cleanly",
                 role.as_str()
@@ -1035,7 +1034,7 @@ mod tests {
         assert_eq!(record["schema"], OWNER_SCHEMA);
         assert_eq!(record["role"], "think");
         assert_eq!(record["pid"], std::process::id());
-        assert!(DateTime::parse_from_rfc3339(record["started_at"].as_str().unwrap()).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(record["started_at"].as_str().unwrap()).is_ok());
         assert_eq!(record["process_instance"]["pid"], std::process::id());
         let (id, _, _) = inherited_from(&generation);
         assert_eq!(record["install_generation_id"], id);
@@ -1363,9 +1362,9 @@ mod tests {
         )
         .unwrap();
         let view = read_speakers_analyze_owner(journal.path());
-        let earlier = Utc::now();
+        let earlier = Timestamp::now();
         std::thread::sleep(StdDuration::from_millis(5));
-        let later = Utc::now();
+        let later = Timestamp::now();
         let first = view.age(earlier).expect("age at first observation");
         let second = view.age(later).expect("age at second observation");
         assert!(second > first, "{second:?} should exceed {first:?}");
@@ -1374,7 +1373,7 @@ mod tests {
             record["started_at"] = json!("not-a-timestamp");
         });
         assert_eq!(
-            read_speakers_analyze_owner(journal.path()).age(Utc::now()),
+            read_speakers_analyze_owner(journal.path()).age(Timestamp::now()),
             None
         );
 
@@ -1386,13 +1385,17 @@ mod tests {
         )
         .unwrap();
         rewrite_owner(journal.path(), |record| {
-            record["started_at"] =
-                json!((Utc::now() + chrono::TimeDelta::seconds(60)).to_rfc3339());
+            record["started_at"] = json!(solstone_core_time::utc_rfc3339(
+                Timestamp::now() + SignedDuration::from_secs(60)
+            ));
         });
         let view = read_speakers_analyze_owner(journal.path());
         assert_eq!(view, SpeakersAnalyzeOwnerView::Unavailable);
-        assert_eq!(view.age(Utc::now()), None);
-        assert_eq!(SpeakersAnalyzeOwnerView::Unavailable.age(Utc::now()), None);
+        assert_eq!(view.age(Timestamp::now()), None);
+        assert_eq!(
+            SpeakersAnalyzeOwnerView::Unavailable.age(Timestamp::now()),
+            None
+        );
     }
 
     #[cfg(unix)]

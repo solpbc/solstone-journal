@@ -6,7 +6,6 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::Local;
 use solstone_core_cli::{
     HEALTH_LOGS_HELP, HEALTH_LOGS_USAGE, HealthLogsArgs, HealthLogsValueCheck,
 };
@@ -20,7 +19,7 @@ use solstone_core_system_health::{
 };
 
 pub(super) fn run(args: HealthLogsArgs) -> ExitCode {
-    let now = Local::now().naive_local();
+    let now = jiff::ZonedDateTime::now().datetime();
     let prepared = match prepare(args, now) {
         Ok(prepared) => prepared,
         Err(error) => return usage_value_error(&error),
@@ -49,7 +48,7 @@ pub(super) fn run(args: HealthLogsArgs) -> ExitCode {
 }
 
 pub(super) fn help(args: HealthLogsArgs) -> ExitCode {
-    let now = Local::now().naive_local();
+    let now = jiff::ZonedDateTime::now().datetime();
     if let Err(error) = prepare(args, now) {
         return usage_value_error(&error);
     }
@@ -58,7 +57,7 @@ pub(super) fn help(args: HealthLogsArgs) -> ExitCode {
 }
 
 pub(super) fn usage(args: HealthLogsArgs) -> ExitCode {
-    let now = Local::now().naive_local();
+    let now = jiff::ZonedDateTime::now().datetime();
     if let Err(error) = prepare(args, now) {
         return usage_value_error(&error);
     }
@@ -70,12 +69,12 @@ pub(super) fn usage(args: HealthLogsArgs) -> ExitCode {
 struct PreparedHealthLogs {
     count: i64,
     follow: bool,
-    since: Option<chrono::NaiveDateTime>,
+    since: Option<jiff::civil::DateTime>,
     service: Option<String>,
     grep: Option<solstone_core_system_health::GrepPattern>,
 }
 
-fn prepare(args: HealthLogsArgs, now: chrono::NaiveDateTime) -> Result<PreparedHealthLogs, String> {
+fn prepare(args: HealthLogsArgs, now: jiff::civil::DateTime) -> Result<PreparedHealthLogs, String> {
     let mut count = 5;
     let mut since = None;
     let mut grep = None;

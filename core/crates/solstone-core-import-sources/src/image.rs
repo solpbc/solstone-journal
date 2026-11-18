@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use base64::Engine;
-use chrono::{DateTime, NaiveDateTime, TimeZone, Timelike};
-use chrono_tz::Tz;
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, ZonedDateTime};
 use solstone_core_depict::resize_for_vlm;
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
@@ -211,7 +212,7 @@ pub fn detect(path: &Path) -> bool {
 pub fn detected_creation_stamp(
     path: &Path,
     filename: Option<&str>,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Option<solstone_core_import::Timestamp> {
     let extra_exif = (|| {
         let mut reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
@@ -231,7 +232,7 @@ pub fn detected_creation_stamp(
 
 fn place_image_timestamp(
     path: &Path,
-    zone: Tz,
+    zone: &TimeZone,
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
     extra_exif: Option<&[u8]>,
@@ -261,7 +262,7 @@ fn place_image_timestamp(
 /// owner's day in `zone`.
 pub fn preview(
     path: &Path,
-    zone: Tz,
+    zone: &TimeZone,
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> ImportPreview {
@@ -280,18 +281,16 @@ pub fn preview(
     ) else {
         return degenerate_preview();
     };
-    let Ok(naive) = NaiveDateTime::parse_from_str(decided_stamp.as_str(), "%Y%m%d_%H%M%S") else {
+    let Ok(naive) = DateTime::strptime("%Y%m%d_%H%M%S", decided_stamp.as_str()) else {
         return degenerate_preview();
     };
-    let timestamp = match zone.from_local_datetime(&naive) {
-        chrono::offset::LocalResult::Single(dt) => dt,
-        chrono::offset::LocalResult::Ambiguous(earliest, _) => earliest,
-        chrono::offset::LocalResult::None => return degenerate_preview(),
+    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+        return degenerate_preview();
     };
     ImportPreview {
         date_range: (
-            timestamp.format("%Y%m%d").to_string(),
-            timestamp.format("%Y%m%d").to_string(),
+            timestamp.strftime("%Y%m%d").to_string(),
+            timestamp.strftime("%Y%m%d").to_string(),
         ),
         item_count: 1,
         entity_count: 0,
@@ -303,7 +302,7 @@ pub fn preview(
 pub fn preview_size(
     path: &Path,
     journal: &Path,
-    zone: Tz,
+    zone: &TimeZone,
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<solstone_core_import::size::ImportSize, ImageImportError> {
@@ -324,29 +323,23 @@ pub fn preview_size(
     let final_stamp =
         solstone_core_import::source_timestamp_for_preview(journal, &decided_stamp, path)
             .unwrap_or(decided_stamp);
-    let naive =
-        NaiveDateTime::parse_from_str(final_stamp.as_str(), "%Y%m%d_%H%M%S").map_err(|error| {
-            ImageImportError::UndecodableSource {
-                path: path.to_path_buf(),
-                detail: error.to_string(),
-            }
-        })?;
-    let timestamp = match zone.from_local_datetime(&naive) {
-        chrono::offset::LocalResult::Single(dt) => dt,
-        chrono::offset::LocalResult::Ambiguous(earliest, _) => earliest,
-        chrono::offset::LocalResult::None => {
-            return Err(ImageImportError::UndecodableSource {
-                path: path.to_path_buf(),
-                detail: "invalid local timestamp in timezone".to_owned(),
-            });
+    let naive = DateTime::strptime("%Y%m%d_%H%M%S", final_stamp.as_str()).map_err(|error| {
+        ImageImportError::UndecodableSource {
+            path: path.to_path_buf(),
+            detail: error.to_string(),
         }
+    })?;
+    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+        return Err(ImageImportError::UndecodableSource {
+            path: path.to_path_buf(),
+            detail: "invalid local timestamp in timezone".to_owned(),
+        });
     };
     let extension = path
         .extension()
         .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
         .unwrap_or_default();
-    let planned =
-        allocate_image_segment(journal, timestamp.naive_local(), path, &extension, false)?;
+    let planned = allocate_image_segment(journal, timestamp.datetime(), path, &extension, false)?;
     Ok(solstone_core_import::size::ImportSize {
         recordings: [solstone_core_import::size::Recording {
             day: planned.day,
@@ -366,7 +359,7 @@ pub struct PreparedImage {
     pub format: ImageFormat,
     pub modified: SystemTime,
     pub description: DescriptionOutcome,
-    pub timestamp: DateTime<Tz>,
+    pub timestamp: ZonedDateTime,
     pub day: String,
     pub segment: String,
     pub format_name: &'static str,
@@ -379,7 +372,7 @@ pub struct PreparedImage {
 pub fn prepare_image(
     path: &Path,
     wire: &dyn WireClient,
-    zone: Tz,
+    zone: &TimeZone,
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<PreparedImage, ImageImportError> {
@@ -396,24 +389,20 @@ pub fn prepare_image(
         fallback_timestamp,
         exif.as_deref(),
     )?;
-    let naive = NaiveDateTime::parse_from_str(decided_stamp.as_str(), "%Y%m%d_%H%M%S").map_err(
-        |error| ImageImportError::UndecodableSource {
+    let naive = DateTime::strptime("%Y%m%d_%H%M%S", decided_stamp.as_str()).map_err(|error| {
+        ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
             detail: error.to_string(),
-        },
-    )?;
-    let timestamp = match zone.from_local_datetime(&naive) {
-        chrono::offset::LocalResult::Single(dt) => dt,
-        chrono::offset::LocalResult::Ambiguous(earliest, _) => earliest,
-        chrono::offset::LocalResult::None => {
-            return Err(ImageImportError::UndecodableSource {
-                path: path.to_path_buf(),
-                detail: "invalid local timestamp in timezone".to_owned(),
-            });
         }
+    })?;
+    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+        return Err(ImageImportError::UndecodableSource {
+            path: path.to_path_buf(),
+            detail: "invalid local timestamp in timezone".to_owned(),
+        });
     };
-    let day = timestamp.format("%Y%m%d").to_string();
-    let segment = format!("{}_0", timestamp.format("%H%M%S"));
+    let day = timestamp.strftime("%Y%m%d").to_string();
+    let segment = format!("{}_0", timestamp.strftime("%H%M%S"));
     let extension = path
         .extension()
         .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
@@ -468,7 +457,7 @@ struct ClaimedImageSegment {
 
 fn claim_image_segment(
     journal_root: &Path,
-    start: NaiveDateTime,
+    start: DateTime,
     source: &Path,
     extension: &str,
 ) -> Result<ClaimedImageSegment, ImageImportError> {
@@ -492,7 +481,7 @@ struct ImageAllocation {
 
 fn allocate_image_segment(
     journal_root: &Path,
-    start: NaiveDateTime,
+    start: DateTime,
     source: &Path,
     extension: &str,
     publish: bool,
@@ -509,7 +498,7 @@ fn allocate_image_segment(
     }
     let source_len = source_meta.len();
 
-    let day = start.format("%Y%m%d").to_string();
+    let day = start.strftime("%Y%m%d").to_string();
     let parent = contained_path(journal_root, &format!("chronicle/{day}/{IMPORT_STREAM}"))
         .map_err(|error| ImageImportError::JournalIo {
             path: journal_root.to_path_buf(),
@@ -526,12 +515,14 @@ fn allocate_image_segment(
     let mut cached_source_hash = None;
 
     for attempt in 0..IMAGE_SEGMENT_PROBE_LIMIT {
-        let candidate_time = start + chrono::Duration::seconds(i64::from(attempt));
-        if candidate_time.format("%Y%m%d").to_string() != day {
+        let candidate_time = start
+            .checked_add(SignedDuration::from_secs(i64::from(attempt)))
+            .expect("a probed segment time is a representable time");
+        if candidate_time.strftime("%Y%m%d").to_string() != day {
             return Err(ImageImportError::ImageSegmentDayOverflow {
                 day,
                 stream: IMPORT_STREAM.to_owned(),
-                start: start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                start: start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
             });
         }
         let segment = format!(
@@ -744,7 +735,7 @@ fn allocate_image_segment(
     Err(ImageImportError::ImageSegmentCollision {
         day,
         stream: IMPORT_STREAM.to_owned(),
-        start: start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        start: start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
         attempts: IMAGE_SEGMENT_PROBE_LIMIT,
     })
 }
@@ -756,7 +747,7 @@ fn allocate_image_segment(
 pub fn install_image_at(
     prepared: &PreparedImage,
     journal_root: &Path,
-    start: NaiveDateTime,
+    start: DateTime,
     publication: &dyn PublicationOperations,
 ) -> Result<ImageImportResult, ImageImportError> {
     if !solstone_core_import::work_continues() {
@@ -857,8 +848,8 @@ pub fn install_and_publish_image(
         .ok()
         .flatten()
         .and_then(|m| solstone_core_import::stored_source_timestamp(&m, import_id).ok())
-        .and_then(|ts| NaiveDateTime::parse_from_str(ts.as_str(), "%Y%m%d_%H%M%S").ok())
-        .unwrap_or_else(|| prepared.timestamp.naive_local());
+        .and_then(|ts| DateTime::strptime("%Y%m%d_%H%M%S", ts.as_str()).ok())
+        .unwrap_or_else(|| prepared.timestamp.datetime());
     let result = install_image_at(prepared, journal_root, effective_start, publication)?;
     write_import_manifest(
         &prepared.path,
@@ -890,7 +881,7 @@ pub fn import_image(
     wire: &dyn WireClient,
 ) -> Result<ImageImportResult, ImageImportError> {
     let zone = solstone_core_journal_config::owner_zone(journal_root);
-    let prepared = prepare_image(path, wire, zone, None, None)?;
+    let prepared = prepare_image(path, wire, &zone, None, None)?;
     install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
 }
 
@@ -1210,7 +1201,6 @@ fn write_import_manifest(
 
 #[cfg(test)]
 mod tests {
-    use chrono::Local;
     use std::cell::RefCell;
     use std::io::Cursor;
 
@@ -1248,12 +1238,12 @@ mod tests {
         wire: &dyn WireClient,
     ) -> Result<ImageImportResult, ImageImportError> {
         let zone = solstone_core_journal_config::owner_zone(journal_root);
-        let selected =
-            DateTime::<chrono::Utc>::from(fs::metadata(path).unwrap().modified().unwrap())
-                .with_timezone(&zone)
-                .format("%Y%m%d_%H%M%S")
-                .to_string();
-        let prepared = super::prepare_image(path, wire, zone, Some(&selected), None)?;
+        let selected = jiff::Timestamp::try_from(fs::metadata(path).unwrap().modified().unwrap())
+            .unwrap()
+            .to_zoned_datetime(zone.clone())
+            .strftime("%Y%m%d_%H%M%S")
+            .to_string();
+        let prepared = super::prepare_image(path, wire, &zone, Some(&selected), None)?;
         super::install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
     }
 
@@ -1304,7 +1294,7 @@ mod tests {
                 include_bytes!("../../solstone-core-import/tests/fixtures/creation-photo.png"),
             )
             .unwrap();
-            let stamp = detected_creation_stamp(&path, Some("photo.png"), Tz::UTC)
+            let stamp = detected_creation_stamp(&path, Some("photo.png"), &TimeZone::UTC)
                 .expect("PNG creation time");
             assert_eq!(stamp.as_str(), "20260624_003000");
         }
@@ -1319,11 +1309,17 @@ mod tests {
             request: RefCell::new(None),
         };
         assert!(matches!(
-            super::prepare_image(&source, &wire, Tz::UTC, None, None),
+            super::prepare_image(&source, &wire, &TimeZone::UTC, None, None),
             Err(ImageImportError::CouldNotDetectTimestamp { .. })
         ));
-        let fallback =
-            super::prepare_image(&source, &wire, Tz::UTC, None, Some("20260623_183000")).unwrap();
+        let fallback = super::prepare_image(
+            &source,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            Some("20260623_183000"),
+        )
+        .unwrap();
         assert_eq!(fallback.day, "20260623");
         assert!(fallback.segment.starts_with("183000"));
     }
@@ -1439,7 +1435,7 @@ mod tests {
         let prepared = prepare_image(
             &path,
             &wire,
-            solstone_core_journal_config::host_zone(),
+            &solstone_core_journal_config::host_zone(),
             Some("20260510_120000"),
             None,
         )
@@ -1666,14 +1662,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("pic.png");
         fs::write(&path, b"not an image").unwrap();
-        let preview = preview(&path, solstone_core_journal_config::host_zone(), None, None);
+        let preview = preview(
+            &path,
+            &solstone_core_journal_config::host_zone(),
+            None,
+            None,
+        );
         assert_eq!(preview.date_range, (String::new(), String::new()));
         assert_eq!(preview.item_count, 0);
         assert_eq!(preview.entity_count, 0);
         assert_eq!(preview.summary, "No readable image found");
     }
 
-    use chrono::TimeZone;
     use solstone_core_segment::StreamHints;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -1698,10 +1698,7 @@ mod tests {
             fs::write(&source, b"synthetic image bytes").unwrap();
             let claimed = claim_image_segment(
                 root.path(),
-                chrono::NaiveDate::from_ymd_opt(2026, 1, 2)
-                    .unwrap()
-                    .and_hms_opt(12, 0, 0)
-                    .unwrap(),
+                jiff::civil::date(2026, 1, 2).at(12, 0, 0, 0),
                 &source,
                 ".png",
             )
@@ -1785,10 +1782,18 @@ mod tests {
         fn emit_drain(&self, _journal: &Path, _revision: Option<&str>, _day: &str) {}
     }
 
-    fn write_test_png(path: &Path, pixel: [u8; 3], time: DateTime<Local>) {
+    /// A wall-clock time on this computer's own zone.
+    fn local_time(wall: jiff::civil::DateTime) -> ZonedDateTime {
+        solstone_core_time::from_local(&jiff::tz::TimeZone::system(), wall)
+            .single()
+            .unwrap()
+    }
+
+    fn write_test_png(path: &Path, pixel: [u8; 3], time: &ZonedDateTime) {
         let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
         img.save_with_format(path, ImageFormat::Png).unwrap();
-        let file_time = fs::FileTimes::new().set_modified(time.into());
+        let file_time = fs::FileTimes::new()
+            .set_modified(std::time::SystemTime::try_from(time.timestamp()).unwrap());
         File::options()
             .write(true)
             .open(path)
@@ -1797,10 +1802,11 @@ mod tests {
             .unwrap();
     }
 
-    fn write_test_jpeg(path: &Path, pixel: [u8; 3], time: DateTime<Local>) {
+    fn write_test_jpeg(path: &Path, pixel: [u8; 3], time: &ZonedDateTime) {
         let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
         img.save_with_format(path, ImageFormat::Jpeg).unwrap();
-        let file_time = fs::FileTimes::new().set_modified(time.into());
+        let file_time = fs::FileTimes::new()
+            .set_modified(std::time::SystemTime::try_from(time.timestamp()).unwrap());
         File::options()
             .write(true)
             .open(path)
@@ -1813,12 +1819,9 @@ mod tests {
     fn an_imported_image_keeps_its_bytes_and_source_time() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
         let source = source_dir.path().join("photo.png");
-        write_test_png(&source, [10, 20, 30], time);
+        write_test_png(&source, [10, 20, 30], &time);
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -1844,7 +1847,7 @@ mod tests {
         assert_eq!(fs::read(&original).unwrap(), fs::read(&source).unwrap());
         assert_eq!(
             fs::metadata(&original).unwrap().modified().unwrap(),
-            SystemTime::from(time)
+            SystemTime::try_from(time.timestamp()).unwrap()
         );
         assert!(segment.join("image_transcript.md").is_file());
         assert!(
@@ -1859,15 +1862,12 @@ mod tests {
     fn two_different_images_with_same_mtime_second_take_consecutive_keys_and_preserve_content() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img_a = source_dir.path().join("a.png");
         let img_b = source_dir.path().join("b.png");
-        write_test_png(&img_a, [10, 20, 30], time);
-        write_test_png(&img_b, [40, 50, 60], time);
+        write_test_png(&img_a, [10, 20, 30], &time);
+        write_test_png(&img_b, [40, 50, 60], &time);
 
         let pub_a = TestPublication::new();
         let wire_a = RecordingWire {
@@ -1959,17 +1959,14 @@ mod tests {
     fn three_different_images_take_three_consecutive_keys_and_build_valid_stream_chain() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img_a = source_dir.path().join("a.png");
         let img_b = source_dir.path().join("b.png");
         let img_c = source_dir.path().join("c.png");
-        write_test_png(&img_a, [1, 1, 1], time);
-        write_test_png(&img_b, [2, 2, 2], time);
-        write_test_png(&img_c, [3, 3, 3], time);
+        write_test_png(&img_a, [1, 1, 1], &time);
+        write_test_png(&img_b, [2, 2, 2], &time);
+        write_test_png(&img_c, [3, 3, 3], &time);
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -2080,15 +2077,12 @@ mod tests {
     fn same_second_png_then_jpg_creates_two_separate_segments() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img_png = source_dir.path().join("pic.png");
         let img_jpg = source_dir.path().join("pic.jpg");
-        write_test_png(&img_png, [100, 100, 100], time);
-        write_test_jpeg(&img_jpg, [100, 100, 100], time);
+        write_test_png(&img_png, [100, 100, 100], &time);
+        write_test_jpeg(&img_jpg, [100, 100, 100], &time);
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -2151,13 +2145,10 @@ mod tests {
     fn an_image_lands_at_a_removed_key_and_steps_past_a_removal_in_progress() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img = source_dir.path().join("photo.png");
-        write_test_png(&img, [7, 8, 9], time);
+        write_test_png(&img, [7, 8, 9], &time);
         let img_bytes = fs::read(&img).unwrap();
 
         // 120000_0 has tombstone.json AND matching original.png: a removal
@@ -2206,13 +2197,10 @@ mod tests {
     fn same_content_reimport_claims_existing_head_segment_without_creating_new_directory() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img = source_dir.path().join("sample.png");
-        write_test_png(&img, [11, 22, 33], time);
+        write_test_png(&img, [11, 22, 33], &time);
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -2258,18 +2246,12 @@ mod tests {
     fn retry_after_a_later_import_reuses_its_segment_and_keeps_its_chain_position() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let first_time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
-        let later_time = Local
-            .with_ymd_and_hms(2026, 6, 15, 13, 0, 0)
-            .single()
-            .unwrap();
+        let first_time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
+        let later_time = local_time(jiff::civil::date(2026, 6, 15).at(13, 0, 0, 0));
         let first = source_dir.path().join("first.png");
         let later = source_dir.path().join("later.png");
-        write_test_png(&first, [11, 22, 33], first_time);
-        write_test_png(&later, [44, 55, 66], later_time);
+        write_test_png(&first, [11, 22, 33], &first_time);
+        write_test_png(&later, [44, 55, 66], &later_time);
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -2358,18 +2340,18 @@ mod tests {
     fn same_bytes_with_different_extensions_do_not_share_segment() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img_jpg = source_dir.path().join("photo.jpg");
         let img_jpeg = source_dir.path().join("photo.jpeg");
-        write_test_jpeg(&img_jpg, [55, 66, 77], time);
+        write_test_jpeg(&img_jpg, [55, 66, 77], &time);
         fs::copy(&img_jpg, &img_jpeg).unwrap();
         crate::shared::open_to_set_times(&img_jpeg)
             .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(time.into()))
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::SystemTime::try_from(time.timestamp()).unwrap()),
+            )
             .unwrap();
 
         let publication = TestPublication::new();
@@ -2426,17 +2408,14 @@ mod tests {
 
     #[test]
     fn corrupt_or_staged_occupants_are_skipped_without_touching_or_creating_candidate() {
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         // Case a: no original.*
         {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("pic.png");
-            write_test_png(&img, [1, 2, 3], time);
+            write_test_png(&img, [1, 2, 3], &time);
 
             let seg_0 = journal
                 .path()
@@ -2459,7 +2438,7 @@ mod tests {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("pic.png");
-            write_test_png(&img, [1, 2, 3], time);
+            write_test_png(&img, [1, 2, 3], &time);
 
             let seg_0 = journal
                 .path()
@@ -2483,7 +2462,7 @@ mod tests {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("pic.png");
-            write_test_png(&img, [1, 2, 3], time);
+            write_test_png(&img, [1, 2, 3], &time);
 
             let seg_0 = journal
                 .path()
@@ -2504,7 +2483,7 @@ mod tests {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("pic.png");
-            write_test_png(&img, [1, 2, 3], time);
+            write_test_png(&img, [1, 2, 3], &time);
 
             let parent = journal.path().join("chronicle/20260615/import.image");
             fs::create_dir_all(&parent).unwrap();
@@ -2526,13 +2505,10 @@ mod tests {
     fn start_at_day_boundary_overflows_into_error_without_creating_directories() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 23, 59, 59)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(23, 59, 59, 0));
 
         let img = source_dir.path().join("photo.png");
-        write_test_png(&img, [99, 99, 99], time);
+        write_test_png(&img, [99, 99, 99], &time);
 
         // Occupy 23:59:59 with other content
         let seg = journal
@@ -2562,17 +2538,14 @@ mod tests {
     #[test]
     fn probe_limit_exhaustion_returns_collision_error_and_does_not_create_probe_limit_plus_one_key()
     {
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         // Subcase 1: Occupy 0..58 -> claims 59
         {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("photo.png");
-            write_test_png(&img, [5, 5, 5], time);
+            write_test_png(&img, [5, 5, 5], &time);
 
             for sec in 0..59 {
                 let seg = journal
@@ -2595,7 +2568,7 @@ mod tests {
             let journal = tempfile::tempdir().unwrap();
             let source_dir = tempfile::tempdir().unwrap();
             let img = source_dir.path().join("photo.png");
-            write_test_png(&img, [5, 5, 5], time);
+            write_test_png(&img, [5, 5, 5], &time);
 
             for sec in 0..60 {
                 let seg = journal
@@ -2642,12 +2615,9 @@ mod tests {
         let source_dir = tempfile::tempdir().unwrap();
 
         // 1. Free 23:59:59 taken as 235959_0
-        let time_end = Local
-            .with_ymd_and_hms(2026, 6, 15, 23, 59, 59)
-            .single()
-            .unwrap();
+        let time_end = local_time(jiff::civil::date(2026, 6, 15).at(23, 59, 59, 0));
         let img_1 = source_dir.path().join("end.png");
-        write_test_png(&img_1, [1, 2, 3], time_end);
+        write_test_png(&img_1, [1, 2, 3], &time_end);
 
         let publ = TestPublication::new();
         let wire = RecordingWire {
@@ -2658,12 +2628,9 @@ mod tests {
 
         // 2. In clean journal, start at 23:59:30 with 23:59:30..23:59:58 occupied -> takes 235959_0
         let journal_2 = tempfile::tempdir().unwrap();
-        let time_30 = Local
-            .with_ymd_and_hms(2026, 6, 15, 23, 59, 30)
-            .single()
-            .unwrap();
+        let time_30 = local_time(jiff::civil::date(2026, 6, 15).at(23, 59, 30, 0));
         let img_2 = source_dir.path().join("start30.png");
-        write_test_png(&img_2, [4, 5, 6], time_30);
+        write_test_png(&img_2, [4, 5, 6], &time_30);
 
         for sec in 30..59 {
             let seg = journal_2
@@ -2682,13 +2649,10 @@ mod tests {
     fn fresh_claim_and_same_content_take_normalize_directory_permissions_and_reject_symlinks() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
 
         let img = source_dir.path().join("photo.png");
-        write_test_png(&img, [12, 34, 56], time);
+        write_test_png(&img, [12, 34, 56], &time);
         let img_bytes = fs::read(&img).unwrap();
 
         // 1. Fresh claim mode 0o700
@@ -2837,19 +2801,20 @@ mod tests {
         file.set_times(std::fs::FileTimes::new().set_modified(old_time))
             .unwrap();
 
-        let preview_res = preview(&photo_path, Tz::UTC, None, None);
+        let preview_res = preview(&photo_path, &TimeZone::UTC, None, None);
         assert_eq!(preview_res.date_range.0, "20260510");
         assert_eq!(preview_res.date_range.1, "20260510");
 
         let journal_dir = tempfile::tempdir().unwrap();
-        let size_res = preview_size(&photo_path, journal_dir.path(), Tz::UTC, None, None).unwrap();
+        let size_res =
+            preview_size(&photo_path, journal_dir.path(), &TimeZone::UTC, None, None).unwrap();
         let size_day = &size_res.recordings.iter().next().unwrap().day;
         assert_eq!(size_day, "20260510");
 
         let wire = RecordingWire {
             request: RefCell::new(None),
         };
-        let prepared = prepare_image(&photo_path, &wire, Tz::UTC, None, None).unwrap();
+        let prepared = prepare_image(&photo_path, &wire, &TimeZone::UTC, None, None).unwrap();
         assert_eq!(prepared.day, "20260510");
         assert!(prepared.segment.starts_with("143000"));
     }
@@ -2895,12 +2860,9 @@ mod tests {
     fn a_stopped_vision_call_discards_the_description_and_installs_nothing() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
         let source = source_dir.path().join("photo.png");
-        write_test_png(&source, [10, 20, 30], time);
+        write_test_png(&source, [10, 20, 30], &time);
         let source_bytes = fs::read(&source).unwrap();
         let stop = solstone_core_import::WorkStop::new();
         let _guard = solstone_core_import::WorkStopGuard::install(&stop);
@@ -2910,11 +2872,12 @@ mod tests {
         };
         let zone = solstone_core_journal_config::owner_zone(journal.path());
         let selected =
-            DateTime::<chrono::Utc>::from(fs::metadata(&source).unwrap().modified().unwrap())
-                .with_timezone(&zone)
-                .format("%Y%m%d_%H%M%S")
+            jiff::Timestamp::try_from(fs::metadata(&source).unwrap().modified().unwrap())
+                .unwrap()
+                .to_zoned_datetime(zone.clone())
+                .strftime("%Y%m%d_%H%M%S")
                 .to_string();
-        let prepared = prepare_image(&source, &wire, zone, Some(&selected), None).unwrap();
+        let prepared = prepare_image(&source, &wire, &zone, Some(&selected), None).unwrap();
         assert!(matches!(
             prepared.description,
             DescriptionOutcome::Unavailable { ref reason } if reason == "generate cancelled"
@@ -2943,12 +2906,9 @@ mod tests {
     fn an_already_stopped_image_does_not_call_the_model() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
         let source = source_dir.path().join("photo.png");
-        write_test_png(&source, [10, 20, 30], time);
+        write_test_png(&source, [10, 20, 30], &time);
         let stop = solstone_core_import::WorkStop::new();
         stop.request();
         let _guard = solstone_core_import::WorkStopGuard::install(&stop);
@@ -2984,14 +2944,11 @@ mod tests {
     fn a_stopped_second_image_keeps_the_admitted_original() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
-        let time = Local
-            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
-            .single()
-            .unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
         let first = source_dir.path().join("first.png");
         let second = source_dir.path().join("second.png");
-        write_test_png(&first, [10, 20, 30], time);
-        write_test_png(&second, [40, 50, 60], time);
+        write_test_png(&first, [10, 20, 30], &time);
+        write_test_png(&second, [40, 50, 60], &time);
         let first_bytes = fs::read(&first).unwrap();
         let publication = TestPublication::new();
         let wire = RecordingWire {

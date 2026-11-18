@@ -5,7 +5,6 @@
 
 use std::{collections::BTreeMap, fs, path::Path};
 
-use chrono::{Datelike, NaiveDate};
 use serde_json::Value;
 use solstone_core_format::segment::segment_parse;
 
@@ -24,10 +23,10 @@ pub(crate) fn accumulate_activities(
     journal_root: &Path,
     day: &str,
 ) -> Result<ActivityAccumulation, JournalStatsError> {
-    let weekday: u8 = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| JournalStatsError::InvalidDay(day.to_owned()))?
+    let weekday: u8 = solstone_core_time::parse_day(day)
+        .ok_or_else(|| JournalStatsError::InvalidDay(day.to_owned()))?
         .weekday()
-        .num_days_from_monday()
+        .to_monday_zero_offset()
         .try_into()
         .unwrap_or(0);
     let mut accumulation = ActivityAccumulation {

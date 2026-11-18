@@ -284,7 +284,7 @@ fn acceptance_13_chatgpt_fingerprinting() {
     assert_eq!(actual_unreadable["reason_code"], "configuration_invalid");
 
     let begin_unreadable =
-        solstone_core_brain::begin_refresh(&root, chrono::Utc::now(), None, None, false, None);
+        solstone_core_brain::begin_refresh(&root, jiff::Timestamp::now(), None, None, false, None);
     assert!(matches!(begin_unreadable, Ok(None)));
 
     fs::remove_dir_all(root).expect("cleanup root");

@@ -324,8 +324,8 @@ fn execute_rotate_recovery_key(journal: &Path, services: &BackupServices<'_>) ->
                 Ok(creds) => creds,
                 Err(err) => return error(err.reason_code),
             };
-            let expires = match chrono::DateTime::parse_from_rfc3339(&credentials.expires_at) {
-                Ok(expires) => expires.timestamp(),
+            let expires = match solstone_core_time::parse_rfc3339(&credentials.expires_at) {
+                Ok(expires) => expires.timestamp().as_second(),
                 Err(_) => return error("failed"),
             };
             let remaining = expires.saturating_sub(services.clock.now_unix());

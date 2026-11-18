@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -115,7 +115,7 @@ struct Context {
     config: (JournalConfigRead, Option<MediaEntry>),
     register: Register,
     catalog: JournalCatalog,
-    at: DateTime<FixedOffset>,
+    at: ZonedDateTime,
     inventory: Vec<(Arc<MediaDirectory>, Vec<MediaEntry>)>,
 }
 
@@ -136,7 +136,7 @@ impl Context {
         })).map_err(io::Error::other)?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
-    fn capture(root: &Arc<JournalRoot>, at: DateTime<FixedOffset>) -> io::Result<Self> {
+    fn capture(root: &Arc<JournalRoot>, at: ZonedDateTime) -> io::Result<Self> {
         let config_directory = MediaDirectory::open(Arc::clone(root), Path::new("config"))?;
         let config = solstone_core_journal_config::read_journal_config_observed_in_directory(
             &config_directory,
@@ -204,8 +204,7 @@ impl Original {
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<Self> {
         let target = &selection.target;
-        let day = NaiveDate::parse_from_str(&target.day, "%Y%m%d").map_err(|_| refuse())?;
-        if day.format("%Y%m%d").to_string() != target.day
+        if solstone_core_time::parse_day(&target.day).is_none()
             || !solstone_core_segment::is_safe_stream_component(&target.stream)
             || solstone_core_format::segment::segment_key(&target.dir).is_none()
             || target.dir.contains(['/', '\\'])
@@ -299,8 +298,8 @@ impl Original {
             target,
             self.selection.layout,
             &policy,
-            context.at.date_naive(),
-            context.at.with_timezone(&Utc),
+            context.at.date(),
+            context.at.timestamp(),
             DecisionPurpose::OffloadProposal,
         );
         let accepted = inspection
@@ -388,7 +387,7 @@ impl CreatorStageRecovery {
     /// creator stage needs the producer's existing exclusion before matching.
     pub fn observe(
         root: Arc<JournalRoot>,
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> Self {
         let mut owner = Self::empty(root);
@@ -401,7 +400,7 @@ impl CreatorStageRecovery {
     pub fn enter(
         root: Arc<JournalRoot>,
         selections: &[CreatorStageSelection],
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> Self {
         let mut owner = Self::empty(root);
@@ -481,7 +480,7 @@ impl CreatorStageRecovery {
     pub fn reconcile(
         root: Arc<JournalRoot>,
         prior: &CreatorConfirmation,
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> Self {
         let mut owner = Self::empty(root);
@@ -547,7 +546,7 @@ impl CreatorStageRecovery {
     fn capture(
         &mut self,
         selections: &[CreatorStageSelection],
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
         checkpoint()?;
@@ -565,7 +564,7 @@ impl CreatorStageRecovery {
     fn capture_admitted(
         &mut self,
         selections: &[CreatorStageSelection],
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
         let activity = self.activity.as_ref().ok_or_else(refuse)?;
@@ -670,7 +669,7 @@ impl CreatorStageRecovery {
 
     fn discover(
         &mut self,
-        at: DateTime<FixedOffset>,
+        at: ZonedDateTime,
         checkpoint: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
         checkpoint()?;
@@ -731,7 +730,7 @@ impl CreatorStageRecovery {
         }
         let mut selections = Vec::new();
         if !copied.is_empty() {
-            let mut context = Context::capture(&self.root, at)?;
+            let mut context = Context::capture(&self.root, at.clone())?;
             let candidates = candidate_segments(&self.root, &mut context.inventory, checkpoint)?;
             for (stage, name, leaf) in &copied {
                 let mut matches = Vec::new();

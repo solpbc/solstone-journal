@@ -3,7 +3,7 @@
 
 //! Recorded backup facts only. No repository, tool, scheduler or operation probe.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_backup::{backup_setup_fingerprint, load_hosted_binding, merge_backup_config};
 use solstone_core_journal_config::read_journal_config;
@@ -150,7 +150,7 @@ fn attempt(value: &Value) -> Result<Option<Attempt<'_>>, ()> {
 fn assess(
     check: Check,
     latest: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     current_identity: impl FnOnce() -> Option<String>,
 ) -> CheckResult {
     let history = success_history(latest, now);
@@ -205,7 +205,7 @@ fn assess(
     result(check, status, format!("{detail}; {applicability}"))
 }
 
-fn success_history(latest: &Value, now: DateTime<Utc>) -> String {
+fn success_history(latest: &Value, now: Timestamp) -> String {
     // Presence matters: an explicit unknown must never fall back to the latest
     // successful attempt. An absent member retains the domain's legacy history.
     let saved = latest.get("last_success").unwrap_or(latest);
@@ -225,7 +225,7 @@ fn success_history(latest: &Value, now: DateTime<Utc>) -> String {
     let time = saved.raw.get("time");
     let age = timestamp(time)
         .filter(|time| *time <= now)
-        .map(|time| format!("{} seconds", now.signed_duration_since(time).num_seconds()))
+        .map(|time| format!("{} seconds", now.duration_since(time).as_secs()))
         .unwrap_or_else(|| "unknown".into());
     let caveat = if saved.incomplete {
         "; incomplete copy, some files were not copied"
@@ -238,13 +238,13 @@ fn success_history(latest: &Value, now: DateTime<Utc>) -> String {
     )
 }
 
-fn timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
-    DateTime::from_timestamp(value?.as_i64()?, 0)
+fn timestamp(value: Option<&Value>) -> Option<Timestamp> {
+    Timestamp::new(value?.as_i64()?, 0).ok()
 }
 
 fn date(value: Option<&Value>) -> String {
     timestamp(value)
-        .map(|time| time.to_rfc3339())
+        .map(solstone_core_time::utc_rfc3339)
         .unwrap_or_else(|| "unknown date".into())
 }
 
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn applicability_precedes_every_outcome_and_never_uses_dates() {
-        let now = DateTime::from_timestamp(200, 0).unwrap();
+        let now = Timestamp::new(200, 0).unwrap();
         for (status, reason, matched) in [
             ("ok", Value::Null, Status::Ok),
             ("ok", json!("incomplete"), Status::Warn),
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn explicit_unknown_success_and_invalid_age_are_preserved() {
-        let now = DateTime::from_timestamp(200, 0).unwrap();
+        let now = Timestamp::new(200, 0).unwrap();
         let mut raw =
             json!({"status":"ok","time":100,"snapshot_id":"legacy","error_reason":"incomplete"});
         assert!(success_history(&raw, now).contains("snapshot legacy"));
@@ -342,12 +342,9 @@ mod tests {
         let raw = json!({"status":"error", "time":100, "setup_fingerprint":"a".repeat(64),
             "error_reason":"secret-repository-url\u{1b}[31m", "detail":"broker-token-secret",
             "last_success":{"status":"ok","time":50,"snapshot_id":"snap\n\u{1b}[31m\u{202e}".repeat(100)}});
-        let row = assess(
-            check(),
-            &raw,
-            DateTime::from_timestamp(200, 0).unwrap(),
-            || Some("a".repeat(64)),
-        );
+        let row = assess(check(), &raw, Timestamp::new(200, 0).unwrap(), || {
+            Some("a".repeat(64))
+        });
         assert!(!row.detail.chars().any(char::is_control));
         assert!(!row.detail.contains('\u{202e}'));
         assert!(row.detail.len() < 700);
@@ -473,7 +470,7 @@ mod filesystem_tests {
     #[test]
     fn actual_writer_through_doctor_and_existing_consumers_is_read_only() {
         let mut staged = context();
-        staged.context.now = DateTime::from_timestamp(400, 0).unwrap();
+        staged.context.now = Timestamp::new(400, 0).unwrap();
         observe(&staged, "missing root", Status::Skip);
         fs::create_dir_all(&staged.journal_path).unwrap();
         observe(&staged, "missing config", Status::Skip);
@@ -700,7 +697,7 @@ mod filesystem_tests {
     #[test]
     fn a_paused_backup_reads_as_paused_with_its_history_never_as_a_warning() {
         let mut staged = context();
-        staged.context.now = DateTime::from_timestamp(400, 0).unwrap();
+        staged.context.now = Timestamp::new(400, 0).unwrap();
         fs::create_dir_all(&staged.journal_path).unwrap();
         generate_and_store_keys(&staged.journal_path).unwrap();
         set_enabled(&staged.journal_path, true).unwrap();

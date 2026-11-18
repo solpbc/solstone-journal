@@ -405,7 +405,7 @@ fn a_wipe_that_stopped_part_way_is_finished_by_the_sweep() {
     fs::rename(&held, root.path().join(&last)).unwrap();
 
     let speakers = Speakers::new(&index);
-    let swept = solstone_core_trash::sweep(root.path(), &[&speakers], chrono::Utc::now());
+    let swept = solstone_core_trash::sweep(root.path(), &[&speakers], jiff::Timestamp::now());
     assert_eq!(swept.resumed, 1, "{swept:?}");
     assert!(swept.failed.is_empty(), "{swept:?}");
     let item = solstone_core_trash::item(root.path(), &id)

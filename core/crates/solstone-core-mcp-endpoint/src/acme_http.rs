@@ -299,8 +299,8 @@ pub fn parse_retry_after(header: Option<&str>, now_unix: i64) -> AriRetry {
         Some(s) => {
             if let Ok(secs) = s.parse::<u64>() {
                 i64::try_from(secs).unwrap_or(MAX_DELAY)
-            } else if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
-                let target = dt.timestamp();
+            } else if let Ok(dt) = jiff::fmt::rfc2822::parse(s) {
+                let target = dt.timestamp().as_second();
                 (target - now_unix).max(0)
             } else {
                 DEFAULT_DELAY
@@ -329,8 +329,8 @@ pub fn parse_issuance_retry_after(header: Option<&str>, now_unix: i64) -> Option
     let s = header.map(str::trim).filter(|s| !s.is_empty())?;
     let delay = if let Ok(secs) = s.parse::<u64>() {
         i64::try_from(secs).unwrap_or(MAX_DELAY)
-    } else if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
-        let target = dt.timestamp();
+    } else if let Ok(dt) = jiff::fmt::rfc2822::parse(s) {
+        let target = dt.timestamp().as_second();
         target.saturating_sub(now_unix)
     } else {
         return None;
@@ -457,15 +457,19 @@ mod tests {
         assert_eq!(r.retry_at, now + 86400);
 
         // Valid RFC 2822 HTTP-date (future)
-        let future_dt = chrono::DateTime::from_timestamp(now + 7200, 0).unwrap();
-        let date_str = future_dt.to_rfc2822();
+        let future_dt = jiff::Timestamp::new(now + 7200, 0)
+            .unwrap()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC);
+        let date_str = jiff::fmt::rfc2822::to_string(&future_dt).unwrap();
         let r = parse_retry_after(Some(&date_str), now);
         assert_eq!(r.delay_seconds, 7200);
         assert_eq!(r.retry_at, now + 7200);
 
         // HTTP-date in the past -> clamped to 1s
-        let past_dt = chrono::DateTime::from_timestamp(now - 300, 0).unwrap();
-        let date_str = past_dt.to_rfc2822();
+        let past_dt = jiff::Timestamp::new(now - 300, 0)
+            .unwrap()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC);
+        let date_str = jiff::fmt::rfc2822::to_string(&past_dt).unwrap();
         let r = parse_retry_after(Some(&date_str), now);
         assert_eq!(r.delay_seconds, 1);
         assert_eq!(r.retry_at, now + 1);
@@ -503,16 +507,20 @@ mod tests {
         );
 
         // Valid RFC 2822 HTTP-date (7 days in future)
-        let future_dt = chrono::DateTime::from_timestamp(now + 7 * 86400, 0).unwrap();
-        let date_str = future_dt.to_rfc2822();
+        let future_dt = jiff::Timestamp::new(now + 7 * 86400, 0)
+            .unwrap()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC);
+        let date_str = jiff::fmt::rfc2822::to_string(&future_dt).unwrap();
         assert_eq!(
             parse_issuance_retry_after(Some(&date_str), now),
             Some(now + 7 * 86400)
         );
 
         // HTTP-date in the past -> clamped to 1s
-        let past_dt = chrono::DateTime::from_timestamp(now - 300, 0).unwrap();
-        let date_str = past_dt.to_rfc2822();
+        let past_dt = jiff::Timestamp::new(now - 300, 0)
+            .unwrap()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC);
+        let date_str = jiff::fmt::rfc2822::to_string(&past_dt).unwrap();
         assert_eq!(
             parse_issuance_retry_after(Some(&date_str), now),
             Some(now + 1)

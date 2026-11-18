@@ -57,9 +57,9 @@ impl ImportPreparation {
             .and_then(serde_json::Value::as_str)
             .and_then(solstone_core_journal_config::parse_zone)
             .unwrap_or_else(solstone_core_journal_config::host_zone);
-        let raw = chrono::Utc::now()
-            .with_timezone(&zone)
-            .format("%Y%m%d_%H%M%S")
+        let raw = jiff::Timestamp::now()
+            .to_zoned_datetime(zone)
+            .strftime("%Y%m%d_%H%M%S")
             .to_string();
         self.checkpoint()?;
         solstone_core_import::validate_timestamp(&raw)

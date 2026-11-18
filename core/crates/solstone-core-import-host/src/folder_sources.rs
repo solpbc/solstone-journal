@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use solstone_core_import::audio_archive::{
     AudioArchiveSize, AudioArchiveStatus, DurationInput, SourceRejection,
 };
@@ -221,7 +221,7 @@ fn gemini_plan_is_write_free_and_does_not_invent_a_missing_time() {
     )
     .unwrap();
     let before = file_stamp(&path);
-    let plan = gemini::plan(root.path(), &Tz::UTC).unwrap();
+    let plan = gemini::plan(root.path(), &TimeZone::UTC).unwrap();
     assert_eq!(file_stamp(&path), before);
     assert!(plan.item_count > 0);
     assert!(
@@ -262,7 +262,7 @@ fn pdf_items(source: &Path) -> u64 {
             source,
             password: None,
             now: SystemTime::UNIX_EPOCH,
-            zone: Tz::UTC,
+            zone: TimeZone::UTC,
             owner_timestamp: None,
         },
         &NullPdfWorker,

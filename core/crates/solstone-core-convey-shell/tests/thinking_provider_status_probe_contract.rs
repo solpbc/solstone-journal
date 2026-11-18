@@ -12,7 +12,7 @@ mod linux {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::{Duration as ChronoDuration, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use solstone_core_brain::{begin_refresh, finish_refresh};
     use solstone_core_convey_shell::router;
@@ -72,11 +72,11 @@ mod linux {
 
     fn seed_ready_brain(journal: &Path) {
         write_runtime_health(journal, "ready");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let evidence = json!({
             "status":"ok",
-            "observed_at":now.to_rfc3339(),
-            "expires_at":(now + ChronoDuration::days(1)).to_rfc3339(),
+            "observed_at":solstone_core_time::utc_rfc3339(now),
+            "expires_at":solstone_core_time::utc_rfc3339(now + SignedDuration::from_hours(24)),
         });
         let permit = begin_refresh(
             journal,

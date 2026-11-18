@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::{Duration, NaiveDateTime, Timelike};
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 use serde_json::Value;
 
 use super::{Segment, segment_times};
@@ -49,7 +50,7 @@ pub(crate) fn mark_span(
         return marked;
     };
     // First time each line showed, per capture file name.
-    let mut first_seen = BTreeMap::<(String, String), NaiveDateTime>::new();
+    let mut first_seen = BTreeMap::<(String, String), DateTime>::new();
     for (index, segment) in prior.into_iter().chain(span).enumerate() {
         let in_span = prior.is_none() || index > 0;
         let Some((start, _)) = segment_times(day, &segment.key) else {
@@ -89,9 +90,9 @@ pub(crate) fn mark_span(
 
 struct Ages<'a> {
     file: String,
-    first_seen: &'a mut BTreeMap<(String, String), NaiveDateTime>,
-    activity_start: NaiveDateTime,
-    at: NaiveDateTime,
+    first_seen: &'a mut BTreeMap<(String, String), DateTime>,
+    activity_start: DateTime,
+    at: DateTime,
     mark: bool,
     before: &'static str,
     terminals: bool,
@@ -99,14 +100,19 @@ struct Ages<'a> {
 
 impl Ages<'_> {
     /// One JSONL row, marked when it is a frame; any other row as it was.
-    fn record(&mut self, segment_start: NaiveDateTime, line: &str) -> String {
+    fn record(&mut self, segment_start: DateTime, line: &str) -> String {
         let Ok(Value::Object(mut frame)) = serde_json::from_str::<Value>(line) else {
             return line.to_owned();
         };
         let Some(seconds) = frame.get("timestamp").and_then(Value::as_f64) else {
             return line.to_owned();
         };
-        self.at = segment_start + Duration::milliseconds((seconds * 1000.0) as i64);
+        let Ok(at) =
+            segment_start.checked_add(SignedDuration::from_millis((seconds * 1000.0) as i64))
+        else {
+            return line.to_owned();
+        };
+        self.at = at;
         let Some(Value::Object(content)) = frame.get_mut("content") else {
             return line.to_owned();
         };
@@ -216,13 +222,8 @@ fn visible(line: &str) -> String {
 }
 
 /// "10:03 PM", as the story's own times read.
-fn clock(time: NaiveDateTime) -> String {
-    let (pm, hour) = time.hour12();
-    format!(
-        "{hour}:{:02} {}",
-        time.minute(),
-        if pm { "PM" } else { "AM" }
-    )
+fn clock(time: DateTime) -> String {
+    time.strftime("%-I:%M %p").to_string()
 }
 
 #[cfg(test)]

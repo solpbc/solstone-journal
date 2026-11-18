@@ -7,7 +7,7 @@
 //! When the device reported which zone that was, the segment page names it
 //! wherever it differs from the zone this journal shows other times in.
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_callosum::ReportedZone;
 
@@ -22,7 +22,7 @@ pub(crate) fn capture_zone_view(
     day: &str,
     key: &str,
     reported: Option<ReportedZone>,
-    host: &Tz,
+    host: &TimeZone,
 ) -> Value {
     let Some(reported) = reported else {
         return Value::Null;
@@ -50,7 +50,7 @@ pub(crate) fn day_zones(
     root: &Path,
     day: &str,
     segments: &[TranscriptSegment],
-    home: &Tz,
+    home: &TimeZone,
 ) -> Value {
     let views = segments.iter().map(|segment| {
         let dir = root
@@ -101,7 +101,6 @@ fn summarize_day_zones(views: impl Iterator<Item = Value>, total: usize) -> Valu
 
 #[cfg(test)]
 mod tests {
-    use chrono_tz::Tz;
     use serde_json::{Value, json};
     use solstone_core_callosum::ReportedZone;
 
@@ -116,7 +115,7 @@ mod tests {
 
     #[test]
     fn a_day_names_each_other_clock_once_and_says_when_all_of_it_was_away() {
-        let home = &Tz::America__Denver;
+        let home = &solstone_core_time::zone("America/Denver").expect("zone");
         let tokyo = || {
             capture_zone_view(
                 "20260930",

@@ -15,7 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration as LockDuration, SystemTime};
 
-use chrono::{Duration, NaiveDateTime};
+use jiff::SignedDuration;
+use jiff::civil::DateTime;
 use serde_json::{Value, json};
 
 use crate::snapshot;
@@ -1333,11 +1334,13 @@ fn publish_attempt(
 }
 
 fn shift_timestamp(source: &Timestamp, offset_seconds: u32) -> Result<Timestamp, FolderAdmitError> {
-    let naive = NaiveDateTime::parse_from_str(source.as_str(), "%Y%m%d_%H%M%S").map_err(|_| {
-        FolderAdmitError::Publication(format!("invalid import id {}", source.as_str()))
-    })?;
-    let shifted = naive + Duration::seconds(i64::from(offset_seconds));
-    let raw = shifted.format("%Y%m%d_%H%M%S").to_string();
+    let invalid =
+        || FolderAdmitError::Publication(format!("invalid import id {}", source.as_str()));
+    let naive = DateTime::strptime("%Y%m%d_%H%M%S", source.as_str()).map_err(|_| invalid())?;
+    let shifted = naive
+        .checked_add(SignedDuration::from_secs(i64::from(offset_seconds)))
+        .map_err(|_| invalid())?;
+    let raw = shifted.strftime("%Y%m%d_%H%M%S").to_string();
     validate_timestamp(&raw)
         .map_err(|_| FolderAdmitError::Publication(format!("invalid import id {raw}")))
 }

@@ -157,7 +157,7 @@ fn input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         "force": data.get("force").and_then(Value::as_bool).unwrap_or(false),
         "source": source_hint(&metadata),
         "setting": metadata.get("setting"),
-        "zone": solstone_core_journal_config::owner_zone(root).name(),
+        "zone": solstone_core_journal_config::owner_zone(root).iana_name(),
     });
     // A Strava import's own facet is bound by its preview, so a change after
     // it asks for a new one.

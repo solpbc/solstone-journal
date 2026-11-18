@@ -9,7 +9,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 #[cfg(any(unix, windows))]
@@ -174,11 +174,11 @@ impl fmt::Display for DailyInputSinceError {
 impl Error for DailyInputSinceError {}
 
 /// Parse exactly one `YYYYMMDD` date.
-pub fn parse_daily_input_day(day: &str) -> Result<NaiveDate, DailyInputSinceError> {
+pub fn parse_daily_input_day(day: &str) -> Result<Date, DailyInputSinceError> {
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(DailyInputSinceError);
     }
-    NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| DailyInputSinceError)
+    solstone_core_time::parse_day(day).ok_or(DailyInputSinceError)
 }
 
 /// Read an input/version's immutable activation cutoff without writing.
@@ -186,7 +186,7 @@ pub fn daily_input_since(
     config: &Map<String, Value>,
     id: &str,
     version: &str,
-) -> Result<Option<NaiveDate>, DailyInputSinceError> {
+) -> Result<Option<Date>, DailyInputSinceError> {
     let Some(inputs) = config.get("daily_inputs") else {
         return Ok(None);
     };
@@ -593,7 +593,7 @@ mod tests {
         );
         assert_eq!(
             daily_input_since(&config(Value::String("20261005".into())), "location", "v1").unwrap(),
-            Some(NaiveDate::from_ymd_opt(2026, 10, 5).unwrap())
+            Some(Date::constant(2026, 10, 5))
         );
         for bad in [
             serde_json::json!("2026-10-05"),

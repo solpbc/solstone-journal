@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
-
 use super::*;
 
 fn command<'a>() -> BodyCommand<'a> {
@@ -21,8 +19,8 @@ fn command<'a>() -> BodyCommand<'a> {
     }
 }
 
-fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 11, 9).unwrap()
+fn today() -> jiff::civil::Date {
+    jiff::civil::date(2026, 11, 9)
 }
 
 #[test]
@@ -246,21 +244,21 @@ fn oura_ranges_mean_what_they_say() {
             window_days: Some(2),
             ..command()
         }),
-        Some((NaiveDate::from_ymd_opt(2026, 11, 8).unwrap(), today()))
+        Some((jiff::civil::date(2026, 11, 8), today()))
     );
     assert_eq!(
         range(BodyCommand {
             window_days: Some(100_000),
             ..command()
         }),
-        Some((NaiveDate::from_ymd_opt(2015, 1, 1).unwrap(), today()))
+        Some((jiff::civil::date(2015, 1, 1), today()))
     );
     assert_eq!(
         range(BodyCommand {
             date_from: Some("2026-01-05"),
             ..command()
         }),
-        Some((NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), today()))
+        Some((jiff::civil::date(2026, 1, 5), today()))
     );
 }
 

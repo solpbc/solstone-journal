@@ -28,6 +28,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
 - the entities list shows every name again when the list is narrow, such as beside the folders on an ipad. before, the names could be pushed out of each row. rows also stop saying what kind of name each one is, since the folders already sort them that way.
+- times were an hour off in places that changed their clock rules recently, including british columbia, alberta, manitoba and morocco. they're right again.
+- some calendar files that were refused, came in with no events, or had lines run together now import correctly. a repeating event that can never happen no longer stalls the import.
+- on a day the clocks change, workouts and other body data now show at the right time in that day's activities.
 - on linux computers with arm processors, media offload no longer stops every run before it begins.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed older days getting stuck before their daily briefing when an empty audio transcript had no recording beside it.

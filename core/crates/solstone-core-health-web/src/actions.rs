@@ -3,8 +3,8 @@
 
 use crate::brain;
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_reprocess_cli::{DayOutcome, Flavor, reprocess_day_with};
@@ -69,7 +69,7 @@ pub async fn reprocess(
         _ => return invalid("Unknown reprocess flavor"),
     };
     let zone = solstone_core_journal_config::owner_zone(&root);
-    reprocess_with(&root, day, flavor, Utc::now(), zone, |envelope| {
+    reprocess_with(&root, day, flavor, Timestamp::now(), &zone, |envelope| {
         send(&root, envelope)
     })
 }
@@ -78,8 +78,8 @@ pub fn reprocess_with<F>(
     root: &Path,
     day: &str,
     flavor: Flavor,
-    now: DateTime<Utc>,
-    zone: Tz,
+    now: Timestamp,
+    zone: &TimeZone,
     transport: F,
 ) -> axum::response::Response
 where

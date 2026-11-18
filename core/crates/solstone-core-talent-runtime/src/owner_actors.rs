@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_facets::DestinationObservation;
 
@@ -31,23 +31,23 @@ const ACTOR_FIELDS: [(&str, &str); 2] = [("from", "from_entity_id"), ("to", "to_
 /// day files are left exactly as written.
 /// Returns how many actors it filled.
 pub fn resolve_owner_actors(journal: &Path) -> Result<usize, String> {
-    resolve_owner_actors_at(journal, Utc::now())
+    resolve_owner_actors_at(journal, Timestamp::now())
 }
 
-fn resolve_owner_actors_at(journal: &Path, now: DateTime<Utc>) -> Result<usize, String> {
+fn resolve_owner_actors_at(journal: &Path, now: Timestamp) -> Result<usize, String> {
     let owner = JournalOwner::load(journal)?;
     let Some(owner_id) = owner.id.clone() else {
         return Ok(0);
     };
-    let today = chrono::NaiveDate::parse_from_str(
-        &solstone_core_system::daily_coverage::local_day(journal, now),
-        "%Y%m%d",
-    )
-    .map_err(|e| e.to_string())?;
-    let first_day = (today
-        - chrono::Duration::days(solstone_core_system::daily_coverage::CONTRACT_REOWE_CLOSED_DAYS))
-    .format("%Y%m%d")
-    .to_string();
+    let today = solstone_core_system::daily_coverage::local_now(journal, now).date();
+    let first_day = solstone_core_time::day_key(
+        today
+            .checked_sub(
+                jiff::Span::new()
+                    .days(solstone_core_system::daily_coverage::CONTRACT_REOWE_CLOSED_DAYS),
+            )
+            .map_err(|e| e.to_string())?,
+    );
     let mut filled = 0;
     for facet in
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?
@@ -76,7 +76,10 @@ fn resolve_owner_actors_at(journal: &Path, now: DateTime<Utc>) -> Result<usize, 
                 let _guard = solstone_core_facets::hold_activity_enrichment(journal, &facet, &id)
                     .map_err(|e| e.to_string())?;
                 let mut count = 0;
-                let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+                let timestamp = solstone_core_time::utc_z(
+                    Timestamp::now(),
+                    solstone_core_time::Precision::Micros,
+                );
                 solstone_core_facets::update_activity_record_with(
                     journal,
                     &facet,
@@ -176,10 +179,8 @@ mod tests {
     use super::*;
 
     /// Noon on 20260101, the day of the journal's records, in its zone.
-    fn now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-01-01T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc)
+    fn now() -> Timestamp {
+        "2026-01-01T12:00:00Z".parse().unwrap()
     }
 
     fn journal(principal: bool) -> tempfile::TempDir {
@@ -290,9 +291,7 @@ mod tests {
         fs::write(&oldest_kept, &rows).unwrap();
         fs::rename(&source, &oldest_re_derived).unwrap();
         // Today is 20260102: the seven closed days before it start at 20251226.
-        let today = DateTime::parse_from_rfc3339("2026-01-02T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let today: Timestamp = "2026-01-02T12:00:00Z".parse().unwrap();
 
         assert_eq!(resolve_owner_actors_at(root.path(), today).unwrap(), 2);
 

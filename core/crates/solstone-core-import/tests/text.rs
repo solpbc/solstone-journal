@@ -802,12 +802,10 @@ fn spring_tile_keeps_real_instants_through_the_reader() {
         Some("00:00:00")
     );
 
-    let expected_ms0 = chrono::NaiveDate::from_ymd_opt(2026, 3, 8)
+    let expected_ms0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 8).at(8, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(8, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     let text0 = fs::read_to_string(&created[0].path).unwrap();
     let rel0 = format!(
         "20260308/import.text/{}/conversation_transcript.jsonl",
@@ -885,12 +883,10 @@ fn fall_back_tile_keeps_both_one_fifty_eight_instants() {
         Some("00:00:00")
     );
 
-    let expected_ms0 = chrono::NaiveDate::from_ymd_opt(2026, 11, 1)
+    let expected_ms0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(7, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
 
     let text0 = fs::read_to_string(&created[0].path).unwrap();
     let rel0 = format!(
@@ -979,12 +975,10 @@ fn ordinary_day_clocks_stay_on_the_wall_time() {
         Some("00:00:00")
     );
 
-    let expected_ms0 = chrono::NaiveDate::from_ymd_opt(2026, 3, 11)
+    let expected_ms0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 11).at(7, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(7, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     let text0 = fs::read_to_string(&created[0].path).unwrap();
     let rel0 = format!(
         "20260311/import.text/{}/conversation_transcript.jsonl",
@@ -1043,12 +1037,10 @@ fn kolkata_midnight_rolls_to_the_next_local_day() {
         created[0].segment
     );
     let produced0 = produce_chunks(Family::AiChat, &rel0, &text0);
-    let expected0 = chrono::NaiveDate::from_ymd_opt(2026, 3, 11)
+    let expected0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 11).at(18, 28, 0, 0))
         .unwrap()
-        .and_hms_opt(18, 28, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(
         produced0.chunks[0].occurrence_time_ms,
         Some(OccurrenceTimeMs(expected0)),
@@ -1167,12 +1159,10 @@ fn inline_clocks_cross_midnight_onto_the_next_local_day() {
     );
     let produced0 = produce_chunks(Family::AiChat, &rel0, &text0);
     // 2026-03-11 23:58:00 Denver MDT (UTC-6) -> 2026-03-12 05:58:00Z
-    let expected0 = chrono::NaiveDate::from_ymd_opt(2026, 3, 12)
+    let expected0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 12).at(5, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(5, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(
         produced0.chunks[0].occurrence_time_ms,
         Some(OccurrenceTimeMs(expected0)),
@@ -1185,12 +1175,10 @@ fn inline_clocks_cross_midnight_onto_the_next_local_day() {
     );
     let produced1 = produce_chunks(Family::AiChat, &rel1, &text1);
     // 2026-03-12 00:03:00 Denver MDT (UTC-6) -> 2026-03-12 06:03:00Z
-    let expected1 = chrono::NaiveDate::from_ymd_opt(2026, 3, 12)
+    let expected1 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 3, 12).at(6, 3, 0, 0))
         .unwrap()
-        .and_hms_opt(6, 3, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(
         produced1.chunks[0].occurrence_time_ms,
         Some(OccurrenceTimeMs(expected1)),
@@ -1232,12 +1220,10 @@ fn a_single_elapsed_tile_splits_at_the_owner_day_boundary() {
             let produced = produce_chunks(Family::AiChat, &rel, &bytes);
             assert_eq!(produced.chunks.len(), 1, "{name}");
             assert!(produced.chunks[0].content.contains(expected_text));
-            let expected = chrono::NaiveDate::from_ymd_opt(2026, 3, 12)
+            let expected = jiff::tz::Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 3, 12).at(hour, minute, 0, 0))
                 .unwrap()
-                .and_hms_opt(hour, minute, 0)
-                .unwrap()
-                .and_utc()
-                .timestamp_millis();
+                .as_millisecond();
             assert_eq!(
                 produced.chunks[0].occurrence_time_ms,
                 Some(OccurrenceTimeMs(expected)),
@@ -1288,12 +1274,10 @@ fn owner_zone_beats_the_host_zone() {
     assert_eq!(created[0].segment, "015800_300");
     assert_eq!(created[1].segment, "015801_300");
 
-    let expected_ms0 = chrono::NaiveDate::from_ymd_opt(2026, 11, 1)
+    let expected_ms0 = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(7, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(7, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     let text0 = fs::read_to_string(&created[0].path).unwrap();
     let rel0 = format!(
         "20261101/import.text/{}/conversation_transcript.jsonl",
@@ -1329,12 +1313,10 @@ fn owner_zone_beats_the_host_zone() {
         created2[0].segment
     );
     let produced_no_cfg = produce_chunks(Family::AiChat, &rel_no_cfg, &text_no_cfg);
-    let expected_utc = chrono::NaiveDate::from_ymd_opt(2026, 11, 1)
+    let expected_utc = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 11, 1).at(1, 58, 0, 0))
         .unwrap()
-        .and_hms_opt(1, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(
         produced_no_cfg.chunks[0].occurrence_time_ms,
         Some(OccurrenceTimeMs(expected_utc)),
@@ -1383,7 +1365,7 @@ fn limitless_utc_keeps_the_second_repeated_hour_for_elapsed_text() {
     let stamp = solstone_core_import::detect_creation(
         &source,
         source.file_name().and_then(|name| name.to_str()),
-        chrono_tz::America::Denver,
+        &solstone_core_time::zone("America/Denver").unwrap(),
     )
     .unwrap();
     assert_eq!(stamp.as_str(), "20261101_015800");

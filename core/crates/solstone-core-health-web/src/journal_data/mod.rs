@@ -56,21 +56,21 @@ pub(crate) fn api_router(journal_root: PathBuf) -> Router {
 }
 
 async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
+    let now = owner_now(&root);
     let day_res = query.day.as_deref().map(resolve_day).transpose();
     let day_opt = match day_res {
         Ok(day) => day,
         Err(err) => return error_response(err),
     };
     spawn_blocking_response(OwnerReadRole::HealthSummary, move || {
-        let day = day_opt.unwrap_or_else(|| now.date_naive());
-        let result = build_health_report(&root, (day, day), now);
+        let day = day_opt.unwrap_or_else(|| now.date());
+        let result = build_health_report(&root, (day, day), &now);
         report_response(result)
     })
     .await
 }
 
-pub(crate) async fn media_backlog(root: PathBuf, now: chrono::DateTime<chrono::Utc>) -> Response {
+pub(crate) async fn media_backlog(root: PathBuf, now: jiff::Timestamp) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthMediaBacklog, move || {
         match report::read_segment_backlog_health(&root, now) {
             Ok(backlog) => Json(serde_json::json!({"segment_backlog":backlog})).into_response(),
@@ -85,20 +85,20 @@ async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
 }
 
 async fn for_range(root: PathBuf, Query(query): Query<RangeQuery>) -> Response {
-    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
-    let range = match resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), now) {
+    let now = owner_now(&root);
+    let range = match resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), &now) {
         Ok(range) => range,
         Err(err) => return error_response(err),
     };
     spawn_blocking_response(OwnerReadRole::HealthRange, move || {
-        let result = build_health_report(&root, range, now);
+        let result = build_health_report(&root, range, &now);
         report_response(result)
     })
     .await
 }
 
 async fn pipeline_route(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
+    let now = owner_now(&root);
     let day_str = match query.day.as_deref() {
         None | Some("") => {
             return error_response(HealthError::MissingRequiredField(
@@ -112,13 +112,18 @@ async fn pipeline_route(root: PathBuf, Query(query): Query<DayQuery>) -> Respons
         Err(err) => return error_response(err),
     };
     spawn_blocking_response(OwnerReadRole::HealthPipeline, move || {
-        let result = pipeline::summarize_pipeline_day(&root, day, now);
+        let result = pipeline::summarize_pipeline_day(&root, day, &now);
         match result {
             Ok(report) => Json(report).into_response(),
             Err(error) => error_response(error),
         }
     })
     .await
+}
+
+/// The current instant in the journal owner's zone.
+fn owner_now(root: &std::path::Path) -> jiff::ZonedDateTime {
+    jiff::Timestamp::now().to_zoned_datetime(solstone_core_journal_config::owner_zone(root))
 }
 
 fn report_response(result: Result<report::HealthReport, HealthError>) -> Response {

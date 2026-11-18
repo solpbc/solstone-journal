@@ -14,11 +14,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_facets::DestinationObservation;
 use solstone_core_journal_io::SegmentLayout;
+use solstone_core_time::{Precision, utc_z};
 
 /// The actor fields a Story item names, each with its resolved id field.
 const ACTOR_FIELDS: [(&str, &str); 2] = [("from", "from_entity_id"), ("to", "to_entity_id")];
@@ -58,10 +59,8 @@ pub(crate) mod relabel_fixture {
     pub(crate) const RECENT: &str = "20261024";
     pub(crate) const TOO_OLD: &str = "20261023";
 
-    pub(crate) fn now() -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339("2026-10-31T12:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc)
+    pub(crate) fn now() -> jiff::Timestamp {
+        "2026-10-31T12:00:00Z".parse().unwrap()
     }
 
     /// Set the owner's zone and add one activity over mic/`segment` on each
@@ -229,7 +228,7 @@ pub fn reresolve_changed_segments(
                 let _guard = solstone_core_facets::hold_activity_enrichment(journal, &facet, &id)
                     .map_err(|e| e.to_string())?;
                 let mut count = 0;
-                let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+                let timestamp = utc_z(Timestamp::now(), Precision::Micros);
                 solstone_core_facets::update_activity_record_with(
                     journal,
                     &facet,

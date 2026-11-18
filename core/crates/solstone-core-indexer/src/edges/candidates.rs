@@ -6,7 +6,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_entity_matching::{
@@ -60,7 +60,7 @@ pub struct EdgeResolver {
     answers: BTreeMap<(String, bool, String), Option<String>>,
     file_lookups: BTreeSet<EdgeLookup>,
     drops: EdgeDropCounter,
-    owner_timezone: Option<Result<Tz, EdgeError>>,
+    owner_timezone: Option<Result<TimeZone, EdgeError>>,
     speaker_entities: Option<SpeakerEntityIndex>,
 }
 
@@ -243,7 +243,12 @@ impl EdgeResolver {
 
     /// A digest of the owner's timezone, which places segment and event times.
     pub fn timezone_digest(&mut self) -> Result<i64, EdgeError> {
-        Ok(digest_i64(self.owner_timezone()?.name().to_owned()))
+        Ok(digest_i64(
+            self.owner_timezone()?
+                .iana_name()
+                .unwrap_or_default()
+                .to_owned(),
+        ))
     }
 
     pub fn record_drop(&mut self) {
@@ -254,7 +259,7 @@ impl EdgeResolver {
         self.owner_timezone().map(|_| ())
     }
 
-    pub(super) fn owner_timezone(&mut self) -> Result<Tz, EdgeError> {
+    pub(super) fn owner_timezone(&mut self) -> Result<TimeZone, EdgeError> {
         if let Some(timezone) = &self.owner_timezone {
             return timezone.clone();
         }

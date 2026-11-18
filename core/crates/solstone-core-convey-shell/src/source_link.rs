@@ -11,7 +11,7 @@ use axum::extract::{Extension, Query};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 use axum::routing::get;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use solstone_core_convey_http::cant_open_response;
 use solstone_core_facets::{
@@ -32,7 +32,7 @@ pub trait SourceReads: Send + Sync {
         &self,
         journal: &Path,
         day: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<DaySegmentRef>, String>;
     fn is_facet_dir(&self, journal: &Path, facet: &str) -> Result<bool, String>;
     fn read_retired_facets(&self, journal: &Path) -> Result<RetiredFacets, String>;
@@ -52,7 +52,7 @@ impl SourceReads for FilesystemReads {
         &self,
         journal: &Path,
         day: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<DaySegmentRef>, String> {
         day_segment_list(journal, day, now)
     }
@@ -126,7 +126,7 @@ async fn handle_source_link(
                 }
             };
 
-            let now = Utc::now();
+            let now = Timestamp::now();
             match resolve_landing(&journal, &classified, reads.as_ref(), now) {
                 Ok(LandingOutcome::Redirect(location)) => redirect_response(&location),
                 Ok(LandingOutcome::Absence) => {
@@ -233,7 +233,7 @@ fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind>
     let is_day_key = |val: &str| val.len() == 8 && val.bytes().all(|b| b.is_ascii_digit());
 
     let is_valid_calendar_date =
-        |val: &str| is_day_key(val) && NaiveDate::parse_from_str(val, "%Y%m%d").is_ok();
+        |val: &str| is_day_key(val) && solstone_core_time::parse_day(val).is_some();
 
     // 1. Facet schemas
     if raw_components.first() == Some(&"facets") {
@@ -400,7 +400,7 @@ fn resolve_landing(
     journal: &Path,
     target: &ClassifiedRef,
     reads: &dyn SourceReads,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<LandingOutcome, String> {
     match target {
         ClassifiedRef::Segment {
@@ -448,7 +448,7 @@ fn resolve_segment(
     target_stream: Option<&str>,
     segment_key: &str,
     reads: &dyn SourceReads,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<LandingOutcome, String> {
     let day_dir = journal.join("chronicle").join(day);
     let day_exists = reads.path_exists(&day_dir)?;
@@ -545,7 +545,7 @@ fn resolve_activity(
     day: &str,
     id: &str,
     reads: &dyn SourceReads,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<LandingOutcome, String> {
     let resolved_facet = match resolve_facet_directory(journal, facet, reads)? {
         Ok(dir) => dir,

@@ -35,7 +35,9 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::tz::Offset;
+use jiff::{Span, Timestamp};
 use solstone_core_journal_io::paths::{DirEntryKind, is_day_key, list_dir_entries};
 
 /// Where a class's entries live, relative to the journal root.
@@ -310,7 +312,7 @@ pub struct LogTarget {
     class: &'static str,
     rel: String,
     kind: EntryKind,
-    day: NaiveDate,
+    day: Date,
     bytes: u64,
 }
 
@@ -324,7 +326,7 @@ impl LogTarget {
     pub fn kind(&self) -> EntryKind {
         self.kind
     }
-    pub fn day(&self) -> NaiveDate {
+    pub fn day(&self) -> Date {
         self.day
     }
     pub fn bytes(&self) -> u64 {
@@ -336,7 +338,7 @@ impl LogTarget {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Kept {
     /// Inside the retention window.
-    TooYoung(NaiveDate),
+    TooYoung(Date),
     /// Exempt whatever its age.
     Exempt,
     /// ⚠ Could not be dated. Kept, and named: an undateable log is not an old one.
@@ -346,7 +348,7 @@ pub enum Kept {
     /// An old-named talent index was empty, or at least one row was still recent.
     ContentNotFullyOld,
     /// An old-named talent index could not be read at all.
-    ContentUnreadable { day: NaiveDate, detail: String },
+    ContentUnreadable { day: Date, detail: String },
 }
 
 /// One examined-and-kept entry.
@@ -401,12 +403,38 @@ pub struct LogPolicy {
 // zero-day window that prunes everything. `plan` enforces the second.
 
 /// Parse a `YYYYMMDD` component.
-fn parse_day(text: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text, "%Y%m%d").ok()
+fn parse_day(text: &str) -> Option<Date> {
+    solstone_core_time::parse_day(text)
+}
+
+/// The UTC day of an instant counted in `units` since the epoch.
+///
+/// A count past the last representable instant is later than any cutoff, so it
+/// dates as the last representable day; one before the first is undateable.
+pub(crate) fn utc_day_since_epoch(
+    units: i64,
+    to_instant: impl FnOnce(i64) -> Result<Timestamp, jiff::Error>,
+) -> Option<Date> {
+    match to_instant(units) {
+        Ok(when) => Some(Offset::UTC.to_datetime(when).date()),
+        Err(_) if units > 0 => Some(Date::MAX),
+        Err(_) => None,
+    }
+}
+
+/// The UTC day of a count of whole seconds since the epoch.
+pub(crate) fn utc_day_from_seconds(seconds: i64) -> Option<Date> {
+    utc_day_since_epoch(seconds, |seconds| Timestamp::new(seconds, 0))
+}
+
+/// `today` less `days` calendar days, or `None` past the representable calendar.
+pub(crate) fn days_before(today: Date, days: u64) -> Option<Date> {
+    let span = Span::new().try_days(i64::try_from(days).ok()?).ok()?;
+    today.checked_sub(span).ok()
 }
 
 /// Valid direct Chronicle day directories, without following a replaced root or day.
-pub(crate) fn chronicle_days(journal: &Path) -> Vec<NaiveDate> {
+pub(crate) fn chronicle_days(journal: &Path) -> Vec<Date> {
     let chronicle = journal.join("chronicle");
     if !is_real_directory(&chronicle) {
         return Vec::new();
@@ -434,13 +462,9 @@ fn is_real_directory(path: &Path) -> bool {
 /// day near midnight — always in the direction of the file appearing to belong to a
 /// different day, never of an in-window file falling out of the window by more than
 /// that day. Recorded rather than hidden.
-fn parse_epoch_millis(text: &str) -> Option<NaiveDate> {
+fn parse_epoch_millis(text: &str) -> Option<Date> {
     let millis: i64 = text.parse().ok()?;
-    Some(
-        DateTime::<Utc>::UNIX_EPOCH
-            .checked_add_signed(chrono::TimeDelta::try_milliseconds(millis)?)?
-            .date_naive(),
-    )
+    utc_day_since_epoch(millis, Timestamp::from_millisecond)
 }
 
 /// The stem and extension of a filename.
@@ -488,7 +512,7 @@ fn entry_bytes(path: &Path, kind: EntryKind) -> u64 {
 /// reader of the index skips a line it cannot parse, so a torn line holds nothing
 /// to protect. Counting one as a reason to keep would hold the index, and report
 /// it, forever.
-fn talent_day_index_is_fully_old(path: &Path, cutoff: NaiveDate) -> Result<bool, String> {
+fn talent_day_index_is_fully_old(path: &Path, cutoff: Date) -> Result<bool, String> {
     let contents =
         std::fs::read(path).map_err(|error| format!("could not read talent day-index: {error}"))?;
     let mut lines = 0usize;
@@ -500,8 +524,7 @@ fn talent_day_index_is_fully_old(path: &Path, cutoff: NaiveDate) -> Result<bool,
         let row_day = serde_json::from_slice::<serde_json::Value>(line)
             .ok()
             .and_then(|row| row.get("ts").and_then(serde_json::Value::as_i64))
-            .and_then(DateTime::from_timestamp_millis)
-            .map(|when| when.date_naive());
+            .and_then(|millis| utc_day_since_epoch(millis, Timestamp::from_millisecond));
         if row_day.is_some_and(|day| day >= cutoff) {
             return Ok(false);
         }
@@ -547,13 +570,13 @@ fn class_roots(journal: &Path, class: &Class) -> Option<Vec<(PathBuf, Option<Str
 }
 
 /// Decide what a log-retention pass would remove. **Reads only.**
-pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
+pub fn plan(journal: &Path, policy: &LogPolicy, today: Date) -> LogPlan {
     let mut built = LogPlan::default();
     if !policy.enabled || policy.days == 0 {
         // ⛔ `days: 0` is not "prune everything". An unset window keeps.
         return built;
     }
-    let Some(cutoff) = today.checked_sub_days(chrono::Days::new(u64::from(policy.days))) else {
+    let Some(cutoff) = days_before(today, u64::from(policy.days)) else {
         return built;
     };
 
@@ -636,8 +659,7 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                         .and_then(|when| {
                             let seconds =
                                 when.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
-                            DateTime::from_timestamp(i64::try_from(seconds).ok()?, 0)
-                                .map(|when| when.date_naive())
+                            utc_day_from_seconds(i64::try_from(seconds).ok()?)
                         }),
                 };
                 // ⛔ Fail closed. An entry that cannot be dated is kept and named.
@@ -679,14 +701,14 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
 }
 
 /// The cutoff a window implies, for a caller that wants to explain a plan.
-pub fn cutoff(policy: &LogPolicy, today: NaiveDate) -> Option<NaiveDate> {
+pub fn cutoff(policy: &LogPolicy, today: Date) -> Option<Date> {
     (policy.enabled && policy.days > 0)
-        .then(|| today.checked_sub_days(chrono::Days::new(u64::from(policy.days))))
+        .then(|| days_before(today, u64::from(policy.days)))
         .flatten()
 }
 
 /// The day a target's name encodes, formatted the way the journal writes days.
-pub fn day_key(day: NaiveDate) -> String {
+pub fn day_key(day: Date) -> String {
     format!("{:04}{:02}{:02}", day.year(), day.month(), day.day())
 }
 
@@ -753,19 +775,20 @@ impl Compaction {
 }
 
 /// The date a line carries, or `None` if it carries none this reader understands.
-fn line_day(line: &[u8], format: LineDate) -> Option<NaiveDate> {
+fn line_day(line: &[u8], format: LineDate) -> Option<Date> {
     match format {
         LineDate::JsonTimestampField => {
             let row: serde_json::Value = serde_json::from_slice(line).ok()?;
             let stamped = row.get("timestamp")?.as_str()?;
             // The reference writes a naive local ISO instant; accept an offset too.
-            DateTime::parse_from_rfc3339(stamped)
-                .map(|when| when.date_naive())
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(stamped, "%Y-%m-%dT%H:%M:%S%.f")
-                        .map(|when| when.date())
-                })
+            solstone_core_time::parse_rfc3339(stamped)
+                .map(|when| when.date())
                 .ok()
+                .or_else(|| {
+                    jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", stamped)
+                        .map(|when| when.date())
+                        .ok()
+                })
         }
     }
 }
@@ -777,7 +800,7 @@ fn line_day(line: &[u8], format: LineDate) -> Option<NaiveDate> {
 pub fn plan_compactions(
     journal: &Path,
     policy: &LogPolicy,
-    today: NaiveDate,
+    today: Date,
     plan: &LogPlan,
 ) -> Vec<Compaction> {
     let Some(cutoff) = cutoff(policy, today) else {
@@ -839,8 +862,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
-    use chrono::NaiveDate;
-
     use super::{LogPolicy, plan};
 
     #[test]
@@ -851,7 +872,7 @@ mod tests {
         let path = journal.join(rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"row\n").unwrap();
-        let today = NaiveDate::from_ymd_opt(2026, 10, 18).unwrap();
+        let today = jiff::civil::date(2026, 10, 18);
         let planned = plan(
             journal,
             &LogPolicy {

@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_entity::{EncoderIdentity, hold_entity_trust_lock};
 use thiserror::Error;
@@ -152,7 +152,7 @@ fn append_undo_prepared_once(
     if let Some(started_at) = state.undo_started_at.clone() {
         return Ok(started_at);
     }
-    let undo_started_at = Utc::now().to_rfc3339();
+    let undo_started_at = solstone_core_time::utc_rfc3339(Timestamp::now());
     let event = undo_event(
         state,
         format!("{}:undo_prepared", state.operation_id),
@@ -261,7 +261,7 @@ fn undo_event(
         event_id,
         operation_id: state.operation_id.clone(),
         request_id: state.request_id.clone(),
-        ts: Utc::now().to_rfc3339(),
+        ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
         caller: CALLER.to_owned(),
         actor: None,
         payload,

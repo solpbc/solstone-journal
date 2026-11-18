@@ -3,7 +3,7 @@
 
 //! The owner's deferred-analysis policy, shared by execution and reporting.
 
-use chrono::Utc;
+use jiff::Timestamp;
 use solstone_core_journal_config::{owner_zone, read_journal_config};
 use std::path::Path;
 
@@ -22,7 +22,7 @@ pub fn processing_allowed(journal: &Path) -> bool {
     if wake::in_dark_wake() {
         return false;
     }
-    match policy_at(journal, Utc::now()) {
+    match policy_at(journal, Timestamp::now()) {
         Ok((settings, gate)) => !settings.deferred || gate.open,
         Err(error) => {
             log::warn!("processing is held: {error}");
@@ -33,7 +33,7 @@ pub fn processing_allowed(journal: &Path) -> bool {
 
 pub fn policy_at(
     journal: &Path,
-    now: chrono::DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(ProcessingSettings, GateState), String> {
     let config = read_journal_config(journal)
         .map_err(|e| e.to_string())?
@@ -49,7 +49,7 @@ pub fn policy_at(
         settings,
         evaluate_drain_gate(
             settings,
-            now.with_timezone(&owner_zone(journal)).time(),
+            now.to_zoned_datetime(owner_zone(journal)).time(),
             reading,
         ),
     ))

@@ -40,7 +40,7 @@ fn fixture() -> (tempfile::TempDir, ForegroundProcessingHost) {
     let host = ForegroundProcessingHost::open_at(
         root.path(),
         &payload,
-        ScheduleNow::in_zone(chrono::Utc::now(), chrono_tz::UTC),
+        ScheduleNow::in_zone(jiff::Timestamp::now(), jiff::tz::TimeZone::UTC),
         BackupWebDeps::new(root.path().to_path_buf()),
     )
     .unwrap();
@@ -1260,7 +1260,7 @@ fn foreground_start_removes_retired_notes_folder_schedules_in_any_form_and_keeps
         let host = ForegroundProcessingHost::open_at(
             root.path(),
             &payload,
-            ScheduleNow::in_zone(chrono::Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(jiff::Timestamp::now(), jiff::tz::TimeZone::UTC),
             BackupWebDeps::new(root.path().to_path_buf()),
         )
         .unwrap();

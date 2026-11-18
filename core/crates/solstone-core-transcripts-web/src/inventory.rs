@@ -12,7 +12,8 @@ use std::time::Duration;
 #[cfg(not(test))]
 use std::time::Instant;
 
-use chrono::{DateTime, Utc};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_journal_io::whole_journal_restore::{TargetUseRefused, begin_target_use_bound};
 use solstone_core_journal_io::{
@@ -219,15 +220,15 @@ pub(crate) enum DayFoldState {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Backoff {
     pub(crate) consecutive_failures: u32,
-    pub(crate) next_retry: Option<DateTime<Utc>>,
+    pub(crate) next_retry: Option<Timestamp>,
 }
 
 impl Backoff {
-    pub(crate) fn record_failure(&mut self, now: DateTime<Utc>) {
+    pub(crate) fn record_failure(&mut self, now: Timestamp) {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         let shift = self.consecutive_failures.saturating_sub(1).min(5);
         let delay_secs = (30u64 << shift).min(900);
-        self.next_retry = Some(now + chrono::Duration::seconds(delay_secs as i64));
+        self.next_retry = Some(now + SignedDuration::from_secs(delay_secs as i64));
     }
 
     pub(crate) fn record_success(&mut self) {
@@ -235,7 +236,7 @@ impl Backoff {
         self.next_retry = None;
     }
 
-    pub(crate) fn can_retry(&self, now: DateTime<Utc>) -> bool {
+    pub(crate) fn can_retry(&self, now: Timestamp) -> bool {
         self.next_retry.is_none_or(|retry| now >= retry)
     }
 }
@@ -247,20 +248,20 @@ pub(crate) struct DayRow {
     #[allow(dead_code)]
     pub(crate) fold_generation: u64,
     pub(crate) in_failed_episode: bool,
-    pub(crate) first_seen_pending: Option<DateTime<Utc>>,
+    pub(crate) first_seen_pending: Option<Timestamp>,
     pub(crate) backoff: Backoff,
 }
 
 pub(crate) struct JournalInventory {
     pub(crate) rows: BTreeMap<String, DayRow>,
-    pub(crate) last_full_pass_finish: Option<DateTime<Utc>>,
-    pub(crate) last_classified_date: Option<chrono::NaiveDate>,
+    pub(crate) last_full_pass_finish: Option<Timestamp>,
+    pub(crate) last_classified_date: Option<Date>,
     pub(crate) active_streams: usize,
     /// Indicates whether a full pass (either initial fill or hourly claim) is currently in flight.
     pub(crate) in_full_pass: bool,
     /// Per-day condvar map to guarantee single-flight folding per day, paired with request generation.
     pub(crate) in_flight: HashMap<String, Arc<(Mutex<bool>, Condvar, u64)>>,
-    pub(crate) pending_first_seen: HashMap<String, DateTime<Utc>>,
+    pub(crate) pending_first_seen: HashMap<String, Timestamp>,
 }
 
 impl JournalInventory {
@@ -1041,13 +1042,15 @@ fn read_day_identity(
 fn compute_live_set(
     journal: &Path,
     listed_days: &[String],
-    now: DateTime<Utc>,
-) -> (chrono::NaiveDate, String, String, BTreeSet<String>) {
+    now: Timestamp,
+) -> (Date, String, String, BTreeSet<String>) {
     let local = local_now(journal, now);
     let today_date = local.date();
-    let today_str = today_date.format("%Y%m%d").to_string();
-    let yesterday_date = today_date - chrono::Days::new(1);
-    let yesterday_str = yesterday_date.format("%Y%m%d").to_string();
+    let today_str = solstone_core_time::day_key(today_date);
+    let yesterday_date = today_date
+        .yesterday()
+        .expect("the owner's today has a day before it");
+    let yesterday_str = solstone_core_time::day_key(yesterday_date);
 
     let mut live_set = BTreeSet::new();
     live_set.insert(today_str.clone());
@@ -1063,7 +1066,7 @@ fn compute_live_set(
 fn compute_day_count(
     journal: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     _identity: ObjectIdentity,
 ) -> Result<u64, String> {
     #[cfg(test)]
@@ -1097,7 +1100,7 @@ fn fold_single_day(
     journal: &Path,
     day: &str,
     is_live: bool,
-    now: DateTime<Utc>,
+    now: Timestamp,
     req_gen: u64,
     inv_arc: &Arc<Mutex<JournalInventory>>,
     mut retry_earlier_failure: bool,
@@ -1178,7 +1181,7 @@ fn fold_single_day_exec(
     journal: &Path,
     day: &str,
     is_live: bool,
-    now: DateTime<Utc>,
+    now: Timestamp,
     req_gen: u64,
     inv_arc: &Arc<Mutex<JournalInventory>>,
     claimed: Arc<(Mutex<bool>, Condvar, u64)>,
@@ -1347,7 +1350,7 @@ fn fold_single_day_exec(
 
 pub(crate) fn read_inventory_admitted(
     root: Arc<JournalRoot>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     clock: &Clock,
     role: RequestRole,
 ) -> (Arc<BTreeMap<String, u64>>, Value) {
@@ -1358,14 +1361,14 @@ pub(crate) fn read_inventory_admitted(
 
 pub(crate) fn read_inventory_unadmitted(
     fallback: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     clock: &Clock,
     role: RequestRole,
 ) -> (Arc<BTreeMap<String, u64>>, Value) {
     let Ok(root) = JournalRoot::open(fallback) else {
         return (
             Arc::new(BTreeMap::new()),
-            json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+            json!({"complete": false, "behind": 0, "failed": 0, "oldest": solstone_core_time::utc_rfc3339(now)}),
         );
     };
     let root = Arc::new(root);
@@ -1378,7 +1381,7 @@ fn read_inventory_inner(
     root_opt: Option<Arc<JournalRoot>>,
     journal_path: &Path,
     identity: ObjectIdentity,
-    now: DateTime<Utc>,
+    now: Timestamp,
     clock: &Clock,
     role: RequestRole,
 ) -> (Arc<BTreeMap<String, u64>>, Value) {
@@ -1390,7 +1393,7 @@ fn read_inventory_inner_with(
     root_opt: Option<Arc<JournalRoot>>,
     journal_path: &Path,
     identity: ObjectIdentity,
-    now: DateTime<Utc>,
+    now: Timestamp,
     clock: &Clock,
     role: RequestRole,
     create: bool,
@@ -1398,7 +1401,7 @@ fn read_inventory_inner_with(
     let Some(root) = root_opt else {
         return (
             Arc::new(BTreeMap::new()),
-            json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+            json!({"complete": false, "behind": 0, "failed": 0, "oldest": solstone_core_time::utc_rfc3339(now)}),
         );
     };
 
@@ -1411,7 +1414,7 @@ fn read_inventory_inner_with(
             None => {
                 return (
                     Arc::new(BTreeMap::new()),
-                    json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+                    json!({"complete": false, "behind": 0, "failed": 0, "oldest": solstone_core_time::utc_rfc3339(now)}),
                 );
             }
         }
@@ -1441,7 +1444,7 @@ fn read_inventory_inner_with(
             inv.in_full_pass = false;
             return (
                 Arc::new(BTreeMap::new()),
-                json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+                json!({"complete": false, "behind": 0, "failed": 0, "oldest": solstone_core_time::utc_rfc3339(now)}),
             );
         }
     };
@@ -1475,10 +1478,12 @@ fn read_inventory_inner_with(
         let inv = inv_arc.lock().expect("inventory lock");
         match inv.last_classified_date {
             Some(last_date) if today_date > last_date => {
-                let prev_today = last_date.format("%Y%m%d").to_string();
-                let prev_yesterday = (last_date - chrono::Days::new(1))
-                    .format("%Y%m%d")
-                    .to_string();
+                let prev_today = solstone_core_time::day_key(last_date);
+                let prev_yesterday = solstone_core_time::day_key(
+                    last_date
+                        .yesterday()
+                        .expect("a classified day has a day before it"),
+                );
                 Some((prev_today, prev_yesterday))
             }
             Some(_) => None,
@@ -1534,7 +1539,7 @@ fn read_inventory_inner_with(
         if !inv.in_full_pass {
             let should_start = match inv.last_full_pass_finish {
                 None => true,
-                Some(last_finish) => (now - last_finish).num_seconds() > 3600,
+                Some(last_finish) => (now - last_finish).as_secs() > 3600,
             };
             if should_start {
                 inv.in_full_pass = true;
@@ -1671,7 +1676,7 @@ fn read_inventory_inner_with(
     let mut counts = BTreeMap::new();
     let mut behind = 0;
     let mut failed = 0;
-    let mut oldest: Option<DateTime<Utc>> = None;
+    let mut oldest: Option<Timestamp> = None;
 
     for day in &listed_days {
         let current_id = day_identities.get(day);
@@ -1718,7 +1723,7 @@ fn read_inventory_inner_with(
             "complete": false,
             "behind": behind,
             "failed": failed,
-            "oldest": oldest.unwrap_or(now).to_rfc3339()
+            "oldest": solstone_core_time::utc_rfc3339(oldest.unwrap_or(now))
         })
     };
 
@@ -2485,7 +2490,7 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use axum::response::Response;
-    use chrono::{DateTime, TimeZone, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use solstone_core_journal_io::{
         HealthMarkerKind, JournalRoot, ObjectIdentity, day_dirs, health_marker_path,
@@ -2591,7 +2596,7 @@ mod tests {
         filetime::set_file_mtime(&stats_path, future).unwrap();
     }
 
-    fn stats_free_walk(journal: &Path, now: DateTime<Utc>) -> BTreeMap<String, u64> {
+    fn stats_free_walk(journal: &Path, now: Timestamp) -> BTreeMap<String, u64> {
         let mut aside = Vec::new();
         if let Ok(entries) = fs::read_dir(journal.join("chronicle")) {
             for entry in entries.flatten() {
@@ -2681,19 +2686,19 @@ mod tests {
         app: &axum::Router,
         root: &Arc<JournalRoot>,
         journal: &Path,
-        now_ref: &Arc<Mutex<DateTime<Utc>>>,
+        now_ref: &Arc<Mutex<Timestamp>>,
         identity: ObjectIdentity,
         month: &str,
         day: &str,
         old: u64,
     ) -> u64 {
-        *now_ref.lock().unwrap() += chrono::Duration::minutes(30);
+        *now_ref.lock().unwrap() += SignedDuration::from_mins(30);
         let hidden = index_month(app, root, month).await;
         assert_eq!(
             hidden, old,
             "unbumped change on {day} stays hidden inside the hour"
         );
-        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() += SignedDuration::from_secs(3700);
         test_support::clear_recorded_notifications(identity);
         let body = index_body(app, root).await;
         let walk = crate::calendar::counts_by_walk(journal, *now_ref.lock().unwrap()).unwrap();
@@ -2715,7 +2720,7 @@ mod tests {
 
         delete_stats_json(temp.path());
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(now));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -2829,7 +2834,7 @@ mod tests {
             month,
         );
         assert_ne!(before, walked_first);
-        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() += SignedDuration::from_secs(3700);
         let after_first = index_month(&app, &root, month).await;
         assert_ne!(after_first, before);
         assert_eq!(
@@ -2848,7 +2853,7 @@ mod tests {
             month,
         );
         assert_ne!(after_first, walked_second_hidden);
-        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() += SignedDuration::from_secs(3700);
         let after_second = index_month(&app, &root, month).await;
         assert_ne!(after_second, after_first);
         assert_eq!(
@@ -2866,7 +2871,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock.clone(), || {
             Response::new(Body::empty())
@@ -2945,7 +2950,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3018,7 +3023,7 @@ mod tests {
         config["identity"]["timezone"] = json!("UTC");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3088,7 +3093,7 @@ mod tests {
             "seed",
         );
         let now_ref = Arc::new(Mutex::new(
-            Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+            "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         ));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -3117,7 +3122,7 @@ mod tests {
 
         // The hour starts the fold. The browser write and the marker bump land
         // after compute, so this read stores the pre-write count.
-        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() += SignedDuration::from_secs(3700);
         let journal = temp.path().to_path_buf();
         let day_c = day.to_string();
         std::thread::spawn(move || {
@@ -3143,7 +3148,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock.clone(), || {
             Response::new(Body::empty())
@@ -3293,7 +3298,7 @@ mod tests {
         config["identity"]["timezone"] = json!("UTC");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 7, 3, 12, 0, 0).unwrap();
+        let now = "2026-07-03T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3362,7 +3367,7 @@ mod tests {
         let _guard = TestResetGuard(identity);
 
         let now_ref = Arc::new(Mutex::new(
-            Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+            "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         ));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -3476,7 +3481,7 @@ mod tests {
         config["identity"]["timezone"] = json!("UTC");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3579,7 +3584,7 @@ mod tests {
         config["identity"]["timezone"] = json!("Asia/Tokyo");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let t0 = Utc.with_ymd_and_hms(2026, 3, 1, 14, 30, 0).unwrap();
+        let t0 = "2026-03-01T14:30:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -3624,7 +3629,7 @@ mod tests {
         fs::write(seg0_new.join("mic_audio.jsonl"), b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"23:45:00\",\"end\":\"23:45:01\",\"text\":\"t0_edit\"}\n").unwrap();
 
         // Advance to 2026-03-01T15:30:00Z (00:30 on 2026-03-02 in Tokyo)
-        *now_ref.lock().unwrap() = Utc.with_ymd_and_hms(2026, 3, 1, 15, 30, 0).unwrap();
+        *now_ref.lock().unwrap() = "2026-03-01T15:30:00Z".parse::<Timestamp>().unwrap();
 
         let resp2 = app
             .clone()
@@ -3662,7 +3667,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock.clone(), || {
             Response::new(Body::empty())
@@ -3727,7 +3732,7 @@ mod tests {
         config["identity"]["timezone"] = json!("UTC");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3789,7 +3794,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3901,7 +3906,7 @@ mod tests {
         let target_day = "20260310";
         test_support::set_injected_compute_error(identity, target_day, Some("temporary error"));
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -3972,7 +3977,7 @@ mod tests {
         fs::create_dir_all(&target_path).unwrap();
         test_support::set_injected_compute_error(identity, target_day, Some("persistent error"));
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4081,7 +4086,7 @@ mod tests {
         let _ = fs::remove_dir_all(&health_dir);
         fs::write(&health_dir, b"regular file instead of directory").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4114,7 +4119,7 @@ mod tests {
         config["identity"]["timezone"] = json!("UTC");
         fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4157,8 +4162,8 @@ mod tests {
         fs::create_dir_all(marker.parent().unwrap()).unwrap();
         fs::write(&marker, b"").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
-        let month_count = |now: DateTime<Utc>| {
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
+        let month_count = |now: Timestamp| {
             let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
                 Response::new(Body::empty())
             });
@@ -4180,7 +4185,7 @@ mod tests {
                 body["20260416"].as_u64().unwrap_or(0)
             }
         };
-        let walked = |now: DateTime<Utc>| {
+        let walked = |now: Timestamp| {
             crate::calendar::counts_by_walk(temp.path(), now)
                 .unwrap()
                 .get("20260416")
@@ -4218,7 +4223,7 @@ mod tests {
         // read claimed may still be running on the worker; an index read
         // never starts a second one, so let that one finish first.
         wait_full_pass_released(identity);
-        let later = now + chrono::Duration::hours(2);
+        let later = now + SignedDuration::from_hours(2);
         let index = crate::router(temp.path().to_path_buf(), Clock::fixed(later), || {
             Response::new(Body::empty())
         })
@@ -4253,7 +4258,7 @@ mod tests {
         fs::create_dir_all(marker.parent().unwrap()).unwrap();
         fs::write(&marker, b"{ not json at all }").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4318,7 +4323,7 @@ mod tests {
         assert_eq!(stats_val["20260416"], json!(after_count));
     }
 
-    fn full_pass_finish(identity: ObjectIdentity) -> Option<DateTime<Utc>> {
+    fn full_pass_finish(identity: ObjectIdentity) -> Option<Timestamp> {
         let reg = INVENTORIES.lock().expect("inventories lock");
         let inv = reg
             .get(&identity)
@@ -4335,7 +4340,7 @@ mod tests {
         let _guard = TestResetGuard(identity);
 
         let now_ref = Arc::new(Mutex::new(
-            Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+            "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         ));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -4348,7 +4353,7 @@ mod tests {
         let before = first["months"]["202601"].as_u64().unwrap();
         let stamped = full_pass_finish(identity).expect("initial pass stamped");
 
-        *now_ref.lock().unwrap() += chrono::Duration::hours(2);
+        *now_ref.lock().unwrap() += SignedDuration::from_hours(2);
         write_browser_segment(temp.path(), "20260101", "234000_60");
 
         let _hold = test_support::hold_background_fill(identity);
@@ -4417,7 +4422,7 @@ mod tests {
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
 
-        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let t0 = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -4431,8 +4436,10 @@ mod tests {
         fs::create_dir_all(&raw).unwrap();
         fs::write(raw.join("mic.flac"), b"raw").unwrap();
         fs::write(raw.join(".analyzing_audio"), b"{}\n").unwrap();
-        let marker_time =
-            filetime::FileTime::from_unix_time(t0.timestamp(), t0.timestamp_subsec_nanos());
+        let marker_time = filetime::FileTime::from_unix_time(
+            t0.as_second(),
+            u32::try_from(t0.subsec_nanosecond()).unwrap(),
+        );
         filetime::set_file_mtime(raw.join(".analyzing_audio"), marker_time).unwrap();
 
         let baseline = index_body(&app, &root).await;
@@ -4469,7 +4476,7 @@ mod tests {
         assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
 
         // Past analyzing-stale (1800s), modality-input age (12h), and the 3-day sense age.
-        *now_ref.lock().unwrap() = t0 + chrono::Duration::days(4);
+        *now_ref.lock().unwrap() = t0 + SignedDuration::from_hours(24 * 4);
         let aged = index_body(&app, &root).await;
         assert_eq!(aged["freshness"]["complete"], true);
         assert_eq!(aged["months"]["202608"], count);
@@ -4499,7 +4506,7 @@ mod tests {
                 .join("field/100000_60"),
             "seed",
         );
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::fixed(now);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4564,7 +4571,7 @@ mod tests {
         );
         test_support::set_injected_compute_error(identity, bad_day, Some("persistent error"));
 
-        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let t0 = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -4583,13 +4590,13 @@ mod tests {
         let stamped = full_pass_finish(identity).expect("failed day still settles the pass");
 
         write_browser_segment(temp.path(), good_day, "235000_60");
-        *now_ref.lock().unwrap() = t0 + chrono::Duration::seconds(1800);
+        *now_ref.lock().unwrap() = t0 + SignedDuration::from_secs(1800);
         let hidden = index_body(&app, &root).await;
         assert_eq!(hidden["months"]["202601"].as_u64(), Some(before));
         assert_eq!(hidden["freshness"]["failed"].as_u64(), Some(1));
         assert_eq!(full_pass_finish(identity), Some(stamped));
 
-        *now_ref.lock().unwrap() = t0 + chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() = t0 + SignedDuration::from_secs(3700);
         let corrected = index_body(&app, &root).await;
         let expected =
             crate::calendar::day_range_count(temp.path(), good_day, *now_ref.lock().unwrap())
@@ -4632,7 +4639,7 @@ mod tests {
         test_support::set_injected_compute_error(identity, failed_day, Some("injected"));
         test_support::limit_inline_folds(identity, 1);
 
-        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let t0 = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -4650,7 +4657,7 @@ mod tests {
         assert_eq!(passes, snap + 1);
         assert!(!full_pass_claimed(identity));
 
-        *now_ref.lock().unwrap() = t0 + chrono::Duration::minutes(10);
+        *now_ref.lock().unwrap() = t0 + SignedDuration::from_mins(10);
         let _inside_hour = index_body(&app, &root).await;
         assert_eq!(full_pass_finish(identity), Some(stamped));
         assert_eq!(test_support::snapshot_worker_passes(identity), passes);
@@ -4707,7 +4714,7 @@ mod tests {
         test_support::limit_inline_folds(identity, 1);
         let parked = lifecycle_hooks::hold_worker_between_days(identity);
 
-        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let t0 = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let clock = Clock::new(move || t0);
         let app = crate::router(temp.path().to_path_buf(), clock, || {
             Response::new(Body::empty())
@@ -4744,7 +4751,10 @@ mod tests {
         assert_eq!(calendar_registered(identity), (false, false, false));
         assert_eq!(test_support::compute_starts(identity), folds_when_parked);
         notify_inventory_worker(identity);
-        tick_journal(&root, &Clock::new(move || t0 + chrono::Duration::hours(2)));
+        tick_journal(
+            &root,
+            &Clock::new(move || t0 + SignedDuration::from_hours(2)),
+        );
         note_dashboard_stream(temp.path(), false);
         assert_eq!(calendar_registered(identity), (false, false, false));
         assert_eq!(test_support::compute_starts(identity), folds_when_parked);
@@ -4790,7 +4800,7 @@ mod tests {
         );
         test_support::set_injected_compute_error(identity, failed_day, Some("injected"));
 
-        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let t0 = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
         let now_c = now_ref.clone();
         let clock = Clock::new(move || *now_c.lock().unwrap());
@@ -4804,7 +4814,7 @@ mod tests {
         let stamped = full_pass_finish(identity).expect("seed pass stamps");
         assert_eq!(stamped, t0);
 
-        let at_hour = t0 + chrono::Duration::seconds(7200);
+        let at_hour = t0 + SignedDuration::from_secs(7200);
         *now_ref.lock().unwrap() = at_hour;
 
         let (held_tx, held_rx) = std::sync::mpsc::channel();
@@ -4874,7 +4884,7 @@ mod tests {
         );
 
         write_browser_segment(temp.path(), good_day, "235000_60");
-        *now_ref.lock().unwrap() = at_hour + chrono::Duration::seconds(3700);
+        *now_ref.lock().unwrap() = at_hour + SignedDuration::from_secs(3700);
         let corrected = index_body(&app, &root).await;
         let expected =
             crate::calendar::day_range_count(temp.path(), good_day, *now_ref.lock().unwrap())
@@ -4899,7 +4909,7 @@ mod tests {
                 .join("field/100000_60"),
             "seed",
         );
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let inv_arc = get_or_create_inventory(&root, identity);
 
         let hooks = Arc::new(AtomicUsize::new(0));
@@ -5007,7 +5017,7 @@ mod tests {
                 .join("field/100000_60"),
             "seed",
         );
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
             Response::new(Body::empty())
         });
@@ -5059,7 +5069,7 @@ mod tests {
                 .join("field/100000_60"),
             "seed",
         );
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now = "2026-08-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
             Response::new(Body::empty())
         });
@@ -5197,7 +5207,7 @@ mod tests {
         fs::create_dir_all(&a2_seg).unwrap();
         fs::write(a2_seg.join("mic_audio.jsonl"), b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"a2\"}\n").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 7, 3, 18, 0, 0).unwrap();
+        let now = "2026-07-03T18:00:00Z".parse::<Timestamp>().unwrap();
         let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
 
         let future_time = filetime::FileTime::from_system_time(
@@ -5240,7 +5250,7 @@ mod tests {
             app: &axum::Router,
             root: &Arc<JournalRoot>,
             temp: &Path,
-            now: DateTime<Utc>,
+            now: Timestamp,
         ) -> BTreeMap<String, u64> {
             let mut aside_paths = Vec::new();
             if let Ok(entries) = fs::read_dir(temp.join("chronicle")) {

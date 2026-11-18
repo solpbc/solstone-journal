@@ -31,8 +31,8 @@ pub fn calendar_beside(calendar: &[ScheduledEvent], day: &str, span: (u32, u32))
         .map(|event| {
             json!({
                 "title": event.title,
-                "start": event.start.map(|at| at.format("%H:%M").to_string()),
-                "end": event.end.map(|at| at.format("%H:%M").to_string()),
+                "start": event.start.map(|at| at.strftime("%H:%M").to_string()),
+                "end": event.end.map(|at| at.strftime("%H:%M").to_string()),
                 "people": event.people.iter().map(|person| person.name.as_str()).collect::<Vec<_>>(),
             })
         })

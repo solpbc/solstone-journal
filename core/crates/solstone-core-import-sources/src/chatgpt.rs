@@ -6,7 +6,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
@@ -38,10 +39,7 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
 }
 
 /// Preview the atomic message count and local date range for a ChatGPT archive.
-pub fn preview(
-    path: &Path,
-    zone: &impl TimeZone<Offset: std::fmt::Display>,
-) -> Result<ImportPreview, SourceError> {
+pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, SourceError> {
     let plan = plan(path, zone)?;
     Ok(ImportPreview {
         date_range: plan.date_range,
@@ -52,10 +50,7 @@ pub fn preview(
 }
 
 /// Parse a ChatGPT archive into a write-free segment plan on the given zone's days.
-pub fn plan(
-    path: &Path,
-    zone: &impl TimeZone<Offset: std::fmt::Display>,
-) -> Result<ImportPlan, SourceError> {
+pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     if source_path_kind(path)? != SourcePathKind::File {
         return Err(SourceError::UnsupportedPathKind {
             path: path.to_owned(),
@@ -260,11 +255,11 @@ fn parse_message(
     });
 }
 
-fn epoch_utc(value: f64) -> Option<DateTime<Utc>> {
+fn epoch_utc(value: f64) -> Option<Timestamp> {
     if !value.is_finite() {
         return None;
     }
     let seconds = value.trunc() as i64;
-    let nanos = ((value.fract().abs()) * 1_000_000_000.0).round() as u32;
-    DateTime::from_timestamp(seconds, nanos)
+    let nanos = ((value.fract().abs()) * 1_000_000_000.0).round() as i32;
+    Timestamp::new(seconds, nanos).ok()
 }

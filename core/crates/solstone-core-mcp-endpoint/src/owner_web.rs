@@ -18,7 +18,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
-use chrono::{Datelike, Duration, Utc};
+use jiff::{SignedDuration, Span};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::gate::require_access;
@@ -230,11 +230,11 @@ pub(crate) fn state_value_with_iface(
             "memory_source": memory_source,
             "paused": paused,
             "paused_attempts": paused_attempts,
-            "auth_method": "bearer token", "created_at": token.created_at,
+            "auth_method": "bearer token", "created_at": solstone_core_time::utc_iso(token.created_at),
             "permission": by_key.get(&key),
             "door": Value::Null,
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
-            "last_request_at": activity.and_then(|(_, last)| *last),
+            "last_request_at": activity.and_then(|(_, last)| last.map(solstone_core_time::utc_iso)),
             "activity_complete": activity_complete,
             "suggestions_enabled": suggestions_enabled,
             "pending_suggestions": pending_suggestions,
@@ -256,11 +256,11 @@ pub(crate) fn state_value_with_iface(
             "paused_attempts": paused_attempts,
             "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
             "client_id": grant.client_id, "auth_method": "OAuth",
-            "created_at": grant.created_at, "access_expires_at": grant.access_expires_at,
+            "created_at": solstone_core_time::utc_iso(grant.created_at), "access_expires_at": solstone_core_time::utc_iso(grant.access_expires_at),
             "permission": by_key.get(&key),
             "door": door,
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
-            "last_request_at": activity.and_then(|(_, last)| *last),
+            "last_request_at": activity.and_then(|(_, last)| last.map(solstone_core_time::utc_iso)),
             "activity_complete": activity_complete,
             "suggestions_enabled": suggestions_enabled,
             "pending_suggestions": pending_suggestions,
@@ -324,16 +324,17 @@ pub(crate) fn state_value_with_iface(
     let lan_door_enabled_flag = solstone_core_journal_config::lan_door_enabled(&config);
     let (listening, reason) = match crate::local_door::read_local_door_state(root) {
         Some(state) => {
-            let now = Utc::now();
-            let age = now.signed_duration_since(state.observed_at);
+            let now = jiff::Timestamp::now();
+            let age = now.duration_since(state.observed_at);
             #[cfg(test)]
             let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
                 age >= custom.0 && age <= custom.1
             } else {
-                age >= Duration::seconds(-5) && age <= Duration::seconds(35)
+                age >= SignedDuration::from_secs(-5) && age <= SignedDuration::from_secs(35)
             };
             #[cfg(not(test))]
-            let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
+            let window_valid =
+                age >= SignedDuration::from_secs(-5) && age <= SignedDuration::from_secs(35);
 
             if window_valid {
                 if state.listening {
@@ -407,7 +408,7 @@ pub(crate) fn state_value_with_iface(
                         )
                         .is_ok()
                 {
-                    let now = Utc::now().timestamp();
+                    let now = jiff::Timestamp::now().as_second();
                     let not_before = leaf_x509.validity().not_before.timestamp();
                     let not_after = leaf_x509.validity().not_after.timestamp();
                     if not_before <= now && now <= not_after {
@@ -433,16 +434,17 @@ pub(crate) fn state_value_with_iface(
     let lan_door_state_res = crate::lan_door::read_lan_door_state(root);
     let (_lan_listening, lan_reason, fresh_state) = match lan_door_state_res {
         Some(state) => {
-            let now = Utc::now();
-            let age = now.signed_duration_since(state.observed_at);
+            let now = jiff::Timestamp::now();
+            let age = now.duration_since(state.observed_at);
             #[cfg(test)]
             let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
                 age >= custom.0 && age <= custom.1
             } else {
-                age >= Duration::seconds(-5) && age <= Duration::seconds(35)
+                age >= SignedDuration::from_secs(-5) && age <= SignedDuration::from_secs(35)
             };
             #[cfg(not(test))]
-            let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
+            let window_valid =
+                age >= SignedDuration::from_secs(-5) && age <= SignedDuration::from_secs(35);
 
             if window_valid {
                 if state.listening {
@@ -720,12 +722,12 @@ pub(crate) fn state_value_with_iface(
                 raw_socket_listening,
                 socket_blocker,
             ) = if let Some(state) = &byo_state {
-                let age = Utc::now().signed_duration_since(state.observed_at);
+                let age = jiff::Timestamp::now().duration_since(state.observed_at);
                 let current = state.hostname == cfg.hostname
                     && state.generation == cfg.generation
                     && state.enabled == cfg.enabled
-                    && age >= Duration::seconds(-5)
-                    && age <= Duration::seconds(5);
+                    && age >= SignedDuration::from_secs(-5)
+                    && age <= SignedDuration::from_secs(5);
                 (
                     current,
                     if current {
@@ -815,8 +817,9 @@ pub(crate) fn state_value_with_iface(
                 )
             });
 
-            let dns_fresh = dns_observed_at
-                .is_some_and(|obs| (Utc::now() - obs) <= chrono::Duration::seconds(60));
+            let dns_fresh = dns_observed_at.is_some_and(|obs| {
+                (jiff::Timestamp::now() - obs) <= jiff::SignedDuration::from_secs(60)
+            });
             let is_admitted = dns_fresh && dns_verdict_str == "admitted";
             let socket_listening = cfg.enabled && is_admitted && raw_socket_listening;
 
@@ -852,7 +855,7 @@ pub(crate) fn state_value_with_iface(
                 "caa": caa_obj,
                 "caa_record": caa_record,
                 "dns_verdict": dns_verdict_str,
-                "dns_observed_at": dns_observed_at,
+                "dns_observed_at": dns_observed_at.map(solstone_core_time::utc_iso),
                 "dns_addresses": dns_addresses_val,
                 "diagnostics": diagnostics_val,
                 "relay": relay_obj,
@@ -879,10 +882,10 @@ pub(crate) fn state_value_with_iface(
         "replay_notices": replay_notices,
         "sme_account": {
             "replace_pending": status == "account_changed"
-                && crate::sme_account_replace::pending_request(root, Utc::now()).is_some(),
+                && crate::sme_account_replace::pending_request(root, jiff::Timestamp::now()).is_some(),
             "replaced": crate::sme_account_replace::read_notice(root).map(|notice| json!({
                 "address": notice.address,
-                "replaced_at": notice.replaced_at,
+                "replaced_at": solstone_core_time::utc_iso(notice.replaced_at),
             })),
         },
         "facets": facets,
@@ -924,7 +927,7 @@ fn grant_door(resource: Option<&str>) -> Value {
 /// The open code's non-secret state. The code itself is shown once, when it is made.
 fn pairing_json(value: crate::PairingCodeSummary) -> Value {
     let mut pairing_obj = json!({
-        "expires_at": value.expires_at,
+        "expires_at": solstone_core_time::utc_iso(value.expires_at),
         "generation": value.generation,
         "locked": value.locked,
     });
@@ -948,9 +951,9 @@ async fn pairing_watch(Extension(journal): Extension<Arc<PathBuf>>) -> Response 
 fn connection_projection_fields(
     root: &std::path::Path,
     key: &str,
-    refresh_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    refresh_expires_at: Option<jiff::Timestamp>,
     side_store_fault: bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> (Value, Value, Value) {
     if side_store_fault {
         return (Value::Null, Value::Null, Value::Null);
@@ -975,9 +978,9 @@ fn connection_projection_fields(
             (
                 json!({
                     "by": "idle",
-                    "since": expires_at.to_rfc3339(),
+                    "since": solstone_core_time::utc_rfc3339(expires_at),
                 }),
-                Some(expires_at.timestamp().to_string()),
+                Some(expires_at.as_second().to_string()),
             )
         } else {
             (Value::Null, None)
@@ -1043,16 +1046,19 @@ pub(crate) fn pairing_watch_value(root: &std::path::Path) -> Result<Value, Strin
                 "paused": paused,
                 "paused_attempts": paused_attempts,
                 "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
-                "created_at": grant.created_at,
+                "created_at": solstone_core_time::utc_iso(grant.created_at),
                 "permission": by_key.get(&key),
                 "door": grant_door(grant.resource.as_deref()),
             })
         })
         .collect();
     let zone = solstone_core_journal_config::owner_zone(root);
-    let today = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(zone)
+        .strftime("%Y%m%d")
+        .to_string();
     Ok(json!({
-        "now": Utc::now(),
+        "now": solstone_core_time::utc_iso(jiff::Timestamp::now()),
         "today": today,
         "pairing": pairing.map(pairing_json),
         "connections": connections,
@@ -1417,12 +1423,12 @@ pub(crate) async fn byo_relay_check(Extension(journal): Extension<Arc<PathBuf>>)
         Some(solstone_core_journal_config::ByoHostnameConfigStatus::Configured(cfg)),
     ) = (&byo_state, &byo_cfg)
     {
-        let age = Utc::now().signed_duration_since(state.observed_at);
+        let age = jiff::Timestamp::now().duration_since(state.observed_at);
         let cur = state.hostname == cfg.hostname
             && state.generation == cfg.generation
             && state.enabled == cfg.enabled
-            && age >= Duration::seconds(-5)
-            && age <= Duration::seconds(5);
+            && age >= SignedDuration::from_secs(-5)
+            && age <= SignedDuration::from_secs(5);
         (cur, cur && state.socket_listening)
     } else {
         (false, false)
@@ -1493,7 +1499,7 @@ async fn byo_dns_check(Extension(journal): Extension<Arc<PathBuf>>) -> Response 
     let uri_str = account_uri.as_deref().unwrap_or("");
 
     let (verdict, addresses) =
-        crate::byo_dns::resolve_byo_dns(&hostname, uri_str, Utc::now()).await;
+        crate::byo_dns::resolve_byo_dns(&hostname, uri_str, jiff::Timestamp::now()).await;
     let verdict_code = verdict.code.as_str();
 
     let diagnostics = if verdict.code == crate::byo_dns::DnsVerdictCode::LookupError
@@ -1699,7 +1705,7 @@ pub(crate) async fn byo_outside_check(Extension(journal): Extension<Arc<PathBuf>
 /// ingress off only when nothing answers on it.
 #[cfg(any(windows, target_os = "ios", target_os = "android"))]
 pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
-    let requested_at = Utc::now();
+    let requested_at = jiff::Timestamp::now();
     let expected = match read_journal_config(&journal)
         .ok()
         .map(|config| solstone_core_journal_config::byo_hostname_config(&config))
@@ -1749,7 +1755,7 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
             socket_path: None,
             socket_blocker: None,
             next_action: None,
-            observed_at: Utc::now(),
+            observed_at: jiff::Timestamp::now(),
         });
     current_state.socket_listening = false;
     current_state.socket_blocker = None;
@@ -1757,7 +1763,7 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     current_state.relay_detail = None;
     current_state.relay_observed_at = None;
     current_state.dns_addresses = Vec::new();
-    current_state.observed_at = Utc::now();
+    current_state.observed_at = jiff::Timestamp::now();
     crate::byo_door::write_byo_door_state(&journal, &current_state);
     state(Extension(journal)).await
 }
@@ -1770,7 +1776,7 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
 ))]
 pub(crate) async fn wait_for_byo_cutover_confirmation(
     journal: &std::path::Path,
-    requested_at: chrono::DateTime<Utc>,
+    requested_at: jiff::Timestamp,
     expected: &(Option<String>, bool, u64),
 ) -> bool {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
@@ -1876,7 +1882,7 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
                         socket_path: None,
                         socket_blocker: None,
                         next_action: None,
-                        observed_at: Utc::now(),
+                        observed_at: jiff::Timestamp::now(),
                     }
                 });
             current_state.socket_listening = false;
@@ -1885,7 +1891,7 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
             current_state.relay_detail = None;
             current_state.relay_observed_at = None;
             current_state.dns_addresses = Vec::new();
-            current_state.observed_at = Utc::now();
+            current_state.observed_at = jiff::Timestamp::now();
             crate::byo_door::write_byo_door_state(&journal, &current_state);
             state(Extension(journal)).await
         }
@@ -2166,7 +2172,7 @@ async fn replace_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Res
 }
 
 #[cfg(test)]
-pub(crate) static TEST_READER_WINDOW: std::sync::Mutex<Option<(Duration, Duration)>> =
+pub(crate) static TEST_READER_WINDOW: std::sync::Mutex<Option<(SignedDuration, SignedDuration)>> =
     std::sync::Mutex::new(None);
 #[cfg(test)]
 pub(crate) static TEST_PUT_POLL_BOUNDS: std::sync::Mutex<
@@ -2180,22 +2186,22 @@ fn portal_origin() -> String {
         .to_string()
 }
 
-type ConnectionActivity = BTreeMap<String, (usize, Option<chrono::DateTime<Utc>>)>;
+type ConnectionActivity = BTreeMap<String, (usize, Option<jiff::Timestamp>)>;
 
 fn activity_this_week(root: &std::path::Path) -> Result<(ConnectionActivity, bool), String> {
-    activity_this_week_at(root, Utc::now())
+    activity_this_week_at(root, jiff::Timestamp::now())
 }
 
 fn activity_this_week_at(
     root: &std::path::Path,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<(ConnectionActivity, bool), String> {
     // Audit records are filed under owner-zone days, so the week starts on the owner-zone Monday.
     let zone = solstone_core_journal_config::owner_zone(root);
-    let today = now.with_timezone(&zone).date_naive();
-    let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    let today = now.to_zoned_datetime(zone).date();
+    let monday = today - Span::new().days(i64::from(today.weekday().to_monday_zero_offset()));
     let mut query = ActivityQuery {
-        day_from: Some(monday.format("%Y%m%d").to_string()),
+        day_from: Some(solstone_core_time::day_key(monday)),
         limit: usize::MAX,
         ..ActivityQuery::default()
     };
@@ -2239,7 +2245,7 @@ fn certificate_posture(root: &std::path::Path) -> Value {
     let hostname = value.get("hostname").and_then(Value::as_str);
     let not_before = value.get("not_before").and_then(Value::as_i64);
     let not_after = value.get("not_after").and_then(Value::as_i64);
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let renewal_due = not_before
         .zip(not_after)
         .is_some_and(|(start, expiry)| now >= expiry - (expiry - start) / 3);
@@ -2270,7 +2276,7 @@ async fn set_local_door(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
-    let start_utc = Utc::now();
+    let start_utc = jiff::Timestamp::now();
     let result = mutate_journal_config(&journal, LockOptions::default(), |config| {
         let endpoint = config
             .entry("mcp_endpoint".to_owned())
@@ -2341,7 +2347,7 @@ async fn set_lan_door(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
-    let start_utc = Utc::now();
+    let start_utc = jiff::Timestamp::now();
     let result = mutate_journal_config(&journal, LockOptions::default(), |config| {
         let endpoint = config
             .entry("mcp_endpoint".to_owned())
@@ -2654,7 +2660,7 @@ async fn generate_pairing(
     match result {
         Ok(created) => Json(json!({
             "code": created.code,
-            "expires_at": created.expires_at,
+            "expires_at": solstone_core_time::utc_iso(created.expires_at),
             "generation": created.generation,
             "door": created.door,
         }))
@@ -2746,7 +2752,8 @@ async fn replace_sme_account(Extension(journal): Extension<Arc<PathBuf>>) -> Res
             StatusCode::CONFLICT,
         );
     }
-    if let Err(error) = crate::sme_account_replace::record_request(&journal, Utc::now()) {
+    if let Err(error) = crate::sme_account_replace::record_request(&journal, jiff::Timestamp::now())
+    {
         return refusal(
             "account_replace_request_failed",
             error,
@@ -3128,7 +3135,7 @@ async fn activity(
                         }
                     };
                     json!({
-                        "day": entry.day, "segment": entry.segment, "timestamp": entry.timestamp,
+                        "day": entry.day, "segment": entry.segment, "timestamp": solstone_core_time::utc_iso(entry.timestamp),
                         "connection": entry.connection, "agent_identity": entry.agent_identity,
                         "name": name,
                         "memory_source": memory_source,
@@ -3281,16 +3288,15 @@ mod tests {
         .unwrap();
 
         let value = pairing_watch_value(root).unwrap();
-        let expected_today = chrono::Utc::now()
-            .with_timezone(&solstone_core_journal_config::owner_zone(root))
-            .format("%Y%m%d")
+        let expected_today = jiff::Timestamp::now()
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(root))
+            .strftime("%Y%m%d")
             .to_string();
         assert_eq!(value["today"], expected_today);
     }
 
     #[test]
     fn activity_this_week_uses_owner_zone_monday_window() {
-        use chrono::TimeZone;
         use solstone_core_journal_config::owner_zone;
         use solstone_core_mcp_audit::{Admission, ToolName, write_interaction_record};
 
@@ -3305,12 +3311,11 @@ mod tests {
             .unwrap();
 
             let zone = owner_zone(root);
-            let monday_civil = chrono::NaiveDate::from_ymd_opt(2026, 8, 31)
-                .unwrap()
-                .and_hms_opt(0, 0, 5)
+            let monday_civil = jiff::civil::date(2026, 8, 31).at(0, 0, 5, 0);
+            let monday_dt = solstone_core_time::from_local(&zone, monday_civil)
+                .single()
                 .unwrap();
-            let monday_dt = zone.from_local_datetime(&monday_civil).single().unwrap();
-            let monday_utc = monday_dt.with_timezone(&Utc);
+            let monday_utc = monday_dt.timestamp();
 
             let admission = Admission {
                 connection: "operator",
@@ -3320,10 +3325,10 @@ mod tests {
                 permission: None,
             };
 
-            write_interaction_record(root, monday_dt, &admission)
+            write_interaction_record(root, &monday_dt, &admission)
                 .expect("write interaction record");
 
-            let query_utc = monday_utc + Duration::hours(2);
+            let query_utc = monday_utc + SignedDuration::from_hours(2);
             let (activity, complete) =
                 activity_this_week_at(root, query_utc).expect("activity this week");
             assert!(complete);
@@ -3340,12 +3345,11 @@ mod tests {
         let temp_host = TempDir::new_in(crate::test_scratch()).unwrap();
         let root_host = temp_host.path();
         let zone = owner_zone(root_host);
-        let monday_civil = chrono::NaiveDate::from_ymd_opt(2026, 8, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 5)
+        let monday_civil = jiff::civil::date(2026, 8, 31).at(0, 0, 5, 0);
+        let monday_dt = solstone_core_time::from_local(&zone, monday_civil)
+            .single()
             .unwrap();
-        let monday_dt = zone.from_local_datetime(&monday_civil).single().unwrap();
-        let monday_utc = monday_dt.with_timezone(&Utc);
+        let monday_utc = monday_dt.timestamp();
 
         let admission = Admission {
             connection: "operator",
@@ -3354,10 +3358,10 @@ mod tests {
             arguments: serde_json::Map::new(),
             permission: None,
         };
-        write_interaction_record(root_host, monday_dt, &admission)
+        write_interaction_record(root_host, &monday_dt, &admission)
             .expect("write interaction record");
 
-        let query_utc = monday_utc + Duration::hours(2);
+        let query_utc = monday_utc + SignedDuration::from_hours(2);
         let (activity, complete) =
             activity_this_week_at(root_host, query_utc).expect("activity this week");
         assert!(complete);
@@ -3521,7 +3525,7 @@ mod tests {
             r#"{"mcp_endpoint":{"enabled":true}}"#,
         )
         .unwrap();
-        let next_attempt = Utc::now() + Duration::seconds(300);
+        let next_attempt = jiff::Timestamp::now() + SignedDuration::from_secs(300);
         crate::owner_state::write_mcp_hold_state(
             journal_root,
             crate::bridge_carrier::RegistrationHold::NeedsSubscription,
@@ -3562,7 +3566,7 @@ mod tests {
                 hold,
                 Some("aaaqeaye.solstone.me"),
                 ("done", "done", "waiting"),
-                Utc::now() + Duration::seconds(60),
+                jiff::Timestamp::now() + SignedDuration::from_secs(60),
             );
             let value = state_value(journal_root).unwrap();
             assert_eq!(value["status"], status, "{status}");
@@ -3606,17 +3610,20 @@ mod tests {
             RegistrationHold::AddressNotReady,
             None,
             ("waiting", "waiting", "waiting"),
-            Utc::now() + Duration::seconds(60),
+            jiff::Timestamp::now() + SignedDuration::from_secs(60),
         );
         assert_eq!(replace().await.unwrap().status(), StatusCode::CONFLICT);
-        assert!(crate::sme_account_replace::pending_request(journal_root, Utc::now()).is_none());
+        assert!(
+            crate::sme_account_replace::pending_request(journal_root, jiff::Timestamp::now())
+                .is_none()
+        );
 
         crate::owner_state::write_mcp_hold_state(
             journal_root,
             RegistrationHold::AccountChanged,
             None,
             ("waiting", "waiting", "waiting"),
-            Utc::now() + Duration::seconds(300),
+            jiff::Timestamp::now() + SignedDuration::from_secs(300),
         );
         let before = state_value(journal_root).unwrap();
         assert_eq!(before["status"], "account_changed");
@@ -3630,7 +3637,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(after["sme_account"]["replace_pending"], true);
-        assert!(crate::sme_account_replace::pending_request(journal_root, Utc::now()).is_some());
+        assert!(
+            crate::sme_account_replace::pending_request(journal_root, jiff::Timestamp::now())
+                .is_some()
+        );
 
         // Turning solstone.me off withdraws the waiting click, and while it is
         // off a click is refused even with the refusal still on record.
@@ -3646,9 +3656,15 @@ mod tests {
             .await
             .unwrap();
         assert!(off.status().is_success(), "{}", off.status());
-        assert!(crate::sme_account_replace::pending_request(journal_root, Utc::now()).is_none());
+        assert!(
+            crate::sme_account_replace::pending_request(journal_root, jiff::Timestamp::now())
+                .is_none()
+        );
         assert_eq!(replace().await.unwrap().status(), StatusCode::CONFLICT);
-        assert!(crate::sme_account_replace::pending_request(journal_root, Utc::now()).is_none());
+        assert!(
+            crate::sme_account_replace::pending_request(journal_root, jiff::Timestamp::now())
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -3660,7 +3676,9 @@ mod tests {
             state_value(journal_root).unwrap()["sme_account"]["replaced"],
             Value::Null
         );
-        let at = Utc::now();
+        let at = "2026-11-03T12:00:00.12Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap();
         crate::sme_account_replace::observe_replacement(
             journal_root,
             "aaaqeaye.solstone.me",
@@ -3673,7 +3691,10 @@ mod tests {
             value["sme_account"]["replaced"]["address"],
             "aaaqeaye.solstone.me"
         );
-        assert_eq!(value["sme_account"]["replaced"]["replaced_at"], json!(at));
+        assert_eq!(
+            value["sme_account"]["replaced"]["replaced_at"],
+            "2026-11-03T12:00:00.120Z"
+        );
         let response = owner_routes(journal_root.to_path_buf())
             .oneshot(post_owner(
                 "/app/agents/api/solstone-me/account/notice/dismiss",
@@ -3703,7 +3724,7 @@ mod tests {
             crate::bridge_carrier::RegistrationHold::NotAccepted,
             None,
             ("waiting", "waiting", "waiting"),
-            Utc::now() + Duration::seconds(300),
+            jiff::Timestamp::now() + SignedDuration::from_secs(300),
         );
 
         let value = state_value(journal_root).unwrap();
@@ -3902,7 +3923,7 @@ mod tests {
 
         // Helper to write arbitrary LocalDoorState
         let write_custom_state =
-            |listening: bool, observed_at: chrono::DateTime<Utc>, reason: Option<&str>| {
+            |listening: bool, observed_at: jiff::Timestamp, reason: Option<&str>| {
                 let state = crate::local_door::LocalDoorState {
                     listening,
                     observed_at,
@@ -3913,25 +3934,41 @@ mod tests {
             };
 
         // 36s old -> not_running
-        write_custom_state(true, Utc::now() - Duration::seconds(36), None);
+        write_custom_state(
+            true,
+            jiff::Timestamp::now() - SignedDuration::from_secs(36),
+            None,
+        );
         let val = state_value(journal_root).unwrap();
         assert_eq!(val["local_door"]["listening"], false);
         assert_eq!(val["local_door"]["reason"], "not_running");
 
         // 6s future -> not_running
-        write_custom_state(true, Utc::now() + Duration::seconds(6), None);
+        write_custom_state(
+            true,
+            jiff::Timestamp::now() + SignedDuration::from_secs(6),
+            None,
+        );
         let val = state_value(journal_root).unwrap();
         assert_eq!(val["local_door"]["listening"], false);
         assert_eq!(val["local_door"]["reason"], "not_running");
 
         // 34s old -> valid record
-        write_custom_state(true, Utc::now() - Duration::seconds(34), None);
+        write_custom_state(
+            true,
+            jiff::Timestamp::now() - SignedDuration::from_secs(34),
+            None,
+        );
         let val = state_value(journal_root).unwrap();
         assert_eq!(val["local_door"]["listening"], true);
         assert!(val["local_door"]["reason"].is_null());
 
         // 4s future -> valid record
-        write_custom_state(true, Utc::now() + Duration::seconds(4), None);
+        write_custom_state(
+            true,
+            jiff::Timestamp::now() + SignedDuration::from_secs(4),
+            None,
+        );
         let val = state_value(journal_root).unwrap();
         assert_eq!(val["local_door"]["listening"], true);
         assert!(val["local_door"]["reason"].is_null());
@@ -3944,7 +3981,7 @@ mod tests {
             "config_unreadable",
             "not_running",
         ] {
-            write_custom_state(false, Utc::now(), Some(reason));
+            write_custom_state(false, jiff::Timestamp::now(), Some(reason));
             let val = state_value(journal_root).unwrap();
             assert_eq!(val["local_door"]["listening"], false);
             assert_eq!(val["local_door"]["reason"], reason);
@@ -4296,7 +4333,7 @@ mod tests {
             account_uri: Some("https://acme-v02.api.letsencrypt.org/acme/acct/12345".to_string()),
             caa: Some("admitted".to_string()),
             dns_verdict: Some("admitted".to_string()),
-            dns_observed_at: Some(Utc::now()),
+            dns_observed_at: Some(jiff::Timestamp::now()),
             dns_addresses: Vec::new(),
             relay_state: "none".to_string(),
             relay_detail: None,
@@ -4310,7 +4347,7 @@ mod tests {
             ),
             socket_blocker: None,
             next_action: None,
-            observed_at: Utc::now(),
+            observed_at: jiff::Timestamp::now(),
         };
         crate::byo_door::write_byo_door_state(root, &state);
 
@@ -4362,7 +4399,7 @@ mod tests {
             account_uri: None,
             caa: Some("admitted".to_string()),
             dns_verdict: Some("admitted".to_string()),
-            dns_observed_at: Some(Utc::now()),
+            dns_observed_at: Some(jiff::Timestamp::now()),
             dns_addresses: Vec::new(),
             relay_state: "none".to_string(),
             relay_detail: None,
@@ -4372,7 +4409,7 @@ mod tests {
             socket_path: None,
             socket_blocker: None,
             next_action: None,
-            observed_at: Utc::now(),
+            observed_at: jiff::Timestamp::now(),
         };
         crate::byo_door::write_byo_door_state(root, &state);
         let other_generation = state_value(root).unwrap();
@@ -4380,7 +4417,7 @@ mod tests {
         assert_eq!(other_generation["byo"]["dns_verdict"], "unchecked");
 
         state.generation = 2;
-        state.observed_at = Utc::now() - Duration::seconds(10);
+        state.observed_at = jiff::Timestamp::now() - SignedDuration::from_secs(10);
         crate::byo_door::write_byo_door_state(root, &state);
         let stale = state_value(root).unwrap();
         assert_eq!(stale["byo"]["socket_listening"], false);
@@ -4531,7 +4568,7 @@ mod tests {
             "mcp.example.com",
             account_uri,
             &records_by_domain,
-            Utc::now(),
+            jiff::Timestamp::now(),
         );
         assert_eq!(verdict.code, crate::byo_dns::DnsVerdictCode::Admitted);
     }
@@ -4558,17 +4595,17 @@ mod tests {
             account_uri: None,
             caa: None,
             dns_verdict: Some("lookup_error".to_string()),
-            dns_observed_at: Some(Utc::now()),
+            dns_observed_at: Some(jiff::Timestamp::now()),
             dns_addresses: Vec::new(),
             relay_state: "connected".to_string(),
             relay_detail: None,
-            relay_observed_at: Some(Utc::now()),
+            relay_observed_at: Some(jiff::Timestamp::now()),
             socket_listening: true,
             certificate_active: false,
             socket_path: None,
             socket_blocker: None,
             next_action: None,
-            observed_at: Utc::now(),
+            observed_at: jiff::Timestamp::now(),
         };
         crate::byo_door::write_byo_door_state(root, &door_state);
         let val = state_value(root).unwrap();
@@ -4583,7 +4620,7 @@ mod tests {
         assert_eq!(val["byo"]["diagnostics"], json!(["address_mismatch"]));
 
         // 3. A connected file with observed_at older than 5 seconds projects relay.state "none"
-        door_state.observed_at = Utc::now() - Duration::seconds(6);
+        door_state.observed_at = jiff::Timestamp::now() - SignedDuration::from_secs(6);
         crate::byo_door::write_byo_door_state(root, &door_state);
         let val = state_value(root).unwrap();
         assert_eq!(val["byo"]["relay"]["state"], "none");
@@ -4688,7 +4725,10 @@ mod tests {
         .unwrap();
 
         *crate::byo_dns::TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
-            crate::byo_dns::DnsVerdict::new(crate::byo_dns::DnsVerdictCode::Admitted, Utc::now()),
+            crate::byo_dns::DnsVerdict::new(
+                crate::byo_dns::DnsVerdictCode::Admitted,
+                jiff::Timestamp::now(),
+            ),
             vec!["203.0.113.10".to_string()],
         ));
 
@@ -4742,13 +4782,13 @@ mod tests {
             dns_addresses: Vec::new(),
             relay_state: "connecting".to_string(),
             relay_detail: None,
-            relay_observed_at: Some(Utc::now()),
+            relay_observed_at: Some(jiff::Timestamp::now()),
             socket_listening: true,
             certificate_active: false,
             socket_path: None,
             socket_blocker: None,
             next_action: None,
-            observed_at: Utc::now(),
+            observed_at: jiff::Timestamp::now(),
         };
         crate::byo_door::write_byo_door_state(root, &state);
 
@@ -5007,7 +5047,7 @@ mod tests {
             .grant_refresh_expires_at(&oauth_id)
             .unwrap()
             .unwrap();
-        crate::oauth::store::set_routine_now(Some(oauth_expiry.timestamp() + 10));
+        crate::oauth::store::set_routine_now(Some(oauth_expiry.as_second() + 10));
         let state_post_expiry = state_value(root).unwrap();
         let oauth_conn_post_expiry = state_post_expiry["connections"]
             .as_array()
@@ -5035,8 +5075,8 @@ mod tests {
             .grant_refresh_expires_at(&oauth_id)
             .unwrap()
             .unwrap();
-        let expected_expiry = (oauth_expiry.timestamp() + 10) + 30 * 86400;
-        assert_eq!(new_expiry.timestamp(), expected_expiry);
+        let expected_expiry = (oauth_expiry.as_second() + 10) + 30 * 86400;
+        assert_eq!(new_expiry.as_second(), expected_expiry);
         assert!(
             crate::agent_state::is_owner_paused(root, &format!("oauth:{}", oauth_id))
                 .unwrap()
@@ -5342,8 +5382,8 @@ mod tests {
             .grant_refresh_expires_at(&oauth_id)
             .unwrap()
             .unwrap();
-        let expected_expiry = crate::oauth::current_time().timestamp() + 30 * 86400;
-        assert_eq!(grant_expiry.timestamp(), expected_expiry);
+        let expected_expiry = crate::oauth::current_time().as_second() + 30 * 86400;
+        assert_eq!(grant_expiry.as_second(), expected_expiry);
 
         // 4. The same leftover-hold resume for the bearer key. mcp-endpoint/tokens.json bytes are unchanged by that resume.
         let tokens_path = root.join("mcp-endpoint/tokens.json");
@@ -5462,7 +5502,7 @@ mod tests {
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         crate::agent_state::set_memory_source(root, &format!("oauth:{grant_id}"), hex).unwrap();
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let coords = crate::audit::write_admitted_interaction(
             root,
             now,

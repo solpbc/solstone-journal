@@ -37,13 +37,13 @@ pub fn owner_voice_originals_checked(
             exit_code: 2,
         };
     }
-    let today = services.now.with_timezone(&services.zone).date_naive();
+    let today = services.now.to_zoned_datetime(services.zone.clone()).date();
     let counts = match finish_owed_owner_voice_deletions_checked(
         journal,
         today,
         BUSY_RETRIES,
         BUSY_PAUSE,
-        &chrono::Utc::now,
+        &jiff::Timestamp::now,
         checkpoint,
     ) {
         Ok(counts) => counts,

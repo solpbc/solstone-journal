@@ -11,7 +11,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_home::HomeContext;
@@ -193,21 +192,20 @@ async fn briefing(journal_root: PathBuf, clock: Clock, query: Option<String>) ->
     .await
 }
 
-fn requested_account_time(context: &HomeContext, query: Option<&str>) -> Option<DateTime<Utc>> {
+fn requested_account_time(context: &HomeContext, query: Option<&str>) -> Option<jiff::Timestamp> {
     // The Home fragment sends one literal wall time in the journal's zone.
     const FORMAT: &str = "%Y-%m-%dT%H:%M";
     let value = query?.strip_prefix("today=")?;
     if value.len() != 16 {
         return None;
     }
-    let wall_time = NaiveDateTime::parse_from_str(value, FORMAT).ok()?;
-    if wall_time.format(FORMAT).to_string() != value {
+    let wall_time = jiff::civil::DateTime::strptime(FORMAT, value).ok()?;
+    if wall_time.strftime(FORMAT).to_string() != value {
         return None;
     }
-    let instant = wall_time
-        .and_local_timezone(context.zone())
+    let instant = solstone_core_time::from_local(context.zone(), wall_time)
         .single()?
-        .to_utc();
+        .timestamp();
     (instant <= context.now_utc).then_some(instant)
 }
 
@@ -234,7 +232,6 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode, header},
     };
-    use chrono::{TimeZone, Timelike};
     use serde_json::{Value, json};
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -502,7 +499,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let now = chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap();
+        let now = jiff::Timestamp::from_millisecond(completed_at + 86_400_000).unwrap();
         let context = solstone_core_home::HomeContext::new(root.path(), now);
         let expected = solstone_core_home::first_minutes::read_first_minutes(&context, false);
         let response = get(
@@ -531,7 +528,7 @@ mod tests {
         .unwrap();
 
         // 1. Open: 1 day after completed_at
-        let open_time = chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap();
+        let open_time = jiff::Timestamp::from_millisecond(completed_at + 86_400_000).unwrap();
         let router = super::routes(
             root.path().to_path_buf(),
             super::Clock::fixed(open_time),
@@ -546,7 +543,7 @@ mod tests {
 
         // 2. Just under 7 days: 604_799_999 ms after completed_at
         let just_under_time =
-            chrono::DateTime::from_timestamp_millis(completed_at + 604_799_999).unwrap();
+            jiff::Timestamp::from_millisecond(completed_at + 604_799_999).unwrap();
         let router = super::routes(
             root.path().to_path_buf(),
             super::Clock::fixed(just_under_time),
@@ -558,8 +555,7 @@ mod tests {
         assert_eq!(body["window_open"], true);
 
         // 3. Exactly 7 days: 604_800_000 ms after completed_at -> closed
-        let exact_7d_time =
-            chrono::DateTime::from_timestamp_millis(completed_at + 604_800_000).unwrap();
+        let exact_7d_time = jiff::Timestamp::from_millisecond(completed_at + 604_800_000).unwrap();
         let router = super::routes(
             root.path().to_path_buf(),
             super::Clock::fixed(exact_7d_time),
@@ -645,10 +641,8 @@ mod tests {
         let router = super::routes(
             root.clone(),
             super::Clock::fixed(
-                chrono::Utc
-                    .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
-                    .unwrap()
-                    .with_nanosecond(430_840_000)
+                jiff::tz::Offset::UTC
+                    .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 430_840_000))
                     .unwrap(),
             ),
             |_| false,
@@ -676,8 +670,8 @@ mod tests {
 
     #[tokio::test]
     async fn pulse_carries_the_originals_total_the_list_reports() {
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 0))
             .unwrap();
         for root in [
             TempDir::new().expect("temporary journal"),
@@ -704,10 +698,10 @@ mod tests {
     #[tokio::test]
     async fn pulse_handler_returns_capture_health_for_a_seeded_client() {
         let root = TempDir::new().expect("temporary journal");
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 0))
             .unwrap();
-        let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
+        let last_seen = solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_secs(1));
         seed_client_activity(root.path(), &last_seen, Some(&last_seen));
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
             false
@@ -741,10 +735,10 @@ mod tests {
     #[tokio::test]
     async fn pulse_handler_reports_never_delivered_as_unassessed() {
         let root = TempDir::new().expect("temporary journal");
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 0))
             .unwrap();
-        let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
+        let last_seen = solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_secs(1));
         seed_client_activity(root.path(), &last_seen, None);
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
             false
@@ -771,8 +765,8 @@ mod tests {
     #[tokio::test]
     async fn pulse_handler_reports_empty_client_ledger_as_registry_empty() {
         let root = TempDir::new().expect("temporary journal");
-        let now = chrono::Utc
-            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+        let now = jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 0))
             .unwrap();
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
             false

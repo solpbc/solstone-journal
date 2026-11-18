@@ -17,8 +17,7 @@ workspace = true
 
 [dependencies]
 axum.workspace = true
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-format.workspace = true
@@ -26,6 +25,7 @@ solstone-core-import.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-location.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"

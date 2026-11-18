@@ -8,11 +8,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
+use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
 
 use crate::gate::{GateError, GateTarget, verify_targets};
@@ -837,7 +838,7 @@ fn append_provenance(
     let row = provenance_row(
         target,
         verification,
-        &Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        &utc_z(Timestamp::now(), Precision::Secs),
     )?;
     let serialized = serde_json::to_string(&row)
         .map_err(|source| MirrorError::ProvenanceSerialize { source })?;

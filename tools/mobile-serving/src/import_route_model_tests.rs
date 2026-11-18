@@ -392,7 +392,7 @@ fn ordinary_audio_upload_uses_shared_sense_and_pinned_speech_before_read_with_ra
     eprintln!(
         "audio worker after Sense: {}; processing policy: {:?}",
         host.audio_status(),
-        solstone_core_system::processing::policy_at(root.path(), chrono::Utc::now())
+        solstone_core_system::processing::policy_at(root.path(), jiff::Timestamp::now())
     );
     let result = native
         .recv_timeout(Duration::from_secs(10))

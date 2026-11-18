@@ -5,12 +5,15 @@
 
 use std::fs;
 
-use chrono_tz::America::Denver;
 use solstone_core_format::content::body_records::decode_rows;
 
 use super::*;
 use crate::apple_health::{decide, plan_with, read_export};
 use crate::body_stream::APPLE;
+
+fn denver() -> jiff::tz::TimeZone {
+    solstone_core_time::zone("America/Denver").unwrap()
+}
 
 const WATCH: &str = r#"sourceName="Synthetic Watch" sourceVersion="11.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Watch&gt;" creationDate="2026-10-10 08:00:00 -0600""#;
 const RING: &str = r#"sourceName="Other Ring" sourceVersion="2""#;
@@ -36,10 +39,11 @@ fn stage(source: &str, start: &str, end: &str, value: &str) -> String {
 
 fn at(minutes: i64) -> String {
     let base =
-        chrono::DateTime::parse_from_str("2026-10-09 00:00:00 -0600", "%Y-%m-%d %H:%M:%S %z")
+        solstone_core_time::strptime_fixed("%Y-%m-%d %H:%M:%S %z", "2026-10-09 00:00:00 -0600")
             .unwrap();
-    (base + chrono::Duration::minutes(minutes))
-        .format("%Y-%m-%d %H:%M:%S %z")
+    base.checked_add(jiff::SignedDuration::from_mins(minutes))
+        .unwrap()
+        .strftime("%Y-%m-%d %H:%M:%S %z")
         .to_string()
 }
 
@@ -152,7 +156,7 @@ type Windows = BTreeMap<WindowId, String>;
 /// What the whole-export reference would write, with its counts.
 fn reference(journal: &Path, source: &Path) -> (Windows, ScanCounts) {
     let export = read_export(source).unwrap();
-    let plan = plan_with(journal, &export, Denver, None, false).unwrap();
+    let plan = plan_with(journal, &export, &denver(), None, false).unwrap();
     let windows = plan
         .files
         .iter()
@@ -183,7 +187,7 @@ fn streamed(journal: &Path, source: &Path, spill: usize) -> (Windows, ScanCounts
     let placed = place(
         journal,
         &APPLE,
-        Denver,
+        &denver(),
         &scan_dir,
         &placed_dir,
         spill,
@@ -395,7 +399,7 @@ fn days_resume_from_a_cursor() {
     let placed = place(
         journal.path(),
         &APPLE,
-        Denver,
+        &denver(),
         &scan_dir,
         &placed_dir,
         20_000,
@@ -458,7 +462,7 @@ fn staged(journal: &Path, source: &Path) -> (Windows, u64, u64) {
     let placed = place(
         journal,
         &APPLE,
-        Denver,
+        &denver(),
         &scan_dir,
         &placed_dir,
         1,
@@ -671,7 +675,7 @@ fn a_tile_is_named_by_its_index_for_apple_and_by_its_window_for_oura() {
     let journal = tempfile::tempdir().unwrap();
     let row = oura_row(RowKind::Experience, "w1");
     let ids = |source| {
-        tile_experience(journal.path(), source, &row, Denver)
+        tile_experience(journal.path(), source, &row, &denver())
             .unwrap()
             .into_iter()
             .map(|(_, tile)| tile.id)

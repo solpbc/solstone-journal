@@ -284,8 +284,8 @@ pub fn verify_owned_offload_offers(
     read: OwnedReadOperation,
     observed: ObservedOffloadOffers,
     proofs: Vec<OffloadProof>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<OwnedVerifiedOffloadOffers, OwnedOffloadOfferFailure> {
     let observed = Box::new(observed);
     #[cfg(any(unix, windows))]
@@ -322,8 +322,8 @@ pub fn verify_owned_offload_offers(
 /// Readable catalog history alone supplies no append-durability authority.
 pub fn publish_owned_offload_offers(
     verified: OwnedVerifiedOffloadOffers,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> OwnedOffloadOfferOutcome {
     #[cfg(any(unix, windows))]
     let publication =

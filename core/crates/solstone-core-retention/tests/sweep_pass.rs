@@ -26,7 +26,8 @@ use std::path::PathBuf;
 
 use solstone_core_processing_record::vocab;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Map, Value, json};
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
@@ -138,10 +139,10 @@ impl Bed {
             policy,
             &ClosedHandlerSet,
             &JournalMedia,
-            NaiveDate::parse_from_str(today, "%Y-%m-%d").expect("a date"),
-            DateTime::parse_from_rfc3339(now)
+            Date::strptime("%Y-%m-%d", today).expect("a date"),
+            solstone_core_time::parse_rfc3339(now)
                 .expect("an instant")
-                .with_timezone(&Utc),
+                .timestamp(),
         )
     }
 }
@@ -241,7 +242,7 @@ fn an_old_proven_segment_is_released_and_its_derived_output_survives() {
         "planning removed nothing"
     );
 
-    let (outcome, tally) = execute(&bed.root, &built, Utc::now());
+    let (outcome, tally) = execute(&bed.root, &built, Timestamp::now());
     assert!(outcome.halted.is_none(), "{outcome:?}");
     assert_eq!(outcome.targets.len(), 1);
     assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
@@ -272,7 +273,7 @@ fn a_default_stream_segment_is_released_rather_than_silently_skipped() {
         "the default stream contributes no path component"
     );
 
-    let (outcome, _) = execute(&bed.root, &built, Utc::now());
+    let (outcome, _) = execute(&bed.root, &built, Timestamp::now());
     assert!(
         outcome.targets[0].not_removed.is_empty(),
         "a four-component path would have reported entry-missing here: {outcome:?}"
@@ -303,7 +304,7 @@ fn a_suffixed_directory_name_is_addressed_by_its_name() {
         "the key `093000_300` addresses a directory that does not exist"
     );
 
-    let (outcome, _) = execute(&bed.root, &built, Utc::now());
+    let (outcome, _) = execute(&bed.root, &built, Timestamp::now());
     assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
     teardown(&bed);
 }
@@ -445,7 +446,7 @@ fn a_legacy_segment_holds_under_a_processed_rule_and_releases_under_a_captured_o
     // The captured anchor still answers, and the legacy evidence still proves.
     let released = bed.plan(&captured_after(7), "2026-08-05", "2026-08-05T00:00:00Z");
     assert_eq!(released.candidates.len(), 1, "{released:?}");
-    let (_, tally) = execute(&bed.root, &released, Utc::now());
+    let (_, tally) = execute(&bed.root, &released, Timestamp::now());
     assert_eq!(tally.on_legacy_rows, 1, "and the receipt says how it knew");
     teardown(&bed);
 }
@@ -577,7 +578,7 @@ fn executing_an_empty_plan_removes_nothing() {
         "070000_17",
         "2026-07-01T00:00:00Z",
     );
-    let (outcome, tally) = execute(&bed.root, &Plan::default(), Utc::now());
+    let (outcome, tally) = execute(&bed.root, &Plan::default(), Timestamp::now());
     assert!(outcome.targets.is_empty(), "{outcome:?}");
     assert_eq!(tally.on_record, 0);
     assert!(
@@ -850,9 +851,9 @@ fn mark_pass_records_empty_audio_and_removes_nothing() {
         &bed.root,
         RemovalClass::PolicyRawRelease,
         &proposals,
-        DateTime::parse_from_rfc3339("2026-08-05T00:00:00Z")
+        solstone_core_time::parse_rfc3339("2026-08-05T00:00:00Z")
             .unwrap()
-            .with_timezone(&Utc),
+            .timestamp(),
     )
     .expect("reconcile");
     assert_eq!(register.marks.len(), 1);

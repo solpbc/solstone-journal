@@ -9,7 +9,6 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use chrono::Local;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use solstone_core_journal_io::{
@@ -40,7 +39,7 @@ impl TestJournal {
             "service",
             "supervisor",
             OplogFormat::Log,
-            Local::now().fixed_offset(),
+            &jiff::ZonedDateTime::now(),
         )
         .expect("create service oplog")
     }
@@ -118,7 +117,7 @@ fn one_shot_merges_interleaved_stdout_and_stderr_from_service_segments() {
         "heartbeat",
         "pass",
         OplogFormat::Log,
-        Local::now().fixed_offset(),
+        &jiff::ZonedDateTime::now(),
     )
     .unwrap();
     unrelated.write_all(b"hidden\n").unwrap();

@@ -10,7 +10,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use chrono::TimeZone as _;
+use jiff::ToSpan as _;
 use solstone_core_import::BodyIngestError;
 use solstone_core_import::oura_http::{HttpResponse, OuraHttp, hold_oura_lock, refresh, settings};
 
@@ -192,7 +192,7 @@ impl OuraHttp for Oura {
         if server.heartrate_inclusive && endpoint == "heartrate" {
             let end = query
                 .get("end_datetime")
-                .and_then(|end| DateTime::parse_from_rfc3339(end).ok());
+                .and_then(|end| solstone_core_time::parse_rfc3339(end).ok());
             asked.extend(
                 documents
                     .iter()
@@ -200,7 +200,7 @@ impl OuraHttp for Oura {
                         document
                             .get("timestamp")
                             .and_then(Value::as_str)
-                            .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+                            .and_then(|at| solstone_core_time::parse_rfc3339(at).ok())
                             == end
                     })
                     .map(|document| {
@@ -276,12 +276,20 @@ fn connected(zone: &str) -> tempfile::TempDir {
 }
 
 /// Noon in Denver, 2026-02-01: every run here reads this clock.
-fn frozen() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 2, 1, 19, 0, 0).unwrap()
+fn frozen() -> Timestamp {
+    utc(2026, 2, 1, 19)
 }
 
-fn date(text: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+fn utc(year: i16, month: i8, day: i8, hour: i8) -> Timestamp {
+    jiff::civil::date(year, month, day)
+        .at(hour, 0, 0, 0)
+        .to_zoned_datetime(TimeZone::UTC)
+        .unwrap()
+        .timestamp()
+}
+
+fn date(text: &str) -> Date {
+    Date::strptime("%Y-%m-%d", text).unwrap()
 }
 
 struct Ask<'a> {
@@ -290,7 +298,7 @@ struct Ask<'a> {
     range: Option<(&'a str, &'a str)>,
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
     /// The frozen clock unless a test names another.
-    clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    clock: Option<&'a dyn Fn() -> Timestamp>,
     /// Nobody asked for it (`--scheduled`): a sync even with a range.
     scheduled: bool,
 }
@@ -421,10 +429,8 @@ fn when_chunk_3_of_5_fails_coverage_holds_chunks_1_and_2() {
     let oura = Oura::new();
     // Five chunks of 364 days, the last of ten.
     let first = date("2020-01-01");
-    let last = first + chrono::Days::new(4 * 364 + 9);
-    let third = (first + chrono::Days::new(2 * 364))
-        .format("%Y-%m-%d")
-        .to_string();
+    let last = first + (4 * 364 + 9).days();
+    let third = (first + (2 * 364).days()).strftime("%Y-%m-%d").to_string();
     let wanted = third.clone();
     oura.rule(
         "daily_sleep",
@@ -433,14 +439,14 @@ fn when_chunk_3_of_5_fails_coverage_holds_chunks_1_and_2() {
         json!({"detail": "unavailable"}),
         None,
     );
-    let to = last.format("%Y-%m-%d").to_string();
+    let to = last.strftime("%Y-%m-%d").to_string();
     let outcome = finished(
         root,
         &oura,
         &ask("20261104_120000", Some(("2020-01-01", &to))),
     );
-    let second_last = (first + chrono::Days::new(2 * 364 - 1))
-        .format("%Y-%m-%d")
+    let second_last = (first + (2 * 364 - 1).days())
+        .strftime("%Y-%m-%d")
         .to_string();
     assert_eq!(
         covered(root, "daily_sleep"),
@@ -1459,32 +1465,39 @@ fn heartrate_is_never_asked_for_a_span_whose_dates_are_more_than_30_apart() {
         &oura,
         &ask("20261104_120000", Some(("2026-01-01", "2026-12-31"))),
     );
-    let spans: Vec<(DateTime<chrono::FixedOffset>, DateTime<chrono::FixedOffset>)> = oura
+    let spans: Vec<(jiff::ZonedDateTime, jiff::ZonedDateTime)> = oura
         .gets()
         .into_iter()
         .filter(|(endpoint, ..)| endpoint == "heartrate")
         .map(|(_, query, _)| {
             (
-                DateTime::parse_from_rfc3339(&query["start_datetime"]).unwrap(),
-                DateTime::parse_from_rfc3339(&query["end_datetime"]).unwrap(),
+                solstone_core_time::parse_rfc3339(&query["start_datetime"]).unwrap(),
+                solstone_core_time::parse_rfc3339(&query["end_datetime"]).unwrap(),
             )
         })
         .collect();
     assert!(spans.len() >= 12);
     for (from, to) in &spans {
-        let written = (to.date_naive() - from.date_naive()).num_days();
-        let utc = (to.to_utc().date_naive() - from.to_utc().date_naive()).num_days();
-        assert!(written <= 30 && utc <= 30, "{from} {to}");
+        let days = |from: Date, to: Date| from.duration_until(to).as_hours() / 24;
+        let in_utc = |at: &jiff::ZonedDateTime| at.with_time_zone(TimeZone::UTC).date();
+        let written = days(from.date(), to.date());
+        let utc = days(in_utc(from), in_utc(to));
+        assert!(
+            written <= 30 && utc <= 30,
+            "{} {}",
+            solstone_core_time::offset_display(from),
+            solstone_core_time::offset_display(to)
+        );
     }
     // Half-open spans meeting end to start, over exactly the days asked.
     for pair in spans.windows(2) {
         assert_eq!(pair[0].1, pair[1].0);
     }
-    assert_eq!(spans[0].0.to_rfc3339(), "2026-01-01T00:00:00+00:00");
-    assert_eq!(
-        spans.last().unwrap().1.to_rfc3339(),
-        "2027-01-01T00:00:00+00:00"
-    );
+    let text = |at: &jiff::ZonedDateTime| {
+        solstone_core_time::zoned_rfc3339(at, solstone_core_time::Precision::AutoSi, false)
+    };
+    assert_eq!(text(&spans[0].0), "2026-01-01T00:00:00+00:00");
+    assert_eq!(text(&spans.last().unwrap().1), "2027-01-01T00:00:00+00:00");
 }
 
 #[test]
@@ -1879,8 +1892,8 @@ fn a_reading_at_a_chunks_end_comes_from_one_chunk_whichever_way_oura_reads_the_e
 }
 
 /// A day later than the frozen clock's.
-fn later() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 2, 4, 19, 0, 0).unwrap()
+fn later() -> Timestamp {
+    utc(2026, 2, 4, 19)
 }
 
 #[test]

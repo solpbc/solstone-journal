@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::DateTime;
+use jiff::{SignedDuration, ZonedDateTime};
 use sha2::{Digest, Sha256};
 use solstone_core_format::obsidian::{Change, NoteChange};
 
 use super::*;
 
-fn at(clock: &str) -> chrono::DateTime<chrono::FixedOffset> {
-    DateTime::parse_from_rfc3339(&format!("2026-11-08T{clock}-07:00")).unwrap()
+fn at(clock: &str) -> ZonedDateTime {
+    solstone_core_time::parse_rfc3339(&format!("2026-11-08T{clock}-07:00")).unwrap()
 }
 
 fn change(kind: Change, path: &str, clock: &str, text: Option<&str>) -> NoteChange {
@@ -309,7 +309,10 @@ fn a_link_edit_long_after_a_rename_is_the_owners_own() {
     );
     // Two days on, the rename is too far away to explain this edit.
     let mut late = changed("n.md", "23:00:00", "See [[B]].\n");
-    late.changed_at += chrono::Duration::days(2);
+    late.changed_at = late
+        .changed_at
+        .checked_add(SignedDuration::from_hours(48))
+        .unwrap();
     let memory = apply(journal.path(), "a", vec![late]).unwrap();
     assert!(memory.contains("edited"), "{memory}");
 }

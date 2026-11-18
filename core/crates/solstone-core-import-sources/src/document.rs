@@ -22,9 +22,9 @@ use std::time::Instant;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use chrono::{DateTime, TimeZone, Utc};
-use chrono_tz::Tz;
 use image::ImageFormat;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solstone_core_depict::resize_for_vlm;
@@ -843,7 +843,7 @@ pub struct DocumentPreviewRequest<'a> {
     pub password: Option<&'a str>,
     pub now: SystemTime,
     /// The owner zone the preview's days are read in.
-    pub zone: Tz,
+    pub zone: TimeZone,
     pub owner_timestamp: Option<&'a str>,
 }
 
@@ -943,7 +943,7 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
                         &payload,
                         source,
                         request.now,
-                        request.zone,
+                        &request.zone,
                         request.owner_timestamp,
                         single_file,
                     )
@@ -956,7 +956,7 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
     }
     let mut days = dates
         .into_iter()
-        .map(|date| day_for(date, request.zone))
+        .map(|date| day_for(date, &request.zone))
         .collect::<Vec<_>>();
     days.sort();
     let summary = if failures.is_empty() {
@@ -987,7 +987,7 @@ pub fn preview_size(
     force: bool,
     worker: &dyn PdfWorker,
 ) -> Result<solstone_core_import::size::ImportSize, String> {
-    validate_owner_time(request.source, request.owner_timestamp, request.zone)?;
+    validate_owner_time(request.source, request.owner_timestamp, &request.zone)?;
     let pdfs = find_pdfs(request.source);
     if pdfs.is_empty() {
         return Err("no PDF documents found".to_owned());
@@ -1019,13 +1019,13 @@ pub fn preview_size(
             &payload,
             &source,
             request.now,
-            request.zone,
+            &request.zone,
             request.owner_timestamp,
             !request.source.is_dir(),
         );
         let claim = allocate_segment(
             journal,
-            request.zone,
+            &request.zone,
             timestamp.timestamp,
             hash,
             &mut occupied,
@@ -1083,7 +1083,7 @@ pub fn prepare_document_import(
     model: &dyn DocumentModelClient,
 ) -> PreparedDocumentImport {
     let zone = solstone_core_journal_config::owner_zone(request.journal_root);
-    if let Err(error) = validate_owner_time(request.source, request.owner_timestamp, zone) {
+    if let Err(error) = validate_owner_time(request.source, request.owner_timestamp, &zone) {
         return PreparedDocumentImport {
             items: Vec::new(),
             errors: vec![error.clone()],
@@ -1151,13 +1151,13 @@ pub fn prepare_document_import(
             &first,
             source,
             request.now,
-            zone,
+            &zone,
             request.owner_timestamp,
             !request.source.is_dir(),
         );
         let claim = match claim_segment(
             request.journal_root,
-            zone,
+            &zone,
             timestamp.timestamp,
             if first.sha256.is_empty() {
                 &source_hash
@@ -1255,7 +1255,7 @@ pub fn prepare_document_import(
                 render_errors: &render_errors,
                 timestamp: &timestamp,
                 claim_timestamp: claim.timestamp,
-                zone,
+                zone: &zone,
                 warnings: &warnings,
             },
             model,
@@ -1470,7 +1470,7 @@ pub fn install_and_publish_document(
         }),
         date_range: date_range(
             &prepared_import.timestamps,
-            solstone_core_journal_config::owner_zone(request.journal_root),
+            &solstone_core_journal_config::owner_zone(request.journal_root),
         ),
         merge_summary: None,
         principal_collision: None,
@@ -1555,7 +1555,7 @@ struct TimestampChoice {
     source: &'static str,
 }
 
-fn validate_owner_time(source: &Path, owner: Option<&str>, zone: Tz) -> Result<(), String> {
+fn validate_owner_time(source: &Path, owner: Option<&str>, zone: &TimeZone) -> Result<(), String> {
     if source.is_file()
         && let Some(owner) = owner
     {
@@ -1570,20 +1570,28 @@ fn validate_owner_time(source: &Path, owner: Option<&str>, zone: Tz) -> Result<(
     Ok(())
 }
 
-fn owner_wall_to_system_time(stamp_str: &str, zone: Tz) -> Option<SystemTime> {
-    let naive = chrono::NaiveDateTime::parse_from_str(stamp_str, "%Y%m%d_%H%M%S").ok()?;
-    match zone.from_local_datetime(&naive) {
-        chrono::offset::LocalResult::Single(dt) => Some(SystemTime::from(dt)),
-        chrono::offset::LocalResult::Ambiguous(earliest, _) => Some(SystemTime::from(earliest)),
-        chrono::offset::LocalResult::None => None,
-    }
+fn owner_wall_to_system_time(stamp_str: &str, zone: &TimeZone) -> Option<SystemTime> {
+    let naive = jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", stamp_str).ok()?;
+    let earliest = solstone_core_time::from_local(zone, naive).earliest()?;
+    SystemTime::try_from(earliest.timestamp()).ok()
+}
+
+/// A system time as an instant; one past the representable years is a fault,
+/// as it is for the system clock.
+fn instant_of(time: SystemTime) -> Timestamp {
+    Timestamp::try_from(time).expect("a system time within the representable years")
+}
+
+/// An instant as a system time.
+fn system_time_of(instant: &ZonedDateTime) -> SystemTime {
+    SystemTime::try_from(instant.timestamp()).expect("an instant a system time can hold")
 }
 
 fn claim_timestamp(
     payload: &PdfPayload,
     source: &Path,
     now: SystemTime,
-    zone: Tz,
+    zone: &TimeZone,
     owner_timestamp: Option<&str>,
     single_file: bool,
 ) -> TimestampChoice {
@@ -1609,9 +1617,9 @@ fn claim_timestamp(
             .and_then(parse_metadata_date)
             .filter(|timestamp| timestamp_in_window(*timestamp, now));
         let conflicts = if let Some(creation_time) = credible_creation {
-            let creation_wall = DateTime::<Utc>::from(creation_time)
-                .with_timezone(&zone)
-                .format("%Y%m%d_%H%M%S")
+            let creation_wall = instant_of(creation_time)
+                .to_zoned_datetime(zone.clone())
+                .strftime("%Y%m%d_%H%M%S")
                 .to_string();
             filename_stamp.as_str() != creation_wall
         } else {
@@ -1656,9 +1664,9 @@ fn claim_timestamp(
 }
 
 fn parse_metadata_date(value: &str) -> Option<SystemTime> {
-    DateTime::parse_from_rfc3339(value)
+    solstone_core_time::parse_rfc3339(value)
         .ok()
-        .map(SystemTime::from)
+        .and_then(|time| SystemTime::try_from(time.timestamp()).ok())
 }
 
 fn timestamp_in_window(timestamp: SystemTime, now: SystemTime) -> bool {
@@ -1721,7 +1729,7 @@ impl fmt::Display for DocumentSegmentError {
 
 fn claim_segment(
     journal: &Path,
-    zone: Tz,
+    zone: &TimeZone,
     start: SystemTime,
     sha256: &str,
     occupied: &mut HashMap<(String, String), String>,
@@ -1732,15 +1740,15 @@ fn claim_segment(
 
 fn allocate_segment(
     journal: &Path,
-    zone: Tz,
+    zone: &TimeZone,
     start: SystemTime,
     sha256: &str,
     occupied: &mut HashMap<(String, String), String>,
     force: bool,
     publish: bool,
 ) -> Result<SegmentClaim, DocumentSegmentError> {
-    let start_local = DateTime::<Utc>::from(start).with_timezone(&zone);
-    let day = start_local.format("%Y%m%d").to_string();
+    let start_local = instant_of(start).to_zoned_datetime(zone.clone());
+    let day = start_local.strftime("%Y%m%d").to_string();
     let parent_rel = format!("chronicle/{day}/{STREAM}");
     let parent =
         contained_path(journal, &parent_rel).map_err(|error| DocumentSegmentError::Io {
@@ -1755,22 +1763,24 @@ fn allocate_segment(
     }
 
     for attempt in 0..DOCUMENT_SEGMENT_PROBE_LIMIT {
-        let candidate_local = start_local + chrono::Duration::seconds(i64::from(attempt));
-        if candidate_local.format("%Y%m%d").to_string() != day {
+        let candidate_local = start_local
+            .checked_add(SignedDuration::from_secs(i64::from(attempt)))
+            .expect("a probed segment time is a representable time");
+        if candidate_local.strftime("%Y%m%d").to_string() != day {
             return Err(DocumentSegmentError::DayOverflow {
                 day,
                 stream: STREAM.to_owned(),
-                start: start_local.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                start: start_local.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
             });
         }
-        let segment = format!("{}_0", candidate_local.format("%H%M%S"));
+        let segment = format!("{}_0", candidate_local.strftime("%H%M%S"));
         let key = (day.clone(), segment.clone());
         if let Some(claimed_hash) = occupied.get(&key) {
             if claimed_hash == sha256 {
                 return Ok(SegmentClaim {
                     day,
                     segment,
-                    timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                    timestamp: system_time_of(&candidate_local),
                     already_imported: true,
                     binding: None,
                 });
@@ -1874,7 +1884,7 @@ fn allocate_segment(
                 return Ok(SegmentClaim {
                     day,
                     segment,
-                    timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                    timestamp: system_time_of(&candidate_local),
                     already_imported: true,
                     binding: None,
                 });
@@ -1884,7 +1894,7 @@ fn allocate_segment(
                 return Ok(SegmentClaim {
                     day,
                     segment,
-                    timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                    timestamp: system_time_of(&candidate_local),
                     already_imported: false,
                     binding: None,
                 });
@@ -1905,7 +1915,7 @@ fn allocate_segment(
             return Ok(SegmentClaim {
                 day,
                 segment,
-                timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                timestamp: system_time_of(&candidate_local),
                 already_imported: false,
                 binding: Some(std::sync::Arc::new(
                     solstone_core_journal_io::JournalRoot::open(resolved.path()).map_err(
@@ -1922,7 +1932,7 @@ fn allocate_segment(
     Err(DocumentSegmentError::Collision {
         day,
         stream: STREAM.to_owned(),
-        start: start_local.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        start: start_local.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
         attempts: DOCUMENT_SEGMENT_PROBE_LIMIT,
     })
 }
@@ -2094,7 +2104,7 @@ struct RenderDocumentInput<'a> {
     render_errors: &'a std::collections::BTreeMap<usize, String>,
     timestamp: &'a TimestampChoice,
     claim_timestamp: SystemTime,
-    zone: Tz,
+    zone: &'a TimeZone,
     warnings: &'a [String],
 }
 
@@ -2667,13 +2677,13 @@ fn page_name(index: usize) -> String {
 fn char_prefix(value: &str, length: usize) -> String {
     value.chars().take(length).collect()
 }
-fn day_for(timestamp: SystemTime, zone: Tz) -> String {
-    DateTime::<Utc>::from(timestamp)
-        .with_timezone(&zone)
-        .format("%Y%m%d")
+fn day_for(timestamp: SystemTime, zone: &TimeZone) -> String {
+    instant_of(timestamp)
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d")
         .to_string()
 }
-fn date_range(timestamps: &[SystemTime], zone: Tz) -> Option<(String, String)> {
+fn date_range(timestamps: &[SystemTime], zone: &TimeZone) -> Option<(String, String)> {
     let mut days = timestamps
         .iter()
         .map(|timestamp| day_for(*timestamp, zone))
@@ -2693,18 +2703,16 @@ mod claim_tests {
     use std::thread;
     use std::time::SystemTime;
 
-    use chrono::{TimeZone, Utc};
-    use chrono_tz::Tz;
+    use jiff::tz::TimeZone;
 
     use super::{
         DOCUMENT_SEGMENT_PROBE_LIMIT, DocumentSegmentError, ORIGINAL, STREAM, claim_segment,
         hash_source,
     };
 
-    fn utc(hour: u32, minute: u32, second: u32) -> SystemTime {
-        Utc.with_ymd_and_hms(2026, 6, 16, hour, minute, second)
-            .unwrap()
-            .into()
+    fn utc(hour: i8, minute: i8, second: i8) -> SystemTime {
+        let wall = jiff::civil::date(2026, 6, 16).at(hour, minute, second, 0);
+        SystemTime::try_from(jiff::tz::Offset::UTC.to_timestamp(wall).unwrap()).unwrap()
     }
 
     fn parent(journal: &std::path::Path) -> std::path::PathBuf {
@@ -2725,7 +2733,7 @@ mod claim_tests {
         let mut occupied = std::collections::HashMap::new();
         let claim = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             "hash-a",
             &mut occupied,
@@ -2792,7 +2800,7 @@ mod claim_tests {
         let mut occupied = std::collections::HashMap::new();
         let first = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             "hash-a",
             &mut occupied,
@@ -2801,7 +2809,7 @@ mod claim_tests {
         .unwrap();
         let again = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             "hash-a",
             &mut occupied,
@@ -2812,7 +2820,7 @@ mod claim_tests {
         assert_eq!(again.segment, first.segment);
         let other = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             "hash-b",
             &mut occupied,
@@ -2834,7 +2842,7 @@ mod claim_tests {
         let mut occupied = std::collections::HashMap::new();
         let retry = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             &hash,
             &mut occupied,
@@ -2847,7 +2855,7 @@ mod claim_tests {
         occupied.clear();
         let forced = claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             &hash,
             &mut occupied,
@@ -2870,7 +2878,7 @@ mod claim_tests {
         for (force, already_imported) in [(false, true), (true, false)] {
             let claim = claim_segment(
                 journal.path(),
-                Tz::UTC,
+                &TimeZone::UTC,
                 utc(12, 0, 0),
                 &hash,
                 &mut std::collections::HashMap::new(),
@@ -2901,7 +2909,7 @@ mod claim_tests {
             fs::write(removed.join("tombstone.json"), b"tomb").unwrap();
             let claim = claim_segment(
                 journal.path(),
-                Tz::UTC,
+                &TimeZone::UTC,
                 utc(12, 0, 0),
                 "same-hash",
                 &mut std::collections::HashMap::new(),
@@ -2936,7 +2944,7 @@ mod claim_tests {
         for force in [false, true] {
             let claim = claim_segment(
                 journal.path(),
-                Tz::UTC,
+                &TimeZone::UTC,
                 utc(12, 0, 0),
                 "requested-hash",
                 &mut occupied,
@@ -2966,7 +2974,7 @@ mod claim_tests {
         for force in [false, true] {
             let claim = claim_segment(
                 journal.path(),
-                Tz::UTC,
+                &TimeZone::UTC,
                 utc(12, 0, 0),
                 "requested-hash",
                 &mut occupied,
@@ -2998,7 +3006,7 @@ mod claim_tests {
         }
         let collision = match claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(12, 0, 0),
             "requested-hash",
             &mut std::collections::HashMap::new(),
@@ -3034,7 +3042,7 @@ mod claim_tests {
         fs::write(occupied.join("keep"), b"edge").unwrap();
         let overflow = match claim_segment(
             journal.path(),
-            Tz::UTC,
+            &TimeZone::UTC,
             utc(23, 59, 59),
             "requested-hash",
             &mut std::collections::HashMap::new(),
@@ -3062,7 +3070,7 @@ mod claim_tests {
                 let mut occupied = std::collections::HashMap::new();
                 claim_segment(
                     &journal_path,
-                    Tz::UTC,
+                    &TimeZone::UTC,
                     utc(12, 0, 0),
                     hash,
                     &mut occupied,

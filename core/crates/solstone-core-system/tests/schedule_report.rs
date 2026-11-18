@@ -5,8 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{NaiveDate, TimeZone};
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde_json::json;
 use solstone_core_system::schedule::{ScheduleNow, build_schedule_report};
 
@@ -57,22 +56,22 @@ impl Drop for Bed {
 }
 
 /// Every schedule fixture reads its wall times in one fixed zone.
-const ZONE: Tz = Tz::America__Denver;
+fn zone() -> TimeZone {
+    solstone_core_time::zone("America/Denver").expect("fixture zone")
+}
 
-fn now(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> ScheduleNow {
-    let local = NaiveDate::from_ymd_opt(year, month, day)
-        .expect("date")
-        .and_hms_opt(hour, minute, 0)
-        .expect("time");
-    let unix_millis = ZONE
-        .from_local_datetime(&local)
+fn now(year: i16, month: i8, day: i8, hour: i8, minute: i8) -> ScheduleNow {
+    let local = jiff::civil::date(year, month, day).at(hour, minute, 0, 0);
+    let zone = zone();
+    let unix_millis = solstone_core_time::from_local(&zone, local)
         .earliest()
         .expect("representable local time")
-        .timestamp_millis();
+        .timestamp()
+        .as_millisecond();
     ScheduleNow {
         local,
         unix_millis,
-        zone: ZONE,
+        zone,
     }
 }
 

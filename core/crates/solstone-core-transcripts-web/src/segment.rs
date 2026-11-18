@@ -10,8 +10,8 @@ use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, TimeZone, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::tz::{Offset, TimeZone};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_format::audio_archive::{
@@ -27,6 +27,7 @@ use solstone_core_format::objects::objects_overlay;
 use solstone_core_format::segment::segment_parse;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{DataState, derive_modality_state};
+use solstone_core_time::Precision;
 use solstone_core_transcripts::POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE;
 
 use crate::day::valid_day;
@@ -50,8 +51,8 @@ struct SegmentContext<'a> {
     dir: &'a Path,
     root: &'a Path,
     /// The journal's owner zone, which the page shows every time in.
-    zone: Tz,
-    now: DateTime<Utc>,
+    zone: TimeZone,
+    now: Timestamp,
     /// Possible names the owner may be shown beside the speech they label.
     possible_names: Vec<solstone_core_possible_names::LiveEntry>,
 }
@@ -119,7 +120,7 @@ fn prepare_segment(
     day: &str,
     stream: &str,
     key: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, Response> {
     if !valid_day(day) {
         return Err(legacy_error_response(
@@ -149,7 +150,7 @@ fn prepare_segment(
         key,
         dir: &dir,
         root,
-        zone,
+        zone: zone.clone(),
         now,
         possible_names: solstone_core_possible_names::live_entries(
             root,
@@ -278,7 +279,7 @@ fn prepare_segment(
             }
         } else if offered_format == Some(FileFormat::Content(Family::Browser)) {
             match read_entries(path) {
-                Ok(entries) => browser_chunks(&mut chunks, zone, name, &entries),
+                Ok(entries) => browser_chunks(&mut chunks, &zone, name, &entries),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
         } else if offered_format == Some(FileFormat::Content(Family::Calendar)) {
@@ -301,7 +302,7 @@ fn prepare_segment(
                         let timestamp = note.changed_at_ms();
                         chunks.push(json!({
                             "type": "calendar",
-                            "time": local_time(zone, timestamp),
+                            "time": local_time(&zone, timestamp),
                             "timestamp": timestamp,
                             "text": format_file(FileFormat::Content(Family::Calendar), name, "", FormatterView::CalendarNote { note, owner }).chunks.into_iter().map(|chunk| chunk.content).collect::<String>(),
                         }));
@@ -317,7 +318,7 @@ fn prepare_segment(
                         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
                         chunks.push(json!({
                             "type": "markdown",
-                            "time": local_time(zone, timestamp),
+                            "time": local_time(&zone, timestamp),
                             "timestamp": timestamp,
                             "markdown": chunk.content,
                         }));
@@ -337,7 +338,7 @@ fn prepare_segment(
                         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
                         chunks.push(json!({
                             "type": "markdown",
-                            "time": local_time(zone, timestamp),
+                            "time": local_time(&zone, timestamp),
                             "timestamp": timestamp,
                             "markdown": chunk.content,
                         }));
@@ -376,7 +377,7 @@ fn prepare_segment(
                                     .map(hms_seconds)
                                     .unwrap_or(0);
                                 let time = wall_time(key, offset_sec as f64);
-                                let timestamp = day_timestamp(zone, day, &time, 0);
+                                let timestamp = day_timestamp(&zone, day, &time, 0);
                                 let mut source_ref = json!({
                                     "raw": raw_name,
                                     "media_kind": "image",
@@ -417,7 +418,7 @@ fn prepare_segment(
     }
     if markdown_only {
         let time = wall_time(key, 0.0);
-        let timestamp = day_timestamp(zone, day, &time, 0);
+        let timestamp = day_timestamp(&zone, day, &time, 0);
         for path in markdown_files(&dir) {
             match fs::read_to_string(&path) {
                 Ok(markdown) if !markdown.trim().is_empty() => {
@@ -542,7 +543,7 @@ fn prepare_segment(
             &dir,
         ),
         "data_state": data_state,
-        "signals": signals(&dir, zone),
+        "signals": signals(&dir, &zone),
         "transcripts_copy": copy_payload(),
         "speaker_labels": speakers.state,
         "warnings": warnings.len(),
@@ -695,7 +696,7 @@ fn screenshot_entry(
     chunks.push(json!({
         "type": "screen",
         "time": time,
-        "timestamp": day_timestamp(context.zone, context.day, &time, 0),
+        "timestamp": day_timestamp(&context.zone, context.day, &time, 0),
         "markdown": "",
         "source_ref": {
             "frame_id": 1,
@@ -798,7 +799,7 @@ fn audio_chunks(
                     let segment_clock_ms = segment_parse(context.key)
                         .map(|start| {
                             day_timestamp(
-                                context.zone,
+                                &context.zone,
                                 context.day,
                                 &format!(
                                     "{:02}:{:02}:{:02}",
@@ -855,7 +856,7 @@ fn audio_chunks(
             && has_embedding
             && answer.is_none()
             && !speakers.owner_unreadable;
-        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(context.zone, value.0)),"markdown":markdown,"sentence_id":sid,"speaker_source":source,"has_embedding":has_embedding,"speaker_actionable":actionable,"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
+        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(&context.zone, value.0)),"markdown":markdown,"sentence_id":sid,"speaker_source":source,"has_embedding":has_embedding,"speaker_actionable":actionable,"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
         if let Some((ref audio_url, origin_ms)) = placement_media
             && let Some(obj) = chunk.as_object_mut()
         {
@@ -997,7 +998,7 @@ fn screen_chunks(
         });
         let time = wall_time(context.key, offset);
         let participants = participants(source.get("content"));
-        let mut chunk = json!({"type":"screen","time":time,"timestamp":day_timestamp(context.zone, context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))});
+        let mut chunk = json!({"type":"screen","time":time,"timestamp":day_timestamp(&context.zone, context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))});
         if let Some(overlay) = source.get("detections").and_then(objects_overlay) {
             chunk["source_ref"]["objects"] = overlay;
         }
@@ -1005,7 +1006,12 @@ fn screen_chunks(
     }
 }
 
-fn browser_chunks(chunks: &mut Vec<Value>, zone: Tz, name: &str, entries: &[Map<String, Value>]) {
+fn browser_chunks(
+    chunks: &mut Vec<Value>,
+    zone: &TimeZone,
+    name: &str,
+    entries: &[Map<String, Value>],
+) {
     let text = entries
         .iter()
         .map(|entry| serde_json::to_string(entry).unwrap())
@@ -1043,7 +1049,7 @@ fn browser_chunks(chunks: &mut Vec<Value>, zone: Tz, name: &str, entries: &[Map<
     }
 }
 
-fn signals(dir: &Path, zone: Tz) -> Value {
+fn signals(dir: &Path, zone: &TimeZone) -> Value {
     let path = dir.join("signals.jsonl");
     let empty = || json!({"events":[],"counts":{},"calendar":{"total":0,"unique":0,"events":[]}});
     let Ok(entries) = read_entries(&path) else {
@@ -1255,13 +1261,13 @@ fn warning(
     kind: &str,
     path: &Path,
     error: impl std::fmt::Display,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> WarningDetail {
     WarningDetail {
         kind: kind.into(),
         file: path.display().to_string(),
         message: error.to_string(),
-        ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        ts: solstone_core_time::utc_z(now, Precision::Secs),
     }
 }
 fn hms_seconds(hms: &str) -> i64 {
@@ -1292,21 +1298,24 @@ fn wall_time(key: &str, offset: f64) -> String {
         seconds % 60
     )
 }
-fn day_timestamp(zone: Tz, day: &str, time: &str, fallback: i64) -> i64 {
-    chrono::NaiveDateTime::parse_from_str(&format!("{day} {time}"), "%Y%m%d %H:%M:%S")
+fn day_timestamp(zone: &TimeZone, day: &str, time: &str, fallback: i64) -> i64 {
+    jiff::civil::DateTime::strptime("%Y%m%d %H:%M:%S", format!("{day} {time}"))
         .ok()
-        .and_then(|value| zone.from_local_datetime(&value).earliest())
-        .map(|value| value.timestamp_millis())
+        .and_then(|value| solstone_core_time::from_local(zone, value).earliest())
+        .map(|value| value.timestamp().as_millisecond())
         .unwrap_or(fallback)
 }
 /// The instant of a formatter occurrence time. The content formatter encodes a
 /// segment's local wall time as if it were UTC; screen and image chunks here
 /// are anchored in the owner zone, so audio is re-anchored the same way to
 /// merge and sort on one clock.
-fn local_wall_instant(zone: Tz, wall_ms: i64) -> i64 {
-    chrono::DateTime::from_timestamp_millis(wall_ms)
-        .and_then(|wall| zone.from_local_datetime(&wall.naive_utc()).earliest())
-        .map_or(wall_ms, |local| local.timestamp_millis())
+fn local_wall_instant(zone: &TimeZone, wall_ms: i64) -> i64 {
+    Timestamp::from_millisecond(wall_ms)
+        .ok()
+        .and_then(|wall| {
+            solstone_core_time::from_local(zone, Offset::UTC.to_datetime(wall)).earliest()
+        })
+        .map_or(wall_ms, |local| local.timestamp().as_millisecond())
 }
 fn timestamp(value: Option<&Value>) -> i64 {
     match value {
@@ -1321,19 +1330,24 @@ fn timestamp(value: Option<&Value>) -> i64 {
             })
             .map(|value| value as i64)
             .unwrap_or_default(),
-        Some(Value::String(value)) => chrono::DateTime::parse_from_rfc3339(value)
-            .map(|value| value.timestamp_millis())
+        Some(Value::String(value)) => solstone_core_time::parse_rfc3339(value)
+            .map(|value| value.timestamp().as_millisecond())
             .unwrap_or(0),
         _ => 0,
     }
 }
-fn local_time(zone: Tz, milliseconds: i64) -> String {
+fn local_time(zone: &TimeZone, milliseconds: i64) -> String {
     if milliseconds <= 0 {
         return String::new();
     }
-    zone.timestamp_millis_opt(milliseconds)
-        .single()
-        .map(|value| value.format("%H:%M:%S").to_string())
+    Timestamp::from_millisecond(milliseconds)
+        .ok()
+        .map(|value| {
+            value
+                .to_zoned_datetime(zone.clone())
+                .strftime("%H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_default()
 }
 fn participants(content: Option<&Value>) -> Vec<Value> {
@@ -1438,8 +1452,8 @@ fn invalid(detail: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{NaiveDateTime, TimeZone, Utc};
-    use chrono_tz::Tz;
+    use jiff::Timestamp;
+    use jiff::tz::{Offset, TimeZone};
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
@@ -1452,38 +1466,36 @@ mod tests {
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
         assert_eq!(timestamp(Some(&json!(1.5))), 1500);
         assert_eq!(timestamp(Some(&json!(10_000_000_001.5))), 10_000_000_001);
-        assert_eq!(local_time(Tz::UTC, 0), "");
-        assert_eq!(local_time(Tz::UTC, -1), "");
+        assert_eq!(local_time(&TimeZone::UTC, 0), "");
+        assert_eq!(local_time(&TimeZone::UTC, -1), "");
     }
 
     #[test]
     fn audio_wall_times_land_on_the_same_clock_as_screen_times() {
-        let wall = NaiveDateTime::parse_from_str("20260731 09:00:05", "%Y%m%d %H:%M:%S").unwrap();
-        let denver = Tz::America__Denver;
+        let wall = Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 7, 31).at(9, 0, 5, 0))
+            .unwrap()
+            .as_millisecond();
+        let denver = &solstone_core_time::zone("America/Denver").unwrap();
         let screen = day_timestamp(denver, "20260731", "09:00:05", 0);
         // 09:00:05 in Denver (UTC-6 in July) is 15:00:05 UTC.
-        assert_eq!(screen, wall.and_utc().timestamp_millis() + 6 * 3_600_000);
-        assert_eq!(
-            local_wall_instant(denver, wall.and_utc().timestamp_millis()),
-            screen
-        );
+        assert_eq!(screen, wall + 6 * 3_600_000);
+        assert_eq!(local_wall_instant(denver, wall), screen);
     }
 
     #[test]
     fn day_timestamps_use_the_owner_zone_at_that_days_offset() {
-        let denver = Tz::America__Denver;
+        let denver = &solstone_core_time::zone("America/Denver").unwrap();
         for (day, hours) in [("20260731", 6), ("20260115", 7)] {
-            let naive =
-                NaiveDateTime::parse_from_str(&format!("{day} 09:00:00"), "%Y%m%d %H:%M:%S")
-                    .unwrap();
+            let wall = solstone_core_time::parse_day(day).unwrap().at(9, 0, 0, 0);
             assert_eq!(
                 day_timestamp(denver, day, "09:00:00", 0),
-                naive.and_utc().timestamp_millis() + hours * 3_600_000,
+                Offset::UTC.to_timestamp(wall).unwrap().as_millisecond() + hours * 3_600_000,
                 "{day}"
             );
         }
-        let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
-        assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
+        let instant = "2026-07-31T15:00:05Z".parse::<Timestamp>().unwrap();
+        assert_eq!(local_time(denver, instant.as_millisecond()), "09:00:05");
     }
 
     #[test]
@@ -1533,7 +1545,7 @@ mod tests {
         );
         solstone_core_possible_names::write(&seg_dir, &sidecar).unwrap();
         let audio = || {
-            prepare_segment(root, "20260101", "default", "120000_60", Utc::now()).unwrap()["chunks"]
+            prepare_segment(root, "20260101", "default", "120000_60", Timestamp::now()).unwrap()["chunks"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -1553,7 +1565,8 @@ mod tests {
         );
         assert!(chunks[1].get("possible_names").is_none());
         // The file is not a talent output tab: its entries are only shown checked.
-        let value = prepare_segment(root, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        let value =
+            prepare_segment(root, "20260101", "default", "120000_60", Timestamp::now()).unwrap();
         assert!(value["md_files"].get("possible_names").is_none());
 
         // A renamed entity's suggestion is hidden until the talent runs again.
@@ -1579,8 +1592,14 @@ mod tests {
         )
         .unwrap();
 
-        let value_rich =
-            prepare_segment(root_rich, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        let value_rich = prepare_segment(
+            root_rich,
+            "20260101",
+            "default",
+            "120000_60",
+            Timestamp::now(),
+        )
+        .unwrap();
         let browser_chunks_rich: Vec<&serde_json::Value> = value_rich["chunks"]
             .as_array()
             .unwrap()
@@ -1605,8 +1624,14 @@ mod tests {
         )
         .unwrap();
 
-        let value_legacy =
-            prepare_segment(root_legacy, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        let value_legacy = prepare_segment(
+            root_legacy,
+            "20260101",
+            "default",
+            "120000_60",
+            Timestamp::now(),
+        )
+        .unwrap();
         let browser_chunks_legacy: Vec<&serde_json::Value> = value_legacy["chunks"]
             .as_array()
             .unwrap()
@@ -1640,8 +1665,14 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, format!("projection witness {key}")).unwrap();
         }
-        let value =
-            prepare_segment(temp.path(), "20260101", "default", "100000_60", Utc::now()).unwrap();
+        let value = prepare_segment(
+            temp.path(),
+            "20260101",
+            "default",
+            "100000_60",
+            Timestamp::now(),
+        )
+        .unwrap();
         for key in ["summary", "details/note"] {
             assert_eq!(value["md_files"][key], format!("projection witness {key}"));
         }
@@ -1661,7 +1692,8 @@ mod tests {
         .unwrap();
         std::fs::write(talents_dir.join("summary.md"), "# Summary\nmeeting notes").unwrap();
 
-        let val = prepare_segment(root, "20260101", "default", "100000_60", Utc::now()).unwrap();
+        let val =
+            prepare_segment(root, "20260101", "default", "100000_60", Timestamp::now()).unwrap();
         let md_files = val["md_files"].as_object().unwrap();
         assert!(md_files.contains_key("screen_text"));
         assert!(md_files.contains_key("summary"));
@@ -1689,8 +1721,14 @@ mod tests {
             format!("{}\n{}\n", lines[1], lines[3]),
         )
         .unwrap();
-        let value =
-            prepare_segment(root, "20261020", "phone_calendar", "163000_300", Utc::now()).unwrap();
+        let value = prepare_segment(
+            root,
+            "20261020",
+            "phone_calendar",
+            "163000_300",
+            Timestamp::now(),
+        )
+        .unwrap();
         let notes = value["chunks"]
             .as_array()
             .unwrap()
@@ -1739,7 +1777,8 @@ mod tests {
             ),
         )
         .unwrap();
-        let value = prepare_segment(root, "20261111", stream, "123448_164", Utc::now()).unwrap();
+        let value =
+            prepare_segment(root, "20261111", stream, "123448_164", Timestamp::now()).unwrap();
         let note = &value["granola"];
         assert_eq!(note["title"], "Capulet standup");
         // An empty markdown summary falls back to its text, and empty notes are absent.
@@ -1780,8 +1819,14 @@ mod tests {
             "{\"granola\":{\"title\":\"not this\"}}\n{\"start\":\"12:34:48\",\"speaker\":1,\"text\":\"Hello.\"}\n",
         )
         .unwrap();
-        let value =
-            prepare_segment(root, "20261111", "import.audio", "123448_164", Utc::now()).unwrap();
+        let value = prepare_segment(
+            root,
+            "20261111",
+            "import.audio",
+            "123448_164",
+            Timestamp::now(),
+        )
+        .unwrap();
         assert!(value.get("granola").is_none());
         assert!(value["chunks"][0].get("speaker_attribution").is_none());
     }
@@ -1852,7 +1897,7 @@ mod tests {
             "20260101",
             "_default",
             "120000_60",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         let chunks = value["chunks"].as_array().unwrap();
@@ -1900,7 +1945,7 @@ mod tests {
             "20260101",
             "_default",
             "120000_60",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
 
@@ -1945,7 +1990,7 @@ mod tests {
             "20260101",
             "_default",
             "120000_60",
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
 
@@ -1969,9 +2014,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2006,9 +2056,14 @@ mod tests {
         });
         std::fs::write(segment_dir.join("events.jsonl"), format!("{receipt}\n")).unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260929",
+            "phone",
+            "211400_300",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["capture_zone"]["tz"], "Asia/Tokyo");
         assert_eq!(value["capture_zone"]["utc_offset_seconds"], 32400);
@@ -2031,9 +2086,14 @@ mod tests {
             "day": "20260929", "segment": "211400_300", "files": [], "meta": meta});
         std::fs::write(dir.join("events.jsonl"), format!("{receipt}\n")).unwrap();
         for _ in 0..2 {
-            let value =
-                super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
-                    .unwrap();
+            let value = super::prepare_segment(
+                root,
+                "20260929",
+                "phone",
+                "211400_300",
+                jiff::Timestamp::now(),
+            )
+            .unwrap();
             assert_eq!(value["audio_capture"]["state"], "partial");
             let sources = value["audio_capture"]["sources"].as_array().unwrap();
             let system = sources
@@ -2061,9 +2121,14 @@ mod tests {
             assert!(value["data_state"].get("audio").is_none());
         }
         std::fs::write(dir.join("events.jsonl"), format!("{receipt}\n{{torn\n")).unwrap();
-        let value =
-            super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260929",
+            "phone",
+            "211400_300",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
         assert_eq!(value["audio_capture"]["state"], "partial");
         assert_eq!(value["audio_capture"]["evidence_unavailable"], true);
     }
@@ -2085,9 +2150,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2113,9 +2183,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2136,9 +2211,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2169,9 +2249,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2199,9 +2284,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2232,9 +2322,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2261,9 +2356,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], false);
         assert_eq!(value["media_removal"]["audio"], serde_json::Value::Null);
@@ -2286,9 +2386,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["screen"], true);
         assert_eq!(
@@ -2319,9 +2424,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(value["media_purged"]["screen"], true);
@@ -2352,9 +2462,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
@@ -2382,7 +2497,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert_eq!(value["data_state"]["image"], "analyzed");
@@ -2440,7 +2555,7 @@ mod tests {
         .unwrap();
         std::fs::write(segment_dir.join("still-2.jpg"), b"dummy jpeg bytes 2").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert_eq!(value["data_state"]["image"], "pending");
@@ -2478,7 +2593,7 @@ mod tests {
         std::fs::create_dir_all(&segment_dir).unwrap();
         std::fs::write(segment_dir.join("bare.jpg"), b"dummy jpeg bytes").unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert_eq!(value["data_state"]["image"], "pending");
@@ -2513,7 +2628,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert_eq!(value["data_state"]["image"], "failed");
@@ -2548,7 +2663,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert_eq!(value["data_state"]["image"], "pending");
@@ -2583,7 +2698,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         let chunks = value["chunks"].as_array().unwrap();
@@ -2613,7 +2728,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
         let chunks = value["chunks"].as_array().unwrap();
 
@@ -2656,7 +2771,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
 
         assert!(value["data_state"].get("image").is_none());
@@ -2699,7 +2814,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value =
             super::prepare_segment(root, "20260101", "phone_screenshots", "091405_1", now).unwrap();
         let chunks = value["chunks"].as_array().unwrap();
@@ -2722,7 +2837,7 @@ mod tests {
     fn prepare_segment_twin_fixture_negative_differential() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/convey_records_journal");
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(&root, "20260731", "field", "090000_300", now).unwrap();
 
         let (_, _, segments) = solstone_core_system_health::scan_day(
@@ -2805,7 +2920,7 @@ mod tests {
         assert!(error.is_err());
         assert_eq!(std::fs::read(&image).unwrap(), STILL_PNG);
 
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
         assert_eq!(value["data_state"]["image"], "failed");
         assert!(value["image_files"].as_object().unwrap().is_empty());
@@ -2843,7 +2958,7 @@ mod tests {
     fn prepare_segment_location_keys() {
         let temp = tempfile::TempDir::new().unwrap();
         let root = temp.path();
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let day = "20260101";
 
         // Segment 1: base (no location.jsonl)
@@ -2928,9 +3043,14 @@ mod tests {
         )
         .unwrap();
 
-        let value =
-            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
-                .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "field",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
 
         let chunks = value["chunks"].as_array().expect("chunks array");
         assert_eq!(chunks.len(), 2);
@@ -2946,8 +3066,8 @@ mod tests {
         assert_eq!(chunks[1]["timestamp"], 1_792_027_800_000_i64);
 
         let zone = solstone_core_journal_config::owner_zone(root);
-        assert_eq!(chunks[0]["time"], local_time(zone, 1_000));
-        assert_eq!(chunks[1]["time"], local_time(zone, 1_792_027_800_000));
+        assert_eq!(chunks[0]["time"], local_time(&zone, 1_000));
+        assert_eq!(chunks[1]["time"], local_time(&zone, 1_792_027_800_000));
     }
 
     #[test]
@@ -2991,7 +3111,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        let now = "2026-01-02T03:04:05Z".parse::<Timestamp>().unwrap();
         let value = super::prepare_segment(root, day, stream, key, now).unwrap();
 
         let chunks = value["chunks"].as_array().expect("chunks array");
@@ -3039,7 +3159,7 @@ mod tests {
         )
         .unwrap();
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
 
         let value = super::prepare_segment(root, day, stream, key, now).unwrap();
         let chunks = value["chunks"].as_array().expect("chunks array");
@@ -3174,7 +3294,8 @@ mod tests {
         /// each audio line's speaker fields.
         fn page(root: &Path) -> Value {
             let value =
-                super::super::prepare_segment(root, DAY, STREAM, KEY, chrono::Utc::now()).unwrap();
+                super::super::prepare_segment(root, DAY, STREAM, KEY, jiff::Timestamp::now())
+                    .unwrap();
             let lines = value["chunks"]
                 .as_array()
                 .unwrap()
@@ -3284,7 +3405,8 @@ mod tests {
             );
             // The line the owner doesn't know never takes the pool voice's name.
             let full =
-                super::super::prepare_segment(root, DAY, STREAM, KEY, chrono::Utc::now()).unwrap();
+                super::super::prepare_segment(root, DAY, STREAM, KEY, jiff::Timestamp::now())
+                    .unwrap();
             let unknown = full["chunks"]
                 .as_array()
                 .unwrap()

@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::Duration;
 
-use chrono::{NaiveDateTime, TimeZone};
 use ffmpeg_next as ffmpeg;
+use jiff::civil::DateTime;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_callosum::CallosumSocketConnection;
@@ -47,8 +48,8 @@ pub struct AudioImportRequest {
     pub source_media: PathBuf,
     pub journal_root: PathBuf,
     pub day: String,
-    pub base_timestamp: NaiveDateTime,
-    pub source_instant: Option<chrono::DateTime<chrono::Utc>>,
+    pub base_timestamp: DateTime,
+    pub source_instant: Option<Timestamp>,
     pub import_id: String,
     pub stream: String,
     pub facet: Option<String>,
@@ -347,7 +348,7 @@ where
             });
         }
         let true_start = chunk_start(&request, index)?;
-        let day = true_start.format("%Y%m%d").to_string();
+        let day = solstone_core_time::day_key(true_start.date());
         let segment_parent = request
             .journal_root
             .join("chronicle")
@@ -405,7 +406,7 @@ where
                     stream: request.stream.clone(),
                     chunk_index: index,
                     start_offset_seconds,
-                    start_timestamp: true_start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                    start_timestamp: true_start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
                     duration_seconds: chunk_duration_seconds,
                     file_path: output.clone(),
                     processing: if request.wait_for_processing {
@@ -722,19 +723,24 @@ fn chunk_count(duration: f64) -> u64 {
         .max(1.0) as u64
 }
 
-fn chunk_start(request: &AudioImportRequest, index: u64) -> Result<NaiveDateTime, ImportError> {
+fn chunk_start(request: &AudioImportRequest, index: u64) -> Result<DateTime, ImportError> {
     let zone = solstone_core_journal_config::owner_zone(&request.journal_root);
     // A timestamp without an offset chooses the first occurrence of a repeated
     // local clock. Elapsed audio time then crosses DST in the owner's zone.
+    let unreadable = || ImportError::AudioInputUnreadable {
+        path: request.source_media.clone(),
+        detail: "the import start time does not exist in your time zone".to_owned(),
+    };
     let start = request
         .source_instant
-        .map(|instant| instant.with_timezone(&zone))
-        .or_else(|| zone.from_local_datetime(&request.base_timestamp).earliest())
-        .ok_or_else(|| ImportError::AudioInputUnreadable {
-            path: request.source_media.clone(),
-            detail: "the import start time does not exist in your time zone".to_owned(),
-        })?;
-    Ok((start + chrono::Duration::seconds((index * CHUNK_SECONDS as u64) as i64)).naive_local())
+        .map(|instant| instant.to_zoned_datetime(zone.clone()))
+        .or_else(|| solstone_core_time::from_local(&zone, request.base_timestamp).earliest())
+        .ok_or_else(unreadable)?;
+    let elapsed = SignedDuration::from_secs((index * CHUNK_SECONDS as u64) as i64);
+    Ok(start
+        .checked_add(elapsed)
+        .map_err(|_| unreadable())?
+        .datetime())
 }
 
 /// Probe and plan generic audio without creating a segment or requesting a model.
@@ -775,7 +781,7 @@ pub fn preview_with_probe(
     let mut recordings = BTreeSet::new();
     for index in 0..chunk_count(duration) {
         let start = chunk_start(request, index)?;
-        let day = start.format("%Y%m%d").to_string();
+        let day = solstone_core_time::day_key(start.date());
         let remaining = duration - index as f64 * CHUNK_SECONDS;
         let length = if index + 1 == chunk_count(duration) {
             remaining
@@ -808,7 +814,7 @@ pub fn preview_with_probe(
         let recording = found.ok_or_else(|| ImportError::AudioSegmentCollision {
             day,
             stream: request.stream.clone(),
-            start: start.to_string(),
+            start: solstone_core_time::civil_display(start),
             attempts: COLLISION_FORWARD_PROBE_LIMIT,
         })?;
         recordings.insert(recording);
@@ -822,19 +828,22 @@ pub fn preview_with_probe(
 fn segment_candidate(
     request: &AudioImportRequest,
     parent: &Path,
-    true_start: NaiveDateTime,
+    true_start: DateTime,
     key_duration: u64,
     attempt: u32,
 ) -> Result<Option<(String, PathBuf)>, ImportError> {
-    let candidate = true_start + chrono::Duration::seconds(i64::from(attempt));
-    if candidate.date() != true_start.date() {
+    let candidate = true_start
+        .checked_add(SignedDuration::from_secs(i64::from(attempt)))
+        .ok()
+        .filter(|candidate| candidate.date() == true_start.date());
+    let Some(candidate) = candidate else {
         return Err(ImportError::AudioSegmentDayOverflow {
-            day: true_start.format("%Y%m%d").to_string(),
+            day: solstone_core_time::day_key(true_start.date()),
             stream: request.stream.clone(),
-            start: true_start.to_string(),
+            start: solstone_core_time::civil_display(true_start),
         });
-    }
-    let segment = format!("{}_{key_duration}", candidate.format("%H%M%S"));
+    };
+    let segment = format!("{}_{key_duration}", candidate.strftime("%H%M%S"));
     let path = parent.join(&segment);
     let occupied = solstone_core_journal_io::path_lexists(&path).map_err(|error| {
         ImportError::AudioSegmentDirectory {
@@ -862,7 +871,7 @@ fn segment_candidate(
 fn allocate_segment_directory(
     request: &AudioImportRequest,
     parent: &Path,
-    true_start: NaiveDateTime,
+    true_start: DateTime,
     key_duration: u64,
 ) -> Result<(String, PathBuf, solstone_core_journal_io::JournalRoot, bool), ImportError> {
     for attempt in 0..COLLISION_FORWARD_PROBE_LIMIT {
@@ -928,7 +937,7 @@ fn allocate_segment_directory(
     Err(ImportError::AudioSegmentCollision {
         day: request.day.clone(),
         stream: request.stream.clone(),
-        start: true_start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        start: true_start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
         attempts: COLLISION_FORWARD_PROBE_LIMIT,
     })
 }

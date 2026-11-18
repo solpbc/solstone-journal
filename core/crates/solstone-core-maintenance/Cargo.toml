@@ -20,8 +20,7 @@ solstone-core-entity.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-indexer-todo.workspace = true
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-backup-runtime.workspace = true
@@ -43,6 +42,7 @@ jsonschema.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-hooks"] }
 solstone-core-installed-payload.workspace = true
+solstone-core-time.workspace = true
 tempfile = "3.24.0"
 
 [features]

@@ -38,7 +38,8 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
 
 use crate::class::{classify, partition_empty_audio};
@@ -141,8 +142,8 @@ pub fn plan(
     policy: &Policy,
     registry: &dyn HandlerRegistry,
     classifier: &dyn MediaClassifier,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Plan {
     let mut built = Plan::default();
     if !crate::layout::chronicle_root_is_dir(journal) {
@@ -238,8 +239,8 @@ pub fn would_empty_audio_offload_mark_still_release(
     found: Vec<FoundContent>,
     stream: &str,
     day: &str,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> bool {
     if found.is_empty() {
         return true;
@@ -281,8 +282,8 @@ fn decide_side(
     classifier: &dyn MediaClassifier,
     policy: &Policy,
     target: &Target,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> SideOutcome {
     match crate::grouped::decide_side(
         side,
@@ -369,7 +370,7 @@ fn take_side(
 /// ⛔ No `#[must_use]` here, and none is needed: the returned tuple already carries
 /// it from [`Outcome`], so discarding this receipt is a compile error either way.
 /// Verified by control, not assumed.
-pub fn execute(journal: &Path, plan: &Plan, at: DateTime<Utc>) -> (Outcome, EvidenceTally) {
+pub fn execute(journal: &Path, plan: &Plan, at: Timestamp) -> (Outcome, EvidenceTally) {
     let proven: Vec<ProvenRaw> = plan
         .candidates
         .iter()

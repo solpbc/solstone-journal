@@ -7,7 +7,8 @@ use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::{Arc, Barrier};
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     JournalRoot, MalformedPolicy,
@@ -27,13 +28,7 @@ fn run(journal: &TempDir, args: &[&str]) -> Output {
         .expect("run solstone-core")
 }
 
-fn append_record(
-    journal: &Path,
-    source: &str,
-    run: &str,
-    opened: DateTime<FixedOffset>,
-    record: Value,
-) {
+fn append_record(journal: &Path, source: &str, run: &str, opened: &ZonedDateTime, record: Value) {
     let mut writer = create_oplog_at(
         JournalRoot::open(journal).unwrap(),
         source,
@@ -58,7 +53,7 @@ fn pass_outcome(ts: i64) -> Value {
 
 fn matching_entries(
     journal: &Path,
-    days: &[NaiveDate],
+    days: &[Date],
     source: &str,
     run: &str,
 ) -> Vec<OplogCatalogEntry> {
@@ -92,9 +87,14 @@ fn entry_records(journal: &Path, entry: &OplogCatalogEntry) -> Vec<Value> {
     .collect()
 }
 
-fn at_local_day(now: DateTime<FixedOffset>, day: NaiveDate) -> DateTime<FixedOffset> {
-    now.offset()
-        .from_local_datetime(&day.and_time(now.time()))
+/// This computer's now, held at its current offset.
+fn local_now() -> ZonedDateTime {
+    let now = ZonedDateTime::now();
+    solstone_core_time::at_offset(now.timestamp(), now.offset())
+}
+
+fn at_local_day(now: &ZonedDateTime, day: Date) -> ZonedDateTime {
+    solstone_core_time::from_local(now.time_zone(), day.to_datetime(now.time()))
         .single()
         .unwrap()
 }
@@ -140,7 +140,7 @@ fn heartbeat_appends_pass_and_success_records_to_one_oplog_then_removes_pid() {
     assert!(!health.join("heartbeat.log").exists());
     assert!(!health.join("steward.log").exists());
 
-    let today = Local::now().date_naive();
+    let today = ZonedDateTime::now().date();
     let entries = matching_entries(journal.path(), &[today], "heartbeat", "pass");
     assert_eq!(entries.len(), 1);
     let records = entry_records(journal.path(), &entries[0]);
@@ -165,18 +165,18 @@ fn heartbeat_appends_pass_and_success_records_to_one_oplog_then_removes_pid() {
 #[test]
 fn recent_success_skips_and_force_creates_a_new_heartbeat_oplog() {
     let journal = TempDir::new().unwrap();
-    let now = Local::now().fixed_offset();
+    let now = local_now();
     append_record(
         journal.path(),
         "heartbeat",
         "pass",
-        now,
-        pass_outcome(now.timestamp_millis()),
+        &now,
+        pass_outcome(now.timestamp().as_millisecond()),
     );
 
     let skipped = run(&journal, &["heartbeat"]);
     assert!(skipped.status.success(), "{skipped:?}");
-    let today = now.date_naive();
+    let today = now.date();
     assert_eq!(
         matching_entries(journal.path(), &[today], "heartbeat", "pass").len(),
         1
@@ -199,26 +199,20 @@ fn recent_success_skips_and_force_creates_a_new_heartbeat_oplog() {
 #[test]
 fn prior_day_success_within_twelve_hours_suppresses_the_after_midnight_check() {
     let journal = TempDir::new().unwrap();
-    let now = Local::now().fixed_offset();
-    let previous = now.date_naive().pred_opt().unwrap();
+    let now = local_now();
+    let previous = now.date().yesterday().unwrap();
     append_record(
         journal.path(),
         "heartbeat",
         "pass",
-        at_local_day(now, previous),
-        pass_outcome(now.timestamp_millis() - 11 * 3_600_000),
+        &at_local_day(&now, previous),
+        pass_outcome(now.timestamp().as_millisecond() - 11 * 3_600_000),
     );
 
     let output = run(&journal, &["heartbeat"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
-        matching_entries(
-            journal.path(),
-            &[previous, now.date_naive()],
-            "heartbeat",
-            "pass"
-        )
-        .len(),
+        matching_entries(journal.path(), &[previous, now.date()], "heartbeat", "pass").len(),
         1
     );
 }
@@ -226,19 +220,19 @@ fn prior_day_success_within_twelve_hours_suppresses_the_after_midnight_check() {
 #[test]
 fn old_success_does_not_suppress_a_heartbeat_pass() {
     let journal = TempDir::new().unwrap();
-    let now = Local::now().fixed_offset();
+    let now = local_now();
     append_record(
         journal.path(),
         "heartbeat",
         "pass",
-        now,
-        pass_outcome(now.timestamp_millis() - 12 * 3_600_000 - 1),
+        &now,
+        pass_outcome(now.timestamp().as_millisecond() - 12 * 3_600_000 - 1),
     );
 
     let output = run(&journal, &["heartbeat"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
-        matching_entries(journal.path(), &[now.date_naive()], "heartbeat", "pass").len(),
+        matching_entries(journal.path(), &[now.date()], "heartbeat", "pass").len(),
         2
     );
 }
@@ -246,13 +240,13 @@ fn old_success_does_not_suppress_a_heartbeat_pass() {
 #[test]
 fn malformed_heartbeat_record_does_not_suppress_a_pass() {
     let journal = TempDir::new().unwrap();
-    let now = Local::now().fixed_offset();
+    let now = local_now();
     let mut writer = create_oplog_at(
         JournalRoot::open(journal.path()).unwrap(),
         "heartbeat",
         "pass",
         OplogFormat::Jsonl,
-        now,
+        &now,
     )
     .unwrap();
     writer.write_all(b"not-json\n").unwrap();
@@ -261,7 +255,7 @@ fn malformed_heartbeat_record_does_not_suppress_a_pass() {
     let output = run(&journal, &["heartbeat"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
-        matching_entries(journal.path(), &[now.date_naive()], "heartbeat", "pass").len(),
+        matching_entries(journal.path(), &[now.date()], "heartbeat", "pass").len(),
         2
     );
 }
@@ -269,19 +263,19 @@ fn malformed_heartbeat_record_does_not_suppress_a_pass() {
 #[test]
 fn wrong_source_record_does_not_suppress_a_heartbeat_pass() {
     let journal = TempDir::new().unwrap();
-    let now = Local::now().fixed_offset();
+    let now = local_now();
     append_record(
         journal.path(),
         "steward",
         "pre-hook",
-        now,
-        pass_outcome(now.timestamp_millis()),
+        &now,
+        pass_outcome(now.timestamp().as_millisecond()),
     );
 
     let output = run(&journal, &["heartbeat"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
-        matching_entries(journal.path(), &[now.date_naive()], "heartbeat", "pass").len(),
+        matching_entries(journal.path(), &[now.date()], "heartbeat", "pass").len(),
         1
     );
 }
@@ -296,7 +290,7 @@ fn heartbeat_removes_stale_pid_before_writing_its_oplog() {
     let output = run(&journal, &["heartbeat", "--force"]);
     assert!(output.status.success(), "{output:?}");
     assert!(!health.join("heartbeat.pid").exists());
-    let today = Local::now().date_naive();
+    let today = ZonedDateTime::now().date();
     assert_eq!(
         matching_entries(journal.path(), &[today], "heartbeat", "pass").len(),
         1
@@ -316,7 +310,7 @@ fn live_pid_guard_skips_pass_and_reference_cleanup_removes_pid_file() {
     assert!(
         matching_entries(
             journal.path(),
-            &[Local::now().date_naive()],
+            &[ZonedDateTime::now().date()],
             "heartbeat",
             "pass"
         )
@@ -339,7 +333,7 @@ fn invalid_utf8_pid_fails_and_reference_cleanup_removes_it() {
     assert!(
         matching_entries(
             journal.path(),
-            &[Local::now().date_naive()],
+            &[ZonedDateTime::now().date()],
             "heartbeat",
             "pass"
         )
@@ -350,7 +344,7 @@ fn invalid_utf8_pid_fails_and_reference_cleanup_removes_it() {
 #[test]
 fn heartbeat_oplog_creation_failure_is_fatal() {
     let journal = TempDir::new().unwrap();
-    let today = Local::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(ZonedDateTime::now().date());
     fs::create_dir_all(journal.path().join("chronicle")).unwrap();
     fs::write(
         journal.path().join("chronicle").join(today),
@@ -369,19 +363,20 @@ fn heartbeat_oplog_creation_failure_is_fatal() {
 fn concurrent_heartbeat_writers_create_distinct_intact_oplogs() {
     let journal = TempDir::new().unwrap();
     let root = Arc::new(journal.path().to_path_buf());
-    let opened = Local::now().fixed_offset();
+    let opened = local_now();
     let barrier = Arc::new(Barrier::new(3));
     let workers = (0..2)
         .map(|worker| {
             let root = Arc::clone(&root);
             let barrier = Arc::clone(&barrier);
+            let opened = opened.clone();
             std::thread::spawn(move || {
                 barrier.wait();
                 append_record(
                     &root,
                     "heartbeat",
                     "pass",
-                    opened,
+                    &opened,
                     json!({"event": "concurrent", "worker": worker}),
                 );
             })
@@ -392,7 +387,7 @@ fn concurrent_heartbeat_writers_create_distinct_intact_oplogs() {
         worker.join().unwrap();
     }
 
-    let entries = matching_entries(journal.path(), &[opened.date_naive()], "heartbeat", "pass");
+    let entries = matching_entries(journal.path(), &[opened.date()], "heartbeat", "pass");
     assert_eq!(entries.len(), 2);
     let mut workers = entries
         .iter()

@@ -704,9 +704,14 @@ fn with_no_zone_configured_timed_events_use_the_fallback_zone() {
         let expected = solstone_core_format::calendar::listed_days(&schedule, &zone)
             .days
             .iter()
-            .map(|day| day.format("%Y%m%d").to_string())
+            .map(|day| solstone_core_time::day_key(*day))
             .collect::<Vec<_>>();
-        assert_eq!(journal.listed(event), expected, "{event} in {zone}");
+        assert_eq!(
+            journal.listed(event),
+            expected,
+            "{event} in {}",
+            solstone_core_journal_config::zone_name(&zone).unwrap_or_default()
+        );
     }
 }
 
@@ -919,27 +924,33 @@ impl Imported<'_> {
     }
 
     fn line(&self, date: &str, hour: u32, expanded: bool) -> String {
-        let start = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .unwrap()
-            .and_hms_opt(hour, 0, 0)
+        let start = jiff::civil::Date::strptime("%Y-%m-%d", date).unwrap().at(
+            i8::try_from(hour).unwrap(),
+            0,
+            0,
+            0,
+        );
+        let zone = solstone_core_time::zone("America/Denver").unwrap();
+        let local = solstone_core_time::from_local(&zone, start)
+            .single()
             .unwrap();
-        let zone: chrono_tz::Tz = "America/Denver".parse().unwrap();
-        let local = start.and_local_timezone(zone).unwrap();
         // The original start: 09:00 on the series' date, whatever hour the
         // date is moved to.
-        let original = start
-            .date()
-            .and_hms_opt(9, 0, 0)
-            .unwrap()
-            .and_local_timezone(zone)
+        let original = solstone_core_time::from_local(&zone, start.date().at(9, 0, 0, 0))
+            .single()
             .unwrap();
-        let end = local + chrono::Duration::minutes(30);
+        let end = local
+            .checked_add(jiff::SignedDuration::from_mins(30))
+            .unwrap();
+        let rfc3339 = |zoned: &jiff::ZonedDateTime| {
+            solstone_core_time::zoned_rfc3339(zoned, solstone_core_time::Precision::AutoSi, false)
+        };
         let mut line = note(
             1,
             json!({
                 "event": WEEKLY, "change": "added", "changed_at": self.changed_at,
-                "occurrence": original.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                "start": local.to_rfc3339(), "end": end.to_rfc3339(),
+                "occurrence": original.timestamp().strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                "start": rfc3339(&local), "end": rfc3339(&end),
                 "repeats": "Weekly", "title": format!("sync {}", self.import),
                 "import": self.import, "imported_at": self.imported_at,
             }),

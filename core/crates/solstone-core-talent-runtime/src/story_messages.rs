@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-use chrono::{NaiveDate, NaiveTime};
+use jiff::civil::Time;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -179,7 +179,7 @@ impl Candidate {
                     .lines()
                     .next()
                     .and_then(|line| line.strip_prefix("### "))
-                    .filter(|clock| NaiveTime::parse_from_str(clock, "%H:%M:%S%.f").is_ok())
+                    .filter(|clock| Time::strptime("%H:%M:%S%.f", clock).is_ok())
                     .ok_or("screen observation clock unavailable")?;
                 let chunk_end = offset
                     .checked_add(chunk.len())
@@ -359,9 +359,9 @@ fn source_day(source: &EntrySource) -> Option<String> {
         .collect::<Option<Vec<_>>>()?;
     parts.windows(2).rev().find_map(|pair| {
         (pair[0] == "chronicle" && solstone_core_format::segment::is_date_key(pair[1]))
-            .then(|| NaiveDate::parse_from_str(pair[1], "%Y%m%d").ok())
+            .then(|| solstone_core_time::parse_day(pair[1]))
             .flatten()
-            .map(|day| day.format("%Y-%m-%d").to_string())
+            .map(|day| day.strftime("%Y-%m-%d").to_string())
     })
 }
 

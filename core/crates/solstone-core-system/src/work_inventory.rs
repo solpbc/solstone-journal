@@ -134,7 +134,7 @@ pub struct WorkInventory {
 /// Admission hint for historical local work. Never establishes completion.
 pub fn newer_work_pending(journal: &Path) -> Result<bool, String> {
     Ok(read(journal)?
-        .filter(|v| v.current_at(chrono::Utc::now().timestamp_millis()))
+        .filter(|v| v.current_at(jiff::Timestamp::now().as_millisecond()))
         .is_some_and(|v| v.bands[..3].iter().any(|b| b.eligible > 0)))
 }
 
@@ -145,7 +145,7 @@ impl Default for WorkInventory {
     fn default() -> Self {
         Self {
             version: 1,
-            as_of_ms: chrono::Utc::now().timestamp_millis(),
+            as_of_ms: jiff::Timestamp::now().as_millisecond(),
             complete: false,
             days_total: 0,
             days_inspected: 0,

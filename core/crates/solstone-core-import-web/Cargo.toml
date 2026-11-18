@@ -13,8 +13,7 @@ workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["tokio", "multipart"] }
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -36,6 +35,7 @@ solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-time.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["fs", "io-util", "process", "rt", "sync", "time"] }
 tokio-util = { version = "0.7.16", features = ["io"] }

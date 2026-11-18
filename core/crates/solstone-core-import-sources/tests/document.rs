@@ -442,8 +442,10 @@ fn ac9_document_publication_days_come_from_claim_not_misleading_path() {
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(claimed_time))
         .unwrap();
-    let expected_day = chrono::DateTime::<chrono::Local>::from(claimed_time)
-        .format("%Y%m%d")
+    let expected_day = jiff::Timestamp::try_from(claimed_time)
+        .unwrap()
+        .to_zoned_datetime(jiff::tz::TimeZone::system())
+        .strftime("%Y%m%d")
         .to_string();
     let worker = FakeWorker::new(vec![Ok(payload(vec![page(1, 50, 0.0, Some("raw"))]))]);
     let model = FakeModel::generated([]);
@@ -1687,7 +1689,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             source: &file1,
             password: None,
             now,
-            zone: chrono_tz::Tz::UTC,
+            zone: jiff::tz::TimeZone::UTC,
             owner_timestamp: Some("20260301_153000"),
         },
         &worker1,
@@ -1700,7 +1702,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             source: &file1,
             password: None,
             now,
-            zone: chrono_tz::Tz::UTC,
+            zone: jiff::tz::TimeZone::UTC,
             owner_timestamp: Some("20260301_153000"),
         },
         tree.journal(),
@@ -1914,7 +1916,7 @@ fn a_pdf_owner_time_in_a_dst_gap_is_refused_before_extraction_or_writes() {
             source: &source,
             password: None,
             now,
-            zone: chrono_tz::America::New_York,
+            zone: solstone_core_time::zone("America/New_York").unwrap(),
             owner_timestamp: Some("20260308_023000"),
         },
         tree.journal(),

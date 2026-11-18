@@ -298,9 +298,7 @@ pub fn restore_day(value: &Map<String, Value>) -> Result<(), Response> {
             "",
         ));
     };
-    let valid = day.len() == 8
-        && day.bytes().all(|byte| byte.is_ascii_digit())
-        && chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok();
+    let valid = solstone_core_time::parse_day(day).is_some();
     valid.then_some(()).ok_or_else(|| {
         response::error(
             axum::http::StatusCode::BAD_REQUEST,

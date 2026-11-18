@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
-use chrono::{Duration, NaiveDate};
+use jiff::civil::Date;
+use solstone_core_time::parse_day;
 
 #[cfg(test)]
 use std::cell::RefCell;
@@ -33,12 +34,12 @@ thread_local! {
 
 /// Supplies all-or-error catalog snapshots for a local-day set.
 pub trait OplogSnapshotSource {
-    fn snapshot(&self, days: &[NaiveDate]) -> Result<OplogCatalogSnapshot, OplogCatalogError>;
+    fn snapshot(&self, days: &[Date]) -> Result<OplogCatalogSnapshot, OplogCatalogError>;
 }
 
 /// Local day authority used for the follower's two-day window and tombstones.
 pub trait OplogClock {
-    fn today(&self) -> NaiveDate;
+    fn today(&self) -> Date;
 }
 
 struct TrackedOplog {
@@ -238,8 +239,8 @@ impl OplogFollower {
 
         // The snapshot is discovery-only for current readers: descriptor state
         // remains the sole liveness and progress authority after admission.
-        let today = clock.today();
-        let snapshot = source.snapshot(&days(today))?;
+        let window = days(clock.today());
+        let snapshot = source.snapshot(&window)?;
         let mut adopted = Vec::new();
         for (entry, file) in snapshot.into_catalogued_entries() {
             let identity = entry.identity();
@@ -270,9 +271,8 @@ impl OplogFollower {
             .tombstones
             .iter()
             .filter_map(|(identity, entry)| {
-                NaiveDate::parse_from_str(entry.day(), "%Y%m%d")
-                    .ok()
-                    .filter(|day| *day != today && *day != today - Duration::days(1))
+                parse_day(entry.day())
+                    .filter(|day| !window.contains(day))
                     .map(|_| *identity)
             })
             .collect::<Vec<_>>();
@@ -449,8 +449,11 @@ fn selected_identities(
         .collect()
 }
 
-fn days(today: NaiveDate) -> [NaiveDate; 2] {
-    [today - Duration::days(1), today]
+fn days(today: Date) -> [Date; 2] {
+    let yesterday = today
+        .yesterday()
+        .expect("the follower's day has a representable day before it");
+    [yesterday, today]
 }
 
 #[cfg(test)]
@@ -460,7 +463,11 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
 
-    use chrono::{Datelike, FixedOffset, TimeZone};
+    use jiff::ToSpan;
+    use jiff::ZonedDateTime;
+    use jiff::civil::date as civil_date;
+    use jiff::tz::{Offset, TimeZone};
+    use solstone_core_time::from_local;
     use tempfile::TempDir;
 
     use super::*;
@@ -470,7 +477,7 @@ mod tests {
     struct Source(PathBuf);
 
     impl OplogSnapshotSource for Source {
-        fn snapshot(&self, days: &[NaiveDate]) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
+        fn snapshot(&self, days: &[Date]) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
             catalog_oplogs(
                 JournalRoot::open(&self.0).map_err(|_| OplogCatalogError::root())?,
                 days,
@@ -484,7 +491,7 @@ mod tests {
     }
 
     impl OplogSnapshotSource for FailOnceSource {
-        fn snapshot(&self, days: &[NaiveDate]) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
+        fn snapshot(&self, days: &[Date]) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
             if self.fail.replace(false) {
                 return Err(OplogCatalogError::root());
             }
@@ -495,22 +502,20 @@ mod tests {
         }
     }
 
-    struct Clock(Cell<NaiveDate>);
+    struct Clock(Cell<Date>);
 
     impl OplogClock for Clock {
-        fn today(&self) -> NaiveDate {
+        fn today(&self) -> Date {
             self.0.get()
         }
     }
 
-    fn date() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 8, 7).unwrap()
+    fn date() -> Date {
+        civil_date(2026, 8, 7)
     }
 
-    fn instant(day: NaiveDate) -> chrono::DateTime<FixedOffset> {
-        FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(day.year(), day.month(), day.day(), 12, 0, 0)
+    fn instant(day: Date) -> ZonedDateTime {
+        from_local(&TimeZone::fixed(Offset::UTC), day.at(12, 0, 0, 0))
             .single()
             .unwrap()
     }
@@ -521,7 +526,7 @@ mod tests {
             source,
             "run",
             OplogFormat::Log,
-            instant(date()),
+            &instant(date()),
         )
         .unwrap()
     }
@@ -690,10 +695,10 @@ mod tests {
         drop(log);
         follower.tick(&source, &clock, &|| false).unwrap();
         assert_eq!(follower.state.tombstones.len(), 1);
-        clock.0.set(date() + Duration::days(1));
+        clock.0.set(date().checked_add(1.day()).unwrap());
         follower.tick(&source, &clock, &|| false).unwrap();
         assert_eq!(follower.state.tombstones.len(), 1);
-        clock.0.set(date() + Duration::days(2));
+        clock.0.set(date().checked_add(2.days()).unwrap());
         follower.tick(&source, &clock, &|| false).unwrap();
         assert!(follower.state.tombstones.is_empty());
     }

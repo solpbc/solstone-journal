@@ -17,8 +17,7 @@ full-tests = []
 test-hooks = []
 
 [dependencies]
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde_json.workspace = true
 solstone-core-brain.workspace = true
@@ -33,6 +32,7 @@ solstone-core-spp-ratls.workspace = true
 solstone-core-system.workspace = true
 solstone-core-talent-cli.workspace = true
 solstone-core-talent-runtime.workspace = true
+solstone-core-time.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }

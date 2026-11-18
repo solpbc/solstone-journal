@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use crate::atomize::compile_expression;
 use crate::temporal::{TemporalExtraction, extract_temporal_references};
@@ -23,7 +23,7 @@ pub struct QueryCompilation {
 }
 
 /// Compile a query against an explicit date used to resolve relative language.
-pub fn compile_query(query: &str, reference_date: NaiveDate) -> QueryCompilation {
+pub fn compile_query(query: &str, reference_date: Date) -> QueryCompilation {
     let temporal = extract_temporal_references(query, reference_date);
     let outcome = if query.trim().is_empty() {
         CompileOutcome::NoInput

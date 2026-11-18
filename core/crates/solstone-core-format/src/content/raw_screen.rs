@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use jiff::tz::Offset;
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::Peekable;
 use std::str::Chars;
@@ -529,11 +529,13 @@ fn base_time(rel: &str) -> (i64, i64, i64, i64) {
     let base_timestamp = rel
         .split('/')
         .find(|part| is_date_key(part))
-        .and_then(|day| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
+        .and_then(solstone_core_time::parse_day)
         .and_then(|day| {
-            day.and_hms_opt(times.hour.into(), times.minute.into(), times.second.into())
+            Offset::UTC
+                .to_timestamp(day.to_datetime(times.clock()?))
+                .ok()
         })
-        .map(|time| time.and_utc().timestamp_millis())
+        .map(|time| time.as_millisecond())
         .unwrap_or(0);
     (base_timestamp, hour, minute, second)
 }

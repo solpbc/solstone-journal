@@ -3,7 +3,7 @@
 
 //! Fail-closed decoding and selection for whole-journal restore snapshots.
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use serde_json::{Map, Value};
 use solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG;
 
@@ -12,7 +12,7 @@ use crate::ARCHIVE_TAG;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct JournalSnapshot {
     pub id: String,
-    pub time: DateTime<FixedOffset>,
+    pub time: ZonedDateTime,
     pub path: String,
     /// Regular files in the snapshot, from the summary restic stores with it.
     /// restic counts only regular files here, never directories or symlinks.
@@ -41,7 +41,7 @@ pub(crate) fn journal_snapshots(
             found.push(journal_snapshot(object)?);
         }
     }
-    found.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.time));
+    found.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.time.timestamp()));
     Ok(found)
 }
 
@@ -61,12 +61,12 @@ pub(crate) fn select_journal_snapshot(
     }
     let latest = candidates
         .iter()
-        .map(|candidate| candidate.time)
+        .map(|candidate| candidate.time.timestamp())
         .max()
         .ok_or(CatalogError::NotFound)?;
     let mut latest_candidates = candidates
         .into_iter()
-        .filter(|candidate| candidate.time == latest);
+        .filter(|candidate| candidate.time.timestamp() == latest);
     let selected = latest_candidates
         .next()
         .expect("a maximum instant has at least one candidate");
@@ -109,7 +109,7 @@ fn journal_snapshot(entry: &Map<String, Value>) -> Result<JournalSnapshot, Catal
     let time = entry
         .get("time")
         .and_then(Value::as_str)
-        .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+        .and_then(|time| solstone_core_time::parse_rfc3339(time).ok())
         .ok_or(CatalogError::Invalid)?;
     let paths = entry
         .get("paths")

@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeMap, ffi::OsString, path::Path};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_system_health::{FilesystemHealthLogSource, FilesystemSegmentSource};
 use solstone_core_talent_config::read_talent_overrides;
 
@@ -26,7 +26,7 @@ pub struct CliRun {
 pub fn run_cli(
     args: &[OsString],
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     system_talent_root: &Path,
     apps_root: &Path,
     backlog_reader: &dyn BacklogViewReader,
@@ -49,7 +49,7 @@ pub fn run_cli(
 pub fn run_cli_with_cache<W: DayCacheWriter>(
     args: &[OsString],
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     system_talent_root: &Path,
     apps_root: &Path,
     backlog_reader: &dyn BacklogViewReader,
@@ -74,7 +74,7 @@ pub fn run_cli_with_cache<W: DayCacheWriter>(
 pub fn run_cli_with_cache_checked<W: DayCacheWriter>(
     args: &[OsString],
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     system_talent_root: &Path,
     apps_root: &Path,
     backlog_reader: &dyn BacklogViewReader,
@@ -99,7 +99,7 @@ pub fn run_cli_with_cache_checked<W: DayCacheWriter>(
 fn run_cli_with_admission<W: DayCacheWriter>(
     args: &[OsString],
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     system_talent_root: &Path,
     apps_root: &Path,
     backlog_reader: &dyn BacklogViewReader,
@@ -158,7 +158,7 @@ fn run_cli_with_admission<W: DayCacheWriter>(
 #[allow(clippy::too_many_arguments)]
 fn run<W: DayCacheWriter>(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     system_talent_root: &Path,
     apps_root: &Path,
     use_cache: bool,

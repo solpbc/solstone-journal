@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_journal_io::activity::ActivityLease;
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
@@ -40,8 +41,8 @@ struct RemovalContext<'a> {
     activity: &'a Arc<ActivityLease>,
     halted: Option<String>,
     policy: &'a Policy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     register_errors: &'a mut Vec<String>,
 }
 
@@ -53,8 +54,8 @@ pub fn remove_marked(
     journal: &Path,
     marks: &PreflightMarks,
     policy: &Policy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     register_errors: &mut Vec<String>,
 ) -> Outcome {
     if marks.as_slice().is_empty() {
@@ -293,7 +294,7 @@ fn remove_one(
             PlannedMarkMutation::failure(
                 mark,
                 Failure {
-                    at: context.now.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    at: solstone_core_time::utc_z(context.now, solstone_core_time::Precision::Secs),
                     reason,
                     staged: Some(staged),
                 },
@@ -586,8 +587,8 @@ impl ReviewedRemoval {
 /// Typed writers and platform/carrier settlement activation remain held.
 pub fn remove_reviewed(
     checked: crate::review_context::CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> ReviewedRemoval {
     let mut execution = ReviewedExecution::new();
     #[cfg(any(unix, windows))]
@@ -775,8 +776,8 @@ impl ReviewedArchiveRemoval<'_> {
 pub fn remove_reviewed_with_archive<'a>(
     checked: crate::review_context::CheckedReviewContext,
     read: solstone_core_backup::archive_readback::ReadOperation<'a>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> ReviewedArchiveRemoval<'a> {
     #[cfg(any(unix, windows))]
     let selected = preflight_archive_review(&checked, &read);
@@ -902,8 +903,8 @@ pub(crate) fn remove_reviewed_approved<'a>(
         crate::archive_approval::ArchiveApprovalBatch<'a>,
         crate::archive_approval::ArchiveApprovalFailure<'a>,
     >,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> ReviewedArchiveRemoval<'a> {
     #[cfg(any(unix, windows))]
     {
@@ -928,8 +929,8 @@ fn remove_reviewed_approved_with<'a>(
         crate::archive_approval::ArchiveApprovalBatch<'a>,
         crate::archive_approval::ArchiveApprovalFailure<'a>,
     >,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     checkpoint: impl FnMut(ReviewedCheckpoint, &Path),
 ) -> ReviewedArchiveRemoval<'a> {
     let mut execution = ReviewedExecution::new();
@@ -954,8 +955,8 @@ pub(crate) fn remove_reviewed_approved_with_test_hook<'a>(
         crate::archive_approval::ArchiveApprovalBatch<'a>,
         crate::archive_approval::ArchiveApprovalFailure<'a>,
     >,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     checkpoint: impl FnMut(ReviewedCheckpoint, &Path),
 ) -> ReviewedArchiveRemoval<'a> {
     remove_reviewed_approved_with(checked, approval, today, now, checkpoint)
@@ -1297,8 +1298,8 @@ fn reviewed_candidates(
     scan: &crate::scan::CheckedSegment,
     policy: &Policy,
     target: &crate::Target,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     purpose: DecisionPurpose,
 ) -> (Vec<ProvenRaw>, BTreeMap<String, String>) {
     let (empty, ordinary) = partition_empty_audio(scan.files().to_vec(), &ClosedHandlerSet);
@@ -1342,7 +1343,7 @@ fn valid_reviewed_coordinates(marks: &[Mark]) -> bool {
                 || (mark.class == RemovalClass::OffloadRawRelease && mark.offload.is_some()))
                 && mark.target.day.len() == 8
                 && mark.target.day.bytes().all(|b| b.is_ascii_digit())
-                && NaiveDate::parse_from_str(&mark.target.day, "%Y%m%d").is_ok()
+                && solstone_core_time::parse_day(&mark.target.day).is_some()
                 && plain(&mark.target.stream)
                 && plain(&mark.target.dir)
                 && mark.proposal.names.iter().all(|name| {
@@ -1465,8 +1466,8 @@ pub(crate) struct ArchiveRelease<'a, 'op> {
     group: &'a ReviewedGroup,
     mark: &'a Mark,
     name: &'a str,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 }
 
 #[cfg(any(unix, windows))]
@@ -1549,8 +1550,8 @@ pub(crate) enum ReviewedCheckpoint {
 #[cfg(any(unix, windows))]
 fn execute_reviewed(
     checked: &crate::review_context::CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     execution: &mut ReviewedExecution,
 ) -> Result<(), ReviewedRemovalRefusal> {
     execute_reviewed_with(checked, today, now, execution, |_, _| {})
@@ -1559,8 +1560,8 @@ fn execute_reviewed(
 #[cfg(any(unix, windows))]
 fn execute_reviewed_with(
     checked: &crate::review_context::CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     execution: &mut ReviewedExecution,
     checkpoint: impl FnMut(ReviewedCheckpoint, &Path),
 ) -> Result<(), ReviewedRemovalRefusal> {
@@ -1570,8 +1571,8 @@ fn execute_reviewed_with(
 #[cfg(any(unix, windows))]
 fn execute_reviewed_mode(
     checked: &crate::review_context::CheckedReviewContext,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     execution: &mut ReviewedExecution,
     archive: Option<crate::archive_approval::ArchiveApprovalRef<'_, '_>>,
     mut checkpoint: impl FnMut(ReviewedCheckpoint, &Path),
@@ -2182,7 +2183,7 @@ fn execute_reviewed_mode(
             Some(PlannedMarkMutation::failure(
                 mark,
                 Failure {
-                    at: now.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    at: solstone_core_time::utc_z(now, solstone_core_time::Precision::Secs),
                     reason: REVIEW_UNCERTAIN.to_owned(),
                     staged,
                 },
@@ -2268,7 +2269,7 @@ fn reviewed_bookkeeping(
     root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
     group: &ReviewedGroup,
     name: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     attempt: &mut ReviewedFileRemoval,
 ) {
     use solstone_core_journal_io::media::Durability;
@@ -2314,7 +2315,7 @@ fn reviewed_bookkeeping(
     let event = solstone_core_callosum::CallosumEnvelope {
         tract: "retention".to_owned(),
         event: "original_deleted".to_owned(),
-        ts: Some(now.timestamp_millis()),
+        ts: Some(now.as_millisecond()),
         extra,
     };
     attempt.append = Some(solstone_core_journal_io::append::append_jsonl_bound(
@@ -2397,7 +2398,7 @@ fn reviewed_bookkeeping(
     root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
     group: &ReviewedGroup,
     name: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     attempt: &mut ReviewedFileRemoval,
 ) {
     use solstone_core_journal_io::media::{
@@ -2458,7 +2459,7 @@ fn reviewed_bookkeeping(
     let event = solstone_core_callosum::CallosumEnvelope {
         tract: "retention".to_owned(),
         event: "original_deleted".to_owned(),
-        ts: Some(now.timestamp_millis()),
+        ts: Some(now.as_millisecond()),
         extra,
     };
 
@@ -2566,8 +2567,6 @@ mod reviewed_tests;
 mod tests {
     use std::fs;
     use std::path::Path;
-
-    use chrono::TimeZone;
 
     use super::*;
     use crate::marks::{Proposal, RemovalClass, decline, preflight, reconcile};
@@ -2682,8 +2681,8 @@ mod tests {
             enabled: true,
             ..Policy::default()
         };
-        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let today = jiff::civil::date(2026, 8, 6);
+        let now = "2026-08-06T00:00:00Z".parse::<Timestamp>().unwrap();
         let mut register_errors = Vec::new();
         let outcome = remove_marked(
             journal.path(),
@@ -2783,8 +2782,8 @@ mod tests {
         .unwrap();
         let id = register.marks.keys().next().unwrap().clone();
         let marks = preflight(journal, std::slice::from_ref(&id)).unwrap();
-        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let today = jiff::civil::date(2026, 8, 6);
+        let now = "2026-08-06T00:00:00Z".parse::<Timestamp>().unwrap();
         let mut register_errors = Vec::new();
         let outcome = remove_marked(journal, &marks, policy, today, now, &mut register_errors);
         (outcome, register_errors)
@@ -2905,7 +2904,7 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let target = target();
         let segment = seed_empty_audio(journal.path(), &target);
-        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let now = "2026-08-06T00:00:00Z".parse::<Timestamp>().unwrap();
         let register = crate::marks::upsert_offload(
             journal.path(),
             &target,
@@ -2924,7 +2923,7 @@ mod tests {
         let mark = register.marks.get(&id).unwrap().clone();
         let preflight = PreflightMarks::new_for_test(vec![(id, mark)]);
         let policy = keep_journal_product_policy();
-        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let today = jiff::civil::date(2026, 8, 6);
         let mut register_errors = Vec::new();
         let outcome = remove_marked(
             journal.path(),
@@ -2971,8 +2970,8 @@ mod tests {
 
         let preflight = PreflightMarks::new_for_test(vec![(id, mark)]);
         let policy = keep_journal_product_policy();
-        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let today = jiff::civil::date(2026, 8, 6);
+        let now = "2026-08-06T00:00:00Z".parse::<Timestamp>().unwrap();
         let mut register_errors = Vec::new();
         let outcome = remove_marked(
             journal.path(),

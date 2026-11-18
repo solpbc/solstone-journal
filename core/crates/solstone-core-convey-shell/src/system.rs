@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use axum::Json;
 use axum::response::{IntoResponse, Response};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_home::HomeContext;
 use solstone_core_home::readers::get_capture_health;
@@ -170,7 +170,7 @@ fn status_body(version: Value, capture: Value) -> Value {
 
 #[allow(clippy::needless_return)]
 pub async fn status(journal_root: PathBuf) -> Response {
-    let context = HomeContext::new(journal_root, Utc::now());
+    let context = HomeContext::new(journal_root, Timestamp::now());
     let capture = get_capture_health(&context);
     #[cfg(target_os = "linux")]
     {

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 #[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::{Map, Value};
@@ -126,10 +126,10 @@ fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<String>, u128, u32)> {
     output
 }
 
-fn fixture_now() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(&projection_fixture().now)
+fn fixture_now() -> Timestamp {
+    solstone_core_time::parse_rfc3339(&projection_fixture().now)
         .expect("fixture now is RFC3339")
-        .with_timezone(&Utc)
+        .timestamp()
 }
 
 fn hex(value: &str) -> Vec<u8> {

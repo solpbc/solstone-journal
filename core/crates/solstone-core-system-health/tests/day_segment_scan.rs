@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::json;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{
@@ -36,8 +36,8 @@ fn write(path: &Path, name: &str, contents: &str) {
     fs::write(path.join(name), contents).unwrap();
 }
 
-fn now() -> DateTime<Utc> {
-    DateTime::from(SystemTime::now())
+fn now() -> Timestamp {
+    Timestamp::try_from(SystemTime::now()).unwrap()
 }
 
 fn data_state(values: &[(&str, &str)]) -> DataStateMap {
@@ -307,9 +307,9 @@ fn marker_ladder_uses_injected_time_and_processing_record_precedence() {
     fs::write(&marker, "{}\n").unwrap();
     fs::File::open(&marker)
         .unwrap()
-        .set_times(
-            fs::FileTimes::new().set_modified(SystemTime::from(instant - Duration::seconds(1_800))),
-        )
+        .set_times(fs::FileTimes::new().set_modified(
+            SystemTime::try_from(instant - SignedDuration::from_secs(1_800)).unwrap(),
+        ))
         .unwrap();
     assert_eq!(
         derive_modality_state(path, "audio", false, true, false, None, instant),
@@ -323,7 +323,7 @@ fn marker_ladder_uses_injected_time_and_processing_record_precedence() {
             true,
             false,
             None,
-            instant + Duration::seconds(1)
+            instant + SignedDuration::from_secs(1)
         ),
         DataState::Failed
     );

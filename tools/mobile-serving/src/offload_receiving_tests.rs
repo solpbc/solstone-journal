@@ -74,7 +74,7 @@ fn serving() -> (
             "identity":{"timezone":"UTC"},
             "providers":{"active":{"provider":"openai","model":"fixture"}},
             "processing":{"history_confirmed":true},
-            "setup":{"completed_at":chrono::Utc::now().timestamp_millis()},
+            "setup":{"completed_at":jiff::Timestamp::now().as_millisecond()},
             "backup":{"enabled":true,"mode":"byo","offload":{"enabled":false}}
         })
         .to_string(),

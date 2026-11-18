@@ -157,7 +157,7 @@ fn afternoon() -> TempDir {
     temp
 }
 
-fn at(value: &str) -> NaiveDateTime {
+fn at(value: &str) -> jiff::civil::DateTime {
     parse_wall(value).unwrap()
 }
 

@@ -1452,7 +1452,7 @@ mod tests {
             decline(journal.path(), &mark.id),
             Err(PreflightRefusal::Register(StoreError::WriterHeld))
         ));
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         assert!(matches!(
             upsert(
                 journal.path(),

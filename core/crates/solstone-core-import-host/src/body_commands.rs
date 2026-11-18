@@ -10,7 +10,8 @@
 use std::io::IsTerminal as _;
 use std::path::Path;
 
-use chrono::{Days, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
 use serde_json::json;
 use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
 
@@ -23,7 +24,7 @@ use crate::oura_fetch::endpoint_plan_lines;
 use crate::strava_filing::{FacetBasis, RunFacet, run_facet};
 use solstone_core_import::cli_render::CliRun;
 
-const FIRST_OURA_DAY: (i32, u32, u32) = (2015, 1, 1);
+const FIRST_OURA_DAY: (i16, i8, i8) = (2015, 1, 1);
 
 /// What a body import command was given, from its own flags.
 pub(crate) struct BodyCommand<'a> {
@@ -304,10 +305,11 @@ const APPLE_READS: &[&str] = &[
     "logged entries like food and symptoms",
 ];
 
-fn parse_day(flag: &str, text: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d")
-        .or_else(|_| NaiveDate::parse_from_str(text, "%Y%m%d"))
-        .map_err(|_| {
+fn parse_day(flag: &str, text: &str) -> Result<Date, String> {
+    Date::strptime("%Y-%m-%d", text)
+        .ok()
+        .or_else(|| solstone_core_time::parse_day(text))
+        .ok_or_else(|| {
             format!(
                 "{flag} takes a date like 2026-01-31, and {text} isn't one. nothing was read.\n"
             )
@@ -315,10 +317,7 @@ fn parse_day(flag: &str, text: &str) -> Result<NaiveDate, String> {
 }
 
 /// The days an Oura run was asked for, or `None` for the days it doesn't hold.
-fn oura_range(
-    command: &BodyCommand<'_>,
-    today: NaiveDate,
-) -> Result<Option<(NaiveDate, NaiveDate)>, String> {
+fn oura_range(command: &BodyCommand<'_>, today: Date) -> Result<Option<(Date, Date)>, String> {
     if command.window_days == Some(0) {
         return Err("--window-days needs at least one day. nothing was read.\n".to_owned());
     }
@@ -326,10 +325,12 @@ fn oura_range(
         return Err("use --window-days or dates, not both. nothing was read.\n".to_owned());
     }
     let (year, month, day) = FIRST_OURA_DAY;
-    let floor = NaiveDate::from_ymd_opt(year, month, day).ok_or("the first day isn't a day")?;
+    let floor = Date::new(year, month, day).map_err(|_| "the first day isn't a day")?;
     if let Some(days) = command.window_days {
-        let from = today
-            .checked_sub_days(Days::new(days.saturating_sub(1)))
+        let from = i64::try_from(days.saturating_sub(1))
+            .ok()
+            .and_then(|days| Span::new().try_days(days).ok())
+            .and_then(|span| today.checked_sub(span).ok())
             .map_or(floor, |from| from.max(floor));
         return Ok(Some((from, today)));
     }
@@ -352,13 +353,13 @@ fn oura_range(
 /// Bring Oura up to date, or with no `--save` say what that would ask for.
 pub(crate) fn sync_oura(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let today = Utc::now().with_timezone(&zone).date_naive();
+    let today = Timestamp::now().to_zoned_datetime(zone.clone()).date();
     let range = match oura_range(command, today) {
         Ok(range) => range,
         Err(words) => return failure("", &words, 1),
     };
     if !command.save {
-        return match endpoint_plan_lines(journal, range, today, zone) {
+        return match endpoint_plan_lines(journal, range, today, &zone) {
             Ok(lines) => success(lines),
             Err(error) => failure("", &format!("{error}\n"), 1),
         };
@@ -396,14 +397,14 @@ pub(crate) fn sync_oura(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
 /// say how many it couldn't get to. A workout the lock held clears at the next
 /// start.
 fn sweep_first(journal: &Path) -> u64 {
-    let counts = crate::strava_convert::sweep(journal, Utc::now());
+    let counts = crate::strava_convert::sweep(journal, Timestamp::now());
     counts.waiting + counts.skipped_locked
 }
 
 fn owner_timestamp(journal: &Path) -> String {
-    Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d_%H%M%S")
+    Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .strftime("%Y%m%d_%H%M%S")
         .to_string()
 }
 

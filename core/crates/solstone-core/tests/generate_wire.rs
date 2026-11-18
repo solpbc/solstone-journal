@@ -1266,10 +1266,7 @@ fn completion_body(text: &str, finish_reason: &str, usage: Option<Value>) -> Str
 
 fn token_entries(journal: &Path) -> Vec<Value> {
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let day = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(jiff::Timestamp::now().to_zoned_datetime(zone).date());
     let path = journal.join("tokens").join(format!("{day}.jsonl"));
     std::fs::read_to_string(path)
         .expect("usage log")
@@ -1730,10 +1727,7 @@ fn bundled_confidential_is_generated_and_logs_usage_while_refusals_do_not_log() 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(server.join().expect("join server"), 6);
     let zone = solstone_core_journal_config::owner_zone(&journal);
-    let day = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(jiff::Timestamp::now().to_zoned_datetime(zone).date());
     let token_path = journal.join("tokens").join(format!("{day}.jsonl"));
     let text = std::fs::read_to_string(&token_path).expect("usage log");
     let lines = text.lines().collect::<Vec<_>>();

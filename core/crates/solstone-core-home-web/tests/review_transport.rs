@@ -15,7 +15,6 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
-    use chrono::{TimeZone, Utc};
     use serde_json::{Value, json};
     use solstone_core_journal_io::JournalRoot;
     use solstone_core_retention::archive_proof::{
@@ -110,7 +109,9 @@ mod tests {
         let router = solstone_core_home_web::routes(
             root.to_path_buf(),
             solstone_core_home_web::Clock::fixed(
-                Utc.with_ymd_and_hms(2026, 10, 10, 12, 0, 0).unwrap(),
+                jiff::tz::Offset::UTC
+                    .to_timestamp(jiff::civil::date(2026, 10, 10).at(12, 0, 0, 0))
+                    .unwrap(),
             ),
             |_| false,
         );
@@ -568,7 +569,7 @@ mod tests {
         let standalone = || {
             solstone_core_home_web::routes(
                 root.path().to_path_buf(),
-                solstone_core_home_web::Clock::fixed(Utc::now()),
+                solstone_core_home_web::Clock::fixed(jiff::Timestamp::now()),
                 |_| false,
             )
         };
@@ -589,7 +590,7 @@ mod tests {
         let router = || {
             solstone_core_home_web::routes_with_backup_deps(
                 deps.clone(),
-                solstone_core_home_web::Clock::fixed(Utc::now()),
+                solstone_core_home_web::Clock::fixed(jiff::Timestamp::now()),
                 |_| false,
             )
         };
@@ -689,7 +690,7 @@ mod tests {
                     .into_parts();
             let router = solstone_core_home_web::routes_with_backup_deps(
                 deps.clone(),
-                solstone_core_home_web::Clock::fixed(Utc::now()),
+                solstone_core_home_web::Clock::fixed(jiff::Timestamp::now()),
                 |_| false,
             );
             let router = solstone_core_convey_shell::session_gate::apply_layer(
@@ -802,7 +803,9 @@ mod tests {
             let router = solstone_core_home_web::routes_with_backup_deps(
                 deps.clone(),
                 solstone_core_home_web::Clock::fixed(
-                    Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap(),
+                    jiff::tz::Offset::UTC
+                        .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+                        .unwrap(),
                 ),
                 |_| false,
             );
@@ -869,7 +872,9 @@ mod tests {
         let router = solstone_core_home_web::routes_with_backup_deps(
             deps.clone(),
             solstone_core_home_web::Clock::fixed(
-                Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap(),
+                jiff::tz::Offset::UTC
+                    .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+                    .unwrap(),
             ),
             |_| false,
         );

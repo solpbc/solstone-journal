@@ -11,9 +11,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::{
-    DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
-};
+use jiff::civil::{DateTime, Time};
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
@@ -32,6 +32,7 @@ use solstone_core_sol_link::client_status::{
 };
 use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, resolve_owner_tier};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
+use solstone_core_time::Precision;
 
 use crate::HomeContext;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
@@ -52,12 +53,13 @@ pub fn count_journal_age_days(context: &HomeContext) -> i64 {
             entry.file_type().ok().filter(|kind| kind.is_dir())?;
             let day = entry.file_name().to_string_lossy().into_owned();
             (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
-                .then(|| NaiveDate::parse_from_str(&day, "%Y%m%d").ok())
+                .then(|| solstone_core_time::parse_day(&day))
                 .flatten()
         })
         .min();
     earliest
-        .map(|day| (context.local_date() - day).num_days().max(0))
+        .and_then(|day| context.local_date().since(day).ok())
+        .map(|span| i64::from(span.get_days()).max(0))
         .unwrap_or(0)
 }
 
@@ -107,11 +109,13 @@ fn read_latest_at(
     lookback_days: u32,
     latest: Option<i64>,
 ) -> Option<Value> {
-    let start = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let start = solstone_core_time::parse_day(day)?;
     for offset in 0..=lookback_days {
-        let probe = (start - Duration::days(i64::from(offset)))
-            .format("%Y%m%d")
-            .to_string();
+        let probe = solstone_core_time::day_key(
+            start
+                .checked_sub(Span::new().days(i64::from(offset)))
+                .ok()?,
+        );
         let path = day_root(context, &probe)
             .join("talents")
             .join(format!("{name}.jsonl"));
@@ -169,8 +173,8 @@ pub(crate) fn load_pulse_narrative_at(
     let updated_at = record
         .get("ts")
         .and_then(Value::as_i64)
-        .and_then(DateTime::from_timestamp_millis)
-        .map(|time| time.with_timezone(&Utc).to_rfc3339());
+        .and_then(|ms| Timestamp::from_millisecond(ms).ok())
+        .map(solstone_core_time::utc_rfc3339);
     PulseNarrative {
         content: Some(content.to_owned()),
         updated_at,
@@ -212,7 +216,7 @@ pub fn enabled_facet_names(context: &HomeContext) -> Vec<String> {
 
 /// The local clock time a segment directory name stands for. `HHMMSS_<length>`
 /// is the reference spelling; anything else has no time of its own.
-fn segment_clock(segment: &str) -> Option<NaiveTime> {
+fn segment_clock(segment: &str) -> Option<Time> {
     let (clock, length) = segment.split_once('_')?;
     if clock.len() != 6
         || !clock.bytes().all(|byte| byte.is_ascii_digit())
@@ -221,15 +225,15 @@ fn segment_clock(segment: &str) -> Option<NaiveTime> {
     {
         return None;
     }
-    NaiveTime::parse_from_str(clock, "%H%M%S").ok()
+    Time::strptime("%H%M%S", clock).ok()
 }
 
 /// When an activity happened: the start of the earliest segment it covers, in
 /// the day's own local clock. `created_at` is when the record was written,
 /// which is a different fact — a talent run that writes an evening's records at
 /// 10:55 PM stamps every one of them 10:55 PM. G1-201.
-fn activity_started_at(day: &str, record: &Map<String, Value>) -> Option<NaiveDateTime> {
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+fn activity_started_at(day: &str, record: &Map<String, Value>) -> Option<DateTime> {
+    let date = solstone_core_time::parse_day(day)?;
     let start = record
         .get("segments")
         .and_then(Value::as_array)?
@@ -237,7 +241,7 @@ fn activity_started_at(day: &str, record: &Map<String, Value>) -> Option<NaiveDa
         .filter_map(Value::as_str)
         .filter_map(segment_clock)
         .min()?;
-    Some(date.and_time(start))
+    Some(date.to_datetime(start))
 }
 
 /// An activity that spans two facets is written once per facet under one id, so
@@ -338,11 +342,13 @@ pub fn collect_activities(context: &HomeContext, day: &str, latest: Option<i64>)
         record.insert(
             "display_time".to_owned(),
             activity_started_at(day, &record)
-                .and_then(|start| zone.from_local_datetime(&start).earliest())
+                .and_then(|start| solstone_core_time::from_local(zone, start).earliest())
                 .or_else(|| {
-                    DateTime::from_timestamp_millis(created).map(|time| time.with_timezone(&zone))
+                    Timestamp::from_millisecond(created)
+                        .ok()
+                        .map(|time| time.to_zoned_datetime(zone.clone()))
                 })
-                .map(|time| time.to_rfc3339())
+                .map(|time| solstone_core_time::zoned_rfc3339(&time, Precision::AutoSi, false))
                 .unwrap_or_default()
                 .into(),
         );
@@ -376,8 +382,8 @@ pub fn collect_activities(context: &HomeContext, day: &str, latest: Option<i64>)
         .into_iter()
         .map(|record| {
             let ordered = activity_started_at(day, &record)
-                .and_then(|start| zone.from_local_datetime(&start).earliest())
-                .map(|start| start.timestamp_millis())
+                .and_then(|start| solstone_core_time::from_local(zone, start).earliest())
+                .map(|start| start.timestamp().as_millisecond())
                 .or_else(|| record.get("created_at").and_then(Value::as_i64))
                 .unwrap_or(0);
             (ordered, Value::Object(record))
@@ -474,10 +480,10 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
 
 /// Read the daily artifact that supplies the requested presentation day.
 pub fn morning_briefing_path(context: &HomeContext, day: &str) -> Option<std::path::PathBuf> {
-    let presentation = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let presentation = solstone_core_time::parse_day(day)?;
     let dates = crate::briefing::BriefingDates::for_presentation(presentation)?;
     Some(
-        day_root(context, &dates.analysis.format("%Y%m%d").to_string())
+        day_root(context, &solstone_core_time::day_key(dates.analysis))
             .join("talents/morning_briefing.json"),
     )
 }
@@ -547,10 +553,11 @@ pub fn briefing_freshness(context: &HomeContext, day: &str) -> Value {
     let label = briefing
         .pointer("/metadata/generated")
         .and_then(Value::as_str)
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
         .map(|time| {
-            time.with_timezone(&Utc)
-                .format("%-I:%M%p")
+            Offset::UTC
+                .to_datetime(time.timestamp())
+                .strftime("%-I:%M%p")
                 .to_string()
                 .to_lowercase()
         });
@@ -589,17 +596,17 @@ pub fn compute_briefing_phase(
 
 /// The briefing clock is a wall-clock, day-scoped one: `now` is the instant in
 /// the journal's local day coordinate, not UTC.
-pub fn briefing_lateness_state(now: DateTime<FixedOffset>, phase: &str) -> Value {
-    let due = now
-        .with_hour(BRIEFING_MORNING_END_HOUR)
-        .and_then(|time| time.with_minute(0))
-        .and_then(|time| time.with_second(0))
-        .and_then(|time| time.with_nanosecond(0))
+pub fn briefing_lateness_state(now: &ZonedDateTime, phase: &str) -> Value {
+    let due = i8::try_from(BRIEFING_MORNING_END_HOUR)
+        .ok()
+        .and_then(|hour| Time::new(hour, 0, 0, 0).ok())
+        .and_then(|due| now.with().time(due).build().ok())
         .expect("valid briefing due time");
+    let hour = u32::from(now.hour().unsigned_abs());
     let late = phase == "missing"
         || (phase == "pending"
-            && now.hour() > BRIEFING_MORNING_END_HOUR + BRIEFING_LATENESS_THRESHOLD_HOURS);
-    json!({"late": late, "late_hours": if late { ((now - due).num_seconds() / 3600).max(0) } else { 0 }})
+            && hour > BRIEFING_MORNING_END_HOUR + BRIEFING_LATENESS_THRESHOLD_HOURS);
+    json!({"late": late, "late_hours": if late { (now.timestamp().duration_since(due.timestamp()).as_secs() / 3600).max(0) } else { 0 }})
 }
 
 /// Read serialized root backlog data without generating it.
@@ -611,7 +618,7 @@ pub fn load_backlog_source(context: &HomeContext) -> BacklogSource {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let validity = solstone_core_system_health::summary_not_yet(
                 context.journal_root(),
-                context.now_local().naive_local(),
+                context.now_local().datetime(),
             )
             .map_or(BacklogValidity::Missing, BacklogValidity::NotYet);
             return BacklogSource {
@@ -722,19 +729,19 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
     };
     // The imports block records local wall time (`20260515T12:00:00`), read in
     // the journal's day coordinate; an RFC 3339 instant is accepted as well.
-    let completed = NaiveDateTime::parse_from_str(completed, "%Y%m%dT%H:%M:%S")
+    let completed = DateTime::strptime("%Y%m%dT%H:%M:%S", completed)
         .ok()
         .and_then(|wall| {
-            wall.and_local_timezone(context.zone())
+            solstone_core_time::from_local(context.zone(), wall)
                 .earliest()
-                .map(|local| local.with_timezone(&Utc))
+                .map(|local| local.timestamp())
         })
         .or_else(|| {
-            DateTime::parse_from_rfc3339(completed)
+            solstone_core_time::parse_rfc3339(completed)
                 .ok()
-                .map(|instant| instant.with_timezone(&Utc))
+                .map(|instant| instant.timestamp())
         })?;
-    (context.now_utc - completed < Duration::hours(1)).then(|| json!({"placeholder_text":"import complete.".to_owned(),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
+    (context.now_utc.duration_since(completed) < SignedDuration::from_hours(1)).then(|| json!({"placeholder_text":"import complete.".to_owned(),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
 }
 
 /// Summarize one day of health JSONL without freshness gating. The terminal-state
@@ -1056,8 +1063,8 @@ pub fn last_observe_relative_seconds(context: &HomeContext) -> Option<i64> {
     };
     rows.into_iter()
         .filter_map(|record| record.last_accepted_ingest_at)
-        .filter_map(|timestamp| DateTime::parse_from_rfc3339(&timestamp).ok())
-        .map(|timestamp| timestamp.timestamp_millis())
+        .filter_map(|timestamp| solstone_core_time::parse_rfc3339(&timestamp).ok())
+        .map(|timestamp| timestamp.timestamp().as_millisecond())
         .max()
         .map(|last_seen| (context.now_ms() - last_seen) / 1000)
 }
@@ -1122,7 +1129,7 @@ fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {
 type ThinkLogRows = Vec<(String, Vec<Map<String, Value>>)>;
 
 fn think_oplogs(context: &HomeContext, day: &str) -> Result<ThinkLogRows, ()> {
-    let day_key = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| ())?;
+    let day_key = solstone_core_time::parse_day(day).ok_or(())?;
     let root = JournalRoot::open(context.journal_root()).map_err(|_| ())?;
     fold_oplogs(
         root,
@@ -1246,7 +1253,6 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use chrono::{FixedOffset, TimeZone};
     use solstone_core_journal_io::{
         JournalRoot,
         operational_log::{OplogFormat, create_oplog_at},
@@ -1262,8 +1268,8 @@ mod tests {
         // host's zone.
         HomeContext::with_zone(
             root,
-            Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
-            chrono_tz::Tz::UTC,
+            crate::test_time::utc_at(2026, 6, 2, 13, 0, 0),
+            jiff::tz::TimeZone::UTC,
         )
     }
     fn write(root: &std::path::Path, relative: &str, text: &str) {
@@ -1273,18 +1279,17 @@ mod tests {
     }
 
     fn write_oplog(root: &std::path::Path, day: &str, source: &str, run: &str, text: &str) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
-            .single()
-            .unwrap();
+        let day = solstone_core_time::parse_day(day).unwrap();
+        let opened = solstone_core_time::at_offset(
+            Offset::UTC.to_timestamp(day.at(12, 0, 0, 0)).unwrap(),
+            Offset::UTC,
+        );
         let mut writer = create_oplog_at(
             JournalRoot::open(root).unwrap(),
             source,
             run,
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         writer.write_all(text.as_bytes()).unwrap();
@@ -1333,12 +1338,12 @@ mod tests {
 
     #[test]
     fn lateness_uses_supplied_phase() {
-        let now = Utc
-            .with_ymd_and_hms(2026, 6, 2, 13, 17, 0)
-            .unwrap()
-            .fixed_offset();
+        let now = solstone_core_time::at_offset(
+            crate::test_time::utc_at(2026, 6, 2, 13, 17, 0),
+            jiff::tz::Offset::UTC,
+        );
         assert_eq!(
-            briefing_lateness_state(now, "pending"),
+            briefing_lateness_state(&now, "pending"),
             json!({"late":true,"late_hours":3})
         );
     }
@@ -1752,8 +1757,8 @@ mod tests {
         // 19:00Z is 13:00 on a -06:00 day.
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 6, 2, 19, 0, 0).unwrap(),
-            chrono_tz::Tz::America__Denver,
+            crate::test_time::utc_at(2026, 6, 2, 19, 0, 0),
+            solstone_core_time::zone("America/Denver").unwrap(),
         );
         write(root.path(), "facets/work/facet.json", "{}");
         write(
@@ -1850,6 +1855,15 @@ mod tests {
             briefing_freshness(&context, "20260602"),
             json!({"exists":true,"valid":true,"generated_label":null})
         );
+        write(
+            root.path(),
+            "chronicle/20260601/talents/morning_briefing.json",
+            r#"{"metadata":{"generated":"2026-06-02T07:05:00-06:00"},"yesterday":[],"needs_attention":[]}"#,
+        );
+        assert_eq!(
+            briefing_freshness(&context, "20260602"),
+            json!({"exists":true,"valid":true,"generated_label":"1:05pm"})
+        );
         assert_eq!(
             briefing_needs_items(&json!({"needs_attention":[{},"bad"]})),
             vec![json!({})]
@@ -1864,25 +1878,26 @@ mod tests {
 
     #[test]
     fn briefing_phase_and_lateness_cover_both_guard_directions() {
-        let now = Utc
-            .with_ymd_and_hms(2026, 6, 2, 13, 0, 0)
-            .unwrap()
-            .fixed_offset();
+        let now = solstone_core_time::at_offset(
+            crate::test_time::utc_at(2026, 6, 2, 13, 0, 0),
+            jiff::tz::Offset::UTC,
+        );
         assert_eq!(compute_briefing_phase(0, 9, false), "pending");
         assert_eq!(compute_briefing_phase(1, 13, true), "active");
         assert_eq!(
-            briefing_lateness_state(now, "pending"),
+            briefing_lateness_state(&now, "pending"),
             json!({"late":true,"late_hours":3})
         );
         assert_eq!(
-            briefing_lateness_state(now, "active"),
+            briefing_lateness_state(&now, "active"),
             json!({"late":false,"late_hours":0})
         );
         assert_eq!(
             briefing_lateness_state(
-                Utc.with_ymd_and_hms(2026, 6, 2, 10, 0, 0)
-                    .unwrap()
-                    .fixed_offset(),
+                &solstone_core_time::at_offset(
+                    crate::test_time::utc_at(2026, 6, 2, 10, 0, 0),
+                    jiff::tz::Offset::UTC
+                ),
                 "pending"
             ),
             json!({"late":false,"late_hours":0})
@@ -1924,8 +1939,8 @@ mod tests {
         // 13:00 UTC is 07:00 at UTC-6.
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
-            chrono_tz::Tz::America__Denver,
+            crate::test_time::utc_at(2026, 6, 2, 13, 0, 0),
+            solstone_core_time::zone("America/Denver").unwrap(),
         );
         let recent = json!({"imports":{"last_completed":"20260602T06:30:00","last_result_summary":"12 notes"}});
         assert_eq!(
@@ -2090,11 +2105,8 @@ mod tests {
         let root = TempDir::new().unwrap();
         let home_context = context(root.path());
         let now = home_context.now_ms();
-        let timestamp = Utc
-            .timestamp_millis_opt(now - 29_000)
-            .single()
-            .unwrap()
-            .to_rfc3339();
+        let timestamp =
+            solstone_core_time::utc_rfc3339(Timestamp::from_millisecond(now - 29_000).unwrap());
         write(
             root.path(),
             "link/authorized_clients.json",
@@ -2545,9 +2557,9 @@ mod tests {
         );
     }
 
-    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
-        let observed = now.to_rfc3339();
-        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+    fn spp_ready_evidence(now: Timestamp) -> Value {
+        let observed = solstone_core_time::utc_rfc3339(now);
+        let expires = solstone_core_time::utc_rfc3339(now + SignedDuration::from_hours(2));
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
@@ -2583,7 +2595,7 @@ mod tests {
         write(ready_path, "config/journal.json", &config_json.to_string());
         solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let ready_permit = solstone_core_brain::begin_refresh(
             ready_path,
             now,
@@ -2614,8 +2626,8 @@ mod tests {
         // record stamped after the read time projects as invalid. Read after
         // the write, not one second after the test began: the fingerprint
         // work above can take longer than that on a loaded host.
-        let now_check = Utc::now() + Duration::seconds(1);
-        let context = HomeContext::with_zone(ready_path, now_check, chrono_tz::Tz::UTC);
+        let now_check = Timestamp::now() + SignedDuration::from_secs(1);
+        let context = HomeContext::with_zone(ready_path, now_check, jiff::tz::TimeZone::UTC);
         let snapshot = build_brain_snapshot(&context);
         assert_eq!(snapshot["state"], "blocked");
         assert_eq!(snapshot["reason_code"], "attestation_not_verified");
@@ -2673,8 +2685,8 @@ mod tests {
             &config_map,
             "certificate_invalid",
         );
-        let now_check = Utc::now() + Duration::seconds(1);
-        let context2 = HomeContext::with_zone(mid_check_path, now_check, chrono_tz::Tz::UTC);
+        let now_check = Timestamp::now() + SignedDuration::from_secs(1);
+        let context2 = HomeContext::with_zone(mid_check_path, now_check, jiff::tz::TimeZone::UTC);
         let snapshot2 = build_brain_snapshot(&context2);
         assert_eq!(snapshot2["state"], "unhealthy");
         assert_eq!(snapshot2["reason_code"], "attestation_rejected");
@@ -2721,11 +2733,11 @@ mod tests {
             }
         });
         let config_map = config_json.as_object().unwrap().clone();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let backlog = BacklogSource {
             backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
             validity: BacklogValidity::Valid,
-            generated_at: Some(now.to_rfc3339()),
+            generated_at: Some(solstone_core_time::utc_rfc3339(now)),
             saved_lane: None,
         };
         let ready_brain = json!({
@@ -2832,7 +2844,7 @@ mod tests {
         let temp4 = tempfile::tempdir_in("/var/tmp").unwrap();
         let path4 = temp4.path();
         write(path4, "config/journal.json", &config_json.to_string());
-        let context4 = HomeContext::with_zone(path4, now, chrono_tz::Tz::UTC);
+        let context4 = HomeContext::with_zone(path4, now, jiff::tz::TimeZone::UTC);
         let snapshot4 = build_brain_snapshot(&context4);
         let headline4 = snapshot4["headline"]
             .as_str()

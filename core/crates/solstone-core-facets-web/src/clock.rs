@@ -4,15 +4,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::{Timestamp, ZonedDateTime};
 
-/// Injectable clock: the current instant together with the local offset.
+/// Injectable clock: the current instant together with its local zone.
 ///
 /// Day strings and local wall-time forms come from the local reading
-/// (`naive_local()`); epoch milliseconds and UTC timestamps come from the
+/// (`datetime()`); epoch milliseconds and UTC timestamps come from the
 /// instant, so neither is shifted by the local offset.
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> DateTime<FixedOffset> + Send + Sync>);
+pub struct Clock(Arc<dyn Fn() -> ZonedDateTime + Send + Sync>);
 
 impl Clock {
     /// Now in the journal's owner zone, read afresh so a changed setting
@@ -20,17 +20,15 @@ impl Clock {
     pub fn owner(journal: impl Into<PathBuf>) -> Self {
         let journal = journal.into();
         Self(Arc::new(move || {
-            Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
-                .fixed_offset()
+            Timestamp::now().to_zoned_datetime(solstone_core_journal_config::owner_zone(&journal))
         }))
     }
 
-    pub fn new(now: impl Fn() -> DateTime<FixedOffset> + Send + Sync + 'static) -> Self {
+    pub fn new(now: impl Fn() -> ZonedDateTime + Send + Sync + 'static) -> Self {
         Self(Arc::new(now))
     }
 
-    pub fn now(&self) -> DateTime<FixedOffset> {
+    pub fn now(&self) -> ZonedDateTime {
         (self.0)()
     }
 }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{Duration as ChronoDuration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 
@@ -33,11 +33,11 @@ fn write(root: &Path, relative: &str, contents: &[u8]) {
 }
 
 fn ready_component() -> Value {
-    let now = Utc::now();
+    let now = Timestamp::now();
     json!({
         "status": "ok",
-        "observed_at": now.to_rfc3339(),
-        "expires_at": (now + ChronoDuration::hours(1)).to_rfc3339(),
+        "observed_at": solstone_core_time::utc_rfc3339(now),
+        "expires_at": solstone_core_time::utc_rfc3339(now + SignedDuration::from_hours(1)),
     })
 }
 
@@ -76,10 +76,11 @@ fn configured_spp_journal(name: &str) -> PathBuf {
         &serde_json::to_vec(&config).expect("encode config"),
     );
     write(&root, "health/brain-fingerprint.key", &[7_u8; 32]);
-    let permit = solstone_core_brain::begin_refresh(&root, Utc::now(), None, None, false, None)
-        .expect("begin seed refresh")
-        .expect("seed permit");
-    solstone_core_brain::finish_refresh(&root, permit, ready_outcome(), Utc::now(), None)
+    let permit =
+        solstone_core_brain::begin_refresh(&root, Timestamp::now(), None, None, false, None)
+            .expect("begin seed refresh")
+            .expect("seed permit");
+    solstone_core_brain::finish_refresh(&root, permit, ready_outcome(), Timestamp::now(), None)
         .expect("finish seed refresh");
     root
 }
@@ -197,18 +198,30 @@ fn assert_lease_free(root: &Path) {
 }
 
 fn direct_projection_after_finish(root: &Path, component: Value) -> Value {
-    let permit =
-        match solstone_core_brain::begin_prerequisite_renewal(root, Utc::now(), None, None, None) {
-            solstone_core_brain::BeginPrerequisiteRenewal::Started(permit) => permit,
-            result => panic!("expected renewal permit, got {result:?}"),
-        };
-    solstone_core_brain::finish_prerequisite_renewal(root, permit, component, Utc::now(), None)
-        .expect("finish renewal");
+    let permit = match solstone_core_brain::begin_prerequisite_renewal(
+        root,
+        Timestamp::now(),
+        None,
+        None,
+        None,
+    ) {
+        solstone_core_brain::BeginPrerequisiteRenewal::Started(permit) => permit,
+        result => panic!("expected renewal permit, got {result:?}"),
+    };
+    solstone_core_brain::finish_prerequisite_renewal(
+        root,
+        permit,
+        component,
+        Timestamp::now(),
+        None,
+    )
+    .expect("finish renewal");
     let config = solstone_core_brain::read_journal_config(root)
         .expect("read config")
         .config
         .unwrap_or_default();
-    let projection = solstone_core_brain::inspect_brain_state(root, &config, Utc::now()).projection;
+    let projection =
+        solstone_core_brain::inspect_brain_state(root, &config, Timestamp::now()).projection;
     json!({
         "schema": RESULT_SCHEMA,
         "kind": "projection",

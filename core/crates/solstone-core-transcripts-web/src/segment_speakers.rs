@@ -6,12 +6,13 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_journal_io::zip2_name::{Zip2NameFailure, prove_zip2_directory};
 use solstone_core_npy::parse_npy;
+use solstone_core_time::Precision;
 use solstone_core_transcripts::{JournalLabels, OwnerAnswer, load_who_spoke};
 use zip::ZipArchive;
 
@@ -99,7 +100,7 @@ impl SpeakerJoin {
 pub(crate) fn load(
     dir: &Path,
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     has_audio_transcript: bool,
 ) -> SpeakerJoin {
     let path = dir.join("talents/speaker_labels.json");
@@ -127,7 +128,7 @@ pub(crate) fn load(
             message:
                 "your answers about who spoke can't be read, so no one is named in this segment"
                     .into(),
-            ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            ts: solstone_core_time::utc_z(now, Precision::Secs),
         });
     }
     let mut labels = BTreeMap::new();
@@ -253,12 +254,12 @@ pub(crate) fn statement_ordinals(text: &str) -> Vec<Option<i64>> {
         .collect()
 }
 
-fn warning(path: &Path, message: &str, now: DateTime<Utc>) -> crate::segment::WarningDetail {
+fn warning(path: &Path, message: &str, now: Timestamp) -> crate::segment::WarningDetail {
     crate::segment::WarningDetail {
         kind: "speaker_labels".into(),
         file: path.display().to_string(),
         message: message.into(),
-        ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        ts: solstone_core_time::utc_z(now, Precision::Secs),
     }
 }
 fn read_statement_ids(path: &Path) -> Result<Option<Vec<i64>>, Zip2NameFailure> {
@@ -330,7 +331,7 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use serde_json::json;
 
     use super::load;
@@ -347,10 +348,10 @@ mod tests {
         .unwrap();
         let segment = root.path().join("segment");
         fs::create_dir_all(&segment).unwrap();
-        let screen = load(&segment, root.path(), Utc::now(), false);
+        let screen = load(&segment, root.path(), Timestamp::now(), false);
         assert!(screen.person_names.is_empty());
         assert!(screen.principal.is_none());
-        let audio = load(&segment, root.path(), Utc::now(), true);
+        let audio = load(&segment, root.path(), Timestamp::now(), true);
         assert_eq!(
             audio.person_names.get("person").map(String::as_str),
             Some("Person")
@@ -394,7 +395,7 @@ mod tests {
         )
         .expect("labels");
 
-        let join = load(&segment, &root, Utc::now(), true);
+        let join = load(&segment, &root, Timestamp::now(), true);
         assert!(join.labels.contains_key(&1));
         assert!(!join.labels.contains_key(&2));
         let _ = fs::remove_dir_all(root);
@@ -424,7 +425,7 @@ mod tests {
         )
         .expect("labels");
 
-        let join = load(&segment, &root, Utc::now(), true);
+        let join = load(&segment, &root, Timestamp::now(), true);
         assert!(join.labels.is_empty());
         assert_eq!(join.warnings.len(), 1);
         assert_eq!(join.warnings[0].kind, "speaker_labels");

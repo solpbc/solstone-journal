@@ -25,9 +25,9 @@ test-support = []
 ios-linked-bridge = ["solstone-core-backup/ios-linked-bridge"]
 
 [dependencies]
-chrono.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
+jiff.workspace = true
 log.workspace = true
 md5.workspace = true
 quick-xml = "0.41.0"
@@ -46,6 +46,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-system.workspace = true
 solstone-core-spp-attest.workspace = true
+solstone-core-time.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "android", windows))'.dependencies]
 tokio = { workspace = true, features = ["rt", "net", "io-util", "time", "macros"] }

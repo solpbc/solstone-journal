@@ -7,7 +7,6 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::Local;
 use solstone_core_cli::ServiceLogsArgs;
 use solstone_core_operational_logs::{
     CollectError, FollowFatalError, SourceTailSnapshot, collect_source_tail_snapshot,
@@ -55,7 +54,7 @@ pub(super) fn run(args: ServiceLogsArgs) -> ExitCode {
     };
     let snapshot = match collect_source_tail_snapshot(
         &journal,
-        Local::now().naive_local(),
+        jiff::ZonedDateTime::now().datetime(),
         SERVICE_SOURCE,
         TAIL_BYTE_LIMIT,
     ) {
@@ -188,7 +187,6 @@ fn terminal_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{FixedOffset, TimeZone};
     use solstone_core_journal_io::{
         JournalRoot,
         operational_log::{OplogFormat, create_oplog_at},
@@ -199,24 +197,23 @@ mod tests {
     #[test]
     fn snapshot_rendering_preserves_the_existing_terminal_policy() {
         let journal = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
+        let opened = jiff::civil::date(2026, 8, 7)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::fixed(jiff::tz::Offset::UTC))
             .unwrap();
         let mut writer = create_oplog_at(
             JournalRoot::open(journal.path()).unwrap(),
             SERVICE_SOURCE,
             "supervisor",
             OplogFormat::Log,
-            opened,
+            &opened,
         )
         .unwrap();
         use std::io::Write as _;
         writer.write_all(b"first\r\nsecond\rlast\xff").unwrap();
         let snapshot = collect_source_tail_snapshot(
             journal.path(),
-            opened.naive_local(),
+            opened.datetime(),
             SERVICE_SOURCE,
             TAIL_BYTE_LIMIT,
         )
@@ -249,7 +246,7 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let snapshot = collect_source_tail_snapshot(
             journal.path(),
-            Local::now().naive_local(),
+            jiff::ZonedDateTime::now().datetime(),
             SERVICE_SOURCE,
             TAIL_BYTE_LIMIT,
         )

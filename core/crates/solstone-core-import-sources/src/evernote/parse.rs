@@ -11,7 +11,8 @@
 use std::io::BufRead;
 
 use base64::Engine;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::DateTime;
 use md5::Context;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -49,8 +50,8 @@ pub struct ParsedExport {
 #[derive(Clone, Debug)]
 pub struct ParsedNote {
     pub title: String,
-    pub created: Option<DateTime<Utc>>,
-    pub updated: Option<DateTime<Utc>>,
+    pub created: Option<Timestamp>,
+    pub updated: Option<Timestamp>,
     /// The note as text: title is separate. This is what a later export is compared to.
     pub rendered: String,
     /// SHA-256 of the ENML content, lowercase hex. Collision keys use it.
@@ -70,12 +71,12 @@ pub struct HeldBytes {
 }
 
 /// The memory time: `updated`, or `created` when `updated` is absent.
-pub fn memory_time(note: &ParsedNote) -> Option<DateTime<Utc>> {
+pub fn memory_time(note: &ParsedNote) -> Option<Timestamp> {
     note.updated.or(note.created)
 }
 
 /// The identity time: `created`, or `updated` when `created` is absent.
-pub fn identity_time(note: &ParsedNote) -> Option<DateTime<Utc>> {
+pub fn identity_time(note: &ParsedNote) -> Option<Timestamp> {
     note.created.or(note.updated)
 }
 
@@ -790,18 +791,18 @@ fn decode_predefined(text: &str) -> String {
     out
 }
 
-fn parse_stamp(raw: &str) -> Option<DateTime<Utc>> {
+fn parse_stamp(raw: &str) -> Option<Timestamp> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
     }
-    let naive = NaiveDateTime::parse_from_str(raw, "%Y%m%dT%H%M%SZ").ok()?;
-    Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
+    let wall = DateTime::strptime("%Y%m%dT%H%M%SZ", raw).ok()?;
+    jiff::tz::Offset::UTC.to_timestamp(wall).ok()
 }
 
 fn display_due(raw: &str) -> Option<String> {
     let stamp = parse_stamp(raw)?;
-    Some(stamp.format("%Y-%m-%d").to_string())
+    Some(stamp.strftime("%Y-%m-%d").to_string())
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

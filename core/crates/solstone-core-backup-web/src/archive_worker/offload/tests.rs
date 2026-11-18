@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::{archive_worker::begin_owned, operation};
-use chrono::Datelike;
+use jiff::tz::Offset;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_backup::archive_admission::Clock;
@@ -86,10 +86,15 @@ pub(super) fn after_actor() {
 struct ActualClock;
 impl Clock for ActualClock {
     fn now_unix(&self) -> i64 {
-        Utc::now().timestamp()
+        Timestamp::now().as_second()
     }
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        Offset::UTC
+            .to_datetime(Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 fn clock() -> super::super::OwnedClock {
@@ -187,7 +192,7 @@ fn seed_offer(
     };
     let event = codec::Event::ArchiveV2 {
         schema_version: 2,
-        time: Utc::now().timestamp().try_into().unwrap(),
+        time: Timestamp::now().as_second().try_into().unwrap(),
         day: selection.target.day,
         stream: selection.target.stream,
         segment: "120000_60".into(),
@@ -268,15 +273,15 @@ fn offload_preflight_and_ready_admission_refusals_release_without_effects() {
                             &worker_slot,
                             begin,
                             vec![],
-                            Utc::now().date_naive(),
-                            Utc::now(),
+                            Offset::UTC.to_datetime(Timestamp::now()).date(),
+                            Timestamp::now(),
                             Path::new("/must-not-open/restic"),
                         );
                     } else {
                         create_planned(
                             &worker_slot,
                             begin,
-                            Utc::now().fixed_offset(),
+                            solstone_core_time::at_offset(Timestamp::now(), Offset::UTC),
                             Path::new("/must-not-open/restic"),
                         );
                     }
@@ -444,14 +449,19 @@ fn packaged_owned_offload_worker() {
         }
         let run = || {
             if planned {
-                create_planned(&worker_slot, begin, Utc::now().fixed_offset(), &restic);
+                create_planned(
+                    &worker_slot,
+                    begin,
+                    solstone_core_time::at_offset(Timestamp::now(), Offset::UTC),
+                    &restic,
+                );
             } else {
                 create_selected(
                     &worker_slot,
                     begin,
                     vec![selection(names)],
-                    NaiveDate::from_ymd_opt(2026, 10, 10).unwrap(),
-                    Utc::now(),
+                    jiff::civil::date(2026, 10, 10),
+                    Timestamp::now(),
                     &restic,
                 );
             }

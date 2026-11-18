@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use chrono::{Duration, NaiveDate};
+use jiff::ToSpan;
 use serde_json::Value;
 
 use crate::weekly_reflection::{
@@ -43,15 +43,13 @@ fn producer_week_opens_in_the_reader() {
     }
 
     let root = tempfile::tempdir().unwrap();
-    let first = NaiveDate::from_ymd_opt(2026, 3, 8).unwrap();
+    let first = jiff::civil::date(2026, 3, 8);
     for (week_index, chunk) in assigned.chunks(7).enumerate() {
-        let start = first + Duration::days((week_index * 7) as i64);
+        let start = first + (week_index as i64 * 7).days();
         let mut reports = Vec::with_capacity(7);
         let mut candidates = Vec::new();
         for (offset, (classification, _)) in chunk.iter().enumerate() {
-            let day = (start + Duration::days(offset as i64))
-                .format("%Y%m%d")
-                .to_string();
+            let day = solstone_core_time::day_key(start + (offset as i64).days());
             if matches!(classification, DayClassification::Memory) {
                 candidates.push(Candidate {
                     day: day.clone(),

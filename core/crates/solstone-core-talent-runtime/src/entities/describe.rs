@@ -140,9 +140,9 @@ fn render_evidence(entity_name: &str, facet: &str, journal: &std::path::Path) ->
     let mut request = SearchRequest::new(entity_name, Default::default());
     request.limit = 5;
     request.facet = (!facet.is_empty()).then_some(facet.to_owned());
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     match search(journal, OwnerBoundary, &request, today) {
         Ok(response) if response.results.is_empty() => NO_EVIDENCE.to_owned(),
         Ok(response) => response

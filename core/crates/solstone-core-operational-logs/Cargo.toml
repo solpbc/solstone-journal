@@ -13,10 +13,11 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
+jiff.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }

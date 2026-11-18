@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use jiff::tz::Offset;
 use serde_json::Value;
 
 use super::{
@@ -224,16 +224,18 @@ fn base_timestamp_and_header(rel: &str) -> (i64, Option<String>) {
     let Some(times) = segment_parse(rel) else {
         return (0, None);
     };
-    let Some(day) = NaiveDate::parse_from_str(day, "%Y%m%d").ok() else {
+    let Some(day) = solstone_core_time::parse_day(day) else {
         return (0, None);
     };
-    let Some(start) = day.and_hms_opt(times.hour.into(), times.minute.into(), times.second.into())
-    else {
+    let Some(start) = times.clock().map(|time| day.to_datetime(time)) else {
+        return (0, None);
+    };
+    let Ok(instant) = Offset::UTC.to_timestamp(start) else {
         return (0, None);
     };
     (
-        start.and_utc().timestamp_millis(),
-        Some(start.format("Start: %Y-%m-%d %I:%M%P").to_string()),
+        instant.as_millisecond(),
+        Some(start.strftime("Start: %Y-%m-%d %I:%M%P").to_string()),
     )
 }
 
@@ -385,16 +387,16 @@ mod clock_tests {
             "20261012/device_audio/130001_15/audio.jsonl",
             &[row.as_object().unwrap().clone()],
         );
-        let expected = NaiveDate::from_ymd_opt(2026, 10, 12)
+        let expected = "2026-10-12T13:00:01Z"
+            .parse::<jiff::Timestamp>()
             .unwrap()
-            .and_hms_opt(13, 0, 1)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
+            .as_millisecond();
         assert_eq!(
             produced.chunks[0].occurrence_time_ms.map(|v| v.0),
             Some(expected)
         );
+        let header = produced.header.unwrap_or_default();
+        assert!(header.contains("Start: 2026-10-12 01:00pm"), "{header}");
     }
 
     #[test]
@@ -408,12 +410,10 @@ mod clock_tests {
                 &format!("20261012/device_audio/{segment}/audio.jsonl"),
                 &[row.as_object().unwrap().clone()],
             );
-            let expected = NaiveDate::from_ymd_opt(2026, 10, day)
+            let expected = Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 10, day).at(hour, minute, second, 0))
                 .unwrap()
-                .and_hms_opt(hour, minute, second)
-                .unwrap()
-                .and_utc()
-                .timestamp_millis();
+                .as_millisecond();
             assert_eq!(
                 produced.chunks[0].occurrence_time_ms.map(|v| v.0),
                 Some(expected)
@@ -428,12 +428,10 @@ mod clock_tests {
             "20261012/device_audio/235959_15/audio.jsonl",
             &[row.as_object().unwrap().clone()],
         );
-        let expected = NaiveDate::from_ymd_opt(2026, 10, 13)
+        let expected = "2026-10-13T00:00:02Z"
+            .parse::<jiff::Timestamp>()
             .unwrap()
-            .and_hms_opt(0, 0, 2)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
+            .as_millisecond();
         assert_eq!(
             produced.chunks[0].occurrence_time_ms.map(|v| v.0),
             Some(expected)

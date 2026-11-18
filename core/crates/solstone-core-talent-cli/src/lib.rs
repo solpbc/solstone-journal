@@ -86,7 +86,7 @@ pub fn run_cli(
         args::Command::Log(options) => log::run_log(
             &journal_root.join("talents"),
             &options,
-            solstone_core_journal_config::owner_zone(journal_root),
+            &solstone_core_journal_config::owner_zone(journal_root),
         ),
         args::Command::Logs(options) => {
             let mut config_loader = || load_configs(talent_root, apps_root, journal_root, None);

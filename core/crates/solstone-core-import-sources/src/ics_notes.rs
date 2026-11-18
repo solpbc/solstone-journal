@@ -9,21 +9,22 @@
 //! the import window's transcript, stamped at the instant that placed the
 //! event, and carry the import that wrote them and when it happened.
 //!
-//! Repeating events are expanded here, with the parser's own recurrence
-//! support, up to a year after the import or the series' end. Times keep their
+//! Repeating events are expanded here up to a year after the import or the
+//! series' end. Times keep their
 //! own zone's wall clock across daylight-saving changes, and nothing depends on
 //! the machine's zone.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::sync::OnceLock;
 
-use chrono::{
-    DateTime, Duration, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Timelike, Utc,
-};
-use chrono_tz::Tz;
-use icalendar::{Component, Property};
+use jiff::civil::{Date, DateTime};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
+use solstone_core_time::Precision;
+
+use crate::ics_calendar::{Event, Property, parse_ical_date, parse_ical_datetime};
+use crate::ics_recur::Rule;
 use sha2::{Digest, Sha256};
 
 /// The import a set of calendar notes comes from.
@@ -32,7 +33,7 @@ pub struct ImportStamp {
     /// The import's id.
     pub id: String,
     /// When the import happened, from its own record.
-    pub imported_at: DateTime<Utc>,
+    pub imported_at: Timestamp,
 }
 
 /// What an import left out of, or shortened in, the calendar listing.
@@ -70,9 +71,9 @@ const WINDOWS_ZONES: &str = include_str!("windows_zones.tsv");
 
 /// The IANA zone a `TZID` names: an IANA name itself, or a Windows zone name
 /// as Outlook writes them, through the standard Windows-to-IANA table.
-pub fn resolve_zone(tzid: &str) -> Option<Tz> {
+pub fn resolve_zone(tzid: &str) -> Option<TimeZone> {
     let tzid = tzid.trim().trim_matches('"');
-    if let Ok(zone) = tzid.parse::<Tz>() {
+    if let Some(zone) = solstone_core_time::zone(tzid) {
         return Some(zone);
     }
     static TABLE: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
@@ -85,16 +86,16 @@ pub fn resolve_zone(tzid: &str) -> Option<Tz> {
                 .collect()
         })
         .get(tzid)
-        .and_then(|iana| iana.parse().ok())
+        .and_then(|iana| solstone_core_time::zone(iana))
 }
 
 /// A calendar time as the file states it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum IcsTime {
-    Zoned(DateTime<Tz>),
-    Utc(DateTime<Utc>),
-    Floating(NaiveDateTime),
-    Date(NaiveDate),
+    Zoned(ZonedDateTime),
+    Utc(Timestamp),
+    Floating(DateTime),
+    Date(Date),
 }
 
 /// A `TZID` that resolves to no zone.
@@ -102,9 +103,9 @@ enum IcsTime {
 struct UnknownZone;
 
 impl IcsTime {
-    fn instant(&self) -> Option<DateTime<Utc>> {
+    fn instant(&self) -> Option<Timestamp> {
         match self {
-            Self::Zoned(time) => Some(time.with_timezone(&Utc)),
+            Self::Zoned(time) => Some(time.timestamp()),
             Self::Utc(time) => Some(*time),
             Self::Floating(_) | Self::Date(_) => None,
         }
@@ -117,26 +118,26 @@ impl IcsTime {
             Self::Zoned(_) | Self::Utc(_) => self
                 .instant()
                 .expect("zoned times have an instant")
-                .format("%Y-%m-%dT%H:%M:%SZ")
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
                 .to_string(),
-            Self::Floating(wall) => wall.format("%Y-%m-%dT%H:%M:%S").to_string(),
-            Self::Date(date) => date.format("%Y-%m-%d").to_string(),
+            Self::Floating(wall) => wall.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
+            Self::Date(date) => date.strftime("%Y-%m-%d").to_string(),
         }
     }
 
     /// The time written as a note's `start` or `end`.
     fn written(&self) -> String {
         match self {
-            Self::Zoned(time) => time.to_rfc3339_opts(SecondsFormat::Secs, false),
-            Self::Utc(time) => time.to_rfc3339_opts(SecondsFormat::Secs, true),
-            Self::Floating(wall) => wall.format("%Y-%m-%dT%H:%M:%S").to_string(),
-            Self::Date(date) => date.format("%Y-%m-%d").to_string(),
+            Self::Zoned(time) => solstone_core_time::zoned_rfc3339(time, Precision::Secs, false),
+            Self::Utc(time) => solstone_core_time::utc_z(*time, Precision::Secs),
+            Self::Floating(wall) => wall.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
+            Self::Date(date) => date.strftime("%Y-%m-%d").to_string(),
         }
     }
 
     fn zone_name(&self) -> Option<String> {
         match self {
-            Self::Zoned(time) => Some(time.timezone().name().to_owned()),
+            Self::Zoned(time) => time.time_zone().iana_name().map(str::to_owned),
             Self::Utc(_) => Some("UTC".to_owned()),
             Self::Floating(_) | Self::Date(_) => None,
         }
@@ -147,29 +148,38 @@ impl IcsTime {
     }
 
     /// A key that orders and compares times of one series.
-    fn key(&self) -> NaiveDateTime {
+    fn key(&self) -> DateTime {
         match self {
-            Self::Zoned(_) | Self::Utc(_) => self.instant().expect("instant").naive_utc(),
+            Self::Zoned(_) | Self::Utc(_) => {
+                Offset::UTC.to_datetime(self.instant().expect("instant"))
+            }
             Self::Floating(wall) => *wall,
-            Self::Date(date) => date.and_hms_opt(0, 0, 0).expect("midnight"),
+            Self::Date(date) => date.to_datetime(jiff::civil::Time::midnight()),
         }
     }
 
-    /// The same moment shifted by a duration, keeping this time's kind.
-    fn plus(&self, length: Duration) -> Self {
-        match self {
-            Self::Zoned(time) => Self::Zoned(*time + length),
-            Self::Utc(time) => Self::Utc(*time + length),
-            Self::Floating(wall) => Self::Floating(*wall + length),
-            Self::Date(date) => Self::Date(*date + length),
-        }
+    /// The same moment shifted by a duration, keeping this time's kind; none
+    /// past the representable range.
+    fn plus(&self, length: SignedDuration) -> Option<Self> {
+        Some(match self {
+            Self::Zoned(time) => Self::Zoned(time.checked_add(length).ok()?),
+            Self::Utc(time) => Self::Utc(time.checked_add(length).ok()?),
+            Self::Floating(wall) => Self::Floating(wall.checked_add(length).ok()?),
+            Self::Date(date) => Self::Date(
+                date.checked_add(jiff::Span::new().days(length.as_hours() / 24))
+                    .ok()?,
+            ),
+        })
     }
 
-    fn until(&self, end: &Self) -> Option<Duration> {
+    fn until(&self, end: &Self) -> Option<SignedDuration> {
         match (self, end) {
-            (Self::Date(start), Self::Date(end)) => Some(*end - *start),
-            (Self::Floating(start), Self::Floating(end)) => Some(*end - *start),
-            _ => Some(end.instant()? - self.instant()?),
+            (Self::Date(start), Self::Date(end)) => Some(
+                end.to_datetime(jiff::civil::Time::midnight())
+                    .duration_since(start.to_datetime(jiff::civil::Time::midnight())),
+            ),
+            (Self::Floating(start), Self::Floating(end)) => Some(end.duration_since(*start)),
+            _ => Some(end.instant()?.duration_since(self.instant()?)),
         }
     }
 }
@@ -192,21 +202,23 @@ fn parse_times(property: &Property) -> Result<Vec<IcsTime>, UnknownZone> {
             continue;
         }
         if is_date || value.len() == 8 {
-            if let Ok(date) = NaiveDate::parse_from_str(value, "%Y%m%d") {
+            if let Some(date) = parse_ical_date(value) {
                 times.push(IcsTime::Date(date));
             }
             continue;
         }
         if let Some(utc) = value.strip_suffix('Z') {
-            if let Ok(wall) = NaiveDateTime::parse_from_str(utc, "%Y%m%dT%H%M%S") {
-                times.push(IcsTime::Utc(Utc.from_utc_datetime(&wall)));
+            if let Some(instant) =
+                parse_ical_datetime(utc).and_then(|wall| Offset::UTC.to_timestamp(wall).ok())
+            {
+                times.push(IcsTime::Utc(instant));
             }
             continue;
         }
-        let Ok(wall) = NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S") else {
+        let Some(wall) = parse_ical_datetime(value) else {
             continue;
         };
-        match zone {
+        match &zone {
             Some(zone) => {
                 if let Some(time) = zone_time(zone, wall) {
                     times.push(IcsTime::Zoned(time));
@@ -219,21 +231,23 @@ fn parse_times(property: &Property) -> Result<Vec<IcsTime>, UnknownZone> {
 }
 
 /// A wall time in a zone; one the clocks skip reads an hour on.
-fn zone_time(zone: Tz, wall: NaiveDateTime) -> Option<DateTime<Tz>> {
-    zone.from_local_datetime(&wall).earliest().or_else(|| {
-        zone.from_local_datetime(&(wall + Duration::hours(1)))
-            .earliest()
-    })
+fn zone_time(zone: &TimeZone, wall: DateTime) -> Option<ZonedDateTime> {
+    solstone_core_time::from_local(zone, wall)
+        .earliest()
+        .or_else(|| {
+            let later = wall.checked_add(SignedDuration::from_hours(1)).ok()?;
+            solstone_core_time::from_local(zone, later).earliest()
+        })
 }
 
-fn first_time(event: &icalendar::Event, key: &str) -> Result<Option<IcsTime>, UnknownZone> {
+fn first_time(event: &Event, key: &str) -> Result<Option<IcsTime>, UnknownZone> {
     match event.properties().get(key) {
         Some(property) => Ok(parse_times(property)?.into_iter().next()),
         None => Ok(None),
     }
 }
 
-fn multi_times(event: &icalendar::Event, key: &str) -> Result<Vec<IcsTime>, UnknownZone> {
+fn multi_times(event: &Event, key: &str) -> Result<Vec<IcsTime>, UnknownZone> {
     let mut times = Vec::new();
     for property in event.multi_properties().get(key).into_iter().flatten() {
         times.extend(parse_times(property)?);
@@ -243,7 +257,7 @@ fn multi_times(event: &icalendar::Event, key: &str) -> Result<Vec<IcsTime>, Unkn
 
 /// One `VEVENT` with the calendar it was read from.
 pub(crate) struct SourceEvent<'a> {
-    pub event: &'a icalendar::Event,
+    pub event: &'a Event,
     pub calendar: Option<String>,
 }
 
@@ -255,7 +269,7 @@ pub(crate) enum Placement {
     /// Placed, but not by a readable `LAST-MODIFIED` or `CREATED`.
     Unstamped,
     /// Placed at this change time.
-    Stamped(DateTime<Utc>),
+    Stamped(Timestamp),
 }
 
 /// The most calendar note lines one import writes.
@@ -270,11 +284,11 @@ type EventKey = (String, String);
 /// override actually wrote a line for. Every other event's lines, a series'
 /// expansion included, are made only when its window is written, and an
 /// import writes at most its line limit.
-pub(crate) struct ImportNotes<'a, Z> {
+pub(crate) struct ImportNotes<'a> {
     sources: &'a [SourceEvent<'a>],
     placements: Vec<Placement>,
     stamp: &'a ImportStamp,
-    zone: &'a Z,
+    zone: &'a TimeZone,
     series: Series,
     overrides: Vec<Option<Outcome>>,
     line_cap: usize,
@@ -302,12 +316,12 @@ struct Tally {
     over_limit: BTreeSet<EventKey>,
 }
 
-impl<'a, Z: TimeZone<Offset: fmt::Display>> ImportNotes<'a, Z> {
+impl<'a> ImportNotes<'a> {
     pub(crate) fn new(
         sources: &'a [SourceEvent<'a>],
         placements: Vec<Placement>,
         stamp: &'a ImportStamp,
-        zone: &'a Z,
+        zone: &'a TimeZone,
         line_cap: usize,
     ) -> Self {
         // Each series' own rule, which its overrides share.
@@ -421,7 +435,7 @@ fn outcome(
     source: &SourceEvent<'_>,
     placement: Placement,
     stamp: &ImportStamp,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
     series: &Series,
 ) -> Outcome {
     match placement {
@@ -451,7 +465,7 @@ impl From<UnknownZone> for Skip {
     }
 }
 
-fn event_uid(event: &icalendar::Event) -> Option<String> {
+fn event_uid(event: &Event) -> Option<String> {
     event
         .property_value("UID")
         .map(str::trim)
@@ -459,7 +473,7 @@ fn event_uid(event: &icalendar::Event) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn is_cancelled(event: &icalendar::Event) -> bool {
+fn is_cancelled(event: &Event) -> bool {
     event
         .property_value("STATUS")
         .is_some_and(|status| status.trim().eq_ignore_ascii_case("CANCELLED"))
@@ -467,7 +481,7 @@ fn is_cancelled(event: &icalendar::Event) -> bool {
 
 /// A stable identity for an event with no `UID`, from its own content, so a
 /// re-import of the same file gives the same identity.
-fn derived_uid(event: &icalendar::Event) -> String {
+fn derived_uid(event: &Event) -> String {
     let mut digest = Sha256::new();
     for key in [
         "SUMMARY",
@@ -548,7 +562,7 @@ impl EventFacts {
         let end_written = end.filter(|_| !removed).filter(|end| {
             start_written
                 .and_then(|start| start.until(end))
-                .is_some_and(|length| length >= Duration::zero())
+                .is_some_and(|length| length >= SignedDuration::ZERO)
         });
         line.insert("end".into(), json!(end_written.map(IcsTime::written)));
         line.insert("event".into(), json!(self.event));
@@ -623,7 +637,7 @@ fn person(property: &Property, with_status: bool) -> Value {
     Value::Object(person)
 }
 
-fn attendees(event: &icalendar::Event) -> Value {
+fn attendees(event: &Event) -> Value {
     let mut people = event
         .multi_properties()
         .get("ATTENDEE")
@@ -643,9 +657,9 @@ fn attendees(event: &icalendar::Event) -> Value {
 
 fn event_notes(
     source: &SourceEvent<'_>,
-    placed_at: DateTime<Utc>,
+    placed_at: Timestamp,
     stamp: &ImportStamp,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
     series: &Series,
 ) -> Outcome {
     let event = source.event;
@@ -706,7 +720,7 @@ fn event_notes(
             .overridden
             .contains(&(uid.clone(), occurrence.clone()))
     };
-    let bound = stamp.imported_at + Duration::days(EXPANSION_DAYS);
+    let bound = stamp.imported_at + SignedDuration::from_hours(24 * EXPANSION_DAYS);
     let mut expanded = Expanded::default();
     let mut starts = match rule.as_deref().map(|rule| expand(rule, &start, bound)) {
         None => vec![start],
@@ -725,12 +739,17 @@ fn event_notes(
             vec![start]
         }
     };
-    starts.extend(rdates.iter().copied().filter(|rdate| {
-        rdate
-            .instant()
-            .zip(Some(bound))
-            .is_none_or(|(instant, bound)| instant <= bound)
-    }));
+    starts.extend(
+        rdates
+            .iter()
+            .filter(|rdate| {
+                rdate
+                    .instant()
+                    .zip(Some(bound))
+                    .is_none_or(|(instant, bound)| instant <= bound)
+            })
+            .cloned(),
+    );
     let excluded = exdates
         .iter()
         .map(IcsTime::occurrence)
@@ -746,7 +765,7 @@ fn event_notes(
         let line = if cancelled || excluded.contains(&occurrence) {
             facts.line("removed", Some(occurrence), None, None)
         } else {
-            let end = length.map(|length| occurrence_start.plus(length));
+            let end = length.and_then(|length| occurrence_start.plus(length));
             facts.line(
                 "added",
                 Some(occurrence),
@@ -771,14 +790,8 @@ fn event_notes(
 
 /// An instant in the journal zone's offset at that instant, in whole seconds,
 /// never written as `Z`.
-fn in_zone_whole_seconds(
-    instant: DateTime<Utc>,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> String {
-    let whole = instant - Duration::nanoseconds(i64::from(instant.nanosecond()));
-    whole
-        .with_timezone(zone)
-        .to_rfc3339_opts(SecondsFormat::Secs, false)
+fn in_zone_whole_seconds(instant: Timestamp, zone: &TimeZone) -> String {
+    solstone_core_time::rfc3339(instant, zone.to_offset(instant), Precision::Secs, false)
 }
 
 /// Keep only lines the contract accepts, each small enough for a file of its
@@ -802,8 +815,7 @@ struct Expansion {
 
 /// Expand a rule from its first start up to `bound`, keeping the most recent
 /// dates when there are more than a series keeps.
-fn expand(rule: &str, start: &IcsTime, bound: DateTime<Utc>) -> Result<Expansion, ()> {
-    use icalendar::rrule::{RRule, Tz as RuleZone, Unvalidated};
+fn expand(rule: &str, start: &IcsTime, bound: Timestamp) -> Result<Expansion, ()> {
     // UNTIL is read here, in the series' own frame, since files often write it
     // with no Z where the parser asks for UTC.
     let mut until = None;
@@ -816,31 +828,28 @@ fn expand(rule: &str, start: &IcsTime, bound: DateTime<Utc>) -> Result<Expansion
             _ => parts.push(part),
         }
     }
-    let mut parsed: RRule<Unvalidated> = parts.join(";").parse().map_err(|_| ())?;
+    let mut parsed = Rule::parse(&parts.join(";")).map_err(|_| ())?;
     if let Some(until) = until {
-        parsed = parsed.until(until.with_timezone(&RuleZone::UTC));
+        parsed = parsed.until(until);
     }
     // Floating and all-day times are expanded as wall clock with no zone, so
     // the machine's own zone never takes part.
-    let (zone, first) = match start {
-        IcsTime::Zoned(time) => {
-            let zone = RuleZone::Tz(time.timezone());
-            (zone, time.with_timezone(&zone))
-        }
-        IcsTime::Utc(time) => (RuleZone::UTC, time.with_timezone(&RuleZone::UTC)),
-        IcsTime::Floating(_) | IcsTime::Date(_) => {
-            (RuleZone::UTC, RuleZone::UTC.from_utc_datetime(&start.key()))
-        }
+    let first = match start {
+        IcsTime::Zoned(time) => time.clone(),
+        IcsTime::Utc(time) => time.to_zoned_datetime(TimeZone::UTC),
+        IcsTime::Floating(_) | IcsTime::Date(_) => Offset::UTC
+            .to_timestamp(start.key())
+            .map_err(|_| ())?
+            .to_zoned_datetime(TimeZone::UTC),
     };
-    let set = parsed.build(first).map_err(|_| ())?;
-    let bound = bound.with_timezone(&zone);
+    let set = parsed.build(&first).map_err(|_| ())?;
     let mut kept = VecDeque::new();
     let mut truncated = false;
-    for (step, time) in (&set).into_iter().enumerate() {
+    for (step, time) in set.iter().enumerate() {
         if step >= MAX_EXPANSION_STEPS {
             return Err(());
         }
-        if time > bound {
+        if time.timestamp() > bound {
             break;
         }
         if kept.len() == MAX_SERIES_OCCURRENCES {
@@ -852,10 +861,12 @@ fn expand(rule: &str, start: &IcsTime, bound: DateTime<Utc>) -> Result<Expansion
     let starts = kept
         .into_iter()
         .map(|time| match start {
-            IcsTime::Zoned(original) => IcsTime::Zoned(time.with_timezone(&original.timezone())),
-            IcsTime::Utc(_) => IcsTime::Utc(time.with_timezone(&Utc)),
-            IcsTime::Floating(_) => IcsTime::Floating(time.naive_utc()),
-            IcsTime::Date(_) => IcsTime::Date(time.naive_utc().date()),
+            IcsTime::Zoned(original) => {
+                IcsTime::Zoned(time.with_time_zone(original.time_zone().clone()))
+            }
+            IcsTime::Utc(_) => IcsTime::Utc(time.timestamp()),
+            IcsTime::Floating(_) => IcsTime::Floating(time.datetime()),
+            IcsTime::Date(_) => IcsTime::Date(time.date()),
         })
         .collect();
     Ok(Expansion { starts, truncated })
@@ -865,23 +876,17 @@ fn expand(rule: &str, start: &IcsTime, bound: DateTime<Utc>) -> Result<Expansion
 /// expanded in: the start's own zone for a zoned series, and wall clock as UTC
 /// for floating and all-day ones. A date `UNTIL` takes in its whole day; a
 /// time with no `Z` is read in the series' own zone.
-fn until_instant(value: &str, start: &IcsTime) -> Option<DateTime<Utc>> {
+fn until_instant(value: &str, start: &IcsTime) -> Option<Timestamp> {
     let (wall, utc) = if let Some(utc) = value.strip_suffix('Z') {
-        (
-            NaiveDateTime::parse_from_str(utc, "%Y%m%dT%H%M%S").ok()?,
-            true,
-        )
-    } else if let Ok(date) = NaiveDate::parse_from_str(value, "%Y%m%d") {
-        (date.and_hms_opt(23, 59, 59)?, false)
+        (parse_ical_datetime(utc)?, true)
+    } else if let Some(date) = parse_ical_date(value) {
+        (date.at(23, 59, 59, 0), false)
     } else {
-        (
-            NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S").ok()?,
-            false,
-        )
+        (parse_ical_datetime(value)?, false)
     };
     match start {
-        IcsTime::Zoned(time) if !utc => Some(zone_time(time.timezone(), wall)?.with_timezone(&Utc)),
-        _ => Some(Utc.from_utc_datetime(&wall)),
+        IcsTime::Zoned(time) if !utc => Some(zone_time(time.time_zone(), wall)?.timestamp()),
+        _ => Offset::UTC.to_timestamp(wall).ok(),
     }
 }
 
@@ -892,8 +897,8 @@ pub(crate) fn one_per_identity(records: Vec<Map<String, Value>>) -> Vec<Map<Stri
         let changed = record
             .get("changed_at")
             .and_then(Value::as_str)
-            .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
-            .map(|time| time.timestamp());
+            .and_then(|text| solstone_core_time::parse_rfc3339(text).ok())
+            .map(|time| time.timestamp().as_second());
         let removed = record.get("change").and_then(Value::as_str) == Some("removed");
         // The earliest name wins, and a missing name loses to every name.
         let calendar = record.get("calendar").and_then(Value::as_str);

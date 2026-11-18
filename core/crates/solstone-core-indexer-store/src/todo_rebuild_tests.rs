@@ -96,7 +96,9 @@ impl Journal {
         let log = self
             .path()
             .join("chronicle")
-            .join(chrono::Local::now().format("%Y%m%d").to_string())
+            .join(solstone_core_time::day_key(
+                jiff::ZonedDateTime::now().date(),
+            ))
             .join("health/indexer.jsonl");
         fs::read_to_string(log)
             .unwrap_or_default()
@@ -129,11 +131,12 @@ fn token_entry(token: Token) -> Entry {
 }
 
 fn note(index: usize) -> String {
-    let day =
-        chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + chrono::Duration::days(index as i64);
+    let day = jiff::civil::date(2026, 1, 1)
+        .checked_add(jiff::Span::new().days(index as i64))
+        .unwrap();
     format!(
         "{}/desktop/120000_300/talents/activity.md",
-        day.format("%Y%m%d")
+        solstone_core_time::day_key(day)
     )
 }
 

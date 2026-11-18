@@ -8,7 +8,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use rusqlite::{
     Connection, Error as SqlError, OpenFlags, OptionalExtension, Row, params_from_iter,
 };
@@ -552,7 +554,7 @@ fn load_entity_network_unreported(
     }
     let filter = build_filters(&request.filters)?;
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let reference_day = reference_day(request.reference_day.as_deref(), zone, Utc::now())?;
+    let reference_day = reference_day(request.reference_day.as_deref(), &zone, Timestamp::now())?;
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -783,7 +785,7 @@ fn load_network_overview_unreported(
     validate_nonnegative("limit", request.limit)?;
     let filter = build_filters(&request.filters)?;
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let reference_day = reference_day(request.reference_day.as_deref(), zone, Utc::now())?;
+    let reference_day = reference_day(request.reference_day.as_deref(), &zone, Timestamp::now())?;
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -1189,36 +1191,35 @@ fn validate_nonnegative(name: &str, value: i64) -> Result<(), EdgeQueryError> {
 }
 fn reference_day(
     input: Option<&str>,
-    zone: chrono_tz::Tz,
-    now: DateTime<Utc>,
+    zone: &TimeZone,
+    now: Timestamp,
 ) -> Result<String, EdgeQueryError> {
     let day = input
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| now.with_timezone(&zone).format("%Y%m%d").to_string());
+        .unwrap_or_else(|| solstone_core_time::day_key(now.to_zoned_datetime(zone.clone()).date()));
     parse_reference_day(&day)?;
     Ok(day)
 }
-fn parse_reference_day(day: &str) -> Result<NaiveDate, EdgeQueryError> {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| invalid(format!("Invalid edge day: {day:?}")))
+fn parse_reference_day(day: &str) -> Result<Date, EdgeQueryError> {
+    solstone_core_time::parse_day(day).ok_or_else(|| invalid(format!("Invalid edge day: {day:?}")))
 }
-fn parse_stored_day(day: &str) -> Result<NaiveDate, EdgeQueryError> {
-    NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| EdgeQueryError::Internal {
+fn parse_stored_day(day: &str) -> Result<Date, EdgeQueryError> {
+    solstone_core_time::parse_day(day).ok_or_else(|| EdgeQueryError::Internal {
         detail: format!("Invalid stored edge day: {day:?}"),
     })
 }
-fn decay_factor(day: Option<&str>, reference: NaiveDate) -> Result<f64, EdgeQueryError> {
+fn decay_factor(day: Option<&str>, reference: Date) -> Result<f64, EdgeQueryError> {
     let Some(day) = day else {
         return Ok(1.0);
     };
-    let age = (reference - parse_stored_day(day)?).num_days().max(0);
+    let age = (reference.duration_since(parse_stored_day(day)?).as_hours() / 24).max(0);
     Ok((-(age as f64) * std::f64::consts::LN_2 / HALF_LIFE_DAYS).exp())
 }
 fn kind_weight(
     kind: &str,
     weight_sum: i64,
     day: Option<&str>,
-    reference: NaiveDate,
+    reference: Date,
 ) -> Result<f64, EdgeQueryError> {
     let Some((_, multiplier)) = KIND_WEIGHTS
         .iter()
@@ -1562,7 +1563,7 @@ fn accumulate_kind(
     count: i64,
     weight_sum: i64,
     day: Option<&str>,
-    reference: NaiveDate,
+    reference: Date,
 ) -> Result<(), EdgeQueryError> {
     if kind == "committed-to" || kind == "decided-with" {
         return Ok(());

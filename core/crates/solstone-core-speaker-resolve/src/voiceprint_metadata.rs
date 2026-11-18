@@ -5,14 +5,16 @@
 
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveDateTime, Offset, TimeDelta, TimeZone};
-use chrono_tz::Tz;
+use jiff::SignedDuration;
+use jiff::civil::{DateTime, Time};
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 use solstone_core_entity::{VoiceprintKey, voiceprint_key_from_metadata};
 use solstone_core_journal_config::{ConfigLoadError, read_journal_config};
 use solstone_core_journal_io::paths::SegmentLayout;
+use solstone_core_time::from_local;
 
 /// Required scalar fields for speaker-resolution archive rows. The entity
 /// store also accepts other scalar shapes, which these consumers must skip.
@@ -229,7 +231,7 @@ impl VoiceprintMetadata {
 /// The journal's owner zone, which segment keys are read in. A config that
 /// exists but does not parse is an error; a missing or unknown zone falls back
 /// to this computer's zone.
-pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
+pub fn owner_timezone(journal_root: &Path) -> Result<TimeZone, ConfigLoadError> {
     read_journal_config(journal_root)?;
     Ok(solstone_core_journal_config::owner_zone(journal_root))
 }
@@ -237,34 +239,55 @@ pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
 /// Epoch milliseconds at which a segment started: the `last_seen_ts` of a
 /// voiceprint taken from it. `None` for a malformed day or segment key.
 #[must_use]
-pub fn segment_start_ts_ms(timezone: Tz, day: &str, segment_key: &str) -> Option<i64> {
-    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+pub fn segment_start_ts_ms(timezone: &TimeZone, day: &str, segment_key: &str) -> Option<i64> {
+    let date = solstone_core_time::parse_day(day)?;
+    // A segment key starts with its wall-clock start as six ASCII digits.
+    let digits = segment_key.as_bytes().get(..6)?;
+    if !digits.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    let time = segment_key.get(0..6)?;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let local = date.and_hms_opt(
-        time[0..2].parse().ok()?,
-        time[2..4].parse().ok()?,
-        time[4..6].parse().ok()?,
-    )?;
-    wall_time_ms(&timezone, &local)
+    let field = |at: usize| (digits[at] - b'0') as i8 * 10 + (digits[at + 1] - b'0') as i8;
+    let time = Time::new(field(0), field(2), field(4), 0).ok()?;
+    wall_time_ms(timezone, date.to_datetime(time))
 }
 
 /// The instant a zone gives a wall time. The repeated hour at the end of
 /// daylight time takes its first instant, and a wall time the clocks skip when
 /// they spring forward reads at the offset in effect just before the jump.
-fn wall_time_ms(timezone: &Tz, local: &NaiveDateTime) -> Option<i64> {
-    if let Some(value) = timezone.from_local_datetime(local).earliest() {
-        return Some(value.timestamp_millis());
+fn wall_time_ms(timezone: &TimeZone, local: DateTime) -> Option<i64> {
+    if let Some(value) = from_local(timezone, local).earliest() {
+        return Some(value.timestamp().as_millisecond());
     }
     let before = (1..=3).find_map(|hours| {
-        timezone
-            .from_local_datetime(&(*local - TimeDelta::hours(hours)))
-            .earliest()
+        let earlier = local.checked_sub(SignedDuration::from_hours(hours)).ok()?;
+        from_local(timezone, earlier).earliest()
     })?;
-    let offset = i64::from(before.offset().fix().local_minus_utc());
-    Some((local.and_utc() - TimeDelta::seconds(offset)).timestamp_millis())
+    let ts = before.offset().to_timestamp(local).ok()?;
+    Some(ts.as_millisecond())
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::segment_start_ts_ms;
+    use solstone_core_journal_config::TimeZone;
+
+    #[test]
+    fn a_segment_key_must_start_with_six_digits() {
+        let utc = TimeZone::UTC;
+        assert_eq!(
+            segment_start_ts_ms(&utc, "19700101", "010000_300"),
+            Some(3_600_000)
+        );
+        for key in [
+            "+10000_300",
+            "1\u{e9}0000_300",
+            "01000",
+            "0100x0_300",
+            " 10000_300",
+        ] {
+            assert_eq!(segment_start_ts_ms(&utc, "19700101", key), None, "{key}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -345,25 +368,25 @@ mod tests {
 
     #[test]
     fn segment_start_is_owner_local_wall_time() {
-        let denver: Tz = "America/Denver".parse().unwrap();
+        let denver = solstone_core_time::zone("America/Denver").unwrap();
         // 2026-08-08 12:00:00 MDT is 18:00:00 UTC.
         assert_eq!(
-            segment_start_ts_ms(denver, "20260808", "120000_300"),
+            segment_start_ts_ms(&denver, "20260808", "120000_300"),
             Some(1_786_212_000_000)
         );
         assert_eq!(
-            segment_start_ts_ms(Tz::UTC, "20260808", "120000_300"),
+            segment_start_ts_ms(&TimeZone::UTC, "20260808", "120000_300"),
             Some(1_786_190_400_000)
         );
         // The repeated hour at the end of daylight time takes its first instant.
         assert_eq!(
-            segment_start_ts_ms(denver, "20261101", "013000_300"),
+            segment_start_ts_ms(&denver, "20261101", "013000_300"),
             Some(1_793_518_200_000)
         );
         // A wall time skipped at the start of daylight time reads at the
         // offset before the jump: 02:30 MST is 09:30 UTC.
         assert_eq!(
-            segment_start_ts_ms(denver, "20260308", "023000_300"),
+            segment_start_ts_ms(&denver, "20260308", "023000_300"),
             Some(1_772_962_200_000)
         );
         for (day, key) in [
@@ -371,7 +394,11 @@ mod tests {
             ("20260808", "12000"),
             ("20260808", "250000_1"),
         ] {
-            assert_eq!(segment_start_ts_ms(Tz::UTC, day, key), None, "{day} {key}");
+            assert_eq!(
+                segment_start_ts_ms(&TimeZone::UTC, day, key),
+                None,
+                "{day} {key}"
+            );
         }
     }
 

@@ -12,7 +12,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
-use chrono::{Days, Local};
+use jiff::{Span, ZonedDateTime};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::{Mutex, MutexGuard};
@@ -723,11 +723,11 @@ fn prune_logs_disabled_is_a_noop_without_an_executor() {
                 Some(&json!({"dry_run": false})),
             ))
         });
-    let cutoff_day = Local::now()
-        .date_naive()
-        .checked_sub_days(Days::new(14))
+    let cutoff_day = ZonedDateTime::now()
+        .date()
+        .checked_sub(Span::new().days(14))
         .expect("cutoff date")
-        .format("%Y%m%d")
+        .strftime("%Y%m%d")
         .to_string();
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -917,7 +917,7 @@ fn ac5a_update_empty_audio_migrates_preserve_all_and_logs_action() {
     );
     assert_eq!(config["transcribe"]["backend"], "parakeet");
 
-    let day = Local::now().format("%Y%m%d").to_string();
+    let day = ZonedDateTime::now().strftime("%Y%m%d").to_string();
     let action_log_path = root.path().join(format!("config/actions/{day}.jsonl"));
     let log_content = fs::read_to_string(action_log_path).expect("action log");
     let last_line = log_content.lines().last().expect("log line");
@@ -973,7 +973,7 @@ fn ac5b_update_empty_audio_removes_preserve_all_even_if_empty_audio_unchanged() 
             .is_none()
     );
 
-    let day = Local::now().format("%Y%m%d").to_string();
+    let day = ZonedDateTime::now().strftime("%Y%m%d").to_string();
     let action_log_path = root.path().join(format!("config/actions/{day}.jsonl"));
     let log_content = fs::read_to_string(action_log_path).expect("action log");
     let last_line = log_content.lines().last().expect("log line");

@@ -19,7 +19,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::{FixedOffset, NaiveDate, TimeZone};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
+use jiff::tz::Offset;
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
 use solstone_core_retention::door::{remove_logs, remove_planned_oplogs};
@@ -69,30 +71,29 @@ impl Bed {
     }
 }
 
-fn date(text: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").expect("a date")
+fn date(text: &str) -> Date {
+    Date::strptime("%Y-%m-%d", text).expect("a date")
 }
 
-fn oplog_instant(year: i32, month: u32, day: u32) -> chrono::DateTime<FixedOffset> {
-    FixedOffset::east_opt(0)
-        .expect("UTC")
-        .with_ymd_and_hms(year, month, day, 12, 0, 0)
-        .single()
-        .expect("oplog instant")
+fn oplog_instant(year: i16, month: i8, day: i8) -> ZonedDateTime {
+    let noon = Offset::UTC
+        .to_timestamp(jiff::civil::date(year, month, day).at(12, 0, 0, 0))
+        .expect("oplog instant");
+    solstone_core_time::at_offset(noon, Offset::UTC)
 }
 
 fn create_oplog(
     bed: &Bed,
-    year: i32,
-    month: u32,
-    day: u32,
+    year: i16,
+    month: i8,
+    day: i8,
 ) -> solstone_core_journal_io::operational_log::OplogWriter {
     create_oplog_at(
         JournalRoot::open(&bed.root).expect("journal root"),
         "source",
         "run",
         OplogFormat::Log,
-        oplog_instant(year, month, day),
+        &oplog_instant(year, month, day),
     )
     .expect("oplog")
 }
@@ -100,11 +101,13 @@ fn create_oplog(
 /// Date a fixture oplog's last write to noon UTC on `day` (YYYYMMDD), the day it
 /// was opened on, so it is old by its write as well as by its partition.
 fn last_written_on(bed: &Bed, day: &str, leaf: &str) {
-    let noon = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .expect("a day")
-        .and_hms_opt(12, 0, 0)
-        .expect("noon")
-        .and_utc();
+    let noon = Offset::UTC
+        .to_timestamp(
+            solstone_core_time::parse_day(day)
+                .expect("a day")
+                .at(12, 0, 0, 0),
+        )
+        .expect("noon");
     fs::OpenOptions::new()
         .write(true)
         .open(
@@ -115,7 +118,7 @@ fn last_written_on(bed: &Bed, day: &str, leaf: &str) {
                 .join(leaf),
         )
         .expect("oplog")
-        .set_modified(std::time::SystemTime::from(noon))
+        .set_modified(std::time::SystemTime::try_from(noon).expect("noon"))
         .expect("last write");
 }
 
@@ -778,11 +781,10 @@ fn filetime_set(path: &std::path::Path, when: std::time::SystemTime) {
 }
 
 fn filetime_set_day(path: &std::path::Path, day: &str) {
-    let seconds = date(day)
-        .and_hms_opt(0, 0, 0)
+    let seconds = Offset::UTC
+        .to_timestamp(date(day).at(0, 0, 0, 0))
         .expect("midnight")
-        .and_utc()
-        .timestamp();
+        .as_second();
     filetime_set(
         path,
         std::time::SystemTime::UNIX_EPOCH

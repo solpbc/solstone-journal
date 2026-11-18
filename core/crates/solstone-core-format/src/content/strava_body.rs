@@ -8,8 +8,9 @@
 //! how the body readers see a tile: its first piece as the workout's
 //! `experience`, and every later piece as an `experience_tile` of it.
 
-use chrono::{DateTime, Duration, SecondsFormat};
+use jiff::SignedDuration;
 use serde_json::Value;
+use solstone_core_time::{Precision, parse_rfc3339, zoned_rfc3339};
 
 use super::body_records::{BodyRow, RowKind, plain_words};
 
@@ -66,14 +67,16 @@ pub fn strava_rows(workout_json: &str) -> Option<Vec<BodyRow>> {
     if record_type.is_empty() {
         return None;
     }
-    let start = DateTime::parse_from_rfc3339(workout.get("start")?.as_str()?.trim()).ok()?;
+    let start = parse_rfc3339(workout.get("start")?.as_str()?.trim()).ok()?;
     // The span its tiles cover, as they were cut: at least a second.
     let elapsed = workout
         .get("elapsed_seconds")
         .and_then(Value::as_u64)
         .unwrap_or(0)
         .max(1);
-    let end = start + Duration::seconds(i64::try_from(elapsed).ok()?);
+    let end = start
+        .checked_add(SignedDuration::from_secs(i64::try_from(elapsed).ok()?))
+        .ok()?;
     let label = plain_words(record_type);
     let kind = if index == 0 {
         RowKind::Experience
@@ -88,8 +91,8 @@ pub fn strava_rows(workout_json: &str) -> Option<Vec<BodyRow>> {
     let mut row = BodyRow::new(kind, id, STRAVA_SOURCE, record_type, label);
     row.by = Some(STRAVA_BY.to_owned());
     row.experience = Some("workout".to_owned());
-    row.start = Some(start.to_rfc3339_opts(SecondsFormat::Secs, false));
-    row.end = Some(end.to_rfc3339_opts(SecondsFormat::Secs, false));
+    row.start = Some(zoned_rfc3339(&start, Precision::Secs, false));
+    row.end = Some(zoned_rfc3339(&end, Precision::Secs, false));
     if index > 0 {
         row.of = Some(activity_id);
         row.index = Some(index);

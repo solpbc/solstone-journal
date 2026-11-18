@@ -75,11 +75,7 @@ pub(crate) fn commit(
     item.parent_binding
         .revalidate_canonical_binding()
         .map_err(|_| CommitError::Changed)?;
-    let instant = chrono::Utc::now();
-    let current_day = instant
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .format("%Y%m%d")
-        .to_string();
+    let current_day = solstone_core_journal_config::owner_day(journal, jiff::Timestamp::now());
     let entries = solstone_core_journal_io::list_dir_entries(segment)
         .map_err(|error| CommitError::Read(error.to_string()))?;
     let candidate = entries

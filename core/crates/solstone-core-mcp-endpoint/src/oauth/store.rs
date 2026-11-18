@@ -11,8 +11,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
+use jiff::SignedDuration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -101,7 +101,7 @@ pub struct OAuthStore {
 /// A newly generated pairing code. The plaintext is returned exactly once.
 pub struct CreatedPairingCode {
     pub code: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: jiff::Timestamp,
     pub generation: u64,
     pub door: String,
 }
@@ -109,7 +109,7 @@ pub struct CreatedPairingCode {
 /// Non-secret state for the owner's currently active pairing window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairingCodeSummary {
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: jiff::Timestamp,
     pub generation: u64,
     pub locked: bool,
     pub door: Option<String>,
@@ -159,7 +159,7 @@ pub(crate) struct RegisteredClient {
     pub(crate) client_id: String,
     pub(crate) redirect_uris: Vec<String>,
     pub(crate) client_name: Option<String>,
-    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) created_at: jiff::Timestamp,
 }
 
 /// Classification of a presented pairing code for an OAuth authorization request.
@@ -183,7 +183,7 @@ pub(crate) struct PendingAuthorization {
 pub struct OAuthClientSummary {
     pub client_id: String,
     pub client_name: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: jiff::Timestamp,
 }
 
 /// Non-secret grant metadata suitable for registry tracking.
@@ -192,8 +192,8 @@ pub struct OAuthGrantSummary {
     pub id: String,
     pub client_id: String,
     pub client_name: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub access_expires_at: DateTime<Utc>,
+    pub created_at: jiff::Timestamp,
+    pub access_expires_at: jiff::Timestamp,
     pub resource: Option<String>,
 }
 
@@ -321,8 +321,10 @@ struct StoredClient {
     redirect_uris: Vec<String>,
     client_name: Option<String>,
     source: String,
-    created_at: DateTime<Utc>,
-    last_used_at: Option<DateTime<Utc>>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: jiff::Timestamp,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    last_used_at: Option<jiff::Timestamp>,
     revocation_generation: u64,
 }
 
@@ -336,9 +338,12 @@ struct StoredGrant {
     refresh_verifier: String,
     refresh_generation: u64,
     revocation_generation: u64,
-    access_expires_at: DateTime<Utc>,
-    refresh_expires_at: DateTime<Utc>,
-    created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    access_expires_at: jiff::Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    refresh_expires_at: jiff::Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: jiff::Timestamp,
     /// Once any grant carries a resource, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resource: Option<String>,
@@ -386,11 +391,14 @@ struct StoredPending {
     pkce_method: String,
     state: Option<String>,
     source: String,
-    created_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: jiff::Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    expires_at: jiff::Timestamp,
     failure_count: u8,
     authorization_code_verifier: Option<String>,
-    code_expires_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    code_expires_at: Option<jiff::Timestamp>,
     #[serde(default)]
     permission: Option<ReadPermission>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -417,7 +425,8 @@ struct StoredPending {
 #[serde(deny_unknown_fields)]
 struct StoredPairing {
     verifier: String,
-    expires_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    expires_at: jiff::Timestamp,
     generation: u64,
     locked: bool,
     /// Once a pairing code carries a door, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
@@ -527,7 +536,7 @@ impl OAuthStore {
         let verifier = sha256_b64(code.as_bytes());
         self.mutate(|store, now| {
             store.pairing_generation = store.pairing_generation.saturating_add(1).max(1);
-            let expires_at = now + Duration::seconds(PAIRING_TTL_SECS);
+            let expires_at = now + SignedDuration::from_secs(PAIRING_TTL_SECS);
             let generation = store.pairing_generation;
             store.pairing = Some(StoredPairing {
                 verifier,
@@ -639,7 +648,7 @@ impl OAuthStore {
     pub(crate) fn grant_refresh_expires_at(
         &self,
         grant_id: &str,
-    ) -> Result<Option<DateTime<Utc>>, OAuthStoreError> {
+    ) -> Result<Option<jiff::Timestamp>, OAuthStoreError> {
         let store = self.read_store()?;
         Ok(store
             .grants
@@ -651,13 +660,13 @@ impl OAuthStore {
     pub(crate) fn resume_refresh_expiry(
         &self,
         grant_id: &str,
-    ) -> Result<DateTime<Utc>, OAuthStoreError> {
+    ) -> Result<jiff::Timestamp, OAuthStoreError> {
         self.edit(
             |store, now| {
                 let Some(grant) = store.grants.iter_mut().find(|g| g.id == grant_id) else {
                     return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
                 };
-                let expiry = now + Duration::seconds(REFRESH_TTL_SECS);
+                let expiry = now + SignedDuration::from_secs(REFRESH_TTL_SECS);
                 grant.refresh_expires_at = expiry;
                 (EditPersistence::Persist, Ok(expiry))
             },
@@ -885,7 +894,7 @@ impl OAuthStore {
                 state,
                 source,
                 created_at: now,
-                expires_at: now + Duration::seconds(PENDING_TRANSACTION_TTL_SECS),
+                expires_at: now + SignedDuration::from_secs(PENDING_TRANSACTION_TTL_SECS),
                 failure_count: 0,
                 authorization_code_verifier: None,
                 code_expires_at: None,
@@ -992,7 +1001,7 @@ impl OAuthStore {
             let pending = &mut store.pending[index];
             pending.transaction_id = verified_transaction_id.clone();
             pending.pairing_verified = true;
-            pending.expires_at = now + Duration::seconds(PENDING_TRANSACTION_TTL_SECS);
+            pending.expires_at = now + SignedDuration::from_secs(PENDING_TRANSACTION_TTL_SECS);
             Ok(verified_transaction_id)
         })
     }
@@ -1278,8 +1287,8 @@ impl OAuthStore {
                 refresh_verifier: sha256_b64(&refresh_bytes),
                 refresh_generation: 0,
                 revocation_generation,
-                access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
-                refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
+                access_expires_at: now + SignedDuration::from_secs(ACCESS_TTL_SECS),
+                refresh_expires_at: now + SignedDuration::from_secs(REFRESH_TTL_SECS),
                 created_at: now,
                 resource: binding.stored_grant_resource(),
                 generation: pending.generation,
@@ -1437,7 +1446,7 @@ impl OAuthStore {
                     grant.client_record_id = client.id.clone();
                     grant.client_id = client.client_id.clone();
                     grant.created_at = now;
-                    grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+                    grant.access_expires_at = now + SignedDuration::from_secs(ACCESS_TTL_SECS);
                     grant.resource = binding.stored_grant_resource();
                     grant.generation = pending.generation;
                     if !is_paused && grant.refresh_expires_at > now {
@@ -1503,8 +1512,8 @@ impl OAuthStore {
                         refresh_verifier: sha256_b64(&refresh_bytes),
                         refresh_generation: 0,
                         revocation_generation,
-                        access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
-                        refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
+                        access_expires_at: now + SignedDuration::from_secs(ACCESS_TTL_SECS),
+                        refresh_expires_at: now + SignedDuration::from_secs(REFRESH_TTL_SECS),
                         created_at: now,
                         resource: binding.stored_grant_resource(),
                         generation: pending.generation,
@@ -1561,7 +1570,8 @@ impl OAuthStore {
                         let Some(grant) = store.grants.iter_mut().find(|g| g.id == grant_id) else {
                             return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
                         };
-                        grant.refresh_expires_at = now + Duration::seconds(REFRESH_TTL_SECS);
+                        grant.refresh_expires_at =
+                            now + SignedDuration::from_secs(REFRESH_TTL_SECS);
                         (EditPersistence::Persist, Ok(()))
                     },
                     || Ok(()),
@@ -1747,7 +1757,7 @@ impl OAuthStore {
             grant.client_record_id = client.id.clone();
             grant.client_id = client.client_id.clone();
             grant.created_at = now;
-            grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+            grant.access_expires_at = now + SignedDuration::from_secs(ACCESS_TTL_SECS);
             grant.resource = binding.stored_grant_resource();
             grant.generation = pending.generation;
             if !is_paused && grant.refresh_expires_at > now {
@@ -1796,8 +1806,8 @@ impl OAuthStore {
                 refresh_verifier: sha256_b64(&refresh_bytes),
                 refresh_generation: 0,
                 revocation_generation,
-                access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
-                refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
+                access_expires_at: now + SignedDuration::from_secs(ACCESS_TTL_SECS),
+                refresh_expires_at: now + SignedDuration::from_secs(REFRESH_TTL_SECS),
                 created_at: now,
                 resource: binding.stored_grant_resource(),
                 generation: pending.generation,
@@ -1904,7 +1914,7 @@ impl OAuthStore {
                 if let Some(history_index) = history_index {
                     let history = &parsed.history[history_index];
                     let is_grace = history_index == 0
-                        && now.timestamp() <= history.rotated_at.saturating_add(REFRESH_GRACE_SECS);
+                        && now.as_second() <= history.rotated_at.saturating_add(REFRESH_GRACE_SECS);
                     // The rotation that retired this token derived the current pair
                     // from it, so re-deriving reproduces that pair exactly. Anything
                     // that does not reproduce it is treated as a replay.
@@ -1962,7 +1972,7 @@ impl OAuthStore {
                     RefreshHistoryEntry {
                         verifier: parsed.current_verifier,
                         verifier_b64: parsed.current_verifier_b64,
-                        rotated_at: now.timestamp(),
+                        rotated_at: now.as_second(),
                         derived: old_secret.is_some(),
                     },
                 );
@@ -1970,13 +1980,13 @@ impl OAuthStore {
                 grant.refresh_verifier =
                     write_refresh_verifier(&sha256_b64(&refresh_bytes), &secret, &history);
                 grant.refresh_generation = generation;
-                grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+                grant.access_expires_at = now + SignedDuration::from_secs(ACCESS_TTL_SECS);
                 let connection = format!("oauth:{}", grant.id);
                 let is_owner_paused =
                     crate::agent_state::is_owner_paused_locked(&self.root, &connection)
                         .unwrap_or(true);
                 if !is_owner_paused && grant.refresh_expires_at > now {
-                    grant.refresh_expires_at = now + Duration::seconds(REFRESH_TTL_SECS);
+                    grant.refresh_expires_at = now + SignedDuration::from_secs(REFRESH_TTL_SECS);
                 }
                 (
                     EditPersistence::Persist,
@@ -2397,7 +2407,7 @@ impl OAuthStore {
 
     fn mutate<T>(
         &self,
-        operation: impl FnOnce(&mut OAuthStoreFile, DateTime<Utc>) -> Result<T, OAuthStoreError>,
+        operation: impl FnOnce(&mut OAuthStoreFile, jiff::Timestamp) -> Result<T, OAuthStoreError>,
     ) -> Result<T, OAuthStoreError> {
         self.edit(
             |store, now| {
@@ -2422,7 +2432,7 @@ impl OAuthStore {
         &self,
         operation: impl FnOnce(
             &mut OAuthStoreFile,
-            DateTime<Utc>,
+            jiff::Timestamp,
         ) -> (EditPersistence, Result<T, OAuthStoreError>),
         after_write: impl FnOnce() -> Result<(), OAuthStoreError>,
     ) -> Result<T, OAuthStoreError> {
@@ -2572,7 +2582,7 @@ fn open_pending_index(
     store: &mut OAuthStoreFile,
     transaction_id: &str,
     binding: &super::RuntimeBinding,
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<usize, OAuthStoreError> {
     let index = store
         .pending
@@ -2678,10 +2688,10 @@ fn issue_authorization(
     pending: &mut StoredPending,
     permission: Option<ReadPermission>,
     code_bytes: &[u8; TOKEN_BYTES],
-    now: DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> IssuedAuthorization {
     pending.authorization_code_verifier = Some(sha256_b64(code_bytes));
-    pending.code_expires_at = Some(now + Duration::seconds(AUTH_CODE_TTL_SECS));
+    pending.code_expires_at = Some(now + SignedDuration::from_secs(AUTH_CODE_TTL_SECS));
     pending.permission = permission;
     IssuedAuthorization {
         code: URL_SAFE_NO_PAD.encode(code_bytes),
@@ -2741,7 +2751,7 @@ fn is_source_held_by_live_connection_locked(
 
 /// Drops what has lapsed and returns the ids of the grants it dropped, so the
 /// caller can remove their permission rows once the drop is on disk.
-fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) -> Vec<String> {
+fn prune(store: &mut OAuthStoreFile, now: jiff::Timestamp) -> Vec<String> {
     store.pending.retain(|pending| {
         if pending.authorization_code_verifier.is_some() {
             pending.code_expires_at.is_some_and(|expires| expires > now)
@@ -2752,7 +2762,7 @@ fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) -> Vec<String> {
     let lapsed = Vec::new();
     store.clients.retain(|client| {
         client.last_used_at.is_some()
-            || now - client.created_at < Duration::seconds(CLIENT_UNUSED_TTL_SECS)
+            || now - client.created_at < SignedDuration::from_secs(CLIENT_UNUSED_TTL_SECS)
     });
     if let Some(pairing) = &store.pairing
         && pairing.expires_at <= now
@@ -2959,14 +2969,14 @@ fn decode_sha256(presented: &str) -> Option<[u8; TOKEN_BYTES]> {
     Some(sha256_digest(&raw))
 }
 
-pub(crate) fn current_time() -> DateTime<Utc> {
+pub(crate) fn current_time() -> jiff::Timestamp {
     #[cfg(test)]
     {
         if let Some(now) = TEST_NOW.with(std::cell::Cell::get) {
-            return DateTime::<Utc>::from_timestamp(now, 0).unwrap_or_else(Utc::now);
+            return jiff::Timestamp::new(now, 0).unwrap_or_else(|_| jiff::Timestamp::now());
         }
     }
-    Utc::now()
+    jiff::Timestamp::now()
 }
 
 fn max_state_bytes() -> usize {
@@ -3008,7 +3018,7 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-    use chrono::{Duration, TimeZone, Utc};
+    use jiff::SignedDuration;
     use serde::Deserialize;
     use sha2::Digest;
 
@@ -3312,15 +3322,15 @@ mod tests {
     #[test]
     fn an_idle_grant_stays_listed_and_its_permission_bytes_stay() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-11-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
         let journal = journal_root();
         let store = store_in(&journal);
         let grant = whole_journal_grant(&store, &journal);
         let perm_path = journal.path().join("mcp-endpoint/permissions.json");
         let bytes_before = fs::read(&perm_path).unwrap();
 
-        set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
+        set_now(start.as_second() + super::REFRESH_TTL_SECS + 1);
         // Any write prunes; making a pairing code is the owner's usual one.
         store.generate_pairing_code_with_door("relay").unwrap();
 
@@ -3462,8 +3472,8 @@ mod tests {
     #[test]
     fn only_a_client_ids_first_grant_ever_is_marked_first() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-09-27T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
         let journal = journal_root();
         let store = store_in(&journal);
         let binding = test_binding();
@@ -3501,7 +3511,7 @@ mod tests {
 
         // Refresh expiry no longer prunes grants. `first` and `again` were
         // revoked before the lapse; `after_disconnect` stays.
-        set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
+        set_now(start.as_second() + super::REFRESH_TTL_SECS + 1);
         let after_lapse = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
         assert!(after_lapse.first_grant.is_none(), "after its access lapsed");
         let held = store.read_store().unwrap().grants;
@@ -3533,8 +3543,8 @@ mod tests {
     #[test]
     fn the_window_is_open_only_while_a_live_code_for_this_door_is() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-09-27T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
         let journal = journal_root();
         let store = store_in(&journal);
         let loopback = RuntimeBinding::Bound {
@@ -3544,9 +3554,9 @@ mod tests {
         store.generate_pairing_code_with_door("relay").unwrap();
         assert!(store.pairing_window_open(&test_binding()).unwrap());
         assert!(!store.pairing_window_open(&loopback).unwrap());
-        set_now(start.timestamp() + super::PAIRING_TTL_SECS);
+        set_now(start.as_second() + super::PAIRING_TTL_SECS);
         assert!(!store.pairing_window_open(&test_binding()).unwrap());
-        set_now(start.timestamp());
+        set_now(start.as_second());
         store.generate_pairing_code_with_door("relay").unwrap();
         store.revoke_pairing_code().unwrap();
         assert!(!store.pairing_window_open(&test_binding()).unwrap());
@@ -3666,8 +3676,8 @@ mod tests {
     #[test]
     fn redeem_is_single_use_and_split_ttls_are_independent() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 8, 31, 12, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-08-31T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
         let journal = journal_root();
         let store = store_in(&journal);
         let client_id = seed_client(&store, "192.0.2.1");
@@ -3699,13 +3709,13 @@ mod tests {
             Err(OAuthStoreError::InvalidToken)
         ));
 
-        set_now(start.timestamp());
+        set_now(start.as_second());
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let expiring = open_transaction(&store, &client_id, "192.0.2.9");
         let issued = store
             .complete_pairing(&expiring, &pairing.code, &test_binding())
             .unwrap();
-        set_now(start.timestamp() + AUTH_CODE_TTL_SECS + 1);
+        set_now(start.as_second() + AUTH_CODE_TTL_SECS + 1);
         const { assert!(AUTH_CODE_TTL_SECS + 1 < PENDING_TRANSACTION_TTL_SECS) };
         assert!(matches!(
             store.redeem_authorization_code(
@@ -3718,15 +3728,15 @@ mod tests {
             ),
             Err(OAuthStoreError::CodeExpired | OAuthStoreError::InvalidToken)
         ));
-        set_now(start.timestamp());
+        set_now(start.as_second());
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let still_open = open_transaction(&store, &client_id, "192.0.2.8");
         let late = open_transaction(&store, &client_id, "192.0.2.10");
-        set_now(start.timestamp() + AUTH_CODE_TTL_SECS + 1);
+        set_now(start.as_second() + AUTH_CODE_TTL_SECS + 1);
         store
             .complete_pairing(&still_open, &pairing.code, &test_binding())
             .expect("an unpaired transaction stays valid while its code is open");
-        set_now(start.timestamp() + PENDING_TRANSACTION_TTL_SECS + 1);
+        set_now(start.as_second() + PENDING_TRANSACTION_TTL_SECS + 1);
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         assert!(matches!(
             store.complete_pairing(&late, &pairing.code, &test_binding()),
@@ -3794,8 +3804,8 @@ mod tests {
         open_transaction(&store, &client, "198.51.100.2");
 
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let path = journal.path().join("mcp-endpoint/oauth.json");
         let mut file = store.read_store().unwrap();
@@ -3807,7 +3817,7 @@ mod tests {
                 redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
                 client_name: None,
                 source: "203.0.113.1".to_owned(),
-                created_at: base_now + Duration::seconds(index as i64),
+                created_at: base_now + SignedDuration::from_secs(index as i64),
                 last_used_at: None,
                 revocation_generation: 0,
             });
@@ -4419,8 +4429,10 @@ mod tests {
             redirect_uris: Vec<String>,
             client_name: Option<String>,
             source: String,
-            created_at: chrono::DateTime<Utc>,
-            last_used_at: Option<chrono::DateTime<Utc>>,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            created_at: jiff::Timestamp,
+            #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+            last_used_at: Option<jiff::Timestamp>,
             revocation_generation: u64,
         }
         #[allow(dead_code)]
@@ -4434,9 +4446,12 @@ mod tests {
             refresh_verifier: String,
             refresh_generation: u64,
             revocation_generation: u64,
-            access_expires_at: chrono::DateTime<Utc>,
-            refresh_expires_at: chrono::DateTime<Utc>,
-            created_at: chrono::DateTime<Utc>,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            access_expires_at: jiff::Timestamp,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            refresh_expires_at: jiff::Timestamp,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            created_at: jiff::Timestamp,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             resource: Option<String>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4455,11 +4470,14 @@ mod tests {
             pkce_method: String,
             state: Option<String>,
             source: String,
-            created_at: chrono::DateTime<Utc>,
-            expires_at: chrono::DateTime<Utc>,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            created_at: jiff::Timestamp,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            expires_at: jiff::Timestamp,
             failure_count: u8,
             authorization_code_verifier: Option<String>,
-            code_expires_at: Option<chrono::DateTime<Utc>>,
+            #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+            code_expires_at: Option<jiff::Timestamp>,
             #[serde(default)]
             permission: Option<ReadPermission>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4472,7 +4490,8 @@ mod tests {
         #[serde(deny_unknown_fields)]
         struct LegacyStoredPairing {
             verifier: String,
-            expires_at: chrono::DateTime<Utc>,
+            #[serde(with = "solstone_core_time::serde::timestamp")]
+            expires_at: jiff::Timestamp,
             generation: u64,
             locked: bool,
             #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4760,8 +4779,8 @@ mod tests {
         let _guard = NowGuard;
         let journal = journal_root();
         let store = store_in(&journal);
-        let start = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(start.timestamp());
+        let start = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(start.as_second());
         store
             .register_client(
                 "https://client.example/unused.json",
@@ -4772,7 +4791,7 @@ mod tests {
             .unwrap();
         let used = seed_client(&store, "192.0.2.9");
         redeem_access(&store, &used, "https://client.example/cimd.json");
-        set_now(start.timestamp() + CLIENT_UNUSED_TTL_SECS + 1);
+        set_now(start.as_second() + CLIENT_UNUSED_TTL_SECS + 1);
         store.generate_pairing_code_with_door("relay").unwrap();
         assert!(
             store
@@ -4801,7 +4820,7 @@ mod tests {
             .unwrap();
         let path = journal.path().join("mcp-endpoint/oauth.json");
         let mut file: OAuthStoreFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        let now = Utc.timestamp_opt(4_000_000_000, 0).unwrap();
+        let now = jiff::Timestamp::new(4_000_000_000, 0).unwrap();
         let token_bytes = [0x11_u8; 32];
         let access = URL_SAFE_NO_PAD.encode(token_bytes);
         let verifier = sha256_b64(&token_bytes);
@@ -5000,8 +5019,8 @@ mod tests {
         ));
 
         let _guard = NowGuard;
-        let base_time = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_time.timestamp());
+        let base_time = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_time.as_second());
 
         let client = unbound
             .store
@@ -5200,12 +5219,12 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let mut client_records = Vec::new();
         for index in 0..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             let client = store
                 .register_client(
                     &format!("https://client.example/revoked_{index}.json"),
@@ -5244,7 +5263,7 @@ mod tests {
             client_records.push(client);
         }
 
-        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + MAX_CLIENTS_PER_SOURCE as i64);
         let seventeenth = store
             .register_client(
                 "https://client.example/seventeenth.json",
@@ -5277,8 +5296,8 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let oldest_client = store
             .register_client(
@@ -5316,7 +5335,7 @@ mod tests {
             .unwrap();
 
         for index in 1..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             store
                 .register_client(
                     &format!("https://client.example/idle_{index}.json"),
@@ -5327,7 +5346,7 @@ mod tests {
                 .unwrap();
         }
 
-        set_now(base_now.timestamp() + 3600 + 10);
+        set_now(base_now.as_second() + 3600 + 10);
 
         let over = store
             .register_client(
@@ -5369,8 +5388,8 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         store.generate_pairing_code_with_door("relay").unwrap();
         let pending_client = store
@@ -5395,7 +5414,7 @@ mod tests {
             .unwrap();
 
         for index in 1..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             store
                 .register_client(
                     &format!("https://client.example/idle_p_{index}.json"),
@@ -5406,7 +5425,7 @@ mod tests {
                 .unwrap();
         }
 
-        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + MAX_CLIENTS_PER_SOURCE as i64);
         let over = store
             .register_client(
                 "https://client.example/over_p.json",
@@ -5501,8 +5520,8 @@ mod tests {
         let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
 
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let client = unbound
             .store
@@ -5547,7 +5566,7 @@ mod tests {
             .unwrap();
 
         for index in 1..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             bound
                 .store
                 .register_client(
@@ -5559,7 +5578,7 @@ mod tests {
                 .unwrap();
         }
 
-        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + MAX_CLIENTS_PER_SOURCE as i64);
         let over = bound
             .store
             .register_client(
@@ -5604,8 +5623,8 @@ mod tests {
         let store = store_in(&journal);
         let perm_store = PermissionStore::open(journal.path());
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let target_client = store
             .register_client(
@@ -5660,7 +5679,7 @@ mod tests {
             .unwrap();
 
         for index in 1..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             store
                 .register_client(
                     &format!("https://client.example/idle_rev_{index}.json"),
@@ -5671,7 +5690,7 @@ mod tests {
                 .unwrap();
         }
 
-        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + MAX_CLIENTS_PER_SOURCE as i64);
         let over = store
             .register_client(
                 "https://client.example/rev_over.json",
@@ -5720,8 +5739,8 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let client_b = store
             .register_client(
@@ -5734,7 +5753,7 @@ mod tests {
 
         let mut a_clients = Vec::new();
         for index in 0..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + 100 + index as i64);
+            set_now(base_now.as_second() + 100 + index as i64);
             let client = store
                 .register_client(
                     &format!("https://client.example/source_a_{index}.json"),
@@ -5746,7 +5765,7 @@ mod tests {
             a_clients.push(client);
         }
 
-        set_now(base_now.timestamp() + 100 + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + 100 + MAX_CLIENTS_PER_SOURCE as i64);
         let over = store
             .register_client(
                 "https://client.example/source_a_over.json",
@@ -5777,13 +5796,13 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let mut tokens_list = Vec::new();
         let mut clients = Vec::new();
         for index in 0..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             let client = store
                 .register_client(
                     &format!("https://client.example/live_{index}.json"),
@@ -5822,7 +5841,7 @@ mod tests {
             clients.push(client);
         }
 
-        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        set_now(base_now.as_second() + MAX_CLIENTS_PER_SOURCE as i64);
         assert!(matches!(
             store.register_client(
                 "https://client.example/refused_17th.json",
@@ -5866,8 +5885,8 @@ mod tests {
         let store = store_in(&journal);
         let path = journal.path().join("mcp-endpoint/oauth.json");
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let mut file = OAuthStoreFile::default();
         for index in 0..MAX_CLIENTS {
@@ -5882,7 +5901,7 @@ mod tests {
                     (index / 256) % 256,
                     index % 256
                 ),
-                created_at: base_now + Duration::seconds(index as i64),
+                created_at: base_now + SignedDuration::from_secs(index as i64),
                 last_used_at: Some(base_now),
                 revocation_generation: 0,
             });
@@ -5925,7 +5944,7 @@ mod tests {
                     (index / 256) % 256,
                     index % 256
                 ),
-                created_at: base_now + Duration::seconds(index as i64),
+                created_at: base_now + SignedDuration::from_secs(index as i64),
                 last_used_at: Some(base_now),
                 revocation_generation: 0,
             });
@@ -5937,8 +5956,8 @@ mod tests {
                 refresh_verifier: verifier.clone(),
                 refresh_generation: 0,
                 revocation_generation: 0,
-                access_expires_at: base_now + Duration::seconds(3600),
-                refresh_expires_at: base_now + Duration::seconds(30 * 86400),
+                access_expires_at: base_now + SignedDuration::from_secs(3600),
+                refresh_expires_at: base_now + SignedDuration::from_secs(30 * 86400),
                 created_at: base_now,
                 resource: None,
                 generation: None,
@@ -5964,8 +5983,8 @@ mod tests {
         let store = store_in(&journal);
         let path = journal.path().join("mcp-endpoint/oauth.json");
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let mut file = OAuthStoreFile::default();
         let verifier = sha256_b64(b"test-bytes");
@@ -5977,7 +5996,7 @@ mod tests {
                 redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
                 client_name: None,
                 source: "192.0.2.1".to_owned(),
-                created_at: base_now + Duration::seconds(index as i64),
+                created_at: base_now + SignedDuration::from_secs(index as i64),
                 last_used_at: Some(base_now),
                 revocation_generation: 0,
             });
@@ -5989,8 +6008,8 @@ mod tests {
                 refresh_verifier: verifier.clone(),
                 refresh_generation: 0,
                 revocation_generation: 0,
-                access_expires_at: base_now + Duration::seconds(3600),
-                refresh_expires_at: base_now + Duration::seconds(30 * 86400),
+                access_expires_at: base_now + SignedDuration::from_secs(3600),
+                refresh_expires_at: base_now + SignedDuration::from_secs(30 * 86400),
                 created_at: base_now,
                 resource: None,
                 generation: None,
@@ -6002,7 +6021,7 @@ mod tests {
             redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
             client_name: None,
             source: "198.51.100.2".to_owned(),
-            created_at: base_now - Duration::seconds(100),
+            created_at: base_now - SignedDuration::from_secs(100),
             last_used_at: Some(base_now),
             revocation_generation: 0,
         });
@@ -6152,7 +6171,7 @@ mod tests {
     fn byo_cohort_isolation() {
         let journal = journal_root();
         let store = store_in(&journal);
-        let base_now = Utc::now();
+        let base_now = jiff::Timestamp::now();
         let path = journal.path().join("mcp-endpoint").join("oauth.json");
         let mut file = OAuthStoreFile::default();
 
@@ -6164,7 +6183,7 @@ mod tests {
                 redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
                 client_name: None,
                 source: format!("127.0.0.{}", (i % 200) + 1),
-                created_at: base_now - Duration::seconds(1000 - i as i64),
+                created_at: base_now - SignedDuration::from_secs(1000 - i as i64),
                 last_used_at: None,
                 revocation_generation: 0,
             });
@@ -6269,7 +6288,7 @@ mod tests {
 
         let code = "K7Q2M9XA";
         let verifier = sha256_b64(code.as_bytes());
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
 
         let bindings = [
             test_binding(),
@@ -6291,7 +6310,7 @@ mod tests {
             let mut file = store.read_store().unwrap();
             file.pairing = Some(super::StoredPairing {
                 verifier: verifier.clone(),
-                expires_at: now + Duration::seconds(600),
+                expires_at: now + SignedDuration::from_secs(600),
                 generation: (idx + 1) as u64,
                 locked: false,
                 door: None,
@@ -6711,8 +6730,8 @@ mod tests {
     #[test]
     fn idle_pause_refresh_day_29_extends_to_day_59_and_day_31_does_not() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-11-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
 
         let binding = test_binding();
         let agent = "https://client.example/cimd.json";
@@ -6744,7 +6763,7 @@ mod tests {
         let tokens_b = issue_tokens(&store_b, &client_b.id, agent, &binding, "relay", None);
 
         // Journal A refreshes at start+29 days; grant_refresh_expires_at equals start+59 days.
-        set_now((start + Duration::days(29)).timestamp());
+        set_now((start + SignedDuration::from_hours(24 * 29)).as_second());
         store_a
             .refresh_grant(&tokens_a.refresh_token, agent, &binding)
             .unwrap();
@@ -6752,13 +6771,13 @@ mod tests {
             store_a
                 .grant_refresh_expires_at(&tokens_a.token_id)
                 .unwrap(),
-            Some(start + Duration::days(59))
+            Some(start + SignedDuration::from_hours(24 * 59))
         );
 
         // Journal B does not refresh until start+31 days; refresh returns Ok,
         // the grant id is unchanged and still in list_grants, refresh_expires_at is still
         // start+30 days, and mcp-endpoint/agent-state.json does not exist.
-        set_now((start + Duration::days(31)).timestamp());
+        set_now((start + SignedDuration::from_hours(24 * 31)).as_second());
         let refreshed_b = store_b
             .refresh_grant(&tokens_b.refresh_token, agent, &binding)
             .unwrap();
@@ -6774,7 +6793,7 @@ mod tests {
             store_b
                 .grant_refresh_expires_at(&tokens_b.token_id)
                 .unwrap(),
-            Some(start + Duration::days(30))
+            Some(start + SignedDuration::from_hours(24 * 30))
         );
         assert!(
             !journal_b
@@ -6784,7 +6803,7 @@ mod tests {
         );
 
         // A second refresh at start+60 days still returns Ok and leaves refresh_expires_at at start+30 days.
-        set_now((start + Duration::days(60)).timestamp());
+        set_now((start + SignedDuration::from_hours(24 * 60)).as_second());
         let refreshed_b2 = store_b
             .refresh_grant(&refreshed_b.refresh_token, agent, &binding)
             .unwrap();
@@ -6793,26 +6812,29 @@ mod tests {
             store_b
                 .grant_refresh_expires_at(&tokens_b.token_id)
                 .unwrap(),
-            Some(start + Duration::days(30))
+            Some(start + SignedDuration::from_hours(24 * 30))
         );
 
         // Then resume_refresh_expiry makes it now + REFRESH_TTL_SECS.
-        let now_60 = start + Duration::days(60);
+        let now_60 = start + SignedDuration::from_hours(24 * 60);
         let resumed = store_b.resume_refresh_expiry(&tokens_b.token_id).unwrap();
-        assert_eq!(resumed, now_60 + Duration::seconds(super::REFRESH_TTL_SECS));
+        assert_eq!(
+            resumed,
+            now_60 + SignedDuration::from_secs(super::REFRESH_TTL_SECS)
+        );
         assert_eq!(
             store_b
                 .grant_refresh_expires_at(&tokens_b.token_id)
                 .unwrap(),
-            Some(now_60 + Duration::seconds(super::REFRESH_TTL_SECS))
+            Some(now_60 + SignedDuration::from_secs(super::REFRESH_TTL_SECS))
         );
     }
 
     #[test]
     fn idle_pause_owner_pause_does_not_slide_refresh_expiry() {
         let _guard = NowGuard;
-        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
-        set_now(start.timestamp());
+        let start = "2026-11-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        set_now(start.as_second());
 
         let journal = journal_root();
         let store = store_in(&journal);
@@ -6834,7 +6856,7 @@ mod tests {
 
         let recorded_expiry = store.grant_refresh_expires_at(&tokens.token_id).unwrap();
 
-        set_now((start + Duration::days(5)).timestamp());
+        set_now((start + SignedDuration::from_hours(24 * 5)).as_second());
         store
             .refresh_grant(&tokens.refresh_token, agent, &binding)
             .unwrap();
@@ -6848,8 +6870,8 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let _guard = NowGuard;
-        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
-        set_now(base_now.timestamp());
+        let base_now = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+        set_now(base_now.as_second());
 
         let oldest_client = store
             .register_client(
@@ -6887,7 +6909,7 @@ mod tests {
             .unwrap();
 
         for index in 1..MAX_CLIENTS_PER_SOURCE {
-            set_now(base_now.timestamp() + index as i64);
+            set_now(base_now.as_second() + index as i64);
             store
                 .register_client(
                     &format!("https://client.example/idle_{index}.json"),
@@ -6902,7 +6924,7 @@ mod tests {
             .grant_refresh_expires_at(&tokens.token_id)
             .unwrap()
             .expect("grant exists");
-        set_now(expiry.timestamp() + 1);
+        set_now(expiry.as_second() + 1);
 
         let over = store
             .register_client(
@@ -6977,7 +6999,7 @@ mod tests {
             .grant_refresh_expires_at(&grant_id)
             .unwrap()
             .unwrap();
-        set_now(expiry.timestamp() + 1);
+        set_now(expiry.as_second() + 1);
 
         // Refresh the current token (rotates, expiry unchanged, grant still listed)
         let rotated_out_token = tokens1.refresh_token.clone();
@@ -7017,7 +7039,7 @@ mod tests {
         );
 
         // Advance REFRESH_GRACE_SECS + 1
-        set_now(expiry.timestamp() + 1 + super::REFRESH_GRACE_SECS + 1);
+        set_now(expiry.as_second() + 1 + super::REFRESH_GRACE_SECS + 1);
 
         // Replay the rotated-out token with the real client id
         let replay = refresh_request(&oauth, &rotated_out_token, &client.client_id);
@@ -7341,7 +7363,7 @@ mod tests {
                     let exp = store.grant_refresh_expires_at(&grant_id).unwrap().unwrap();
                     assert_eq!(
                         exp,
-                        current_time() + Duration::seconds(super::REFRESH_TTL_SECS)
+                        current_time() + SignedDuration::from_secs(super::REFRESH_TTL_SECS)
                     );
                     if is_paused {
                         assert!(
@@ -7524,7 +7546,7 @@ mod tests {
                 assert!(exp > current_time());
 
                 // One day later, generate_pairing_code_with_door leaves the grant listed and the new refresh token still refreshes.
-                set_now(current_time().timestamp() + 86400);
+                set_now(current_time().as_second() + 86400);
                 oauth
                     .store
                     .generate_pairing_code_with_door("relay")

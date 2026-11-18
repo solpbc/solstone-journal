@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Timestamp};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
 use rusqlite::{
@@ -32,7 +34,7 @@ pub fn search(
     journal: &Path,
     _boundary: OwnerBoundary,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<SearchResponse, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
     if let Some(response) = untokenizable_response(&compilation) {
@@ -60,7 +62,7 @@ pub fn search_counts(
     journal: &Path,
     _boundary: OwnerBoundary,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<CountsResponse, IndexAccessError> {
     let mut owner_index = open_owner_index(journal, OwnerBoundary)?;
     let resolved = owner_index.resolve_counts(request, reference_date)?;
@@ -83,7 +85,7 @@ pub fn search_connection(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
     search_connection_admitting(journal, boundary, request, reference_date, None)
 }
@@ -97,7 +99,7 @@ pub fn search_connection_with_possible_names(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     admission: PossibleNameAdmission,
     body_entries: BodyEntryAdmission,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
@@ -120,7 +122,7 @@ pub fn connection_search_withheld_body(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     body_entries: BodyEntryAdmission,
 ) -> Result<bool, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
@@ -160,7 +162,7 @@ fn search_connection_admitting(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     admission: Option<(PossibleNameAdmission, BodyEntryAdmission)>,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
@@ -341,7 +343,7 @@ pub fn indexed_entity_ids(
 fn search_on_connection(
     connection: &mut QueryConnection,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     compilation: crate::QueryCompilation,
 ) -> Result<SearchResponse, IndexAccessError> {
     let cleaned_query = compilation.temporal.remaining_text.clone();
@@ -396,7 +398,7 @@ fn search_on_connection(
 fn resolve_plan(
     connection: &mut QueryConnection,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     compilation: crate::QueryCompilation,
 ) -> Result<(SqlPlan, bool), IndexAccessError> {
     connection.set_body_entries(if request.body_owner_words {
@@ -410,7 +412,7 @@ fn resolve_plan(
 fn resolve_plan_with_boundary(
     connection: &mut QueryConnection,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     compilation: crate::QueryCompilation,
     boundary: Option<&ConnectionBoundary>,
 ) -> Result<(SqlPlan, bool), IndexAccessError> {
@@ -739,7 +741,7 @@ impl OwnerIndex {
     pub fn search(
         &mut self,
         request: &SearchRequest,
-        reference_date: NaiveDate,
+        reference_date: Date,
     ) -> Result<SearchResponse, IndexAccessError> {
         let compilation = compile_query(&request.query, reference_date);
         if let Some(response) = untokenizable_response(&compilation) {
@@ -751,7 +753,7 @@ impl OwnerIndex {
     pub fn resolve_counts(
         &mut self,
         request: &SearchRequest,
-        reference: NaiveDate,
+        reference: Date,
     ) -> Result<ResolvedCounts, IndexAccessError> {
         let compilation = compile_query(&request.query, reference);
         if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) {
@@ -907,26 +909,27 @@ fn body_data_open(journal: Option<&Path>) -> bool {
 const NOT_AFTER_TODAY: &str = "(day IS NULL OR day <= solstone_today_anywhere())";
 
 /// The latest calendar day anywhere right now, at UTC+14, as `YYYYMMDD`.
-pub(crate) fn today_anywhere(now: chrono::DateTime<chrono::Utc>) -> String {
-    (now + chrono::Duration::hours(14))
-        .date_naive()
-        .format("%Y%m%d")
-        .to_string()
+pub(crate) fn today_anywhere(now: Timestamp) -> String {
+    solstone_core_time::day_key(
+        Offset::UTC
+            .to_datetime(now + SignedDuration::from_hours(14))
+            .date(),
+    )
 }
 
 #[cfg(test)]
 thread_local! {
     /// Lets a test move the clock that readers opened on its thread see.
-    pub(crate) static TEST_NOW: std::cell::Cell<Option<chrono::DateTime<chrono::Utc>>> =
+    pub(crate) static TEST_NOW: std::cell::Cell<Option<Timestamp>> =
         const { std::cell::Cell::new(None) };
 }
 
-fn now() -> chrono::DateTime<chrono::Utc> {
+fn now() -> Timestamp {
     #[cfg(test)]
     if let Some(now) = TEST_NOW.with(std::cell::Cell::get) {
         return now;
     }
-    chrono::Utc::now()
+    Timestamp::now()
 }
 
 /// Register `solstone_today_anywhere()`. It is read once, when the reader
@@ -2560,7 +2563,7 @@ pub(crate) fn search_with_connection_for_test(
     connection: Connection,
     path: PathBuf,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<(SearchResponse, QueryCounters), IndexAccessError> {
     let mut connection = QueryConnection::new(connection, path)?;
     let compilation = compile_query(&request.query, reference_date);

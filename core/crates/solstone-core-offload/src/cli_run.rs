@@ -8,7 +8,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff::tz::Offset;
 use solstone_core_backup::archive_activity::{
     ArchivePreparationCustody, OwnedArchivePreparationFailure, OwnedArchivePreparationInput,
     OwnedPreparedArchiveHold,
@@ -395,7 +396,7 @@ pub fn run_cli_offload(
             );
         }
     };
-    let Some(at) = DateTime::<Utc>::from_timestamp(prepared.owned_clock().now_unix(), 0) else {
+    let Ok(at) = Timestamp::new(prepared.owned_clock().now_unix(), 0) else {
         return OwnedOffloadCliRun::receive(
             Custody::PreparedHold {
                 prepared: Box::new(prepared.into_owned_hold()),
@@ -408,7 +409,7 @@ pub fn run_cli_offload(
     };
     let readiness = match catch_unwind(AssertUnwindSafe(|| {
         test_cut(CliUnwindPhase::Preflight);
-        prepare_owned_offload_plan(&prepared, at.fixed_offset())
+        prepare_owned_offload_plan(&prepared, solstone_core_time::at_offset(at, Offset::UTC))
     })) {
         Ok(Ok(readiness)) => readiness,
         Ok(Err(failure)) => {

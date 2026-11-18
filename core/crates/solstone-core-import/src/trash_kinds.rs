@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_facets::entity_trash::Entities;
 use solstone_core_facets::facet_trash::{FacetDrops, Facets};
 use solstone_core_indexer_store::RetentionIndex;
@@ -61,7 +61,7 @@ fn with_made<T>(journal: &Path, made: &MadeFromIt, act: impl FnOnce(&[&dyn Kind]
 ///
 /// Erasing an archive leaves its rows in the shared claims database, and those
 /// go here too: a run neither in the journal nor in the trash is gone for good.
-pub fn sweep(journal: &Path, now: DateTime<Utc>) -> Swept {
+pub fn sweep(journal: &Path, now: Timestamp) -> Swept {
     let mut swept = with_kinds(journal, |kinds| {
         solstone_core_trash::sweep(journal, kinds, now)
     });

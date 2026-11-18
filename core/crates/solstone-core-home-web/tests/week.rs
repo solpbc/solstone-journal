@@ -13,7 +13,6 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use chrono::TimeZone;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -61,8 +60,8 @@ fn queued_keys(root: &Path) -> Vec<String> {
 
 fn test_router(root: &Path) -> Router {
     let clock = solstone_core_home_web::Clock::fixed(
-        chrono::Utc
-            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+        jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 8, 14).at(22, 28, 35, 0))
             .unwrap(),
     );
     solstone_core_home_web::routes(
@@ -220,7 +219,9 @@ async fn week_containment_and_absence_on_nonexistent_root() {
 
 #[tokio::test]
 async fn week_untrusted_files_matrix() {
-    let now = chrono::Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap();
+    let now = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 8, 14).at(12, 0, 0, 0))
+        .unwrap();
     let sun = "20260308";
 
     let test_cases = [
@@ -1191,7 +1192,9 @@ async fn week_api_uses_owner_local_year_for_title() {
     .expect("write week json");
 
     let clock = solstone_core_home_web::Clock::fixed(
-        chrono::Utc.with_ymd_and_hms(2026, 1, 1, 7, 30, 0).unwrap(),
+        jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 1, 1).at(7, 30, 0, 0))
+            .unwrap(),
     );
     let router = solstone_core_home_web::routes(
         journal.path().to_path_buf(),

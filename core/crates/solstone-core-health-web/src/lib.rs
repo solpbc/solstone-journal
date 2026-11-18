@@ -14,7 +14,7 @@ use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_respon
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 mod actions;
 mod assets;
@@ -31,19 +31,19 @@ mod talent_failures;
 mod work_view;
 
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
+pub struct Clock(Arc<dyn Fn() -> Timestamp + Send + Sync>);
 
 impl Clock {
     pub fn real() -> Self {
-        Self(Arc::new(Utc::now))
+        Self(Arc::new(Timestamp::now))
     }
-    pub fn fixed(dt: DateTime<Utc>) -> Self {
+    pub fn fixed(dt: Timestamp) -> Self {
         Self(Arc::new(move || dt))
     }
-    pub fn new(now: impl Fn() -> DateTime<Utc> + Send + Sync + 'static) -> Self {
+    pub fn new(now: impl Fn() -> Timestamp + Send + Sync + 'static) -> Self {
         Self(Arc::new(now))
     }
-    pub fn now(&self) -> DateTime<Utc> {
+    pub fn now(&self) -> Timestamp {
         (self.0)()
     }
 }
@@ -139,8 +139,8 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         // a summary that doesn't exist yet is calm, not unclear.
         let not_yet = solstone_core_system_health::summary_not_yet(
             &root,
-            now.with_timezone(&solstone_core_journal_config::owner_zone(&root))
-                .naive_local(),
+            now.to_zoned_datetime(solstone_core_journal_config::owner_zone(&root))
+                .datetime(),
         );
         let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),

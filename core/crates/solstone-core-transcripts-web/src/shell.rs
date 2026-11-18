@@ -8,7 +8,7 @@ use axum::body::HttpBody;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::json;
 
 use crate::day::{invalid_day, prepare_day, valid_day};
@@ -36,7 +36,7 @@ pub(crate) async fn open_day(State(state): State<Arc<AppState>>) -> Response {
 
 pub(crate) fn open_day_from_journal(
     journal_root: &std::path::Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<String, crate::TranscriptError> {
     let mut days = solstone_core_journal_io::day_dirs(journal_root)
         .map_err(crate::TranscriptError::display)?
@@ -48,10 +48,7 @@ pub(crate) fn open_day_from_journal(
             return Ok(day);
         }
     }
-    Ok(now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-        .format("%Y%m%d")
-        .to_string())
+    Ok(solstone_core_journal_config::owner_day(journal_root, now))
 }
 
 fn page(state: &AppState) -> Response {

@@ -728,12 +728,7 @@ mod startup_continuity_tests {
     }
     struct NoSpp;
     impl OwnerSppPrerequisite for NoSpp {
-        fn assess(
-            &self,
-            _: &Path,
-            _: &Map<String, Value>,
-            _: chrono::DateTime<chrono::Utc>,
-        ) -> Value {
+        fn assess(&self, _: &Path, _: &Map<String, Value>, _: jiff::Timestamp) -> Value {
             panic!("synthetic cloud fixture must never use SPP")
         }
     }

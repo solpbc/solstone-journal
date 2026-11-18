@@ -402,8 +402,11 @@ fn a_detach_a_stop_interrupted_is_finished_by_the_sweep_and_recovers_exactly() {
         State::Detaching
     );
 
-    let swept =
-        solstone_core_trash::sweep(journal.root(), &[&Entities::new(&told)], chrono::Utc::now());
+    let swept = solstone_core_trash::sweep(
+        journal.root(),
+        &[&Entities::new(&told)],
+        jiff::Timestamp::now(),
+    );
     assert_eq!(swept.resumed, 1, "{swept:?}");
     assert_eq!(journal.row("robert"), (vec!["ann".to_owned()], None));
 

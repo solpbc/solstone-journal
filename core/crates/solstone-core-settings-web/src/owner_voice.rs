@@ -7,7 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use axum::response::Response;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use solstone_core_processing_record::{owner_voice, read_processing_record_header};
 use solstone_core_retention::owner_voice::{owner_voice_deletion_owed, owner_voice_owed_days};
@@ -15,14 +16,14 @@ use solstone_core_retention::owner_voice::{owner_voice_deletion_owed, owner_voic
 use crate::http::json_response;
 
 pub async fn get(journal_root: PathBuf) -> Response {
-    json_response(status_at(&journal_root, Utc::now()))
+    json_response(status_at(&journal_root, Timestamp::now()))
 }
 
 /// The status as of `now`, with days taken in the owner's zone.
-pub(crate) fn status_at(journal: &Path, now: DateTime<Utc>) -> Value {
+pub(crate) fn status_at(journal: &Path, now: Timestamp) -> Value {
     let today = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     let available =
         solstone_core_speaker_resolve::owner_centroid::owner_voice_print(journal).is_some();
     let (left_out_s, recordings) = today_counts(journal, today);
@@ -40,7 +41,7 @@ pub(crate) fn status_at(journal: &Path, now: DateTime<Utc>) -> Value {
     })
 }
 
-fn today_counts(journal: &Path, today: NaiveDate) -> (f64, u64) {
+fn today_counts(journal: &Path, today: Date) -> (f64, u64) {
     let mut left_out_s = 0.0;
     let mut recordings = 0;
     // By record, not by original: a successful deletion removes the original.
@@ -65,10 +66,10 @@ fn today_counts(journal: &Path, today: NaiveDate) -> (f64, u64) {
 /// sibling of the same stem; unreadable directories are skipped.
 fn transcripts(
     journal: &Path,
-    day: NaiveDate,
+    day: Date,
     with_original: bool,
 ) -> impl Iterator<Item = (PathBuf, PathBuf)> {
-    let key = day.format("%Y%m%d").to_string();
+    let key = solstone_core_time::day_key(day);
     let segments = solstone_core_segment::list_segments(journal, &key).unwrap_or_default();
     segments.into_iter().flat_map(move |segment| {
         let segment = segment.path().to_path_buf();
@@ -105,8 +106,6 @@ fn transcripts(
 #[cfg(test)]
 mod tests {
     use std::fs;
-
-    use chrono::TimeZone;
 
     use super::*;
 
@@ -160,7 +159,7 @@ mod tests {
         )
         .unwrap();
         // 23:30 in Denver on 10-20 is already 10-21 in UTC.
-        let now = Utc.with_ymd_and_hms(2026, 10, 21, 5, 30, 0).unwrap();
+        let now: Timestamp = "2026-10-21T05:30:00Z".parse().unwrap();
         write_transcript(journal, "20261020", "120000_300", 4.0, 3, true);
         write_transcript(journal, "20261020", "130000_300", 2.0, 2, true);
         write_transcript(journal, "20261020", "140000_300", 5.0, 0, true); // no scored window

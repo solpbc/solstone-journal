@@ -81,7 +81,7 @@ impl Fixture {
         CreatorStageRecovery::enter(
             Arc::clone(&self.root),
             &self.selections,
-            DateTime::parse_from_rfc3339("2026-10-10T00:00:00Z").unwrap(),
+            solstone_core_time::parse_rfc3339("2026-10-10T00:00:00Z").unwrap(),
             &|| Ok(()),
         )
     }
@@ -117,7 +117,7 @@ impl Fixture {
 fn observe(f: &Fixture) -> CreatorStageRecovery {
     CreatorStageRecovery::observe(
         Arc::clone(&f.root),
-        DateTime::parse_from_rfc3339("2026-10-10T00:00:00Z").unwrap(),
+        solstone_core_time::parse_rfc3339("2026-10-10T00:00:00Z").unwrap(),
         &|| Ok(()),
     )
 }
@@ -128,7 +128,7 @@ fn clean_observation_creates_no_lock_or_apply_footprint() {
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let owner = CreatorStageRecovery::observe(
         root,
-        DateTime::parse_from_rfc3339("2026-10-10T00:00:00Z").unwrap(),
+        solstone_core_time::parse_rfc3339("2026-10-10T00:00:00Z").unwrap(),
         &|| Ok(()),
     );
     assert!(owner.refusal.is_none(), "{}", owner.report());
@@ -243,7 +243,7 @@ fn explicit_readonly_reconciliation_preserves_old_unknown_and_requires_originals
         let result = CreatorStageRecovery::reconcile(
             Arc::clone(&f.root),
             &prior,
-            DateTime::parse_from_rfc3339("2026-10-10T00:00:00Z").unwrap(),
+            solstone_core_time::parse_rfc3339("2026-10-10T00:00:00Z").unwrap(),
             &|| Ok(()),
         );
         assert_eq!(

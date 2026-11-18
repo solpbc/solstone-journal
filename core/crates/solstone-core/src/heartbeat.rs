@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use jiff::{Timestamp, ZonedDateTime};
 #[cfg(unix)]
 use nix::errno::Errno;
 #[cfg(unix)]
@@ -36,7 +36,7 @@ fn run_inner(journal: &Path, force: bool) -> io::Result<()> {
     let health_dir = journal.join("health");
     fs::create_dir_all(&health_dir)?;
 
-    if !force && recently_succeeded(journal, Local::now().fixed_offset())? {
+    if !force && recently_succeeded(journal, &ZonedDateTime::now())? {
         return Ok(());
     }
 
@@ -47,9 +47,9 @@ fn run_inner(journal: &Path, force: bool) -> io::Result<()> {
     result.and(cleanup)
 }
 
-fn recently_succeeded(journal: &Path, now: DateTime<FixedOffset>) -> io::Result<bool> {
-    let today = now.date_naive();
-    let Some(previous) = today.pred_opt() else {
+fn recently_succeeded(journal: &Path, now: &ZonedDateTime) -> io::Result<bool> {
+    let today = now.date();
+    let Ok(previous) = today.yesterday() else {
         return Ok(false);
     };
 
@@ -92,7 +92,7 @@ fn recently_succeeded(journal: &Path, now: DateTime<FixedOffset>) -> io::Result<
     .flatten();
 
     Ok(newest_success.is_some_and(|ts| {
-        now.timestamp_millis().saturating_sub(ts) < RECENCY_WINDOW_HOURS * 3_600_000
+        now.timestamp().as_millisecond().saturating_sub(ts) < RECENCY_WINDOW_HOURS * 3_600_000
     }))
 }
 
@@ -123,14 +123,14 @@ fn guarded_pass(journal: &Path, pid_path: &Path) -> io::Result<()> {
 
     fs::write(pid_path, std::process::id().to_string())?;
     let started = Instant::now();
-    let mut log = open_heartbeat_log(journal, Local::now().fixed_offset())?;
+    let mut log = open_heartbeat_log(journal, &ZonedDateTime::now())?;
     let pass = run_pass(&mut log);
     let outcome = if pass.is_ok() { "success" } else { "error" };
     let log_result = append_heartbeat_log(&mut log, started.elapsed().as_secs(), outcome);
     pass.and(log_result)
 }
 
-fn open_heartbeat_log(journal: &Path, opened: DateTime<FixedOffset>) -> io::Result<OplogWriter> {
+fn open_heartbeat_log(journal: &Path, opened: &ZonedDateTime) -> io::Result<OplogWriter> {
     let root = JournalRoot::open(journal).map_err(|error| io::Error::other(error.to_string()))?;
     create_oplog_at(root, "heartbeat", "pass", OplogFormat::Jsonl, opened)
         .map_err(|error| io::Error::other(format!("failed to create heartbeat oplog: {error}")))
@@ -142,7 +142,7 @@ fn run_pass(log: &mut OplogWriter) -> io::Result<()> {
         "escalated_targets": [],
         "event": "pass",
         "fired": [],
-        "ts": Utc::now().timestamp_millis(),
+        "ts": Timestamp::now().as_millisecond(),
     });
     write_record(log, &record)
 }
@@ -158,7 +158,7 @@ fn append_heartbeat_log(
             "duration_seconds": duration_seconds,
             "event": "pass.outcome",
             "outcome": outcome,
-            "ts": Utc::now().timestamp_millis(),
+            "ts": Timestamp::now().as_millisecond(),
         }),
     )
 }

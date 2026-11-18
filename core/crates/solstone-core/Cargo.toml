@@ -142,9 +142,8 @@ test = false
 
 [dependencies]
 solstone-core-removals.workspace = true
-chrono.workspace = true
-chrono-tz.workspace = true
 env_logger.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_path_to_error = "0.1.20"
@@ -190,6 +189,7 @@ solstone-core-spp-ratls.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-time.workspace = true
 solstone-core-user-skill.workspace = true
 getrandom.workspace = true
 solstone-core-system-health.workspace = true

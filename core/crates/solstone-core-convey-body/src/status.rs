@@ -14,12 +14,11 @@ use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 
-use crate::fmt::{count_noun, month_abbr, parse_day, short_day, short_day_year};
+use crate::fmt::{count_noun, days_through, month_abbr, parse_day, short_day, short_day_year};
 use crate::listing::{BodyDays, DaySources, body_days, body_streams, window_count};
 use crate::query::decoded_query_params;
 use crate::router::unreadable_response;
@@ -124,10 +123,8 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
     ) else {
         return Vec::new();
     };
-    let empty = first
-        .iter_days()
-        .take_while(|day| *day <= last)
-        .map(|day| day.format("%Y%m%d").to_string())
+    let empty = days_through(first, last)
+        .map(solstone_core_time::day_key)
         .filter(|day| !days.shown.contains_key(day) && !days.hidden.contains(day))
         .collect::<Vec<_>>();
     let earlier = solstone_core_location::old_imports::covered_days_among(
@@ -136,13 +133,13 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
     );
     (first.year()..=last.year())
         .map(|year| {
-            let start = first.max(NaiveDate::from_ymd_opt(year, 1, 1).unwrap());
-            let end = last.min(NaiveDate::from_ymd_opt(year, 12, 31).unwrap());
+            let start = first.max(jiff::civil::date(year, 1, 1));
+            let end = last.min(jiff::civil::date(year, 12, 31));
             let mut weeks = Vec::<Vec<Value>>::new();
-            let mut week = vec![Value::Null; start.weekday().num_days_from_monday() as usize];
-            let mut current = start;
-            while current <= end {
-                let key = current.format("%Y%m%d").to_string();
+            let lead = start.weekday().to_monday_zero_offset().unsigned_abs();
+            let mut week = vec![Value::Null; usize::from(lead)];
+            for current in days_through(start, end) {
+                let key = solstone_core_time::day_key(current);
                 week.push(grid_cell(
                     &key,
                     days.shown.get(&key),
@@ -152,7 +149,6 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
                 if week.len() == 7 {
                     weeks.push(std::mem::take(&mut week));
                 }
-                current = current.succ_opt().expect("valid date successor");
             }
             if !week.is_empty() {
                 week.resize(7, Value::Null);

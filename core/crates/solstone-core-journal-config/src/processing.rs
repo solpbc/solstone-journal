@@ -2,14 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 //! Deferred analysis settings and pure gate evaluation.
-use chrono::NaiveTime;
+use jiff::civil::Time;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeWindowSettings {
     pub enabled: bool,
-    pub start: NaiveTime,
-    pub end: NaiveTime,
+    pub start: Time,
+    pub end: Time,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisplayPowersaveSettings {
@@ -51,7 +51,7 @@ pub struct GateState {
     pub display_powersave: ConditionState,
 }
 
-pub fn evaluate_time_window(settings: TimeWindowSettings, now: NaiveTime) -> ConditionState {
+pub fn evaluate_time_window(settings: TimeWindowSettings, now: Time) -> ConditionState {
     let open = if settings.start < settings.end {
         now >= settings.start && now < settings.end
     } else if settings.start > settings.end {
@@ -84,7 +84,7 @@ pub fn evaluate_display_powersave(
 }
 pub fn evaluate_drain_gate(
     settings: ProcessingSettings,
-    now: NaiveTime,
+    now: Time,
     reading: DisplayPowersaveReading,
 ) -> GateState {
     let time_window = evaluate_time_window(settings.gate.time_window, now);
@@ -146,13 +146,13 @@ pub fn processing_settings(config: &Map<String, Value>) -> Result<ProcessingSett
                         .and_then(|value| value.get("start"))
                         .and_then(Value::as_str),
                 )
-                .unwrap_or_else(|| NaiveTime::from_hms_opt(2, 0, 0).expect("valid default")),
+                .unwrap_or_else(|| Time::constant(2, 0, 0, 0)),
                 end: parse_time(
                     window
                         .and_then(|value| value.get("end"))
                         .and_then(Value::as_str),
                 )
-                .unwrap_or_else(|| NaiveTime::from_hms_opt(6, 0, 0).expect("valid default")),
+                .unwrap_or_else(|| Time::constant(6, 0, 0, 0)),
             },
             display_powersave: DisplayPowersaveSettings {
                 enabled: display
@@ -164,8 +164,8 @@ pub fn processing_settings(config: &Map<String, Value>) -> Result<ProcessingSett
     })
 }
 
-fn parse_time(value: Option<&str>) -> Option<NaiveTime> {
-    value.and_then(|value| NaiveTime::parse_from_str(value, "%H:%M").ok())
+fn parse_time(value: Option<&str>) -> Option<Time> {
+    value.and_then(|value| Time::strptime("%H:%M", value).ok())
 }
 
 /// Reject malformed supplied fields, while absent fields retain their defaults.

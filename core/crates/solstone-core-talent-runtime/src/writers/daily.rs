@@ -272,7 +272,7 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
                 .get("primary")
                 .and_then(Value::as_str)
                 .ok_or_else(|| invalid("maintenance primary is missing"))?;
-            if chrono::NaiveTime::parse_from_str(primary, "%H:%M").is_err() {
+            if jiff::civil::Time::strptime("%H:%M", primary).is_err() {
                 return Err(invalid("maintenance primary must be HH:MM"));
             }
         }

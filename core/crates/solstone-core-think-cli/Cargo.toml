@@ -19,8 +19,8 @@ default = []
 test-hooks = []
 
 [dependencies]
-chrono.workspace = true
 glob.workspace = true
+jiff.workspace = true
 log.workspace = true
 rapidfuzz.workspace = true
 serde.workspace = true
@@ -50,6 +50,7 @@ solstone-core-system-health.workspace = true
 solstone-core-talent-cli.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-talent-runtime.workspace = true
+solstone-core-time.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
@@ -57,7 +58,6 @@ solstone-core-removals.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-cortex.workspace = true
 solstone-core-journal-config-write.workspace = true
-chrono-tz.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true

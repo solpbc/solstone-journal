@@ -16,9 +16,10 @@ use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_system_health::{DataState, derive_modality_state};
+use solstone_core_time::Precision;
 
 use crate::delete::{valid_day, valid_key, valid_stream};
 use crate::{AppState, legacy_error_response};
@@ -341,7 +342,7 @@ fn create_analyzing_marker(
 ) -> Result<Marker, CreateMarkerError> {
     let path = analyzing_marker_path(segment_dir, modality);
     let request_id = random_hex().map_err(CreateMarkerError::Io)?;
-    let started_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let started_at = solstone_core_time::utc_z(Timestamp::now(), Precision::Secs);
     let body = json!({"started_at":started_at,"modality":modality,"request_id":request_id});
     let temporary = segment_dir.join(format!(".analyzing_{modality}.{request_id}.tmp"));
     let mut file = OpenOptions::new()
@@ -398,7 +399,7 @@ fn marker_payload(path: &Path) -> Map<String, Value> {
         .unwrap_or_default()
 }
 
-fn running_response(segment_dir: &Path, modality: &str, now: chrono::DateTime<Utc>) -> Response {
+fn running_response(segment_dir: &Path, modality: &str, now: Timestamp) -> Response {
     let marker = marker_payload(&analyzing_marker_path(segment_dir, modality));
     let data_state = data_state(segment_dir, now, Some((modality, DataState::Analyzing)));
     Json(json!({"data_state":data_state,"marker":{"started_at":marker.get("started_at").and_then(Value::as_str).unwrap_or_default()},"repair_status":"running"})).into_response()
@@ -409,7 +410,7 @@ fn watch_reprocess_completion(
     modality: &str,
     request_id: &str,
     exit: ChildExit,
-    now: chrono::DateTime<Utc>,
+    now: Timestamp,
 ) {
     let marker = analyzing_marker_path(segment_dir, modality);
     if marker_payload(&marker)
@@ -486,7 +487,7 @@ fn write_failed_marker(
     failed.insert("reason".into(), json!(reason));
     failed.insert(
         "failed_at".into(),
-        json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
+        json!(solstone_core_time::utc_z(Timestamp::now(), Precision::Secs)),
     );
     failed.insert("detail".into(), json!(detail));
     if let Some(reason_code) = reason_code {
@@ -526,7 +527,7 @@ struct Signals {
     has_chunks: bool,
 }
 
-fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Utc>) -> Signals {
+fn modality_signals(segment_dir: &Path, modality: &str, now: Timestamp) -> Signals {
     if modality == "image" {
         let parent_name = segment_dir
             .parent()
@@ -616,7 +617,7 @@ fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Ut
 
 fn data_state(
     segment_dir: &Path,
-    now: chrono::DateTime<Utc>,
+    now: Timestamp,
     override_state: Option<(&str, DataState)>,
 ) -> BTreeMap<String, String> {
     let mut states = BTreeMap::new();
@@ -656,7 +657,7 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::{TimeZone, Utc};
+    use jiff::Timestamp;
     use serde_json::Value;
     use tempfile::TempDir;
     use tokio::sync::Notify;
@@ -805,7 +806,7 @@ mod tests {
     fn test_router(root: &std::path::Path, spawner: Arc<dyn SenseSpawner>) -> axum::Router {
         crate::router_with_test_spawner(
             root.to_path_buf(),
-            crate::Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+            crate::Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
             shell,
             Duration::from_secs(10),
             spawner,
@@ -851,7 +852,7 @@ mod tests {
             super::modality_signals(
                 root.path(),
                 "audio",
-                Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap()
+                "2026-07-31T09:00:00Z".parse::<Timestamp>().unwrap()
             )
             .state,
             super::DataState::Failed
@@ -949,7 +950,7 @@ mod tests {
     #[test]
     fn watcher_writes_only_for_its_own_request_and_preserves_exit_shape() {
         let root = TempDir::new().expect("segment");
-        let now = Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap();
+        let now = "2026-07-31T09:00:00Z".parse::<Timestamp>().unwrap();
         let marker = create_analyzing_marker(root.path(), "audio").expect("marker");
         watch_reprocess_completion(
             root.path(),
@@ -1200,7 +1201,7 @@ mod tests {
     #[test]
     fn watcher_handles_image_modality_completion() {
         let root = TempDir::new().expect("segment");
-        let now = Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap();
+        let now = "2026-07-31T09:00:00Z".parse::<Timestamp>().unwrap();
 
         // 1. Exit 0 with bare still -> analyzing marker removed, data_state is failed
         write(root.path(), "photo.jpg", b"jpeg bytes");
@@ -1589,7 +1590,7 @@ mod tests {
         );
 
         // Settle success first while the child is still parked
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         fs::write(direct_dir.join("audio.jsonl"), b"{\"start\": \"1\"}\n").unwrap();
 
         watch_reprocess_completion(

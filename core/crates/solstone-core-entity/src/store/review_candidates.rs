@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::AtomicWriteError;
 use solstone_core_journal_io::AtomicWriteOptions;
@@ -17,6 +17,7 @@ use solstone_core_journal_io::LockOptions;
 use solstone_core_journal_io::hold_lock;
 use solstone_core_journal_io::write_text;
 use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
+use solstone_core_time::{Precision, utc_z};
 
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
@@ -613,7 +614,7 @@ fn candidate_key_for_row(row: &Value) -> String {
 }
 
 fn candidate_now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+    utc_z(Timestamp::now(), Precision::Secs)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

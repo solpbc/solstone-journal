@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 use solstone_core_facets::{BodyRecordPlace, read_strava_converted};
 use tempfile::TempDir;
@@ -16,8 +15,12 @@ const DAY: &str = "20260101";
 const SENSE: &str = "exercise_070000_300";
 const WORKOUT: u64 = 901;
 
-fn now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 9, 0, 0, 0).unwrap()
+fn now() -> Timestamp {
+    jiff::civil::date(2026, 11, 9)
+        .at(0, 0, 0, 0)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 fn journal(facets: &[&str]) -> TempDir {

@@ -252,7 +252,7 @@ fn token_values(payload: &Value) -> Result<TokenValues, BodyIngestError> {
             object
                 .get("expires_in")
                 .and_then(Value::as_f64)
-                .map(|seconds| chrono::Utc::now().timestamp() as f64 + seconds)
+                .map(|seconds| jiff::Timestamp::now().as_second() as f64 + seconds)
         })
         .filter(|value| value.is_finite())
         .ok_or_else(|| source("authorization_response"))?;

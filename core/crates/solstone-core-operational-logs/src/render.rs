@@ -97,15 +97,14 @@ fn sanitize_preserving_lf(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDateTime;
+    use jiff::civil::DateTime;
     use solstone_core_system::operational_log_parse::ParsedHealthLogRow;
 
     use super::*;
 
     fn row(service: &str, raw: &str) -> ParsedHealthLogRow {
         ParsedHealthLogRow {
-            timestamp: NaiveDateTime::parse_from_str("2026-01-01 12:00:00", "%Y-%m-%d %H:%M:%S")
-                .unwrap(),
+            timestamp: DateTime::strptime("%Y-%m-%d %H:%M:%S", "2026-01-01 12:00:00").unwrap(),
             service: service.to_owned(),
             stream: "stdout".to_owned(),
             message: "message".to_owned(),

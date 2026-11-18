@@ -6,7 +6,6 @@ use axum::{
     http::{Request, StatusCode},
     response::IntoResponse,
 };
-use chrono::{FixedOffset, TimeZone};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     JournalRoot,
@@ -416,23 +415,24 @@ fn matches(path: &str, pattern: &str) -> bool {
 #[tokio::test]
 async fn reprocess_holds_back_the_journals_today_not_this_computers() {
     let root = crate::test_support::root();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let host_today = now
-        .with_timezone(&solstone_core_journal_config::host_zone())
-        .date_naive();
-    let zone = [chrono_tz::Pacific::Kiritimati, chrono_tz::Etc::GMTPlus12]
+        .to_zoned_datetime(solstone_core_journal_config::host_zone())
+        .date();
+    let zone = ["Pacific/Kiritimati", "Etc/GMT+12"]
         .into_iter()
-        .find(|zone| now.with_timezone(zone).date_naive() != host_today)
+        .map(|name| solstone_core_time::zone(name).expect("zone"))
+        .find(|zone| now.to_zoned_datetime(zone.clone()).date() != host_today)
         .expect("UTC+14 and UTC-12 never share a date");
-    let owner_today = now.with_timezone(&zone).date_naive();
+    let owner_today = now.to_zoned_datetime(zone.clone()).date();
     let config_path = root.path().join("config/journal.json");
     let mut config: Value = serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
-    config["identity"]["timezone"] = json!(zone.name());
+    config["identity"]["timezone"] = json!(zone.iana_name());
     std::fs::write(&config_path, config.to_string()).unwrap();
-    let reason = |day: chrono::NaiveDate| {
+    let reason = |day: jiff::civil::Date| {
         let root = root.path().to_owned();
         async move {
-            let body = json!({"day": day.format("%Y%m%d").to_string(), "flavor": "from-scratch"});
+            let body = json!({"day": solstone_core_time::day_key(day), "flavor": "from-scratch"});
             let response = crate::actions::reprocess(root, Some(axum::Json(body))).await;
             let body: Value =
                 serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
@@ -442,7 +442,7 @@ async fn reprocess_holds_back_the_journals_today_not_this_computers() {
     };
     let owner_reason = reason(owner_today).await;
     let host_reason = reason(host_today).await;
-    if chrono::Utc::now().with_timezone(&zone).date_naive() != owner_today {
+    if jiff::Timestamp::now().to_zoned_datetime(zone).date() != owner_today {
         return; // the journal's midnight passed mid-test
     }
     assert_eq!(owner_reason, "reprocess_past_only");
@@ -501,7 +501,7 @@ async fn ac14_reprocess_response_shapes() {
 async fn reprocess_with_no_engine_returns_bad_request_without_transport() {
     let root = crate::test_support::root();
     let day = "20260101";
-    let now = chrono::Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap();
+    let now: jiff::Timestamp = "2026-01-03T12:00:00Z".parse().unwrap();
     let segment = root.path().join(format!("chronicle/{day}/090000_60"));
     std::fs::create_dir_all(&segment).unwrap();
     std::fs::write(segment.join("audio.jsonl"), "raw\n").unwrap();
@@ -512,7 +512,7 @@ async fn reprocess_with_no_engine_returns_bad_request_without_transport() {
         day,
         solstone_core_reprocess_cli::Flavor::FromScratch,
         now,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
         |_| {
             calls.set(calls.get() + 1);
             true
@@ -825,16 +825,16 @@ async fn ac10_and_ac11_log_reads_are_whole_and_safely_classified() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["reason_code"], "file_read_failed");
 
-    let opened = FixedOffset::east_opt(0)
-        .unwrap()
-        .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
-        .unwrap();
+    let opened = solstone_core_time::at_offset(
+        "2024-01-01T12:00:00Z".parse().unwrap(),
+        jiff::tz::Offset::UTC,
+    );
     let mut writer = create_oplog_at(
         JournalRoot::open(root.path()).unwrap(),
         "service",
         "supervisor",
         OplogFormat::Log,
-        opened,
+        &opened,
     )
     .unwrap();
     let leaf = writer.leaf_name().to_owned();
@@ -860,7 +860,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
     )
     .unwrap();
     let day = "20260101";
-    let now = chrono::Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap();
+    let now: jiff::Timestamp = "2026-01-03T12:00:00Z".parse().unwrap();
     let segment = root.path().join(format!("chronicle/{day}/090000_60"));
     std::fs::create_dir_all(&segment).unwrap();
     std::fs::write(segment.join("audio.jsonl"), "raw\n").unwrap();
@@ -875,7 +875,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
         day,
         solstone_core_reprocess_cli::Flavor::FromScratch,
         now,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
         |envelope| {
             calls.borrow_mut().push(envelope.clone());
             true
@@ -893,7 +893,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
 
     let fingerprint =
         solstone_core_system::catchup::read_raw_input_fingerprint(root.path(), day).unwrap();
-    let retry_at = now.timestamp() as f64 + 3_600.0;
+    let retry_at = now.as_second() as f64 + 3_600.0;
     let daily_key = format!("{day}:daily-catchup");
     let state = json!({
         "version": 1,
@@ -914,7 +914,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
         day,
         solstone_core_reprocess_cli::Flavor::ProcessNow,
         now,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
         |_| {
             calls.set(calls.get() + 1);
             true

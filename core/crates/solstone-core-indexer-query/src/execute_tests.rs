@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{Connection, OpenFlags, params};
 use solstone_core_indexer_store::db::{db_path, open_index};
@@ -35,8 +35,8 @@ fn record_sql(event: TraceEvent<'_>) {
     }
 }
 
-fn reference_date() -> NaiveDate {
-    NaiveDate::parse_from_str(REFERENCE_DATE, "%Y-%m-%d").expect("reference date")
+fn reference_date() -> Date {
+    Date::strptime("%Y-%m-%d", REFERENCE_DATE).expect("reference date")
 }
 
 fn temp_root(name: &str) -> PathBuf {
@@ -176,7 +176,7 @@ fn request(query: &str) -> SearchRequest {
 fn search(
     journal: &Path,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<crate::SearchResponse, IndexAccessError> {
     owner_search(journal, OwnerBoundary, request, reference_date)
 }
@@ -184,7 +184,7 @@ fn search(
 fn search_counts(
     journal: &Path,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> Result<crate::CountsResponse, IndexAccessError> {
     owner_search_counts(journal, OwnerBoundary, request, reference_date)
 }
@@ -3656,7 +3656,7 @@ fn group_offset_populates_when_present_and_none_when_absent() {
         body_owner_words: false,
     };
     let response = owner_index
-        .search(&request, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap())
+        .search(&request, jiff::civil::date(2026, 1, 1))
         .expect("search");
     assert_eq!(response.results.len(), 2);
     let screen_hit = response

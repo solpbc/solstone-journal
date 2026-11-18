@@ -2381,9 +2381,10 @@ fn capture_operated_archive_pair(
     let credentials = credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
         reason: error.reason_code,
     })?;
-    let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+    let expiry = solstone_core_time::parse_rfc3339(&credentials.expires_at)
         .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
-        .timestamp();
+        .timestamp()
+        .as_second();
     let rclone = rclone.ok_or(ArchiveError::ToolUnavailable)?;
     let write = hosted_append_only_session(binding, &credentials, rclone)
         .map_err(|_| ArchiveError::ToolUnavailable)?;
@@ -2423,9 +2424,10 @@ fn capture_linked_operated_pair(
     let credentials = credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
         reason: error.reason_code,
     })?;
-    let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+    let expiry = solstone_core_time::parse_rfc3339(&credentials.expires_at)
         .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
-        .timestamp();
+        .timestamp()
+        .as_second();
     let write = hosted_session(binding, &credentials)
         .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
     let read = hosted_session(binding, &credentials)
@@ -2620,9 +2622,10 @@ fn capture_archive_read(
         let credentials = credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
             reason: error.reason_code,
         })?;
-        let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+        let expiry = solstone_core_time::parse_rfc3339(&credentials.expires_at)
             .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
-            .timestamp();
+            .timestamp()
+            .as_second();
         let session = hosted_session(binding, &credentials)
             .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
         (session.destination, Some(expiry))

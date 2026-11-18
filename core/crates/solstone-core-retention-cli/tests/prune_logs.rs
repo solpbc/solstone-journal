@@ -18,7 +18,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use chrono::{FixedOffset, TimeZone};
+use jiff::tz::Offset;
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
 
@@ -109,17 +109,17 @@ fn populate_all_classes(journal: &Journal) {
 }
 
 fn released_old_oplog(journal: &Journal) -> String {
-    let instant = FixedOffset::east_opt(0)
-        .expect("UTC")
-        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
-        .single()
-        .expect("oplog instant");
+    let wall = jiff::civil::date(2026, 1, 1).at(12, 0, 0, 0);
+    let instant = solstone_core_time::at_offset(
+        Offset::UTC.to_timestamp(wall).expect("oplog instant"),
+        Offset::UTC,
+    );
     let writer = create_oplog_at(
         JournalRoot::open(&journal.root).expect("journal root"),
         "source",
         "run",
         OplogFormat::Log,
-        instant,
+        &instant,
     )
     .expect("oplog");
     let leaf = writer.leaf_name().to_owned();
@@ -129,7 +129,7 @@ fn released_old_oplog(journal: &Journal) -> String {
         .write(true)
         .open(journal.root.join("chronicle/20260101/health").join(&leaf))
         .expect("oplog")
-        .set_modified(std::time::SystemTime::from(instant))
+        .set_modified(std::time::SystemTime::try_from(instant.timestamp()).expect("system time"))
         .expect("last write");
     leaf
 }

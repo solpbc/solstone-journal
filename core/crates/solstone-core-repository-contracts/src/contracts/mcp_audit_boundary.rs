@@ -7,8 +7,13 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item};
 
-const APPROVED_DEPENDENCIES: [&str; 4] =
-    ["chrono", "serde", "serde_json", "solstone-core-journal-io"];
+const APPROVED_DEPENDENCIES: [&str; 5] = [
+    "jiff",
+    "serde",
+    "serde_json",
+    "solstone-core-journal-io",
+    "solstone-core-time",
+];
 
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

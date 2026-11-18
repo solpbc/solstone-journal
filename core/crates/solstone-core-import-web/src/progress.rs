@@ -90,7 +90,7 @@ fn read_counts(root: &Path, import_id: &str) -> Result<Option<Value>, String> {
             &health::FilesystemSegmentSource,
             root,
             &day,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .map_err(|error| error.to_string());
         let progress =

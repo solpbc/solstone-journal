@@ -23,7 +23,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_local::install::status::InstallStatus;
 use solstone_core_local::install::{lease, manifest, pins, status};
@@ -125,7 +125,7 @@ impl LocalFollow {
                 model_installed_before: model_installed_before(journal),
                 readiness,
                 record: record.as_ref(),
-                now: Utc::now(),
+                now: Timestamp::now(),
                 launch_backoff_elapsed: memory.backoff_elapsed(now),
             },
             || lease::is_held(journal, "local"),
@@ -151,7 +151,7 @@ pub(crate) struct FollowInput<'a> {
     pub readiness: &'a Value,
     /// `None` when the install status record could not be read.
     pub record: Option<&'a InstallStatus>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
     pub launch_backoff_elapsed: bool,
 }
 
@@ -178,7 +178,7 @@ pub(crate) fn decide(
 
 pub(crate) fn install_follow_tail(
     record: Option<&InstallStatus>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     launch_backoff_elapsed: bool,
     lease_held: impl FnOnce() -> std::io::Result<bool>,
 ) -> FollowDecision {
@@ -192,7 +192,7 @@ pub(crate) fn install_follow_tail(
     match latest_activity(record) {
         Err(()) => return FollowDecision::Hold("install-status-unreadable"),
         Ok(Some(latest)) => {
-            let Ok(since) = (now - latest).to_std() else {
+            let Ok(since) = Duration::try_from(now.duration_since(latest)) else {
                 return FollowDecision::Hold("install-status-in-future");
             };
             if since < PERSISTED_BACKOFF {
@@ -275,7 +275,7 @@ fn model_installed_before(journal: &Path) -> bool {
     })
 }
 
-fn latest_activity(record: &InstallStatus) -> Result<Option<DateTime<Utc>>, ()> {
+fn latest_activity(record: &InstallStatus) -> Result<Option<Timestamp>, ()> {
     let mut latest = None;
     for stamp in [
         &record.completed_at,
@@ -285,9 +285,9 @@ fn latest_activity(record: &InstallStatus) -> Result<Option<DateTime<Utc>>, ()> 
     .into_iter()
     .flatten()
     {
-        let parsed = DateTime::parse_from_rfc3339(stamp)
+        let parsed = solstone_core_time::parse_rfc3339(stamp)
             .map_err(|_| ())?
-            .with_timezone(&Utc);
+            .timestamp();
         latest = latest.max(Some(parsed));
     }
     Ok(latest)
@@ -350,10 +350,8 @@ mod tests {
         }
     }
 
-    fn now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-10-07T18:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc)
+    fn now() -> Timestamp {
+        "2026-10-07T18:00:00Z".parse().unwrap()
     }
 
     fn installed_long_ago() -> InstallStatus {

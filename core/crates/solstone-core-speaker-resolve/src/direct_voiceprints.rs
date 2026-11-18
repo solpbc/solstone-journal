@@ -244,7 +244,7 @@ pub fn plan_direct_voiceprints(
         let Some(embedding) = load_member_embedding(journal_root, &member, owner.as_ref())? else {
             continue;
         };
-        let last_seen_ts = segment_start_ts_ms(timezone, &member.day, &member.segment_key)
+        let last_seen_ts = segment_start_ts_ms(&timezone, &member.day, &member.segment_key)
             .ok_or_else(|| DirectVoiceprintsError::InvalidSegment {
                 day: member.day.clone(),
                 segment_key: member.segment_key.clone(),

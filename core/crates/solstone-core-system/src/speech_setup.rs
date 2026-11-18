@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::stt_backend_choice::SttRuntimeKind;
@@ -78,7 +78,7 @@ pub fn read_speech_setup(
     os: &str,
     arch: &str,
     home: Option<&Path>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> SpeechSetupPresentation {
     let policy = crate::stt_backend_choice::stt_host_policy(os, arch);
     let kind = match policy.runtime_kind {
@@ -223,8 +223,8 @@ pub fn read_speech_setup(
         SttRuntimeKind::MacosCoreml if status_record.install_state == "failed" => status_record
             .last_transition_at
             .as_deref()
-            .and_then(|stamp| chrono::DateTime::parse_from_rfc3339(stamp).ok())
-            .and_then(|at| (now - at.with_timezone(&chrono::Utc)).to_std().ok())
+            .and_then(|stamp| solstone_core_time::parse_rfc3339(stamp).ok())
+            .and_then(|at| std::time::Duration::try_from(now.duration_since(at.timestamp())).ok())
             .is_some_and(|since| {
                 since < solstone_core_local::install::coreml_install::COREML_HEAL_COOLDOWN
             }),
@@ -315,7 +315,6 @@ fn proof_ready(proof: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use solstone_core_journal_config::parakeet_coreml::{
@@ -466,7 +465,7 @@ mod tests {
     #[test]
     fn test_non_applicable_platforms() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         // Windows with garbage install file
         let bad_path = temp.path().join("health/providers/parakeet.json");
@@ -493,7 +492,7 @@ mod tests {
     #[test]
     fn test_linux_ready_proofs_hidden() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         setup_linux_proofs_ready(temp.path());
 
@@ -513,7 +512,7 @@ mod tests {
     #[test]
     fn test_linux_not_desired_phases_hidden() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_runtime_health(temp.path(), "not-desired", None);
         let pres = read_speech_setup(temp.path(), "linux", "x86_64", None, now);
@@ -531,7 +530,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("fake_home");
         fs::create_dir_all(&home).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         setup_macos_sentinel_ready(&home);
         for code in ["fail_code", "install_cancelled"] {
@@ -546,7 +545,7 @@ mod tests {
     #[test]
     fn test_macos_missing_or_relative_home() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let pres_none = read_speech_setup(temp.path(), "darwin", "arm64", None, now);
         assert!(pres_none.applicable);
@@ -569,7 +568,7 @@ mod tests {
     #[test]
     fn test_malformed_runtime_file_untouched() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let path = temp.path().join("health/providers/runtime/parakeet.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -597,7 +596,7 @@ mod tests {
     #[test]
     fn test_in_flight_downloading_with_lease_held() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_install_status(
             temp.path(),
@@ -641,7 +640,7 @@ mod tests {
     #[test]
     fn test_paused_states() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_install_status(
             temp.path(),
@@ -671,7 +670,7 @@ mod tests {
     #[test]
     fn test_cooling_and_waiting() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         // Linux backoff with failed -> cooling
         write_install_status(temp.path(), "failed", Some("err_1"), None, None, None);
@@ -700,7 +699,8 @@ mod tests {
         // macOS cooling within cooldown
         let home = temp.path().join("fake_home_cooling");
         fs::create_dir_all(&home).unwrap();
-        let recent_transition = (now - chrono::Duration::minutes(5)).to_rfc3339();
+        let recent_transition =
+            solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_mins(5));
         write_install_status(
             temp.path(),
             "failed",
@@ -719,7 +719,8 @@ mod tests {
         );
 
         // macOS past cooldown -> attention
-        let old_transition = (now - chrono::Duration::minutes(40)).to_rfc3339();
+        let old_transition =
+            solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_mins(40));
         write_install_status(
             temp.path(),
             "failed",
@@ -736,7 +737,7 @@ mod tests {
     #[test]
     fn test_host_blocked_attention() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_runtime_health(temp.path(), "host-blocked", None);
         let pres = read_speech_setup(temp.path(), "linux", "x86_64", None, now);
@@ -756,7 +757,7 @@ mod tests {
     #[test]
     fn test_installed_record_without_proofs_is_attention() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         // Installed in parakeet.json, but proofs are NOT ready on disk
         write_install_status(temp.path(), "installed", None, None, None, None);
@@ -787,7 +788,7 @@ mod tests {
     #[test]
     fn test_unreadable_follow_pins_are_unavailable() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_install_status(temp.path(), "idle", None, None, None, None);
 
@@ -810,7 +811,7 @@ mod tests {
     #[test]
     fn test_in_flight_downloading_with_backoff_pin_is_downloading() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_install_status(
             temp.path(),
@@ -839,7 +840,7 @@ mod tests {
     #[test]
     fn test_in_flight_other_stages_with_lease_held() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let lease = solstone_core_local::install::lease::acquire(temp.path(), "parakeet").unwrap();
         assert!(lease.is_some());
@@ -863,7 +864,7 @@ mod tests {
     #[test]
     fn test_no_runtime_and_no_install_file_is_waiting() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let pres = read_speech_setup(temp.path(), "linux", "x86_64", None, now);
         assert!(pres.applicable);
@@ -880,7 +881,7 @@ mod tests {
     #[test]
     fn test_pin_follow_launch_and_install_running_with_idle_is_waiting() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         write_install_status(temp.path(), "idle", None, None, None, None);
 
@@ -898,7 +899,7 @@ mod tests {
     #[test]
     fn test_malformed_install_status_file_is_unavailable_and_unchanged() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let path = temp.path().join("health/providers/parakeet.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -920,11 +921,12 @@ mod tests {
     #[test]
     fn test_macos_cancelled_within_cooldown_is_paused_not_cooling() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let home = temp.path().join("fake_home_mac_cancelled");
         fs::create_dir_all(&home).unwrap();
-        let recent_transition = (now - chrono::Duration::minutes(5)).to_rfc3339();
+        let recent_transition =
+            solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_mins(5));
         write_install_status(
             temp.path(),
             "failed",
@@ -946,7 +948,7 @@ mod tests {
     #[test]
     fn test_macos_malformed_journal_config_is_unavailable() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
 
         let config_path = temp.path().join("config/journal.json");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
@@ -967,7 +969,7 @@ mod tests {
     #[test]
     fn unknown_follow_reason_does_not_prescribe_reinstall() {
         let temp = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
         write_install_status(temp.path(), "idle", None, None, None, None);
         write_runtime_health(
             temp.path(),
@@ -985,7 +987,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("mac_home");
         fs::create_dir_all(&home).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now: Timestamp = "2026-10-17T12:00:00Z".parse().unwrap();
         write_install_status(temp.path(), "downloading", None, None, Some((10, 20)), None);
         let lease = solstone_core_local::install::lease::acquire(temp.path(), "parakeet").unwrap();
         assert!(lease.is_some());

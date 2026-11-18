@@ -228,17 +228,14 @@ fn assert_last_heard_at_segment_start(root: &Path, entity_id: &str) {
 /// 20260808 12:00:00 as the host's local time: with no owner timezone
 /// configured, a segment's wall time is read in the host's zone.
 fn host_local_segment_start_ms() -> i64 {
-    use chrono::TimeZone;
-    chrono::Local
-        .from_local_datetime(
-            &chrono::NaiveDate::from_ymd_opt(2026, 8, 8)
-                .unwrap()
-                .and_hms_opt(12, 0, 0)
-                .unwrap(),
-        )
-        .earliest()
-        .unwrap()
-        .timestamp_millis()
+    solstone_core_time::from_local(
+        &jiff::tz::TimeZone::system(),
+        jiff::civil::date(2026, 8, 8).at(12, 0, 0, 0),
+    )
+    .earliest()
+    .unwrap()
+    .timestamp()
+    .as_millisecond()
 }
 
 fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {

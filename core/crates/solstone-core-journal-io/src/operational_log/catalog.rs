@@ -12,7 +12,8 @@ use std::io::{Read, Seek, SeekFrom};
 #[cfg(test)]
 use std::cell::{Cell, RefCell};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
+use solstone_core_time::day_key;
 
 use super::LeaseProbe;
 use super::admission::{OPLOG_ADMISSION_MAX_BYTES, validate_oplog_admission};
@@ -225,12 +226,9 @@ impl Error for OplogCatalogError {}
 /// Build a complete catalog of canonical oplogs for the supplied local days.
 pub fn catalog_oplogs(
     root: JournalRoot,
-    days: &[NaiveDate],
+    days: &[Date],
 ) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
-    let mut days = days
-        .iter()
-        .map(|day| day.format("%Y%m%d").to_string())
-        .collect::<Vec<_>>();
+    let mut days = days.iter().map(|day| day_key(*day)).collect::<Vec<_>>();
     days.sort();
     days.dedup();
 
@@ -259,13 +257,10 @@ pub fn catalog_oplogs(
 /// accumulator: external effects cannot be rolled back on a census retry.
 pub fn fold_oplogs<T: Default>(
     root: JournalRoot,
-    days: &[NaiveDate],
+    days: &[Date],
     read: impl Fn(&mut T, &OplogCatalogEntry, &mut dyn Read) -> std::io::Result<()>,
 ) -> Result<T, OplogCatalogError> {
-    let mut days = days
-        .iter()
-        .map(|day| day.format("%Y%m%d").to_string())
-        .collect::<Vec<_>>();
+    let mut days = days.iter().map(|day| day_key(*day)).collect::<Vec<_>>();
     days.sort();
     days.dedup();
     for attempt in 0..OPLOG_CATALOG_CENSUS_ATTEMPTS {
@@ -834,22 +829,26 @@ fn map_directory_error(error: FlatDirectoryError, day: &str) -> OplogCatalogErro
 mod tests {
     use std::fs;
 
-    use chrono::{FixedOffset, TimeZone};
+    use jiff::ZonedDateTime;
+    use jiff::civil::date;
+    use jiff::tz::{Offset, TimeZone};
+    use solstone_core_time::from_local;
     use tempfile::TempDir;
 
     use super::*;
     use crate::operational_log::{OplogFormat, create_oplog_at};
 
-    fn day() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 8, 7).unwrap()
+    fn day() -> Date {
+        date(2026, 8, 7)
     }
 
-    fn instant() -> chrono::DateTime<FixedOffset> {
-        FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap()
+    fn instant() -> ZonedDateTime {
+        from_local(
+            &TimeZone::fixed(Offset::UTC),
+            date(2026, 8, 7).at(12, 0, 0, 0),
+        )
+        .single()
+        .unwrap()
     }
 
     fn snapshot(temporary: &TempDir) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
@@ -866,7 +865,7 @@ mod tests {
             "source",
             "run",
             OplogFormat::Log,
-            instant(),
+            &instant(),
         )
         .unwrap();
         let leaf = writer.leaf_name().to_owned();

@@ -9,7 +9,7 @@ use regex::Regex;
 
 /// A timestamp which has passed the import timestamp validators.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Timestamp(String, Option<chrono::DateTime<chrono::Utc>>);
+pub struct Timestamp(String, Option<jiff::Timestamp>);
 
 impl Timestamp {
     #[must_use]
@@ -19,13 +19,13 @@ impl Timestamp {
 
     /// Known source instant, retained while planning elapsed media time.
     #[must_use]
-    pub fn source_instant(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub fn source_instant(&self) -> Option<jiff::Timestamp> {
         self.1
     }
 
     /// Retain an exporter-provided instant alongside its owner-local wall stamp.
     #[must_use]
-    pub fn with_source_instant(mut self, instant: chrono::DateTime<chrono::Utc>) -> Self {
+    pub fn with_source_instant(mut self, instant: jiff::Timestamp) -> Self {
         self.1 = Some(instant);
         self
     }
@@ -166,4 +166,10 @@ pub fn validate_timestamp(raw: &str) -> Result<Timestamp, TimestampError> {
         });
     }
     Ok(Timestamp(raw.to_owned(), None))
+}
+
+/// Milliseconds since the Unix epoch, rounded toward the past, so an instant
+/// before 1970 with a fraction of a millisecond keeps the key it always had.
+pub(crate) fn epoch_millis(instant: jiff::Timestamp) -> i64 {
+    instant.as_millisecond() - i64::from(instant.subsec_nanosecond() % 1_000_000 < 0)
 }

@@ -28,7 +28,9 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Days, NaiveDate, NaiveTime, TimeDelta, TimeZone, Utc};
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Map, Value};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter,
@@ -37,6 +39,7 @@ use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, HealthMarkerKind, SegmentDeconflictError,
     bump_stream_marker, health_marker_path, write_jsonl,
 };
+use solstone_core_time::{day_key, from_local};
 
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
 
@@ -262,7 +265,7 @@ pub fn process_transcript(
     stream: &str,
     facet: Option<&str>,
     setting: Option<&str>,
-    source_instant: Option<DateTime<Utc>>,
+    source_instant: Option<Timestamp>,
 ) -> TextImportOutcome {
     let wire = SystemWireClient::sibling();
     let outcome = process_transcript_with_wire(
@@ -293,7 +296,7 @@ pub fn process_transcript_with_wire(
     facet: Option<&str>,
     setting: Option<&str>,
     wire: &dyn WireClient,
-    source_instant: Option<DateTime<Utc>>,
+    source_instant: Option<Timestamp>,
 ) -> TextImportOutcome {
     match import(
         path,
@@ -329,7 +332,7 @@ fn import(
     facet: Option<&str>,
     setting: Option<&str>,
     wire: &dyn WireClient,
-    source_instant: Option<DateTime<Utc>>,
+    source_instant: Option<Timestamp>,
 ) -> ImportResult {
     let early = |error| (Vec::new(), error);
     if !crate::work_continues() {
@@ -526,7 +529,7 @@ pub fn preview(
     day_dir: &Path,
     start_time: &str,
     stream: &str,
-    source_instant: Option<DateTime<Utc>>,
+    source_instant: Option<Timestamp>,
 ) -> Result<crate::size::ImportSize, TextImportError> {
     let text = read_transcript(path)?;
     let (planned, _) = plan_tiles(&text, day_dir, start_time, stream, source_instant)?;
@@ -550,7 +553,7 @@ struct PlannedTile {
     turns: Vec<Turn>,
     day: String,
     segment: String,
-    origin: DateTime<Utc>,
+    origin: Timestamp,
 }
 
 fn plan_tiles(
@@ -558,69 +561,61 @@ fn plan_tiles(
     day_dir: &Path,
     start_time: &str,
     stream: &str,
-    source_instant: Option<DateTime<Utc>>,
+    source_instant: Option<Timestamp>,
 ) -> Result<(Vec<Result<PlannedTile, TextImportError>>, bool), TextImportError> {
     let (journal_root, day) = journal_marker_context(day_dir)?;
     let zone = solstone_core_journal_config::owner_zone(journal_root);
     let start_seconds = clock_seconds(start_time).ok_or_else(|| TextImportError::InvalidTime {
         value: start_time.to_owned(),
     })?;
-    let parsed_date = NaiveDate::parse_from_str(day, "%Y%m%d");
-    let is_literal_day = parsed_date.is_err();
-    let day_date = parsed_date.unwrap_or_else(|_| NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+    let parsed_date = solstone_core_time::parse_day(day);
+    let is_literal_day = parsed_date.is_none();
+    let day_date = parsed_date.unwrap_or_else(|| jiff::civil::date(2026, 1, 1));
     let chronicle = day_dir.parent().unwrap_or(day_dir);
     let reading = read_turns(text);
     let untimed = reading.untimed;
 
     let (anchor, turns) = if let Some(first) = reading.clock_start {
-        let naive_time = NaiveTime::from_num_seconds_from_midnight_opt(first as u32, 0).unwrap();
-        let naive = day_date.and_time(naive_time);
-        let anchor = zone
-            .from_local_datetime(&naive)
+        let naive = day_date.to_datetime(time_of_day(first));
+        let anchor = from_local(&zone, naive)
             .earliest()
             .ok_or_else(|| TextImportError::LocalTimeMissing {
                 day: day.to_owned(),
                 time: clock_text(first),
             })?
-            .with_timezone(&Utc);
+            .timestamp();
         let mut resolved_turns = Vec::with_capacity(reading.turns.len());
         for mut turn in reading.turns {
             if let Some(stated) = turn.stated {
                 let turn_date = day_date
-                    .checked_add_days(Days::new(stated.day_shift as u64))
-                    .ok_or_else(|| TextImportError::NextDay {
+                    .checked_add(Span::new().days(i64::from(stated.day_shift)))
+                    .map_err(|_| TextImportError::NextDay {
                         day: day.to_owned(),
                     })?;
-                let turn_time =
-                    NaiveTime::from_num_seconds_from_midnight_opt(stated.seconds as u32, 0)
-                        .unwrap();
-                let turn_naive = turn_date.and_time(turn_time);
-                let turn_utc = zone
-                    .from_local_datetime(&turn_naive)
+                let turn_naive = turn_date.to_datetime(time_of_day(stated.seconds));
+                let turn_utc = from_local(&zone, turn_naive)
                     .earliest()
                     .ok_or_else(|| TextImportError::LocalTimeMissing {
                         day: if is_literal_day {
                             day.to_owned()
                         } else {
-                            turn_date.format("%Y%m%d").to_string()
+                            day_key(turn_date)
                         },
                         time: clock_text(stated.seconds),
                     })?
-                    .with_timezone(&Utc);
-                turn.offset = (turn_utc - anchor).num_seconds().max(0) as u64;
+                    .timestamp();
+                turn.offset = turn_utc.duration_since(anchor).as_secs().max(0) as u64;
             }
             resolved_turns.push(turn);
         }
         (anchor, resolved_turns)
     } else {
-        let naive_time =
-            NaiveTime::from_num_seconds_from_midnight_opt(start_seconds as u32, 0).unwrap();
-        let naive = day_date.and_time(naive_time);
+        let naive = day_date.to_datetime(time_of_day(start_seconds));
         let anchor = source_instant
             .or_else(|| {
-                zone.from_local_datetime(&naive)
+                from_local(&zone, naive)
                     .earliest()
-                    .map(|instant| instant.with_timezone(&Utc))
+                    .map(|instant| instant.timestamp())
             })
             .ok_or_else(|| TextImportError::LocalTimeMissing {
                 day: day.to_owned(),
@@ -628,29 +623,39 @@ fn plan_tiles(
             })?;
         (anchor, reading.turns)
     };
+    // Past the last day the calendar holds there is no next day to file on.
+    let last = turns.iter().map(|turn| turn.offset).max().unwrap_or(0);
+    if anchor
+        .checked_add(SignedDuration::from_secs(last as i64))
+        .is_err()
+    {
+        return Err(TextImportError::NextDay {
+            day: day.to_owned(),
+        });
+    }
 
     let mut occupied: HashMap<String, HashSet<String>> = HashMap::new();
     let mut planned = Vec::new();
-    for ((tile, local_day), turns) in tiles(turns, anchor, zone) {
+    for ((tile, local_day), turns) in tiles(turns, anchor, &zone) {
         let result = (|| {
             let nominal_offset = tile * TILE_SECONDS;
-            let nominal_instant = anchor + TimeDelta::seconds(nominal_offset as i64);
+            let nominal_instant = after(anchor, nominal_offset);
             // One elapsed tile may straddle midnight. Keep each turn on its
             // own local day, starting the second piece at its first turn.
-            let start_offset = if nominal_instant.with_timezone(&zone).date_naive() == local_day {
-                nominal_offset
-            } else {
-                turns[0].offset
-            };
-            let tile_instant = anchor + TimeDelta::seconds(start_offset as i64);
-            let tile_local = tile_instant.with_timezone(&zone).naive_local();
+            let start_offset =
+                if nominal_instant.to_zoned_datetime(zone.clone()).date() == local_day {
+                    nominal_offset
+                } else {
+                    turns[0].offset
+                };
+            let tile_instant = after(anchor, start_offset);
+            let tile_local = tile_instant.to_zoned_datetime(zone.clone()).datetime();
             let tile_day = if is_literal_day && tile_local.date() == day_date {
                 day.to_owned()
             } else {
-                tile_local.format("%Y%m%d").to_string()
+                day_key(tile_local.date())
             };
-            let tile_seconds = (tile_local.time() - NaiveTime::from_hms_opt(0, 0, 0).unwrap())
-                .num_seconds() as u64;
+            let tile_seconds = tile_local.time().duration_since(Time::midnight()).as_secs() as u64;
             let parent = chronicle.join(&tile_day).join(stream);
             let candidate = format!("{}_{TILE_SECONDS}", clock_key(tile_seconds));
             let day_occupied = occupied.entry(tile_day.clone()).or_default();
@@ -1059,22 +1064,34 @@ fn speaker_line(line: &str) -> Option<(&str, &str)> {
 }
 
 /// Group turns by elapsed tile and owner day, preserving source order.
-fn tiles(
-    turns: Vec<Turn>,
-    anchor: DateTime<Utc>,
-    zone: chrono_tz::Tz,
-) -> BTreeMap<(u64, NaiveDate), Vec<Turn>> {
-    let mut tiles: BTreeMap<(u64, NaiveDate), Vec<Turn>> = BTreeMap::new();
+fn tiles(turns: Vec<Turn>, anchor: Timestamp, zone: &TimeZone) -> BTreeMap<(u64, Date), Vec<Turn>> {
+    let mut tiles: BTreeMap<(u64, Date), Vec<Turn>> = BTreeMap::new();
     for turn in turns {
-        let day = (anchor + TimeDelta::seconds(turn.offset as i64))
-            .with_timezone(&zone)
-            .date_naive();
+        let day = after(anchor, turn.offset)
+            .to_zoned_datetime(zone.clone())
+            .date();
         tiles
             .entry((turn.offset / TILE_SECONDS, day))
             .or_default()
             .push(turn);
     }
     tiles
+}
+
+/// `offset` seconds after `anchor`. The plan has checked that its last turn
+/// fits the calendar.
+fn after(anchor: Timestamp, offset: u64) -> Timestamp {
+    anchor + SignedDuration::from_secs(offset as i64)
+}
+
+/// The time of day `seconds` after midnight.
+fn time_of_day(seconds: u64) -> Time {
+    let seconds = i64::from(seconds as u32);
+    Time::midnight()
+        .checked_add(SignedDuration::from_secs(seconds))
+        .ok()
+        .filter(|_| seconds < 86_400)
+        .expect("a clock within one day")
 }
 
 fn clock_key(seconds: u64) -> String {
@@ -1256,7 +1273,7 @@ fn stage_raw_source(
 fn jsonl_rows(
     turns: &[Turn],
     tile_offset: u64,
-    origin: DateTime<Utc>,
+    origin: Timestamp,
     import_id: &str,
     raw_filename: &str,
     facet: Option<&str>,
@@ -1301,7 +1318,7 @@ fn jsonl_rows(
             "start".to_owned(),
             Value::String(clock_text(turn.offset - tile_offset)),
         );
-        let source_ms = (origin + TimeDelta::seconds(turn.offset as i64)).timestamp_millis();
+        let source_ms = crate::timestamp::epoch_millis(after(origin, turn.offset));
         entry.insert("source_ms".to_owned(), Value::Number(source_ms.into()));
         if let Some(speaker) = &turn.speaker {
             entry.insert("speaker".to_owned(), Value::String(speaker.clone()));

@@ -28,6 +28,7 @@ use solstone_core_format::obsidian::{
 };
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_sol_link::ledger::AuthorizationLedger;
+use solstone_core_time::{Precision, zoned_rfc3339};
 
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_protocol};
@@ -156,13 +157,13 @@ pub(crate) fn prepare(journal: &Path, mut changes: Vec<NoteChange>) -> Result<Pr
         let update = vaults
             .entry(change.vault.clone())
             .or_insert_with(|| VaultUpdate {
-                last_synced_at: change.observed_at.to_rfc3339(),
-                last_synced_ms: change.observed_at.timestamp_millis(),
+                last_synced_at: zoned_rfc3339(&change.observed_at, Precision::AutoSi, false),
+                last_synced_ms: change.observed_at.timestamp().as_millisecond(),
                 renames: Vec::new(),
             });
-        if change.observed_at.timestamp_millis() > update.last_synced_ms {
-            update.last_synced_ms = change.observed_at.timestamp_millis();
-            update.last_synced_at = change.observed_at.to_rfc3339();
+        if change.observed_at.timestamp().as_millisecond() > update.last_synced_ms {
+            update.last_synced_ms = change.observed_at.timestamp().as_millisecond();
+            update.last_synced_at = zoned_rfc3339(&change.observed_at, Precision::AutoSi, false);
         }
         let key = (change.vault.clone(), change.path.clone());
         match change.change {

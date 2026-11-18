@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use jiff::tz::Offset;
 use serde_json::Value;
 
 use super::{JsonObject, ProducedChunks, recorded_chunk};
@@ -126,12 +126,13 @@ fn ai_chat_base_timestamp(rel: &str) -> i64 {
     let Some(times) = segment_parse(rel) else {
         return 0;
     };
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
+    solstone_core_time::parse_day(day)
         .and_then(|day| {
-            day.and_hms_opt(times.hour as u32, times.minute as u32, times.second as u32)
+            Offset::UTC
+                .to_timestamp(day.to_datetime(times.clock()?))
+                .ok()
         })
-        .map(|time| time.and_utc().timestamp_millis())
+        .map(|time| time.as_millisecond())
         .unwrap_or(0)
 }
 

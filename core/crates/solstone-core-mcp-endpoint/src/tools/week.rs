@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{Datelike, NaiveDate, Offset, TimeDelta};
+use jiff::Span;
+use jiff::civil::Date;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -78,12 +79,12 @@ pub(crate) fn read_week(
             return Err(ToolError::InvalidInput);
         };
         // The week a day falls in starts on the Sunday on or before it.
-        date - TimeDelta::days(date.weekday().num_days_from_sunday() as i64)
+        date - Span::new().days(date.weekday().to_sunday_zero_offset())
     } else {
         let owner_zone = solstone_core_journal_config::owner_zone(journal);
-        let today = chrono::Utc::now().with_timezone(&owner_zone).date_naive();
-        let days_from_sun = today.weekday().num_days_from_sunday();
-        today - TimeDelta::days(days_from_sun as i64)
+        let today = jiff::Timestamp::now().to_zoned_datetime(owner_zone).date();
+        let days_from_sun = today.weekday().to_sunday_zero_offset();
+        today - Span::new().days(days_from_sun)
     };
 
     project_sunday(journal, sunday_date, principal, snapshot)
@@ -91,15 +92,19 @@ pub(crate) fn read_week(
 
 fn project_sunday(
     journal: &Path,
-    sunday: NaiveDate,
+    sunday: Date,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
 ) -> Result<WeekRead, ToolError> {
-    let start_day = sunday.format("%Y%m%d").to_string();
-    let end_day = (sunday + TimeDelta::days(6)).format("%Y%m%d").to_string();
+    let start_day = solstone_core_time::day_key(sunday);
+    // A week ending past the last representable day is not one that can be read.
+    let saturday = sunday
+        .checked_add(Span::new().days(6))
+        .map_err(|_| ToolError::InvalidInput)?;
+    let end_day = solstone_core_time::day_key(saturday);
 
-    let week_dates: Vec<NaiveDate> = (0..7).map(|d| sunday + TimeDelta::days(d)).collect();
-    let prev_dates: Vec<NaiveDate> = (1..=7).map(|d| sunday - TimeDelta::days(8 - d)).collect();
+    let week_dates: Vec<Date> = (0..7).map(|d| sunday + Span::new().days(d)).collect();
+    let prev_dates: Vec<Date> = (1..=7).map(|d| sunday - Span::new().days(8 - d)).collect();
 
     let available = available_facets(journal, snapshot).map_err(|_| ToolError::FileUnreadable)?;
     let facets: Vec<(String, String, String)> = available
@@ -121,7 +126,7 @@ fn project_sunday(
 
     let mut prior_keys = BTreeSet::new();
     for date in &prev_dates {
-        let day_str = date.format("%Y%m%d").to_string();
+        let day_str = solstone_core_time::day_key(*date);
         for (_, dir, _) in &facets {
             let rows = solstone_core_facets::read_activity_records_strict(journal, dir, &day_str)
                 .map_err(|_| ToolError::FileUnreadable)?;
@@ -176,12 +181,12 @@ fn project_sunday(
     let mut week_faces: BTreeMap<String, BTreeMap<String, Vec<_>>> = BTreeMap::new();
     let first_day = week_dates
         .first()
-        .map(|date| date.format("%Y%m%d").to_string());
+        .map(|date| solstone_core_time::day_key(*date));
     let last_day = week_dates
         .last()
-        .map(|date| date.format("%Y%m%d").to_string());
+        .map(|date| solstone_core_time::day_key(*date));
     for date in &week_dates {
-        let day_str = date.format("%Y%m%d").to_string();
+        let day_str = solstone_core_time::day_key(*date);
         for (f_id, f_dir, f_title) in &facets {
             let rel_path = format!("facets/{f_dir}/activities/{day_str}.jsonl");
             let day_file_bytes = crate::activity_admit::read_contained_source(journal, &rel_path)
@@ -364,11 +369,9 @@ fn project_sunday(
     ranked.truncate(7);
 
     let owner_zone = solstone_core_journal_config::owner_zone(journal);
-    let now = chrono::Utc::now().with_timezone(&owner_zone);
-    let zone_str = solstone_core_journal_config::zone_label(
-        Some(owner_zone),
-        now.offset().fix().local_minus_utc(),
-    );
+    let now = jiff::Timestamp::now().to_zoned_datetime(owner_zone.clone());
+    let zone_str =
+        solstone_core_journal_config::zone_label(Some(&owner_zone), now.offset().seconds());
 
     let sources = crate::dispatch::source_labels(journal);
     let mut activities = Vec::new();
@@ -626,7 +629,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use chrono::{Duration, NaiveDate, Utc};
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use solstone_core_format::content::week_left_out::left_out_bytes;
@@ -692,7 +694,7 @@ mod tests {
             },
             JsonTool::GetWeek,
             Some(&arguments),
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
     }
 
@@ -724,8 +726,8 @@ mod tests {
     }
 
     fn shift(sunday: &str, days: i64) -> String {
-        let date = NaiveDate::parse_from_str(sunday, "%Y%m%d").unwrap();
-        (date + Duration::days(days)).format("%Y%m%d").to_string()
+        let date = solstone_core_time::parse_day(sunday).unwrap();
+        solstone_core_time::day_key(date + jiff::Span::new().days(days))
     }
 
     fn write_raw(root: &Path, relative: &str, body: &str) {

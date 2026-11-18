@@ -21,8 +21,6 @@ full-tests = ["solstone-core-distribution/test-fixture-pin", "solstone-core-loca
 test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation-identity/test-hooks"]
 
 [dependencies]
-chrono = { workspace = true }
-chrono-tz.workspace = true
 solstone-core-distribution = { workspace = true }
 solstone-core-installed-payload.workspace = true
 solstone-core-indexer.workspace = true
@@ -32,6 +30,7 @@ solstone-core-facets.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-journal.workspace = true
 getrandom = { workspace = true }
+jiff.workspace = true
 libc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -41,6 +40,7 @@ solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io = { workspace = true }
 solstone-core-segment.workspace = true
 solstone-core-processing-record = { workspace = true }
+solstone-core-time.workspace = true
 solstone-core-format = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }

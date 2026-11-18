@@ -10,8 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use chrono::Local;
-
 use crate::partition::partition_for;
 
 use super::super::events::{OutputStream, ProcessEvent, ProcessEventSink};
@@ -514,7 +512,7 @@ fn format_log_line(name: &str, stream: OutputStream, line: &str) -> String {
     };
     format!(
         "{} [{name}:{stream}] {line}\n",
-        Local::now().format("%Y-%m-%dT%H:%M:%S")
+        jiff::ZonedDateTime::now().strftime("%Y-%m-%dT%H:%M:%S")
     )
 }
 

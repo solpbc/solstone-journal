@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_system_health::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthError, SegmentSource,
@@ -22,8 +22,8 @@ use crate::{
 
 const DAY: &str = "20260105";
 
-fn now() -> chrono::DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 1, 6, 12, 0, 0).unwrap()
+fn now() -> Timestamp {
+    "2026-01-06T12:00:00Z".parse().unwrap()
 }
 
 fn day_path(root: &Path) -> PathBuf {

@@ -15,8 +15,9 @@ mod submission;
 
 use std::path::PathBuf;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
 use thiserror::Error;
 
 pub use bound::mutate_schedule_entries_at_root_checked;
@@ -39,19 +40,19 @@ pub use submission::ScheduleSubmissionSink;
 ///
 /// Schedule decisions use `local`, the wall time in `zone`; stored run times are
 /// read back in the same `zone`, so a schedule never compares two clocks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleNow {
-    pub local: NaiveDateTime,
+    pub local: DateTime,
     pub unix_millis: i64,
-    pub zone: Tz,
+    pub zone: TimeZone,
 }
 
 impl ScheduleNow {
     /// `now` as a wall time in `zone`, the journal's owner zone in production.
-    pub fn in_zone(now: DateTime<Utc>, zone: Tz) -> Self {
+    pub fn in_zone(now: Timestamp, zone: TimeZone) -> Self {
         Self {
-            local: now.with_timezone(&zone).naive_local(),
-            unix_millis: now.timestamp_millis(),
+            local: now.to_zoned_datetime(zone.clone()).datetime(),
+            unix_millis: now.as_millisecond(),
             zone,
         }
     }

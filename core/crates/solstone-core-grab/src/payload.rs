@@ -141,7 +141,7 @@ fn list_stream_segments(
         if screens.is_empty() {
             continue;
         }
-        rows.push(json!({"segment":segment, "start":window.start.time().format("%H:%M:%S").to_string(), "end":window.end.time().format("%H:%M:%S").to_string(), "screens":screens.len(), "frames_analyzed":sum(&screens,"frames_analyzed")}));
+        rows.push(json!({"segment":segment, "start":window.start.time().strftime("%H:%M:%S").to_string(), "end":window.end.time().strftime("%H:%M:%S").to_string(), "screens":screens.len(), "frames_analyzed":sum(&screens,"frames_analyzed")}));
     }
     Ok(json!({"level":"2", "scope":{"day":day,"stream":stream}, "data":{"segments":rows}}))
 }

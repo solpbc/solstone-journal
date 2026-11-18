@@ -11,8 +11,8 @@
 //! reads never create `awareness/`; briefing lateness is a function of supplied phase
 //! and time; client timestamps are milliseconds rather than bridge seconds;
 //! pipeline `failed` and `outstanding_failed` stay distinct; and calendar math
-//! runs on the journal's local day (`HomeContext::day_offset`) while every
-//! instant stays UTC.
+//! runs on the journal's local day (`HomeContext::local_date`, in
+//! `HomeContext::zone`) while every instant stays UTC.
 //!
 //! The populated connections projection is source-derived but unoracled pending
 //! a captured oracle. `flow_updated_at` is host-dependent (`stat().st_mtime`) and
@@ -36,5 +36,7 @@ pub mod weekly;
 
 #[cfg(test)]
 mod corpus;
+#[cfg(test)]
+mod test_time;
 
 pub use context::HomeContext;

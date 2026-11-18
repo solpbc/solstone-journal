@@ -236,10 +236,10 @@ impl TeardownOperation {
     ))]
     pub(crate) fn date(&self) -> Result<String, TeardownRemoteRefusal> {
         self.remaining().map_err(TeardownRemoteRefusal::Operation)?;
-        let date = chrono::DateTime::<chrono::Utc>::from_timestamp(self.clock.now_unix(), 0)
-            .ok_or(TeardownRemoteRefusal::Timestamp)?;
+        let date = jiff::Timestamp::new(self.clock.now_unix(), 0)
+            .map_err(|_| TeardownRemoteRefusal::Timestamp)?;
         self.remaining().map_err(TeardownRemoteRefusal::Operation)?;
-        Ok(date.format("%Y%m%dT%H%M%SZ").to_string())
+        Ok(date.strftime("%Y%m%dT%H%M%SZ").to_string())
     }
 
     #[cfg(any(
@@ -406,9 +406,10 @@ impl TeardownOperation {
                 }
                 Err(refusal) => return Err(TeardownRemoteRefusal::Broker(refusal)),
             };
-            let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+            let expiry = solstone_core_time::parse_rfc3339(&credentials.expires_at)
                 .map_err(|_| TeardownRemoteRefusal::Timestamp)?
-                .timestamp();
+                .timestamp()
+                .as_second();
             self.budget.cap_credential_expiry(expiry);
             self.remaining().map_err(TeardownRemoteRefusal::Operation)?;
             admission

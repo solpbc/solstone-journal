@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
@@ -99,7 +99,7 @@ fn mark_raw(
     }
 
     // The owner's day: the approval in Home re-checks the same date.
-    let today = services.now.with_timezone(&services.zone).date_naive();
+    let today = services.now.to_zoned_datetime(services.zone.clone()).date();
     let before = match load(journal) {
         Ok(register) => register,
         Err(_) => return mark_refused(),
@@ -210,7 +210,7 @@ fn prune_logs(
         return prune_unavailable("the journal directory is unavailable".to_owned());
     }
     // The owner's day; the injected zone keeps the result deterministic in tests.
-    let today = services.now.with_timezone(&services.zone).date_naive();
+    let today = services.now.to_zoned_datetime(services.zone.clone()).date();
     let policy = LogPolicy {
         days,
         enabled: true,
@@ -358,7 +358,7 @@ fn parse_prune_args(args: &[String]) -> Result<(bool, Option<u32>), PruneArgErro
 }
 
 fn render_prune(
-    today: NaiveDate,
+    today: Date,
     days: u32,
     dry_run: bool,
     plan: &LogPlan,
@@ -412,8 +412,10 @@ fn render_prune(
         total_bytes = total_bytes.saturating_add(freed);
     }
     let action = if dry_run { "would prune" } else { "pruned" };
-    let cutoff = today
-        .checked_sub_days(chrono::Days::new(u64::from(days)))
+    let cutoff = jiff::Span::new()
+        .try_days(days)
+        .ok()
+        .and_then(|span| today.checked_sub(span).ok())
         .map(day_key)
         .unwrap_or_default();
     let mut output = format!(
@@ -534,7 +536,8 @@ fn usage_error(id: &str, args: &[String], detail: &str) -> CliRun {
 mod tests {
     use super::{positive_config_days, prune_refused, run};
     use crate::HealthServices;
-    use chrono::{FixedOffset, TimeZone, Utc};
+    use jiff::Timestamp;
+    use jiff::tz::{Offset, TimeZone};
     use serde_json::{Map, Value, json};
     use solstone_core_journal_io::JournalRoot;
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
@@ -591,8 +594,8 @@ mod tests {
             &[],
             journal.path(),
             &HealthServices {
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                zone: chrono_tz::Tz::UTC,
+                now: utc(2026, 3, 2, 1, 0, 0),
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -602,9 +605,9 @@ mod tests {
     }
 
     #[test]
-    fn mark_raw_uses_host_date_even_when_owner_timezone_is_configured() {
-        // This health routine matches Python's no-argument `astimezone()`,
-        // which deliberately ignores the owner-configured `identity.timezone`.
+    fn mark_raw_takes_its_day_in_the_zone_it_is_given() {
+        // The routine reads its day in `HealthServices::zone`, which production
+        // fills with the owner zone; it does not reread the config file itself.
         let journal = tempfile::tempdir().unwrap();
         write_config(
             journal.path(),
@@ -620,8 +623,8 @@ mod tests {
             journal.path(),
             &HealthServices {
                 // This is Mar 1 in Los Angeles and Mar 2 in configured Tokyo.
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap(),
-                zone: chrono_tz::Tz::America__Los_Angeles,
+                now: utc(2026, 3, 2, 1, 30, 0),
+                zone: solstone_core_time::zone("America/Los_Angeles").unwrap(),
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -640,8 +643,8 @@ mod tests {
         );
         write_proven_segment(journal.path(), "20260130", "first.audio", "070000_17");
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let first = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(first.exit_code, 0);
@@ -681,8 +684,8 @@ mod tests {
     fn prune_argument_validation_matches_manual_and_argparse_branches() {
         let journal = tempfile::tempdir().unwrap();
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let zero = run(
             "health:prune-logs",
@@ -722,8 +725,8 @@ mod tests {
             &[],
             journal.path(),
             &HealthServices {
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                zone: chrono_tz::Tz::UTC,
+                now: utc(2026, 3, 2, 1, 0, 0),
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -738,8 +741,8 @@ mod tests {
         std::fs::create_dir_all(token.parent().unwrap()).unwrap();
         std::fs::write(&token, b"old token log\n").unwrap();
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let dry_run = run(
             "health:prune-logs",
@@ -788,8 +791,8 @@ mod tests {
         )
         .unwrap();
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result = run("health:prune-logs", &[], journal.path(), &services);
         assert_eq!(result.exit_code, 0, "{}", result.stderr);
@@ -820,21 +823,21 @@ mod tests {
     }
 
     #[test]
-    fn prune_logs_measures_the_window_from_the_host_local_day() {
+    fn prune_logs_measures_the_window_from_the_day_in_the_zone_it_is_given() {
         let journal = tempfile::tempdir().unwrap();
         let token = journal.path().join("tokens/20260130.jsonl");
         std::fs::create_dir_all(token.parent().unwrap()).unwrap();
         std::fs::write(&token, b"token log at the window edge\n").unwrap();
         // 01:00 UTC on Mar 2 is the evening of Mar 1 in Denver, so a 30-day
         // window still reaches back to Jan 30 there.
-        let now = Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap();
+        let now = utc(2026, 3, 2, 1, 0, 0);
         let evening = run(
             "health:prune-logs",
             &[],
             journal.path(),
             &HealthServices {
                 now,
-                zone: chrono_tz::Tz::America__Denver,
+                zone: solstone_core_time::zone("America/Denver").unwrap(),
             },
         );
         assert_eq!(evening.exit_code, 0);
@@ -846,7 +849,7 @@ mod tests {
             journal.path(),
             &HealthServices {
                 now,
-                zone: chrono_tz::Tz::UTC,
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(next_day.exit_code, 0);
@@ -856,18 +859,14 @@ mod tests {
     #[test]
     fn prune_logs_plans_and_removes_released_canonical_oplogs() {
         let journal = tempfile::tempdir().unwrap();
-        let instant = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
-            .single()
-            .unwrap();
+        let instant = solstone_core_time::at_offset(utc(2026, 1, 1, 12, 0, 0), Offset::UTC);
         let leaf = {
             let writer = create_oplog_at(
                 JournalRoot::open(journal.path()).unwrap(),
                 "source",
                 "run",
                 OplogFormat::Log,
-                instant,
+                &instant,
             )
             .unwrap();
             writer.leaf_name().to_owned()
@@ -878,11 +877,11 @@ mod tests {
             .write(true)
             .open(&path)
             .unwrap()
-            .set_modified(std::time::SystemTime::from(instant))
+            .set_modified(std::time::SystemTime::try_from(instant.timestamp()).unwrap())
             .unwrap();
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
 
         let dry_run = run(
@@ -1025,7 +1024,7 @@ mod tests {
             dir: "070000_17".to_owned(),
         };
         let names = vec!["audio.flac".to_owned()];
-        let now = Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap();
+        let now = utc(2026, 3, 2, 1, 0, 0);
         solstone_core_retention::marks::reconcile(
             journal.path(),
             RemovalClass::PolicyRawRelease,
@@ -1049,7 +1048,7 @@ mod tests {
             journal.path(),
             &HealthServices {
                 now,
-                zone: chrono_tz::Tz::UTC,
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -1075,8 +1074,8 @@ mod tests {
             &[],
             journal.path(),
             &HealthServices {
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                zone: chrono_tz::Tz::UTC,
+                now: utc(2026, 3, 2, 1, 0, 0),
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -1100,8 +1099,8 @@ mod tests {
         seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(result.exit_code, 0);
@@ -1121,8 +1120,8 @@ mod tests {
         seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
         let services = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(result.exit_code, 0);
@@ -1153,8 +1152,8 @@ mod tests {
             &[],
             journal.path(),
             &HealthServices {
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                zone: chrono_tz::Tz::UTC,
+                now: utc(2026, 3, 2, 1, 0, 0),
+                zone: TimeZone::UTC,
             },
         );
         assert_ne!(result.exit_code, 0);
@@ -1176,8 +1175,8 @@ mod tests {
             &[],
             journal.path(),
             &HealthServices {
-                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                zone: chrono_tz::Tz::UTC,
+                now: utc(2026, 3, 2, 1, 0, 0),
+                zone: TimeZone::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -1201,8 +1200,8 @@ mod tests {
             seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
         let services_day2 = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
         assert_eq!(result1.exit_code, 0);
@@ -1260,8 +1259,8 @@ mod tests {
         );
 
         let services_day3 = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 3, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
         assert_eq!(result2.exit_code, 0);
@@ -1295,8 +1294,8 @@ mod tests {
             seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
         let services_day2 = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 2, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
         assert_eq!(result1.exit_code, 0);
@@ -1361,8 +1360,8 @@ mod tests {
         );
 
         let services_day3 = HealthServices {
-            now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
-            zone: chrono_tz::Tz::UTC,
+            now: utc(2026, 3, 3, 1, 0, 0),
+            zone: TimeZone::UTC,
         };
         let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
         assert_eq!(result2.exit_code, 0);
@@ -1393,5 +1392,11 @@ mod tests {
 
     fn object(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
+    }
+
+    fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(jiff::civil::date(year, month, day).at(hour, minute, second, 0))
+            .unwrap()
     }
 }

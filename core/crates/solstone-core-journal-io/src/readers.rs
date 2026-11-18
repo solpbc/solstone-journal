@@ -727,7 +727,8 @@ mod tests {
     use std::io::Write;
     use std::sync::{Mutex, Once, OnceLock};
 
-    use chrono::{FixedOffset, TimeZone};
+    use jiff::civil::date;
+    use jiff::tz::{Offset, TimeZone};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nix::errno::Errno;
     use nix::fcntl::{AT_FDCWD, OFlag, openat};
@@ -929,17 +930,18 @@ mod tests {
     #[test]
     fn valid_oplog_admission_is_not_a_jsonl_payload_record() {
         let temporary = TempDir::new();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = solstone_core_time::from_local(
+            &TimeZone::fixed(Offset::UTC),
+            date(2026, 8, 7).at(12, 0, 0, 0),
+        )
+        .single()
+        .unwrap();
         let mut writer = crate::operational_log::create_oplog_at(
             crate::JournalRoot::open(temporary.path()).unwrap(),
             "think",
             "daily",
             crate::operational_log::OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         let path = temporary

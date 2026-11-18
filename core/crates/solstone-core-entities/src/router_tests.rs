@@ -2790,7 +2790,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     // day its observations are about. With none, it is unknown rather than
     // a stand-in date.
     let zone = solstone_core_journal_config::owner_zone(journal.path());
-    let day_start = |day| solstone_core_entity::journal_day_start_ms(day, zone).unwrap();
+    let day_start = |day| solstone_core_entity::journal_day_start_ms(day, &zone).unwrap();
     let jan_1 = day_start("20260101");
     let jan_15 = day_start("20260115");
     let jun_1 = day_start("20260601");
@@ -2909,7 +2909,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         assert_eq!(
             record["last_active_day"],
             json!(
-                activity_ts.and_then(|ts| solstone_core_entity::last_active_day_for_ts(ts, zone))
+                activity_ts.and_then(|ts| solstone_core_entity::last_active_day_for_ts(ts, &zone))
             ),
             "{id}"
         );
@@ -3825,7 +3825,11 @@ fn hidden_names_file(root: &Path) -> PathBuf {
 async fn hide_detected_moves_the_name_to_the_hidden_list_and_marks_its_rows() {
     let j = Journal::new();
     seed_work_facet(j.path());
-    let today = chrono::Utc::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(
+        jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date(),
+    );
     write_detected_day(
         j.path(),
         &today,
@@ -4194,13 +4198,11 @@ async fn last_mentioned_drops_a_future_day_before_the_detected_scan() {
     let j = Journal::new();
     let root = j.path();
     let zone = solstone_core_journal_config::owner_zone(root);
-    let now = chrono::Utc::now().with_timezone(&zone);
-    let future_day = (now.date_naive() + chrono::Duration::days(30))
-        .format("%Y%m%d")
-        .to_string();
-    let past_day = (now.date_naive() - chrono::Duration::days(10))
-        .format("%Y%m%d")
-        .to_string();
+    let now = jiff::Timestamp::now().to_zoned_datetime(zone);
+    let future_day =
+        solstone_core_time::day_key(now.date().checked_add(jiff::Span::new().days(30)).unwrap());
+    let past_day =
+        solstone_core_time::day_key(now.date().checked_sub(jiff::Span::new().days(10)).unwrap());
 
     write(root, "facets/work/facet.json", json!({"title": "Work"}));
 
@@ -4589,19 +4591,15 @@ async fn last_mentioned_skips_an_unreadable_day_file_outside_the_review_window()
     let j = Journal::new();
     let root = j.path();
     let zone = solstone_core_journal_config::owner_zone(root);
-    let now = chrono::Utc::now().with_timezone(&zone);
-    let bad_day = (now.date_naive() - chrono::Duration::days(35))
-        .format("%Y%m%d")
-        .to_string();
-    let good_day = (now.date_naive() - chrono::Duration::days(40))
-        .format("%Y%m%d")
-        .to_string();
-    let obs_day = (now.date_naive() - chrono::Duration::days(50))
-        .format("%Y%m%d")
-        .to_string();
-    let last_seen_day = (now.date_naive() - chrono::Duration::days(60))
-        .format("%Y%m%d")
-        .to_string();
+    let now = jiff::Timestamp::now().to_zoned_datetime(zone);
+    let bad_day =
+        solstone_core_time::day_key(now.date().checked_sub(jiff::Span::new().days(35)).unwrap());
+    let good_day =
+        solstone_core_time::day_key(now.date().checked_sub(jiff::Span::new().days(40)).unwrap());
+    let obs_day =
+        solstone_core_time::day_key(now.date().checked_sub(jiff::Span::new().days(50)).unwrap());
+    let last_seen_day =
+        solstone_core_time::day_key(now.date().checked_sub(jiff::Span::new().days(60)).unwrap());
 
     write(root, "facets/work/facet.json", json!({"title": "Work"}));
 
@@ -4696,12 +4694,15 @@ async fn last_mentioned_uses_the_source_day_when_record_timestamps_are_today() {
     let root = j.path();
     write(root, "facets/work/facet.json", json!({"title": "Work"}));
 
-    let now = chrono::Utc::now();
-    let now_ms = now.timestamp_millis();
+    let now = jiff::Timestamp::now();
+    let now_ms = now.as_millisecond();
     let zone = solstone_core_journal_config::owner_zone(root);
-    let five_days_ago = (now.with_timezone(&zone).date_naive() - chrono::Duration::days(5))
-        .format("%Y%m%d")
-        .to_string();
+    let five_days_ago = solstone_core_time::day_key(
+        now.to_zoned_datetime(zone)
+            .date()
+            .checked_sub(jiff::Span::new().days(5))
+            .unwrap(),
+    );
 
     write(
         root,
@@ -4764,7 +4765,7 @@ async fn last_mentioned_is_null_when_the_observation_has_no_source_day() {
     let root = j.path();
     write(root, "facets/work/facet.json", json!({"title": "Work"}));
 
-    let now_ms = chrono::Utc::now().timestamp_millis();
+    let now_ms = jiff::Timestamp::now().as_millisecond();
 
     write(
         root,
@@ -8320,14 +8321,12 @@ async fn a_merge_that_can_not_be_finished_refuses_a_delete_as_busy() {
 
 #[test]
 fn entity_search_work_at_uses_owner_zone_today() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let now: jiff::Timestamp = "2026-09-30T12:00:00Z".parse().unwrap();
     let host_tz = solstone_core_journal_config::host_zone();
-    let host_date = now.with_timezone(&host_tz).date_naive();
-    let kiritimati: chrono_tz::Tz = "Pacific/Kiritimati".parse().unwrap();
-    let gmt_minus_12: chrono_tz::Tz = "Etc/GMT+12".parse().unwrap();
-    let chosen_tz = if now.with_timezone(&kiritimati).date_naive() != host_date {
+    let host_date = now.to_zoned_datetime(host_tz.clone()).date();
+    let kiritimati = solstone_core_time::zone("Pacific/Kiritimati").unwrap();
+    let gmt_minus_12 = solstone_core_time::zone("Etc/GMT+12").unwrap();
+    let chosen_tz = if now.to_zoned_datetime(kiritimati.clone()).date() != host_date {
         kiritimati
     } else {
         gmt_minus_12
@@ -8338,7 +8337,7 @@ fn entity_search_work_at_uses_owner_zone_today() {
         write(
             j.path(),
             "config/journal.json",
-            json!({ "identity": { "timezone": tz.name() } }),
+            json!({ "identity": { "timezone": tz.iana_name().unwrap() } }),
         );
         write(
             j.path(),
@@ -8347,7 +8346,7 @@ fn entity_search_work_at_uses_owner_zone_today() {
                 "id": "today_owner",
                 "name": "Today Owner",
                 "type": "Person",
-                "updated_at": now.to_rfc3339(),
+                "updated_at": solstone_core_time::utc_rfc3339(now),
             }),
         );
         write(
@@ -8357,7 +8356,7 @@ fn entity_search_work_at_uses_owner_zone_today() {
                 "id": "other_day",
                 "name": "Other Day",
                 "type": "Person",
-                "updated_at": (now - chrono::Duration::hours(24)).to_rfc3339(),
+                "updated_at": solstone_core_time::utc_rfc3339(now - jiff::SignedDuration::from_hours(24)),
             }),
         );
 

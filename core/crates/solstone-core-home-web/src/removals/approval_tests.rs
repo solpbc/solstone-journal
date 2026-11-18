@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use super::*;
-use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use solstone_core_backup_web::archive_worker::removal::{ApprovalState, status};
 use solstone_core_retention::{
@@ -206,7 +205,9 @@ async fn packaged_home_approval_join() {
     let mut deps = solstone_core_backup_web::BackupWebDeps::new(input.journal.clone());
     deps.executable = std::env::current_exe().unwrap();
     assert_eq!(input.restic_path.file_name().unwrap(), "restic");
-    let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
+    let now = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+        .unwrap();
     // Missing Extension never constructs another slot or touches admission.
     assert!(dispatch_approval(None, Ok(Bytes::from(body.clone())), now).is_err());
     use axum::{
@@ -380,7 +381,9 @@ async fn packaged_public_approval_post_start_unknown_retains_original() {
         std::env::var_os("HOME_APPROVAL_RECEIVING_PACKAGE")
             .expect("existing copied package member"),
     );
-    let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
+    let now = jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
+        .unwrap();
     let router = crate::routes_with_backup_deps(deps.clone(), crate::Clock::fixed(now), |_| false);
     let (sent, received) = std::sync::mpsc::channel();
     PUBLIC_START.with(|hook| {

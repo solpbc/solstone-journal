@@ -13,7 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::Utc;
 use serde_json::Value;
 use solstone_core_facets::{
     RetiredFacet, RetiredFacetState, RetiredFacets, append_action_log, hold_facet_trust_lock,
@@ -510,7 +509,7 @@ pub(crate) fn repair_malformed_retired_file(journal: &Path) -> Result<Option<Str
     let damaged = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let aside = path.with_file_name(format!(
         "retired.json.malformed-{}",
-        Utc::now().format("%Y%m%dT%H%M%SZ")
+        jiff::Timestamp::now().strftime("%Y%m%dT%H%M%SZ")
     ));
     fs::rename(&path, &aside).map_err(|e| e.to_string())?;
     let mut prev = path.clone().into_os_string();

@@ -112,7 +112,7 @@ pub fn read_journal_day(journal: &Path, day: &str) -> Result<DayLocation, area::
         tier,
         packs.as_deref(),
         &JournalDirectory::read(journal),
-        solstone_core_journal_config::owner_zone(journal),
+        &solstone_core_journal_config::owner_zone(journal),
     ))
 }
 
@@ -130,7 +130,7 @@ pub fn read_journal_days(
         tier,
         packs.as_deref(),
         &JournalDirectory::read(journal),
-        solstone_core_journal_config::owner_zone(journal),
+        &solstone_core_journal_config::owner_zone(journal),
     ))
 }
 
@@ -148,7 +148,7 @@ pub fn reconcile_journal(
         tier,
         packs.as_deref(),
         &JournalDirectory::read(journal),
-        solstone_core_journal_config::owner_zone(journal),
+        &solstone_core_journal_config::owner_zone(journal),
     ))
 }
 
@@ -218,6 +218,14 @@ impl PlaceView {
     }
 }
 
+/// Whole seconds since midnight on a wall clock.
+pub(crate) fn seconds_into_day(time: jiff::civil::Time) -> u32 {
+    let seconds =
+        i32::from(time.hour()) * 3600 + i32::from(time.minute()) * 60 + i32::from(time.second());
+    // Every field of a time of day is zero or more.
+    seconds.unsigned_abs()
+}
+
 /// Every place in the journal with the stays it rests on, most recent first.
 pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError> {
     let tier = area_tier()?;
@@ -226,14 +234,7 @@ pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError
     let stays = projection::all_stays(journal);
     let zone = solstone_core_journal_config::owner_zone(journal);
     let offset = |at: i64| {
-        use chrono::{Offset, TimeZone};
-        chrono::DateTime::from_timestamp(at, 0).map_or(0, |utc| {
-            i64::from(
-                zone.offset_from_utc_datetime(&utc.naive_utc())
-                    .fix()
-                    .local_minus_utc(),
-            )
-        })
+        jiff::Timestamp::new(at, 0).map_or(0, |utc| i64::from(zone.to_offset(utc).seconds()))
     };
     // Each stay belongs to at most one place; find it once.
     let mut by_place: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
@@ -254,8 +255,12 @@ pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError
                 .unwrap_or_default();
             let description = places::describe(&members.iter().collect::<Vec<_>>(), offset);
             let clock = |at: Option<i64>| {
-                at.and_then(|at| chrono::DateTime::from_timestamp(at, 0))
-                    .map(|utc| utc.with_timezone(&zone).format("%H:%M").to_string())
+                at.and_then(|at| jiff::Timestamp::new(at, 0).ok())
+                    .map(|utc| {
+                        utc.to_zoned_datetime(zone.clone())
+                            .strftime("%H:%M")
+                            .to_string()
+                    })
             };
             let clocks = members
                 .iter()

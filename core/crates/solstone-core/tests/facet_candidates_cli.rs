@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::Value;
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -60,24 +60,22 @@ fn write_sense(journal: &Path, day: &str, segment: &str, name: &str) {
 /// only the owner's today finds the fixture's segments.
 fn two_candidate_fixture() -> TempJournal {
     let journal = TempJournal::new();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let host_day = now
-        .with_timezone(&solstone_core_journal_config::host_zone())
-        .date_naive();
-    let zone = [
-        chrono_tz::Tz::Pacific__Kiritimati,
-        chrono_tz::Tz::Etc__GMTPlus12,
-    ]
-    .into_iter()
-    .find(|zone| now.with_timezone(zone).date_naive() != host_day)
-    .expect("UTC+14 and UTC-12 never share a date");
+        .to_zoned_datetime(solstone_core_journal_config::host_zone())
+        .date();
+    let zone = ["Pacific/Kiritimati", "Etc/GMT+12"]
+        .into_iter()
+        .map(|name| solstone_core_time::zone(name).expect("bundled zone"))
+        .find(|zone| now.to_zoned_datetime(zone.clone()).date() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date");
     fs::create_dir_all(journal.path().join("config")).expect("create config directory");
     fs::write(
         journal.path().join("config/journal.json"),
-        serde_json::json!({"identity": {"timezone": zone.name()}}).to_string(),
+        serde_json::json!({"identity": {"timezone": zone.iana_name()}}).to_string(),
     )
     .expect("write journal zone");
-    let day = now.with_timezone(&zone).format("%Y%m%d").to_string();
+    let day = solstone_core_time::day_key(now.to_zoned_datetime(zone).date());
     for segment in ["090000_300", "093000_300", "100000_300"] {
         write_sense(journal.path(), &day, segment, "Home Reno");
     }

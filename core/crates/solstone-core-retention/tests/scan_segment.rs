@@ -672,7 +672,7 @@ mod bound {
 
     #[test]
     fn bound_all_siblings_feed_existing_independent_group_decisions() {
-        use chrono::{TimeZone, Utc};
+        use jiff::Timestamp;
         use serde_json::json;
         use solstone_core_journal_io::paths::SegmentLayout;
         use solstone_core_retention::grouped::{DecisionPurpose, GroupVerdict, inspect_grouped};
@@ -707,13 +707,13 @@ mod bound {
             stream: "_default".into(),
             dir: "prefix_120000_60_suffix".into(),
         };
-        let now = Utc.with_ymd_and_hms(2026, 10, 10, 1, 0, 0).unwrap();
+        let now = "2026-10-10T01:00:00Z".parse::<Timestamp>().unwrap();
         let result = inspect_grouped(
             &observed,
             &target,
             SegmentLayout::Named,
             &policy,
-            now.date_naive(),
+            jiff::tz::Offset::UTC.to_datetime(now).date(),
             now,
             DecisionPurpose::OffloadProposal,
         );

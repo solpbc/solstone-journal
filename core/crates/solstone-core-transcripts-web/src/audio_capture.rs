@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -345,7 +345,7 @@ fn project<'a>(values: impl Iterator<Item = &'a Value>) -> Option<Value> {
     Some(result)
 }
 
-pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail> {
+pub(crate) fn warnings(capture: &Value, now: Timestamp) -> Vec<WarningDetail> {
     let mut warnings = Vec::new();
     if let Some(sources) = capture["sources"].as_array() {
         for source in sources {
@@ -361,7 +361,7 @@ pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail
                     failure["domain"].as_str().unwrap_or("unknown"),
                     failure["code"]
                 ),
-                ts: now.to_rfc3339(),
+                ts: solstone_core_time::utc_rfc3339(now),
             });
         }
     }
@@ -375,7 +375,7 @@ pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail
                     row["stage"].as_str().unwrap_or("remix"),
                     row["state"].as_str().unwrap_or("unknown")
                 ),
-                ts: now.to_rfc3339(),
+                ts: solstone_core_time::utc_rfc3339(now),
             });
         }
         for row in rows
@@ -387,7 +387,7 @@ pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail
                 file: row["source_id"].as_str().unwrap_or("audio").into(),
                 message: "an earlier audio copy attempt had a problem. the latest copy completed."
                     .into(),
-                ts: now.to_rfc3339(),
+                ts: solstone_core_time::utc_rfc3339(now),
             });
         }
     }
@@ -401,7 +401,7 @@ pub(crate) fn warnings(capture: &Value, now: DateTime<Utc>) -> Vec<WarningDetail
             kind: "audio_capture".into(),
             file: "audio".into(),
             message: "audio may be incomplete for this segment.".into(),
-            ts: now.to_rfc3339(),
+            ts: solstone_core_time::utc_rfc3339(now),
         });
     }
     warnings
@@ -441,7 +441,7 @@ mod tests {
         let recovered = json!({"version": 1, "state": "finished", "sources": [], "remix": [
             {"source_id": "mic", "state": "complete", "frames_copied": 1920}]});
         let result = project([&capture, &recovered].into_iter()).unwrap();
-        let detail = warnings(&result, Utc::now());
+        let detail = warnings(&result, Timestamp::now());
         assert_eq!(detail.len(), 1);
         assert_eq!(detail[0].kind, "audio_capture_history");
         assert!(detail[0].message.contains("latest copy completed"));
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(result["sources"], json!([]));
         assert_eq!(result["failures"].as_array().unwrap().len(), 1);
         assert_eq!(result["failures"][0]["count"], 1);
-        assert_eq!(warnings(&result, Utc::now()).len(), 1);
+        assert_eq!(warnings(&result, Timestamp::now()).len(), 1);
     }
     #[test]
     fn timeline_origin_and_generated_pcm_survive_real_projection_and_duplicates() {
@@ -561,7 +561,7 @@ mod tests {
         assert_eq!(result["state"], "partial");
         assert_eq!(result["sources"][1]["dropped_frames"], 960);
         assert_eq!(result["sources"][1]["failures"][0]["count"], 3);
-        assert!(!warnings(&result, Utc::now()).is_empty());
+        assert!(!warnings(&result, Timestamp::now()).is_empty());
     }
     #[test]
     fn malformed_future_and_missing_evidence_are_unknown_without_false_loss() {
@@ -570,7 +570,7 @@ mod tests {
             let result = project([&invalid].into_iter()).unwrap();
             assert_eq!(result["state"], "unknown");
             assert_eq!(result["evidence_unavailable"], true);
-            assert!(warnings(&result, Utc::now()).is_empty());
+            assert!(warnings(&result, Timestamp::now()).is_empty());
         }
     }
     #[test]
@@ -580,6 +580,6 @@ mod tests {
         let result = project([&original["audio_capture"], &invalid].into_iter()).unwrap();
         assert_eq!(result["state"], "partial");
         assert_eq!(result["evidence_unavailable"], true);
-        assert_eq!(warnings(&result, Utc::now()).len(), 2);
+        assert_eq!(warnings(&result, Timestamp::now()).len(), 2);
     }
 }

@@ -6,8 +6,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use getrandom::fill as fill_random;
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{FileLock, JsonWriteOptions, LockOptions, hold_lock, write_json};
 
@@ -321,7 +321,7 @@ pub fn request_runtime_retry(
         revision: retry.revision + 1,
         token_id: Some(retry_token_id()?),
         desired_fingerprint_sha256: Some(desired_fingerprint_sha256.to_owned()),
-        requested_at: Some(Utc::now().to_rfc3339()),
+        requested_at: Some(solstone_core_time::utc_rfc3339(Timestamp::now())),
         reason_code: Some("retry-token-requested".to_owned()),
         owner: Some(owner),
     };

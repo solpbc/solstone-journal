@@ -166,7 +166,7 @@ fn left_by_run(
     day: &str,
     coverage: &daily_coverage::DailyCoverage,
 ) -> Result<BTreeSet<solstone_core_journal_io::DailyUnitIdentity>, String> {
-    let today = daily_coverage::local_day(journal, chrono::Utc::now());
+    let today = daily_coverage::local_day(journal, jiff::Timestamp::now());
     let mut left = BTreeSet::new();
     for unit in &coverage.units {
         if !unit.state.is_owed()
@@ -488,7 +488,7 @@ struct HistoryDay {
 fn priority(
     day: &str,
     segment: Option<&str>,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
     explicit: Option<WorkBand>,
 ) -> WorkPriority {
     let mut command = vec!["journal".into(), "think".into(), "--day".into(), day.into()];
@@ -732,9 +732,9 @@ fn raw_retries(
             .join(&segment.stream)
             .join(&segment.key),
     };
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     let mut tasks = Vec::new();
     for talent in solstone_core_system_health::SEGMENT_FLOOR_TALENTS {
         let unit = Unit::Segment {
@@ -833,14 +833,14 @@ fn daily_retries(
     report: &mut WorkInventory,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Vec<DiscoveredTask>, String> {
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     let mut candidates = Vec::new();
     let maintenance = coverage
         .maintenance
         .as_ref()
-        .filter(|_| day == today.format("%Y%m%d").to_string());
+        .filter(|_| day == solstone_core_time::day_key(today));
     for covered in coverage.units.iter().chain(maintenance) {
         let unit = Unit::Daily {
             day: day.into(),
@@ -906,9 +906,9 @@ fn talent_retries(
 ) -> Result<Vec<DiscoveredTask>, String> {
     let (records, errors) = work_retry::list(journal);
     report.unreadable.extend(errors);
-    let today = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+    let today = jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     let mut candidates = Vec::new();
     for record in records.into_iter().filter(|r| {
         r.unit.day() == day
@@ -995,10 +995,10 @@ fn inspect_day(
     report: &mut WorkInventory,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<DayWork, String> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let today = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive();
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date();
     let mut work = DayWork {
         candidates: Vec::new(),
         completed_segments: BTreeSet::new(),
@@ -1103,8 +1103,8 @@ fn inspect_day(
     // A vault's notes from before the last week, and screenshots from before
     // today, are history arriving, and take the ladder's import place, as an
     // equally large import would.
-    let age_days = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|date| today.signed_duration_since(date).num_days())
+    let age_days = solstone_core_time::parse_day(day)
+        .map(|date| today.duration_since(date).as_hours() / 24)
         .unwrap_or(0);
     let is_note_stream = |stream: &str| {
         (age_days > 7 && solstone_core_segment::is_obsidian_stream(journal, stream))
@@ -1267,7 +1267,7 @@ fn inspect_day(
                 }
             }
         }
-        let queued = day < today.format("%Y%m%d").to_string().as_str()
+        let queued = day < solstone_core_time::day_key(today).as_str()
             && queue_daily(
                 journal,
                 day,
@@ -1315,7 +1315,7 @@ fn inspect_day(
                 .segment_retry_at
                 .get(&(Some(segment.stream.clone()), segment.key.clone()))
                 .is_some_and(|at| {
-                    let left = at - now.timestamp_millis();
+                    let left = at - now.as_millisecond();
                     left > 0 && left <= solstone_core_system_health::LONGEST_REST_MS
                 })
         {
@@ -1432,7 +1432,7 @@ fn queue_daily(
         // and an outage says nothing about the day's own work.
         ask.asked_at_ms
             .max(intent.and_then(|intent| intent.asked_at_ms))
-            .max(outage_retry_at.filter(|at| chrono::Utc::now().timestamp_millis() >= *at)),
+            .max(outage_retry_at.filter(|at| jiff::Timestamp::now().as_millisecond() >= *at)),
     ) {
         held(report, day, None, p.band, "retry_wait");
     } else {
@@ -1590,7 +1590,7 @@ fn still_owed(
                 facet: argument("--facet").ok_or("activity has no facet")?.into(),
                 activity: activity.into(),
             },
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         );
     }
     if argv.iter().any(|arg| arg == "--weekly") {
@@ -1617,7 +1617,7 @@ fn still_owed(
             },
             journal,
             day,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .map_err(|error| error.to_string())?;
         let Some(segment) = segments
@@ -1789,11 +1789,13 @@ fn held_thinking(
 fn history_progress(
     report: &WorkInventory,
     days: &BTreeMap<String, (HistoryDay, bool)>,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
     previous: Option<&HistorySample>,
 ) -> HistoryProgress {
-    let through = today - chrono::Duration::days(2);
-    let through_day = through.format("%Y%m%d").to_string();
+    let through = today
+        .checked_sub(jiff::Span::new().days(2))
+        .expect("two days before today is a real date");
+    let through_day = solstone_core_time::day_key(through);
     let historical = days
         .iter()
         .filter(|(day, _)| *day <= &through_day)
@@ -1805,10 +1807,9 @@ fn history_progress(
         .map(|(day, _)| day.as_str());
     let caught_up_since = match newest_owed {
         Some(day) if day == through_day => None,
-        Some(day) => chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-            .ok()
-            .and_then(|day| day.succ_opt())
-            .map(|day| day.format("%Y%m%d").to_string()),
+        Some(day) => solstone_core_time::parse_day(day)
+            .and_then(|day| day.tomorrow().ok())
+            .map(solstone_core_time::day_key),
         None => historical.first().map(|(day, _)| (*day).clone()),
     };
     let readable = days
@@ -1834,7 +1835,7 @@ fn history_progress(
     let sample = (report.days_inspected == report.days_total
         && !days.values().any(|(work, _)| work.archive_pending))
     .then(|| HistorySample {
-        local_day: today.format("%Y%m%d").to_string(),
+        local_day: solstone_core_time::day_key(today),
         journal_version: env!("CARGO_PKG_VERSION").into(),
         as_of_ms: report.as_of_ms,
         owed: segments_owed + daily_units_owed,
@@ -1885,7 +1886,7 @@ fn aggregate(
     report.days_total = days.len();
     report.oldest_day = days.keys().next().cloned();
     report.newest_day = days.keys().next_back().cloned();
-    report.as_of_ms = chrono::Utc::now().timestamp_millis();
+    report.as_of_ms = jiff::Timestamp::now().as_millisecond();
 }
 
 #[cfg(test)]
@@ -1949,7 +1950,7 @@ fn reconcile_pass_with_roots(
                 .as_ref()
                 .and_then(|inventory| inventory.history.clone()),
             inventory.is_some_and(|inventory| {
-                inventory.current_at(chrono::Utc::now().timestamp_millis())
+                inventory.current_at(jiff::Timestamp::now().as_millisecond())
             }),
         ),
         Err(error) => {
@@ -1996,7 +1997,7 @@ fn reconcile_pass_with_roots(
         journal,
         &work_intent::read(journal)?,
         roots.map(|roots| (roots.talent.as_path(), roots.apps.as_path())),
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         checkpoint,
     )?;
     let crate::activity_work::ActivityWorkSnapshot {
@@ -2005,13 +2006,13 @@ fn reconcile_pass_with_roots(
         errors: activity_errors,
     } = crate::activity_work::snapshot_activity_work(
         journal,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     );
     asks.hold(journal, &unfinished_activities);
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
     let (held_records, mut retry_errors) = work_retry::list(journal);
     let held_records = settle_body_data_holds(journal, held_records, &mut retry_errors);
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let today = daily_coverage::local_day(journal, now);
     let pass_day = today.clone();
     solstone_core_system::daily_coverage::activate_daily_inputs_checked(journal, now, checkpoint)?;
@@ -2122,7 +2123,7 @@ fn reconcile_pass_with_roots(
         if let Err(error) = crate::activity_work::seed_activity_retries_checked(
             journal,
             &day,
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
             checkpoint,
         ) {
             day_report.unreadable.push(format!("{day}: {error}"));
@@ -2224,9 +2225,9 @@ fn reconcile_pass_with_roots(
         for activity in activities.iter().filter(|a| {
             a.day == day && !intents.get(&day).is_some_and(|intent| intent.from_scratch)
         }) {
-            let today = chrono::Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-                .date_naive();
+            let today = jiff::Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+                .date();
             let mut p = priority(
                 &day,
                 None,
@@ -2329,9 +2330,9 @@ fn reconcile_pass_with_roots(
     let week_tasks = asks.finish(
         journal,
         roots.map(|roots| (roots.talent.as_path(), roots.apps.as_path())),
-        chrono::NaiveDate::parse_from_str(&pass_day, "%Y%m%d").map_err(|e| e.to_string())?,
+        solstone_core_time::parse_day(&pass_day).ok_or("day must be YYYYMMDD")?,
         policy,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         checkpoint,
     )?;
     retain_best(&mut candidates, week_tasks);
@@ -2378,14 +2379,13 @@ fn reconcile_pass_with_roots(
         report.days_inspected,
         report.days_total,
     );
-    report.as_of_ms = chrono::Utc::now().timestamp_millis();
+    report.as_of_ms = jiff::Timestamp::now().as_millisecond();
     report.next_pass_ms =
         automatic.then(|| report.as_of_ms + rest_after(pass_started.elapsed()).as_millis() as i64);
-    let ended = chrono::Utc::now();
+    let ended = jiff::Timestamp::now();
     // A pass that crossed midnight keeps the last line until the next pass.
     if import_errors.is_empty() && daily_coverage::local_day(journal, ended) == pass_day {
-        let today = chrono::NaiveDate::parse_from_str(&pass_day, "%Y%m%d")
-            .map_err(|error| error.to_string())?;
+        let today = solstone_core_time::parse_day(&pass_day).ok_or("day must be YYYYMMDD")?;
         report.history = Some(history_progress(
             &report,
             &history_days,
@@ -2531,15 +2531,17 @@ pub fn is_mcp_audit_segment(stream: Option<&str>) -> bool {
 
 pub fn day_still_closing(journal: &Path, queue: &TaskQueue, now: SystemTime) -> Option<String> {
     let local_day = |at: SystemTime| {
-        solstone_core_system::daily_coverage::local_day(journal, chrono::DateTime::from(at))
+        jiff::Timestamp::try_from(at)
+            .ok()
+            .map(|at| solstone_core_system::daily_coverage::local_day(journal, at))
     };
-    let day = local_day(now.checked_sub(DAY_CLOSE_LIMIT)?);
-    if day == local_day(now) {
+    let day = local_day(now.checked_sub(DAY_CLOSE_LIMIT)?)?;
+    if Some(&day) == local_day(now).as_ref() {
         return None;
     }
     let within_grace = now
         .checked_sub(DAY_CLOSE_GRACE)
-        .is_some_and(|at| local_day(at) == day);
+        .is_some_and(|at| local_day(at).as_ref() == Some(&day));
     let flush = format!("supervisor-flush-{day}-");
     let observed = format!("supervisor-observed-{day}-");
     let activity = format!("\"day\":\"{day}\"");
@@ -2824,7 +2826,7 @@ mod tests {
 
             // The daily refill/retry reads must use those same resources, rather
             // than falling back to current_exe after the first pass succeeds.
-            let today = daily_coverage::local_day(root.path(), chrono::Utc::now());
+            let today = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
             let unit = Unit::Daily {
                 day: today.clone(),
                 talent: "daily_schedule".into(),
@@ -2962,7 +2964,7 @@ mod tests {
 
     #[test]
     fn history_range_keeps_prerequisites_but_excepts_young_and_unreadable_days() {
-        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 13).unwrap();
+        let today = jiff::civil::date(2026, 10, 13);
         let mut days = BTreeMap::from([
             (
                 "20260901".into(),
@@ -3099,7 +3101,7 @@ mod tests {
         let root = fixture("local");
         let day = "19990102";
         segment(root.path(), day, "120000_60");
-        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 13).unwrap();
+        let today = jiff::civil::date(2026, 10, 13);
         let mut coverage = daily_coverage::read_daily_coverage(root.path(), day).unwrap();
         assert!(coverage.units.iter().any(|unit| unit.state.is_owed()));
         let missing = daily_priority(priority(day, None, today, None), &coverage);
@@ -3201,7 +3203,7 @@ mod tests {
     #[test]
     fn capped_global_maintenance_is_discovered_on_today_without_recordings() {
         let root = fixture("local");
-        let today = daily_coverage::local_day(root.path(), chrono::Utc::now());
+        let today = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
         let unit = Unit::Daily {
             day: today.clone(),
             talent: "daily_schedule".into(),
@@ -3280,7 +3282,7 @@ mod tests {
             })
         };
         assert!(listed(&report));
-        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 13).unwrap();
+        let today = jiff::civil::date(2026, 10, 13);
         let mut history_day = work.history;
         history_day.segments_owed = report.bands[4].segments_owed;
         history_day.daily_units_owed =
@@ -3382,7 +3384,7 @@ mod tests {
             ("no_port", true),
         ] {
             let root = fixture("local");
-            let day = daily_coverage::local_day(root.path(), chrono::Utc::now());
+            let day = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
             let directory = root
                 .path()
                 .join("chronicle")
@@ -3444,7 +3446,7 @@ mod tests {
     fn native_readmissions_keep_today_owner_and_background_priority_and_spend() {
         use solstone_core_system::work_policy::ThinkingLane;
         let root = fixture("local");
-        let today = daily_coverage::local_day(root.path(), chrono::Utc::now());
+        let today = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
         let local = WorkPolicy {
             lane: ThinkingLane::Bundled,
             history_confirmed: false,
@@ -3480,7 +3482,7 @@ mod tests {
                 &solstone_core_system_health::FilesystemSegmentSource,
                 root.path(),
                 day,
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             )
             .unwrap();
             assert_eq!(segments.len(), 1);
@@ -3703,7 +3705,7 @@ mod tests {
     #[test]
     fn a_day_holding_only_body_windows_owes_nothing_at_any_age() {
         let root = fixture("local");
-        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
         for day in ["19990101", today.as_str()] {
             body_window(root.path(), day, "063000_300");
             body_window(root.path(), day, "063500_300");
@@ -3932,7 +3934,11 @@ mod tests {
     fn a_listed_evernote_note_from_today_takes_the_import_place() {
         use solstone_core_import::publish::*;
         let root = fixture("local");
-        let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date(),
+        );
         let notes = root
             .path()
             .join("chronicle")
@@ -4057,15 +4063,18 @@ mod tests {
             "think",
             "segment",
             OplogFormat::Jsonl,
-            chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-                .unwrap()
-                .and_hms_opt(12, 0, 0)
-                .unwrap()
-                .and_utc()
-                .fixed_offset(),
+            &solstone_core_time::at_offset(
+                solstone_core_time::parse_day(day)
+                    .unwrap()
+                    .at(12, 0, 0, 0)
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .unwrap()
+                    .timestamp(),
+                jiff::tz::Offset::UTC,
+            ),
         )
         .unwrap();
-        let sensed = chrono::Utc::now().timestamp_millis() + 3_600_000;
+        let sensed = jiff::Timestamp::now().as_millisecond() + 3_600_000;
         for key in keys {
             segment(root, day, key);
             std::fs::write(
@@ -4203,7 +4212,7 @@ mod tests {
             &solstone_core_system_health::FilesystemSegmentSource,
             root.path(),
             day,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .unwrap();
         let progress = solstone_core_system_health::read_segment_progress(
@@ -4257,9 +4266,13 @@ mod tests {
         let root = fixture("local");
         // Stay clear of yesterday's intentional hold just after UTC midnight,
         // while retaining band-2 early admission through the owner request.
-        let recent_day = (chrono::Utc::now().date_naive() - chrono::Duration::days(2))
-            .format("%Y%m%d")
-            .to_string();
+        let recent_day = solstone_core_time::day_key(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date()
+                .checked_sub(jiff::Span::new().days(2))
+                .unwrap(),
+        );
         thought_without_receipt(root.path(), &recent_day, &["090000_60", "100000_60"]);
         work_intent::register(root.path(), &recent_day, false).unwrap();
         let older = 24;
@@ -4682,18 +4695,17 @@ mod tests {
         let root = fixture("local");
         let journal = root.path();
         let zone = solstone_core_journal_config::owner_zone(journal);
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let today =
-            chrono::NaiveDate::parse_from_str(&daily_coverage::local_day(journal, now), "%Y%m%d")
-                .unwrap();
+            solstone_core_time::parse_day(&daily_coverage::local_day(journal, now)).unwrap();
         // The location input's recipients that a closed day can still owe are
         // the facet-scoped entity talents, so each day has an active facet.
         solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
         let mut days = Vec::new();
         for age in 1..=12 {
-            let day = (today - chrono::Duration::days(age))
-                .format("%Y%m%d")
-                .to_string();
+            let day = solstone_core_time::day_key(
+                today.checked_sub(jiff::Span::new().days(age)).unwrap(),
+            );
             let talents = journal
                 .join("chronicle")
                 .join(&day)
@@ -4724,25 +4736,25 @@ mod tests {
             }
             days.push(day);
         }
-        let before = chrono::Utc::now();
+        let before = jiff::Timestamp::now();
         let backlog =
             reconcile_pass(journal, &queue(journal), &AtomicBool::new(false), false).unwrap();
-        let after = chrono::Utc::now();
+        let after = jiff::Timestamp::now();
         let early = daily_coverage::daily_input_since_day(before, &zone, 7);
         let late = daily_coverage::daily_input_since_day(after, &zone, 7);
         let config = solstone_core_journal_config::read_journal_config(journal)
             .unwrap()
             .config
             .unwrap();
-        let stored = solstone_core_journal_config::daily_input_since(
-            &config,
-            "location",
-            "location-words-1",
-        )
-        .unwrap()
-        .unwrap()
-        .format("%Y%m%d")
-        .to_string();
+        let stored = solstone_core_time::day_key(
+            solstone_core_journal_config::daily_input_since(
+                &config,
+                "location",
+                "location-words-1",
+            )
+            .unwrap()
+            .unwrap(),
+        );
         assert!(stored == early || stored == late, "{stored} {early} {late}");
         let mut owed = BTreeSet::new();
         for task in backlog.offered.iter() {
@@ -4788,7 +4800,7 @@ mod tests {
         sensed: bool,
     ) -> PathBuf {
         // After the input the fixture writes, so the failures read as about it.
-        let after_input = chrono::Utc::now().timestamp_millis() + 3_600_000;
+        let after_input = jiff::Timestamp::now().as_millisecond() + 3_600_000;
         failing_talent_from(root, talent, failures, reason, sensed, after_input)
     }
 
@@ -4824,12 +4836,15 @@ mod tests {
             "think",
             "segment",
             OplogFormat::Jsonl,
-            chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-                .unwrap()
-                .and_hms_opt(12, 0, 0)
-                .unwrap()
-                .and_utc()
-                .fixed_offset(),
+            &solstone_core_time::at_offset(
+                solstone_core_time::parse_day(day)
+                    .unwrap()
+                    .at(12, 0, 0, 0)
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .unwrap()
+                    .timestamp(),
+                jiff::tz::Offset::UTC,
+            ),
         )
         .unwrap();
         if sensed {
@@ -5027,7 +5042,7 @@ mod tests {
             "wait failed: Dispatch(Closed)",
         ] {
             let root = fixture("local");
-            let rested = chrono::Utc::now().timestamp_millis() - 40 * 3_600_000;
+            let rested = jiff::Timestamp::now().as_millisecond() - 40 * 3_600_000;
             failing_talent_from(root.path(), "screen", 30, reason, true, rested);
             let queue = queue(root.path());
             reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
@@ -5044,7 +5059,7 @@ mod tests {
     #[test]
     fn failures_short_of_the_cap_keep_repairing() {
         let root = fixture("local");
-        let rested = chrono::Utc::now().timestamp_millis() - 10 * 3_600_000;
+        let rested = jiff::Timestamp::now().as_millisecond() - 10 * 3_600_000;
         failing_talent_from(
             root.path(),
             "screen",
@@ -5066,7 +5081,7 @@ mod tests {
         let repair = "supervisor-work-19990101-notes-120000_60";
         for reason in ["network_unreachable", "provider_response_invalid"] {
             let root = fixture("local");
-            let just_now = chrono::Utc::now().timestamp_millis();
+            let just_now = jiff::Timestamp::now().as_millisecond();
             failing_talent_from(root.path(), "screen", 1, reason, true, just_now);
             let queue = queue(root.path());
             reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
@@ -5089,7 +5104,7 @@ mod tests {
         }
         // A failure stamped far ahead was left by a clock that has moved back.
         let root = fixture("local");
-        let ahead = chrono::Utc::now().timestamp_millis() + 24 * 3_600_000;
+        let ahead = jiff::Timestamp::now().as_millisecond() + 24 * 3_600_000;
         failing_talent_from(root.path(), "screen", 1, "network_unreachable", true, ahead);
         let queue = queue(root.path());
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
@@ -5108,7 +5123,7 @@ mod tests {
         use std::io::Write;
         let daily = "supervisor-work-19990101-daily";
         let hour = 3_600_000;
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         for (reason, age, runs) in [
             ("network_unreachable", hour, true),
             ("network_unreachable", 0, false),
@@ -5135,12 +5150,15 @@ mod tests {
                 "think",
                 "daily",
                 OplogFormat::Jsonl,
-                chrono::NaiveDate::parse_from_str("19990101", "%Y%m%d")
-                    .unwrap()
-                    .and_hms_opt(12, 0, 0)
-                    .unwrap()
-                    .and_utc()
-                    .fixed_offset(),
+                &solstone_core_time::at_offset(
+                    solstone_core_time::parse_day("19990101")
+                        .unwrap()
+                        .at(12, 0, 0, 0)
+                        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                        .unwrap()
+                        .timestamp(),
+                    jiff::tz::Offset::UTC,
+                ),
             )
             .unwrap();
             writeln!(
@@ -5244,7 +5262,14 @@ mod tests {
         let candidate = super::task(
             day,
             None,
-            priority(day, None, chrono::Utc::now().date_naive(), None),
+            priority(
+                day,
+                None,
+                jiff::Timestamp::now()
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .date(),
+                None,
+            ),
             None,
         );
         // Spent under the evidence it conflicted on: declined, so not run.
@@ -5461,7 +5486,14 @@ mod tests {
             );
             assert_eq!(
                 daily_priority(
-                    priority(walked, None, chrono::Utc::now().date_naive(), None),
+                    priority(
+                        walked,
+                        None,
+                        jiff::Timestamp::now()
+                            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                            .date(),
+                        None
+                    ),
                     &coverage
                 )
                 .band,
@@ -5533,7 +5565,7 @@ mod tests {
             serde_json::to_value(&progress).unwrap(),
             serde_json::to_value(&old).unwrap()
         );
-        assert!(!progress.current_at(chrono::Utc::now().timestamp_millis()));
+        assert!(!progress.current_at(jiff::Timestamp::now().as_millisecond()));
         // A daily output never made on that newer day still holds the range.
         let unmade = made.iter().find(|unit| !review(unit)).unwrap();
         solstone_core_journal_io::save_daily_unit_record(
@@ -5586,7 +5618,7 @@ mod tests {
     #[test]
     fn inspect_day_enqueues_archive_segment_by_coordinate_and_sets_work_band() {
         let root = fixture("local");
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let today = daily_coverage::local_day(root.path(), now);
         let archive_key = "120000_60";
         let notes_key = "120100_60";
@@ -5781,7 +5813,7 @@ mod tests {
                 },
                 run_note: None,
             }],
-            chrono_tz::UTC,
+            &jiff::tz::TimeZone::UTC,
             AudioArchiveSettings {
                 qualifier: "archive".into(),
                 archive_identity: "fixture".into(),
@@ -5843,7 +5875,14 @@ mod tests {
         let daily = task(
             day,
             None,
-            priority(day, None, chrono::Utc::now().date_naive(), None),
+            priority(
+                day,
+                None,
+                jiff::Timestamp::now()
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .date(),
+                None,
+            ),
             None,
         );
         assert!(!still_owed(root.path(), &daily, None, &|| Ok(())).unwrap());
@@ -5922,7 +5961,9 @@ mod tests {
         let history = history_progress(
             &total,
             &BTreeMap::from([(day.to_string(), (work.history, false))]),
-            chrono::Utc::now().date_naive(),
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date(),
             None,
         );
         assert_eq!(history.caught_up_since.as_deref(), Some("19990102"));
@@ -6106,7 +6147,7 @@ mod tests {
             &solstone_core_system_health::FilesystemSegmentSource,
             root.path(),
             day,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         let ordinary = task(
             day,
@@ -6114,7 +6155,9 @@ mod tests {
             priority(
                 day,
                 Some("120000_60"),
-                chrono::Utc::now().date_naive(),
+                jiff::Timestamp::now()
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .date(),
                 None,
             ),
             None,
@@ -6125,7 +6168,9 @@ mod tests {
             priority(
                 day,
                 Some("120000_60"),
-                chrono::Utc::now().date_naive(),
+                jiff::Timestamp::now()
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .date(),
                 None,
             ),
             None,
@@ -6217,7 +6262,14 @@ mod tests {
         let candidate = task(
             day,
             None,
-            priority(day, None, chrono::Utc::now().date_naive(), None),
+            priority(
+                day,
+                None,
+                jiff::Timestamp::now()
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .date(),
+                None,
+            ),
             None,
         );
         assert!(still_owed(root.path(), &candidate, None, &|| Ok(())).is_err());
@@ -6246,9 +6298,13 @@ mod tests {
     fn maintenance_keeps_its_recent_key_projection_outside_archive_processing_bound() {
         use std::os::unix::fs::PermissionsExt;
         let root = fixture("local");
-        let recent = (chrono::Utc::now().date_naive() - chrono::Duration::days(1))
-            .format("%Y%m%d")
-            .to_string();
+        let recent = solstone_core_time::day_key(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date()
+                .yesterday()
+                .unwrap(),
+        );
         let stream = root
             .path()
             .join("chronicle")

@@ -14,11 +14,12 @@ use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_shell::router;
 use solstone_core_npy::write_npy;
+use solstone_core_time::utc_rfc3339;
 use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -1009,7 +1010,7 @@ async fn owner_ready_treats_expired_rejection_as_plain_needs_detection() {
     journal.entity("owner", true);
     journal.voiceprint_state(json!({
         "status":"rejected",
-        "rejected_at":(Utc::now() - Duration::days(15)).to_rfc3339(),
+        "rejected_at":utc_rfc3339(Timestamp::now() - SignedDuration::from_hours(24 * 15)),
     }));
 
     let (status, ready) = call(
@@ -1029,7 +1030,7 @@ async fn owner_ready_and_detect_refuse_during_rejection_cooldown() {
     journal.entity("owner", true);
     journal.voiceprint_state(json!({
         "status":"rejected",
-        "rejected_at":Utc::now().to_rfc3339(),
+        "rejected_at":utc_rfc3339(Timestamp::now()),
     }));
 
     let (status, ready) = call(

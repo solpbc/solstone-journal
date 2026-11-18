@@ -22,8 +22,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveDateTime, Utc};
-use chrono_tz::Tz;
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Timestamp};
 use rusqlite::{Connection, OptionalExtension, params};
 use solstone_core_format::calendar::{
     CalendarNote, OwnerAddresses, When, import_stamp, listed_days, parse_calendar_note,
@@ -191,7 +192,7 @@ struct ImportCover {
     /// and latest written occurrences. When it expanded the series' rule, it
     /// covers up to a year past the import, as far as an import expands one,
     /// even when its last written occurrence is earlier.
-    span: Option<(NaiveDateTime, NaiveDateTime)>,
+    span: Option<(DateTime, DateTime)>,
 }
 
 impl ImportCover {
@@ -258,8 +259,13 @@ fn event_imports(conn: &Connection, event: &str) -> Result<EventImports, StoreEr
                 .collect::<Vec<_>>();
             let span = match (instants.iter().min(), instants.iter().max()) {
                 (Some(&first), Some(&last)) => {
-                    let expanded_to = chrono::DateTime::from_timestamp_millis(imported_at_ms)
-                        .map(|at| (at + chrono::Duration::days(IMPORT_EXPANSION_DAYS)).naive_utc());
+                    let expanded_to = Timestamp::from_millisecond(imported_at_ms)
+                        .ok()
+                        .and_then(|at| {
+                            at.checked_add(SignedDuration::from_hours(24 * IMPORT_EXPANSION_DAYS))
+                                .ok()
+                        })
+                        .map(|at| Offset::UTC.to_datetime(at));
                     let end = expanded_to
                         .filter(|_| expanded)
                         .map_or(last, |end| end.max(last));
@@ -290,16 +296,16 @@ fn event_imports(conn: &Connection, event: &str) -> Result<EventImports, StoreEr
 
 /// A normalized occurrence as a point in time: the UTC instant of a zoned
 /// start, the wall clock of a floating one, and the start of an all-day date.
-fn occurrence_instant(occurrence: &str) -> Option<NaiveDateTime> {
+fn occurrence_instant(occurrence: &str) -> Option<DateTime> {
     if let Some(utc) = occurrence.strip_suffix('Z') {
-        return NaiveDateTime::parse_from_str(utc, "%Y-%m-%dT%H:%M:%S%.f").ok();
+        return DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", utc).ok();
     }
-    NaiveDateTime::parse_from_str(occurrence, "%Y-%m-%dT%H:%M:%S%.f")
+    DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", occurrence)
         .ok()
         .or_else(|| {
-            NaiveDate::parse_from_str(occurrence, "%Y-%m-%d")
+            Date::strptime("%Y-%m-%d", occurrence)
                 .ok()
-                .and_then(|date| date.and_hms_opt(0, 0, 0))
+                .map(|date| date.to_datetime(Time::midnight()))
         })
 }
 
@@ -350,7 +356,7 @@ fn index_imported_calendar_file(
                 note.changed_at_text(),
                 serde_json::Value::Object(note.record.clone()).to_string(),
                 import,
-                imported_at.timestamp_millis(),
+                imported_at.timestamp().as_millisecond(),
             ],
         )?;
         events.insert(note.event.clone());
@@ -492,7 +498,7 @@ pub(crate) fn calendar_paths_in_stream(
 /// The journal zone timed events are listed in: the configured zone, or the
 /// journal's usual fallback when none is configured. Only a settings file
 /// that cannot be read is an error.
-pub(crate) fn listing_zone(journal: &Path) -> Result<Tz, StoreError> {
+pub(crate) fn listing_zone(journal: &Path) -> Result<TimeZone, StoreError> {
     Ok(solstone_core_indexer::edges::owner_timezone_for_journal(
         journal,
     )?)
@@ -680,7 +686,7 @@ pub(crate) fn relist(
     let identities = &identities;
     let mut event_owners: BTreeMap<String, OwnerAddresses> = BTreeMap::new();
     let mut relisted = Relisted::default();
-    let mut zone: Option<Result<Tz, String>> = None;
+    let mut zone: Option<Result<TimeZone, String>> = None;
     let mut owner_read: Option<Result<OwnerAddresses, String>> = None;
     let mut event_covers: BTreeMap<String, EventImports> = BTreeMap::new();
     for identity in identities {
@@ -747,14 +753,14 @@ pub(crate) fn relist(
                     .warnings
                     .push(format!("calendar note in {path} not listed: {reason}")),
                 Ok(note) => {
-                    if let Some(schedule) = note.schedule {
+                    if let Some(schedule) = &note.schedule {
                         let listing = if matches!(schedule.start, When::Date(_)) {
-                            Some(listed_days(&schedule, &Utc))
+                            Some(listed_days(schedule, &TimeZone::UTC))
                         } else {
                             match zone.get_or_insert_with(|| {
                                 listing_zone(journal).map_err(|error| error.to_string())
                             }) {
-                                Ok(zone) => Some(listed_days(&schedule, zone)),
+                                Ok(zone) => Some(listed_days(schedule, zone)),
                                 Err(error) => {
                                     relisted.warnings.push(format!(
                                         "calendar event in {path} is listed once the settings file can be read: {error}"
@@ -779,7 +785,7 @@ pub(crate) fn relist(
                                 };
                                 (
                                     LISTING_IDX_BASE + line * LISTING_IDX_STRIDE + offset as i64,
-                                    day.format("%Y%m%d").to_string(),
+                                    solstone_core_time::day_key(*day),
                                     bucket.to_owned(),
                                 )
                             })

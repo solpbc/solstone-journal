@@ -15,7 +15,7 @@ test-hooks = []
 
 [dependencies]
 caseless = "0.2.2"
-chrono.workspace = true
+jiff.workspace = true
 jsonschema.workspace = true
 log.workspace = true
 serde.workspace = true
@@ -42,6 +42,7 @@ solstone-core-talent-cli.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-system.workspace = true
+solstone-core-time.workspace = true
 solstone-core-generate-wire.workspace = true
 solstone-core-transcripts.workspace = true
 solstone-core-possible-names.workspace = true

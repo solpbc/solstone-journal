@@ -36,7 +36,7 @@ mod windows;
 #[cfg(windows)]
 mod windows_liveness;
 
-use chrono::{DateTime, FixedOffset, Local};
+use jiff::ZonedDateTime;
 
 pub use crate::lease::LeaseProbe;
 pub use admission::{
@@ -92,10 +92,10 @@ pub use writer::{OplogChildCapture, OplogWriteHandle, OplogWriter, OplogWriterEr
 pub use writer::{run_with_oplog_capture_stderr_fault, run_with_oplog_capture_stdout_fault};
 
 /// Sample one local instant for day-key and UTC-field derivation.
-fn sample_local_instant() -> Result<DateTime<FixedOffset>, OplogCreateError> {
+fn sample_local_instant() -> Result<ZonedDateTime, OplogCreateError> {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(overridden) = create::take_sampler_override() {
         return overridden;
     }
-    Ok(Local::now().fixed_offset())
+    Ok(ZonedDateTime::now())
 }

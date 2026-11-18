@@ -70,7 +70,7 @@ fn write_outcome(
     );
     payload.insert(
         "ts".to_owned(),
-        Value::from(chrono::Utc::now().timestamp_millis()),
+        Value::from(jiff::Timestamp::now().as_millisecond()),
     );
     crate::partial_input::copy_marker(output, &mut payload);
     if let Some(parent) = path.parent() {
@@ -605,16 +605,18 @@ fn render_reconcile_packet(
 
     for (id, content, observed_at, source_day, has_history) in &rows {
         let date_str = if let Some(day) = source_day {
-            chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-                .map(|d| d.format("%Y-%m-%d").to_string())
-                .unwrap_or_else(|_| day.clone())
+            solstone_core_time::parse_day(day)
+                .map(|d| d.strftime("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| day.clone())
         } else if *observed_at > 1_000_000_000_000 {
-            chrono::DateTime::from_timestamp_millis(*observed_at)
-                .map(|dt| dt.format("%Y-%m-%d").to_string())
+            jiff::Timestamp::from_millisecond(*observed_at)
+                .ok()
+                .map(|ts| ts.strftime("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| "unknown".to_string())
         } else if *observed_at > 1_000_000_000 {
-            chrono::DateTime::from_timestamp(*observed_at, 0)
-                .map(|dt| dt.format("%Y-%m-%d").to_string())
+            jiff::Timestamp::new(*observed_at, 0)
+                .ok()
+                .map(|ts| ts.strftime("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| "unknown".to_string())
         } else {
             "unknown".to_string()
@@ -888,7 +890,7 @@ pub fn prepare_publication(
     outcome.insert("error".into(), Value::Null);
     outcome.insert(
         "ts".into(),
-        Value::from(chrono::Utc::now().timestamp_millis()),
+        Value::from(jiff::Timestamp::now().as_millisecond()),
     );
 
     crate::partial_input::copy_marker(output, &mut outcome);

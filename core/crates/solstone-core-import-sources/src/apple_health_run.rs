@@ -27,7 +27,7 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::{BodyRow, RowKind, parse_source_time};
@@ -39,6 +39,7 @@ use crate::apple_health::{
     tile_experience,
 };
 use crate::body_stream::BodySource;
+use crate::shared::{epoch_millisecond, epoch_second};
 
 /// How much a spill buffer holds before it is sorted and written.
 pub const DEFAULT_SPILL_BYTES: usize = 64 * 1024 * 1024;
@@ -354,7 +355,7 @@ pub struct PlaceResult {
 struct Placer<'a> {
     journal: &'a Path,
     source: &'a BodySource,
-    zone: Tz,
+    zone: &'a TimeZone,
     out: Spill<PlacedItem>,
     nights: BTreeMap<String, OpenNight>,
     /// Workouts and mindfulness sessions not yet ended at the instant being
@@ -366,7 +367,7 @@ struct Placer<'a> {
 
 fn seconds(text: Option<&str>) -> i64 {
     text.and_then(parse_source_time)
-        .map(|time| time.timestamp())
+        .map(|time| epoch_second(time.timestamp()))
         .unwrap_or_default()
 }
 
@@ -394,7 +395,7 @@ impl Placer<'_> {
         let Some(at) = row
             .begins()
             .and_then(parse_source_time)
-            .map(|time| time.timestamp_millis())
+            .map(|time| epoch_millisecond(time.timestamp()))
         else {
             return false;
         };
@@ -415,7 +416,7 @@ impl Placer<'_> {
         if is_session(experience) {
             let millis = |text: Option<&str>| {
                 text.and_then(parse_source_time)
-                    .map(|time| time.timestamp_millis())
+                    .map(|time| epoch_millisecond(time.timestamp()))
             };
             // The span its tiles are written to, a stored later end included.
             if let (Some(start), Some(end)) = (
@@ -530,7 +531,7 @@ impl Placer<'_> {
 pub fn place(
     journal: &Path,
     source: &BodySource,
-    zone: Tz,
+    zone: &TimeZone,
     scan_dir: &Path,
     dir: &Path,
     spill_bytes: usize,

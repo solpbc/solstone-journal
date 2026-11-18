@@ -3,7 +3,7 @@
 
 //! How the Body app says dates and numbers.
 
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+use jiff::civil::{Date, DateTime};
 
 use crate::presentation::display_number;
 
@@ -11,7 +11,7 @@ pub(crate) fn number(value: f64) -> String {
     display_number("", value, None)
 }
 
-pub(crate) fn clock(time: NaiveDateTime) -> String {
+pub(crate) fn clock(time: DateTime) -> String {
     let hour = time.hour() % 12;
     format!(
         "{}:{:02} {}",
@@ -21,7 +21,7 @@ pub(crate) fn clock(time: NaiveDateTime) -> String {
     )
 }
 
-pub(crate) fn long_day(day: NaiveDate) -> String {
+pub(crate) fn long_day(day: Date) -> String {
     format!(
         "{} {}, {}",
         month_full_name(day.month()),
@@ -30,10 +30,15 @@ pub(crate) fn long_day(day: NaiveDate) -> String {
     )
 }
 
-pub(crate) fn parse_day(day: &str) -> Option<NaiveDate> {
-    (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
-        .flatten()
+pub(crate) fn parse_day(day: &str) -> Option<Date> {
+    solstone_core_time::parse_day(day)
+}
+
+/// Each date from `first` through `last`.
+pub(crate) fn days_through(first: Date, last: Date) -> impl Iterator<Item = Date> {
+    first
+        .series(jiff::Span::new().days(1))
+        .take_while(move |date| *date <= last)
 }
 
 pub(crate) fn short_day(day: &str) -> Option<String> {
@@ -50,14 +55,14 @@ pub(crate) fn short_day_year(day: &str) -> Option<String> {
     ))
 }
 
-pub(crate) fn month_abbr(month: u32) -> &'static str {
+pub(crate) fn month_abbr(month: i8) -> &'static str {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
-    MONTHS[month as usize - 1]
+    MONTHS[month_index(month)]
 }
 
-fn month_full_name(month: u32) -> &'static str {
+fn month_full_name(month: i8) -> &'static str {
     const MONTHS: [&str; 12] = [
         "January",
         "February",
@@ -72,7 +77,11 @@ fn month_full_name(month: u32) -> &'static str {
         "November",
         "December",
     ];
-    MONTHS[month as usize - 1]
+    MONTHS[month_index(month)]
+}
+
+fn month_index(month: i8) -> usize {
+    usize::try_from(month - 1).expect("a month is 1 to 12")
 }
 
 pub(crate) fn grouped_decimal(value: f64, places: usize) -> String {

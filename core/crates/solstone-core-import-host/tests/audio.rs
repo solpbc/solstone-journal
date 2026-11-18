@@ -7,7 +7,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use serde_json::Map;
 use serde_json::{Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
@@ -45,8 +45,7 @@ fn request(temp: &TempDir, import_id: &str) -> AudioImportRequest {
         source_media: temp.path().join("source.m4a"),
         journal_root: temp.path().join("journal"),
         day: "20260811".to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str("2026-08-11T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .unwrap(),
+        base_timestamp: DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T12:00:00").unwrap(),
         import_id: import_id.to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,
@@ -727,7 +726,7 @@ async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
     let midnight = TempDir::new().unwrap();
     let mut midnight_request = request(&midnight, "midnight");
     midnight_request.base_timestamp =
-        NaiveDateTime::parse_from_str("2026-08-11T23:59:59", "%Y-%m-%dT%H:%M:%S").unwrap();
+        DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T23:59:59").unwrap();
     let midnight_parent = midnight_request
         .journal_root
         .join("chronicle")
@@ -1813,7 +1812,7 @@ async fn preview_matches_published_coordinates_across_midnight_dst_and_collision
     ] {
         let temp = TempDir::new().unwrap();
         let mut req = request(&temp, stamp);
-        req.base_timestamp = NaiveDateTime::parse_from_str(stamp, "%Y%m%d_%H%M%S").unwrap();
+        req.base_timestamp = DateTime::strptime("%Y%m%d_%H%M%S", stamp).unwrap();
         req.day = stamp[..8].to_owned();
         fs::create_dir_all(req.journal_root.join("config")).unwrap();
         fs::write(
@@ -1866,7 +1865,7 @@ async fn preview_matches_published_coordinates_across_midnight_dst_and_collision
 fn preview_refuses_a_nonexistent_local_audio_start() {
     let temp = TempDir::new().unwrap();
     let mut req = request(&temp, "20260308_023000");
-    req.base_timestamp = NaiveDateTime::parse_from_str("20260308_023000", "%Y%m%d_%H%M%S").unwrap();
+    req.base_timestamp = DateTime::strptime("%Y%m%d_%H%M%S", "20260308_023000").unwrap();
     fs::create_dir_all(req.journal_root.join("config")).unwrap();
     fs::write(
         req.journal_root.join("config/journal.json"),
@@ -1880,7 +1879,7 @@ fn preview_refuses_a_nonexistent_local_audio_start() {
 async fn utc_metadata_keeps_the_second_repeated_hour_for_audio_chunks() {
     let temp = TempDir::new().unwrap();
     let mut req = request(&temp, "20261101_015800");
-    req.base_timestamp = NaiveDateTime::parse_from_str("20261101_015800", "%Y%m%d_%H%M%S").unwrap();
+    req.base_timestamp = DateTime::strptime("%Y%m%d_%H%M%S", "20261101_015800").unwrap();
     req.day = "20261101".into();
     fs::create_dir_all(req.journal_root.join("config")).unwrap();
     fs::write(
@@ -1893,9 +1892,12 @@ async fn utc_metadata_keeps_the_second_repeated_hour_for_audio_chunks() {
         include_bytes!("../../solstone-core-import/tests/fixtures/creation-fold.m4a"),
     )
     .unwrap();
-    let stamp =
-        solstone_core_import::detect_creation(&req.source_media, None, chrono_tz::America::Denver)
-            .unwrap();
+    let stamp = solstone_core_import::detect_creation(
+        &req.source_media,
+        None,
+        &solstone_core_time::zone("America/Denver").unwrap(),
+    )
+    .unwrap();
     req.source_instant = stamp.source_instant();
     let preview =
         solstone_core_import_host::audio::preview_with_probe(&req, probed(301.0)).unwrap();

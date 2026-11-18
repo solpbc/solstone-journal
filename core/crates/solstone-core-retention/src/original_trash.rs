@@ -21,6 +21,7 @@
 
 use std::path::Path;
 
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::paths::contained_path;
@@ -247,7 +248,7 @@ pub fn link_before(
     action: Action,
     surface: Surface,
     stop_at_busy: bool,
-    at: chrono::DateTime<chrono::Utc>,
+    at: Timestamp,
 ) -> Result<Linking, String> {
     // One owner act: the history shows it as one line however many
     // recordings it took originals from.
@@ -326,7 +327,7 @@ pub fn keep_after(journal: &Path, linked: Vec<Linked>) -> Kept {
 /// with the owner's day it is erased on (`erase_day`, `YYYYMMDD`), what the
 /// sweep still owes, and one plain sentence.
 #[must_use]
-pub fn cli_answer(journal: &Path, kept: &Kept, now: chrono::DateTime<chrono::Utc>) -> Value {
+pub fn cli_answer(journal: &Path, kept: &Kept, now: Timestamp) -> Value {
     let day_of = |item: &Item| {
         item.erase_at()
             .map(|at| solstone_core_journal_config::owner_day(journal, at))
@@ -371,10 +372,10 @@ pub fn cli_answer(journal: &Path, kept: &Kept, now: chrono::DateTime<chrono::Utc
 /// A `YYYYMMDD` day as the trash page writes it: lowercase weekday, month and
 /// day, with the year when it isn't this year.
 fn spoken_day(day: &str, today: &str) -> Option<String> {
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let mut text = date.format("%a %b %-d").to_string().to_lowercase();
+    let date = solstone_core_time::parse_day(day)?;
+    let mut text = date.strftime("%a %b %-d").to_string().to_lowercase();
     if today.get(..4) != day.get(..4) {
-        text.push_str(&date.format(" '%y").to_string());
+        text.push_str(&date.strftime(" '%y").to_string());
     }
     Some(text)
 }
@@ -566,8 +567,8 @@ impl Kind for Originals {
             Change::Attached => item
                 .pending
                 .as_ref()
-                .and_then(|pending| chrono::DateTime::parse_from_rfc3339(&pending.at).ok())
-                .map(|at| at.with_timezone(&chrono::Utc)),
+                .and_then(|pending| solstone_core_time::parse_rfc3339(&pending.at).ok())
+                .map(|at| at.timestamp()),
             Change::Detached => None,
         }
         .or_else(|| item.trashed_at())
@@ -610,7 +611,7 @@ impl Kind for Originals {
             let envelope = CallosumEnvelope {
                 tract: "retention".to_owned(),
                 event: event.to_owned(),
-                ts: Some(at.timestamp_millis()),
+                ts: Some(at.as_millisecond()),
                 extra,
             };
             append_durable_event(&dir, &DurableEvent::Callosum(envelope))

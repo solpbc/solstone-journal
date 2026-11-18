@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::Duration;
 
-use chrono::{NaiveDateTime, TimeZone};
+use jiff::civil::DateTime;
 use serde_json::Value;
 use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_import::cli_render::CliRun;
@@ -484,13 +484,14 @@ fn generic_text_v1_transcript_takes_its_times_from_the_file_with_no_model() {
         .collect()
     };
     let first = rows("100000_300");
-    let source_ms = solstone_core_journal_config::owner_zone(journal.path())
-        .from_local_datetime(
-            &NaiveDateTime::parse_from_str("20260818_100000", "%Y%m%d_%H%M%S").unwrap(),
-        )
-        .earliest()
-        .unwrap()
-        .timestamp_millis();
+    let source_ms = solstone_core_time::from_local(
+        &solstone_core_journal_config::owner_zone(journal.path()),
+        DateTime::strptime("%Y%m%d_%H%M%S", "20260818_100000").unwrap(),
+    )
+    .earliest()
+    .unwrap()
+    .timestamp()
+    .as_millisecond();
     assert_eq!(
         first[1..],
         [
@@ -599,8 +600,7 @@ fn production_audio_import_runtime_waits_on_a_bound_callosum_socket() {
         source_media: temporary.path().join("source.m4a"),
         journal_root: journal.clone(),
         day: "20260811".to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str("2026-08-11T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .unwrap(),
+        base_timestamp: DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T12:00:00").unwrap(),
         import_id: "runtime-io".to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,
@@ -696,8 +696,7 @@ fn run_wait_cli(wait: ProcessingWaitFn) -> CliRun {
         source_media: temporary.path().join("source.m4a"),
         journal_root: journal,
         day: "20260811".to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str("2026-08-11T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .unwrap(),
+        base_timestamp: DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T12:00:00").unwrap(),
         import_id: "wait-cli".to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,
@@ -800,9 +799,10 @@ fn a_timestamp_with_its_offset_imports_the_second_occurrence_of_a_repeated_hour(
         let entry: Value = serde_json::from_str(transcript.lines().nth(1).unwrap()).unwrap();
         assert_eq!(
             entry["source_ms"],
-            chrono::DateTime::parse_from_rfc3339(instant)
+            solstone_core_time::parse_rfc3339(instant)
                 .unwrap()
-                .timestamp_millis(),
+                .timestamp()
+                .as_millisecond(),
             "{timestamp}"
         );
     }
@@ -1011,7 +1011,7 @@ fn place_audio(
         source_media: source.to_path_buf(),
         journal_root: journal.to_path_buf(),
         day: source_stamp[..8].to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str(source_stamp, "%Y%m%d_%H%M%S").unwrap(),
+        base_timestamp: DateTime::strptime("%Y%m%d_%H%M%S", source_stamp).unwrap(),
         import_id: import_id.to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,
@@ -1116,8 +1116,7 @@ fn wait_success_still_reports_complete() {
         source_media: temporary.path().join("source.m4a"),
         journal_root: journal,
         day: "20260811".to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str("2026-08-11T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .unwrap(),
+        base_timestamp: DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T12:00:00").unwrap(),
         import_id: "wait-ok".to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,
@@ -1163,8 +1162,7 @@ fn partial_remux_without_failed_or_stalled_wait_still_succeeds() {
         source_media: temporary.path().join("source.m4a"),
         journal_root: journal,
         day: "20260811".to_owned(),
-        base_timestamp: NaiveDateTime::parse_from_str("2026-08-11T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .unwrap(),
+        base_timestamp: DateTime::strptime("%Y-%m-%dT%H:%M:%S", "2026-08-11T12:00:00").unwrap(),
         import_id: "wait-partial".to_owned(),
         stream: "import.audio".to_owned(),
         facet: None,

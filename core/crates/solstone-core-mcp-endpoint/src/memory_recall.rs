@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rusqlite::{Connection, InterruptHandle};
 use solstone_core_format::agent_memory::{
     ChainPredecessor, Coordinate, MAX_METADATA_BYTES, OperationRecord, Origin, ReadyDocument,
@@ -115,7 +115,7 @@ pub(crate) fn recall(
     verified_identity: &str,
     credential_lineage: &str,
     args: RecallArgs,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> RecallPage {
     let source_key = SourceKey::from_verified_id(verified_identity);
     recall_until(
@@ -141,7 +141,7 @@ pub(crate) fn recall_until(
     source_key: &SourceKey,
     credential_lineage: &str,
     args: RecallArgs,
-    mut reference_date: NaiveDate,
+    mut reference_date: Date,
     deadline: Instant,
 ) -> RecallPage {
     let boundary = QueryBoundary::OwnMemory {
@@ -445,7 +445,7 @@ fn mint_cursor(
     source_key: &SourceKey,
     query: Option<String>,
     compiled: &OwnMemoryQuery,
-    reference_date: NaiveDate,
+    reference_date: Date,
     anchor: (String, String),
     anchor_inclusive: bool,
 ) -> Result<String, ReferenceError> {
@@ -549,7 +549,7 @@ fn row_matches(
         && cached_origin == *origin
         && cached_chain == ready.chain
         && row.creation_label == origin.creation_label
-        && row.created_at == origin.created_at.to_rfc3339()
+        && row.created_at == solstone_core_time::utc_rfc3339(origin.created_at)
 }
 
 fn coverage_in_view(
@@ -868,7 +868,6 @@ fn coverage_io_failure(deadline: Instant) -> Coverage {
 mod tests {
     use super::*;
     #[cfg(feature = "full-tests")]
-    use chrono::{TimeZone, Utc};
     #[cfg(feature = "full-tests")]
     use solstone_core_format::agent_memory::{OriginKind, Readiness, digest as note_digest};
 
@@ -928,14 +927,14 @@ mod tests {
                         source_key: source_key.as_str().to_owned(),
                         credential_lineage: credential_lineage.to_owned(),
                         query: query.as_deref().map(normalize_query),
-                        reference_date: NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+                        reference_date: jiff::civil::date(2026, 9, 14),
                         compiled_mode: compile_own_memory_query(
                             args.query.as_deref(),
                             OwnMemoryDateFilters {
                                 day: day.clone(),
                                 ..OwnMemoryDateFilters::default()
                             },
-                            NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+                            jiff::civil::date(2026, 9, 14),
                         )
                         .mode,
                         effective_date: solstone_core_indexer_query::EffectiveDateConstraint::Exact(
@@ -999,7 +998,7 @@ mod tests {
                     continuation: Some(token),
                     ..args.clone()
                 },
-                NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+                jiff::civil::date(2026, 9, 14),
             )
         };
         let matching = recall_with(&codec, "credential-lineage-a", token.clone());
@@ -1086,7 +1085,7 @@ mod tests {
         );
         let stream = format!("agent-memory-{}", source.component());
         let day = "20260102";
-        let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        let created_at = "2026-01-02T03:04:05Z".parse::<jiff::Timestamp>().unwrap();
         let operation_dir = journal
             .path()
             .join("config/agent-memory")
@@ -1213,7 +1212,7 @@ mod tests {
                 rusqlite::params![
                     path, coordinate.day, coordinate.stream, coordinate.segment,
                     source.as_str(), bytes, serde_json::to_string(&origin).unwrap(),
-                    ready.digest, ready.byte_count as i64, created_at.to_rfc3339(),
+                    ready.digest, ready.byte_count as i64, solstone_core_time::utc_rfc3339(created_at),
                     origin.creation_label, serde_json::to_string(&ready.chain).unwrap()
                 ],
             ).unwrap();
@@ -1250,7 +1249,7 @@ mod tests {
             "recall-fixture-source",
             "recall-fixture-credential",
             RecallArgs::default(),
-            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            jiff::civil::date(2026, 1, 2),
         );
         assert_eq!(first.notes.len(), 2);
         assert_eq!(
@@ -1282,7 +1281,7 @@ mod tests {
                 continuation: Some(continuation),
                 ..RecallArgs::default()
             },
-            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            jiff::civil::date(2026, 1, 2),
         );
         assert_eq!(next.notes.len(), 1);
         assert_eq!(
@@ -1311,7 +1310,7 @@ mod tests {
                 limit: Some(1),
                 ..RecallArgs::default()
             },
-            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            jiff::civil::date(2026, 1, 2),
         );
         assert_eq!(first.notes.len(), 1);
         let next = recall(
@@ -1326,7 +1325,7 @@ mod tests {
                 continuation: first.continuation,
                 ..RecallArgs::default()
             },
-            NaiveDate::from_ymd_opt(2026, 1, 3).unwrap(),
+            jiff::civil::date(2026, 1, 3),
         );
         assert_eq!(next.notes.len(), 1);
         assert_ne!(first.notes[0].path, next.notes[0].path);
@@ -1373,7 +1372,7 @@ mod tests {
             },
             "needle light original",
             "light-operation",
-            Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+            "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
         )
         .unwrap() else {
             panic!("writer fixture must store");
@@ -1387,7 +1386,7 @@ mod tests {
             "light-source",
             "light-credential",
             RecallArgs::default(),
-            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            jiff::civil::date(2026, 1, 2),
         );
         assert!(recalled.complete, "{:?}", recalled.reason);
         assert_eq!(recalled.notes.len(), 1);
@@ -1422,7 +1421,7 @@ mod tests {
                 "scan-source",
                 "scan-credential",
                 RecallArgs::default(),
-                NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+                jiff::civil::date(2026, 1, 2),
             )
         };
         let unused = recall_now();
@@ -1440,7 +1439,7 @@ mod tests {
             },
             "needle exact original",
             "scan-operation",
-            Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap(),
+            "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
         )
         .unwrap() else {
             panic!("writer fixture must store");
@@ -1568,7 +1567,7 @@ mod tests {
                 "recall-fixture-source",
                 "recall-fixture-credential",
                 RecallArgs::default(),
-                NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+                jiff::civil::date(2026, 1, 2),
             );
             assert_eq!(page.reason, None);
             assert!(page.complete);
@@ -1620,7 +1619,7 @@ mod tests {
         use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
         let source = SourceKey::from_verified_id("measurement-source");
         let stream = format!("agent-memory-{}", source.component());
-        let created_at = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
+        let created_at = "2026-09-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
         for ordinal in 0..128 {
             let AppendResult::Stored(receipt) = append_connection_memory(
                 journal.path(),
@@ -1631,7 +1630,7 @@ mod tests {
                 },
                 "needle exact memory",
                 &format!("saved-{ordinal}"),
-                created_at + chrono::Duration::seconds(ordinal),
+                created_at + jiff::SignedDuration::from_secs(ordinal),
             )
             .unwrap() else {
                 panic!("measurement writer must store");
@@ -1659,7 +1658,7 @@ mod tests {
                 },
                 "needle other source",
                 &format!("other-{ordinal}"),
-                created_at + chrono::Duration::seconds(ordinal),
+                created_at + jiff::SignedDuration::from_secs(ordinal),
             )
             .unwrap();
         }
@@ -1711,7 +1710,7 @@ mod tests {
                     query: query.map(str::to_owned),
                     ..RecallArgs::default()
                 },
-                NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+                jiff::civil::date(2026, 9, 1),
             );
             assert_eq!(page.reason, None);
             assert_eq!(page.notes.len(), DEFAULT_LIMIT);
@@ -1736,12 +1735,12 @@ mod tests {
         let browse = compile_own_memory_query(
             None,
             OwnMemoryDateFilters::default(),
-            NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+            jiff::civil::date(2026, 9, 1),
         );
         let terms = compile_own_memory_query(
             Some("needle"),
             OwnMemoryDateFilters::default(),
-            NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+            jiff::civil::date(2026, 9, 1),
         );
         let plans = [
             own_memory_candidate_statement(&boundary, &browse, None, true, 5).unwrap(),

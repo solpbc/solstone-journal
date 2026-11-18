@@ -14,7 +14,7 @@ workspace = true
 
 [dependencies]
 sha2.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 log.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
@@ -23,6 +23,7 @@ solstone-core-memory-original.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-speaker-id.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }

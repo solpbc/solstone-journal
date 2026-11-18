@@ -153,12 +153,12 @@ unsafe extern "C" fn provider(context: *mut c_void, destination: *const c_char) 
     fs::create_dir(destination.join("empty")).unwrap();
     let note = destination.join("note.md");
     fs::write(&note, b"# Picked notes\n\ncobalt iOS retained folder\n").unwrap();
-    let instant: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
+    let instant: jiff::Timestamp = "2026-10-14T09:00:00Z".parse().unwrap();
     fs::File::open(note)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(instant.timestamp().try_into().unwrap()),
+                + Duration::from_secs(instant.as_second().try_into().unwrap()),
         ))
         .unwrap();
     if let Some(path) = &context.corrupt_config {

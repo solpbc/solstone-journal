@@ -116,9 +116,8 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::put;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{Offset, Utc};
 use serde_json::Value;
-use solstone_core_journal_config::{owner_zone, zone_label};
+use solstone_core_journal_config::{owner_zone, zone_label, zone_name};
 #[cfg(feature = "host")]
 use solstone_core_sol_link::DeviceDoorAuthorization;
 #[cfg(feature = "host")]
@@ -2009,16 +2008,16 @@ async fn shell_api(
         Value::String(shell.version.to_owned()),
     );
     let zone = owner_zone(&journal.0);
-    let now = Utc::now().with_timezone(&zone);
-    let label = zone_label(Some(zone), now.offset().fix().local_minus_utc());
+    let now = jiff::Timestamp::now().to_zoned_datetime(zone.clone());
+    let label = zone_label(Some(&zone), now.offset().seconds());
     // `today` is for clients with no zone table of their own, like the
     // `solstone` CLI: the journal's day key, which this computer's may not be.
     payload.insert(
         "clock".to_string(),
         serde_json::json!({
-            "tz": zone.name(),
+            "tz": zone_name(&zone),
             "label": label,
-            "today": now.format("%Y%m%d").to_string(),
+            "today": solstone_core_time::day_key(now.date()),
         }),
     );
     match pinned::read_pinned_views(&journal.0) {

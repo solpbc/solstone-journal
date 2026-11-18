@@ -97,7 +97,7 @@ fn is_false(value: &bool) -> bool {
 fn valid_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|c| c.is_ascii_digit())
-        && chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(day).is_some()
 }
 
 pub fn read(journal: &Path) -> Result<BTreeMap<String, OwnerIntent>, String> {
@@ -203,7 +203,7 @@ pub fn register(journal: &Path, day: &str, from_scratch: bool) -> Result<OwnerIn
         owner_stopped: false,
         rebuild: None,
         restarted: false,
-        asked_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+        asked_at_ms: Some(jiff::Timestamp::now().as_millisecond()),
     };
     mutate(journal, |days| {
         days.insert(day.to_owned(), intent.clone());

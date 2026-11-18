@@ -3,7 +3,8 @@
 
 //! Daily-schedule hook stages.
 
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::SignedDuration;
+use jiff::civil::{Date, DateTime, Time};
 use serde_json::{Map, Value};
 use solstone_core_format::segment::{segment_key, segment_start_and_end_seconds};
 use solstone_core_journal_io::{PathOrDay, iter_segments};
@@ -112,7 +113,7 @@ pub(crate) fn apply_result_cancellable(
     let Some(primary) = value.get("primary").and_then(Value::as_str) else {
         return Ok(());
     };
-    if NaiveTime::parse_from_str(primary, "%H:%M").is_err() {
+    if Time::strptime("%H:%M", primary).is_err() {
         return Ok(());
     }
     solstone_core_system::schedule::mutate_schedule_entries(
@@ -137,32 +138,37 @@ pub(crate) fn apply_result_cancellable(
 fn generate_span_summary(
     journal: &std::path::Path,
     days: i64,
-    end_date: NaiveDate,
+    end_date: Date,
 ) -> Result<String, String> {
     if !(1..=366).contains(&days) {
         return Err("daily schedule lookback outside 1..=366".to_owned());
     }
-    let start_date = end_date - Duration::days(days - 1);
+    let start_date = end_date
+        .checked_sub(jiff::Span::new().days(days - 1))
+        .map_err(|e| e.to_string())?;
     let mut current = start_date;
     let mut lines = Vec::new();
     let mut days_with_data = 0;
     while current <= end_date {
-        let day = current.format("%Y%m%d").to_string();
+        let day = solstone_core_time::day_key(current);
         let spans = build_spans(segment_ranges(journal, &day)?);
         if !spans.is_empty() {
             days_with_data += 1;
-            lines.push(format!("{} ({}):", day, current.format("%A")));
+            lines.push(format!("{} ({}):", day, current.strftime("%A")));
             for (start, end) in spans {
                 lines.push(format!(
                     "  {} - {} ({})",
-                    start.format("%H:%M"),
-                    end.format("%H:%M"),
+                    start.strftime("%H:%M"),
+                    end.strftime("%H:%M"),
                     format_duration(start, end)
                 ));
             }
             lines.push(String::new());
         }
-        current += Duration::days(1);
+        let Ok(next) = current.tomorrow() else {
+            break;
+        };
+        current = next;
     }
     if days_with_data == 0 {
         return Ok("No activity data found for the past week.".to_owned());
@@ -176,8 +182,8 @@ fn generate_span_summary(
 fn segment_ranges(
     journal: &std::path::Path,
     day: &str,
-) -> Result<Vec<(NaiveDateTime, NaiveDateTime)>, String> {
-    let anchor = NaiveDate::from_ymd_opt(2000, 1, 1).expect("fixed date is valid");
+) -> Result<Vec<(DateTime, DateTime)>, String> {
+    let anchor = jiff::civil::date(2000, 1, 1);
     // Calendar notes say what the owner planned and body records what another
     // system recorded, not when the owner was active.
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
@@ -192,28 +198,33 @@ fn segment_ranges(
 
 /// A segment's window on its own day: the end is clamped to the day's final
 /// second, so a long segment never reads as activity into the next morning.
-fn parse_segment(key: &str, anchor: NaiveDate) -> Option<(NaiveDateTime, NaiveDateTime)> {
+fn parse_segment(key: &str, anchor: Date) -> Option<(DateTime, DateTime)> {
     let key = segment_key(key)?;
     let (times, end_seconds) = segment_start_and_end_seconds(&key)?;
-    let start = anchor.and_hms_opt(
-        u32::from(times.hour),
-        u32::from(times.minute),
-        u32::from(times.second),
-    )?;
-    let end = anchor.and_hms_opt(0, 0, 0)? + Duration::seconds(i64::try_from(end_seconds).ok()?);
+    let start = anchor.to_datetime(
+        Time::new(
+            i8::try_from(times.hour).ok()?,
+            i8::try_from(times.minute).ok()?,
+            i8::try_from(times.second).ok()?,
+            0,
+        )
+        .ok()?,
+    );
+    let end = anchor
+        .to_datetime(Time::midnight())
+        .checked_add(SignedDuration::from_secs(i64::try_from(end_seconds).ok()?))
+        .ok()?;
     Some((start, end))
 }
 
-fn build_spans(
-    segments: Vec<(NaiveDateTime, NaiveDateTime)>,
-) -> Vec<(NaiveDateTime, NaiveDateTime)> {
+fn build_spans(segments: Vec<(DateTime, DateTime)>) -> Vec<(DateTime, DateTime)> {
     let Some((mut span_start, mut span_end)) = segments.first().copied() else {
         return Vec::new();
     };
     let mut spans = Vec::new();
     for (start, end) in segments.into_iter().skip(1) {
-        if (start - span_end).num_seconds() > 300 {
-            if (span_end - span_start).num_minutes() >= 10 {
+        if start.duration_since(span_end).as_secs() > 300 {
+            if span_end.duration_since(span_start).as_mins() >= 10 {
                 spans.push((span_start, span_end));
             }
             span_start = start;
@@ -222,14 +233,14 @@ fn build_spans(
             span_end = span_end.max(end);
         }
     }
-    if (span_end - span_start).num_minutes() >= 10 {
+    if span_end.duration_since(span_start).as_mins() >= 10 {
         spans.push((span_start, span_end));
     }
     spans
 }
 
-fn format_duration(start: NaiveDateTime, end: NaiveDateTime) -> String {
-    let minutes = (end - start).num_seconds() / 60;
+fn format_duration(start: DateTime, end: DateTime) -> String {
+    let minutes = end.duration_since(start).as_secs() / 60;
     let (hours, minutes) = (minutes / 60, minutes % 60);
     match (hours, minutes) {
         (0, minutes) => format!("{minutes}m"),
@@ -267,11 +278,10 @@ mod tests {
         let ranges = segment_ranges(root, "20261019").unwrap();
         let starts = ranges
             .iter()
-            .map(|(start, _)| start.format("%H:%M").to_string())
+            .map(|(start, _)| start.strftime("%H:%M").to_string())
             .collect::<Vec<_>>();
         assert_eq!(starts, ["14:00", "14:05", "14:10"]);
-        let summary =
-            generate_span_summary(root, 1, NaiveDate::from_ymd_opt(2026, 10, 19).unwrap()).unwrap();
+        let summary = generate_span_summary(root, 1, jiff::civil::date(2026, 10, 19)).unwrap();
         assert!(summary.contains("14:00 - 14:15"), "{summary}");
         assert!(!summary.contains("09:40"), "{summary}");
     }
@@ -279,7 +289,7 @@ mod tests {
     #[test]
     fn parses_and_groups_reference_segment_ranges() {
         // Derived from solstone/talent/daily_schedule.py:18-79.
-        let day = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+        let day = jiff::civil::date(2000, 1, 1);
         let first = parse_segment("090000_600", day).unwrap();
         let second = parse_segment("091100_600_audio", day).unwrap();
         assert_eq!(build_spans(vec![first, second]).len(), 1);
@@ -288,10 +298,10 @@ mod tests {
 
     #[test]
     fn a_long_segment_stays_on_its_own_day_and_never_shortens_a_span() {
-        let day = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+        let day = jiff::civil::date(2000, 1, 1);
         let long = parse_segment("201347_42324", day).unwrap();
-        assert_eq!(long.0, day.and_hms_opt(20, 13, 47).unwrap());
-        assert_eq!(long.1, day.and_hms_opt(23, 59, 59).unwrap());
+        assert_eq!(long.0, day.at(20, 13, 47, 0));
+        assert_eq!(long.1, day.at(23, 59, 59, 0));
 
         let inside = parse_segment("210000_300", day).unwrap();
         assert_eq!(build_spans(vec![long, inside]), vec![long]);

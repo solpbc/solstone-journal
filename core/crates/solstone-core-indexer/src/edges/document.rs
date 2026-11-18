@@ -19,7 +19,7 @@ pub(crate) fn extract_document_edges(
     };
 
     let (anchor, segment) = segment_ref(&context.path)?;
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
+    let ts = segment_start_ts_ms(&context.day, &segment, &resolver.owner_timezone()?)?;
     let mut resolved = BTreeMap::new();
     for party in parties {
         let Value::Object(party) = party else {

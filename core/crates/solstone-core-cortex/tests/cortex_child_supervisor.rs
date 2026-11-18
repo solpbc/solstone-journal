@@ -609,11 +609,12 @@ fn reserved_ids_isolate_cancellation_finalization_and_recovery() {
         assert!(log.contains(expected), "{log}");
         assert!(!work[index].active.exists());
     }
-    let day = chrono::DateTime::from_timestamp_millis(work[0].use_id.parse().unwrap())
-        .unwrap()
-        .with_timezone(&chrono::Local)
-        .format("%Y%m%d")
-        .to_string();
+    let day = solstone_core_time::day_key(
+        jiff::Timestamp::from_millisecond(work[0].use_id.parse().unwrap())
+            .unwrap()
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .date(),
+    );
     let rows = fs::read_to_string(
         directory
             .path()

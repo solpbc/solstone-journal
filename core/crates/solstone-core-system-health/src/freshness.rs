@@ -3,7 +3,8 @@
 
 //! Summary freshness, age formatting, template constants, and verdict composition.
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 
@@ -57,40 +58,39 @@ impl Serialize for SummaryFreshness {
     }
 }
 
-pub fn parse_summary_time(value: &str) -> Option<DateTime<Utc>> {
+pub fn parse_summary_time(value: &str) -> Option<Timestamp> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return None;
     }
-    DateTime::parse_from_rfc3339(trimmed)
+    solstone_core_time::parse_rfc3339(trimmed)
         .ok()
-        .map(|time| time.with_timezone(&Utc))
+        .map(|time| time.timestamp())
         .or_else(|| {
-            trimmed
-                .parse::<chrono::NaiveDateTime>()
+            solstone_core_time::parse_civil_datetime(trimmed)
                 .ok()
-                .map(|time| DateTime::from_naive_utc_and_offset(time, Utc))
+                .and_then(|time| Offset::UTC.to_timestamp(time).ok())
         })
 }
 
-pub fn summary_freshness(generated_at: Option<&str>, now: DateTime<Utc>) -> SummaryFreshness {
+pub fn summary_freshness(generated_at: Option<&str>, now: Timestamp) -> SummaryFreshness {
     let Some(raw) = generated_at else {
         return SummaryFreshness::Unknown;
     };
     let Some(generated) = parse_summary_time(raw) else {
         return SummaryFreshness::Unknown;
     };
-    if generated - now > Duration::milliseconds(FUTURE_SKEW_TOLERANCE_MS) {
+    if generated - now > SignedDuration::from_millis(FUTURE_SKEW_TOLERANCE_MS) {
         return SummaryFreshness::Unknown;
     }
-    if now - generated > Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) {
+    if now - generated > SignedDuration::from_hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) {
         return SummaryFreshness::Stale;
     }
     SummaryFreshness::Fresh
 }
 
-pub fn format_summary_age(delta: Duration) -> String {
-    let seconds = delta.num_seconds().max(0);
+pub fn format_summary_age(delta: SignedDuration) -> String {
+    let seconds = delta.as_secs().max(0);
     let minutes = (seconds / 60).max(1);
     let hours = seconds / 3600;
     let days = seconds / 86400;
@@ -215,7 +215,7 @@ pub struct BacklogStatusEvaluation {
 pub fn evaluate_backlog_status(
     backlog: Option<&Map<String, Value>>,
     generated_at: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> BacklogStatusEvaluation {
     let Some(backlog) = backlog else {
         return BacklogStatusEvaluation {

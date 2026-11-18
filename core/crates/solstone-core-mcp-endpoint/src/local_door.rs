@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use solstone_core_convey_http::listener::{LoopbackListeners, bind_loopback};
 use solstone_core_journal_config::{
@@ -62,7 +62,8 @@ impl LocalDoorRun {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalDoorState {
     pub listening: bool,
-    pub observed_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub observed_at: Timestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -78,7 +79,7 @@ pub fn write_local_door_state(journal_root: &Path, listening: bool, reason: Opti
     // a crash leaves the last record; until that record ages out of the reader window a turn-off can reach its wait bound, and the agents page can keep showing the door open until the owner reloads.
     let state = LocalDoorState {
         listening,
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
         reason: reason.map(str::to_owned),
     };
     let path = journal_root.join(LOCAL_DOOR_STATE_PATH);
@@ -248,7 +249,7 @@ async fn run_direct_doors(
         relay_detail: None,
         relay_observed_at: None,
         dns_addresses: Vec::new(),
-        observed_at: chrono::Utc::now(),
+        observed_at: Timestamp::now(),
     });
     if !matches!(lan_result, Ok(Ok(()))) || !matches!(byo_result, Ok(Ok(()))) {
         return Err(McpServiceError::Listener);
@@ -531,7 +532,7 @@ fn write_terminal_local_state(state: &DoorStateWriter) {
 fn write_local_state_at_root(state: &DoorStateWriter, listening: bool, reason: Option<&str>) {
     state.publish_local(&LocalDoorState {
         listening,
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
         reason: reason.map(str::to_owned),
     });
 }

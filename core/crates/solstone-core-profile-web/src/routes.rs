@@ -11,7 +11,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::{Timestamp, ZonedDateTime};
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -45,10 +45,8 @@ pub(crate) struct ActiveQuery {
 
 /// The current instant in the journal's owner zone: activity days are the
 /// owner's days.
-fn local_now(journal: &std::path::Path) -> DateTime<FixedOffset> {
-    Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .fixed_offset()
+fn local_now(journal: &std::path::Path) -> ZonedDateTime {
+    Timestamp::now().to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
 }
 
 pub(crate) async fn full(
@@ -61,7 +59,7 @@ pub(crate) async fn full(
         &name,
         parse_facets(query.facets.as_deref()).as_deref(),
         truthy(query.include_mentions.as_deref()),
-        local_now(&state.journal_root),
+        &local_now(&state.journal_root),
     ) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -70,7 +68,7 @@ pub(crate) async fn full(
 }
 
 pub(crate) async fn brief(State(state): State<RouteState>, Path(name): Path<String>) -> Response {
-    match profile::brief(&state.journal_root, &name, local_now(&state.journal_root)) {
+    match profile::brief(&state.journal_root, &name, &local_now(&state.journal_root)) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
         Err(error) => internal_error(error),
@@ -86,7 +84,7 @@ pub(crate) async fn cadence(
         &state.journal_root,
         &name,
         truthy(query.include_mentions.as_deref()),
-        local_now(&state.journal_root),
+        &local_now(&state.journal_root),
     ) {
         Ok(Some(cadence)) => Json(cadence).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -106,7 +104,7 @@ pub(crate) async fn active(
     match profile::list_active(
         &state.journal_root,
         window_days,
-        local_now(&state.journal_root),
+        &local_now(&state.journal_root),
     ) {
         Ok(items) => {
             let total = items.len();
@@ -153,8 +151,15 @@ fn parse_window_days(value: Option<&str>) -> Result<i64, &'static str> {
     if window_days <= 0 {
         return Err("window_days must be positive");
     }
+    if window_days > MAX_WINDOW_DAYS {
+        return Err("window_days must be at most 36500");
+    }
     Ok(window_days)
 }
+
+/// A century of days. Each day in the window costs one read per facet, so an
+/// unbounded window could hold the journal busy or exhaust its memory.
+const MAX_WINDOW_DAYS: i64 = 36_500;
 
 fn entity_not_found(name: &str) -> Response {
     error_envelope(
@@ -189,6 +194,14 @@ fn internal_error(error: ProfileError) -> Response {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_activity_window_is_bounded() {
+        assert_eq!(super::parse_window_days(None), Ok(30));
+        assert_eq!(super::parse_window_days(Some("36500")), Ok(36_500));
+        assert!(super::parse_window_days(Some("36501")).is_err());
+        assert!(super::parse_window_days(Some("0")).is_err());
+    }
+
     use axum::{
         Router,
         body::{Body, to_bytes},

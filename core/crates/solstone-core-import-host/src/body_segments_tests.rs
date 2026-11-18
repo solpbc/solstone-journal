@@ -207,7 +207,7 @@ fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_comes_back() {
             stream: STREAM.to_owned(),
             dir: "060000_3600".to_owned(),
         }],
-        &chrono::Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         RemovalReason::OwnerSegmentDelete,
         "test",
     );
@@ -251,7 +251,7 @@ fn a_deleted_card_stays_deleted_and_rows_beside_it_come_back_after_their_own_del
                 stream: STREAM.to_owned(),
                 dir: key.to_owned(),
             }],
-            &chrono::Utc::now().to_rfc3339(),
+            &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
             RemovalReason::OwnerSegmentDelete,
             "test",
         );
@@ -1148,7 +1148,7 @@ fn delete(root: &Path, day: &str, key: &str) {
             stream: STREAM.to_owned(),
             dir: key.to_owned(),
         }],
-        &chrono::Utc::now().to_rfc3339(),
+        &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         RemovalReason::OwnerSegmentDelete,
         "test",
     );
@@ -1593,11 +1593,10 @@ fn at_another_offset(records: &[String]) -> Vec<String> {
             while let Some(at) = rest.find(" -0600") {
                 let (head, tail) = rest.split_at(at);
                 let (head, time) = head.split_at(head.len() - 19);
-                let time = chrono::NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S")
-                    .unwrap()
-                    + chrono::Duration::hours(2);
+                let time = jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", time).unwrap()
+                    + jiff::SignedDuration::from_hours(2);
                 out.push_str(head);
-                out.push_str(&time.format("%Y-%m-%d %H:%M:%S -0400").to_string());
+                out.push_str(&time.strftime("%Y-%m-%d %H:%M:%S -0400").to_string());
                 rest = &tail[" -0600".len()..];
             }
             out.push_str(rest);
@@ -1960,20 +1959,25 @@ fn failures_with_a_published_day_between_them_arent_in_a_row() {
     let scratch = tempfile::tempdir().unwrap();
     // Every other day holds one stuck window, more of them than stop a run if they
     // were in a row; the days between publish whole.
-    let days: Vec<chrono::NaiveDate> = (0..140)
-        .map(|n| chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap() + chrono::Duration::days(n))
+    let days: Vec<Date> = (0..140)
+        .map(|n| jiff::civil::date(2026, 3, 1) + jiff::Span::new().days(n))
         .collect();
     let records: Vec<String> = days
         .iter()
-        .map(|day| heart(&format!("{} 06:31:10 -0600", day.format("%Y-%m-%d")), "70"))
+        .map(|day| {
+            heart(
+                &format!("{} 06:31:10 -0600", day.strftime("%Y-%m-%d")),
+                "70",
+            )
+        })
         .collect();
     for day in days.iter().step_by(2) {
-        stuck_window(root, &day.format("%Y%m%d").to_string(), "060000_3600");
+        stuck_window(root, &solstone_core_time::day_key(*day), "060000_3600");
     }
     let source = export(scratch.path(), &records);
     let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
     assert!(!one.finished);
-    let last = days.last().unwrap().format("%Y%m%d").to_string();
+    let last = solstone_core_time::day_key(*days.last().unwrap());
     assert!(
         window(root, &last, "060000_3600")
             .join("stream.json")
@@ -1987,12 +1991,17 @@ fn a_stream_that_takes_no_window_stops_the_run_though_each_day_holds_only_one() 
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
-    let days: Vec<chrono::NaiveDate> = (0..70)
-        .map(|n| chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap() + chrono::Duration::days(n))
+    let days: Vec<Date> = (0..70)
+        .map(|n| jiff::civil::date(2026, 3, 1) + jiff::Span::new().days(n))
         .collect();
     let records: Vec<String> = days
         .iter()
-        .map(|day| heart(&format!("{} 06:31:10 -0600", day.format("%Y-%m-%d")), "70"))
+        .map(|day| {
+            heart(
+                &format!("{} 06:31:10 -0600", day.strftime("%Y-%m-%d")),
+                "70",
+            )
+        })
         .collect();
     let source = export(scratch.path(), &records);
     let record = root.join("streams").join(format!("{STREAM}.json"));

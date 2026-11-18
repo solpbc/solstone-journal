@@ -3,9 +3,10 @@
 
 //! `_solstone_processing` records for transcription outcomes.
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_processing_record::vocab;
+use solstone_core_time::{Precision, utc_z};
 
 /// Why successfully decoded audio produced no transcript.
 #[derive(Clone, Copy)]
@@ -58,7 +59,7 @@ fn record(state: &str, reason_code: &str, input_size: u64) -> Value {
         "reason_code": reason_code,
         "handler": vocab::HANDLER_TRANSCRIBE,
         "input_size": input_size,
-        "attempted_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        "attempted_at": utc_z(Timestamp::now(), Precision::Secs),
     })
 }
 
@@ -68,7 +69,6 @@ pub(crate) fn backend_failure_record(input_size: u64, reason: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
     use solstone_core_processing_record::vocab;
 
     use super::{
@@ -102,7 +102,7 @@ mod tests {
             assert_eq!(record["handler"], vocab::HANDLER_TRANSCRIBE);
             assert_eq!(record["input_size"], input_size);
             assert!(record.get("attempts").is_none());
-            DateTime::parse_from_rfc3339(
+            solstone_core_time::parse_rfc3339(
                 record["attempted_at"]
                     .as_str()
                     .expect("attempted_at must be a string"),

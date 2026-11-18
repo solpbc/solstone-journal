@@ -11,7 +11,8 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
-    use chrono::{Duration, TimeZone, Utc};
+    use jiff::tz::{Offset, TimeZone};
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -19,6 +20,14 @@ mod tests {
     use crate::search_index::{IndexMetadata, evaluate_search_index};
     use crate::{Clock, backlog, routes_with_clock};
     use solstone_core_system_health::INDEX_TEXT_OK;
+
+    fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        jiff::civil::date(year, month, day)
+            .at(hour, minute, second, 0)
+            .to_zoned_datetime(TimeZone::UTC)
+            .unwrap()
+            .timestamp()
+    }
 
     #[cfg(feature = "full-tests")]
     #[tokio::test]
@@ -43,7 +52,7 @@ mod tests {
         )
         .unwrap();
         for (hour, expected) in [(9, "window_open"), (13, "waiting_for_window")] {
-            let now = Utc.with_ymd_and_hms(2026, 10, 20, hour, 0, 0).unwrap();
+            let now = utc(2026, 10, 20, hour, 0, 0);
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
             let response = router
                 .oneshot(
@@ -59,11 +68,11 @@ mod tests {
                     .unwrap();
             assert_eq!(body["segment_backlog"]["drain_state"], expected);
             assert_eq!(body["segment_backlog"]["not_sensed"], 1);
-            let local = now.with_timezone(&chrono_tz::America::Denver);
+            let local = now.to_zoned_datetime(solstone_core_time::zone("America/Denver").unwrap());
             let full = crate::journal_data::build_health_report(
                 root,
-                (local.date_naive(), local.date_naive()),
-                local,
+                (local.date(), local.date()),
+                &local,
             )
             .unwrap();
             assert_eq!(
@@ -76,7 +85,7 @@ mod tests {
             // A media-only read has no dependency on the full report's facet inventory.
             fs::remove_dir(root.join("facets")).unwrap();
             std::os::unix::fs::symlink("facets", root.join("facets")).unwrap();
-            let now = Utc.with_ymd_and_hms(2026, 10, 20, 9, 0, 0).unwrap();
+            let now = utc(2026, 10, 20, 9, 0, 0);
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
             let narrow = router
                 .clone()
@@ -138,7 +147,7 @@ mod tests {
         let root = temp.path();
         let sqlite = root.join("indexer/journal.sqlite");
         let wal = root.join("indexer/journal.sqlite-wal");
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::from_second(1_800_000_000).unwrap();
         let now_sys = UNIX_EPOCH + StdDuration::from_secs(1_800_000_000);
 
         let stub = StubIndexMetadata::new();
@@ -244,14 +253,14 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
 
-        let now = Utc::now();
-        let fixed_now = chrono::DateTime::<chrono::FixedOffset>::from(now);
+        let now = Timestamp::now();
+        let fixed_now = solstone_core_time::at_offset(now, Offset::UTC);
 
         // 1. Missing indexer database -> note pushed
         let (_synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
             &crate::journal_data::report::ScanAggregate::default(),
-            fixed_now,
+            &fixed_now,
         )
         .unwrap();
         assert!(
@@ -265,7 +274,7 @@ mod tests {
         let (synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
             &crate::journal_data::report::ScanAggregate::default(),
-            fixed_now,
+            &fixed_now,
         )
         .unwrap();
         assert_eq!(synth.search_index.state, "failing");
@@ -279,7 +288,7 @@ mod tests {
         // not in it -> the attempt note
         fs::remove_file(root.join("indexer/journal.sqlite")).unwrap();
         drop(solstone_core_indexer_store::db::open_index(root).expect("open index"));
-        let day = now.format("%Y%m%d").to_string();
+        let day = Offset::UTC.to_datetime(now).strftime("%Y%m%d").to_string();
         fs::create_dir_all(root.join("chronicle").join(&day).join("talents")).unwrap();
         fs::write(
             root.join("chronicle").join(&day).join("talents/test.md"),
@@ -289,7 +298,7 @@ mod tests {
         let health_dir = root.join("chronicle").join(&day).join("health");
         fs::create_dir_all(&health_dir).unwrap();
         let record = json!({
-            "ts": now.timestamp_millis(),
+            "ts": now.as_millisecond(),
             "event": "index.attempt",
             "path": format!("{day}/talents/test.md"),
             "outcome": "failed",
@@ -299,7 +308,7 @@ mod tests {
         let (synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
             &crate::journal_data::report::ScanAggregate::default(),
-            fixed_now,
+            &fixed_now,
         )
         .unwrap();
         assert_eq!(synth.search_index.failed, 1);
@@ -315,9 +324,9 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let stats = json!({
-            "generated_at": now.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(now),
             "backlog": {
                 "pending_days": 1,
                 "stuck_days": 0,
@@ -366,7 +375,10 @@ mod tests {
                 assert_eq!(backlog["pending_days"], 1);
                 assert_eq!(backlog["oldest_pending_day"], "20990101");
                 assert_eq!(backlog["freshness"]["state"], "fresh");
-                assert_eq!(backlog["freshness"]["generated_at"], now.to_rfc3339());
+                assert_eq!(
+                    backlog["freshness"]["generated_at"],
+                    solstone_core_time::utc_rfc3339(now)
+                );
                 assert_eq!(backlog["unfinished_activities"]["activities"], 2);
                 assert_eq!(backlog["unfinished_activities"]["day_count"], 1);
                 assert_eq!(backlog["unfinished_activities"]["oldest_day"], "20990101");
@@ -384,7 +396,7 @@ mod tests {
             });
     }
 
-    fn state_body(root: &Path, now: chrono::DateTime<Utc>) -> Value {
+    fn state_body(root: &Path, now: Timestamp) -> Value {
         let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -410,7 +422,7 @@ mod tests {
     fn a_summary_that_has_not_come_up_yet_is_calm_on_health() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // No way to think chosen: the nightly run is off, and search makes no claim.
         let body = state_body(root, now);
@@ -429,8 +441,8 @@ mod tests {
         )
         .unwrap();
         let today = now
-            .with_timezone(&chrono::Local)
-            .format("%Y%m%d")
+            .to_zoned_datetime(TimeZone::system())
+            .strftime("%Y%m%d")
             .to_string();
         fs::create_dir_all(root.join("chronicle").join(&today)).unwrap();
         let body = state_body(root, now);
@@ -446,7 +458,7 @@ mod tests {
 
         // The injected clock decides: three days on, the first night has passed
         // with no summary, so it is unclear again.
-        let later = state_body(root, now + Duration::days(3));
+        let later = state_body(root, now + SignedDuration::from_hours(24 * 3));
         assert!(later["backlog"]["not_yet"].is_null());
         assert_eq!(
             later["backlog"]["verdict"],
@@ -467,7 +479,7 @@ mod tests {
     fn saved_thinking_lane_is_reflected_on_health() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        let now = Utc::now();
+        let now = Timestamp::now();
         fs::create_dir_all(root.join("config")).unwrap();
 
         for (choice, lane) in [
@@ -495,11 +507,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::from_second(1_800_000_000).unwrap();
         // Stats generated 40 hours before `now` -> stale
-        let old_time = now - Duration::hours(40);
+        let old_time = now - SignedDuration::from_hours(40);
         let stats = json!({
-            "generated_at": old_time.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(old_time),
             "backlog": {
                 "pending_days": 0,
                 "stuck_days": 0
@@ -613,7 +625,7 @@ mod tests {
         fs::create_dir_all(root_control.join("chronicle").join(day)).unwrap();
 
         let t_secs = 1_800_000_000i64;
-        let t = Utc.timestamp_opt(t_secs, 0).unwrap();
+        let t = Timestamp::from_second(t_secs).unwrap();
         let (talent_root, apps_root) =
             solstone_core_system::daily_coverage::package_roots().unwrap();
 
@@ -663,7 +675,7 @@ mod tests {
             .unwrap();
 
         // Shortly after builder generated_at: T + 10s
-        let now_shortly = t + Duration::seconds(10);
+        let now_shortly = t + SignedDuration::from_secs(10);
 
         rt.block_on(async {
             // Control check
@@ -714,7 +726,10 @@ mod tests {
 
             // Aging tests:
             // +2h -> fresh
-            let r2 = routes_with_clock(root.to_path_buf(), Clock::fixed(t + Duration::hours(2)));
+            let r2 = routes_with_clock(
+                root.to_path_buf(),
+                Clock::fixed(t + SignedDuration::from_hours(2)),
+            );
             let resp = r2
                 .oneshot(
                     Request::get("/app/health/api/state")
@@ -729,7 +744,10 @@ mod tests {
             assert_eq!(b2["backlog"]["freshness"]["state"], "fresh");
 
             // +40h -> stale, pending_days == 0, unfinished activities 0 (omitted or 0), verdict contains "40 hours" and does not contain "1 day is still catching up."
-            let r40 = routes_with_clock(root.to_path_buf(), Clock::fixed(t + Duration::hours(40)));
+            let r40 = routes_with_clock(
+                root.to_path_buf(),
+                Clock::fixed(t + SignedDuration::from_hours(40)),
+            );
             let resp = r40
                 .oneshot(
                     Request::get("/app/health/api/state")
@@ -773,7 +791,9 @@ mod tests {
             );
 
             // Set generated_at one hour after now -> unknown future sentence
-            stats_val["generated_at"] = json!((now_shortly + Duration::hours(1)).to_rfc3339());
+            stats_val["generated_at"] = json!(solstone_core_time::utc_rfc3339(
+                now_shortly + SignedDuration::from_hours(1)
+            ));
             fs::write(&stats_path, stats_val.to_string()).unwrap();
 
             let r_fut = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
@@ -839,7 +859,7 @@ mod tests {
         fs::create_dir_all(root.join("chronicle").join(day)).unwrap();
 
         let t_secs = 1_800_000_000i64;
-        let t = Utc.timestamp_opt(t_secs, 0).unwrap();
+        let t = Timestamp::from_second(t_secs).unwrap();
         let (talent_root, apps_root) =
             solstone_core_system::daily_coverage::package_roots().unwrap();
 
@@ -882,7 +902,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let now_shortly = t + Duration::seconds(10);
+        let now_shortly = t + SignedDuration::from_secs(10);
         rt.block_on(async {
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = router
@@ -916,7 +936,7 @@ mod tests {
         let run_res2 = run_cli(
             &[],
             root,
-            t + Duration::seconds(10),
+            t + SignedDuration::from_secs(10),
             &talent_root,
             &apps_root,
             &FilesystemBacklogViewReader,
@@ -960,7 +980,7 @@ mod tests {
             fs::write(&wal, b"").unwrap();
         }
 
-        let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let now = Timestamp::from_second(1_800_000_000).unwrap();
         let eight_days_ago_secs = 1_800_000_000 - 8 * 86400;
 
         set_file_mtime(&sqlite, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
@@ -1026,8 +1046,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
 
-        let now = Utc::now();
-        let fixed_now = chrono::DateTime::<chrono::FixedOffset>::from(now);
+        let now = Timestamp::now();
+        let fixed_now = solstone_core_time::at_offset(now, Offset::UTC);
 
         fs::create_dir_all(root.join("indexer")).unwrap();
         let sqlite = root.join("indexer/journal.sqlite");
@@ -1035,12 +1055,12 @@ mod tests {
         fs::write(&sqlite, b"sqlite").unwrap();
         fs::write(&wal, b"wal").unwrap();
 
-        let one_hour_ago = now.timestamp() - 3600;
+        let one_hour_ago = now.as_second() - 3600;
         set_file_mtime(&sqlite, FileTime::from_unix_time(one_hour_ago, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(one_hour_ago, 0)).unwrap();
 
         let stats = json!({
-            "generated_at": now.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(now),
             "backlog": {
                 "degraded": true,
                 "indexer_phase": {
@@ -1055,7 +1075,7 @@ mod tests {
         let (synth, notes) = crate::journal_data::report::build_synthesis_health(
             root,
             &crate::journal_data::report::ScanAggregate::default(),
-            fixed_now,
+            &fixed_now,
         )
         .unwrap();
 
@@ -1115,7 +1135,7 @@ mod tests {
 
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = utc(2026, 10, 17, 12, 0, 0);
 
         // 1. Oneshot equality test
         let app = crate::routes_with_clock(root.to_path_buf(), Clock::fixed(now));

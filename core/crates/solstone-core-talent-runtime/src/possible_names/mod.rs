@@ -247,7 +247,7 @@ fn sidecar(plan: &Plan, accepted: &[usize]) -> Sidecar {
         plan.talent_version.clone(),
         plan.source.clone(),
         plan.registry_revision.clone(),
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         accepted
             .iter()
             .map(|index| {

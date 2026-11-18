@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDate;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::segment::{is_date_key, segment_parse, segment_start_and_end_seconds};
@@ -449,9 +448,16 @@ fn transcript_start_header(rel: &str) -> Option<String> {
         .skip(day_index + 1)
         .rev()
         .find_map(|part| segment_parse(part))?;
-    let day = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let start = day.and_hms_opt(times.hour.into(), times.minute.into(), times.second.into())?;
-    Some(start.format("Start: %Y-%m-%d %I:%M%P").to_string())
+    let day = solstone_core_time::parse_day(day)?;
+    let time = jiff::civil::Time::new(
+        i8::try_from(times.hour).ok()?,
+        i8::try_from(times.minute).ok()?,
+        i8::try_from(times.second).ok()?,
+        0,
+    )
+    .ok()?;
+    let start = day.to_datetime(time);
+    Some(start.strftime("Start: %Y-%m-%d %I:%M%P").to_string())
 }
 
 fn transcript_header_value(value: &Value) -> String {

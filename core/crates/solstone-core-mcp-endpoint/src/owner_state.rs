@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 
@@ -23,9 +23,10 @@ pub struct McpOwnerState {
     pub certificate_leg: String,
     pub relay_leg: String,
     pub detail: Option<String>,
-    #[serde(default)]
-    pub next_attempt_at: Option<DateTime<Utc>>,
-    pub observed_at: DateTime<Utc>,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    pub next_attempt_at: Option<Timestamp>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub observed_at: Timestamp,
 }
 
 pub fn read_mcp_owner_state(journal_root: &Path) -> Option<McpOwnerState> {
@@ -50,7 +51,7 @@ pub(crate) fn write_mcp_owner_state(
         relay_leg: legs.2.to_owned(),
         detail: detail.map(str::to_owned),
         next_attempt_at: None,
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
     };
     let _ = write_json(
         journal_root.join(STATE_PATH),
@@ -65,7 +66,7 @@ pub(crate) fn write_mcp_owner_state(
 pub(crate) fn write_mcp_rate_limit_state(
     journal_root: &Path,
     address: &str,
-    next_attempt_at: DateTime<Utc>,
+    next_attempt_at: Timestamp,
 ) {
     let state = McpOwnerState {
         schema: 1,
@@ -76,7 +77,7 @@ pub(crate) fn write_mcp_rate_limit_state(
         relay_leg: "waiting".to_owned(),
         detail: Some("the certificate authority's current allowance is used up. your journal is in line and will try again on its own. no action needed; you'll see it here when it's ready.".to_owned()),
         next_attempt_at: Some(next_attempt_at),
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
     };
     let _ = write_json(
         journal_root.join(STATE_PATH),
@@ -93,7 +94,7 @@ pub(crate) fn write_mcp_hold_state(
     hold: RegistrationHold,
     address: Option<&str>,
     legs: (&str, &str, &str),
-    next_attempt_at: DateTime<Utc>,
+    next_attempt_at: Timestamp,
 ) {
     let (status, detail) = match (hold, address.is_some()) {
         (RegistrationHold::NeedsSubscription, true) => (
@@ -138,7 +139,7 @@ pub(crate) fn write_mcp_hold_state(
         relay_leg: legs.2.to_owned(),
         detail: Some(detail.to_owned()),
         next_attempt_at: Some(next_attempt_at),
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
     };
     let _ = write_json(
         journal_root.join(STATE_PATH),
@@ -160,7 +161,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let journal_root = dir.path();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).expect("mkdir");
-        let next_attempt = Utc::now() + chrono::Duration::seconds(300);
+        let next_attempt = Timestamp::now() + jiff::SignedDuration::from_secs(300);
         for address in [None, Some("aaaqeaye.solstone.me")] {
             write_mcp_hold_state(
                 journal_root,
@@ -188,7 +189,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let journal_root = dir.path();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).expect("mkdir");
-        let next_attempt = Utc::now() + chrono::Duration::seconds(300);
+        let next_attempt = Timestamp::now() + jiff::SignedDuration::from_secs(300);
 
         // Without address (first-connect 402)
         write_mcp_hold_state(

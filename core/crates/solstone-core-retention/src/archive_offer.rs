@@ -8,7 +8,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_backup::archive_activity::PreparedArchiveOperation;
 use solstone_core_backup::archive_readback::{ReadOperation, ReadbackError};
 use solstone_core_journal_io::JournalRoot;
@@ -314,7 +315,7 @@ fn validate_selections(selections: &[OffloadOfferSelection]) -> Result<(), Offlo
         let target = &selection.target;
         if target.day.len() != 8
             || !target.day.bytes().all(|byte| byte.is_ascii_digit())
-            || NaiveDate::parse_from_str(&target.day, "%Y%m%d").is_err()
+            || solstone_core_time::parse_day(&target.day).is_none()
             || !crate::archive_catalog::codec::component(&target.stream)
             || !crate::archive_catalog::codec::component(&target.dir)
             || (selection.layout == SegmentLayout::Direct && target.stream != DEFAULT_STREAM)
@@ -436,8 +437,8 @@ fn acquire_claims(
 pub fn capture_offload_offers(
     operation: &PreparedArchiveOperation<'_>,
     selections: &[OffloadOfferSelection],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<ObservedOffloadOffers, OffloadOfferRefusal> {
     #[cfg(not(any(unix, windows)))]
     {
@@ -624,7 +625,7 @@ fn candidate_marks(
     observed: &ObservedOffloadOffers,
     read: &ReadOperation<'_>,
     proofs: Vec<OffloadProof>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Vec<Mark>, OffloadOfferRefusal> {
     use std::collections::BTreeMap;
 
@@ -699,7 +700,7 @@ fn candidate_marks(
 fn candidate_mark(
     group: &ObservedOffloadGroup,
     proof: OffloadProof,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Mark, OffloadOfferRefusal> {
     use crate::archive_proof::OffloadOffer;
     use crate::marks::{MarkState, Proposal};
@@ -719,7 +720,7 @@ fn candidate_mark(
         id: selected_id(&group.selection),
         class: RemovalClass::OffloadRawRelease,
         target: group.selection.target.clone(),
-        marked_at: now.to_rfc3339(),
+        marked_at: solstone_core_time::utc_rfc3339(now),
         proposal: Proposal {
             names: group.selection.names.clone(),
             bytes,
@@ -734,8 +735,8 @@ fn candidate_mark(
 fn check_current_metadata(
     observed: &ObservedOffloadOffers,
     policy: &crate::remove_marked::ReviewedPolicy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<(), OffloadOfferRefusal> {
     if ReviewedSettings::of(policy) != observed.settings {
         return Err(OffloadOfferRefusal::Changed);
@@ -777,8 +778,8 @@ fn check_current_metadata(
 fn check_current_inputs(
     observed: &ObservedOffloadOffers,
     policy: &crate::remove_marked::ReviewedPolicy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<(), OffloadOfferRefusal> {
     use std::ffi::OsStr;
     check_current_metadata(observed, policy, today, now)?;
@@ -849,8 +850,8 @@ fn preflight_verification(
     read: &ReadOperation<'_>,
     observed: &ObservedOffloadOffers,
     marks: &[Mark],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<(), OffloadOfferRefusal> {
     read.revalidate_admission()
         .map_err(OffloadOfferRefusal::Readback)?;
@@ -919,8 +920,8 @@ pub fn verify_offload_offers<'clock>(
     read: ReadOperation<'clock>,
     observed: ObservedOffloadOffers,
     proofs: Vec<OffloadProof>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<VerifiedOffloadOffers<'clock>, OffloadOfferFailure<'clock>> {
     let observed = Box::new(observed);
     #[cfg(any(unix, windows))]
@@ -1002,8 +1003,8 @@ fn check_active_witnesses(
 fn publish_with_approval(
     observed: &ObservedOffloadOffers,
     approval: crate::archive_approval::ArchiveApprovalRef<'_, '_>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<crate::mark_mutation::BoundMutationOutcome, OffloadOfferRefusal> {
     approval.revalidate_admission().map_err(admission_refusal)?;
     if !Arc::ptr_eq(approval.journal_root(), &observed.root)
@@ -1071,8 +1072,8 @@ fn publish_with_approval(
 /// The returned outcome retains all verification and native owners on failure.
 pub fn publish_offload_offers<'clock>(
     verified: VerifiedOffloadOffers<'clock>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> OffloadOfferOutcome<'clock> {
     #[cfg(any(unix, windows))]
     let publication =
@@ -1096,7 +1097,6 @@ pub fn publish_offload_offers<'clock>(
 )]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use solstone_core_backup::archive_admission::{ArchiveBudget, Clock};
@@ -1115,10 +1115,10 @@ mod tests {
         }
     }
 
-    pub(super) fn time() -> (NaiveDate, DateTime<Utc>) {
+    pub(super) fn time() -> (Date, Timestamp) {
         (
-            NaiveDate::from_ymd_opt(2026, 10, 10).unwrap(),
-            Utc.with_ymd_and_hms(2026, 10, 10, 0, 0, 0).unwrap(),
+            jiff::civil::date(2026, 10, 10),
+            "2026-10-10T00:00:00Z".parse::<Timestamp>().unwrap(),
         )
     }
 

@@ -161,7 +161,7 @@ impl DailyQueueWork {
         let day = day?;
         if day.len() != 8
             || !day.bytes().all(|c| c.is_ascii_digit())
-            || chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
+            || solstone_core_time::parse_day(day).is_none()
         {
             return None;
         }
@@ -3656,7 +3656,7 @@ fn read_work_policy(inner: &QueueInner) -> WorkPolicy {
 struct Selection {
     allowed: bool,
     own_endpoint: bool,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
     spending: WorkPolicy,
 }
 
@@ -3680,10 +3680,10 @@ impl Selection {
     }
 }
 
-fn selection_day(journal: &Path) -> chrono::NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive()
+fn selection_day(journal: &Path) -> jiff::civil::Date {
+    jiff::Timestamp::now()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+        .date()
 }
 
 fn normalize_request(request: ExecutionRequest, caps: &dyn CapResolver) -> Submission {
@@ -6505,7 +6505,7 @@ mod tests {
     }
 
     #[cfg(feature = "full-tests")]
-    fn selection(today: chrono::NaiveDate, spending: WorkPolicy) -> Selection {
+    fn selection(today: jiff::civil::Date, spending: WorkPolicy) -> Selection {
         Selection {
             allowed: true,
             own_endpoint: false,
@@ -7279,7 +7279,7 @@ mod tests {
             "120000_300",
         ];
         queue.submit(command_request(&command, "derived", None));
-        let date = |day| chrono::NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        let date = |day| jiff::civil::date(2026, 10, day);
         let selected = {
             let mut state = queue.inner.state.lock().unwrap();
             for submission in std::mem::take(&mut state.pending) {
@@ -7699,10 +7699,7 @@ mod tests {
             );
             let selected = take_ready(
                 &mut state,
-                selection(
-                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
-                    local_spending(),
-                ),
+                selection(jiff::civil::date(2026, 1, 11), local_spending()),
             );
             assert_eq!(selected.len(), 1);
             state.ready = false;
@@ -7724,10 +7721,7 @@ mod tests {
             enqueue(&mut state, &["journal", "maintenance"], "maintenance");
             let selected = take_ready(
                 &mut state,
-                selection(
-                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
-                    local_spending(),
-                ),
+                selection(jiff::civil::date(2026, 1, 11), local_spending()),
             );
             assert_eq!(
                 selected
@@ -7750,10 +7744,7 @@ mod tests {
             assert!(
                 take_ready(
                     &mut state,
-                    selection(
-                        chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
-                        local_spending()
-                    )
+                    selection(jiff::civil::date(2026, 1, 11), local_spending())
                 )
                 .is_empty()
             );
@@ -7764,10 +7755,7 @@ mod tests {
             let mut state = ready_state(&queue);
             let selected = take_ready(
                 &mut state,
-                selection(
-                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
-                    local_spending(),
-                ),
+                selection(jiff::civil::date(2026, 1, 11), local_spending()),
             );
             assert_eq!(selected.len(), 2);
             state.running.clear();

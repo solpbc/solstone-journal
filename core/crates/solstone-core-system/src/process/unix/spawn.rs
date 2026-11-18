@@ -18,7 +18,6 @@ use crate::lifecycle::{
     HOSTED_PARENT_LAUNCH_ID_ENV,
 };
 use crate::partition::partition_for;
-use chrono::Local;
 
 use super::super::events::{OutputStream, ProcessEvent, ProcessEventSink};
 use super::super::log::DailyLogWriter;
@@ -689,7 +688,7 @@ fn format_log_line(name: &str, stream: OutputStream, line: &str) -> String {
     };
     format!(
         "{} [{name}:{stream}] {line}\n",
-        Local::now().format("%Y-%m-%dT%H:%M:%S")
+        jiff::ZonedDateTime::now().strftime("%Y-%m-%dT%H:%M:%S")
     )
 }
 

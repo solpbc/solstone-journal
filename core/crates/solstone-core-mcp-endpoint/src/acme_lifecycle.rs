@@ -1548,8 +1548,8 @@ pub async fn run_renewal_lifecycle(
                                 crate::owner_state::write_mcp_rate_limit_state(
                                     root,
                                     params.hostname,
-                                    chrono::DateTime::<chrono::Utc>::from_timestamp(deadline, 0)
-                                        .unwrap_or_else(chrono::Utc::now),
+                                    jiff::Timestamp::new(deadline, 0)
+                                        .unwrap_or_else(|_| jiff::Timestamp::now()),
                                 );
                             }
                             loop_schedule = Some(sched);

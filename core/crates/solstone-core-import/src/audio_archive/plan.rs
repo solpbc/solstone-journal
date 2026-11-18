@@ -5,10 +5,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use chrono::{DateTime, Timelike, Utc};
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use solstone_core_format::audio_archive::build_stored_name;
+use solstone_core_time::day_key;
 
 use super::identity::{
     MemberIdentity, MemberStartEvidence, ResolvedOccurrence, resolve_start_evidence,
@@ -182,7 +183,7 @@ pub struct PlannedTile {
 pub struct AudioArchivePlan {
     pub settings: AudioArchiveSettings,
     pub stream: String,
-    pub owner_zone: Tz,
+    pub owner_zone: TimeZone,
     pub members: Vec<PlannedMember>,
     pub tiles: Vec<PlannedTile>,
     pub size: AudioArchiveSize,
@@ -191,7 +192,7 @@ pub struct AudioArchivePlan {
 /// Pure planner entry point.
 pub fn plan_audio_archive(
     members: &[AudioArchiveMemberInput],
-    owner_zone: Tz,
+    owner_zone: &TimeZone,
     settings: AudioArchiveSettings,
 ) -> Result<AudioArchivePlan, AudioArchiveError> {
     plan_excluding(members, owner_zone, settings, &HashMap::new())
@@ -199,7 +200,7 @@ pub fn plan_audio_archive(
 
 fn plan_excluding(
     members: &[AudioArchiveMemberInput],
-    owner_zone: Tz,
+    owner_zone: &TimeZone,
     settings: AudioArchiveSettings,
     exclusions: &HashMap<MemberIdentity, LeftOutReason>,
 ) -> Result<AudioArchivePlan, AudioArchiveError> {
@@ -405,7 +406,7 @@ fn plan_excluding(
     Ok(AudioArchivePlan {
         settings,
         stream,
-        owner_zone,
+        owner_zone: owner_zone.clone(),
         members: planned_members,
         tiles,
         size,
@@ -464,7 +465,7 @@ pub fn apply_exclusions(
             run_note: member.run_note.clone(),
         })
         .collect();
-    *plan = plan_excluding(&inputs, plan.owner_zone, plan.settings.clone(), &combined)?;
+    *plan = plan_excluding(&inputs, &plan.owner_zone, plan.settings.clone(), &combined)?;
     Ok(())
 }
 
@@ -510,8 +511,8 @@ pub fn compute_plan_size(members: &[PlannedMember], tiles: &[PlannedTile]) -> Au
 
 /// Simulate breaking a duration into owner-local civil 300s tiles across boundaries.
 pub fn simulate_parts(
-    start_instant: DateTime<Utc>,
-    owner_zone: Tz,
+    start_instant: Timestamp,
+    owner_zone: &TimeZone,
     duration_ms: i64,
 ) -> Result<Vec<SimulatedPart>, LeftOutReason> {
     if duration_ms <= 0 {
@@ -519,9 +520,8 @@ pub fn simulate_parts(
     }
 
     // End instant overflows DateTime representation; cannot settle owner-local boundary.
-    let end_instant = chrono::Duration::try_milliseconds(duration_ms)
-        .and_then(|dur| start_instant.checked_add_signed(dur));
-    if end_instant.is_none() {
+    let end_instant = start_instant.checked_add(SignedDuration::from_millis(duration_ms));
+    if end_instant.is_err() {
         return Err(LeftOutReason::UnsettledTime);
     }
 
@@ -531,13 +531,13 @@ pub fn simulate_parts(
     let mut remaining = duration_ms;
 
     while remaining > 0 {
-        let local = curr_instant.with_timezone(&owner_zone);
-        let day = local.format("%Y%m%d").to_string();
+        let local = curr_instant.to_zoned_datetime(owner_zone.clone());
+        let day = day_key(local.date());
 
-        let ms_of_day = ((local.hour() as i64 * 60 + local.minute() as i64) * 60
-            + local.second() as i64)
+        let ms_of_day = ((i64::from(local.hour()) * 60 + i64::from(local.minute())) * 60
+            + i64::from(local.second()))
             * 1000
-            + local.timestamp_subsec_millis() as i64;
+            + i64::from(local.subsec_nanosecond() / 1_000_000);
 
         let window_ms = (ms_of_day / AUDIO_ARCHIVE_WINDOW_MS) * AUDIO_ARCHIVE_WINDOW_MS;
         let offset_ms = ms_of_day - window_ms;
@@ -548,7 +548,7 @@ pub fn simulate_parts(
         let win_s = win_sec % 60;
         let segment_key = format!("{win_h:02}{win_m:02}{win_s:02}_{AUDIO_ARCHIVE_LEN_SECONDS}");
 
-        let w0 = (local.date_naive(), window_ms);
+        let w0 = (local.date(), window_ms);
         let window_limit = AUDIO_ARCHIVE_WINDOW_MS - offset_ms;
 
         let mut low = 1i64;
@@ -557,19 +557,18 @@ pub fn simulate_parts(
 
         while low <= high {
             let mid = low + (high - low) / 2;
-            let sample = match chrono::Duration::try_milliseconds(mid)
-                .and_then(|d| curr_instant.checked_add_signed(d))
-            {
-                Some(t) => t,
-                None => return Err(LeftOutReason::UnsettledTime),
+            let sample = match curr_instant.checked_add(SignedDuration::from_millis(mid)) {
+                Ok(t) => t,
+                Err(_) => return Err(LeftOutReason::UnsettledTime),
             };
-            let sample_local = sample.with_timezone(&owner_zone);
-            let sample_ms = ((sample_local.hour() as i64 * 60 + sample_local.minute() as i64) * 60
-                + sample_local.second() as i64)
-                * 1000
-                + sample_local.timestamp_subsec_millis() as i64;
+            let sample_local = sample.to_zoned_datetime(owner_zone.clone());
+            let sample_ms =
+                ((i64::from(sample_local.hour()) * 60 + i64::from(sample_local.minute())) * 60
+                    + i64::from(sample_local.second()))
+                    * 1000
+                    + i64::from(sample_local.subsec_nanosecond() / 1_000_000);
             let sample_win = (sample_ms / AUDIO_ARCHIVE_WINDOW_MS) * AUDIO_ARCHIVE_WINDOW_MS;
-            let sample_w = (sample_local.date_naive(), sample_win);
+            let sample_w = (sample_local.date(), sample_win);
 
             if sample_w != w0 {
                 first_diff = Some(mid);
@@ -607,11 +606,9 @@ pub fn simulate_parts(
         remaining -= part_len;
         curr_origin += part_len;
         if remaining > 0 {
-            curr_instant = match chrono::Duration::try_milliseconds(part_len)
-                .and_then(|d| curr_instant.checked_add_signed(d))
-            {
-                Some(t) => t,
-                None => return Err(LeftOutReason::UnsettledTime),
+            curr_instant = match curr_instant.checked_add(SignedDuration::from_millis(part_len)) {
+                Ok(t) => t,
+                Err(_) => return Err(LeftOutReason::UnsettledTime),
             };
         }
     }

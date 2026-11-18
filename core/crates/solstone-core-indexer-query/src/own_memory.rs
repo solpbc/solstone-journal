@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params_from_iter};
 use solstone_core_format::agent_memory::{
@@ -59,7 +59,7 @@ pub fn memory_row_matches_original(
     let Ok(cached_chain) = serde_json::from_str::<ChainPredecessor>(&row.chain_json) else {
         return false;
     };
-    let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&row.created_at) else {
+    let Ok(created_at) = solstone_core_time::parse_rfc3339(&row.created_at) else {
         return false;
     };
     row.path
@@ -77,7 +77,7 @@ pub fn memory_row_matches_original(
         && row.byte_count == ready.byte_count
         && row.creation_label == origin.creation_label
         && cached_origin == *origin
-        && created_at.with_timezone(&chrono::Utc) == ready.created_at
+        && created_at.timestamp() == ready.created_at
         && cached_chain == ready.chain
 }
 
@@ -107,7 +107,7 @@ pub struct OwnMemoryDateFilters {
 pub fn compile_own_memory_query(
     query: Option<&str>,
     filters: OwnMemoryDateFilters,
-    reference_date: NaiveDate,
+    reference_date: Date,
 ) -> OwnMemoryQuery {
     let compilation = compile_query(query.unwrap_or_default(), reference_date);
     let mode = match query {
@@ -372,15 +372,14 @@ fn append_date_predicate(sql: &mut String, values: &mut Vec<Value>, query: &OwnM
 
 #[cfg(test)]
 mod tests {
-    use chrono::{NaiveDate, TimeZone, Utc};
     use solstone_core_format::agent_memory::{
         OperationRecord, OriginKind, Readiness, digest, ready_document, validate_complete_original,
     };
 
     use super::*;
 
-    fn reference_date() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()
+    fn reference_date() -> Date {
+        jiff::civil::date(2026, 9, 1)
     }
 
     fn original_fixture() -> (MemoryOriginalRow, ReadyDocument) {
@@ -390,7 +389,9 @@ mod tests {
             operation_id: "op:1".into(),
             digest: digest(&bytes),
             byte_count: bytes.len(),
-            created_at: Utc.with_ymd_and_hms(2026, 9, 1, 3, 4, 5).unwrap(),
+            created_at: jiff::tz::Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 9, 1).at(3, 4, 5, 0))
+                .unwrap(),
             origin_kind: OriginKind::AgentMemory,
             creation_label: "test connection".into(),
             coordinate: Coordinate {
@@ -428,7 +429,7 @@ mod tests {
             origin_json: serde_json::to_string(&ready.origin).unwrap(),
             digest: ready.digest.clone(),
             byte_count: ready.byte_count,
-            created_at: ready.created_at.to_rfc3339(),
+            created_at: solstone_core_time::utc_rfc3339(ready.created_at),
             creation_label: ready.origin.creation_label.clone(),
             chain_json: serde_json::to_string(&ready.chain).unwrap(),
         };

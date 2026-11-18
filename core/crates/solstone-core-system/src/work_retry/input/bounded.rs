@@ -92,7 +92,7 @@ pub fn activity_input_bounded(
     record: &Map<String, Value>,
     checkpoint: impl Fn() -> Result<(), String>,
 ) -> Result<ActivityInputSnapshot, String> {
-    chrono::NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
+    solstone_core_time::parse_day(day).ok_or_else(|| format!("invalid day: {day}"))?;
     let spans = record
         .get("segments")
         .and_then(Value::as_array)

@@ -282,26 +282,26 @@ fn folder_timestamp_reads_bound_owner_zone_and_missing_config_without_admission(
     )
     .unwrap();
     let zone = solstone_core_journal_config::parse_zone("Pacific/Auckland").unwrap();
-    let before = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+    let before = jiff::Timestamp::now()
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string();
     let timestamp = prep.folder_timestamp().unwrap();
-    let after = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+    let after = jiff::Timestamp::now()
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string();
     assert!(timestamp.as_str() >= before.as_str() && timestamp.as_str() <= after.as_str());
     fs::remove_file(root.path().join("config/journal.json")).unwrap();
     let zone = solstone_core_journal_config::host_zone();
-    let before = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+    let before = jiff::Timestamp::now()
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string();
     let timestamp = prep.folder_timestamp().unwrap();
-    let after = chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d_%H%M%S")
+    let after = jiff::Timestamp::now()
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d_%H%M%S")
         .to_string();
     assert!(timestamp.as_str() >= before.as_str() && timestamp.as_str() <= after.as_str());
     assert_eq!(calls.load(Ordering::Acquire), 0);

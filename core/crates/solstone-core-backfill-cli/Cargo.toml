@@ -11,11 +11,12 @@ publish = false
 
 [dependencies]
 solstone-core-segment.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 serde_json.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"

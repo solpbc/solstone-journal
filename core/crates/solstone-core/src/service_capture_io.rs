@@ -6,7 +6,7 @@
 use std::io;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogFormat, OplogWriter, create_oplog_at},
@@ -14,7 +14,7 @@ use solstone_core_journal_io::{
 
 pub(super) fn open_service_oplog(
     journal: &Path,
-    opened: DateTime<FixedOffset>,
+    opened: &ZonedDateTime,
 ) -> Result<OplogWriter, String> {
     let root = JournalRoot::open(journal)
         .map_err(|error| format!("open journal for service capture: {error}"))?;

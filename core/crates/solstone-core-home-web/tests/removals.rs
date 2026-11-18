@@ -19,16 +19,15 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
 static EXECUTOR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-fn fixed_removal_now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 8, 30, 12, 0, 0)
-        .single()
+fn fixed_removal_now() -> jiff::Timestamp {
+    jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2026, 8, 30).at(12, 0, 0, 0))
         .expect("fixed removal clock")
 }
 

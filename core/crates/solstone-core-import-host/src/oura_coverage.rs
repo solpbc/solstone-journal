@@ -21,8 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
-use chrono::{DateTime, Datelike as _, NaiveDate, TimeZone as _, Utc};
-use chrono_tz::Tz;
+use jiff::civil::Date;
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Span, Timestamp};
 use serde::{Deserialize, Serialize};
 use solstone_core_import_sources::oura::{ENDPOINTS, Hole, HoleReason};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
@@ -74,8 +75,8 @@ impl Default for Coverage {
 /// heartrate's instants, the second the one after the last.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Claim {
-    Days(NaiveDate, NaiveDate),
-    Instants(DateTime<Utc>, DateTime<Utc>),
+    Days(Date, Date),
+    Instants(Timestamp, Timestamp),
 }
 
 /// Sorted half-open spans that never touch: days as day numbers, instants as
@@ -125,32 +126,43 @@ impl Spans {
     }
 }
 
-fn day_number(date: NaiveDate) -> i64 {
-    i64::from(date.num_days_from_ce())
+/// The day before the first of the common era, day number zero.
+const DAY_ZERO: Date = Date::constant(0, 12, 31);
+
+/// Days since the common era began, 0001-01-01 being day one.
+fn day_number(date: Date) -> i64 {
+    DAY_ZERO.duration_until(date).as_hours() / 24
 }
 
-fn day_of(number: i64) -> Option<NaiveDate> {
-    NaiveDate::from_num_days_from_ce_opt(i32::try_from(number).ok()?)
+fn day_of(number: i64) -> Option<Date> {
+    DAY_ZERO
+        .checked_add(Span::new().try_days(number).ok()?)
+        .ok()
 }
 
-fn day_text(date: NaiveDate) -> String {
-    date.format("%Y-%m-%d").to_string()
+fn day_text(date: Date) -> String {
+    date.strftime("%Y-%m-%d").to_string()
+}
+
+/// Whole seconds since the epoch, rounded down.
+fn whole_seconds(instant: Timestamp) -> i64 {
+    instant.as_second() - i64::from(instant.subsec_nanosecond() < 0)
 }
 
 fn instant_text(seconds: i64) -> String {
-    DateTime::<Utc>::from_timestamp(seconds, 0)
-        .map(|instant| instant.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+    Timestamp::from_second(seconds)
+        .map(|instant| solstone_core_time::utc_z(instant, solstone_core_time::Precision::Secs))
         .unwrap_or_default()
 }
 
 fn instant_of(text: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(text)
+    solstone_core_time::parse_rfc3339(text)
         .ok()
-        .map(|instant| instant.timestamp())
+        .map(|instant| whole_seconds(instant.timestamp()))
 }
 
-fn parse_day(text: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()
+fn parse_day(text: &str) -> Option<Date> {
+    Date::strptime("%Y-%m-%d", text).ok()
 }
 
 /// The span a hole touches: its Oura day, or heartrate's whole UTC hour.
@@ -168,7 +180,7 @@ fn hole_span(endpoint: &str, at: &str) -> Option<(i64, i64)> {
 fn claim_span(claim: Claim) -> (i64, i64) {
     match claim {
         Claim::Days(first, last) => (day_number(first), day_number(last) + 1),
-        Claim::Instants(from, to) => (from.timestamp(), to.timestamp()),
+        Claim::Instants(from, to) => (whole_seconds(from), whole_seconds(to)),
     }
 }
 
@@ -269,11 +281,11 @@ impl Coverage {
     pub(crate) fn unheld_spans(
         &self,
         endpoint: &str,
-        floor: NaiveDate,
-        trailing: NaiveDate,
-        today: NaiveDate,
-        zone: Tz,
-    ) -> Result<Vec<(NaiveDate, NaiveDate)>, String> {
+        floor: Date,
+        trailing: Date,
+        today: Date,
+        zone: &TimeZone,
+    ) -> Result<Vec<(Date, Date)>, String> {
         let stored = self.endpoints.get(endpoint);
         let covered = stored.map_or_else(|| Ok(Spans::default()), |e| e.spans(endpoint))?;
         let mut deferred = BTreeSet::new();
@@ -284,7 +296,7 @@ impl Coverage {
                 deferred.insert(day);
             }
         }
-        let held = |day: NaiveDate| {
+        let held = |day: Date| {
             let span = if endpoint == HEARTRATE {
                 owner_day_instants(day, zone)
             } else {
@@ -292,16 +304,16 @@ impl Coverage {
             };
             span.is_some_and(|span| covered.covers(span))
         };
-        let mut spans: Vec<(NaiveDate, NaiveDate)> = Vec::new();
+        let mut spans: Vec<(Date, Date)> = Vec::new();
         let mut day = floor;
         while day <= today {
             if day >= trailing || (!held(day) && !deferred.contains(&day)) {
                 match spans.last_mut() {
-                    Some(span) if span.1.succ_opt() == Some(day) => span.1 = day,
+                    Some(span) if span.1.tomorrow().ok() == Some(day) => span.1 = day,
                     _ => spans.push((day, day)),
                 }
             }
-            let Some(next) = day.succ_opt() else {
+            let Ok(next) = day.tomorrow() else {
                 break;
             };
             day = next;
@@ -313,16 +325,19 @@ impl Coverage {
 /// The owner days a set of claims covers, as inclusive `YYYYMMDD` ranges,
 /// each run of days whole: never the asked range, so a failed chunk's days
 /// stay out.
-pub(crate) fn claimed_days(claims: &BTreeMap<String, Vec<Claim>>, zone: Tz) -> Vec<[String; 2]> {
+pub(crate) fn claimed_days(
+    claims: &BTreeMap<String, Vec<Claim>>,
+    zone: &TimeZone,
+) -> Vec<[String; 2]> {
     let mut days = Spans::default();
     for claim in claims.values().flatten() {
         let (first, last) = match *claim {
             Claim::Days(first, last) => (first, last),
             Claim::Instants(from, to) => (
-                from.with_timezone(&zone).date_naive(),
-                (to - chrono::Duration::seconds(1))
-                    .with_timezone(&zone)
-                    .date_naive(),
+                from.to_zoned_datetime(zone.clone()).date(),
+                (to - SignedDuration::from_secs(1))
+                    .to_zoned_datetime(zone.clone())
+                    .date(),
             ),
         };
         days.add((day_number(first), day_number(last) + 1));
@@ -331,32 +346,32 @@ pub(crate) fn claimed_days(claims: &BTreeMap<String, Vec<Claim>>, zone: Tz) -> V
         .iter()
         .filter_map(|&(from, to)| {
             Some([
-                day_of(from)?.format("%Y%m%d").to_string(),
-                day_of(to - 1)?.format("%Y%m%d").to_string(),
+                solstone_core_time::day_key(day_of(from)?),
+                solstone_core_time::day_key(day_of(to - 1)?),
             ])
         })
         .collect()
 }
 
 /// The owner day a hole falls on.
-fn hole_day(endpoint: &str, at: &str, zone: Tz) -> Option<NaiveDate> {
+fn hole_day(endpoint: &str, at: &str, zone: &TimeZone) -> Option<Date> {
     if endpoint == HEARTRATE {
-        let instant = DateTime::<Utc>::from_timestamp(instant_of(at)?, 0)?;
-        Some(instant.with_timezone(&zone).date_naive())
+        let instant = Timestamp::from_second(instant_of(at)?).ok()?;
+        Some(instant.to_zoned_datetime(zone.clone()).date())
     } else {
         parse_day(at)
     }
 }
 
 /// An owner day as UTC seconds, half open.
-fn owner_day_instants(day: NaiveDate, zone: Tz) -> Option<(i64, i64)> {
-    let start = zone
-        .from_local_datetime(&day.and_hms_opt(0, 0, 0)?)
-        .earliest()?;
-    let end = zone
-        .from_local_datetime(&day.succ_opt()?.and_hms_opt(0, 0, 0)?)
-        .earliest()?;
-    Some((start.timestamp(), end.timestamp()))
+fn owner_day_instants(day: Date, zone: &TimeZone) -> Option<(i64, i64)> {
+    let start = solstone_core_time::from_local(zone, day.at(0, 0, 0, 0)).earliest()?;
+    let end =
+        solstone_core_time::from_local(zone, day.tomorrow().ok()?.at(0, 0, 0, 0)).earliest()?;
+    Some((
+        whole_seconds(start.timestamp()),
+        whole_seconds(end.timestamp()),
+    ))
 }
 
 /// The coverage a journal holds. None yet is none; a file that can't be read is
@@ -413,10 +428,15 @@ pub(crate) fn update_coverage(
 /// A UTC hour as a person reads it: `2026-01-18 17:00 UTC`.
 fn hour_words(at: &str) -> String {
     instant_of(at)
-        .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
+        .and_then(|seconds| Timestamp::from_second(seconds).ok())
         .map_or_else(
             || at.to_owned(),
-            |instant| instant.format("%Y-%m-%d %H:%M UTC").to_string(),
+            |instant| {
+                Offset::UTC
+                    .to_datetime(instant)
+                    .strftime("%Y-%m-%d %H:%M UTC")
+                    .to_string()
+            },
         )
 }
 
@@ -475,7 +495,7 @@ pub fn coverage_text(coverage: &Coverage) -> String {
 mod tests {
     use super::*;
 
-    fn day(text: &str) -> NaiveDate {
+    fn day(text: &str) -> Date {
         parse_day(text).unwrap()
     }
 
@@ -508,7 +528,7 @@ mod tests {
                 day("2026-01-01"),
                 day("2026-01-25"),
                 day("2026-01-27"),
-                chrono_tz::UTC,
+                &TimeZone::UTC,
             )
             .unwrap();
         assert_eq!(
@@ -560,7 +580,7 @@ mod tests {
 
     #[test]
     fn a_heartrate_hole_takes_back_its_whole_hour_and_only_a_whole_hour_clears_it() {
-        let at = |text: &str| DateTime::parse_from_rfc3339(text).unwrap().to_utc();
+        let at = |text: &str| text.parse::<Timestamp>().unwrap();
         let mut coverage = Coverage::default();
         let day = BTreeMap::from([(
             HEARTRATE.to_owned(),

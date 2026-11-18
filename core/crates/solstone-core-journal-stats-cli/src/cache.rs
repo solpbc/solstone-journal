@@ -128,8 +128,8 @@ pub(crate) fn unreadable_inputs_fingerprint(
     let mut entries = Vec::new();
     let day_dir = journal_root.join("chronicle").join(day);
     stat_tree(&day_dir, &day_dir, &mut entries)?;
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| JournalStatsError::InvalidDay(day.to_owned()))?;
+    let date = solstone_core_time::parse_day(day)
+        .ok_or_else(|| JournalStatsError::InvalidDay(day.to_owned()))?;
     let facets = journal_root.join("facets");
     if facets.is_dir() {
         for facet in read_entries(&facets)? {
@@ -138,7 +138,7 @@ pub(crate) fn unreadable_inputs_fingerprint(
             }
             stat_one(&facets, &facet.join("facet.json"), &mut entries)?;
             for offset in 0..=7 {
-                let d = (date - chrono::Duration::days(offset)).format("%Y%m%d");
+                let d = solstone_core_time::day_key(date - jiff::Span::new().days(offset));
                 for kind in ["activities", "events", "entities"] {
                     stat_one(
                         &facets,
@@ -391,7 +391,6 @@ mod tests {
     use std::fs;
     use std::io::Write;
 
-    use chrono::{FixedOffset, TimeZone};
     use solstone_core_journal_io::{
         JournalRoot,
         operational_log::{OplogFormat, create_oplog_at},
@@ -402,16 +401,16 @@ mod tests {
     #[test]
     fn canonical_jsonl_oplog_is_a_bounded_day_cache_input() {
         let root = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 6, 2, 12, 0, 0)
+        let opened = jiff::civil::date(2026, 6, 2)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::fixed(jiff::tz::Offset::UTC))
             .unwrap();
         let mut writer = create_oplog_at(
             JournalRoot::open(root.path()).unwrap(),
             "think",
             "daily",
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         let leaf = writer.leaf_name().to_owned();

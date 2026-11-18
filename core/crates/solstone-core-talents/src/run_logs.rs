@@ -6,7 +6,10 @@ use std::fs;
 use std::path::Path;
 
 use crate::layout::TalentStorageError;
+use jiff::Timestamp;
+use jiff::tz::Offset;
 use serde_json::{Map, Value};
+use solstone_core_time::day_key;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TalentRunLogMigrationReport {
@@ -165,8 +168,8 @@ fn day_from_id(id: &str) -> String {
     let Ok(ms) = id.parse::<i64>() else {
         return String::new();
     };
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map(|d| d.format("%Y%m%d").to_string())
+    Timestamp::from_millisecond(ms)
+        .map(|ts| day_key(Offset::UTC.to_datetime(ts).date()))
         .unwrap_or_default()
 }
 fn existing_ids(path: &Path) -> HashSet<String> {
@@ -200,6 +203,13 @@ fn io(error: std::io::Error) -> TalentStorageError {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    #[test]
+    fn a_run_id_names_its_utc_day() {
+        assert_eq!(day_from_id("1700000000000"), "20231114");
+        assert_eq!(day_from_id("1699919999999"), "20231113");
+        assert_eq!(day_from_id("0"), "19700101");
+        assert_eq!(day_from_id("chat"), "");
+    }
     #[test]
     fn moves_log_and_creates_day_index() {
         let temp = tempdir().unwrap();

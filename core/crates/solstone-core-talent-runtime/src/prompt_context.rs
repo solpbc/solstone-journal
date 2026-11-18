@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::{Days, NaiveDate};
+use jiff::civil::Date;
 use serde_json::{Map, Value};
 use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_system_health::find_segment_dir;
@@ -30,12 +30,12 @@ pub(crate) fn build(
     context.insert("day_YYYYMMDD".to_owned(), day.to_owned());
     // The weekly reflection receives a week-start anchor.
     if config.get("schedule").and_then(Value::as_str) == Some("weekly")
-        && let Ok(reference_day) = NaiveDate::parse_from_str(day, "%Y%m%d")
-        && let Some(bound) = reference_day.checked_add_days(Days::new(6))
+        && let Some(reference_day) = solstone_core_time::parse_day(day)
+        && let Ok(bound) = reference_day.checked_add(jiff::Span::new().days(6))
     {
         context.insert(
             "week_end_YYYYMMDD".to_owned(),
-            bound.format("%Y%m%d").to_string(),
+            solstone_core_time::day_key(bound),
         );
         if let Some(days) = calendar_days(reference_day, 7) {
             context.insert("week_days_YYYYMMDD".to_owned(), days);
@@ -177,9 +177,9 @@ pub(crate) fn build(
 }
 
 fn format_day(day: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|date| date.format("%A, %B %d, %Y").to_string())
-        .unwrap_or_else(|_| day.to_owned())
+    solstone_core_time::parse_day(day)
+        .map(|date| date.strftime("%A, %B %d, %Y").to_string())
+        .unwrap_or_else(|| day.to_owned())
 }
 
 fn segment_bounds(segment: &str) -> Option<(u64, u64)> {
@@ -695,11 +695,13 @@ fn stream_import_guidance(
     }
 }
 
-fn calendar_days(start: NaiveDate, count: u64) -> Option<String> {
+fn calendar_days(start: Date, count: u64) -> Option<String> {
     let mut days = Vec::with_capacity(count as usize);
     for offset in 0..count {
-        let day = start.checked_add_days(Days::new(offset))?;
-        days.push(day.format("%Y%m%d").to_string());
+        let day = start
+            .checked_add(jiff::Span::new().days(i64::try_from(offset).ok()?))
+            .ok()?;
+        days.push(solstone_core_time::day_key(day));
     }
     Some(days.join(" "))
 }

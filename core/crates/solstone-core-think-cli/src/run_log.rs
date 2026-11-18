@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
     JournalRoot,
@@ -273,24 +273,26 @@ fn open_oplog(journal: &Path, day: &str, run: &str) -> Result<OplogWriter, Strin
         "think",
         run,
         OplogFormat::Jsonl,
-        current_time_on_local_day(journal, day)?,
+        &current_time_on_local_day(journal, day)?,
     )
     .map_err(|error| error.to_string())
 }
 
 /// Now's wall-clock time placed on `day`, at that day's own offset in the
 /// owner zone, so a day across a daylight-time change keeps its own offset.
-fn current_time_on_local_day(journal: &Path, day: &str) -> Result<DateTime<FixedOffset>, String> {
-    let day = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|error| error.to_string())?;
+fn current_time_on_local_day(journal: &Path, day: &str) -> Result<ZonedDateTime, String> {
+    let day =
+        solstone_core_time::parse_day(day).ok_or_else(|| "day must be YYYYMMDD".to_owned())?;
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let wall = day.and_time(Utc::now().with_timezone(&zone).time());
-    zone.from_local_datetime(&wall)
+    let wall = day.to_datetime(Timestamp::now().to_zoned_datetime(zone.clone()).time());
+    solstone_core_time::from_local(&zone, wall)
         .earliest()
         .or_else(|| {
-            zone.from_local_datetime(&(wall + TimeDelta::hours(1)))
-                .earliest()
+            wall.checked_add(SignedDuration::from_hours(1))
+                .ok()
+                .and_then(|later| solstone_core_time::from_local(&zone, later).earliest())
         })
-        .map(|instant| instant.fixed_offset())
+        .map(|instant| solstone_core_time::at_offset(instant.timestamp(), instant.offset()))
         .ok_or_else(|| "invalid local day".to_owned())
 }
 

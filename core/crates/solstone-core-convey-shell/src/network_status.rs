@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::Extension;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,7 @@ use solstone_core_spl::{
     load_link_state,
 };
 use solstone_core_thinking::confidential::OperationRegistry;
+use solstone_core_time::{Precision, utc_z};
 
 use solstone_core_journal_config::read_direct_door_port;
 
@@ -297,7 +298,7 @@ pub(crate) async fn status(
         health: health.as_ref(),
         home_address: configured_home_address(config.as_ref()),
         snapshot,
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: Timestamp::now().as_millisecond(),
         direct_port,
     }) {
         Ok(body) => body,
@@ -754,7 +755,7 @@ fn build_local_endpoints_body(
             })
             .collect(),
         ttl_s: 3600,
-        generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        generated_at: utc_z(Timestamp::now(), Precision::Secs),
     }
 }
 

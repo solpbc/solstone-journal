@@ -63,7 +63,7 @@ where
         request.apps_root,
     )
     .map_err(JournalStatsError::Validation)?;
-    coverage.as_of_ms = request.now.timestamp_millis();
+    coverage.as_of_ms = request.now.as_millisecond();
     scan.stats.outputs_processed = coverage
         .units
         .iter()

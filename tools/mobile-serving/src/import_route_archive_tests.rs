@@ -41,7 +41,7 @@ fn ordinary_archive_folder_previews_saves_and_replays_through_owner_routes() {
         "picked archive",
         "ordinary-archive",
         &stamp,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     let id = folder.import_id.as_str();
@@ -262,7 +262,7 @@ fn ordinary_archive_manifest_previews_and_saves_nested_members() {
         "picked manifest archive",
         "manifest-archive",
         &stamp,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     let mut request = json!({"path":saved["path"],"timestamp":saved["source_timestamp"],"import_id":folder.import_id.as_str(),"archive_manifest":"members.json"});
@@ -338,7 +338,7 @@ fn ordinary_archive_resume_keeps_an_already_published_tile_and_its_original_iden
         "picked archive",
         "archive-resume",
         &stamp,
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     let id = folder.import_id.as_str();

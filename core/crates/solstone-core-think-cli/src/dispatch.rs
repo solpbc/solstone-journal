@@ -6,7 +6,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
 use serde_json::{Map, Value};
 use solstone_core_cortex_client::{CortexRequest, TimedOutUse, UseEndState, read_use_events};
 use solstone_core_format::segment::segment_start_and_end_seconds;
@@ -273,24 +274,25 @@ pub(crate) struct DispatchSettings<'a> {
 /// same Saturday takes the previous week, which the reflection runtime accepts
 /// only once its last day is before today.
 pub(crate) fn snap_weekly_reflection_start(context: &ThinkContext) -> String {
-    let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").expect("validated day");
-    let now =
-        chrono::DateTime::from_timestamp_millis(context.now_ms).unwrap_or_else(chrono::Utc::now);
+    let day = solstone_core_time::parse_day(&context.day).expect("validated day");
+    let now = Timestamp::from_millisecond(context.now_ms).unwrap_or_else(|_| Timestamp::now());
     let today = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(&context.journal))
-        .date_naive();
-    weekly_reflection_start(day, today)
-        .format("%Y%m%d")
-        .to_string()
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(&context.journal))
+        .date();
+    solstone_core_time::day_key(weekly_reflection_start(day, today))
 }
 
-fn weekly_reflection_start(day: NaiveDate, today: NaiveDate) -> NaiveDate {
-    let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
-    let mut end = day - ChronoDuration::days(i64::from(days_since_saturday));
+fn weekly_reflection_start(day: Date, today: Date) -> Date {
+    let days_back = |date: Date, days: i64| {
+        date.checked_sub(Span::new().days(days))
+            .expect("a week start is a real date")
+    };
+    let days_since_saturday = (day.weekday().to_sunday_zero_offset() + 1) % 7;
+    let mut end = days_back(day, i64::from(days_since_saturday));
     if end >= today {
-        end -= ChronoDuration::days(7);
+        end = days_back(end, 7);
     }
-    end - ChronoDuration::days(6)
+    days_back(end, 6)
 }
 
 pub(crate) fn dispatch_prepared(
@@ -405,9 +407,7 @@ pub(crate) fn dispatch_prepared(
 }
 
 fn iso_day(day: &str) -> Option<String> {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .map(|day| day.format("%Y-%m-%d").to_string())
+    solstone_core_time::parse_day(day).map(|day| day.strftime("%Y-%m-%d").to_string())
 }
 
 fn day_input_summary(day_dir: &std::path::Path) -> String {

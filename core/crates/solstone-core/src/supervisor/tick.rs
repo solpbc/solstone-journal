@@ -356,13 +356,13 @@ pub(crate) async fn run(
             &mut state.last_disk_space_check,
             tick,
         );
-        let today = wall.format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(wall.date());
         check_index_todo(
             &state.journal,
             &state.queue,
             &mut state.last_index_todo_scan,
             tick,
-            wall.timestamp_millis() as u64,
+            wall.timestamp().as_millisecond() as u64,
             Duration::from_secs(30),
         );
         check_activity_settle(
@@ -370,20 +370,20 @@ pub(crate) async fn run(
             &state.queue,
             &mut state.last_activity_settle_scan,
             tick,
-            wall.timestamp_millis(),
+            wall.timestamp().as_millisecond(),
             &today,
         );
-        if !state.no_daily && state.daily.last_day != Some(wall.date_naive()) {
+        if !state.no_daily && state.daily.last_day != Some(wall.date()) {
             if let Some(previous) = state.daily.last_day {
                 check_segment_flush(
                     &state.journal,
                     &state.queue,
                     &mut state.flush,
-                    Some(&previous.format("%Y%m%d").to_string()),
+                    Some(&solstone_core_time::day_key(previous)),
                     tick,
                 );
             }
-            state.daily.last_day = Some(wall.date_naive());
+            state.daily.last_day = Some(wall.date());
             state.discovery.request();
         }
         if let Some(scheduler) = state.scheduler.as_mut() {
@@ -392,7 +392,7 @@ pub(crate) async fn run(
                 server: state.server.clone(),
             };
             let _ = scheduler.check(
-                ScheduleNow::in_zone(wall.to_utc(), wall.timezone()),
+                ScheduleNow::in_zone(wall.timestamp(), wall.time_zone().clone()),
                 &schedule_sink,
             );
         }
@@ -423,7 +423,10 @@ pub(crate) async fn run(
                 .scheduler
                 .as_ref()
                 .map(|scheduler| {
-                    scheduler.collect_status(ScheduleNow::in_zone(wall.to_utc(), wall.timezone()))
+                    scheduler.collect_status(ScheduleNow::in_zone(
+                        wall.timestamp(),
+                        wall.time_zone().clone(),
+                    ))
                 })
                 .unwrap_or_default();
             match plan_status_emission(StatusEmissionInputs {
@@ -1098,8 +1101,8 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
 
 /// Now in the journal's owner zone: the one clock every day, rollover and
 /// schedule decision in the supervisor reads.
-pub(crate) fn owner_now(journal: &std::path::Path) -> chrono::DateTime<chrono_tz::Tz> {
-    chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(journal))
+pub(crate) fn owner_now(journal: &std::path::Path) -> jiff::ZonedDateTime {
+    jiff::Timestamp::now().to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
 }
 
 fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -1112,7 +1115,7 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
     };
     let day = message_string(message, "day")
         .map(str::to_owned)
-        .unwrap_or_else(|| owner_now(&state.journal).format("%Y%m%d").to_string());
+        .unwrap_or_else(|| solstone_core_time::day_key(owner_now(&state.journal).date()));
     let batch = message_truthy(message, "batch");
     let stream = message_string(message, "stream");
     solstone_core_think_cli::planner::plan_observed_segment(
@@ -1434,7 +1437,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use chrono::NaiveDate;
+    use jiff::civil::Date;
     #[cfg(unix)]
     use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
     use solstone_core_system::cap::{CapResolver, DefaultCapResolver};
@@ -2441,13 +2444,15 @@ mod tests {
             .unwrap_or(0)
     }
 
-    fn date(day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 1, day).expect("fixture date")
+    fn date(day: i8) -> Date {
+        Date::new(2026, 1, day).expect("fixture date")
     }
 
-    fn wall_time(day: u32, seconds: u64) -> SystemTime {
-        let midnight = date(day).and_hms_opt(0, 0, 0).unwrap().and_utc();
-        SystemTime::from(midnight) + Duration::from_secs(seconds)
+    fn wall_time(day: i8, seconds: u64) -> SystemTime {
+        let midnight = jiff::tz::Offset::UTC
+            .to_timestamp(date(day).at(0, 0, 0, 0))
+            .unwrap();
+        SystemTime::try_from(midnight).unwrap() + Duration::from_secs(seconds)
     }
 
     fn pending_flush(at: Instant, day: &str, segment: &str) -> PendingFlush {

@@ -6,6 +6,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::owner_zone;
 use solstone_core_journal_io::append_jsonl;
@@ -18,6 +20,7 @@ use solstone_core_journal_io::cortex_use::{
     read_cortex_use_request, recover_active_use, talent_directory_name,
 };
 use solstone_core_journal_io::journal_root::{JournalEntryKind, JournalRoot};
+use solstone_core_time::day_key;
 
 // The recovery census walks every entry under `talents/`, cumulatively, to find
 // orphaned in-progress uses. A long-running journal accumulates a large body of
@@ -234,7 +237,7 @@ impl CortexStore {
             .and_then(Value::as_str)
             .filter(|day| is_day_key(day))
             .map(str::to_owned)
-            .unwrap_or_else(|| day_from_use_id(use_id, zone));
+            .unwrap_or_else(|| day_from_use_id(use_id, &zone));
         if !is_day_key(&day) {
             return;
         }
@@ -587,7 +590,7 @@ pub(crate) fn synthesized_error(use_id: &str, error: impl Into<String>) -> Map<S
 }
 
 pub(crate) fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+    jiff::Timestamp::now().as_millisecond()
 }
 
 fn runtime(start: i64, end: Option<i64>) -> Value {
@@ -604,12 +607,12 @@ fn ts_from_use_id(use_id: &str) -> i64 {
     use_id.parse::<i64>().unwrap_or(0)
 }
 
-fn day_from_use_id(use_id: &str, zone: chrono_tz::Tz) -> String {
+fn day_from_use_id(use_id: &str, zone: &TimeZone) -> String {
     use_id
         .parse::<i64>()
         .ok()
-        .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
-        .map(|time| time.with_timezone(&zone).format("%Y%m%d").to_string())
+        .and_then(|millis| Timestamp::from_millisecond(millis).ok())
+        .map(|time| day_key(time.to_zoned_datetime(zone.clone()).date()))
         .unwrap_or_default()
 }
 

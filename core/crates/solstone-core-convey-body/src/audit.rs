@@ -9,7 +9,6 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDateTime;
 use serde_json::{Value, json};
 use solstone_core_import::metadata::{
     AttemptHolder, AttemptRead, AttemptState, attempt_holder, read_attempt_facts, read_provenance,
@@ -78,8 +77,7 @@ pub(crate) fn progress_line(progress: &Value, running: bool) -> String {
 }
 
 fn when_label(id: &str) -> Option<String> {
-    let at = NaiveDateTime::parse_from_str(id, "%Y%m%d_%H%M%S").ok()?;
-    use chrono::Datelike;
+    let at = jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", id).ok()?;
     Some(format!(
         "{} {}, {}, {}",
         month_abbr(at.month()),

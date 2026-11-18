@@ -23,7 +23,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ));
     }
     let process_source = SystemProcessInstanceSource;
-    let now = context.now.timestamp() as f64;
+    let now = context.now.as_second() as f64;
     let diagnosis =
         describe_sync_rescan(&context.journal_path, "doctor.check", now, &process_source);
     // `doctor` never writes its own heartbeat, so the exclusion filter inside
@@ -141,7 +141,6 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use chrono::Utc;
     use solstone_core_system::lifecycle::{
         HeartbeatClassification, HeartbeatV2, RunId, SyncCheckResult, SyncPeerObservation,
         SyncSnapshot, WriterId,
@@ -157,7 +156,7 @@ mod tests {
             journal_path: PathBuf::new(),
             callosum_socket_path: PathBuf::new(),
             platform: crate::vocabulary::Platform::Linux,
-            now: Utc::now(),
+            now: jiff::Timestamp::now(),
             host_arch: String::new(),
             hostname: "host".to_owned(),
             checkout_root: None,

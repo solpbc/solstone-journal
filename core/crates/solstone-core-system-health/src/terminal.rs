@@ -3,8 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
-
 use crate::event::HealthEvent;
 use crate::read::read_day_records;
 use crate::vocabulary::{
@@ -388,9 +386,13 @@ pub fn read_completed_since<S: HealthLogSource>(
     day: &str,
     since_ms: i64,
 ) -> Result<FoldRead<CompletionsSince>, HealthError> {
-    let current = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
-    let previous = (current - Duration::days(1)).format("%Y%m%d").to_string();
+    let current = solstone_core_time::parse_day(day)
+        .ok_or_else(|| HealthError::InvalidDay(day.to_owned()))?;
+    let previous = solstone_core_time::day_key(
+        current
+            .yesterday()
+            .map_err(|_| HealthError::InvalidDay(day.to_owned()))?,
+    );
     let mut segments: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
     let mut activities: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
     let mut malformed_line_count = 0;

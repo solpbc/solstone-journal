@@ -7,13 +7,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
-chrono.workspace = true
-chrono-tz.workspace = true
 iana-time-zone.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-journal.workspace = true
+solstone-core-time.workspace = true
 whoami.workspace = true
 
 [target.'cfg(any(unix, windows))'.dependencies]

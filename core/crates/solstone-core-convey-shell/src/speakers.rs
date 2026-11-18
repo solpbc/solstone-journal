@@ -10,7 +10,7 @@ use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_config::owner_zone;
 
@@ -58,7 +58,7 @@ pub async fn who_is_this() -> Response {
 /// filtered speaker instead.
 pub async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     let zone = owner_zone(&journal.0);
-    let today = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(Timestamp::now().to_zoned_datetime(zone).date());
     Json(json!({
         "today": today,
         "owner_min_statements": 30,

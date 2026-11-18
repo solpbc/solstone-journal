@@ -9,7 +9,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use crate::store_tests::TempDir;
 use crate::{
@@ -17,8 +17,8 @@ use crate::{
     aggregate_speculative_facets,
 };
 
-fn day(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).unwrap()
+fn day(year: i16, month: i8, day: i8) -> Date {
+    jiff::civil::date(year, month, day)
 }
 
 fn segment_dir(root: &Path, day: &str, stream: Option<&str>, segment: &str) -> PathBuf {

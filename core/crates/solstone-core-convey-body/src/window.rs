@@ -17,8 +17,9 @@ use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Timelike};
-use chrono_tz::Tz;
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, ZonedDateTime};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::read_hidden_days;
@@ -27,8 +28,9 @@ use solstone_core_format::content::body_records::{
     source_words,
 };
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
+use solstone_core_time::{Precision, at_offset, from_local, zoned_rfc3339};
 
-use crate::fmt::{clock, count_noun, grouped};
+use crate::fmt::{clock, count_noun, days_through, grouped};
 use crate::hidden::drop_hidden_rows;
 use crate::listing::{body_streams, is_deleted, window_names};
 use crate::query::decoded_query_params;
@@ -55,12 +57,14 @@ pub(crate) async fn window_route(
     if window_end <= window_start {
         return invalid_window_response(END_BEFORE_START);
     }
-    if window_end - window_start > Duration::days(MAX_WINDOW_DAYS) {
+    if window_end.timestamp() - window_start.timestamp()
+        > SignedDuration::from_hours(24 * MAX_WINDOW_DAYS)
+    {
         return invalid_window_response(&format!(
             "Window span must be {MAX_WINDOW_DAYS} days or less."
         ));
     }
-    Json(build_window(&root, window_start, window_end)).into_response()
+    Json(build_window(&root, &window_start, &window_end)).into_response()
 }
 
 fn invalid_window_response(detail: &str) -> Response {
@@ -75,14 +79,33 @@ fn invalid_window_response(detail: &str) -> Response {
 
 /// Parse a stored body time that carries its own offset: RFC 3339, or the
 /// Apple Health export form (`2026-01-02 00:00:00 -0700`) its rows keep.
-pub(crate) fn parse_offset_time(value: &str) -> Option<DateTime<FixedOffset>> {
+pub(crate) fn parse_offset_time(value: &str) -> Option<ZonedDateTime> {
     let value = value.trim();
-    DateTime::parse_from_rfc3339(value)
-        .or_else(|_| DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S %z"))
+    solstone_core_time::parse_rfc3339(value)
         .ok()
+        .or_else(|| with_offset("%Y-%m-%d %H:%M:%S", value))
 }
 
-pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<DateTime<FixedOffset>> {
+/// `text` as a date and time in `format` followed by a numeric offset, read
+/// as the journal always has (`-0700`, `-07:00` and ` -07 : 00` all read).
+fn with_offset(format: &str, text: &str) -> Option<ZonedDateTime> {
+    solstone_core_time::strptime_fixed(&format!("{format}%z"), text).ok()
+}
+
+/// A wall-clock time read as UTC.
+fn at_utc(time: DateTime) -> Option<ZonedDateTime> {
+    Offset::UTC
+        .to_timestamp(time)
+        .ok()
+        .map(|ts| at_offset(ts, Offset::UTC))
+}
+
+/// `time` at the offset it has now, without its zone's rules.
+fn fixed(time: &ZonedDateTime) -> ZonedDateTime {
+    at_offset(time.timestamp(), time.offset())
+}
+
+pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<ZonedDateTime> {
     let mut text = value?.trim().to_owned();
     if text.is_empty() {
         return None;
@@ -95,12 +118,12 @@ pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<DateTime<FixedOf
         text.push_str("+00:00");
     }
     for format in [
-        "%Y-%m-%dT%H:%M:%S%.f%:z",
-        "%Y-%m-%d %H:%M:%S%.f%:z",
-        "%Y-%m-%dT%H:%M%:z",
-        "%Y-%m-%d %H:%M%:z",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
     ] {
-        if let Ok(value) = DateTime::parse_from_str(&text, format) {
+        if let Some(value) = with_offset(format, &text) {
             return Some(value);
         }
     }
@@ -110,47 +133,41 @@ pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<DateTime<FixedOf
         "%Y-%m-%dT%H:%M",
         "%Y-%m-%d %H:%M",
     ] {
-        if let Ok(value) = NaiveDateTime::parse_from_str(&text, format) {
-            return Some(DateTime::from_naive_utc_and_offset(
-                value,
-                FixedOffset::east_opt(0).expect("UTC offset exists"),
-            ));
+        if let Ok(value) = DateTime::strptime(format, &text) {
+            return at_utc(value);
         }
     }
-    NaiveDate::parse_from_str(&text, "%Y-%m-%d")
+    Date::strptime("%Y-%m-%d", &text)
         .ok()
-        .map(|value| {
-            DateTime::from_naive_utc_and_offset(
-                value.and_hms_opt(0, 0, 0).expect("midnight exists"),
-                FixedOffset::east_opt(0).expect("UTC offset exists"),
-            )
-        })
+        .and_then(|value| at_utc(value.to_datetime(Time::midnight())))
 }
 
 /// A window's span in time: its key's clock, on the zone the source placed it
 /// on. `None` when the key can't be read, or the source has no such record.
 fn window_instants(
-    zone: Option<Tz>,
+    zone: Option<&TimeZone>,
     day: &str,
     name: &str,
-) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+) -> Option<(ZonedDateTime, ZonedDateTime)> {
     let zone = zone?;
     let (clock_text, length) = name.split_once('_')?;
     if clock_text.len() != 6 || !clock_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let length = length.split('_').next()?.parse::<i64>().ok()?;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let time = date.and_hms_opt(
+    let date = solstone_core_time::parse_day(day)?;
+    let time = Time::new(
         clock_text[0..2].parse().ok()?,
         clock_text[2..4].parse().ok()?,
         clock_text[4..6].parse().ok()?,
-    )?;
-    let start = zone.from_local_datetime(&time).earliest()?;
-    Some((
-        start.fixed_offset(),
-        (start + Duration::seconds(length.max(1))).fixed_offset(),
-    ))
+        0,
+    )
+    .ok()?;
+    let start = from_local(zone, date.to_datetime(time)).earliest()?;
+    let end = start
+        .checked_add(SignedDuration::from_secs(length.max(1)))
+        .ok()?;
+    Some((fixed(&start), fixed(&end)))
 }
 
 /// One row's place in the span, or `None` when it falls outside it. A row with
@@ -158,35 +175,33 @@ fn window_instants(
 fn row_span(
     row: &BodyRow,
     window_day: &str,
-    zone: Option<Tz>,
-) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+    zone: Option<&TimeZone>,
+) -> Option<(ZonedDateTime, ZonedDateTime)> {
     match row.begins().and_then(parse_source_time) {
         Some(start) => {
             let end = row.end.as_deref().and_then(parse_source_time);
-            Some((start, end.filter(|end| *end > start).unwrap_or(start)))
+            let end = end
+                .filter(|end| *end > start)
+                .unwrap_or_else(|| start.clone());
+            Some((start, end))
         }
         None => {
-            let date = NaiveDate::parse_from_str(window_day, "%Y%m%d").ok()?;
-            let midnight = date.and_hms_opt(0, 0, 0)?;
+            let date = solstone_core_time::parse_day(window_day)?;
+            let midnight = date.to_datetime(Time::midnight());
             let start = match zone {
-                Some(zone) => zone
-                    .from_local_datetime(&midnight)
-                    .earliest()?
-                    .fixed_offset(),
-                None => DateTime::from_naive_utc_and_offset(
-                    midnight,
-                    FixedOffset::east_opt(0).expect("UTC offset exists"),
-                ),
+                Some(zone) => fixed(&from_local(zone, midnight).earliest()?),
+                None => at_utc(midnight)?,
             };
-            Some((start, start + Duration::days(1)))
+            let end = start.checked_add(SignedDuration::from_hours(24)).ok()?;
+            Some((start, end))
         }
     }
 }
 
 fn overlaps(
-    (start, end): (DateTime<FixedOffset>, DateTime<FixedOffset>),
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
+    (start, end): (&ZonedDateTime, &ZonedDateTime),
+    from: &ZonedDateTime,
+    to: &ZonedDateTime,
 ) -> bool {
     if end > start {
         start < to && end > from
@@ -198,36 +213,36 @@ fn overlaps(
 struct Found {
     source: String,
     row: BodyRow,
-    start: DateTime<FixedOffset>,
-    end: DateTime<FixedOffset>,
+    start: ZonedDateTime,
+    end: ZonedDateTime,
 }
 
 /// The day-keyed windows a span could touch: a day each side of it, because a
 /// window's day is the source's own and the span's offset isn't.
-fn candidate_days(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<String> {
-    let first = (from - Duration::days(1)).date_naive();
-    let last = (to + Duration::days(1)).date_naive();
-    first
-        .iter_days()
-        .take_while(|date| *date <= last)
-        .map(|date| date.format("%Y%m%d").to_string())
+fn candidate_days(from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<String> {
+    // A day before and after on each bound's own fixed offset: 24 hours exactly.
+    let first = from.date().yesterday().unwrap_or_else(|_| from.date());
+    let last = to.date().tomorrow().unwrap_or_else(|_| to.date());
+    days_through(first, last)
+        .map(solstone_core_time::day_key)
         .collect()
 }
 
 /// The days the span covers, on its own clock.
-fn span_days(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> BTreeSet<String> {
-    let last = (to.with_timezone(from.offset()) - Duration::nanoseconds(1)).date_naive();
-    from.date_naive()
-        .iter_days()
-        .take_while(|date| *date <= last)
-        .map(|date| date.format("%Y%m%d").to_string())
+fn span_days(from: &ZonedDateTime, to: &ZonedDateTime) -> BTreeSet<String> {
+    let Ok(last) = to.timestamp().checked_sub(SignedDuration::from_nanos(1)) else {
+        return BTreeSet::new();
+    };
+    let last = from.offset().to_datetime(last).date();
+    days_through(from.date(), last)
+        .map(solstone_core_time::day_key)
         .collect()
 }
 
 fn collect_rows(
     root: &Path,
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
+    from: &ZonedDateTime,
+    to: &ZonedDateTime,
     hidden: &BTreeSet<String>,
 ) -> Vec<Found> {
     let mut found = Vec::new();
@@ -243,8 +258,8 @@ fn collect_rows(
                 if is_deleted(root, &day, stream, &name) {
                     continue;
                 }
-                if let Some(instants) = window_instants(zone, &day, &name)
-                    && !overlaps(instants, from, to)
+                if let Some((start, end)) = window_instants(zone.as_ref(), &day, &name)
+                    && !overlaps((&start, &end), from, to)
                 {
                     continue;
                 }
@@ -268,20 +283,20 @@ fn collect_rows(
                 .collect::<Vec<_>>();
             drop_hidden_rows(root, source, &day, &mut rows, hidden, &mut took);
             for row in rows {
-                if let Some(span) =
-                    row_span(&row, &day, zone).filter(|span| overlaps(*span, from, to))
+                if let Some((start, end)) = row_span(&row, &day, zone.as_ref())
+                    .filter(|(start, end)| overlaps((start, end), from, to))
                 {
                     found.push(Found {
                         source: source.to_owned(),
-                        start: span.0,
-                        end: span.1,
+                        start,
+                        end,
                         row,
                     });
                 }
             }
         }
     }
-    found.sort_by_key(|item| item.start.timestamp_millis());
+    found.sort_by_key(|item| item.start.timestamp().as_millisecond());
     one_row_per_experience(found)
 }
 
@@ -312,8 +327,8 @@ fn is_entry(item: &Found) -> bool {
     item.row.kind != RowKind::Event
 }
 
-fn iso(time: DateTime<FixedOffset>) -> String {
-    time.to_rfc3339()
+fn iso(time: &ZonedDateTime) -> String {
+    zoned_rfc3339(time, Precision::AutoSi, false)
 }
 
 /// Counts of what the span holds, kind by kind: the only thing the panel states.
@@ -369,10 +384,10 @@ fn events(rows: &[Found]) -> Vec<Value> {
             "kind": kind,
             "label": row.label,
             "source": source_words(&item.source),
-            "start": iso(item.start),
-            "end": iso(item.end),
-            "start_label": clock(item.start.naive_local()),
-            "end_label": clock(item.end.naive_local()),
+            "start": iso(&item.start),
+            "end": iso(&item.end),
+            "start_label": clock(item.start.datetime()),
+            "end_label": clock(item.end.datetime()),
         }));
     }
     events
@@ -416,33 +431,31 @@ fn rows_listing(rows: &[Found]) -> Vec<Value> {
 
 /// One bucket per hour of the span on the request's own clock, with how many
 /// entries begin in it. A count, never a value.
-fn hourly(rows: &[Found], from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<Value> {
-    let offset = *from.offset();
-    let mut bucket_start = from
-        .naive_local()
-        .with_minute(0)
-        .and_then(|time| time.with_second(0))
-        .and_then(|time| time.with_nanosecond(0))
-        .expect("an hour's start is a clock time");
+fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<Value> {
+    let offset = from.offset();
+    let from_local = from.datetime();
+    let mut bucket_start = from_local.date().at(from_local.hour(), 0, 0, 0);
     let mut items = Vec::new();
-    let to_local = to.with_timezone(&offset).naive_local();
+    let to_local = offset.to_datetime(to.timestamp());
+    let on_offset = |time: DateTime| {
+        at_offset(
+            offset.to_timestamp(time).expect("fixed offset converts"),
+            offset,
+        )
+    };
     while bucket_start < to_local {
-        let bucket_end = bucket_start + Duration::hours(1);
-        let start = offset
-            .from_local_datetime(&bucket_start.max(from.naive_local()))
-            .earliest()
-            .expect("fixed offset converts");
-        let end = offset
-            .from_local_datetime(&bucket_end.min(to_local))
-            .earliest()
-            .expect("fixed offset converts");
+        let bucket_end = bucket_start
+            .checked_add(SignedDuration::from_hours(1))
+            .expect("an hour's end is a clock time");
+        let start = on_offset(bucket_start.max(from_local));
+        let end = on_offset(bucket_end.min(to_local));
         let count = rows
             .iter()
             .filter(|item| is_entry(item) && item.start >= start && item.start < end)
             .count() as u64;
         items.push(json!({
-            "start": iso(start),
-            "end": iso(end),
+            "start": iso(&start),
+            "end": iso(&end),
             "label": clock(bucket_start),
             "range_label": format!("{}–{}", clock(bucket_start), clock(bucket_end)),
             "has_data": count > 0,
@@ -455,16 +468,13 @@ fn hourly(rows: &[Found], from: DateTime<FixedOffset>, to: DateTime<FixedOffset>
     items
 }
 
-pub(crate) fn build_window(
-    root: &Path,
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
-) -> Value {
+pub(crate) fn build_window(root: &Path, from: &ZonedDateTime, to: &ZonedDateTime) -> Value {
     let hidden = read_hidden_days(root).days().cloned().unwrap_or_default();
     let rows = collect_rows(root, from, to, &hidden);
     let on_hidden_day = !hidden.is_disjoint(&span_days(from, to));
     let entry_total = rows.iter().filter(|item| is_entry(item)).count() as u64;
-    let span_minutes = ((to - from).num_seconds() as f64 / 60.0 * 10.0).round() / 10.0;
+    let span_minutes =
+        ((to.timestamp() - from.timestamp()).as_secs() as f64 / 60.0 * 10.0).round() / 10.0;
     json!({
         "from": iso(from),
         "to": iso(to),
@@ -480,4 +490,38 @@ pub(crate) fn build_window(
         "rows": rows_listing(&rows),
         "rows_truncated": rows.len() > MAX_ROWS,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_bound_reads_every_offset_form_it_always_has() {
+        for (text, expected) in [
+            ("2026-01-10T09:00:00-07:00", "2026-01-10T09:00:00-07:00"),
+            ("2026-01-10T09:00:00-0700", "2026-01-10T09:00:00-07:00"),
+            (
+                "2026-01-10T09:00:00.5+0530",
+                "2026-01-10T09:00:00.500+05:30",
+            ),
+            ("2026-01-10 09:00 -07:00", "2026-01-10T09:00:00-07:00"),
+            ("2026-01-10T09:00-07 : 00", "2026-01-10T09:00:00-07:00"),
+            ("2026-01-02 00:00:00 -0700", "2026-01-02T00:00:00-07:00"),
+            ("2026-01-10T09:00:00.5Z", "2026-01-10T09:00:00.500+00:00"),
+            ("2026-01-10T09:00", "2026-01-10T09:00:00+00:00"),
+            ("2026-01-10", "2026-01-10T00:00:00+00:00"),
+        ] {
+            let bound = parse_window_bound(Some(text)).unwrap_or_else(|| panic!("{text}"));
+            assert_eq!(iso(&bound), expected, "{text}");
+        }
+        for text in [
+            "2026-01-10T09:00:00+24:00",
+            "2026-01-10T09:00:00-07:00:00",
+            "2026-01-10T09:00-07",
+            "2026-01-10T09:00:00-07:60",
+        ] {
+            assert!(parse_window_bound(Some(text)).is_none(), "{text}");
+        }
+    }
 }

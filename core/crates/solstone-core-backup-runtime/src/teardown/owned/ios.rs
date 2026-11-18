@@ -45,9 +45,10 @@ impl TeardownOperation {
             .map_err(TeardownRemoteRefusal::Admission)?;
         let credentials =
             decode_hosted_credentials(&response).map_err(TeardownRemoteRefusal::Broker)?;
-        let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+        let expiry = solstone_core_time::parse_rfc3339(&credentials.expires_at)
             .map_err(|_| TeardownRemoteRefusal::Timestamp)?
-            .timestamp();
+            .timestamp()
+            .as_second();
         self.budget.cap_credential_expiry(expiry);
         self.remaining().map_err(TeardownRemoteRefusal::Operation)?;
         let configured = crate::hosted_runtime::operated_destination(binding, &credentials);

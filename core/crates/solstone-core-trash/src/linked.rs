@@ -45,11 +45,12 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, SecondsFormat, Utc};
+use jiff::{SignedDuration, Timestamp};
 use solstone_core_journal_io::entry::{same_file, sync_dir};
 use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
 use solstone_core_journal_io::paths::path_lexists;
 use solstone_core_removals::{Action, Event, Surface, Unit};
+use solstone_core_time::{Precision, utc_z};
 
 use super::{
     FILES_DIR, Item, Kind, SCHEMA, State, TrashError, abandon, describe, ensure_trash,
@@ -102,7 +103,7 @@ pub fn detach_linked(
     if paths.is_empty() {
         return Err(TrashError::Missing(describe(&unit).to_owned()));
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut item = Item {
         schema: SCHEMA,
         id: item_id(now),
@@ -110,12 +111,14 @@ pub fn detach_linked(
         unit,
         action,
         surface,
-        trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        trashed_at: utc_z(now, Precision::Millis),
         settled_at: None,
         // Provisional, so a reader before it settles never sees an erase that
         // has already come; settling counts the days again from then.
-        erase_at: (now + Duration::days(i64::from(erase_after_days(journal))))
-            .to_rfc3339_opts(SecondsFormat::Millis, true),
+        erase_at: utc_z(
+            now + SignedDuration::from_hours(24 * i64::from(erase_after_days(journal))),
+            Precision::Millis,
+        ),
         paths,
         bytes: 0,
         pending: None,
@@ -315,10 +318,12 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
         .map(|held| tree_bytes(&held))
         .sum();
     // It is in the trash from now: the owner's days count from here.
-    let now = Utc::now();
-    item.trashed_at = now.to_rfc3339_opts(SecondsFormat::Millis, true);
-    item.erase_at = (now + Duration::days(i64::from(erase_after_days(journal))))
-        .to_rfc3339_opts(SecondsFormat::Millis, true);
+    let now = Timestamp::now();
+    item.trashed_at = utc_z(now, Precision::Millis);
+    item.erase_at = utc_z(
+        now + SignedDuration::from_hours(24 * i64::from(erase_after_days(journal))),
+        Precision::Millis,
+    );
     publish(journal, &item)?;
     kind.references(journal, &item, super::Change::Detached, &item.paths)
         .map_err(TrashError::Io)?;
@@ -332,7 +337,7 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
     )
     .record_event(Event::Trashed, item.unit.clone());
     item.state = State::Trashed;
-    item.settled_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
+    item.settled_at = Some(utc_z(Timestamp::now(), Precision::Millis));
     publish(journal, &item)?;
     Ok(Some(item))
 }

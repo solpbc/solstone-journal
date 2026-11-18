@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rusqlite::{Connection, params};
 
 use crate::{
@@ -806,8 +806,8 @@ const LEDGER: &[LedgerEntry] = &[
     ),
 ];
 
-fn reference_date() -> NaiveDate {
-    NaiveDate::parse_from_str(REFERENCE_DATE, "%Y-%m-%d").expect("reference date parses")
+fn reference_date() -> Date {
+    Date::strptime("%Y-%m-%d", REFERENCE_DATE).expect("reference date parses")
 }
 
 fn expression(compiled: &CompileOutcome) -> &str {

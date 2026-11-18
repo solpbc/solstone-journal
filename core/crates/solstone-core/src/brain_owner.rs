@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_brain_owner::{
     BundledRuntimePrerequisiteAssessment, OwnerProbe, OwnerRefreshOptions, OwnerRefreshOutcome,
@@ -108,7 +108,7 @@ fn run_status(json_output: bool) -> ExitCode {
     let Ok((journal, config)) = journal() else {
         return ExitCode::from(EXIT_UNAVAILABLE);
     };
-    let view = owner_view(&journal, &config, Utc::now());
+    let view = owner_view(&journal, &config, Timestamp::now());
     render(&view, json_output);
     ExitCode::from(owner_exit_code(&view))
 }

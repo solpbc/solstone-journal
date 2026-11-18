@@ -319,12 +319,8 @@ fn is_body_chunk(chunk: &IndexChunk) -> bool {
 
 /// The day before `day` (`YYYYMMDD`).
 fn previous_day(day: &str) -> Option<String> {
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    Some(
-        (date - chrono::Duration::days(1))
-            .format("%Y%m%d")
-            .to_string(),
-    )
+    let date = solstone_core_time::parse_day(day)?;
+    Some(solstone_core_time::day_key(date.yesterday().ok()?))
 }
 
 /// A stream that holds body windows or Strava workouts.

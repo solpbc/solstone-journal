@@ -1998,7 +1998,7 @@ mod tests {
         let id = "20261110T000000000Z-0000abcd";
         let path = root.join(format!(".trash/{id}/item.json"));
         let mut item: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        item["trashed_at"] = Value::String(chrono::Utc::now().to_rfc3339());
+        item["trashed_at"] = Value::String(solstone_core_time::utc_rfc3339(jiff::Timestamp::now()));
         fs::write(&path, item.to_string()).unwrap();
         assert_eq!(
             crate::body_trash::source_trash_held(root, "oura", ""),

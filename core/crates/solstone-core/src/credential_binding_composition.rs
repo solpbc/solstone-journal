@@ -84,7 +84,7 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
         .expect("config"),
     )
     .expect("config writes");
-    let now = chrono::Utc::now() - chrono::Duration::seconds(30);
+    let now = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(30);
     let record_path = solstone_core_brain::brain_state_path(&journal);
     std::fs::create_dir_all(record_path.parent().expect("health")).expect("health");
     std::fs::write(
@@ -92,7 +92,7 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
         serde_json::to_vec(&json!({
             "schema_version": 1,
             "revision": 1,
-            "updated_at": now.to_rfc3339(),
+            "updated_at": solstone_core_time::utc_rfc3339(now),
             "aggregate_state": "ready",
             "reason_code": null,
             "active_lane": "byo-cloud",
@@ -103,9 +103,9 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
             "checking": null,
             "runtime_failure_marker": null,
             "evidence": {
-                "configuration": {"status": "ok", "observed_at": now.to_rfc3339(), "expires_at": "2030-01-01T00:00:00Z"},
-                "generate": {"status": "ok", "observed_at": now.to_rfc3339(), "expires_at": "2030-01-01T00:00:00Z"},
-                "lane_prerequisites": {"status": "ok", "observed_at": now.to_rfc3339(), "expires_at": "2030-01-01T00:00:00Z"}
+                "configuration": {"status": "ok", "observed_at": solstone_core_time::utc_rfc3339(now), "expires_at": "2030-01-01T00:00:00Z"},
+                "generate": {"status": "ok", "observed_at": solstone_core_time::utc_rfc3339(now), "expires_at": "2030-01-01T00:00:00Z"},
+                "lane_prerequisites": {"status": "ok", "observed_at": solstone_core_time::utc_rfc3339(now), "expires_at": "2030-01-01T00:00:00Z"}
             }
         }))
         .expect("record"),
@@ -146,7 +146,7 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
     assert!(stored.contains("credential_hmac"));
     assert!(!stored.contains(SECRET));
     let inspection =
-        solstone_core_brain::inspect_brain_state(&journal, &config, chrono::Utc::now());
+        solstone_core_brain::inspect_brain_state(&journal, &config, jiff::Timestamp::now());
     assert_eq!(
         inspection.projection.reason_code.as_deref(),
         Some("provider_key_invalid")
@@ -409,7 +409,7 @@ fn owner_correction_keeps_the_unprocessed_segment() {
     );
     assert!(!solstone_core_brain::brain_state_path(&journal).exists());
     let inspection =
-        solstone_core_brain::inspect_brain_state(&journal, &config, chrono::Utc::now());
+        solstone_core_brain::inspect_brain_state(&journal, &config, jiff::Timestamp::now());
     assert_eq!(
         inspection.projection.reason_code.as_deref(),
         Some("provider_key_invalid")

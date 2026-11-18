@@ -11,13 +11,15 @@ use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, Duration, NaiveDate};
+use jiff::Span;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_location::places::{Alias, PlaceStore, clean_name};
 use solstone_core_location::{Entry, PlaceView};
+use solstone_core_time::day_key;
 
 use crate::{
     AppState, area_json, entry_json, invalid_day, invalid_month, place_json, round, town_json,
@@ -215,18 +217,28 @@ pub(crate) async fn week(
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapWeek, move || {
-        let Ok(date) = NaiveDate::parse_from_str(&day, "%Y%m%d") else {
+        let Some(date) = solstone_core_time::parse_day(&day) else {
             return invalid_day();
         };
-        let monday = date - Duration::days(i64::from(date.weekday().num_days_from_monday()));
+        let Some(monday) = days_after(date, -i64::from(date.weekday().to_monday_zero_offset()))
+        else {
+            return invalid_day();
+        };
+        // The week and the weeks either side, or none when they leave the
+        // calendar's range.
+        let Some(keys) = (0..7)
+            .map(|offset| days_after(monday, offset).map(day_key))
+            .collect::<Option<Vec<String>>>()
+        else {
+            return invalid_day();
+        };
+        let (Some(previous), Some(next)) = (
+            days_after(monday, -7).map(day_key),
+            days_after(monday, 7).map(day_key),
+        ) else {
+            return invalid_day();
+        };
         let store = PlaceStore::read(&journal_root);
-        let keys: Vec<String> = (0..7)
-            .map(|offset| {
-                (monday + Duration::days(offset))
-                    .format("%Y%m%d")
-                    .to_string()
-            })
-            .collect();
         let views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
             Ok(views) => views,
             Err(error) => return names_unavailable(error.to_string()),
@@ -246,16 +258,11 @@ pub(crate) async fn week(
                 "items": items,
             }));
         }
-        let step = |weeks: i64| {
-            (monday + Duration::days(7 * weeks))
-                .format("%Y%m%d")
-                .to_string()
-        };
         Json(json!({
-            "start": monday.format("%Y%m%d").to_string(),
+            "start": day_key(monday),
             "days": days,
-            "previous": step(-1),
-            "next": step(1),
+            "previous": previous,
+            "next": next,
         }))
         .into_response()
     })
@@ -307,30 +314,31 @@ pub(crate) async fn month(
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapMonth, move || {
-        let year: i32 = match month[..4].parse() {
+        let year: i16 = match month[..4].parse() {
             Ok(y) => y,
             Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
         };
-        let month_num: u32 = match month[4..6].parse() {
+        let month_num: i8 = match month[4..6].parse() {
             Ok(m) => m,
             Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
         };
-        let Some(first_date) = NaiveDate::from_ymd_opt(year, month_num, 1) else {
+        let Ok(first_date) = Date::new(year, month_num, 1) else {
             return invalid_month(StatusCode::BAD_REQUEST);
         };
-        let before_date = first_date - Duration::days(1);
-        let before_day = before_date.format("%Y%m%d").to_string();
-        let previous = before_date.format("%Y%m").to_string();
-
-        let next_date = if month_num == 12 {
-            NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
-        } else {
-            NaiveDate::from_ymd_opt(year, month_num + 1, 1).unwrap()
+        // The days either side, or none when they leave the calendar's range.
+        let (Some(before_date), Some(next_date)) = (
+            days_after(first_date, -1),
+            days_after(first_date, i64::from(first_date.days_in_month())),
+        ) else {
+            return invalid_month(StatusCode::BAD_REQUEST);
         };
-        let next = next_date.format("%Y%m").to_string();
-        let after_day = next_date.format("%Y%m%d").to_string();
+        let before_day = day_key(before_date);
+        let previous = month_key(before_date);
 
-        let days_in_month = (next_date - first_date).num_days();
+        let next = month_key(next_date);
+        let after_day = day_key(next_date);
+
+        let days_in_month = i64::from(first_date.days_in_month());
 
         let tier = match solstone_core_location::area_tier() {
             Ok(tier) => tier,
@@ -341,11 +349,11 @@ pub(crate) async fn month(
         // The day before, every day of the month, then the day after, in order,
         // so each day is read once.
         let mut keys = vec![before_day];
-        keys.extend((0..days_in_month).map(|offset| {
-            (first_date + Duration::days(offset))
-                .format("%Y%m%d")
-                .to_string()
-        }));
+        keys.extend(
+            (0..days_in_month)
+                .filter_map(|offset| days_after(first_date, offset))
+                .map(day_key),
+        );
         keys.push(after_day);
         let mut views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
             Ok(views) => views,
@@ -439,10 +447,11 @@ pub(crate) async fn month(
             .is_empty()
             || any_day_has_devices;
 
-        let today = chrono::Utc::now()
-            .with_timezone(&solstone_core_journal_config::owner_zone(&journal_root))
-            .format("%Y%m%d")
-            .to_string();
+        let today = day_key(
+            jiff::Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(&journal_root))
+                .date(),
+        );
 
         Json(json!({
             "month": month,
@@ -465,4 +474,17 @@ pub(crate) async fn month(
         .into_response()
     })
     .await
+}
+
+/// The date `days` calendar days after `date`, or none outside the calendar's
+/// range.
+fn days_after(date: Date, days: i64) -> Option<Date> {
+    date.checked_add(Span::new().try_days(days).ok()?).ok()
+}
+
+/// A compact month key, `YYYYMM`.
+fn month_key(date: Date) -> String {
+    let mut key = day_key(date);
+    key.truncate(key.len() - 2);
+    key
 }

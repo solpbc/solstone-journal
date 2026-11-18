@@ -13,8 +13,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
-use chrono_tz::Tz;
+use jiff::ZonedDateTime;
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
@@ -77,14 +78,15 @@ fn build_token(journal: &Path, day: &str, hidden: &BTreeSet<String>) -> String {
 
 /// `day` and the days before it an experience on it can have started on.
 fn days_reaching(day: &str) -> BTreeSet<String> {
-    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(date) = solstone_core_time::parse_day(day) else {
         return BTreeSet::from([day.to_owned()]);
     };
     (0..=REACH_DAYS)
         .map(|back| {
-            (date - chrono::Duration::days(back))
-                .format("%Y%m%d")
-                .to_string()
+            solstone_core_time::day_key(
+                date.checked_sub(jiff::Span::new().days(back))
+                    .expect("a day a few days back"),
+            )
         })
         .collect()
 }
@@ -162,25 +164,27 @@ fn read_rows(journal: &Path, day: &str) -> Result<BTreeMap<String, Vec<BodyRow>>
 /// A time on the clock that placed this source's windows, so the day reads as its
 /// windows do, whatever offset an export rendered. Its own clock when there's no
 /// such record.
-fn on_clock(time: DateTime<FixedOffset>, zone: Option<Tz>) -> NaiveDateTime {
+fn on_clock(time: &ZonedDateTime, zone: Option<&TimeZone>) -> DateTime {
     zone.map_or_else(
-        || time.naive_local(),
-        |zone| time.with_timezone(&zone).naive_local(),
+        || time.datetime(),
+        |zone| zone.to_datetime(time.timestamp()),
     )
 }
 
-fn clock(time: DateTime<FixedOffset>, zone: Option<Tz>) -> String {
-    on_clock(time, zone).format("%H:%M").to_string()
+fn clock(time: &ZonedDateTime, zone: Option<&TimeZone>) -> String {
+    on_clock(time, zone).strftime("%H:%M").to_string()
 }
 
-fn time_of(text: Option<&str>) -> Option<DateTime<FixedOffset>> {
+fn time_of(text: Option<&str>) -> Option<ZonedDateTime> {
     parse_source_time(text?)
 }
 
-fn span_words(row: &BodyRow, day: &str, zone: Option<Tz>) -> String {
-    let word = |text: Option<&str>| match time_of(text).map(|time| on_clock(time, zone)) {
-        Some(time) if time.format("%Y%m%d").to_string() == day => time.format("%H:%M").to_string(),
-        Some(time) => time.format("%Y-%m-%d %H:%M").to_string(),
+fn span_words(row: &BodyRow, day: &str, zone: Option<&TimeZone>) -> String {
+    let word = |text: Option<&str>| match time_of(text).map(|time| on_clock(&time, zone)) {
+        Some(time) if solstone_core_time::day_key(time.date()) == day => {
+            time.strftime("%H:%M").to_string()
+        }
+        Some(time) => time.strftime("%Y-%m-%d %H:%M").to_string(),
         None => String::new(),
     };
     format!(
@@ -193,21 +197,25 @@ fn span_words(row: &BodyRow, day: &str, zone: Option<Tz>) -> String {
 #[derive(Default)]
 struct Tally {
     count: u64,
-    first: Option<DateTime<FixedOffset>>,
-    last: Option<DateTime<FixedOffset>>,
+    first: Option<ZonedDateTime>,
+    last: Option<ZonedDateTime>,
 }
 
 impl Tally {
     fn add(&mut self, row: &BodyRow) {
         self.count += 1;
         if let Some(time) = time_of(row.begins()) {
-            self.first = Some(self.first.map_or(time, |first| first.min(time)));
-            self.last = Some(self.last.map_or(time, |last| last.max(time)));
+            self.first = Some(
+                self.first
+                    .take()
+                    .map_or_else(|| time.clone(), |first| first.min(time.clone())),
+            );
+            self.last = Some(self.last.take().map_or(time.clone(), |last| last.max(time)));
         }
     }
 
-    fn words(&self, zone: Option<Tz>) -> String {
-        match (self.first, self.last) {
+    fn words(&self, zone: Option<&TimeZone>) -> String {
+        match (&self.first, &self.last) {
             (Some(first), Some(last)) if first != last => {
                 format!(
                     "{}, {} to {}",
@@ -246,7 +254,7 @@ fn render_source(
     source: &str,
     rows: &[BodyRow],
     day: &str,
-    zone: Option<Tz>,
+    zone: Option<&TimeZone>,
 ) {
     lines.push(format!("## {}", source_label(source)));
     lines.push(String::new());
@@ -277,7 +285,7 @@ fn render_source(
                 if !row.words.is_empty() {
                     line.push_str(&format!(": {}", row.words.join(", ")));
                 }
-                let begins = time_of(row.begins()).map(|time| time.timestamp_millis());
+                let begins = time_of(row.begins()).map(|time| time.timestamp().as_millisecond());
                 experiences.push((begins, row.id.clone(), line));
             }
             RowKind::ExperienceTile => {
@@ -372,14 +380,14 @@ fn render_source(
 }
 
 fn render_document(journal: &Path, day: &str, rows: &BTreeMap<String, Vec<BodyRow>>) -> String {
-    let heading = NaiveDate::parse_from_str(day, "%Y%m%d").map_or_else(
-        |_| day.to_owned(),
-        |date| date.format("%A, %B %-d, %Y").to_string(),
+    let heading = solstone_core_time::parse_day(day).map_or_else(
+        || day.to_owned(),
+        |date| date.strftime("%A, %B %-d, %Y").to_string(),
     );
     let mut lines = vec![format!("# body on {heading}"), String::new()];
     for (source, rows) in rows {
         let zone = solstone_core_journal_config::placed_zone(journal, source);
-        render_source(&mut lines, source, rows, day, zone);
+        render_source(&mut lines, source, rows, day, zone.as_ref());
     }
     let mut text = lines.join("\n");
     while text.ends_with("\n\n") {

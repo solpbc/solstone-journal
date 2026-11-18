@@ -11,7 +11,7 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode, header};
-    use chrono::{TimeZone, Utc};
+    use jiff::Timestamp;
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use solstone_core_journal_stats_cli::bounded_input_mtime;
@@ -125,7 +125,7 @@ mod tests {
     fn app(root: &Path) -> axum::Router {
         router(
             root.to_path_buf(),
-            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+            Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
             shell,
         )
     }
@@ -655,7 +655,7 @@ mod tests {
         fn app(root: &Path) -> axum::Router {
             crate::router_with_delete_window(
                 root.to_path_buf(),
-                Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+                Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
                 shell,
                 Duration::from_secs(10),
             )
@@ -777,7 +777,7 @@ mod tests {
         fn app(root: &Path) -> axum::Router {
             crate::router_with_delete_window(
                 root.to_path_buf(),
-                Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+                Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
                 shell,
                 Duration::from_secs(10),
             )
@@ -951,7 +951,7 @@ mod tests {
                 &index,
                 &solstone_core_retention::made_from::NothingMade,
             );
-            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
+            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], Timestamp::now());
             assert_eq!(swept.failed, Vec::<String>::new());
             assert_eq!(names(&root.path().join(SEGMENT)), vec!["tombstone.json"]);
             assert_eq!(trash_items(root.path()).len(), 1);
@@ -986,7 +986,7 @@ mod tests {
                 surface: solstone_core_removals::Surface::Web {
                     page: solstone_core_removals::Page::Settings,
                 },
-                at: chrono::Utc::now().to_rfc3339(),
+                at: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 operation: None,
                 backups: false,
             });
@@ -996,7 +996,7 @@ mod tests {
                 &index,
                 &solstone_core_retention::made_from::NothingMade,
             );
-            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
+            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], Timestamp::now());
             assert_eq!(swept.failed, Vec::<String>::new());
             let after = snapshot(root.path());
             for (path, value) in &before {
@@ -1196,7 +1196,7 @@ mod tests {
             }
         }
         delete_all_stats_json(&stats_free_root);
-        let clock_now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let clock_now = "2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let stats_free_walk = crate::calendar::counts_by_walk(&stats_free_root, clock_now).unwrap();
         let _ = fs::remove_dir_all(&stats_free_root);
 
@@ -1314,12 +1314,12 @@ mod tests {
                     let path = "/app/transcripts/api/segment/20260731/speakers/134000_60";
                     let early = router(
                         root.clone(),
-                        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+                        Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
                         shell,
                     );
                     let late = router(
                         root.clone(),
-                        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 3, 0, 0, 0).unwrap()),
+                        Clock::fixed("2026-08-03T00:00:00Z".parse::<Timestamp>().unwrap()),
                         shell,
                     );
                     let (_, _, early_body) = response(early, path).await;
@@ -1796,12 +1796,13 @@ mod tests {
         )
         .unwrap();
 
-        let walk = crate::calendar::counts_by_walk(root.path(), Utc::now()).unwrap();
+        let walk = crate::calendar::counts_by_walk(root.path(), Timestamp::now()).unwrap();
         assert_eq!(walk[DAY], 43);
 
         let path_aside = root.path().join("chronicle/20260731/stats.json.aside");
         fs::rename(&path, &path_aside).unwrap();
-        let file_count = crate::calendar::day_range_count(root.path(), DAY, Utc::now()).unwrap();
+        let file_count =
+            crate::calendar::day_range_count(root.path(), DAY, Timestamp::now()).unwrap();
         fs::rename(&path_aside, &path).unwrap();
 
         let app = app(root.path());
@@ -1957,7 +1958,7 @@ mod tests {
             br#"{"identity":{"timezone":"America/Denver"}}"#,
         );
         // Past midnight in UTC, still the evening before in Denver.
-        let now = Utc.with_ymd_and_hms(2026, 8, 2, 3, 0, 0).unwrap();
+        let now = "2026-08-02T03:00:00Z".parse::<Timestamp>().unwrap();
         assert_eq!(
             crate::shell::open_day_from_journal(root.path(), now).unwrap(),
             "20260801"

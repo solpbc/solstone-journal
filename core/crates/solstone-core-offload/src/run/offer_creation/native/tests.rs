@@ -5,7 +5,6 @@ use std::cell::Cell;
 use std::fs;
 use std::io;
 
-use chrono::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_backup::archive_admission::{ArchiveBudget, Clock};
 use solstone_core_backup_runtime::{
@@ -57,10 +56,10 @@ fn services(work: &NoWork) -> BackupServices<'_> {
     }
 }
 
-fn time() -> (NaiveDate, DateTime<Utc>) {
+fn time() -> (Date, Timestamp) {
     (
-        NaiveDate::from_ymd_opt(2026, 10, 10).unwrap(),
-        Utc.with_ymd_and_hms(2026, 10, 10, 0, 0, 0).unwrap(),
+        jiff::civil::date(2026, 10, 10),
+        "2026-10-10T00:00:00Z".parse::<Timestamp>().unwrap(),
     )
 }
 

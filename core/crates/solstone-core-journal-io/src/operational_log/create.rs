@@ -9,7 +9,7 @@ use std::io::{self, ErrorKind, Write};
 #[cfg(any(test, feature = "test-hooks"))]
 use std::time::Duration;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 
 use super::admission::encode_oplog_admission;
 use super::sample_local_instant;
@@ -64,7 +64,7 @@ pub fn create_oplog(
         source_original,
         run_original,
         format,
-        sample_local_instant()?,
+        &sample_local_instant()?,
     )
 }
 
@@ -78,7 +78,7 @@ pub fn create_oplog_at(
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
-    instant: DateTime<FixedOffset>,
+    instant: &ZonedDateTime,
 ) -> Result<OplogWriter, OplogCreateError> {
     create_oplog_at_checked(
         root,
@@ -95,7 +95,7 @@ pub fn create_oplog_at_checked(
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
-    instant: DateTime<FixedOffset>,
+    instant: &ZonedDateTime,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<OplogWriter, OplogCreateError> {
     if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
@@ -119,7 +119,7 @@ pub fn create_oplog_with_test_timing(
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
-    instant: DateTime<FixedOffset>,
+    instant: &ZonedDateTime,
     timeout: Duration,
     poll_interval: Duration,
 ) -> Result<OplogWriter, OplogCreateError> {
@@ -139,7 +139,7 @@ fn create_with_timing(
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
-    instant: DateTime<FixedOffset>,
+    instant: &ZonedDateTime,
     timing: LockTiming,
     caller_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<OplogWriter, OplogCreateError> {
@@ -1330,7 +1330,7 @@ struct OplogCreateTraceState {
     entropy_fault_consumed: bool,
     entropy_draws: usize,
     events: Vec<OplogCreateEvent>,
-    sampled_instant: Option<DateTime<FixedOffset>>,
+    sampled_instant: Option<ZonedDateTime>,
     sampler_fail: bool,
     sampler_calls: usize,
 }
@@ -1560,7 +1560,7 @@ fn record_event(event: OplogCreateEvent) {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-pub(super) fn take_sampler_override() -> Option<Result<DateTime<FixedOffset>, OplogCreateError>> {
+pub(super) fn take_sampler_override() -> Option<Result<ZonedDateTime, OplogCreateError>> {
     OPLOG_CREATE_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let state = trace.as_mut()?;
@@ -1568,7 +1568,7 @@ pub(super) fn take_sampler_override() -> Option<Result<DateTime<FixedOffset>, Op
         if state.sampler_fail {
             Some(Err(bare(OplogCreateReason::Clock)))
         } else {
-            state.sampled_instant.map(Ok)
+            state.sampled_instant.clone().map(Ok)
         }
     })
 }
@@ -1706,7 +1706,7 @@ pub fn run_with_oplog_entropy_source_fault_at<T>(
 /// Freeze the production sampler to `instant`.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn run_with_oplog_sampled_instant<T>(
-    instant: DateTime<FixedOffset>,
+    instant: ZonedDateTime,
     operation: impl FnOnce() -> T,
 ) -> T {
     with_trace(
@@ -1790,8 +1790,8 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use chrono::DateTime;
     use nix::sys::stat::{Mode, umask};
+    use solstone_core_time::parse_rfc3339;
 
     use super::*;
     use crate::journal_root::JournalRoot;
@@ -1809,8 +1809,8 @@ mod tests {
     const SOURCE: &str = "cortex";
     const RUN: &str = "daily-think";
 
-    fn instant() -> DateTime<FixedOffset> {
-        DateTime::parse_from_rfc3339("2026-09-01T16:42:33.381904Z").unwrap()
+    fn instant() -> ZonedDateTime {
+        parse_rfc3339("2026-09-01T16:42:33.381904Z").unwrap()
     }
 
     fn temp() -> tempfile::TempDir {
@@ -1818,7 +1818,7 @@ mod tests {
     }
 
     fn health_at(root: &Path) -> crate::operational_log::OplogDayHealth {
-        let (day, _) = derive_day_key_and_opened_field(instant());
+        let (day, _) = derive_day_key_and_opened_field(&instant());
         admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap()
     }
 
@@ -1828,14 +1828,14 @@ mod tests {
             SOURCE,
             RUN,
             OplogFormat::Log,
-            instant(),
+            &instant(),
             ZERO,
             ZERO,
         )
     }
 
     fn dest_for(file_id: [u8; 16]) -> String {
-        let (_, opened) = derive_day_key_and_opened_field(instant());
+        let (_, opened) = derive_day_key_and_opened_field(&instant());
         format_oplog_name(&oplog_name_from_parts(
             SOURCE,
             RUN,
@@ -1846,7 +1846,7 @@ mod tests {
     }
 
     fn health_dir(root: &Path) -> std::path::PathBuf {
-        let (day, _) = derive_day_key_and_opened_field(instant());
+        let (day, _) = derive_day_key_and_opened_field(&instant());
         root.join("chronicle").join(day).join("health")
     }
 
@@ -2520,7 +2520,7 @@ mod tests {
                 "",
                 RUN,
                 OplogFormat::Log,
-                instant(),
+                &instant(),
                 ZERO,
                 ZERO,
             )
@@ -2533,7 +2533,7 @@ mod tests {
                 "ok",
                 "bad\0name",
                 OplogFormat::Log,
-                instant(),
+                &instant(),
                 ZERO,
                 ZERO,
             )
@@ -2649,14 +2649,14 @@ mod tests {
     #[test]
     fn day_and_utc_come_from_the_same_instant() {
         let temporary = temp();
-        let offset = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
-        let (day, opened) = derive_day_key_and_opened_field(offset);
+        let offset = parse_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
+        let (day, opened) = derive_day_key_and_opened_field(&offset);
         let writer = create_oplog_with_test_timing(
             JournalRoot::open(temporary.path()).unwrap(),
             SOURCE,
             RUN,
             OplogFormat::Log,
-            offset,
+            &offset,
             ZERO,
             ZERO,
         )
@@ -2817,7 +2817,7 @@ mod tests {
     #[test]
     fn sampled_near_midnight_instant_controls_day_and_utc_fields() {
         let temporary = temp();
-        let offset = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
+        let offset = parse_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [0x21 + index as u8; 16])
             .collect();
@@ -3828,7 +3828,7 @@ mod tests {
                     SOURCE,
                     RUN,
                     OplogFormat::Log,
-                    instant(),
+                    &instant(),
                     ZERO,
                     ZERO,
                 )
@@ -4295,7 +4295,7 @@ mod tests {
                     SOURCE,
                     RUN,
                     OplogFormat::Log,
-                    instant(),
+                    &instant(),
                     ZERO,
                     ZERO,
                 )
@@ -4443,31 +4443,43 @@ mod tests {
 
 #[cfg(test)]
 mod derivation_tests {
-    use chrono::DateTime;
+    use solstone_core_time::{parse_rfc3339, zone};
 
     use super::*;
 
-    /// DST here is two independent `FixedOffset` instants, not an IANA fold.
+    /// Each call derives day-key and UTC field from its instant alone.
     ///
-    /// Production only ever receives `DateTime<FixedOffset>`. This crate
-    /// depends on plain `chrono`, not `chrono-tz`, so a real zone database
-    /// transition is not available in tests. A caller who sampled
-    /// `Local::now()` across a spring-forward hands in two nearby instants
-    /// with different offsets; this checks that each call derives day-key
-    /// and UTC field from that instant alone, with no persistent state.
+    /// A caller who sampled the local clock across a spring-forward hands in
+    /// two nearby instants with different offsets. The same instants read in
+    /// the zone that made the change derive the same fields, so a fixed offset
+    /// and a named zone agree, and nothing persists between calls.
     #[test]
     fn dst_boundary_instants_derive_independently() {
-        let before = DateTime::parse_from_rfc3339("2026-03-08T01:30:00-05:00").unwrap();
-        let after = DateTime::parse_from_rfc3339("2026-03-08T03:30:00-04:00").unwrap();
-        let (day_before, opened_before) = derive_day_key_and_opened_field(before);
-        let (day_after, opened_after) = derive_day_key_and_opened_field(after);
+        let before = parse_rfc3339("2026-03-08T01:30:00-05:00").unwrap();
+        let after = parse_rfc3339("2026-03-08T03:30:00-04:00").unwrap();
+        let (day_before, opened_before) = derive_day_key_and_opened_field(&before);
+        let (day_after, opened_after) = derive_day_key_and_opened_field(&after);
         assert_eq!(day_before, "20260308");
         assert_eq!(opened_before, "20260308T063000.000000Z");
         assert_eq!(day_after, "20260308");
         assert_eq!(opened_after, "20260308T073000.000000Z");
-        let (day_before_again, opened_before_again) = derive_day_key_and_opened_field(before);
+        let (day_before_again, opened_before_again) = derive_day_key_and_opened_field(&before);
         assert_eq!(day_before, day_before_again);
         assert_eq!(opened_before, opened_before_again);
+
+        let new_york = zone("America/New_York").unwrap();
+        let zoned_before = before.timestamp().to_zoned_datetime(new_york.clone());
+        let zoned_after = after.timestamp().to_zoned_datetime(new_york);
+        assert_eq!(zoned_before.offset().seconds(), -5 * 3600);
+        assert_eq!(zoned_after.offset().seconds(), -4 * 3600);
+        assert_eq!(
+            derive_day_key_and_opened_field(&zoned_before),
+            (day_before, opened_before)
+        );
+        assert_eq!(
+            derive_day_key_and_opened_field(&zoned_after),
+            (day_after, opened_after)
+        );
     }
 }
 

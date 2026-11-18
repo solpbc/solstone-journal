@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -148,8 +148,8 @@ fn link(dst: &str, label: &str) -> (String, String, String, String) {
     )
 }
 
-fn at(text: &str) -> Option<NaiveDateTime> {
-    Some(NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").unwrap())
+fn at(text: &str) -> Option<DateTime> {
+    Some(DateTime::strptime("%Y-%m-%d %H:%M", text).unwrap())
 }
 
 fn event(start: &str, end: &str) -> ScheduledEvent {

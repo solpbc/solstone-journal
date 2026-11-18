@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EntityOperationContext, EntityOperationKind, ReviewOwnerConflictKind, ReviewOwnerError,
@@ -16,6 +16,7 @@ use solstone_core_entity_matching::{
     ConfidentMatcher, EntityNameCandidate, EntityNameMatchOutcome, entity_slug,
     normalize_resolution_query,
 };
+use solstone_core_time::Precision;
 
 use crate::hold_facet_trust_lock;
 
@@ -1362,7 +1363,7 @@ fn operation(kind: EntityOperationKind, metadata: Value) -> EntityOperationConte
     }
 }
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+    solstone_core_time::utc_z(Timestamp::now(), Precision::Micros)
 }
 fn identity_name(identity: &Value) -> String {
     normalize_resolution_query(

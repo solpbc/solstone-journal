@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 
 use crate::read::read_day_records;
@@ -68,7 +68,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     segment_source: &S,
     journal: &Path,
     window: usize,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<BacklogView, HealthError> {
     read_backlog_view_using(
         health_source,
@@ -87,7 +87,7 @@ pub fn read_backlog_view_with_roots<H: HealthLogSource, S: SegmentSource>(
     segment_source: &S,
     journal: &Path,
     window: usize,
-    now: DateTime<Utc>,
+    now: Timestamp,
     talent_root: &Path,
     apps_root: &Path,
 ) -> Result<BacklogView, HealthError> {
@@ -113,7 +113,7 @@ fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
     segment_source: &S,
     journal: &Path,
     window: usize,
-    now: DateTime<Utc>,
+    now: Timestamp,
     read_coverage: &dyn Fn(
         &str,
     )
@@ -278,7 +278,7 @@ fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
                 let not_sensed = aged_not_sensed_count(
                     &scanned,
                     &inputs,
-                    now.timestamp_millis(),
+                    now.as_millisecond(),
                     MODALITY_INPUT_AGED_MS,
                 );
                 let stream_updated_ms = stream_updated_ms(journal, &day);
@@ -290,7 +290,7 @@ fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
                     &terminals,
                     stream_updated_ms,
                     repair_attempted,
-                    now.timestamp_millis(),
+                    now.as_millisecond(),
                 );
                 why.extend(non_segment_failed_units(&terminals, stream_updated_ms));
                 let backoff = read_backoff_summary(journal, &day);
@@ -362,7 +362,7 @@ fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
             .unwrap_or_else(|| read_coverage(&day.day))
         {
             Ok(mut coverage) => {
-                coverage.as_of_ms = now.timestamp_millis();
+                coverage.as_of_ms = now.as_millisecond();
                 if coverage.state.is_owed() && day.state == BACKLOG_STATE_COMPLETE {
                     day.state = BACKLOG_STATE_PENDING.to_owned();
                 }
@@ -483,7 +483,7 @@ fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
                 day.daily_coverage = Some(solstone_core_system::daily_coverage::DailyCoverage {
                     maintenance: None,
                     day: day.day.clone(),
-                    as_of_ms: now.timestamp_millis(),
+                    as_of_ms: now.as_millisecond(),
                     state: solstone_core_system::daily_coverage::CoverageState::Unreadable,
                     units: Vec::new(),
                 });
@@ -781,9 +781,10 @@ fn read_failed_marker(
     let object = data.as_object()?;
     let reason = object.get("reason")?.as_str()?.to_owned();
     let failed_at = object.get("failed_at")?.as_str()?;
-    let failed_at_ms = DateTime::parse_from_rfc3339(failed_at)
+    let failed_at_ms = solstone_core_time::parse_rfc3339(failed_at)
         .ok()?
-        .timestamp_millis();
+        .timestamp()
+        .as_millisecond();
     Some((reason, failed_at_ms))
 }
 
@@ -973,7 +974,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
 
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use solstone_core_journal_io::SegmentLayout;
     use tempfile::tempdir;
 
@@ -1036,9 +1037,9 @@ mod tests {
             &BTreeMap::new(),
             None,
             false,
-            DateTime::<Utc>::from_timestamp_millis(1_800_000_000_000)
+            Timestamp::from_millisecond(1_800_000_000_000)
                 .unwrap()
-                .timestamp_millis(),
+                .as_millisecond(),
         );
         assert_eq!(why.len(), 1);
         assert_eq!(why[0].why, WHY_CORRUPT_RAW);

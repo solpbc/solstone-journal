@@ -976,7 +976,7 @@ mod tests {
         assert!(
             solstone_core_journal_config::processing::evaluate_drain_gate(
                 settings,
-                chrono::NaiveTime::from_hms_opt(23, 30, 0).unwrap(),
+                jiff::civil::Time::constant(23, 30, 0, 0),
                 solstone_core_journal_config::processing::DisplayPowersaveReading::UNAVAILABLE
             )
             .open

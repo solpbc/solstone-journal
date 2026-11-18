@@ -40,7 +40,7 @@ async fn native_folder_registration_is_visible_through_maintained_owner_read_rou
         "selected notes",
         "native-row",
         &stamp(),
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     assert_eq!(summary["timestamp"], folder.import_id.as_str());
@@ -111,7 +111,7 @@ async fn same_legacy_hash_changed_folder_versions_keep_distinct_saved_rows_and_b
         "notes",
         "first",
         &stamp(),
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     fs::write(&note, b"other note").unwrap();
@@ -127,7 +127,7 @@ async fn same_legacy_hash_changed_folder_versions_keep_distinct_saved_rows_and_b
         "notes",
         "second",
         &stamp(),
-        chrono_tz::UTC,
+        &jiff::tz::TimeZone::UTC,
     )
     .unwrap();
     for (folder, bytes) in [(&first, b"first note"), (&second, b"other note")] {
@@ -176,7 +176,7 @@ fn native_folder_registration_does_not_open_body_or_unregistered_source_setup() 
                 "selected folder",
                 "body-refusal",
                 &stamp(),
-                chrono_tz::UTC
+                &jiff::tz::TimeZone::UTC
             )
             .is_err()
         );

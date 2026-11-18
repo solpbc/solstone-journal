@@ -11,7 +11,8 @@ pub mod schedule_sync;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Datelike, Utc};
+use jiff::Timestamp;
+use jiff::tz::{Offset, TimeZone};
 use registry::{RoutineDescriptor, routines};
 use solstone_core_backup_runtime::{
     BackupServices, Clock, ClosedToolError, HttpTransport, NativeJournalMaintenance,
@@ -52,8 +53,8 @@ pub struct MaintenanceServices<'a> {
 /// Injectable time and zone for health routines: `zone` is the journal's owner
 /// zone in production, the same zone removal approval re-checks a date in.
 pub struct HealthServices {
-    pub now: DateTime<Utc>,
-    pub zone: chrono_tz::Tz,
+    pub now: Timestamp,
+    pub zone: TimeZone,
 }
 
 impl<'a> MaintenanceServices<'a> {
@@ -295,7 +296,7 @@ fn run_cli_with_deps(
 ) -> CliRun {
     let clock = ProductionClock;
     let restore_hooks = NativeJournalMaintenance;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let placeholder = BackupServices {
         runner,
         http,
@@ -517,7 +518,12 @@ impl Clock for ProductionClock {
     }
 
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        Offset::UTC
+            .to_datetime(Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 
@@ -535,7 +541,7 @@ mod composed_tests {
     use std::path::Path;
 
     use super::{HealthServices, MaintenanceServices, registry, run_cli_with_services};
-    use chrono::{TimeZone, Utc};
+    use jiff::tz::TimeZone;
     use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
     use solstone_core_backup_runtime::{
@@ -639,10 +645,10 @@ mod composed_tests {
             version: "test",
             journal_maintenance: &hooks,
         };
-        let now = Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap();
+        let now: jiff::Timestamp = "2026-03-02T00:00:00Z".parse().unwrap();
         let health = HealthServices {
             now,
-            zone: chrono_tz::Tz::UTC,
+            zone: TimeZone::UTC,
         };
         let services = MaintenanceServices::new(registry::routines());
         let run = |arguments: &[&str]| {

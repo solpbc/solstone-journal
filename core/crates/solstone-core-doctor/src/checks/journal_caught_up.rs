@@ -49,7 +49,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let inventory = solstone_core_system::work_inventory::read(&context.journal_path);
     let (summary, complete) = match inventory {
         Ok(Some(report)) => {
-            let fresh = report.current_at(context.now.timestamp_millis());
+            let fresh = report.current_at(context.now.as_millisecond());
             let owed = report.bands.iter().any(|band| {
                 band.segments_owed
                     + band.daily_units_owed
@@ -374,7 +374,7 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                 }
             };
             let day = entry.file_name().to_string_lossy().to_string();
-            if day.len() != 8 || chrono::NaiveDate::parse_from_str(&day, "%Y%m%d").is_err() {
+            if solstone_core_time::parse_day(&day).is_none() {
                 continue;
             }
             let units_dir = entry.path().join("health/daily-units");

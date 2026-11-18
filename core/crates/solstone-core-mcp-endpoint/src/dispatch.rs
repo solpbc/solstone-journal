@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
@@ -191,7 +191,7 @@ pub fn run_mcp_probe(
         },
         entry.tool_name,
         Some(arguments),
-        Utc::now(),
+        Timestamp::now(),
     )
     .map(|output| crate::jsonrpc::with_note(output.value, output.empty_note.as_deref()))
     .map_err(|error| match error {
@@ -211,7 +211,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     principal: DispatchPrincipal<'_>,
     tool_name: crate::jsonrpc::ToolName,
     arguments: Option<&Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<ToolOutput, DispatchError> {
     if tool_name == crate::jsonrpc::ToolName::SuggestCorrection
         && !crate::suggestions::suggestions_ready()
@@ -390,7 +390,7 @@ fn literal_record_text(record: Map<String, Value>) -> Result<String, DispatchErr
 fn record_outcome(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
-    now: DateTime<Utc>,
+    now: Timestamp,
     outcome: Outcome,
     reason: Option<&str>,
     result: Option<solstone_core_mcp_audit::ResultShape>,
@@ -734,7 +734,7 @@ fn validate(
 
 fn audit_call(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     principal: DispatchPrincipal<'_>,
     entry: &ToolEntry,
     arguments: Map<String, Value>,
@@ -830,7 +830,7 @@ fn execute_validated(
             principal,
             snapshot,
             request,
-            Utc::now(),
+            Timestamp::now(),
         ),
     }
 }
@@ -1467,9 +1467,9 @@ fn search(
             },
             // Journal days are the owner's days, so relative dates resolve against
             // the owner's today.
-            Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-                .date_naive(),
+            Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+                .date(),
             possible_names.admission(),
             crate::body_source::body_entry_admission(journal_root, snapshot, day_files.clone()),
         )
@@ -1883,9 +1883,9 @@ fn search_withheld_body(
             relax: true,
             ..ConnectionSearchRequest::default()
         },
-        Utc::now()
-            .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-            .date_naive(),
+        Timestamp::now()
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+            .date(),
         crate::body_source::body_entry_admission(
             journal_root,
             &with_body,
@@ -2541,7 +2541,7 @@ fn memory_hit_origin(journal_root: &Path, path: &str, stream: &str) -> Option<Or
 }
 
 fn public_memory_origin(origin: &Origin) -> Value {
-    json!({"kind": origin.kind, "creation_label": origin.creation_label, "created_at": origin.created_at})
+    json!({"kind": origin.kind, "creation_label": origin.creation_label, "created_at": solstone_core_time::utc_iso(origin.created_at)})
 }
 
 fn list_facets(
@@ -3658,7 +3658,7 @@ pub(crate) fn read_segment(
 
 pub(crate) fn differing_capture_zone(
     journal_root: &Path,
-    owner: &solstone_core_journal_config::Tz,
+    owner: &solstone_core_journal_config::TimeZone,
     day: &str,
     key: &str,
     segment: &Segment,

@@ -180,7 +180,7 @@ fn summary_value(journal: &Path) -> Value {
             Some(json!({
                 "source": component,
                 "count": places.len(),
-                "latest_at": newest.as_ref().map(|origin| origin.created_at),
+                "latest_at": newest.as_ref().map(|origin| solstone_core_time::utc_iso(origin.created_at)),
                 "label": newest.as_ref().map(|origin| origin.creation_label.as_str()),
             }))
         })
@@ -195,7 +195,7 @@ fn row(journal: &Path, source: &SourceKey, place: &Place) -> Option<Value> {
             "day": place.day,
             "stream": stream,
             "segment": place.segment,
-            "created_at": origin.created_at,
+            "created_at": solstone_core_time::utc_iso(origin.created_at),
             "content": String::from_utf8_lossy(&bytes),
         })),
         OriginalRead::Absent | OriginalRead::Deleted | OriginalRead::Staged => None,
@@ -304,7 +304,6 @@ pub(crate) async fn page(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Duration, TimeZone, Utc};
     use tempfile::TempDir;
 
     use super::*;
@@ -319,8 +318,9 @@ mod tests {
         journal
     }
 
-    fn at(minutes: i64) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 11, 3, 12, 0, 0).unwrap() + Duration::minutes(minutes)
+    fn at(minutes: i64) -> jiff::Timestamp {
+        "2026-11-03T12:00:00Z".parse::<jiff::Timestamp>().unwrap()
+            + jiff::SignedDuration::from_mins(minutes)
     }
 
     fn save(journal: &TempDir, id: &str, label: &str, text: &str, minutes: i64) -> Coordinate {
@@ -375,7 +375,7 @@ mod tests {
             .unwrap();
         assert_eq!(found["count"], 2);
         assert_eq!(found["label"], "Claude");
-        assert_eq!(found["latest_at"], json!(at(2)));
+        assert_eq!(found["latest_at"], json!("2026-11-03T12:02:00Z"));
     }
 
     #[test]
@@ -409,7 +409,7 @@ mod tests {
         let removed = solstone_core_retention::door::remove_segments(
             journal.path(),
             std::slice::from_ref(&target),
-            &at(2).to_rfc3339(),
+            &solstone_core_time::utc_rfc3339(at(2)),
             solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
             "journal-owner",
         );

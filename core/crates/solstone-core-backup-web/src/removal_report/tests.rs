@@ -94,7 +94,7 @@ fn published_mutation_keeps_uncertainty_without_register_payload() {
 #[cfg(unix)]
 #[test]
 fn actual_owner_preserves_success_post_commit_failure_and_stale_refusal() {
-    use chrono::{NaiveDate, TimeZone, Utc};
+    use jiff::tz::Offset;
     use solstone_core_journal_io::JournalRoot;
     use solstone_core_journal_io::activity::{ActivityAdmissionError, TeardownLease};
     use solstone_core_journal_io::media::{MediaPrimitive, run_with_media_hook};
@@ -156,8 +156,10 @@ fn actual_owner_preserves_success_post_commit_failure_and_stale_refusal() {
         }
         let owner = remove_reviewed(
             checked,
-            NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(),
-            Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap(),
+            jiff::civil::date(2026, 8, 6),
+            Offset::UTC
+                .to_timestamp(jiff::civil::date(2026, 8, 6).at(0, 0, 0, 0))
+                .unwrap(),
         );
         let view = ordinary(&owner);
         let facts = serde_json::to_value(&view).unwrap();

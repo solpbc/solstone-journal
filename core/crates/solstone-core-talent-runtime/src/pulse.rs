@@ -8,13 +8,14 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
 };
 use solstone_core_home::HomeContext;
 use solstone_core_system_health::find_segment_dir;
+use solstone_core_time::Precision;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -201,9 +202,15 @@ pub fn commit(
     );
     record.insert(
         "generated_at".to_owned(),
-        Value::String(Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)),
+        Value::String(solstone_core_time::utc_z(
+            Timestamp::now(),
+            Precision::Micros,
+        )),
     );
-    record.insert("ts".to_owned(), Value::from(Utc::now().timestamp_millis()));
+    record.insert(
+        "ts".to_owned(),
+        Value::from(Timestamp::now().as_millisecond()),
+    );
     record.insert("window".to_owned(), window_value(&state.window));
     Ok(CommitPlan::Write(WriteIntent::DayAccumulator {
         day,
@@ -234,7 +241,7 @@ fn build_packet(
     prepared: &PreparedTalent,
     context: &ExecutionContext,
 ) -> Result<PulsePreState, String> {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let home = HomeContext::new(&context.journal, now);
     let day = pulse_day(prepared, &home);
     let mut gaps = Vec::new();
@@ -255,7 +262,7 @@ fn build_packet(
         default,
         window,
         completed_since: compact_json(completed),
-        as_of: home.now_local().to_rfc3339_opts(SecondsFormat::Secs, false),
+        as_of: solstone_core_time::zoned_rfc3339(&home.now_local(), Precision::Secs, false),
         awareness: compact_json(awareness),
         recent_entities: compact_json(json!(recent)),
         gaps: if gaps.is_empty() {
@@ -817,31 +824,27 @@ mod tests {
     #[test]
     fn without_a_requested_day_the_pulse_takes_the_journals_today() {
         let root = tempfile::TempDir::new().unwrap();
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let instant = "2026-09-30T12:00:00Z".parse::<Timestamp>().unwrap();
         let host_day = instant
-            .with_timezone(&solstone_core_journal_config::host_zone())
-            .date_naive();
-        let zone = [
-            solstone_core_journal_config::Tz::Pacific__Kiritimati,
-            solstone_core_journal_config::Tz::Etc__GMTPlus12,
+            .to_zoned_datetime(solstone_core_journal_config::host_zone())
+            .date();
+        let (zone, expected) = [
+            ("Pacific/Kiritimati", "20261001"),
+            ("Etc/GMT+12", "20260930"),
         ]
         .into_iter()
-        .find(|zone| instant.with_timezone(zone).date_naive() != host_day)
+        .map(|(name, expected)| (solstone_core_time::zone(name).unwrap(), expected))
+        .find(|(zone, _)| instant.to_zoned_datetime(zone.clone()).date() != host_day)
         .expect("UTC+14 and UTC-12 never share a date");
         fs::create_dir_all(root.path().join("config")).unwrap();
         fs::write(
             root.path().join("config/journal.json"),
-            json!({"identity": {"timezone": zone.name()}}).to_string(),
+            json!({"identity": {"timezone": zone.iana_name().unwrap()}}).to_string(),
         )
         .unwrap();
         let home = HomeContext::new(root.path(), instant);
         let mut prepared = PreparedTalent::new("pulse".to_owned(), Map::new());
-        assert_eq!(
-            pulse_day(&prepared, &home),
-            instant.with_timezone(&zone).format("%Y%m%d").to_string()
-        );
+        assert_eq!(pulse_day(&prepared, &home), expected);
         prepared.config.insert("day".to_owned(), json!("20260101"));
         assert_eq!(pulse_day(&prepared, &home), "20260101");
     }

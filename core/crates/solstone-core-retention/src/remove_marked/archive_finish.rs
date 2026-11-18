@@ -654,8 +654,8 @@ enum OwnedArchiveReviewOwner {
 pub fn remove_reviewed_with_owned_archive(
     checked: crate::review_context::CheckedReviewContext,
     read: solstone_core_backup::archive_readback::OwnedReadOperation,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> OwnedReviewedArchiveRun {
     #[cfg(any(unix, windows))]
     let selected = preflight_archive_review(&checked, read.as_read());

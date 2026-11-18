@@ -10,7 +10,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde_json::Value;
 use solstone_core_import::RegistrySource;
 use solstone_core_import::text::TextCreated;
@@ -168,7 +168,7 @@ pub fn render(
     source: RegistrySource,
     path: &Path,
     import_id: &str,
-    zone: Tz,
+    zone: &TimeZone,
     stamp: Option<&crate::ics_notes::ImportStamp>,
 ) -> Option<Result<RenderedImport, String>> {
     let conversations = |plan: Result<crate::ImportPlan, crate::SourceError>| {
@@ -176,11 +176,11 @@ pub fn render(
             .map_err(|error| error.to_string())
     };
     Some(match source {
-        RegistrySource::Chatgpt => conversations(crate::chatgpt::plan(path, &zone)),
-        RegistrySource::Claude => conversations(crate::claude::plan(path, &zone)),
-        RegistrySource::Gemini => conversations(crate::gemini::plan(path, &zone)),
+        RegistrySource::Chatgpt => conversations(crate::chatgpt::plan(path, zone)),
+        RegistrySource::Claude => conversations(crate::claude::plan(path, zone)),
+        RegistrySource::Gemini => conversations(crate::gemini::plan(path, zone)),
         RegistrySource::Ics => {
-            crate::ics::render_with_notes(path, &zone, stamp).map_err(|error| error.to_string())
+            crate::ics::render_with_notes(path, zone, stamp).map_err(|error| error.to_string())
         }
         _ => return None,
     })

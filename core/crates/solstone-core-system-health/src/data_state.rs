@@ -6,7 +6,7 @@ use std::io;
 use std::path::Path;
 use std::time::SystemTime;
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use solstone_core_processing_record::{is_failure_exhausted, vocab};
 
@@ -30,7 +30,7 @@ pub fn derive_modality_state(
     has_jsonl: bool,
     has_raw: bool,
     record: Option<&Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DataState {
     let marker_path = segment_path.join(format!(".analyzing_{modality}"));
     let failed_path = segment_path.join(format!(".analyze_failed_{modality}"));
@@ -68,7 +68,7 @@ pub fn derive_modality_state(
     DataState::Absent
 }
 
-fn classify_marker(marker_path: &Path, has_chunks: bool, now: DateTime<Utc>) -> MarkerVerdict {
+fn classify_marker(marker_path: &Path, has_chunks: bool, now: Timestamp) -> MarkerVerdict {
     if has_chunks {
         return MarkerVerdict::ChunksWin;
     }
@@ -89,13 +89,15 @@ fn classify_marker(marker_path: &Path, has_chunks: bool, now: DateTime<Utc>) -> 
 
 fn marker_verdict_from_modified(
     modified: Result<SystemTime, io::Error>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> MarkerVerdict {
     let age = modified
-        .map(DateTime::<Utc>::from)
-        .map(|modified| now.signed_duration_since(modified))
-        .unwrap_or_else(|_| Duration::zero());
-    if age > Duration::seconds(ANALYZING_STALE_SECONDS) {
+        .ok()
+        .and_then(|modified| Timestamp::try_from(modified).ok())
+        .map_or(SignedDuration::ZERO, |modified| {
+            now.duration_since(modified)
+        });
+    if age > SignedDuration::from_secs(ANALYZING_STALE_SECONDS) {
         MarkerVerdict::Stale
     } else {
         MarkerVerdict::Active
@@ -106,14 +108,17 @@ fn marker_verdict_from_modified(
 mod tests {
     use std::io;
 
-    use chrono::Utc;
+    use jiff::Timestamp;
 
     use super::{MarkerVerdict, marker_verdict_from_modified};
 
     #[test]
     fn unreadable_marker_metadata_keeps_a_valid_marker_active() {
         assert_eq!(
-            marker_verdict_from_modified(Err(io::Error::other("metadata unavailable")), Utc::now(),),
+            marker_verdict_from_modified(
+                Err(io::Error::other("metadata unavailable")),
+                Timestamp::now(),
+            ),
             MarkerVerdict::Active
         );
     }
@@ -128,7 +133,7 @@ mod tests {
         use crate::DataState;
 
         let dummy = Path::new("/dummy");
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         for reason in ["server_not_ready", "no_port"] {
             for attempts in [3, 1000] {

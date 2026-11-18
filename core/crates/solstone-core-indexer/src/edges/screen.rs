@@ -44,7 +44,7 @@ pub(crate) fn extract_screen_edges(
     resolver: &mut EdgeResolver,
 ) -> Result<Vec<EdgeRow>, EdgeError> {
     let (anchor, segment) = segment_ref(&context.path)?;
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
+    let ts = segment_start_ts_ms(&context.day, &segment, &resolver.owner_timezone()?)?;
     let mut rows = messaging_rows(entries, context, resolver, &anchor, ts)?;
     rows.extend(calendar_rows(entries, context, resolver, &anchor, ts)?);
     Ok(rows)

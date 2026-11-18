@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::json;
 use solstone_core_system_health::{DaySegment, FilesystemSegmentSource, TimeRange, scan_day};
 
@@ -105,7 +105,7 @@ pub(crate) struct PreparedDay {
 pub(crate) fn prepare_day(
     journal_root: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<PreparedDay, TranscriptError> {
     let (audio, screen, segments) = scan_day(&FilesystemSegmentSource, journal_root, day, now)
         .map_err(TranscriptError::health)?;
@@ -128,7 +128,7 @@ pub struct DaySegmentRef {
 pub fn day_segment_list(
     journal: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Vec<DaySegmentRef>, String> {
     let prepared = prepare_day(journal, day, now).map_err(|err| err.to_string())?;
     Ok(prepared
@@ -155,7 +155,7 @@ pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
     }
 }
 #[allow(clippy::result_large_err)]
-fn checked_prepare(root: &Path, day: &str, now: DateTime<Utc>) -> Result<PreparedDay, Response> {
+fn checked_prepare(root: &Path, day: &str, now: Timestamp) -> Result<PreparedDay, Response> {
     if !valid_day(day) {
         return Err(invalid_day());
     }

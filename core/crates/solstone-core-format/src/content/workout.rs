@@ -9,7 +9,6 @@
 //! started. The text restates what Strava recorded, attributed to Strava, and
 //! computes nothing from it.
 
-use chrono::DateTime;
 use serde_json::Value;
 
 use super::{JsonObject, ProducedChunks, recorded_chunk};
@@ -24,8 +23,8 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             let occurrence = workout
                 .get("start")
                 .and_then(Value::as_str)
-                .and_then(|start| DateTime::parse_from_rfc3339(start).ok())
-                .map(|start| start.timestamp_millis())
+                .and_then(|start| solstone_core_time::parse_rfc3339(start).ok())
+                .map(|start| start.timestamp().as_millisecond())
                 .unwrap_or(0);
             Some(recorded_chunk(content, occurrence, tile))
         })
@@ -64,10 +63,12 @@ fn render_workout(workout: &JsonObject) -> String {
     if let Some(kind) = kind {
         when.push(kind.to_string());
     }
-    if let Some(start) = text("start").and_then(|start| DateTime::parse_from_rfc3339(start).ok()) {
+    if let Some(start) =
+        text("start").and_then(|start| solstone_core_time::parse_rfc3339(start).ok())
+    {
         when.push(format!(
             "started {}",
-            start.naive_local().format("%Y-%m-%d %H:%M")
+            start.datetime().strftime("%Y-%m-%d %H:%M")
         ));
     }
     if let Some(seconds) = number("elapsed_seconds") {

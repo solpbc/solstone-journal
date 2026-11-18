@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 solstone-core-removals.workspace = true
 solstone-core-about.workspace = true
-chrono = { workspace = true }
+jiff = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }
 solstone-core-journal-archive = { workspace = true }
@@ -22,6 +22,7 @@ solstone-core-indexer-todo = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 solstone-core-system = { workspace = true }
 solstone-core-thinking-copy = { workspace = true }
+solstone-core-time = { workspace = true }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-indexer-query = { workspace = true }

@@ -35,7 +35,7 @@ pub fn clients(context: &CheckContext) -> Result<Vec<ClientAssessment>, String> 
 }
 
 pub(crate) fn inspect_context(context: &CheckContext) -> ClientInspection {
-    inspect_clients_at(&context.journal_path, context.now.timestamp_millis())
+    inspect_clients_at(&context.journal_path, context.now.as_millisecond())
 }
 
 pub(crate) fn delivery_facts(inspection: &ClientInspection) -> ClientDeliveryFacts {

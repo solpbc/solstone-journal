@@ -122,16 +122,17 @@ pub struct DrainReport {
 }
 
 fn record_attempt(journal: &Path, entry: &Entry, outcome: &str, cause: Option<&str>) {
-    // Filed under the owner's today: a UTC day makes a folder dated tomorrow.
-    let now = chrono::Local::now();
+    // Filed under this computer's today, like the other operational logs: a UTC
+    // day makes a folder dated tomorrow.
+    let now = jiff::ZonedDateTime::now();
     let relative = solstone_core_journal_io::durability::artifact(
         solstone_core_journal_io::durability::ArtifactId::IndexAttempts,
     )
     .path
-    .replacen('*', &now.format("%Y%m%d").to_string(), 1);
+    .replacen('*', &solstone_core_time::day_key(now.date()), 1);
     let log_path = journal.join(relative);
     let mut event = serde_json::json!({
-        "event": "index.attempt", "ts": now.timestamp_millis(),
+        "event": "index.attempt", "ts": now.timestamp().as_millisecond(),
         "path": entry.key, "outcome": outcome, "cause": cause,
     });
     // How long the entry waited since it was first queued, retries included.
@@ -693,7 +694,7 @@ impl WorkList {
     ) -> io::Result<Vec<Entry>> {
         self.refresh(journal)?;
         let at_ms = now_ms();
-        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
         let mut paths = Vec::new();
         let mut tokens = Vec::new();
         let mut edges = None;

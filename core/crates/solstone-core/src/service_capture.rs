@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDate};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
 use solstone_core_journal_io::operational_log::OplogWriter;
 
 use crate::service::current_process_has_matching_installation_guard;
@@ -74,13 +75,13 @@ fn start_if_guarded_with(
 
 fn start_capture(journal: &Path) -> Result<ServiceCapture, String> {
     let opened = local_instant();
-    let writer = open_and_redirect(journal, opened, open_service_oplog, redirect_both)?;
+    let writer = open_and_redirect(journal, &opened, open_service_oplog, redirect_both)?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
     let journal = journal.to_path_buf();
     let worker =
-        thread::spawn(move || rollover_worker(journal, writer, opened.date_naive(), worker_stop));
+        thread::spawn(move || rollover_worker(journal, writer, opened.date(), worker_stop));
     Ok(ServiceCapture {
         stop,
         worker: Some(worker),
@@ -90,7 +91,7 @@ fn start_capture(journal: &Path) -> Result<ServiceCapture, String> {
 fn rollover_worker(
     journal: PathBuf,
     mut writer: OplogWriter,
-    mut day: NaiveDate,
+    mut day: Date,
     stop: Arc<AtomicBool>,
 ) {
     while !stop.load(Ordering::Relaxed) {
@@ -98,21 +99,21 @@ fn rollover_worker(
         let _ = rollover_at_with(
             &mut writer,
             &mut day,
-            local_instant(),
+            &local_instant(),
             |opened| open_service_oplog(&journal, opened),
             redirect_both,
         );
     }
 }
 
-fn local_instant() -> DateTime<FixedOffset> {
-    Local::now().fixed_offset()
+fn local_instant() -> ZonedDateTime {
+    ZonedDateTime::now()
 }
 
 fn open_and_redirect(
     journal: &Path,
-    opened: DateTime<FixedOffset>,
-    open: impl FnOnce(&Path, DateTime<FixedOffset>) -> Result<OplogWriter, String>,
+    opened: &ZonedDateTime,
+    open: impl FnOnce(&Path, &ZonedDateTime) -> Result<OplogWriter, String>,
     redirect: impl FnOnce(&OplogWriter, Option<&OplogWriter>) -> io::Result<()>,
 ) -> Result<OplogWriter, String> {
     let writer = open(journal, opened)?;
@@ -122,12 +123,12 @@ fn open_and_redirect(
 
 fn rollover_at_with(
     writer: &mut OplogWriter,
-    day: &mut NaiveDate,
-    opened: DateTime<FixedOffset>,
-    open: impl FnOnce(DateTime<FixedOffset>) -> Result<OplogWriter, String>,
+    day: &mut Date,
+    opened: &ZonedDateTime,
+    open: impl FnOnce(&ZonedDateTime) -> Result<OplogWriter, String>,
     redirect: impl FnOnce(&OplogWriter, Option<&OplogWriter>) -> io::Result<()>,
 ) -> bool {
-    if opened.date_naive() == *day {
+    if opened.date() == *day {
         return false;
     }
     let Ok(next) = open(opened) else {
@@ -137,7 +138,7 @@ fn rollover_at_with(
         return false;
     }
     *writer = next;
-    *day = opened.date_naive();
+    *day = opened.date();
     true
 }
 
@@ -147,26 +148,23 @@ mod tests {
     use std::fs;
     use std::io::Write;
 
-    use chrono::TimeZone;
-
     use super::*;
 
-    fn instant(day: u32) -> DateTime<FixedOffset> {
-        FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, day, 12, 0, 0)
-            .single()
+    fn instant(day: i8) -> ZonedDateTime {
+        jiff::civil::date(2026, 8, day)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::fixed(jiff::tz::Offset::UTC))
             .unwrap()
     }
 
-    fn open_test_writer(journal: &Path, opened: DateTime<FixedOffset>) -> OplogWriter {
+    fn open_test_writer(journal: &Path, opened: &ZonedDateTime) -> OplogWriter {
         open_service_oplog(journal, opened).unwrap()
     }
 
-    fn leaf_path(journal: &Path, opened: DateTime<FixedOffset>, writer: &OplogWriter) -> PathBuf {
+    fn leaf_path(journal: &Path, opened: &ZonedDateTime, writer: &OplogWriter) -> PathBuf {
         journal
             .join("chronicle")
-            .join(opened.format("%Y%m%d").to_string())
+            .join(solstone_core_time::day_key(opened.date()))
             .join("health")
             .join(writer.leaf_name())
     }
@@ -203,17 +201,18 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let creation = open_and_redirect(
             journal.path(),
-            instant(7),
+            &instant(7),
             |_, _| Err("injected oplog create failure".to_owned()),
             |_, _| Ok(()),
         )
         .unwrap_err();
         assert!(creation.contains("injected oplog create failure"));
 
-        let redirect = open_and_redirect(journal.path(), instant(7), open_service_oplog, |_, _| {
-            Err(io::Error::other("injected dup2 failure"))
-        })
-        .unwrap_err();
+        let redirect =
+            open_and_redirect(journal.path(), &instant(7), open_service_oplog, |_, _| {
+                Err(io::Error::other("injected dup2 failure"))
+            })
+            .unwrap_err();
         assert!(redirect.contains("redirect service capture: injected dup2 failure"));
     }
 
@@ -221,14 +220,14 @@ mod tests {
     fn rollover_create_or_second_redirect_failure_retains_the_old_destination() {
         let journal = tempfile::tempdir().unwrap();
         let opened = instant(7);
-        let mut writer = open_test_writer(journal.path(), opened);
-        let old_path = leaf_path(journal.path(), opened, &writer);
-        let mut day = opened.date_naive();
+        let mut writer = open_test_writer(journal.path(), &opened);
+        let old_path = leaf_path(journal.path(), &opened, &writer);
+        let mut day = opened.date();
 
         assert!(!rollover_at_with(
             &mut writer,
             &mut day,
-            instant(8),
+            &instant(8),
             |_| Err("injected rollover create failure".to_owned()),
             |_, _| unreachable!("a failed create must not redirect"),
         ));
@@ -239,7 +238,7 @@ mod tests {
         assert!(!rollover_at_with(
             &mut writer,
             &mut day,
-            instant(8),
+            &instant(8),
             |next_opened| Ok(open_test_writer(journal.path(), next_opened)),
             |next, previous| {
                 capture_io::redirect_both_with(
@@ -260,16 +259,16 @@ mod tests {
     fn rollover_swaps_only_after_both_targets_redirect_to_the_new_oplog() {
         let journal = tempfile::tempdir().unwrap();
         let opened = instant(7);
-        let mut writer = open_test_writer(journal.path(), opened);
-        let old_path = leaf_path(journal.path(), opened, &writer);
+        let mut writer = open_test_writer(journal.path(), &opened);
+        let old_path = leaf_path(journal.path(), &opened, &writer);
         writer.write_all(b"before rollover").unwrap();
 
-        let mut day = opened.date_naive();
+        let mut day = opened.date();
         let redirects = RefCell::new(Vec::new());
         assert!(rollover_at_with(
             &mut writer,
             &mut day,
-            instant(8),
+            &instant(8),
             |next_opened| Ok(open_test_writer(journal.path(), next_opened)),
             |next, previous| {
                 assert!(previous.is_some());
@@ -288,7 +287,7 @@ mod tests {
             },
         ));
         assert_eq!(redirects.into_inner(), ["stdout", "stderr"]);
-        let new_path = leaf_path(journal.path(), instant(8), &writer);
+        let new_path = leaf_path(journal.path(), &instant(8), &writer);
         writer.write_all(b"after rollover").unwrap();
         writer.flush().unwrap();
 
@@ -300,6 +299,6 @@ mod tests {
                 .any(|bytes| bytes == b"after rollover")
         );
         assert_contains(&new_path, b"after rollover");
-        assert_eq!(day, instant(8).date_naive());
+        assert_eq!(day, instant(8).date());
     }
 }

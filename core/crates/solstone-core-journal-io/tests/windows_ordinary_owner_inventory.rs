@@ -12,7 +12,8 @@ use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle, Ra
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{FixedOffset, TimeZone};
+use jiff::civil::date;
+use jiff::tz::{Offset, TimeZone};
 use solstone_core_journal_io::operational_log::{
     OplogFormat, admit_day_health_directory, create_oplog_with_test_timing,
 };
@@ -340,17 +341,18 @@ fn open_by_extended_id_for_append_probe(
 fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
     let journal = root.join("opid");
     fs::create_dir(&journal).expect("create oplog share-probe journal root");
-    let instant = FixedOffset::east_opt(0)
-        .expect("UTC offset")
-        .with_ymd_and_hms(2026, 9, 2, 16, 0, 0)
-        .single()
-        .expect("fixed receipt instant");
+    let instant = solstone_core_time::from_local(
+        &TimeZone::fixed(Offset::UTC),
+        date(2026, 9, 2).at(16, 0, 0, 0),
+    )
+    .single()
+    .expect("fixed receipt instant");
     let mut writer = create_oplog_with_test_timing(
         JournalRoot::open(&journal).expect("admit oplog share-probe root"),
         "id",
         "probe",
         OplogFormat::Log,
-        instant,
+        &instant,
         Duration::ZERO,
         Duration::ZERO,
     )

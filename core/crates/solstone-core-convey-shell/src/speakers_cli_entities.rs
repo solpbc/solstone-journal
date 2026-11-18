@@ -10,7 +10,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -222,7 +222,7 @@ pub async fn link_import(
         object.insert("aka".to_owned(), Value::Array(aka));
         object.insert(
             "updated_at".to_owned(),
-            json!(Utc::now().timestamp_millis()),
+            json!(Timestamp::now().as_millisecond()),
         );
         match solstone_core_entity::save_entity_identity(&root.0, entity_id, &identity, None) {
             Ok(_) => {}

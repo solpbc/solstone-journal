@@ -253,12 +253,10 @@ fn prune(entries: &mut Map<String, Value>, journal: &Path) {
     let Some(newest) = days.keys().max() else {
         return;
     };
-    let Ok(date) = chrono::NaiveDate::parse_from_str(newest, "%Y%m%d") else {
+    let Some(date) = solstone_core_time::parse_day(newest) else {
         return;
     };
-    let cutoff = (date - chrono::Duration::days(30))
-        .format("%Y%m%d")
-        .to_string();
+    let cutoff = solstone_core_time::day_key(date - jiff::Span::new().days(30));
     entries.retain(|_, value| {
         let Some(record) = value.as_object() else {
             return true;
@@ -1582,14 +1580,12 @@ mod tests {
     /// contract re-owe window, where a changed contract must make it owed again.
     /// A fixed date ages out of that window, and older days keep their result.
     fn closed_day_inside_reowe_window(journal: &Path) -> String {
-        let today = chrono::NaiveDate::parse_from_str(
-            &crate::daily_coverage::local_day(journal, chrono::Utc::now()),
-            "%Y%m%d",
-        )
+        let today = solstone_core_time::parse_day(&crate::daily_coverage::local_day(
+            journal,
+            jiff::Timestamp::now(),
+        ))
         .unwrap();
-        (today - chrono::Duration::days(1))
-            .format("%Y%m%d")
-            .to_string()
+        solstone_core_time::day_key(today - jiff::Span::new().days(1))
     }
 
     fn accepted_embedded_daily(bed: &Bed, day: &str) -> (PathBuf, PathBuf, String) {

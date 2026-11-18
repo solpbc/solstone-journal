@@ -78,8 +78,8 @@ impl OwnedOffloadInputFailure {
 pub fn prepare_owned_offload_inputs(
     original: &OwnedPreparedArchiveOperation,
     selections: &[OffloadOfferSelection],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<OwnedOffloadInputs, OwnedOffloadInputFailure> {
     let inputs = capture_inputs(
         original.as_prepared(),
@@ -101,8 +101,8 @@ pub(super) fn capture_inputs(
     operation: &PreparedArchiveOperation<'_>,
     carrier: Arc<RootActivityCarrier>,
     selections: &[OffloadOfferSelection],
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> Result<OwnedOffloadInputs, OwnedOffloadInputFailure> {
     let mut resources = Resources::default();
     #[cfg(any(unix, windows))]
@@ -576,8 +576,8 @@ fn fail(
 pub fn create_owned_offload_offers(
     mut admitted: OwnedAdmittedArchive,
     inputs: OwnedOffloadInputs,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
 ) -> OwnedOffloadCreation {
     let carrier = Arc::clone(admitted.carrier());
     let OwnedOffloadInputs {

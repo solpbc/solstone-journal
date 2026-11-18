@@ -639,7 +639,7 @@ fn run_depict(
             "state": vocab::STATE_ANALYZED,
             "reason_code": vocab::REASON_OK,
             "handler": vocab::HANDLER_DEPICT,
-            "attempted_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "attempted_at": attempted_at(),
             "input_size": source.len() as u64,
         }),
     );
@@ -767,6 +767,10 @@ fn publish_failed_analysis(
     Err(error)
 }
 
+fn attempted_at() -> String {
+    solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs)
+}
+
 fn failure_document(
     image_path: &Path,
     input_size: u64,
@@ -782,7 +786,7 @@ fn failure_document(
             "state": vocab::STATE_FAILED,
             "reason_code": reason_code,
             "handler": vocab::HANDLER_DEPICT,
-            "attempted_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "attempted_at": attempted_at(),
             "input_size": input_size,
             "attempts": attempts,
         }),
@@ -1563,7 +1567,7 @@ mod tests {
         assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
         assert_eq!(record["input_size"], input_size);
         assert!(record.get("attempts").is_none());
-        chrono::DateTime::parse_from_rfc3339(
+        solstone_core_time::parse_rfc3339(
             record["attempted_at"]
                 .as_str()
                 .expect("attempted_at must be a string"),

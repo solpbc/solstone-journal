@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_system_health::{
     BACKLOG_DEFAULT_WINDOW, BacklogView, FilesystemHealthLogSource, FilesystemSegmentSource,
     HealthError, read_backlog_view_with_roots,
@@ -14,7 +14,7 @@ pub trait BacklogViewReader {
     fn read_backlog_view(
         &self,
         journal_root: &Path,
-        now: DateTime<Utc>,
+        now: Timestamp,
         system_talent_root: &Path,
         apps_root: &Path,
     ) -> Result<BacklogView, HealthError>;
@@ -28,7 +28,7 @@ impl BacklogViewReader for FilesystemBacklogViewReader {
     fn read_backlog_view(
         &self,
         journal_root: &Path,
-        now: DateTime<Utc>,
+        now: Timestamp,
         system_talent_root: &Path,
         apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {

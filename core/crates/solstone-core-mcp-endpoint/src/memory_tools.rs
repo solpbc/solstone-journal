@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_format::agent_memory::{
@@ -100,7 +100,7 @@ pub(crate) fn execute(
     authority: &MemoryAuthority<'_>,
     request: &JsonRpcRequest,
     tool: ToolName,
-    now: DateTime<Utc>,
+    now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
     #[cfg(all(test, feature = "full-tests"))]
@@ -198,7 +198,7 @@ fn save(
     journal: &Path,
     authority: &MemoryAuthority<'_>,
     request: &JsonRpcRequest,
-    now: DateTime<Utc>,
+    now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
     let Some((content, operation)) = save_args(tool_arguments(request)) else {
@@ -243,7 +243,7 @@ fn save(
         && readiness == "ready"
         && ordinary_readable(journal, authority.id(), &receipt.coordinate);
     let value = json!({"schema":1, "status":status, "operation_id":operation,
-        "coordinate":receipt.coordinate, "origin":receipt.origin, "created_at":receipt.created_at,
+        "coordinate":receipt.coordinate, "origin":receipt.origin, "created_at":solstone_core_time::utc_iso(receipt.created_at),
         "digest":receipt.digest, "byte_count":receipt.byte_count,
         "own_recall":readiness, "ordinary_readable":readable});
     let shape_bytes = match bounded_json(&value, MAX_PREPARED_BYTES) {
@@ -295,7 +295,7 @@ fn postcommit_failure(
     audit: &AuditCoordinates,
     request: &JsonRpcRequest,
     operation: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
     let _ = crate::audit::write_outcome(
@@ -431,7 +431,7 @@ fn memory_publication_queues_under_a_held_index_writer() {
         },
         "kestrel memory publication",
         "operation-1",
-        Utc::now(),
+        Timestamp::now(),
     )
     .unwrap();
     let AppendResult::Stored(receipt) = prepared.result else {
@@ -465,7 +465,7 @@ fn recall_response(
     journal: &Path,
     authority: &MemoryAuthority<'_>,
     request: &JsonRpcRequest,
-    now: DateTime<Utc>,
+    now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
     let Some(args) = recall_args(tool_arguments(request)) else {
@@ -517,8 +517,8 @@ fn recall_response(
         source,
         authority.id(),
         args,
-        now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
-            .date_naive(),
+        now.to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
+            .date(),
         deadline,
     );
     // Serialization and final live checks share the engine's absolute budget.
@@ -659,14 +659,14 @@ pub(crate) mod faults {
         RevokeRead,
     }
     static FAULTS: Mutex<Vec<(PathBuf, Fault)>> = Mutex::new(Vec::new());
-    static CLOCKS: Mutex<Vec<(PathBuf, DateTime<Utc>)>> = Mutex::new(Vec::new());
+    static CLOCKS: Mutex<Vec<(PathBuf, Timestamp)>> = Mutex::new(Vec::new());
 
-    pub fn set_now(journal: &Path, now: DateTime<Utc>) {
+    pub fn set_now(journal: &Path, now: Timestamp) {
         let mut clocks = CLOCKS.lock().unwrap();
         clocks.retain(|(path, _)| path != journal);
         clocks.push((journal.to_path_buf(), now));
     }
-    pub fn now(journal: &Path, default: DateTime<Utc>) -> DateTime<Utc> {
+    pub fn now(journal: &Path, default: Timestamp) -> Timestamp {
         CLOCKS
             .lock()
             .unwrap()
@@ -707,7 +707,7 @@ pub(crate) mod faults {
             Some(Fault::Terminal) => {
                 let path = journal
                     .join("chronicle")
-                    .join(audit.day.format("%Y%m%d").to_string())
+                    .join(solstone_core_time::day_key(audit.day))
                     .join(&audit.stream)
                     .join(&audit.segment)
                     .join("outcome.json");
@@ -723,7 +723,7 @@ pub(crate) mod faults {
                 let removed = solstone_core_retention::door::remove_segments(
                     journal,
                     &[target],
-                    &Utc::now().to_rfc3339(),
+                    &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
                     solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
                     "journal-owner",
                 );

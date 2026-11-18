@@ -70,7 +70,7 @@ fn directory(journal: &Path) -> PathBuf {
 }
 
 fn path(journal: &Path, identity: &ActivityRetry) -> Result<PathBuf, String> {
-    chrono::NaiveDate::parse_from_str(&identity.day, "%Y%m%d").map_err(|e| e.to_string())?;
+    solstone_core_time::parse_day(&identity.day).ok_or("invalid activity work identity")?;
     for value in [&identity.facet, &identity.activity] {
         if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\', '\0']) {
             return Err("invalid activity work identity".to_owned());
@@ -1288,7 +1288,7 @@ mod tests {
                 root.path(),
                 day.into(),
                 root.path().join("chronicle").join(day),
-                chrono::Utc::now().timestamp_millis(),
+                jiff::Timestamp::now().as_millisecond(),
             )
             .unwrap();
             let hash = crate::segment::compute_activity_input_hash(&context, day, &record).unwrap();
@@ -1355,7 +1355,7 @@ mod tests {
             root,
             day.into(),
             root.join("chronicle").join(day),
-            chrono::Utc::now().timestamp_millis(),
+            jiff::Timestamp::now().as_millisecond(),
         )
         .unwrap()
         .with_talent_roots(payload.join("talent"), payload.join("apps"))

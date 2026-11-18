@@ -14,7 +14,7 @@ log.workspace = true
 solstone-core-backup.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-distribution.workspace = true
 solstone-core-facets.workspace = true
@@ -26,6 +26,7 @@ solstone-core-local.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-time.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 solstone-core-transcribe.workspace = true

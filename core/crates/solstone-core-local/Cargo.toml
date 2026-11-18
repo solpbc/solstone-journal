@@ -29,7 +29,7 @@ test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 tar.workspace = true
@@ -42,6 +42,7 @@ solstone-core-artifact-download.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-time.workspace = true
 uuid = { version = "1", features = ["v4"] }
 log.workspace = true
 tempfile = "3.24.0"

@@ -82,7 +82,7 @@ fn is_timestamp(value: &str) -> bool {
 }
 
 fn write_detailed_schedule(journal: &std::path::Path) {
-    let now = chrono::Local::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     fs::write(
         journal.join("config/schedules.json"),
         r#"{"daily_time":"03:00","weekly_day":"monday","weekly_time":"08:15","daily-with-configured-time":{"cmd":["journal","heartbeat"],"every":"daily"},"sub-floor-minute":{"cmd":"journal think --cadence","every":"2m"},"unsupported-interval":{"cmd":"journal check","every":"fortnightly"},"very-long-schedule-name:hourly":{"cmd":["journal","think"],"every":"hourly"},"weekly-status":{"cmd":["journal","maintenance"],"every":"weekly"},"z:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
@@ -238,7 +238,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
         journal.path().join("health/scheduler.json"),
         format!(
             r#"{{"daily-at-midnight":{{"last_run":{}}}}}"#,
-            chrono::Local::now().timestamp()
+            jiff::Timestamp::now().as_second()
         ),
     )
     .expect("midnight state");
@@ -268,7 +268,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
         journal.path().join("health/scheduler.json"),
         format!(
             r#"{{"daily-with-invalid-time":{{"last_run":{}}}}}"#,
-            chrono::Local::now().timestamp()
+            jiff::Timestamp::now().as_second()
         ),
     )
     .expect("invalid daily-time state");

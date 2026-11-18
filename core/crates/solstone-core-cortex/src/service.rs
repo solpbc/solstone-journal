@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
-use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_callosum::CallosumSocketConnection;
 use solstone_core_journal_io::cortex_use::{
@@ -413,7 +412,7 @@ struct ServiceDependencies {
 impl ServiceDependencies {
     fn production() -> Self {
         Self {
-            now: Arc::new(Utc::now),
+            now: Arc::new(jiff::Timestamp::now),
             worker_factory: Arc::new(RenewalWorkerStart::production),
             lifecycle: Arc::new(|_| {}),
             worker_start_requests: 1,
@@ -632,7 +631,6 @@ mod early_stop_tests {
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
     use std::sync::{Arc, Mutex, mpsc};
 
     use super::*;
@@ -645,8 +643,8 @@ mod tests {
         )
     }
 
-    fn test_now() -> DateTime<Utc> {
-        chrono::TimeZone::with_ymd_and_hms(&Utc, 2026, 8, 6, 12, 0, 0).unwrap()
+    fn test_now() -> jiff::Timestamp {
+        "2026-08-06T12:00:00Z".parse().unwrap()
     }
 
     fn test_dependencies(

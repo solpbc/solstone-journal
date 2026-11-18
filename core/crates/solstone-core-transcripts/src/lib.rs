@@ -6,7 +6,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use jiff::SignedDuration;
+use jiff::civil::{DateTime, Time};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
@@ -308,10 +309,10 @@ pub fn is_no_input(text: &str, counts: &SourceCounts) -> bool {
 }
 
 struct Entry {
-    timestamp: NaiveDateTime,
+    timestamp: DateTime,
     segment_key: String,
-    segment_start: NaiveDateTime,
-    segment_end: NaiveDateTime,
+    segment_start: DateTime,
+    segment_end: DateTime,
     prefix: &'static str,
     content: String,
     stream: Option<String>,
@@ -820,13 +821,12 @@ pub fn cluster_range(
     sources: &Sources,
     stream: Option<&str>,
 ) -> Result<String, RangeError> {
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(range_error)?;
+    let date = solstone_core_time::parse_day(day)
+        .ok_or_else(|| RangeError::Invalid(format!("{day} is not a day")))?;
+    let day_key = solstone_core_time::day_key(date);
     let start =
-        NaiveDateTime::parse_from_str(&format!("{}{start}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
-            .map_err(range_error)?;
-    let end =
-        NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
-            .map_err(range_error)?;
+        DateTime::strptime("%Y%m%d%H%M%S", format!("{day_key}{start}")).map_err(range_error)?;
+    let end = DateTime::strptime("%Y%m%d%H%M%S", format!("{day_key}{end}")).map_err(range_error)?;
     let stream = stream.filter(|stream| !stream.is_empty());
     let segments = all_segments(root, day);
     if let Some(stream) = stream
@@ -1807,8 +1807,8 @@ fn name_speakers(text: &str, speakers: &BTreeMap<i64, String>) -> String {
 }
 
 fn entry(
-    start: NaiveDateTime,
-    end: NaiveDateTime,
+    start: DateTime,
+    end: DateTime,
     segment: &Segment,
     prefix: &'static str,
     content: String,
@@ -1881,8 +1881,8 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
         group_lines.push(lines.len());
         lines.push(format!(
             "## {} - {}",
-            first.segment_start.format("%Y-%m-%d %H:%M:%S"),
-            first.segment_end.format("%H:%M:%S")
+            first.segment_start.strftime("%Y-%m-%d %H:%M:%S"),
+            first.segment_end.strftime("%H:%M:%S")
         ));
         lines.push(String::new());
         for entry in group {
@@ -2080,12 +2080,21 @@ fn sorted_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn segment_times(day: &str, key: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
+fn segment_times(day: &str, key: &str) -> Option<(DateTime, DateTime)> {
     let start = segment_parse(key)?;
     let length = key.split_once('_')?.1.parse::<i64>().ok()?;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let start = date.and_hms_opt(start.hour.into(), start.minute.into(), start.second.into())?;
-    Some((start, start + Duration::seconds(length)))
+    let date = solstone_core_time::parse_day(day)?;
+    let start = date.to_datetime(
+        Time::new(
+            i8::try_from(start.hour).ok()?,
+            i8::try_from(start.minute).ok()?,
+            i8::try_from(start.second).ok()?,
+            0,
+        )
+        .ok()?,
+    );
+    let end = start.checked_add(SignedDuration::from_secs(length)).ok()?;
+    Some((start, end))
 }
 
 fn stream_marker(path: &Path) -> Option<String> {

@@ -3,28 +3,30 @@
 
 //! Pure briefing projections.
 
-use chrono::{DateTime, NaiveDate, Timelike, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff::tz::Offset;
 use serde_json::{Value, json};
 
 /// Daily artifacts belong to their analysis day; their briefing presents the
 /// following local calendar day. This relation is independent of execution time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BriefingDates {
-    pub analysis: NaiveDate,
-    pub presentation: NaiveDate,
+    pub analysis: Date,
+    pub presentation: Date,
 }
 
 impl BriefingDates {
-    pub fn for_analysis(analysis: NaiveDate) -> Option<Self> {
+    pub fn for_analysis(analysis: Date) -> Option<Self> {
         Some(Self {
             analysis,
-            presentation: analysis.succ_opt()?,
+            presentation: analysis.tomorrow().ok()?,
         })
     }
 
-    pub fn for_presentation(presentation: NaiveDate) -> Option<Self> {
+    pub fn for_presentation(presentation: Date) -> Option<Self> {
         Some(Self {
-            analysis: presentation.pred_opt()?,
+            analysis: presentation.yesterday().ok()?,
             presentation,
         })
     }
@@ -48,9 +50,10 @@ pub fn compute_phase(segment_count: i64, hour: u32, exists: bool) -> &'static st
     }
 }
 
-pub fn lateness_state(now: DateTime<Utc>, phase: &str) -> Value {
-    let late = phase == "missing" || (phase == "pending" && now.hour() > 12);
-    json!({"late":late,"late_hours":if late { (i64::from(now.hour()) - 10).max(0) } else { 0 }})
+pub fn lateness_state(now: Timestamp, phase: &str) -> Value {
+    let hour = Offset::UTC.to_datetime(now).hour();
+    let late = phase == "missing" || (phase == "pending" && hour > 12);
+    json!({"late":late,"late_hours":if late { (i64::from(hour) - 10).max(0) } else { 0 }})
 }
 
 pub fn render_sections(briefing: &Value) -> Value {

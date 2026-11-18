@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
 
 #[cfg(unix)]
@@ -565,12 +566,12 @@ pub fn bump_progress(
 }
 
 fn now() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+    utc_z(Timestamp::now(), Precision::Micros)
 }
 fn new_attempt_id() -> String {
     format!(
         "{:016x}{:016x}",
-        Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
+        i64::try_from(Timestamp::now().as_nanosecond()).unwrap_or_default() as u64,
         ATTEMPT_COUNTER.fetch_add(1, Ordering::Relaxed)
     )
 }

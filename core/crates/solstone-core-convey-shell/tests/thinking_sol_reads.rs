@@ -70,9 +70,9 @@ fn write_jsonl(path: &Path, entries: &[Value]) {
 
 fn today_for(path: &Path) -> String {
     let zone = solstone_core_journal_config::owner_zone(path);
-    chrono::Utc::now()
-        .with_timezone(&zone)
-        .format("%Y%m%d")
+    jiff::Timestamp::now()
+        .to_zoned_datetime(zone)
+        .strftime("%Y%m%d")
         .to_string()
 }
 
@@ -496,10 +496,10 @@ async fn ac3_active_use_day_falls_back_to_use_id() {
     fixture.established();
     let timestamp = 1_710_030_600_000i64;
     let zone = solstone_core_journal_config::owner_zone(&fixture.0);
-    let owner_day = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp)
+    let owner_day = jiff::Timestamp::from_millisecond(timestamp)
         .expect("timestamp")
-        .with_timezone(&zone)
-        .format("%Y%m%d")
+        .to_zoned_datetime(zone)
+        .strftime("%Y%m%d")
         .to_string();
     let mut no_day = request_event_at("1710030600000", "unused", "fallback", None, timestamp);
     no_day.as_object_mut().expect("request event").remove("day");

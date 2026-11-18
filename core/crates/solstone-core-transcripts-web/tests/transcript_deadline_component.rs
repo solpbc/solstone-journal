@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use solstone_core_transcripts_web::{Clock, router_with_delete_window};
 use tempfile::TempDir;
@@ -125,7 +125,7 @@ async fn sense_spawn_resolution_child() {
     );
     let response = router_with_delete_window(
         root.clone(),
-        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+        Clock::fixed("2026-08-02T00:00:00Z".parse::<Timestamp>().unwrap()),
         shell,
         Duration::from_secs(1),
     )

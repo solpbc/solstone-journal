@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 
 use crate::fixture::local_contract;
@@ -27,7 +27,7 @@ impl std::error::Error for ValidationError {}
 pub struct BrainStateRecord {
     pub schema_version: u64,
     pub revision: u64,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     pub aggregate_state: String,
     pub reason_code: Option<String>,
     pub active_lane: String,
@@ -172,16 +172,16 @@ pub(crate) fn parse_credential_holds(
 #[derive(Debug, Clone, PartialEq)]
 pub struct EvidenceComponent {
     pub status: String,
-    pub observed_at: DateTime<Utc>,
+    pub observed_at: Timestamp,
     pub reason: Option<String>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
     pub diagnostic: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Checking {
-    pub started_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub started_at: Timestamp,
+    pub expires_at: Timestamp,
     pub checking_revision: i64,
     pub fingerprint_sha256: Option<String>,
     pub run_id: String,
@@ -192,13 +192,13 @@ pub struct Checking {
 pub struct RuntimeFailureMarker {
     pub marker_id: String,
     pub revision: i64,
-    pub recorded_at: DateTime<Utc>,
+    pub recorded_at: Timestamp,
     pub reason: String,
 }
 
 pub fn validate_brain_state_record(
     value: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<BrainStateRecord, ValidationError> {
     let object = match value.as_object() {
         Some(object) => object,
@@ -313,7 +313,7 @@ pub fn validate_brain_state_record(
 
 pub(crate) fn parse_evidence(
     value: Option<&Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<BTreeMap<String, Option<EvidenceComponent>>, ValidationError> {
     let vocabulary = &local_contract().brain_state;
     let object = value
@@ -376,7 +376,7 @@ pub(crate) fn parse_evidence(
 /// reject a malformed probe while it can still abandon the live refresh permit.
 pub fn validate_refresh_probe_outcome(
     value: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), ValidationError> {
     parse_evidence(Some(value), now).map(|_| ())
 }
@@ -476,12 +476,12 @@ pub fn evidence_component_for_reason(
     component: &str,
     reason: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, ValidationError> {
     let status = component_status_for_reason(reason)?;
     let value = json!({
         "status": status,
-        "observed_at": now.to_rfc3339(),
+        "observed_at": solstone_core_time::utc_rfc3339(now),
         "reason_code": reason,
         "diagnostic": diagnostic,
     });
@@ -492,7 +492,7 @@ pub fn evidence_component_for_reason(
 pub(crate) fn parse_component(
     component: &str,
     value: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<EvidenceComponent, ValidationError> {
     let vocabulary = &local_contract().brain_state;
     let path = format!("evidence.{component}");
@@ -564,10 +564,7 @@ pub(crate) fn parse_component(
     })
 }
 
-pub(crate) fn parse_checking(
-    value: &Value,
-    now: DateTime<Utc>,
-) -> Result<Checking, ValidationError> {
+pub(crate) fn parse_checking(value: &Value, now: Timestamp) -> Result<Checking, ValidationError> {
     let vocabulary = &local_contract().brain_state;
     let object = value
         .as_object()
@@ -591,7 +588,7 @@ pub(crate) fn parse_checking(
 
 pub(crate) fn parse_runtime_failure_marker(
     value: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<RuntimeFailureMarker, ValidationError> {
     let vocabulary = &local_contract().brain_state;
     let object = value
@@ -642,7 +639,7 @@ fn validate_reduction(record: &BrainStateRecord) -> Result<(), ValidationError> 
 
 pub(crate) fn reduce_evidence(
     record: &BrainStateRecord,
-    now: DateTime<Utc>,
+    now: Timestamp,
     refresh_permit_active: bool,
 ) -> (String, Option<String>) {
     reduce_evidence_with_runtime(record, now, refresh_permit_active, None)
@@ -650,7 +647,7 @@ pub(crate) fn reduce_evidence(
 
 pub(crate) fn reduce_evidence_with_runtime(
     record: &BrainStateRecord,
-    now: DateTime<Utc>,
+    now: Timestamp,
     refresh_permit_active: bool,
     runtime_reason: Option<&str>,
 ) -> (String, Option<String>) {
@@ -907,8 +904,8 @@ fn optional_known(
 fn required_time(
     object: &Map<String, Value>,
     key: &str,
-    now: DateTime<Utc>,
-) -> Result<DateTime<Utc>, ValidationError> {
+    now: Timestamp,
+) -> Result<Timestamp, ValidationError> {
     let value = required_string(object, key)?;
     parse_time(&value, key, now)
 }
@@ -916,23 +913,19 @@ fn required_time(
 fn optional_time(
     object: &Map<String, Value>,
     key: &str,
-    _now: DateTime<Utc>,
-) -> Result<Option<DateTime<Utc>>, ValidationError> {
+    _now: Timestamp,
+) -> Result<Option<Timestamp>, ValidationError> {
     match optional_string(object, key)? {
         None => Ok(None),
-        Some(value) => DateTime::parse_from_rfc3339(&value)
-            .map(|value| Some(value.with_timezone(&Utc)))
+        Some(value) => solstone_core_time::parse_rfc3339(&value)
+            .map(|value| Some(value.timestamp()))
             .map_err(|_| failure(key, "must be an ISO-8601 timestamp")),
     }
 }
 
-fn parse_time(
-    value: &str,
-    path: &str,
-    _now: DateTime<Utc>,
-) -> Result<DateTime<Utc>, ValidationError> {
-    let parsed = DateTime::parse_from_rfc3339(value)
-        .map(|value| value.with_timezone(&Utc))
+fn parse_time(value: &str, path: &str, _now: Timestamp) -> Result<Timestamp, ValidationError> {
+    let parsed = solstone_core_time::parse_rfc3339(value)
+        .map(|value| value.timestamp())
         .map_err(|_| failure(path, "must be an ISO-8601 timestamp"))?;
     Ok(parsed)
 }
@@ -961,7 +954,7 @@ mod tests {
 
     #[test]
     fn reducer_preserves_an_unknown_component_reason() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let record = BrainStateRecord {
             schema_version: local_contract().brain_state.schema_version,
             revision: 1,

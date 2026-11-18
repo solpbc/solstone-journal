@@ -7,12 +7,13 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, hold_lock, write_text,
 };
+use solstone_core_time::Precision;
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
 use crate::{SpeculativeFacetCandidate, SpeculativeFacetSample};
@@ -232,7 +233,7 @@ fn modify_candidates<T>(
 }
 
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+    solstone_core_time::utc_z(Timestamp::now(), Precision::Secs)
 }
 
 fn samples_value(samples: &[SpeculativeFacetSample]) -> Value {

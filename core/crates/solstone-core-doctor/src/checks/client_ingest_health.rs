@@ -9,9 +9,9 @@ use crate::{
 use solstone_core_sol_link::ledger::IngestRejection;
 
 fn rejection_date(rejection: &IngestRejection) -> String {
-    chrono::DateTime::parse_from_rfc3339(&rejection.first)
+    solstone_core_time::parse_rfc3339(&rejection.first)
         .ok()
-        .map(|timestamp| timestamp.format("%Y-%m-%d").to_string())
+        .map(|timestamp| timestamp.strftime("%Y-%m-%d").to_string())
         .unwrap_or_else(|| "unknown".into())
 }
 

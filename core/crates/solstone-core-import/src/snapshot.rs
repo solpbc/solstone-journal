@@ -277,8 +277,7 @@ pub fn verify_preview(
     if record["token"].as_str() != Some(token)
         || options["timestamp"].as_str() != Some(timestamp)
         || options["force"].as_bool() != Some(force)
-        || options["zone"].as_str()
-            != Some(solstone_core_journal_config::owner_zone(journal).name())
+        || options["zone"].as_str() != solstone_core_journal_config::owner_zone(journal).iana_name()
         || options["setting"]
             .as_str()
             .filter(|value| !value.is_empty())
@@ -395,7 +394,7 @@ mod tests {
     }
     fn save_preview(root: &Path, source: &Path, relative: &Path, digest: &str) {
         let metadata = json!({"setting":"office", "source_hint":"gemini", "preview": {"token":"token", "source":source, "relative":relative, "digest":digest,
-            "options":{"timestamp":ID,"force":false,"zone":solstone_core_journal_config::owner_zone(root).name(),"setting":"office","source":"gemini"}}});
+            "options":{"timestamp":ID,"force":false,"zone":solstone_core_journal_config::owner_zone(root).iana_name(),"setting":"office","source":"gemini"}}});
         crate::write_import_metadata(root, ID, metadata.as_object().unwrap()).unwrap();
     }
     #[test]

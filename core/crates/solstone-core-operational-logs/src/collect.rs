@@ -5,7 +5,10 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, Utc};
+use jiff::Timestamp;
+use jiff::ToSpan;
+use jiff::civil::{Date, DateTime};
+use jiff::tz::{Offset, TimeZone};
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs, fold_oplogs},
@@ -19,7 +22,7 @@ use crate::error::CollectError;
 #[derive(Debug, Clone)]
 pub struct HealthLogsQuery {
     pub count: i64,
-    pub since: Option<NaiveDateTime>,
+    pub since: Option<DateTime>,
     pub service: Option<String>,
     pub grep: Option<GrepPattern>,
 }
@@ -61,14 +64,15 @@ impl SourceTailSnapshot {
 /// handoff.
 pub fn collect_source_tail_snapshot(
     journal_root: &Path,
-    now: NaiveDateTime,
+    now: DateTime,
     source_slug: &str,
     tail_byte_limit: usize,
 ) -> Result<SourceTailSnapshot, CollectError> {
     let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
     let today = now.date();
     let days = today
-        .pred_opt()
+        .yesterday()
+        .ok()
         .map_or_else(|| vec![today], |previous| vec![previous, today]);
     let snapshot = catalog_oplogs(root, &days).map_err(CollectError::Catalog)?;
     let mut tail = Vec::new();
@@ -110,12 +114,15 @@ pub fn collect_source_tail_snapshot(
 /// The source a supervisor's own captured stdout and stderr is written under.
 const SERVICE_CAPTURE_SOURCE: &str = "service";
 
+/// The time a captured line takes when nothing before it carries one.
+const UNIX_EPOCH_WALL_CLOCK: DateTime = DateTime::constant(1970, 1, 1, 0, 0, 0, 0);
+
 /// Collect and order canonical operational logs without rendering them.
 ///
 /// Reads today's logs, or every day from `--since` through today.
 pub fn collect_health_logs(
     journal_root: &Path,
-    now: NaiveDateTime,
+    now: DateTime,
     query: &HealthLogsQuery,
 ) -> Result<Vec<ParsedHealthLogRow>, CollectError> {
     let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
@@ -157,9 +164,12 @@ pub fn collect_health_logs(
     Ok(tail_slice(rows, query.count))
 }
 
-fn window_days(today: NaiveDate, since: Option<NaiveDateTime>) -> Vec<NaiveDate> {
+fn window_days(today: Date, since: Option<DateTime>) -> Vec<Date> {
     let first = since.map_or(today, |since| since.date().min(today));
-    first.iter_days().take_while(|day| *day <= today).collect()
+    first
+        .series(1.day())
+        .take_while(|day| *day <= today)
+        .collect()
 }
 
 /// Rows for a supervisor's captured output, which is raw process bytes rather
@@ -170,16 +180,17 @@ fn window_days(today: NaiveDate, since: Option<NaiveDateTime>) -> Vec<NaiveDate>
 /// multi-line error stays in place and is still reachable by `--since`.
 struct CapturedOutput {
     service: String,
-    last: Option<NaiveDateTime>,
+    last: Option<DateTime>,
 }
 
 impl CapturedOutput {
     fn new(opened_utc: &str, service: &str) -> Self {
         Self {
             service: service.to_owned(),
-            last: NaiveDateTime::parse_from_str(opened_utc, "%Y%m%dT%H%M%S%.fZ")
+            last: DateTime::strptime("%Y%m%dT%H%M%S%.fZ", opened_utc)
                 .ok()
-                .map(|opened| local_time(opened.and_utc())),
+                .and_then(|opened| Offset::UTC.to_timestamp(opened).ok())
+                .map(local_time),
         }
     }
 
@@ -188,7 +199,9 @@ impl CapturedOutput {
             self.last = Some(row.timestamp);
             return row;
         }
-        let timestamp = logger_timestamp(&raw).or(self.last).unwrap_or_default();
+        let timestamp = logger_timestamp(&raw)
+            .or(self.last)
+            .unwrap_or(UNIX_EPOCH_WALL_CLOCK);
         self.last = Some(timestamp);
         ParsedHealthLogRow {
             timestamp,
@@ -202,19 +215,19 @@ impl CapturedOutput {
 
 /// The timestamp in the default `env_logger` header the supervisor writes:
 /// `[2026-09-29T15:41:17Z WARN  target] message`.
-fn logger_timestamp(line: &str) -> Option<NaiveDateTime> {
+fn logger_timestamp(line: &str) -> Option<DateTime> {
     let (stamp, rest) = line.strip_prefix('[')?.split_once(' ')?;
     let level = rest.split_whitespace().next()?;
     if !matches!(level, "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE") || !rest.contains(']') {
         return None;
     }
-    DateTime::parse_from_rfc3339(stamp)
+    solstone_core_time::parse_rfc3339(stamp)
         .ok()
-        .map(|stamp| local_time(stamp.with_timezone(&Utc)))
+        .map(|stamp| local_time(stamp.timestamp()))
 }
 
-fn local_time(instant: DateTime<Utc>) -> NaiveDateTime {
-    instant.with_timezone(&Local).naive_local()
+fn local_time(instant: Timestamp) -> DateTime {
+    instant.to_zoned_datetime(TimeZone::system()).datetime()
 }
 
 fn matches_filters(row: &ParsedHealthLogRow, query: &HealthLogsQuery) -> bool {
@@ -249,22 +262,28 @@ fn splitlines(text: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{FixedOffset, TimeZone};
+    use jiff::{SignedDuration, ZonedDateTime};
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
 
     use super::*;
+
+    /// A zoned time at a fixed zero offset.
+    fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> ZonedDateTime {
+        solstone_core_time::at_offset(
+            Offset::UTC
+                .to_timestamp(jiff::civil::date(year, month, day).at(hour, minute, second, 0))
+                .unwrap(),
+            Offset::UTC,
+        )
+    }
 
     #[test]
     fn service_filter_uses_the_canonical_source_not_run_or_payload_text() {
         let temporary = tempfile::tempdir().unwrap();
         let root = JournalRoot::open(temporary.path()).unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = utc(2026, 8, 7, 12, 0, 0);
         let mut writer =
-            create_oplog_at(root, "source", "run-only", OplogFormat::Log, opened).unwrap();
+            create_oplog_at(root, "source", "run-only", OplogFormat::Log, &opened).unwrap();
         use std::io::Write;
         writeln!(
             writer,
@@ -279,7 +298,7 @@ mod tests {
             grep: None,
         };
         assert_eq!(
-            collect_health_logs(temporary.path(), opened.naive_local(), &base)
+            collect_health_logs(temporary.path(), opened.datetime(), &base)
                 .unwrap()
                 .len(),
             1
@@ -290,7 +309,7 @@ mod tests {
                 ..base.clone()
             };
             assert!(
-                collect_health_logs(temporary.path(), opened.naive_local(), &query)
+                collect_health_logs(temporary.path(), opened.datetime(), &query)
                     .unwrap()
                     .is_empty()
             );
@@ -302,32 +321,25 @@ mod tests {
         use std::io::Write;
 
         let temporary = tempfile::tempdir().unwrap();
-        let offset = FixedOffset::east_opt(0).unwrap();
-        let previous = offset
-            .with_ymd_and_hms(2026, 8, 7, 23, 59, 59)
-            .single()
-            .unwrap();
-        let today = offset
-            .with_ymd_and_hms(2026, 8, 8, 0, 0, 1)
-            .single()
-            .unwrap();
+        let previous = utc(2026, 8, 7, 23, 59, 59);
+        let today = utc(2026, 8, 8, 0, 0, 1);
         for (opened, bytes) in [
             (previous, b"before midnight\n".as_slice()),
-            (today, b"after midnight\n".as_slice()),
+            (today.clone(), b"after midnight\n".as_slice()),
         ] {
             let mut writer = create_oplog_at(
                 JournalRoot::open(temporary.path()).unwrap(),
                 "service",
                 "supervisor",
                 OplogFormat::Log,
-                opened,
+                &opened,
             )
             .unwrap();
             writer.write_all(bytes).unwrap();
         }
 
         let snapshot =
-            collect_source_tail_snapshot(temporary.path(), today.naive_local(), "service", 1024)
+            collect_source_tail_snapshot(temporary.path(), today.datetime(), "service", 1024)
                 .unwrap();
 
         assert_eq!(snapshot.tail(), b"before midnight\nafter midnight\n");
@@ -339,11 +351,7 @@ mod tests {
         use std::io::Write;
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = utc(2026, 8, 7, 12, 0, 0);
         for (source, lines) in [
             (
                 "alpha",
@@ -372,7 +380,7 @@ mod tests {
                 source,
                 "run",
                 OplogFormat::Log,
-                opened,
+                &opened,
             )
             .unwrap();
             for line in lines {
@@ -385,7 +393,7 @@ mod tests {
             service: None,
             grep: None,
         };
-        let rows = collect_health_logs(temporary.path(), opened.naive_local(), &query).unwrap();
+        let rows = collect_health_logs(temporary.path(), opened.datetime(), &query).unwrap();
         assert_eq!(
             rows.iter()
                 .map(|row| row.message.as_str())
@@ -400,11 +408,7 @@ mod tests {
         use std::io::Write;
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = utc(2026, 8, 7, 12, 0, 0);
         for (source, seconds) in [
             ("alpha", [1, 4, 7]),
             ("beta", [2, 5, 8]),
@@ -415,7 +419,7 @@ mod tests {
                 source,
                 "run",
                 OplogFormat::Log,
-                opened,
+                &opened,
             )
             .unwrap();
             for second in seconds {
@@ -432,7 +436,7 @@ mod tests {
             service: None,
             grep: None,
         };
-        let rows = collect_health_logs(temporary.path(), opened.naive_local(), &query).unwrap();
+        let rows = collect_health_logs(temporary.path(), opened.datetime(), &query).unwrap();
         assert_eq!(
             rows.iter()
                 .map(|row| row.message.as_str())
@@ -446,11 +450,7 @@ mod tests {
         use std::io::Write;
 
         let temporary = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = utc(2026, 8, 7, 12, 0, 0);
         for (source, payload) in [
             ("service", b"stdout\nstderr\n".as_slice()),
             ("other", b"hidden\n"),
@@ -460,13 +460,13 @@ mod tests {
                 source,
                 "run",
                 OplogFormat::Log,
-                opened,
+                &opened,
             )
             .unwrap();
             writer.write_all(payload).unwrap();
         }
         let snapshot =
-            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 32)
+            collect_source_tail_snapshot(temporary.path(), opened.datetime(), "service", 32)
                 .unwrap();
         assert!(snapshot.has_descriptors());
         assert_eq!(snapshot.source_slug(), "service");
@@ -480,12 +480,7 @@ this installation couldn't be verified.\n\
 run `journal setup` to check it. if setup finishes successfully, try again.\n\
 details: saved binding: open storage directory: No such file or directory (os error 2)\n";
 
-    fn write_leaf(
-        journal: &Path,
-        source: &str,
-        opened: chrono::DateTime<chrono::FixedOffset>,
-        bytes: &[u8],
-    ) {
+    fn write_leaf(journal: &Path, source: &str, opened: &ZonedDateTime, bytes: &[u8]) {
         use std::io::Write;
 
         let mut writer = create_oplog_at(
@@ -499,7 +494,7 @@ details: saved binding: open storage directory: No such file or directory (os er
         writer.write_all(bytes).unwrap();
     }
 
-    fn query(since: Option<NaiveDateTime>, grep: Option<&str>) -> HealthLogsQuery {
+    fn query(since: Option<DateTime>, grep: Option<&str>) -> HealthLogsQuery {
         HealthLogsQuery {
             count: 50,
             since,
@@ -516,23 +511,19 @@ details: saved binding: open storage directory: No such file or directory (os er
     #[test]
     fn a_captured_supervisors_logger_and_bare_lines_are_rows() {
         let temporary = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 9, 29, 15, 41, 17)
-            .single()
-            .unwrap();
+        let opened = utc(2026, 9, 29, 15, 41, 17);
         write_leaf(
             temporary.path(),
             "service",
-            opened,
+            &opened,
             CAPTURED_SUPERVISOR_OUTPUT,
         );
-        let now = opened.naive_local();
+        let now = opened.datetime();
 
         let rows = collect_health_logs(temporary.path(), now, &query(None, None)).unwrap();
         let expected = String::from_utf8(CAPTURED_SUPERVISOR_OUTPUT.to_vec()).unwrap();
         assert_eq!(raws(&rows), expected.lines().collect::<Vec<_>>());
-        let logged = local_time(opened.with_timezone(&Utc));
+        let logged = local_time(opened.timestamp());
         assert!(rows.iter().all(|row| row.timestamp == logged));
         assert!(rows.iter().all(|row| row.service == "service"));
 
@@ -541,7 +532,7 @@ details: saved binding: open storage directory: No such file or directory (os er
         assert_eq!(raws(&refused), ["this installation couldn't be verified."]);
         let since = collect_health_logs(temporary.path(), now, &query(Some(logged), None)).unwrap();
         assert_eq!(since.len(), 4);
-        let later = logged + chrono::TimeDelta::seconds(1);
+        let later = logged + SignedDuration::from_secs(1);
         assert!(
             collect_health_logs(temporary.path(), now, &query(Some(later), None))
                 .unwrap()
@@ -552,56 +543,45 @@ details: saved binding: open storage directory: No such file or directory (os er
     #[test]
     fn a_bare_line_with_nothing_before_it_takes_the_leafs_opening_time() {
         let temporary = tempfile::tempdir().unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 9, 29, 12, 0, 0)
-            .single()
-            .unwrap();
-        write_leaf(temporary.path(), "service", opened, b"bare refusal\n");
+        let opened = utc(2026, 9, 29, 12, 0, 0);
+        write_leaf(temporary.path(), "service", &opened, b"bare refusal\n");
         write_leaf(
             temporary.path(),
             "other",
-            opened,
+            &opened,
             b"bare refusal elsewhere\n",
         );
 
-        let rows = collect_health_logs(temporary.path(), opened.naive_local(), &query(None, None))
-            .unwrap();
+        let rows =
+            collect_health_logs(temporary.path(), opened.datetime(), &query(None, None)).unwrap();
         assert_eq!(raws(&rows), ["bare refusal"]);
-        assert_eq!(rows[0].timestamp, local_time(opened.with_timezone(&Utc)));
+        assert_eq!(rows[0].timestamp, local_time(opened.timestamp()));
     }
 
     #[test]
     fn since_reaches_every_day_through_today() {
         let temporary = tempfile::tempdir().unwrap();
-        let offset = FixedOffset::east_opt(0).unwrap();
-        let earlier = offset
-            .with_ymd_and_hms(2026, 9, 27, 23, 0, 0)
-            .single()
-            .unwrap();
-        let today = offset
-            .with_ymd_and_hms(2026, 9, 29, 1, 0, 0)
-            .single()
-            .unwrap();
+        let earlier = utc(2026, 9, 27, 23, 0, 0);
+        let today = utc(2026, 9, 29, 1, 0, 0);
         for (opened, line) in [
             (earlier, "2026-09-27T23:00:00 [sense:stderr] two days back"),
-            (today, "2026-09-29T01:00:00 [sense:stderr] today"),
+            (today.clone(), "2026-09-29T01:00:00 [sense:stderr] today"),
         ] {
             write_leaf(
                 temporary.path(),
                 "sense",
-                opened,
+                &opened,
                 format!("{line}\n").as_bytes(),
             );
         }
-        let now = today.naive_local();
+        let now = today.datetime();
 
         let unbounded = collect_health_logs(temporary.path(), now, &query(None, None)).unwrap();
         assert_eq!(
             raws(&unbounded),
             ["2026-09-29T01:00:00 [sense:stderr] today"]
         );
-        let since = now - chrono::TimeDelta::days(2);
+        let since = now - SignedDuration::from_hours(48);
         let window = collect_health_logs(temporary.path(), now, &query(Some(since), None)).unwrap();
         assert_eq!(
             raws(&window),

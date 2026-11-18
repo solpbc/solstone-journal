@@ -93,13 +93,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if let Some(age) = document
         .get("generated_at")
         .and_then(Value::as_str)
-        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-        .map(|generated| {
-            context
-                .now
-                .signed_duration_since(generated.with_timezone(&chrono::Utc))
-        })
-        && age.num_hours() > MAX_AGE_HOURS
+        .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
+        .map(|generated| context.now.duration_since(generated.timestamp()))
+        && age.as_hours() > MAX_AGE_HOURS
     {
         // ⛔ Warn, not Skip. `output.rs` renders only Fail and Warn without
         // `--verbose`, so a Skip here is invisible on a plain `journal doctor`
@@ -115,7 +111,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             Status::Warn,
             format!(
                 "couldn't check — the statistics are {} hours old",
-                age.num_hours()
+                age.as_hours()
             ),
             Some("run solstone journal journal-stats; check the health logs if it persists"),
         ));
@@ -194,7 +190,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let every_day_is_a_date = unreadable
         .iter()
         .chain(fold_failed.iter())
-        .all(|day| chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok());
+        .all(|day| solstone_core_time::parse_day(day).is_some());
     Ok(make_result(
         check,
         Status::Warn,

@@ -10,12 +10,18 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use icalendar::{Calendar, CalendarDateTime, Component, DatePerhapsTime};
+use jiff::civil::{Date, DateTime};
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use solstone_core_import::{ImportPreview, RegistrySource};
+use solstone_core_time::Precision;
 use zip::ZipArchive;
 
+use crate::ics_calendar::{
+    Calendar, CalendarDateTime, DatePerhapsTime, Event, Parameter, Property, parse_ical_date,
+    parse_ical_datetime,
+};
 use crate::ics_notes::{ImportNotes, ImportStamp, MAX_IMPORT_LINES, Placement, SourceEvent};
 use crate::save::{RenderedImport, SegmentFile};
 use crate::shared::day_key;
@@ -32,7 +38,7 @@ pub struct CalendarAttendee {
 pub struct CalendarEntry {
     pub title: String,
     pub content: String,
-    pub create_ts: DateTime<Utc>,
+    pub create_ts: Timestamp,
     pub ts: Option<String>,
     pub end_ts: Option<String>,
     pub duration_minutes: Option<i64>,
@@ -101,15 +107,12 @@ pub fn detect(path: &Path) -> bool {
 
 /// Read source calendars into in-memory event facts without mutating the source.
 /// A floating or all-day time, which names no zone, is read in `zone`.
-pub fn parse_events(path: &Path, zone: &impl TimeZone) -> Result<Vec<CalendarEntry>, IcsError> {
+pub fn parse_events(path: &Path, zone: &TimeZone) -> Result<Vec<CalendarEntry>, IcsError> {
     Ok(parse_ics_data(extract_ics_data(path)?, zone))
 }
 
 /// Aggregate a calendar source into the fixed import preview contract, on the zone's days.
-pub fn preview(
-    path: &Path,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> Result<ImportPreview, IcsError> {
+pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, IcsError> {
     let data = extract_ics_data(path)?;
     if data.is_empty() {
         return Ok(ImportPreview {
@@ -162,10 +165,7 @@ pub const TRANSCRIPT_FILE: &str = "event_transcript.md";
 /// Each event is placed at the moment it was created or last changed, not when it is
 /// scheduled: the journal keeps when something entered the owner's life, and talents
 /// read what it is about.
-pub fn render(
-    path: &Path,
-    zone: &impl TimeZone<Offset: fmt::Display>,
-) -> Result<RenderedImport, IcsError> {
+pub fn render(path: &Path, zone: &TimeZone) -> Result<RenderedImport, IcsError> {
     render_with_notes(path, zone, None)
 }
 
@@ -176,7 +176,7 @@ pub fn render(
 /// placed each event, in the journal zone's offset.
 pub fn render_with_notes(
     path: &Path,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
     stamp: Option<&ImportStamp>,
 ) -> Result<RenderedImport, IcsError> {
     render_with_line_cap(path, zone, stamp, MAX_IMPORT_LINES)
@@ -184,7 +184,7 @@ pub fn render_with_notes(
 
 pub(crate) fn render_with_line_cap(
     path: &Path,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
     stamp: Option<&ImportStamp>,
     line_cap: usize,
 ) -> Result<RenderedImport, IcsError> {
@@ -193,7 +193,7 @@ pub(crate) fn render_with_line_cap(
         .into_iter()
         .filter_map(|(member, data)| {
             let contents = String::from_utf8(data).ok()?;
-            let calendar = contents.parse::<Calendar>().ok()?;
+            let calendar = Calendar::parse(&contents)?;
             Some((member, calendar))
         })
         .collect::<Vec<_>>();
@@ -314,7 +314,7 @@ pub(crate) fn render_with_line_cap(
     })
 }
 
-fn event_markdown(entry: &CalendarEntry, zone: &impl TimeZone<Offset: fmt::Display>) -> String {
+fn event_markdown(entry: &CalendarEntry, zone: &TimeZone) -> String {
     let mut lines = vec![format!("## {}", entry.title)];
     if let Some(days) = all_day_span(entry) {
         let start = entry
@@ -329,9 +329,9 @@ fn event_markdown(entry: &CalendarEntry, zone: &impl TimeZone<Offset: fmt::Displ
             format!("**{start}** ({days} days)")
         });
     } else if let Some(start) = entry.ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
-        let mut when = start.format("%Y-%m-%d %I:%M %p").to_string();
+        let mut when = start.strftime("%Y-%m-%d %I:%M %p").to_string();
         if let Some(end) = entry.end_ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
-            when.push_str(&format!(" – {}", end.format("%I:%M %p")));
+            when.push_str(&format!(" – {}", end.strftime("%I:%M %p")));
         }
         let mut line = format!("**{when}**");
         if let Some(minutes) = entry.duration_minutes {
@@ -362,7 +362,7 @@ fn event_item(
     day: &str,
     segment: &str,
     stream: &str,
-    zone: &impl TimeZone<Offset: fmt::Display>,
+    zone: &TimeZone,
 ) -> Value {
     let mut meta = Map::new();
     let start = entry.ts.as_deref().and_then(|ts| wall_time(ts, zone));
@@ -373,8 +373,8 @@ fn event_item(
         .map(|(start, end)| {
             format!(
                 "{}–{}",
-                clock(&start.format("%I:%M %p").to_string()),
-                clock(&end.format("%I:%M %p").to_string())
+                clock(&start.strftime("%I:%M %p").to_string()),
+                clock(&end.strftime("%I:%M %p").to_string())
             )
         });
     if let Some(range) = &time_range {
@@ -454,18 +454,18 @@ fn all_day_span(entry: &CalendarEntry) -> Option<i64> {
 
 /// An event time as the owner would read it: a zoned time in the owner's zone, a floating
 /// or all-day time as written.
-fn wall_time(value: &str, zone: &impl TimeZone<Offset: fmt::Display>) -> Option<NaiveDateTime> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|time| time.with_timezone(zone).naive_local())
+fn wall_time(value: &str, zone: &TimeZone) -> Option<DateTime> {
+    solstone_core_time::parse_rfc3339(value)
+        .map(|time| time.with_time_zone(zone.clone()).datetime())
         .ok()
-        .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
+        .or_else(|| DateTime::strptime("%Y-%m-%dT%H:%M:%S", value).ok())
 }
 
 fn clock(value: &str) -> &str {
     value.strip_prefix('0').unwrap_or(value)
 }
 
-fn parse_ics_data(data: Vec<Vec<u8>>, zone: &impl TimeZone) -> Vec<CalendarEntry> {
+fn parse_ics_data(data: Vec<Vec<u8>>, zone: &TimeZone) -> Vec<CalendarEntry> {
     let mut entries = Vec::new();
     for data in data {
         // Python treats an unreadable calendar blob as a zero-event calendar, so one malformed
@@ -473,7 +473,7 @@ fn parse_ics_data(data: Vec<Vec<u8>>, zone: &impl TimeZone) -> Vec<CalendarEntry
         let Ok(contents) = String::from_utf8(data) else {
             continue;
         };
-        let Ok(calendar) = contents.parse::<Calendar>() else {
+        let Some(calendar) = Calendar::parse(&contents) else {
             continue;
         };
         entries.extend(
@@ -552,7 +552,7 @@ fn extract_ics_members(path: &Path) -> Result<Vec<IcsMember>, IcsError> {
     Ok(data)
 }
 
-fn parse_event(event: &icalendar::Event, zone: &impl TimeZone) -> Option<CalendarEntry> {
+fn parse_event(event: &Event, zone: &TimeZone) -> Option<CalendarEntry> {
     let create_ts = creation_timestamp(event, zone)?;
     let start = event.get_start();
     let end = event.get_end();
@@ -592,7 +592,7 @@ fn parse_event(event: &icalendar::Event, zone: &impl TimeZone) -> Option<Calenda
 /// The change time a calendar note is stamped with: the event's
 /// `LAST-MODIFIED`, or with none its `CREATED`. One that is present but
 /// unreadable gives none; the start a transcript may fall back to never does.
-fn change_time(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
+fn change_time(event: &Event, zone: &TimeZone) -> Option<Timestamp> {
     let properties = event.properties();
     let property = properties
         .get("LAST-MODIFIED")
@@ -602,7 +602,7 @@ fn change_time(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTim
         .and_then(|value| date_perhaps_time_utc(value, zone))
 }
 
-fn creation_timestamp(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
+fn creation_timestamp(event: &Event, zone: &TimeZone) -> Option<Timestamp> {
     ["LAST-MODIFIED", "CREATED"]
         .into_iter()
         .find_map(|field| {
@@ -623,57 +623,63 @@ fn creation_timestamp(event: &icalendar::Event, zone: &impl TimeZone) -> Option<
 
 /// The instant of a calendar time. A time that names its own zone keeps it; a
 /// floating time or an all-day date names none, so it is read in `zone`.
-fn date_perhaps_time_utc(value: &DatePerhapsTime, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
+fn date_perhaps_time_utc(value: &DatePerhapsTime, zone: &TimeZone) -> Option<Timestamp> {
     match value {
-        DatePerhapsTime::Date(date) => in_zone(date.and_hms_opt(0, 0, 0)?, zone),
+        DatePerhapsTime::Date(date) => {
+            in_zone(date.to_datetime(jiff::civil::Time::midnight()), zone)
+        }
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => {
             in_zone(*date_time, zone)
         }
         DatePerhapsTime::DateTime(date_time) => date_time
             .try_into_utc()
-            .or_else(|| mapped_zone_time(date_time).map(|time| time.with_timezone(&Utc))),
+            .or_else(|| mapped_zone_time(date_time).map(|time| time.timestamp())),
     }
 }
 
 /// A time whose `TZID` the parser cannot read, such as a Windows zone name as
 /// Outlook writes it, read through the same zone table the calendar notes use.
-fn mapped_zone_time(value: &CalendarDateTime) -> Option<DateTime<chrono_tz::Tz>> {
+fn mapped_zone_time(value: &CalendarDateTime) -> Option<ZonedDateTime> {
     let CalendarDateTime::WithTimezone { date_time, tzid } = value else {
         return None;
     };
     let zone = crate::ics_notes::resolve_zone(tzid)?;
-    zone.from_local_datetime(date_time).earliest()
+    solstone_core_time::from_local(&zone, *date_time).earliest()
 }
 
 /// A wall time in `zone`; one the clocks skip reads an hour on, as it would on
 /// a clock that sprang forward.
-fn in_zone(wall: NaiveDateTime, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
-    zone.from_local_datetime(&wall)
+fn in_zone(wall: DateTime, zone: &TimeZone) -> Option<Timestamp> {
+    solstone_core_time::from_local(zone, wall)
         .earliest()
         .or_else(|| {
-            zone.from_local_datetime(&(wall + chrono::Duration::hours(1)))
-                .earliest()
+            let later = wall.checked_add(SignedDuration::from_hours(1)).ok()?;
+            solstone_core_time::from_local(zone, later).earliest()
         })
-        .map(|instant| instant.with_timezone(&Utc))
+        .map(|instant| instant.timestamp())
 }
 
 fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
     match value {
-        DatePerhapsTime::Date(date) => date
-            .and_hms_opt(0, 0, 0)
-            .map(|date| date.format("%Y-%m-%dT%H:%M:%S").to_string()),
+        DatePerhapsTime::Date(date) => Some(
+            date.to_datetime(jiff::civil::Time::midnight())
+                .strftime("%Y-%m-%dT%H:%M:%S")
+                .to_string(),
+        ),
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => {
-            Some(date_time.format("%Y-%m-%dT%H:%M:%S").to_string())
+            Some(date_time.strftime("%Y-%m-%dT%H:%M:%S").to_string())
         }
-        DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => Some(date_time.to_rfc3339()),
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => {
+            Some(solstone_core_time::utc_rfc3339(*date_time))
+        }
         DatePerhapsTime::DateTime(date_time @ CalendarDateTime::WithTimezone { .. }) => {
+            let written = |time: ZonedDateTime| {
+                solstone_core_time::zoned_rfc3339(&time, Precision::AutoSi, false)
+            };
             if date_time.try_into_utc().is_none() {
-                return mapped_zone_time(date_time).map(|date_time| date_time.to_rfc3339());
+                return mapped_zone_time(date_time).map(written);
             }
-            date_time
-                .clone()
-                .as_dt_with_tz()
-                .map(|date_time| date_time.to_rfc3339())
+            date_time.with_zone().map(written)
         }
     }
 }
@@ -681,21 +687,23 @@ fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
 fn duration_minutes(
     start: &DatePerhapsTime,
     end: &DatePerhapsTime,
-    zone: &impl TimeZone,
+    zone: &TimeZone,
 ) -> Option<i64> {
     let duration = if has_offset(start) != has_offset(end) {
-        naive_wall_time(end).signed_duration_since(naive_wall_time(start))
+        naive_wall_time(end).duration_since(naive_wall_time(start))
     } else {
-        date_perhaps_time_utc(end, zone)?.signed_duration_since(date_perhaps_time_utc(start, zone)?)
+        date_perhaps_time_utc(end, zone)?.duration_since(date_perhaps_time_utc(start, zone)?)
     };
-    Some((duration.num_seconds() / 60).max(0))
+    Some((duration.as_secs() / 60).max(0))
 }
 
-fn naive_wall_time(value: &DatePerhapsTime) -> NaiveDateTime {
+fn naive_wall_time(value: &DatePerhapsTime) -> DateTime {
     match value {
-        DatePerhapsTime::Date(date) => date.and_hms_opt(0, 0, 0).expect("midnight is valid"),
+        DatePerhapsTime::Date(date) => date.to_datetime(jiff::civil::Time::midnight()),
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => *date_time,
-        DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => date_time.naive_utc(),
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => {
+            Offset::UTC.to_datetime(*date_time)
+        }
         DatePerhapsTime::DateTime(CalendarDateTime::WithTimezone { date_time, .. }) => *date_time,
     }
 }
@@ -707,7 +715,7 @@ fn has_offset(value: &DatePerhapsTime) -> bool {
     )
 }
 
-fn parse_attendee(property: &icalendar::Property) -> Option<CalendarAttendee> {
+fn parse_attendee(property: &Property) -> Option<CalendarAttendee> {
     let email = property
         .value()
         .trim()
@@ -721,7 +729,7 @@ fn parse_attendee(property: &icalendar::Property) -> Option<CalendarAttendee> {
     let name = property
         .params()
         .get("CN")
-        .map_or("", icalendar::Parameter::value)
+        .map_or("", Parameter::value)
         .trim()
         .to_owned();
     Some(CalendarAttendee {
@@ -810,17 +818,14 @@ pub(crate) fn describe_rrule(value: &str) -> Option<String> {
         description.push_str(&format!(", {count} times"));
     }
     if let Some(until) = fields.get("UNTIL").and_then(|until| parse_until(until)) {
-        description.push_str(&format!(", until {}", until.format("%Y-%m-%d")));
+        description.push_str(&format!(", until {}", until.strftime("%Y-%m-%d")));
     }
     Some(description)
 }
 
-fn parse_until(value: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(value, "%Y%m%d").ok().or_else(|| {
-        NaiveDateTime::parse_from_str(value.trim_end_matches('Z'), "%Y%m%dT%H%M%S")
-            .ok()
-            .map(|value| value.date())
-    })
+fn parse_until(value: &str) -> Option<Date> {
+    parse_ical_date(value)
+        .or_else(|| parse_ical_datetime(value.trim_end_matches('Z')).map(|value| value.date()))
 }
 
 fn nonempty(value: Option<&str>) -> Option<&str> {

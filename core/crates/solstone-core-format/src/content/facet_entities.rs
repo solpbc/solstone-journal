@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{DateTime, NaiveDate};
+use jiff::tz::Offset;
 use serde_json::Value;
 
 use super::{
@@ -147,20 +147,21 @@ fn entity_timestamp(record: &JsonObject, detected_day: Option<&str>) -> Option<i
 fn stored_timestamp_ms(value: Option<&Value>) -> Option<i64> {
     match value? {
         Value::Number(number) => number.as_i64(),
-        Value::String(text) => DateTime::parse_from_rfc3339(text)
+        Value::String(text) => solstone_core_time::parse_rfc3339(text)
             .ok()
-            .map(|value| value.timestamp_millis()),
+            .map(|value| value.timestamp().as_millisecond()),
         _ => None,
     }
 }
 
 fn day_timestamp(day: &str) -> Option<i64> {
-    NaiveDate::parse_from_str(day, "%Y%m%d").ok().map(|day| {
-        day.and_hms_opt(0, 0, 0)
-            .expect("midnight is valid")
-            .and_utc()
-            .timestamp_millis()
-    })
+    solstone_core_time::parse_day(day)
+        .and_then(|day| {
+            Offset::UTC
+                .to_timestamp(day.to_datetime(jiff::civil::Time::midnight()))
+                .ok()
+        })
+        .map(|instant| instant.as_millisecond())
 }
 
 fn append_array_field(record: &JsonObject, key: &str, label: &str, lines: &mut Vec<String>) {

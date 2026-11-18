@@ -8,7 +8,7 @@ use std::env;
 use std::path::Path;
 use std::time::{Duration as StdDuration, SystemTime};
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value, json};
 pub use solstone_core_brain::BundledRuntimePrerequisiteAssessment;
 use solstone_core_brain::{
@@ -25,6 +25,7 @@ use solstone_core_generate::{
     HEALTH_BRAIN_GENERATE_CONTEXT,
 };
 use solstone_core_spp_ratls::AttestationSession;
+use solstone_core_time::{parse_rfc3339, utc_rfc3339};
 
 pub use solstone_core_brain::{
     BrainObservation, BrainObservationSink, ObservationCaller, ObservationFailure,
@@ -106,13 +107,13 @@ pub trait OwnerProbe {
 }
 
 pub trait OwnerSppPrerequisite {
-    fn assess(&self, journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> Value;
+    fn assess(&self, journal: &Path, config: &Map<String, Value>, now: Timestamp) -> Value;
 }
 
 pub struct ProductionSppPrerequisite;
 
 impl OwnerSppPrerequisite for ProductionSppPrerequisite {
-    fn assess(&self, journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> Value {
+    fn assess(&self, journal: &Path, config: &Map<String, Value>, now: Timestamp) -> Value {
         spp_prerequisite(journal, config, now)
     }
 }
@@ -253,7 +254,7 @@ fn refresh_inner(
     let _model_turn = if own_endpoint {
         if probe_file_lease_held(&brain_refresh_lease_path(journal)).unwrap_or(false) {
             return OwnerRefreshOutcome::Busy {
-                view: transient_view("busy", &owner_view(journal, &config, Utc::now())),
+                view: transient_view("busy", &owner_view(journal, &config, Timestamp::now())),
             };
         }
         let turn = match solstone_core_local::admission::wait_for_model_call(
@@ -286,7 +287,7 @@ fn refresh_inner(
     } else {
         None
     };
-    let now = Utc::now();
+    let now = Timestamp::now();
     let before = owner_view(journal, &config, now);
     let initial_resolution = derive_active_brain_lane(&config);
     let bundled_runtime_fingerprint = probe.bundled_runtime_fingerprint(journal, &config);
@@ -355,7 +356,7 @@ fn refresh_inner(
                     view: transient_view("busy", &before),
                 };
             }
-            let current = owner_view(journal, &config, Utc::now());
+            let current = owner_view(journal, &config, Timestamp::now());
             return persisted(current);
         }
         Err(BeginRefreshError::ExpectedFingerprintStale(_)) => {
@@ -407,7 +408,7 @@ fn refresh_inner(
         };
     }
 
-    let checking_view = owner_view(journal, &checking_config, Utc::now());
+    let checking_view = owner_view(journal, &checking_config, Timestamp::now());
     let (Some(lane), Some(_provider), Some(_model)) = (
         checking_view.lane.as_deref(),
         checking_view.provider.as_deref(),
@@ -572,7 +573,7 @@ fn refresh_inner(
             journal,
             permit,
             outcome.evidence,
-            Utc::now(),
+            Timestamp::now(),
             finish_bundled_runtime_fingerprint,
             receipt,
             &admit,
@@ -582,7 +583,7 @@ fn refresh_inner(
             journal,
             permit,
             outcome.evidence,
-            Utc::now(),
+            Timestamp::now(),
             finish_bundled_runtime_fingerprint,
             &admit,
         )
@@ -633,7 +634,7 @@ fn refresh_inner(
                 };
             }
         };
-    let committed = owner_view(journal, &committed_config, Utc::now());
+    let committed = owner_view(journal, &committed_config, Timestamp::now());
     if refresh_root.revalidate_canonical_binding().is_err()
         || !solstone_core_journal_io::JournalRoot::open(journal)
             .is_ok_and(|root| root.identity() == refresh_root.identity())
@@ -666,7 +667,7 @@ fn abandon_probe_failure(
     journal: &Path,
     fallback_config: &Map<String, Value>,
     permit: solstone_core_brain::BrainRefreshPermit,
-    now: DateTime<Utc>,
+    now: Timestamp,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
     observation: Option<&BrainObservation>,
 ) -> OwnerRefreshOutcome {
@@ -697,7 +698,7 @@ fn abandon_probe_failure(
         .ok()
         .and_then(|read| read.config)
         .unwrap_or_else(|| fallback_config.clone());
-    let committed = owner_view(journal, &config, Utc::now());
+    let committed = owner_view(journal, &config, Timestamp::now());
     persisted(committed)
 }
 
@@ -754,7 +755,7 @@ fn renew_prerequisites_inner(
     cancelled: &(dyn Fn() -> bool + Send + Sync),
     observation: Option<&BrainObservation>,
 ) -> OwnerRefreshOutcome {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let config = match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
@@ -822,7 +823,7 @@ fn renew_prerequisites_inner(
                 journal,
                 permit,
                 component,
-                Utc::now(),
+                Timestamp::now(),
                 None,
                 &writer_checkpoint(cancelled),
             ) {
@@ -837,7 +838,7 @@ fn renew_prerequisites_inner(
                     };
                 }
             }
-            let committed = owner_view(journal, &checking_config, Utc::now());
+            let committed = owner_view(journal, &checking_config, Timestamp::now());
             persisted(committed)
         }
         Ok(BeginPrerequisiteRenewal::Busy { .. }) => OwnerRefreshOutcome::Busy {
@@ -1052,7 +1053,7 @@ fn settle_refresh_credential(
 ) -> Result<(), String> {
     let root = witness.admitted_root();
     let provider = target.provider();
-    let mut entry = json!({"valid":true,"timestamp":Utc::now().to_rfc3339()});
+    let mut entry = json!({"valid":true,"timestamp":utc_rfc3339(Timestamp::now())});
     solstone_core_brain::attach_credential_binding(
         entry.as_object_mut().unwrap(),
         &target.hmac(key),
@@ -1195,7 +1196,7 @@ fn probe_outcome(
     config: &Map<String, Value>,
     lane: &str,
     bundled_runtime_fingerprint: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     probe: &impl OwnerProbe,
     spp: &impl OwnerSppPrerequisite,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
@@ -1241,7 +1242,7 @@ fn lane_prerequisite(
     config: &Map<String, Value>,
     lane: &str,
     bundled_runtime_fingerprint: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     probe: &impl OwnerProbe,
     spp: &impl OwnerSppPrerequisite,
 ) -> Value {
@@ -1306,7 +1307,7 @@ fn lane_prerequisite(
     }
 }
 
-fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> Value {
+fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: Timestamp) -> Value {
     let endpoint = match solstone_core_local::resolve_local_endpoint(config) {
         solstone_core_local::LocalEndpointResolution::Byo(endpoint) if endpoint.is_confidential => {
             endpoint
@@ -1379,7 +1380,7 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
 fn generate_component(
     journal: &Path,
     config: &Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     probe: &impl OwnerProbe,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> (Value, bool, Option<&'static str>) {
@@ -1511,11 +1512,11 @@ fn map_provider_reason(component: &str, reason: Option<&str>) -> String {
     }
 }
 
-fn component_ok(now: DateTime<Utc>) -> Value {
-    json!({"status":"ok", "observed_at": now.to_rfc3339(), "expires_at": (now + Duration::hours(26)).to_rfc3339()})
+fn component_ok(now: Timestamp) -> Value {
+    json!({"status":"ok", "observed_at": utc_rfc3339(now), "expires_at": utc_rfc3339(now + SignedDuration::from_hours(26))})
 }
 
-fn spp_component_ok(now: DateTime<Utc>, session: &AttestationSession) -> Value {
+fn spp_component_ok(now: Timestamp, session: &AttestationSession) -> Value {
     let expires_at = [
         session.tpm_heartbeat_due_at(),
         session.gpu_reattest_due_at(),
@@ -1526,13 +1527,15 @@ fn spp_component_ok(now: DateTime<Utc>, session: &AttestationSession) -> Value {
     .expect("attestation session has deadlines");
     json!({
         "status": "ok",
-        "observed_at": now.to_rfc3339(),
-        "expires_at": DateTime::<Utc>::from(expires_at).to_rfc3339(),
+        "observed_at": utc_rfc3339(now),
+        "expires_at": utc_rfc3339(
+            Timestamp::try_from(expires_at).expect("attestation deadline is a representable instant"),
+        ),
     })
 }
 
-fn component_not_attempted(reason: &str, now: DateTime<Utc>) -> Value {
-    json!({"status":"not_attempted", "observed_at":now.to_rfc3339(), "reason_code":reason})
+fn component_not_attempted(reason: &str, now: Timestamp) -> Value {
+    json!({"status":"not_attempted", "observed_at":utc_rfc3339(now), "reason_code":reason})
 }
 
 fn runtime_diagnostic(
@@ -1559,19 +1562,19 @@ fn component_for_reason(
     component: &str,
     reason: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Value {
     evidence_component_for_reason(component, reason, diagnostic, now)
         .expect("owner evidence reason is admitted by the shared contract")
 }
 
-pub fn owner_view(journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> OwnerView {
+pub fn owner_view(journal: &Path, config: &Map<String, Value>, now: Timestamp) -> OwnerView {
     let inspection = inspect_brain_state(journal, config, now);
     let (failing_component, observed_at, expires_at) = evidence_view(inspection.record.as_ref());
     let checked_age = observed_at
         .as_deref()
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-        .map(|value| age(now, value.with_timezone(&Utc)));
+        .and_then(|value| parse_rfc3339(value).ok())
+        .map(|value| age(now, value.timestamp()));
     OwnerView {
         aggregate_state: inspection.projection.aggregate_state,
         reason_code: inspection.projection.reason_code,
@@ -1726,8 +1729,8 @@ pub fn owner_exit_code(view: &OwnerView) -> u8 {
     }
 }
 
-fn age(now: DateTime<Utc>, observed: DateTime<Utc>) -> String {
-    let seconds = (now - observed).num_seconds().max(0);
+fn age(now: Timestamp, observed: Timestamp) -> String {
+    let seconds = now.duration_since(observed).as_secs().max(0);
     if seconds < 60 {
         format!("{seconds}s")
     } else if seconds < 3600 {
@@ -1839,7 +1842,6 @@ mod tests {
     }
 
     use super::*;
-    use chrono::TimeZone;
     use std::sync::Mutex;
 
     fn test_owner_view(state: &str, reason: Option<&str>, component: Option<&str>) -> OwnerView {
@@ -1946,7 +1948,7 @@ mod tests {
 
     #[test]
     fn owner_checked_age_boundaries_match_the_oracle() {
-        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let now = "2026-01-02T00:00:00Z".parse::<Timestamp>().unwrap();
         for (seconds, expected) in [
             (0, "0s"),
             (59, "59s"),
@@ -1956,7 +1958,7 @@ mod tests {
             (172799, "47h"),
             (172800, "2d"),
         ] {
-            assert_eq!(age(now, now - Duration::seconds(seconds)), expected);
+            assert_eq!(age(now, now - SignedDuration::from_secs(seconds)), expected);
         }
     }
 
@@ -1983,7 +1985,7 @@ mod tests {
 
     #[test]
     fn generate_client_failures_remain_contract_valid_owner_evidence() {
-        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let now = "2026-01-02T00:00:00Z".parse::<Timestamp>().unwrap();
         let resolution = ClientError::Resolve("missing sibling".to_owned());
         let reason = generate_client_failure_reason(&resolution);
         assert_eq!(reason, "probe_internal_error");
@@ -2021,7 +2023,7 @@ mod tests {
 
     #[test]
     fn typed_local_admission_timeout_is_a_brain_timeout_without_credential_or_contract_changes() {
-        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let now = "2026-01-02T00:00:00Z".parse::<Timestamp>().unwrap();
         for (reason, expected) in [
             ("admission_timeout", "brain_refresh_timeout"),
             ("local_request_timeout", "brain_refresh_timeout"),
@@ -2226,7 +2228,7 @@ mod tests {
     pub(super) struct NoSpp;
 
     impl OwnerSppPrerequisite for NoSpp {
-        fn assess(&self, _: &Path, _: &Map<String, Value>, _: DateTime<Utc>) -> Value {
+        fn assess(&self, _: &Path, _: &Map<String, Value>, _: Timestamp) -> Value {
             panic!("SPP assess must not run");
         }
     }
@@ -2372,7 +2374,7 @@ mod tests {
                 &self,
                 _journal: &Path,
                 _config: &Map<String, Value>,
-                _now: DateTime<Utc>,
+                _now: Timestamp,
             ) -> Value {
                 panic!("SPP assess must not be called");
             }
@@ -2911,7 +2913,7 @@ mod tests {
             );
 
             let config = read_journal_config(temp.path()).unwrap().config.unwrap();
-            let inspection = inspect_brain_state(temp.path(), &config, Utc::now());
+            let inspection = inspect_brain_state(temp.path(), &config, Timestamp::now());
             assert_eq!(inspection.projection.aggregate_state, "ready");
             assert_eq!(inspection.projection.reason_code, None);
             assert!(inspection.projection.fingerprint_sha256.is_some());
@@ -2919,7 +2921,7 @@ mod tests {
             let record_val = inspection.record.expect("record exists");
             assert_eq!(record_val["reason_code"], serde_json::Value::Null);
             assert_eq!(record_val["checking"], serde_json::Value::Null);
-            solstone_core_brain::validate_brain_state_record(&record_val, Utc::now())
+            solstone_core_brain::validate_brain_state_record(&record_val, Timestamp::now())
                 .expect("record validates");
 
             let captured = probe.captured_requests.lock().unwrap();
@@ -2980,7 +2982,7 @@ mod tests {
                 );
 
                 let config = read_journal_config(temp.path()).unwrap().config.unwrap();
-                let inspection = inspect_brain_state(temp.path(), &config, Utc::now());
+                let inspection = inspect_brain_state(temp.path(), &config, Timestamp::now());
                 assert_ne!(inspection.projection.aggregate_state, "ready");
                 let captured = probe.captured_requests.lock().unwrap();
                 assert!(captured.is_empty());
@@ -3019,7 +3021,7 @@ mod tests {
             );
 
             let config = read_journal_config(temp.path()).unwrap().config.unwrap();
-            let inspection = inspect_brain_state(temp.path(), &config, Utc::now());
+            let inspection = inspect_brain_state(temp.path(), &config, Timestamp::now());
             assert!(
                 matches!(
                     inspection.projection.aggregate_state.as_str(),
@@ -3150,7 +3152,7 @@ mod tests {
             );
 
             let config = read_journal_config(temp.path()).unwrap().config.unwrap();
-            let inspection = inspect_brain_state(temp.path(), &config, Utc::now());
+            let inspection = inspect_brain_state(temp.path(), &config, Timestamp::now());
             assert_ne!(inspection.projection.aggregate_state, "ready");
             assert!(!probe_file_lease_held(&brain_refresh_lease_path(temp.path())).unwrap());
 
@@ -3264,7 +3266,7 @@ mod tests {
 
             struct RefusingSpp;
             impl OwnerSppPrerequisite for RefusingSpp {
-                fn assess(&self, _: &Path, _: &Map<String, Value>, now: DateTime<Utc>) -> Value {
+                fn assess(&self, _: &Path, _: &Map<String, Value>, now: Timestamp) -> Value {
                     component_for_reason(
                         "lane_prerequisites",
                         "attestation_not_verified",
@@ -3439,7 +3441,7 @@ mod tests {
             assert!(!probe_file_lease_held(&brain_refresh_lease_path(temp.path())).unwrap());
 
             let config = read_journal_config(temp.path()).unwrap().config.unwrap();
-            let inspection = inspect_brain_state(temp.path(), &config, Utc::now());
+            let inspection = inspect_brain_state(temp.path(), &config, Timestamp::now());
             assert_ne!(inspection.projection.aggregate_state, "ready");
         }
 
@@ -3510,21 +3512,21 @@ mod tests {
                 serde_json::to_vec(&config).unwrap(),
             )
             .unwrap();
-            let now = Utc::now();
-            let component = json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now + Duration::days(1)).to_rfc3339()});
+            let now = Timestamp::now();
+            let component = json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))});
             let permit = begin_refresh(temp.path(), now, None, None, false, None)
                 .unwrap()
                 .unwrap();
-            finish_refresh(temp.path(),permit,json!({"configuration":component,"lane_prerequisites":component,"generate":component}),Utc::now(),None).unwrap();
+            finish_refresh(temp.path(),permit,json!({"configuration":component,"lane_prerequisites":component,"generate":component}),Timestamp::now(),None).unwrap();
             let before: Value =
                 serde_json::from_slice(&std::fs::read(brain_state_path(temp.path())).unwrap())
                     .unwrap();
-            let view = owner_view(temp.path(), config.as_object().unwrap(), Utc::now());
+            let view = owner_view(temp.path(), config.as_object().unwrap(), Timestamp::now());
             assert_eq!(view.aggregate_state, "ready");
             struct ReadySpp;
             impl OwnerSppPrerequisite for ReadySpp {
-                fn assess(&self, _: &Path, _: &Map<String, Value>, now: DateTime<Utc>) -> Value {
-                    json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now + Duration::days(1)).to_rfc3339()})
+                fn assess(&self, _: &Path, _: &Map<String, Value>, now: Timestamp) -> Value {
+                    json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))})
                 }
             }
             let probe = TestProbe::new("a".repeat(64), |_, _, _| {
@@ -3563,8 +3565,8 @@ mod tests {
                 serde_json::to_vec(&config).unwrap(),
             )
             .unwrap();
-            let now = Utc::now();
-            let component = json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now + Duration::days(1)).to_rfc3339()});
+            let now = Timestamp::now();
+            let component = json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))});
             let permit = begin_refresh(temp.path(), now, None, None, false, None)
                 .unwrap()
                 .unwrap();
@@ -3572,14 +3574,14 @@ mod tests {
                 temp.path(),
                 permit,
                 json!({"configuration":component,"lane_prerequisites":component,"generate":component}),
-                Utc::now(),
+                Timestamp::now(),
                 None,
             )
             .unwrap();
             let before: Value =
                 serde_json::from_slice(&std::fs::read(brain_state_path(temp.path())).unwrap())
                     .unwrap();
-            let view = owner_view(temp.path(), config.as_object().unwrap(), Utc::now());
+            let view = owner_view(temp.path(), config.as_object().unwrap(), Timestamp::now());
             assert_eq!(view.aggregate_state, "ready");
             let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let checking = std::sync::Arc::new(Mutex::new(None));
@@ -3588,19 +3590,14 @@ mod tests {
                 checking: std::sync::Arc<Mutex<Option<Value>>>,
             }
             impl OwnerSppPrerequisite for ReadySpp {
-                fn assess(
-                    &self,
-                    journal: &Path,
-                    _: &Map<String, Value>,
-                    now: DateTime<Utc>,
-                ) -> Value {
+                fn assess(&self, journal: &Path, _: &Map<String, Value>, now: Timestamp) -> Value {
                     *self.checking.lock().unwrap() = Some(
                         serde_json::from_slice(&std::fs::read(brain_state_path(journal)).unwrap())
                             .unwrap(),
                     );
                     self.cancel
                         .store(true, std::sync::atomic::Ordering::Release);
-                    json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now + Duration::days(1)).to_rfc3339()})
+                    json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(now + SignedDuration::from_hours(24))})
                 }
             }
             let probe = TestProbe::new("a".repeat(64), |_, _, _| {

@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_brain::{
     BeginPrerequisiteRenewal, begin_prerequisite_renewal, begin_refresh,
@@ -32,10 +32,10 @@ fn fixture() -> &'static Value {
     })
 }
 
-fn fixture_now() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(fixture()["now"].as_str().expect("fixture now"))
+fn fixture_now() -> Timestamp {
+    solstone_core_time::parse_rfc3339(fixture()["now"].as_str().expect("fixture now"))
         .expect("fixture now")
-        .with_timezone(&Utc)
+        .timestamp()
 }
 
 struct TestJournal(PathBuf);

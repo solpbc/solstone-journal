@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use crate::atomize::relaxation_terms;
 use crate::compile::compile_query;
@@ -25,7 +25,7 @@ pub(super) fn relaxed_plan(
     connection: &mut QueryConnection,
     compilation: &QueryCompilation,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     boundary: Option<&ConnectionBoundary>,
 ) -> Result<Option<SqlPlan>, IndexAccessError> {
     let Some(words) = relaxation_terms(&compilation.temporal.remaining_text) else {
@@ -104,7 +104,7 @@ fn candidate_plan(
     candidate_text: &str,
     original: &QueryCompilation,
     request: &SearchRequest,
-    reference_date: NaiveDate,
+    reference_date: Date,
     boundary: Option<&ConnectionBoundary>,
 ) -> SqlPlan {
     let candidate = compile_query(candidate_text, reference_date);

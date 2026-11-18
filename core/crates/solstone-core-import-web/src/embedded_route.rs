@@ -904,7 +904,8 @@ mod tests {
             "--json".to_owned(),
             "--preview-zone".to_owned(),
             solstone_core_journal_config::owner_zone(root.path())
-                .name()
+                .iana_name()
+                .expect("a named zone")
                 .to_owned(),
         ]);
         let recorded = fake.captures.lock().expect("captures");
@@ -1100,7 +1101,7 @@ mod tests {
             "notes",
             "folder-row",
             &stamp,
-            chrono_tz::UTC,
+            &jiff::tz::TimeZone::UTC,
         )
         .unwrap();
         // Continuation reads only the copied tree, never the owner's original.

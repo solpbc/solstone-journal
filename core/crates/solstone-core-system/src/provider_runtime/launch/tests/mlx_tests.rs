@@ -352,7 +352,9 @@ fn darwin_follow_acquires_mlx_and_retries_failed_acquisition_after_restart_backo
         "persisted backoff survives restart"
     );
     let mut expired = failed;
-    let old = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
+    let old = solstone_core_time::utc_rfc3339(
+        jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2),
+    );
     expired.last_transition_at = Some(old.clone());
     expired.last_progress_at = Some(old.clone());
     expired.completed_at = Some(old);

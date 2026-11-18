@@ -13,8 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
-chrono-tz.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-callosum.workspace = true
@@ -23,6 +22,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health = { path = "../solstone-core-system-health" }
+solstone-core-time.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"

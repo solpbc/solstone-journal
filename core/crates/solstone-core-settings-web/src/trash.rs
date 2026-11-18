@@ -836,7 +836,7 @@ async fn run(
     act: impl Fn(&Path, &str, &OperationId) -> Result<Vec<String>, TrashError> + Send + 'static,
 ) -> Response {
     let outcome = tokio::task::spawn_blocking(move || {
-        let operation = OperationId::fresh(chrono::Utc::now());
+        let operation = OperationId::fresh(jiff::Timestamp::now());
         let mut done = Vec::new();
         let mut failed = Vec::new();
         let mut seen = std::collections::BTreeSet::new();

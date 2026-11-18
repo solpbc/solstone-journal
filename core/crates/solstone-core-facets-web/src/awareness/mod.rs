@@ -14,6 +14,7 @@ use axum::{
     routing::get,
 };
 use serde_json::{Map, Value, json};
+use solstone_core_time::day_key;
 
 use crate::{Clock, http};
 
@@ -68,8 +69,7 @@ async fn log(State((root, clock)): State<(PathBuf, Clock)>, RawQuery(query): Raw
     if let Some(response) = session_response(&root) {
         return response;
     }
-    let day = query_value(query.as_deref(), "day")
-        .unwrap_or_else(|| clock.now().date_naive().format("%Y%m%d").to_string());
+    let day = query_value(query.as_deref(), "day").unwrap_or_else(|| day_key(clock.now().date()));
     let kind = query_value(query.as_deref(), "kind");
     let (limit, offset) = pagination(query.as_deref());
     match solstone_core_facets::read_log(&root, &day) {
@@ -127,9 +127,9 @@ async fn update_imports(State((root, clock)): State<(PathBuf, Clock)>, body: Byt
     }
     let now = clock.now();
     // The imports block keeps its local wall-time form; the log row keeps the instant.
-    let iso = now.naive_local().format("%Y%m%dT%H:%M:%S").to_string();
-    let day = now.date_naive().format("%Y%m%d").to_string();
-    let timestamp_ms = now.timestamp_millis();
+    let iso = now.strftime("%Y%m%dT%H:%M:%S").to_string();
+    let day = day_key(now.date());
+    let timestamp_ms = now.timestamp().as_millisecond();
     let outcome = match active[0] {
         "record" => solstone_core_facets::record_import(
             &root,
@@ -187,8 +187,8 @@ async fn create_log(State((root, clock)): State<(PathBuf, Clock)>, body: Bytes) 
         body.get("key").and_then(Value::as_str),
         body.get("message").and_then(Value::as_str),
         data,
-        &now.date_naive().format("%Y%m%d").to_string(),
-        now.timestamp_millis(),
+        &day_key(now.date()),
+        now.timestamp().as_millisecond(),
         &extra,
     ) {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
@@ -361,7 +361,7 @@ mod tests {
         let root = crate::test_support::phase_root("established_empty");
         // 18:00 at UTC-6 on May 10 is midnight UTC on May 11.
         let evening = Clock::new(|| {
-            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+            solstone_core_time::parse_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
         });
         let response = routes(root.path().to_path_buf(), evening)
             .oneshot(
@@ -377,8 +377,8 @@ mod tests {
                 .expect("body"),
         )
         .expect("json");
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-05-11T00:00:00Z").unwrap();
-        assert_eq!(body["ts"], instant.timestamp_millis());
+        let instant = solstone_core_time::parse_timestamp("2026-05-11T00:00:00Z").unwrap();
+        assert_eq!(body["ts"], instant.as_millisecond());
         assert!(root.path().join("awareness/20260510.jsonl").is_file());
     }
 }

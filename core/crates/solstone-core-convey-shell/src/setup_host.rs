@@ -518,7 +518,7 @@ mod tests {
         let path = root.canonical_path().to_owned();
         std::fs::create_dir(path.join("config")).unwrap();
         std::fs::write(path.join("config/journal.json"), serde_json::json!({
-            "setup": {"completed_at": chrono::Utc::now().timestamp_millis(), "thinking_choice": "later"}
+            "setup": {"completed_at": jiff::Timestamp::now().as_millisecond(), "thinking_choice": "later"}
         }).to_string()).unwrap();
         solstone_core_local::install::status::record_terminal_refusal_if_unchanged(
             &path,

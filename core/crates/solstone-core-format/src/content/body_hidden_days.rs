@@ -15,8 +15,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
 
@@ -70,7 +69,7 @@ struct HiddenDaysFile {
 pub fn is_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(day).is_some()
 }
 
 /// The store's path in `journal`.
@@ -123,13 +122,13 @@ pub fn read_hidden_days(journal: &Path) -> HiddenDays {
 /// The day a source time falls on, on the clock that placed its source's
 /// windows, or its own clock when there is none.
 #[must_use]
-pub fn day_of(time: &str, zone: Option<Tz>) -> Option<String> {
+pub fn day_of(time: &str, zone: Option<&TimeZone>) -> Option<String> {
     let time = parse_source_time(time)?;
     let date = zone.map_or_else(
-        || time.date_naive(),
-        |zone| time.with_timezone(&zone).date_naive(),
+        || time.date(),
+        |zone| zone.to_datetime(time.timestamp()).date(),
     );
-    Some(date.format("%Y%m%d").to_string())
+    Some(solstone_core_time::day_key(date))
 }
 
 /// Which day each of a day's body rows belongs to, for a hide.
@@ -142,7 +141,7 @@ pub fn day_of(time: &str, zone: Option<Tz>) -> Option<String> {
 #[derive(Debug)]
 pub struct RowDays {
     window_day: String,
-    zone: Option<Tz>,
+    zone: Option<TimeZone>,
     /// Each experience's starting day, by its id, from what this day holds.
     starts: HashMap<String, String>,
 }
@@ -152,7 +151,7 @@ impl RowDays {
     /// experiences started. `zone` is the source's placed zone.
     pub fn new<'r>(
         window_day: &str,
-        zone: Option<Tz>,
+        zone: Option<TimeZone>,
         rows: impl IntoIterator<Item = &'r BodyRow>,
     ) -> Self {
         let mut starts = HashMap::new();
@@ -164,7 +163,9 @@ impl RowDays {
                 RowKind::ExperienceTile => {
                     if let (Some(of), Some(day)) = (
                         row.of.as_deref(),
-                        row.start.as_deref().and_then(|start| day_of(start, zone)),
+                        row.start
+                            .as_deref()
+                            .and_then(|start| day_of(start, zone.as_ref())),
                     ) {
                         starts.entry(of.to_owned()).or_insert(day);
                     }
@@ -187,7 +188,7 @@ impl RowDays {
             RowKind::ExperienceTile if row.of.is_some() => row
                 .start
                 .as_deref()
-                .and_then(|start| day_of(start, self.zone)),
+                .and_then(|start| day_of(start, self.zone.as_ref())),
             RowKind::Stage | RowKind::Event => row
                 .of
                 .as_deref()
@@ -282,7 +283,7 @@ mod tests {
 
     #[test]
     fn a_night_goes_whole_with_the_day_it_starts() {
-        let zone: Option<Tz> = Some("America/Denver".parse().unwrap());
+        let zone = solstone_core_time::zone("America/Denver");
         // The next morning holds the night's later piece and a stage of it, and
         // the morning's own readings and a nap that starts that day.
         let rows = [

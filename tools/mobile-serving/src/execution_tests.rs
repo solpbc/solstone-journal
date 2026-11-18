@@ -304,7 +304,6 @@ async fn recovery_drains_lost_client_native_preview_and_reuses_routes_for_real_m
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom_commands() {
-    use chrono::TimeZone;
     use solstone_core_system::request::ScheduledRequest;
     use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow, ScheduleSubmissionSink};
     #[derive(Default)]
@@ -373,17 +372,20 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
     assert_eq!(saved["sync:plaud"]["extra"], "kept");
     assert_eq!(saved["owner:source:plaud"]["enabled"], false);
     assert_eq!(saved["custom"], custom);
-    let now = chrono::Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+    let now = "2030-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
     let (mut engine, _) = ScheduleEngine::init(
         &path,
         fixture.path().join("health/scheduler.json"),
-        ScheduleNow::in_zone(now, chrono_tz::UTC),
+        ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
     )
     .unwrap();
     let sink = Sink::default();
     engine
         .check(
-            ScheduleNow::in_zone(now + chrono::Duration::minutes(1), chrono_tz::UTC),
+            ScheduleNow::in_zone(
+                now + jiff::SignedDuration::from_mins(1),
+                jiff::tz::TimeZone::UTC,
+            ),
             &sink,
         )
         .unwrap();
@@ -631,7 +633,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
     config["retention"] = json!({"journal_logs":{"enabled":true,"days":30}});
     config["processing"] = json!({"history_confirmed":true});
     config["providers"] = json!({"active":{"provider":"openai","model":"fixture"}});
-    config["setup"] = json!({"completed_at":chrono::Utc::now().timestamp_millis()});
+    config["setup"] = json!({"completed_at":jiff::Timestamp::now().as_millisecond()});
     std::fs::write(&config_path, config.to_string()).unwrap();
     let payload = temp.path().join("payload");
     for directory in [
@@ -791,15 +793,14 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
             hints_applied: vec![],
         })))
     };
-    use chrono::TimeZone;
     // The actual worker keeps its real clock. Only the scheduler's existing
     // test seam receives a future clock, so every control would be due if
     // cached disabled/deleted work were still admitted.
-    let now = chrono::Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+    let now = "2030-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
     let host = ForegroundProcessingHost::open_with_executor(
         temp.path(),
         &payload,
-        ScheduleNow::in_zone(now, chrono_tz::UTC),
+        ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
         Arc::new(generate),
         solstone_core_backup_web::BackupWebDeps::new(temp.path().to_path_buf()),
     )
@@ -859,16 +860,16 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
     // explicit saved policy. A second old writer keeps its live lease.
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
     use std::io::Write;
-    let old_at = chrono::Utc
-        .with_ymd_and_hms(2020, 1, 1, 12, 0, 0)
-        .unwrap()
-        .fixed_offset();
+    let old_at = solstone_core_time::at_offset(
+        "2020-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap(),
+        jiff::tz::Offset::UTC,
+    );
     let mut old = create_oplog_at(
         JournalRoot::open(temp.path()).unwrap(),
         "think",
         "api-fixture",
         OplogFormat::Jsonl,
-        old_at,
+        &old_at,
     )
     .unwrap();
     old.write_all(b"{\"event\":\"completed\"}\n").unwrap();
@@ -883,7 +884,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         "think",
         "active-fixture",
         OplogFormat::Jsonl,
-        old_at,
+        &old_at,
     )
     .unwrap();
     held.write_all(b"{\"event\":\"started\"}\n").unwrap();
@@ -893,7 +894,8 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         .join(held.leaf_name());
     // Retention measures modification time too: both records must actually
     // be old so only the live writer lease protects the held one.
-    let old_time = std::time::UNIX_EPOCH + Duration::from_secs(old_at.timestamp() as u64);
+    let old_time =
+        std::time::UNIX_EPOCH + Duration::from_secs(old_at.timestamp().as_second() as u64);
     for path in [&old_path, &held_path] {
         std::fs::OpenOptions::new()
             .write(true)
@@ -945,8 +947,8 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
     .await;
     assert_eq!(status, StatusCode::OK, "{value}");
     host.check_schedule(ScheduleNow::in_zone(
-        now + chrono::Duration::minutes(1),
-        chrono_tz::UTC,
+        now + jiff::SignedDuration::from_mins(1),
+        jiff::tz::TimeZone::UTC,
     ))
     .unwrap();
     host.queue().resume_processing();
@@ -978,8 +980,8 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         .filter(|record| record.scheduler_name.as_deref() == Some("owner:think:custom_fixture"))
         .count();
     host.check_schedule(ScheduleNow::in_zone(
-        now + chrono::Duration::minutes(10),
-        chrono_tz::UTC,
+        now + jiff::SignedDuration::from_mins(10),
+        jiff::tz::TimeZone::UTC,
     ))
     .unwrap();
     host.queue().join_callable_workers().unwrap();
@@ -999,8 +1001,8 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
     assert_eq!(saved["owner:think:custom_fixture"]["every"], "weekly");
     assert_eq!(mutate("DELETE", json!({})).await.0, StatusCode::OK);
     host.check_schedule(ScheduleNow::in_zone(
-        now + chrono::Duration::minutes(20),
-        chrono_tz::UTC,
+        now + jiff::SignedDuration::from_mins(20),
+        jiff::tz::TimeZone::UTC,
     ))
     .unwrap();
     host.queue().join_callable_workers().unwrap();
@@ -1061,7 +1063,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
     let second = ForegroundProcessingHost::open_with_executor(
         temp.path(),
         &payload,
-        ScheduleNow::in_zone(chrono::Utc::now(), chrono_tz::UTC),
+        ScheduleNow::in_zone(jiff::Timestamp::now(), jiff::tz::TimeZone::UTC),
         Arc::new(generate),
         solstone_core_backup_web::BackupWebDeps::new(temp.path().to_path_buf()),
     )
@@ -1073,7 +1075,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(chrono::Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(jiff::Timestamp::now(), jiff::tz::TimeZone::UTC),
             Arc::new(generate),
             solstone_core_backup_web::BackupWebDeps::new(temp.path().to_path_buf())
         )
@@ -1516,10 +1518,11 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     host.stop_discovery_for_test();
     let saved: Value = serde_json::from_slice(
         &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(saved["owner:source:audio"], saved_audio_schedule);
     let config_before = std::fs::read(&config_path).unwrap();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     assert_eq!(call(&server, "GET", json!({})).1["enabled"], false);
     let (status, created) = call(&server, "PUT", json!({"every":"1m","enabled":true}));
     assert_eq!(status, 200, "{created}");
@@ -1534,8 +1537,8 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     );
     let report = host
         .check_schedule(ScheduleNow::in_zone(
-            now + chrono::Duration::minutes(1),
-            chrono_tz::UTC,
+            now + jiff::SignedDuration::from_mins(1),
+            jiff::tz::TimeZone::UTC,
         ))
         .unwrap();
     assert!(report.submitted.iter().any(|submitted| submitted == &name));
@@ -1546,8 +1549,8 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     assert_eq!(status, 200, "{changed}");
     let report = host
         .check_schedule(ScheduleNow::in_zone(
-            now + chrono::Duration::minutes(2),
-            chrono_tz::UTC,
+            now + jiff::SignedDuration::from_mins(2),
+            jiff::tz::TimeZone::UTC,
         ))
         .unwrap();
     assert!(!report.submitted.iter().any(|submitted| submitted == &name));
@@ -1559,8 +1562,8 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     );
     let report = host
         .check_schedule(ScheduleNow::in_zone(
-            now + chrono::Duration::minutes(8),
-            chrono_tz::UTC,
+            now + jiff::SignedDuration::from_mins(8),
+            jiff::tz::TimeZone::UTC,
         ))
         .unwrap();
     assert!(report.submitted.iter().any(|submitted| submitted == &name));
@@ -1569,8 +1572,8 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     assert_eq!(call(&server, "DELETE", json!({})).0, 200);
     let report = host
         .check_schedule(ScheduleNow::in_zone(
-            now + chrono::Duration::minutes(9),
-            chrono_tz::UTC,
+            now + jiff::SignedDuration::from_mins(9),
+            jiff::tz::TimeZone::UTC,
         ))
         .unwrap();
     assert!(!report.submitted.iter().any(|submitted| submitted == &name));

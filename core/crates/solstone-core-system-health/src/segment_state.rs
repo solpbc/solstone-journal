@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_path, iter_segments, segment_path};
 use solstone_core_segment::is_body_only_segment;
 
@@ -48,7 +48,7 @@ pub fn read_segment_data_state(
     day: &str,
     segment: &str,
     stream: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DataStateMap {
     let Some(path) = find_segment_dir(journal, day, segment, stream) else {
         return DataStateMap::default();
@@ -68,7 +68,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use chrono::Utc;
+    use jiff::Timestamp;
 
     use super::{find_segment_dir, read_segment_data_state};
 
@@ -132,7 +132,7 @@ mod tests {
                 "20260101",
                 "090000_300_summary",
                 Some("alpha"),
-                Utc::now(),
+                Timestamp::now(),
             ),
             crate::DataStateMap(std::collections::BTreeMap::from([(
                 "audio".to_owned(),

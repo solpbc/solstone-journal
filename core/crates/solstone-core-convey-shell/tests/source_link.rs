@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use tempfile::tempdir;
 use tower::ServiceExt;
@@ -88,7 +88,7 @@ impl SourceReads for PanicReads {
         &self,
         _journal: &Path,
         _day: &str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> Result<Vec<DaySegmentRef>, String> {
         panic!("PanicReads::read_day_segments called");
     }
@@ -121,7 +121,7 @@ impl SourceReads for RecordReadErrorReads {
         &self,
         journal: &Path,
         day: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<DaySegmentRef>, String> {
         self.inner.read_day_segments(journal, day, now)
     }
@@ -716,7 +716,7 @@ impl SourceReads for InjectedFaultReads {
         &self,
         journal: &Path,
         day: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<DaySegmentRef>, String> {
         if self.fail_segments {
             return Err("injected segment scan failure".to_owned());

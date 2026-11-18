@@ -4,7 +4,6 @@
 //! Ignored installed coordinator controls; barriers observe, never authorize.
 
 use super::*;
-use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_journal_io::activity::ActivityLease;
@@ -58,10 +57,15 @@ struct Input {
 struct ActualClock;
 impl Clock for ActualClock {
     fn now_unix(&self) -> i64 {
-        Utc::now().timestamp()
+        jiff::Timestamp::now().as_second()
     }
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        jiff::tz::Offset::UTC
+            .to_datetime(jiff::Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 fn stages(root: &Path) -> io::Result<Vec<PathBuf>> {

@@ -26,7 +26,9 @@ use std::io::{Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
@@ -108,7 +110,7 @@ pub struct AppleSegmentsRequest<'a> {
     /// import's run: one it finds is taken over, and this import holds what it writes.
     pub import_id: Option<&'a str>,
     /// Test seam: the clock the run reads for when a record arrived.
-    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    pub clock: Option<&'a dyn Fn() -> Timestamp>,
 }
 
 impl<'a> AppleSegmentsRequest<'a> {
@@ -154,7 +156,7 @@ pub struct OuraSegmentsRequest<'a> {
     /// killed, when it returns true.
     pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
     /// Test seam: the clock the run reads for when a record arrived.
-    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    pub clock: Option<&'a dyn Fn() -> Timestamp>,
 }
 
 impl<'a> OuraSegmentsRequest<'a> {
@@ -196,7 +198,7 @@ pub struct OuraImportRequest<'a> {
     pub earlier_waiting: u64,
     /// Owner days, first and last inclusive. `None` asks each endpoint from seven
     /// days before what it last covered, or the last 30 days.
-    pub range: Option<(NaiveDate, NaiveDate)>,
+    pub range: Option<(Date, Date)>,
     /// Nobody asked for this run (`--scheduled`): even with a range it is a sync,
     /// which leaves out what the owner deleted. A range someone asked for is a
     /// re-import, which brings it back.
@@ -212,7 +214,7 @@ pub struct OuraImportRequest<'a> {
     /// killed, when it returns true.
     pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
     /// Test seam: the clock the run reads for today and for when a record arrived.
-    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    pub clock: Option<&'a dyn Fn() -> Timestamp>,
 }
 
 impl<'a> OuraImportRequest<'a> {
@@ -285,7 +287,7 @@ struct RunRequest<'a> {
     earlier_waiting: u64,
     spill_bytes: usize,
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
-    clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    clock: Option<&'a dyn Fn() -> Timestamp>,
     /// See `AppleSegmentsRequest::import_id`.
     exact_import: Option<&'a str>,
     /// A re-import (an Apple export, or an Oura range someone asked for) brings
@@ -741,8 +743,10 @@ impl Run<'_, '_> {
         self.journal.join("imports").join(&self.import_id)
     }
 
-    fn now(&self) -> DateTime<Utc> {
-        self.request.clock.map_or_else(Utc::now, |clock| clock())
+    fn now(&self) -> Timestamp {
+        self.request
+            .clock
+            .map_or_else(Timestamp::now, |clock| clock())
     }
 
     fn still_this_attempt(&self) -> bool {
@@ -1165,7 +1169,7 @@ impl Run<'_, '_> {
             );
             for row in rows.values().filter(|row| row.kind != RowKind::Moved) {
                 if let Some(end) = row.end.as_deref().and_then(parse_source_time) {
-                    let end = end.with_timezone(&zone).format("%Y%m%d").to_string();
+                    let end = solstone_core_time::day_key(end.with_time_zone(zone.clone()).date());
                     if end > day {
                         let id = if row.kind == RowKind::ExperienceTile {
                             row.of.as_ref().unwrap_or(&row.id)
@@ -1724,7 +1728,7 @@ fn activity_totals(
     journal: &Path,
     source: &BodySource,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     move_listed: bool,
 ) -> Totals {
     let counts = crate::body_activity::write_records_at(journal, source, day, now, move_listed);
@@ -1906,7 +1910,7 @@ fn close_superseded(
     journal: &Path,
     source: &BodySource,
     state: &RunState,
-    zone: chrono_tz::Tz,
+    zone: &TimeZone,
     successor: Option<&str>,
 ) {
     let Ok(_lock) = hold_import_lock(journal, &state.import_id) else {
@@ -2011,7 +2015,7 @@ fn listed_rule(
 
 /// What this import read, for the old-import line: an Apple export's whole span,
 /// or the days Oura's coverage now claims from this run. `None` when neither.
-fn span_of(state: &RunState, zone: chrono_tz::Tz) -> Option<Vec<[String; 2]>> {
+fn span_of(state: &RunState, zone: &TimeZone) -> Option<Vec<[String; 2]>> {
     match &state.fetch {
         Some(fetched) => {
             let ranges = crate::oura_coverage::claimed_days(&fetched.claims(), zone);
@@ -2547,7 +2551,7 @@ fn run_segments_bound(
         resume,
         replan,
         (&source_hash, &export_hash),
-        zone,
+        &zone,
     );
     match outcome {
         Ok(outcome) => Ok(outcome),
@@ -2610,7 +2614,7 @@ fn run_phases(
     resume: bool,
     replan: bool,
     (source_hash, export_hash): (&str, &str),
-    zone: chrono_tz::Tz,
+    zone: &TimeZone,
 ) -> Result<RunOutcome, Stop> {
     let journal = run.journal;
     let source = run.source;
@@ -2834,7 +2838,7 @@ fn run_phases(
     if let Input::Fetch(input) = request.input
         && !resume
     {
-        let today = run.now().with_timezone(&zone).date_naive();
+        let today = run.now().to_zoned_datetime(zone.clone()).date();
         state.fetch = Some(plan(input.range, &read_coverage(journal)?, today, zone)?);
         state.phase = Phase::Fetch;
         let _ = remove_dir_all(journal, &format!("{run_dir_rel}/pages"));

@@ -4,7 +4,7 @@
 //! The single native write authority for `health/brain.json`.
 //!
 //! Records are deliberately composed as JSON values.  The read model parses
-//! timestamps into `DateTime<Utc>`, but write paths must preserve caller and
+//! timestamps into `Timestamp`, but write paths must preserve caller and
 //! carried-forward timestamp spellings byte-for-byte (`Z` versus `+00:00`).
 
 use std::collections::BTreeMap;
@@ -14,8 +14,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, Duration, Utc};
 use getrandom::fill as fill_random;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value, json};
 #[cfg(unix)]
 use solstone_core_journal_io::{
@@ -95,8 +95,8 @@ pub const REACHABLE_WRITE_CASES: [&str; 24] = [
 #[derive(Debug)]
 pub struct BrainRefreshPermit {
     pub run_id: String,
-    pub started_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub started_at: Timestamp,
+    pub expires_at: Timestamp,
     pub fingerprint_sha256: String,
     pub checking_revision: u64,
     pub runtime_failure_marker_seen: Option<String>,
@@ -2058,7 +2058,7 @@ fn key_validation_binds(config: &Map<String, Value>) -> bool {
 /// Begin a fenced refresh.  Lease contention deliberately returns no permit.
 pub fn begin_refresh(
     journal_path: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     run_id: Option<String>,
     expected_active_fingerprint_sha256: Option<&str>,
     expect_active_fingerprint_absent: bool,
@@ -2077,7 +2077,7 @@ pub fn begin_refresh(
 
 pub fn begin_refresh_checked(
     journal_path: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     run_id: Option<String>,
     expected_active_fingerprint_sha256: Option<&str>,
     expect_active_fingerprint_absent: bool,
@@ -2140,7 +2140,7 @@ pub fn begin_refresh_checked(
 /// Begin the narrow SPP prerequisite-renewal lane.
 pub fn begin_prerequisite_renewal(
     journal_path: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     run_id: Option<String>,
     expected_fingerprint_sha256: Option<&str>,
     bundled_runtime_fingerprint_sha256: Option<String>,
@@ -2160,7 +2160,7 @@ pub fn begin_prerequisite_renewal(
 
 pub fn begin_prerequisite_renewal_checked(
     journal_path: &Path,
-    now: DateTime<Utc>,
+    now: Timestamp,
     run_id: Option<String>,
     expected_fingerprint_sha256: Option<&str>,
     bundled_runtime_fingerprint_sha256: Option<String>,
@@ -2314,7 +2314,7 @@ pub fn finish_refresh_rejected(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     outcome: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
     receipt: CredentialRejectionReceipt,
 ) -> Result<Value, WriterError> {
@@ -2333,7 +2333,7 @@ pub fn finish_refresh_rejected_checked(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     outcome: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
     receipt: CredentialRejectionReceipt,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
@@ -2391,7 +2391,7 @@ pub fn finish_refresh(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     outcome: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
 ) -> Result<Value, WriterError> {
     finish_refresh_checked(
@@ -2408,7 +2408,7 @@ pub fn finish_refresh_checked(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     outcome: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
@@ -2459,7 +2459,7 @@ pub fn abandon_refresh(
     permit: BrainRefreshPermit,
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, WriterError> {
     abandon_refresh_checked(journal_path, permit, reason_code, diagnostic, now, &|| {
         Ok(())
@@ -2471,7 +2471,7 @@ pub fn abandon_refresh_checked(
     permit: BrainRefreshPermit,
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
     publication_checkpoint().map_err(WriterError::Cancelled)?;
@@ -2526,7 +2526,7 @@ pub fn finish_prerequisite_renewal(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     lane_prerequisites: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
 ) -> Result<Value, WriterError> {
     finish_prerequisite_renewal_checked(
@@ -2543,7 +2543,7 @@ pub fn finish_prerequisite_renewal_checked(
     journal_path: &Path,
     permit: BrainRefreshPermit,
     lane_prerequisites: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
@@ -2609,7 +2609,7 @@ pub fn abandon_prerequisite_renewal(
     permit: BrainRefreshPermit,
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
 ) -> Result<Value, WriterError> {
     abandon_prerequisite_renewal_checked(
@@ -2628,7 +2628,7 @@ pub fn abandon_prerequisite_renewal_checked(
     permit: BrainRefreshPermit,
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
@@ -2656,7 +2656,7 @@ pub fn record_runtime_failure(
     component: &str,
     expected_fingerprint_sha256: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
 ) -> RuntimeFailureResult {
     let vocabulary = &local_contract().brain_state;
@@ -2728,7 +2728,7 @@ struct RuntimeFailureObservation<'a> {
     component: &'a str,
     expected_fingerprint_sha256: &'a str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     bundled_runtime_fingerprint_sha256: Option<String>,
 }
 
@@ -2936,7 +2936,7 @@ fn confidential_refusal_result(
         );
         return RefusalObservation::Failed(crate::ObservationFailure::FingerprintMismatch);
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let lock = match root.lock(record_name(), &checkpoint) {
         Ok(lock) => lock,
         Err(error) => {
@@ -3035,7 +3035,7 @@ impl From<WriterError> for RuntimeFailureInternal {
 
 #[allow(clippy::too_many_arguments)] // Each independent refresh fence and publication admission is retained.
 fn begin_refresh_under_lease(
-    now: DateTime<Utc>,
+    now: Timestamp,
     run_id: Option<String>,
     expected: Option<&str>,
     expect_absent: bool,
@@ -3282,7 +3282,7 @@ fn fingerprint_for_write(
 
 fn begin_none_lane(
     root: &BrainWriteRoot,
-    now: DateTime<Utc>,
+    now: Timestamp,
     resolution: &LaneResolution,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), WriterError> {
@@ -3309,7 +3309,7 @@ fn begin_none_lane(
 }
 
 fn compose_none_record(
-    now: DateTime<Utc>,
+    now: Timestamp,
     resolution: &LaneResolution,
     revision: u64,
 ) -> Result<Value, WriterError> {
@@ -3337,8 +3337,8 @@ fn compose_none_record(
 
 struct CheckingRecord<'a> {
     revision: u64,
-    now: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    now: Timestamp,
+    expires_at: Timestamp,
     run_id: &'a str,
     loaded: &'a LoadedFingerprint,
     evidence: Map<String, Value>,
@@ -3375,7 +3375,7 @@ fn compose_record_from_evidence(
     evidence_value: Value,
     loaded: &LoadedFingerprint,
     revision: u64,
-    now: DateTime<Utc>,
+    now: Timestamp,
     checking: Value,
     marker: Value,
     diagnostic: Value,
@@ -3449,7 +3449,7 @@ struct DirectRecord {
     checking: Value,
     marker: Value,
     diagnostic: Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 
 fn compose_direct_record(input: DirectRecord) -> Value {
@@ -3483,7 +3483,7 @@ fn raw_evidence_value(value: &Value) -> Result<Map<String, Value>, WriterError> 
 fn safe_prerequisite_evidence(
     raw: &Value,
     current: &BrainStateRecord,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Option<Map<String, Value>> {
     if current.active_lane != "spp" || record_timestamp_invalid(current, now) {
         return None;
@@ -3497,7 +3497,7 @@ fn safe_prerequisite_evidence(
     raw_evidence_value(raw).ok()
 }
 
-fn record_timestamp_invalid(record: &BrainStateRecord, now: DateTime<Utc>) -> bool {
+fn record_timestamp_invalid(record: &BrainStateRecord, now: Timestamp) -> bool {
     if record.updated_at > now
         || record
             .checking
@@ -3521,7 +3521,7 @@ fn record_timestamp_invalid(record: &BrainStateRecord, now: DateTime<Utc>) -> bo
 fn assert_finish_allowed(
     permit: &BrainRefreshPermit,
     current: &BrainStateRecord,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), WriterError> {
     if current.credential_holds != permit.credential_holds_seen {
         return Err(WriterError::Conflict(
@@ -3574,7 +3574,7 @@ fn target_component(reason_code: &str) -> Option<&str> {
 fn component_for_reason(
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, WriterError> {
     let component = target_component(reason_code)
         .ok_or_else(|| WriterError::Conflict("reason is not recordable evidence".to_owned()))?;
@@ -3585,7 +3585,7 @@ fn component_for_reason_in(
     component: &str,
     reason_code: &str,
     diagnostic: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Value, WriterError> {
     let status = component_status_for_reason(reason_code)?;
     let value = json!({
@@ -3612,7 +3612,7 @@ fn write_record(
     root: &BrainWriteRoot,
     lock: &BoundParentLock,
     record: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
     checkpoint().map_err(WriterError::Io)?;
@@ -3679,7 +3679,7 @@ fn read_credential_observation_authority(
 
 fn read_current(
     root: &BrainWriteRoot,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Option<(Value, BrainStateRecord)>, WriterError> {
     let Some(bytes) = root.read(record_name())? else {
         return Ok(None);
@@ -3729,12 +3729,12 @@ fn marker_id(record: Option<&Value>) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn checking_ttl() -> Duration {
-    Duration::seconds(local_contract().brain_state.checking_ttl_seconds as i64)
+fn checking_ttl() -> SignedDuration {
+    SignedDuration::from_secs(local_contract().brain_state.checking_ttl_seconds as i64)
 }
 
-fn iso(now: DateTime<Utc>) -> String {
-    now.to_rfc3339()
+fn iso(now: Timestamp) -> String {
+    solstone_core_time::utc_rfc3339(now)
 }
 
 fn validate_expected(expected: Option<&str>, expect_absent: bool) -> Result<(), BeginRefreshError> {
@@ -3811,8 +3811,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use chrono::DateTime;
-
     use super::*;
     use crate::InspectionStatus;
     use crate::fixture::projection_fixture;
@@ -3885,10 +3883,10 @@ mod tests {
         }
     }
 
-    fn fixture_now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(&projection_fixture().now)
+    fn fixture_now() -> Timestamp {
+        solstone_core_time::parse_rfc3339(&projection_fixture().now)
             .expect("fixture now")
-            .with_timezone(&Utc)
+            .timestamp()
     }
 
     fn ready_outcome() -> Value {
@@ -4091,11 +4089,11 @@ mod tests {
             let fixture = projection_fixture();
             let target = fixture.records.get(name).expect("reachable fixture record");
             let (lane, _) = name.split_once('/').expect("fixture case name");
-            let now = DateTime::parse_from_rfc3339(
+            let now = solstone_core_time::parse_rfc3339(
                 target["updated_at"].as_str().expect("fixture updated_at"),
             )
             .expect("fixture timestamp")
-            .with_timezone(&Utc);
+            .timestamp();
             let journal = TestJournal::new();
             journal.write_config(lane);
             journal.write_fixture_key();
@@ -4133,11 +4131,11 @@ mod tests {
     #[test]
     fn composition_matches_every_projection_fixture_record() {
         for (name, record) in &projection_fixture().records {
-            let now = DateTime::parse_from_rfc3339(
+            let now = solstone_core_time::parse_rfc3339(
                 record["updated_at"].as_str().expect("fixture updated_at"),
             )
             .unwrap()
-            .with_timezone(&Utc);
+            .timestamp();
             let composed = compose_direct_record(DirectRecord {
                 revision: record["revision"].as_u64().expect("fixture revision"),
                 reason_code: record["reason_code"]
@@ -4505,7 +4503,7 @@ mod tests {
 
     fn assert_finish_refusal_preserves_bytes(
         mutator: impl FnOnce(&mut Value),
-        finish_now: DateTime<Utc>,
+        finish_now: Timestamp,
     ) {
         let journal = TestJournal::new();
         let permit = begin_cloud(&journal);
@@ -6228,7 +6226,7 @@ mod tests {
 
     #[test]
     fn runtime_failure_precedence_prefers_reason_over_component() {
-        // There is no (1, 2) pair test: the native API receives `DateTime<Utc>`,
+        // There is no (1, 2) pair test: the native API receives `Timestamp`,
         // so Python's fallible now-normalization has already completed before this
         // function can run. Invalid timestamps are structurally unrepresentable here.
         let journal = TestJournal::new();
@@ -6361,11 +6359,11 @@ mod tests {
         );
     }
 
-    fn ready_evidence_spp_for(now: DateTime<Utc>) -> Value {
+    fn ready_evidence_spp_for(now: Timestamp) -> Value {
         let component = json!({
             "status": "ok",
             "observed_at": iso(now),
-            "expires_at": iso(now + Duration::days(1)),
+            "expires_at": iso(now + SignedDuration::from_hours(24)),
         });
         json!({
             "configuration": component.clone(),
@@ -6382,7 +6380,7 @@ mod tests {
             .unwrap()
             .config
             .unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         record_confidential_attestation_refusal(journal.path(), &config, "certificate_invalid");
         let inspection = inspect_brain_state(journal.path(), &config, now);
         assert_eq!(
@@ -6401,7 +6399,7 @@ mod tests {
             .unwrap()
             .config
             .unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         record_confidential_attestation_refusal(journal.path(), &config, "certificate_invalid");
         let inspection = inspect_brain_state(journal.path(), &config, now);
         assert_eq!(
@@ -6444,7 +6442,7 @@ mod tests {
 
         record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
 
-        let now = Utc::now() + chrono::Duration::seconds(1);
+        let now = Timestamp::now() + SignedDuration::from_secs(1);
         let inspection = inspect_brain_state(journal.path(), &config, now);
         assert_eq!(inspection.projection.aggregate_state, "blocked");
         assert_eq!(
@@ -6469,7 +6467,7 @@ mod tests {
             .unwrap();
         let shown = |raw: &str| {
             record_confidential_attestation_refusal(journal.path(), &config, raw);
-            let now = Utc::now() + chrono::Duration::seconds(1);
+            let now = Timestamp::now() + SignedDuration::from_secs(1);
             let inspection = inspect_brain_state(journal.path(), &config, now);
             assert_eq!(
                 inspection.projection.reason_code.as_deref(),
@@ -6530,7 +6528,7 @@ mod tests {
             let mut unknown = record.clone();
             unknown["evidence"]["lane_prerequisites"]["diagnostic"]["verification_reason"] =
                 json!("proof_http_unknown");
-            assert!(validate_brain_state_record(&unknown, Utc::now()).is_err());
+            assert!(validate_brain_state_record(&unknown, Timestamp::now()).is_err());
         }
         for raw in [
             "proof_http_unknown",
@@ -6561,7 +6559,7 @@ mod tests {
             .unwrap();
 
         record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
-        let now1 = Utc::now() + chrono::Duration::seconds(1);
+        let now1 = Timestamp::now() + SignedDuration::from_secs(1);
         let insp1 = inspect_brain_state(journal.path(), &config, now1);
         let rev1 = insp1.record.as_ref().unwrap()["revision"].as_u64().unwrap();
         assert_eq!(insp1.projection.aggregate_state, "blocked");
@@ -6572,7 +6570,7 @@ mod tests {
 
         // Same reason does not bump revision
         record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
-        let now2 = Utc::now() + chrono::Duration::seconds(1);
+        let now2 = Timestamp::now() + SignedDuration::from_secs(1);
         let insp2 = inspect_brain_state(journal.path(), &config, now2);
         assert_eq!(
             insp2.record.as_ref().unwrap()["revision"].as_u64().unwrap(),
@@ -6581,7 +6579,7 @@ mod tests {
 
         // Different raw reason (tls_handshake_failed -> attestation_rejected) bumps revision
         record_confidential_attestation_refusal(journal.path(), &config, "tls_handshake_failed");
-        let now3 = Utc::now() + chrono::Duration::seconds(1);
+        let now3 = Timestamp::now() + SignedDuration::from_secs(1);
         let insp3 = inspect_brain_state(journal.path(), &config, now3);
         assert_eq!(
             insp3.record.as_ref().unwrap()["revision"].as_u64().unwrap(),
@@ -6610,7 +6608,7 @@ mod tests {
 
         // nvattest_unavailable
         record_confidential_attestation_refusal(journal.path(), &config, "nvattest_unavailable");
-        let now1 = Utc::now() + chrono::Duration::seconds(1);
+        let now1 = Timestamp::now() + SignedDuration::from_secs(1);
         let insp1 = inspect_brain_state(journal.path(), &config, now1);
         let expected_agg = local_contract()
             .brain_state
@@ -6633,7 +6631,7 @@ mod tests {
             &config,
             "nvattest_integrity_failed",
         );
-        let now2 = Utc::now() + chrono::Duration::seconds(1);
+        let now2 = Timestamp::now() + SignedDuration::from_secs(1);
         let insp2 = inspect_brain_state(journal.path(), &config, now2);
         assert_eq!(insp2.projection.aggregate_state, "unhealthy");
         assert_eq!(
@@ -6655,7 +6653,7 @@ mod tests {
             let state_path = brain_state_path(journal.path());
             std::fs::write(&state_path, serde_json::to_vec(&corrupt_record).unwrap()).unwrap();
 
-            let inspected = inspect_brain_state(journal.path(), &config, Utc::now());
+            let inspected = inspect_brain_state(journal.path(), &config, Timestamp::now());
             assert_eq!(inspected.status, crate::inspect::InspectionStatus::Corrupt);
             assert_eq!(
                 inspected.projection.reason_code.as_deref(),
@@ -6663,7 +6661,7 @@ mod tests {
             );
             assert!(inspected.record.is_none());
             let presentation =
-                crate::presentation::present_brain_inspection(&inspected, Utc::now());
+                crate::presentation::present_brain_inspection(&inspected, Timestamp::now());
             assert!(!presentation.reason_text.contains("nvattest"));
             assert!(!presentation.headline.contains("nvattest"));
         }
@@ -6678,7 +6676,7 @@ mod tests {
             .unwrap()
             .config
             .unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let permit = begin_refresh(
             journal.path(),
             now,
@@ -6692,7 +6690,7 @@ mod tests {
 
         record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
 
-        let after_now = Utc::now() + chrono::Duration::seconds(1);
+        let after_now = Timestamp::now() + SignedDuration::from_secs(1);
         let after = inspect_brain_state(journal.path(), &config, after_now);
         let record = after.record.expect("record exists");
         assert!(record["checking"].is_null());
@@ -6774,28 +6772,28 @@ mod tests {
                 "configuration": {
                     "status": "ok",
                     "observed_at": iso(now),
-                    "expires_at": iso(now + Duration::days(1)),
+                    "expires_at": iso(now + SignedDuration::from_hours(24)),
                     "reason_code": null,
                     "diagnostic": {}
                 },
                 "lane_prerequisites": {
                     "status": "ok",
                     "observed_at": iso(now),
-                    "expires_at": iso(now + Duration::days(1)),
+                    "expires_at": iso(now + SignedDuration::from_hours(24)),
                     "reason_code": null,
                     "diagnostic": {}
                 },
                 "generate": {
                     "status": "ok",
                     "observed_at": iso(now),
-                    "expires_at": iso(now + Duration::days(1)),
+                    "expires_at": iso(now + SignedDuration::from_hours(24)),
                     "reason_code": null,
                     "diagnostic": {}
                 },
                 "cogitate": {
                     "status": "failed",
                     "observed_at": iso(now),
-                    "expires_at": iso(now + Duration::days(1)),
+                    "expires_at": iso(now + SignedDuration::from_hours(24)),
                     "reason_code": "cogitate_terminal_error",
                     "diagnostic": {}
                 }
@@ -6824,18 +6822,18 @@ mod tests {
             "configuration": {
                 "status": "ok",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             },
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             },
             "generate": {
                 "status": "failed",
                 "reason_code": "provider_quota_exceeded",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             }
         });
         let refused_finished =
@@ -6851,17 +6849,17 @@ mod tests {
             "configuration": {
                 "status": "ok",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             },
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             },
             "generate": {
                 "status": "ok",
                 "observed_at": iso(now),
-                "expires_at": iso(now + Duration::days(1))
+                "expires_at": iso(now + SignedDuration::from_hours(24))
             }
         });
         let success_finished =

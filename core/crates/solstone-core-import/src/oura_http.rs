@@ -10,7 +10,6 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
@@ -185,7 +184,8 @@ pub fn settings(journal: &Path) -> Result<OuraSettings, BodyIngestError> {
             .ok_or_else(|| failure(BodyIngestErrorKind::Source, stage))
     };
     let timezone = solstone_core_journal_config::owner_zone(journal)
-        .name()
+        .iana_name()
+        .unwrap_or_default()
         .to_owned();
     Ok(OuraSettings {
         client_id: required(section, "client_id", "client_id_missing")?,
@@ -334,7 +334,7 @@ pub fn refresh(
             object
                 .get("expires_in")
                 .and_then(Value::as_f64)
-                .map(|seconds| Utc::now().timestamp() as f64 + seconds)
+                .map(|seconds| jiff::Timestamp::now().as_second() as f64 + seconds)
         })
         .ok_or_else(|| failure(BodyIngestErrorKind::Source, "authorization_response"))?;
     if persist {

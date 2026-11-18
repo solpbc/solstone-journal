@@ -743,7 +743,7 @@ fn windows_follow_does_not_launch() {
     // Activity inside floor
     run_case("recent-activity", |root, _| {
         let mut status = old_test_status();
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
         status.last_progress_at = Some(now.clone());
         status.last_transition_at = Some(now);
         write_install_status(root, &status);

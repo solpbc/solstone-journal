@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value};
 use solstone_core_brain::BrainInspection;
 use uuid::Uuid;
@@ -33,7 +33,7 @@ const _: () = assert!(
     SPP_RENEWAL_PROACTIVE_MARGIN_S < solstone_core_spp_ratls::TPM_HEARTBEAT_INTERVAL.as_secs() / 2
 );
 
-pub(crate) type Now = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync + 'static>;
+pub(crate) type Now = Arc<dyn Fn() -> Timestamp + Send + Sync + 'static>;
 pub(crate) type Wait = Arc<dyn Fn(Duration) -> bool + Send + Sync + 'static>;
 
 #[derive(Clone, Debug)]
@@ -52,7 +52,7 @@ impl std::fmt::Display for RenewalBrainError {
 impl std::error::Error for RenewalBrainError {}
 
 pub(crate) trait RenewalBrain: Send + Sync {
-    fn inspect(&self, now: DateTime<Utc>) -> Result<BrainInspection, RenewalBrainError>;
+    fn inspect(&self, now: Timestamp) -> Result<BrainInspection, RenewalBrainError>;
     fn active_fingerprint(&self) -> Result<Option<String>, RenewalBrainError>;
 }
 
@@ -73,7 +73,7 @@ impl BrainAdapter {
 }
 
 impl RenewalBrain for BrainAdapter {
-    fn inspect(&self, now: DateTime<Utc>) -> Result<BrainInspection, RenewalBrainError> {
+    fn inspect(&self, now: Timestamp) -> Result<BrainInspection, RenewalBrainError> {
         let config = self.config()?;
         Ok(solstone_core_brain::inspect_brain_state(
             &self.journal,
@@ -127,8 +127,8 @@ impl AttemptKind {
 pub(crate) struct Attempt {
     kind: AttemptKind,
     reference: String,
-    observed_before: Option<DateTime<Utc>>,
-    expires_before: Option<DateTime<Utc>>,
+    observed_before: Option<Timestamp>,
+    expires_before: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,8 +138,8 @@ pub(crate) enum PlanOutcome {
     Wait(Duration),
     Start {
         kind: AttemptKind,
-        observed_before: Option<DateTime<Utc>>,
-        expires_before: Option<DateTime<Utc>>,
+        observed_before: Option<Timestamp>,
+        expires_before: Option<Timestamp>,
     },
 }
 
@@ -246,13 +246,13 @@ fn python_float(value: f64) -> String {
 #[derive(Default)]
 pub(crate) struct RenewalMachine {
     pending: Option<Attempt>,
-    ack_deadline: Option<DateTime<Utc>>,
+    ack_deadline: Option<Timestamp>,
     running: Option<Attempt>,
-    running_deadline: Option<DateTime<Utc>>,
+    running_deadline: Option<Timestamp>,
     successor_after_ref: Option<String>,
-    successor_deadline: Option<DateTime<Utc>>,
+    successor_deadline: Option<Timestamp>,
     retry_index: usize,
-    retry_after: Option<DateTime<Utc>>,
+    retry_after: Option<Timestamp>,
     last_mode: Option<&'static str>,
     events: Vec<RenewalEvent>,
 }
@@ -266,12 +266,12 @@ impl RenewalMachine {
         std::mem::take(&mut self.events)
     }
 
-    fn schedule_retry(&mut self, now: DateTime<Utc>) {
+    fn schedule_retry(&mut self, now: Timestamp) {
         let delay = SPP_RENEWAL_RETRY_DELAYS_S[self
             .retry_index
             .min(SPP_RENEWAL_RETRY_DELAYS_S.len().saturating_sub(1))];
         self.retry_index += 1;
-        self.retry_after = Some(now + chrono::Duration::seconds(delay as i64));
+        self.retry_after = Some(now + SignedDuration::from_secs(delay as i64));
         self.event(
             "retrying",
             vec![RenewalField::seconds("delay_s", delay as f64)],
@@ -304,7 +304,7 @@ impl RenewalMachine {
         self.retry_after = None;
     }
 
-    fn step_error(&mut self, now: DateTime<Utc>, reason: &str) {
+    fn step_error(&mut self, now: Timestamp, reason: &str) {
         self.event("failed", vec![RenewalField::text("reason", reason)]);
         self.clear_pending(false);
         self.clear_running();
@@ -327,7 +327,7 @@ impl RenewalMachine {
         Some(Duration::from_secs(SPP_RENEWAL_DISABLED_IDLE_S))
     }
 
-    fn state_delay(&mut self, now: DateTime<Utc>) -> Option<Duration> {
+    fn state_delay(&mut self, now: Timestamp) -> Option<Duration> {
         if let Some(pending) = &self.pending {
             if self.ack_deadline.is_some_and(|deadline| now >= deadline) {
                 self.event(
@@ -387,7 +387,7 @@ impl RenewalMachine {
 
     pub(crate) fn plan(
         &mut self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         inspection: &BrainInspection,
         active_fingerprint: Option<String>,
     ) -> PlanOutcome {
@@ -445,9 +445,9 @@ impl RenewalMachine {
             };
         }
         let expires = expires.expect("checked above");
-        let renew_at = expires - chrono::Duration::seconds(SPP_RENEWAL_PROACTIVE_MARGIN_S as i64);
+        let renew_at = expires - SignedDuration::from_secs(SPP_RENEWAL_PROACTIVE_MARGIN_S as i64);
         if now < renew_at {
-            let delay = (renew_at - now).to_std().unwrap_or_default();
+            let delay = Duration::try_from(renew_at - now).unwrap_or_default();
             self.event(
                 "scheduled",
                 vec![RenewalField::seconds(
@@ -466,7 +466,7 @@ impl RenewalMachine {
         }
     }
 
-    fn mark_pending(&mut self, now: DateTime<Utc>, attempt: Attempt) {
+    fn mark_pending(&mut self, now: Timestamp, attempt: Attempt) {
         self.event(
             "in_flight",
             vec![
@@ -474,7 +474,7 @@ impl RenewalMachine {
                 RenewalField::text("ref", attempt.reference.clone()),
             ],
         );
-        self.ack_deadline = Some(now + chrono::Duration::seconds(SPP_RENEWAL_ACK_TIMEOUT_S as i64));
+        self.ack_deadline = Some(now + SignedDuration::from_secs(SPP_RENEWAL_ACK_TIMEOUT_S as i64));
         self.pending = Some(attempt);
     }
 
@@ -547,7 +547,7 @@ impl RenewalMachine {
 
     fn apply_verification(
         &mut self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         attempt: Attempt,
         result: VerificationResult,
         exit: i32,
@@ -602,22 +602,22 @@ pub(crate) struct MachineSnapshot {
     pub(crate) pending_ref: Option<String>,
     pub(crate) running_ref: Option<String>,
     pub(crate) successor_ref: Option<String>,
-    pub(crate) ack_deadline: Option<DateTime<Utc>>,
-    pub(crate) running_deadline: Option<DateTime<Utc>>,
-    pub(crate) successor_deadline: Option<DateTime<Utc>>,
+    pub(crate) ack_deadline: Option<Timestamp>,
+    pub(crate) running_deadline: Option<Timestamp>,
+    pub(crate) successor_deadline: Option<Timestamp>,
     pub(crate) retry_index: usize,
 }
 
-fn seconds_until(deadline: Option<DateTime<Utc>>, now: DateTime<Utc>, default: u64) -> Duration {
+fn seconds_until(deadline: Option<Timestamp>, now: Timestamp, default: u64) -> Duration {
     deadline
-        .and_then(|deadline| (deadline - now).to_std().ok())
+        .and_then(|deadline| Duration::try_from(deadline - now).ok())
         .unwrap_or_else(|| Duration::from_secs(default))
 }
 
-fn parse_time(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
+fn parse_time(value: &str) -> Option<Timestamp> {
+    solstone_core_time::parse_rfc3339(value)
         .ok()
-        .map(|value| value.with_timezone(&Utc))
+        .map(|value| value.timestamp())
 }
 
 pub(crate) fn exit_code(fields: &Map<String, Value>) -> i32 {
@@ -770,7 +770,7 @@ impl RenewalHandle {
         }
     }
 
-    pub(crate) fn step(&self, now: DateTime<Utc>) -> Duration {
+    pub(crate) fn step(&self, now: Timestamp) -> Duration {
         let inspection = match self.brain.inspect(now) {
             Ok(inspection) => inspection,
             Err(error) => return self.fail_step(now, &error.to_string()),
@@ -818,10 +818,10 @@ impl RenewalHandle {
 
     fn enqueue_attempt(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         kind: AttemptKind,
-        observed_before: Option<DateTime<Utc>>,
-        expires_before: Option<DateTime<Utc>>,
+        observed_before: Option<Timestamp>,
+        expires_before: Option<Timestamp>,
     ) -> Duration {
         let reference = format!("spp-renewal-{}", Uuid::new_v4().simple());
         let command = match &kind {
@@ -880,7 +880,7 @@ impl RenewalHandle {
         Duration::from_secs(SPP_RENEWAL_ACK_TIMEOUT_S)
     }
 
-    fn fail_step(&self, now: DateTime<Utc>, reason: &str) -> Duration {
+    fn fail_step(&self, now: Timestamp, reason: &str) -> Duration {
         self.machine
             .lock()
             .expect("renewal state lock poisoned")
@@ -905,7 +905,7 @@ impl RenewalHandle {
                     let attempt = machine.pending.take().expect("checked pending");
                     machine.ack_deadline = None;
                     machine.running_deadline = Some(
-                        now + chrono::Duration::from_std(attempt.kind.observation_bound())
+                        now + SignedDuration::try_from(attempt.kind.observation_bound())
                             .expect("duration"),
                     );
                     machine.event(
@@ -945,7 +945,7 @@ impl RenewalHandle {
                     machine.event("in_flight", fields);
                     machine.successor_after_ref = active;
                     machine.successor_deadline = machine.successor_after_ref.as_ref().map(|_| {
-                        now + chrono::Duration::seconds(SPP_REFRESH_OBSERVATION_BOUND_S as i64)
+                        now + SignedDuration::from_secs(SPP_REFRESH_OBSERVATION_BOUND_S as i64)
                     });
                     if machine.successor_after_ref.is_none() {
                         machine.schedule_retry(now);
@@ -1100,8 +1100,8 @@ impl Drop for RenewalService {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
     use solstone_core_brain::BrainProjection;
+    use solstone_core_time::utc_rfc3339;
     use std::fs;
 
     use super::*;
@@ -1117,7 +1117,7 @@ mod tests {
     }
 
     impl RenewalBrain for FakeBrain {
-        fn inspect(&self, _: DateTime<Utc>) -> Result<BrainInspection, RenewalBrainError> {
+        fn inspect(&self, _: Timestamp) -> Result<BrainInspection, RenewalBrainError> {
             self.inspection.lock().unwrap().clone()
         }
         fn active_fingerprint(&self) -> Result<Option<String>, RenewalBrainError> {
@@ -1139,8 +1139,8 @@ mod tests {
         }
     }
 
-    fn now() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap()
+    fn now() -> Timestamp {
+        "2026-08-06T12:00:00Z".parse::<Timestamp>().unwrap()
     }
     fn fingerprint() -> String {
         "a".repeat(64)
@@ -1148,8 +1148,8 @@ mod tests {
     fn inspection(
         lane: &str,
         aggregate: &str,
-        observed: DateTime<Utc>,
-        expires: DateTime<Utc>,
+        observed: Timestamp,
+        expires: Timestamp,
     ) -> BrainInspection {
         BrainInspection {
             status: solstone_core_brain::InspectionStatus::Ok,
@@ -1164,7 +1164,7 @@ mod tests {
             },
             error: None,
             record: Some(
-                json!({"active_lane":lane,"fingerprint_sha256":fingerprint(),"evidence":{"lane_prerequisites":{"status":"ok","observed_at":observed.to_rfc3339(),"expires_at":expires.to_rfc3339()}}}),
+                json!({"active_lane":lane,"fingerprint_sha256":fingerprint(),"evidence":{"lane_prerequisites":{"status":"ok","observed_at":utc_rfc3339(observed),"expires_at":utc_rfc3339(expires)}}}),
             ),
         }
     }
@@ -1199,16 +1199,16 @@ mod tests {
         inspection(
             "spp",
             "ready",
-            now() - chrono::Duration::minutes(9),
-            now() + chrono::Duration::seconds(30),
+            now() - SignedDuration::from_mins(9),
+            now() + SignedDuration::from_secs(30),
         )
     }
     fn advance(brain: &FakeBrain) {
         *brain.inspection.lock().unwrap() = Ok(inspection(
             "spp",
             "ready",
-            now() + chrono::Duration::seconds(1),
-            now() + chrono::Duration::minutes(10),
+            now() + SignedDuration::from_secs(1),
+            now() + SignedDuration::from_mins(10),
         ));
     }
 
@@ -1239,7 +1239,7 @@ mod tests {
         assert!(matches!(
             RenewalMachine::default().plan(
                 now(),
-                &inspection("spp", "ready", now(), now() + chrono::Duration::minutes(10)),
+                &inspection("spp", "ready", now(), now() + SignedDuration::from_mins(10)),
                 Some(fingerprint())
             ),
             PlanOutcome::Wait(_)
@@ -1273,8 +1273,8 @@ mod tests {
                 &inspection(
                     "spp",
                     "ready",
-                    now() - chrono::Duration::minutes(2),
-                    now() - chrono::Duration::seconds(1)
+                    now() - SignedDuration::from_mins(2),
+                    now() - SignedDuration::from_secs(1)
                 ),
                 Some(fingerprint())
             ),
@@ -1303,10 +1303,10 @@ mod tests {
             machine.pending = Some(Attempt {
                 kind,
                 reference: reference.clone(),
-                observed_before: Some(now() - chrono::Duration::minutes(9)),
-                expires_before: Some(now() + chrono::Duration::seconds(30)),
+                observed_before: Some(now() - SignedDuration::from_mins(9)),
+                expires_before: Some(now() + SignedDuration::from_secs(30)),
             });
-            machine.ack_deadline = Some(now() + chrono::Duration::seconds(15));
+            machine.ack_deadline = Some(now() + SignedDuration::from_secs(15));
         }
         handle.handle_supervisor(
             "started",
@@ -1438,7 +1438,7 @@ mod tests {
                 expires_before: None,
             },
         );
-        let _ = machine.state_delay(now() + chrono::Duration::seconds(15));
+        let _ = machine.state_delay(now() + SignedDuration::from_secs(15));
         assert_eq!(machine.retry_index, 1);
     }
     #[test]
@@ -1450,10 +1450,10 @@ mod tests {
                 observed_before: None,
                 expires_before: None,
             }),
-            running_deadline: Some(now() + chrono::Duration::seconds(300)),
+            running_deadline: Some(now() + SignedDuration::from_secs(300)),
             ..RenewalMachine::default()
         };
-        let _ = machine.state_delay(now() + chrono::Duration::seconds(300));
+        let _ = machine.state_delay(now() + SignedDuration::from_secs(300));
         assert_eq!(machine.retry_index, 1);
     }
     #[test]
@@ -1467,10 +1467,10 @@ mod tests {
                 observed_before: None,
                 expires_before: None,
             }),
-            running_deadline: Some(now() + chrono::Duration::seconds(120)),
+            running_deadline: Some(now() + SignedDuration::from_secs(120)),
             ..RenewalMachine::default()
         };
-        let _ = machine.state_delay(now() + chrono::Duration::seconds(120));
+        let _ = machine.state_delay(now() + SignedDuration::from_secs(120));
         assert_eq!(machine.retry_index, 1);
     }
     #[test]
@@ -1647,7 +1647,7 @@ mod tests {
             observed_before: None,
             expires_before: None,
         });
-        machine.ack_deadline = Some(now() + chrono::Duration::seconds(15));
+        machine.ack_deadline = Some(now() + SignedDuration::from_secs(15));
         machine.running = Some(Attempt {
             kind: AttemptKind::Renew {
                 fingerprint: fingerprint(),
@@ -1656,9 +1656,9 @@ mod tests {
             observed_before: None,
             expires_before: None,
         });
-        machine.running_deadline = Some(now() + chrono::Duration::seconds(120));
+        machine.running_deadline = Some(now() + SignedDuration::from_secs(120));
         machine.successor_after_ref = Some("successor".into());
-        machine.successor_deadline = Some(now() + chrono::Duration::seconds(300));
+        machine.successor_deadline = Some(now() + SignedDuration::from_secs(300));
     }
 
     fn seed_on_active_fingerprint(brain: &FakeBrain, handle: &RenewalHandle) {
@@ -1771,7 +1771,7 @@ mod tests {
             })
         };
         let brain = fake(
-            inspection("spp", "ready", now(), now() + chrono::Duration::hours(5)),
+            inspection("spp", "ready", now(), now() + SignedDuration::from_hours(5)),
             Some(fingerprint()),
         );
         let (handle, _, _) = handle(brain);
@@ -1861,9 +1861,9 @@ mod tests {
         );
     }
 
-    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
-        let observed = now.to_rfc3339();
-        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+    fn spp_ready_evidence(now: Timestamp) -> Value {
+        let observed = utc_rfc3339(now);
+        let expires = utc_rfc3339(now + SignedDuration::from_hours(2));
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
@@ -1908,7 +1908,7 @@ mod tests {
         .unwrap();
         let ready_key = solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
 
-        let now = chrono::Utc::now();
+        let now = Timestamp::now();
         let ready_permit = solstone_core_brain::begin_refresh(
             ready_path,
             now,
@@ -1946,7 +1946,7 @@ mod tests {
 
         // The refusal writer timestamps with the real clock. Inspect after its
         // write rather than assuming both fixture setups finish within a second.
-        let now_check = chrono::Utc::now();
+        let now_check = Timestamp::now();
         let inspection1 =
             solstone_core_brain::inspect_brain_state(ready_path, &config_map, now_check);
         let outcome1 = RenewalMachine::default().plan(now_check, &inspection1, fingerprint1);
@@ -1995,7 +1995,7 @@ mod tests {
         .unwrap();
         assert!(fingerprint2.is_some());
 
-        let now_check = chrono::Utc::now();
+        let now_check = Timestamp::now();
         let inspection2 =
             solstone_core_brain::inspect_brain_state(mid_check_path, &config_map, now_check);
         assert_eq!(inspection2.projection.aggregate_state, "unhealthy");

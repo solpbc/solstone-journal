@@ -45,7 +45,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::door::{
@@ -296,7 +297,7 @@ fn link_originals(
     releases: &[original_trash::Release],
     class: RawReleaseClass,
     stop_at_busy: bool,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<original_trash::Linking, String> {
     original_trash::link_before(
         journal,
@@ -356,7 +357,7 @@ fn without_busy(
 fn keep_originals(
     journal: &Path,
     linked: Vec<original_trash::Linked>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> serde_json::Value {
     let kept = original_trash::keep_after(journal, linked);
     original_trash::cli_answer(journal, &kept, now)
@@ -554,7 +555,7 @@ fn run_recover(args: &Args) -> ExitCode {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
-    let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let at_stamp = solstone_core_time::utc_z(at, solstone_core_time::Precision::Secs);
     let cid = match args.required("--did") {
         Ok(value) => value,
         Err(error) => return fail(&error),
@@ -1004,15 +1005,15 @@ fn run_sweep(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let today = match args.required("--today").and_then(|value| {
-        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        Date::strptime("%Y-%m-%d", value)
             .map_err(|_| format!("--today must be YYYY-MM-DD, not `{value}`"))
     }) {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
     let now = match args.required("--now").and_then(|value| {
-        DateTime::parse_from_rfc3339(value)
-            .map(|when| when.with_timezone(&Utc))
+        solstone_core_time::parse_rfc3339(value)
+            .map(|when| when.timestamp())
             .map_err(|_| format!("--now must be an RFC 3339 instant, not `{value}`"))
     }) {
         Ok(value) => value,
@@ -1082,22 +1083,22 @@ fn parse_policy(args: &Args) -> Result<Policy, String> {
     }
 }
 
-fn parse_today(args: &Args) -> Result<NaiveDate, String> {
+fn parse_today(args: &Args) -> Result<Date, String> {
     args.required("--today").and_then(|value| {
-        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        Date::strptime("%Y-%m-%d", value)
             .map_err(|_| format!("--today must be YYYY-MM-DD, not `{value}`"))
     })
 }
 
-fn parse_rfc3339_flag(args: &Args, flag: &str) -> Result<DateTime<Utc>, String> {
+fn parse_rfc3339_flag(args: &Args, flag: &str) -> Result<Timestamp, String> {
     args.required(flag).and_then(|value| {
-        DateTime::parse_from_rfc3339(value)
-            .map(|when| when.with_timezone(&Utc))
+        solstone_core_time::parse_rfc3339(value)
+            .map(|when| when.timestamp())
             .map_err(|_| format!("{flag} must be an RFC 3339 instant, not `{value}`"))
     })
 }
 
-fn parse_now(args: &Args) -> Result<DateTime<Utc>, String> {
+fn parse_now(args: &Args) -> Result<Timestamp, String> {
     parse_rfc3339_flag(args, "--now")
 }
 
@@ -1462,7 +1463,7 @@ fn run_prune_logs(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let today = match args.required("--today").and_then(|value| {
-        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        Date::strptime("%Y-%m-%d", value)
             .map_err(|_| format!("--today must be YYYY-MM-DD, not `{value}`"))
     }) {
         Ok(value) => value,

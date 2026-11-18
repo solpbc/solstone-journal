@@ -146,7 +146,7 @@ fn a_queued_sense_run_on_a_strava_tile_writes_nothing_and_ends_its_pending_routi
         &context.day,
         &serde_json::json!({"event":"sense.complete","mode":"segment","day":context.day,
             "stream":STRAVA,"segment":TILE,"density":"idle",
-            "ts":chrono::Utc::now().timestamp_millis() + 3_600_000})
+            "ts":jiff::Timestamp::now().as_millisecond() + 3_600_000})
         .to_string(),
     );
     let before = (tree(&sensed), tree(&unsensed));
@@ -185,7 +185,7 @@ fn a_queued_sense_run_on_a_strava_tile_writes_nothing_and_ends_its_pending_routi
 }
 
 fn oplog_events(context: &context::ThinkContext) -> Vec<Value> {
-    let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").unwrap();
+    let day = solstone_core_time::parse_day(&context.day).unwrap();
     catalog_oplogs(JournalRoot::open(&context.journal).unwrap(), &[day])
         .unwrap()
         .into_catalogued_entries()

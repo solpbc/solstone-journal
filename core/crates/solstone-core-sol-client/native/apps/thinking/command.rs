@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use serde_json::{Value, json};
 
 use crate::args::parse_args;
@@ -559,15 +559,12 @@ fn action_error(error: ClientError) -> ClientError {
     error
 }
 
-fn parse_attestation_observed_at(attestation: &Value) -> Option<DateTime<FixedOffset>> {
+fn parse_attestation_observed_at(attestation: &Value) -> Option<ZonedDateTime> {
     let value = attestation.get("observed_at").and_then(Value::as_str)?;
-    DateTime::parse_from_rfc3339(value).ok()
+    solstone_core_time::parse_rfc3339(value).ok()
 }
 
-fn attestation_observed_at_newer(
-    attestation: &Value,
-    baseline: Option<&DateTime<FixedOffset>>,
-) -> bool {
+fn attestation_observed_at_newer(attestation: &Value, baseline: Option<&ZonedDateTime>) -> bool {
     let Some(current) = parse_attestation_observed_at(attestation) else {
         return false;
     };
@@ -579,7 +576,7 @@ fn attestation_observed_at_newer(
 
 fn poll_confidential_recheck_until_complete(
     ctx: CommandContext<'_>,
-    baseline_observed_at: Option<&DateTime<FixedOffset>>,
+    baseline_observed_at: Option<&ZonedDateTime>,
 ) -> Result<(Value, &'static str), ClientError> {
     let deadline = monotonic_seconds(ctx) + CONFIDENTIAL_RECHECK_WAIT_SECONDS;
     let interval = Duration::from_secs_f64(CONFIDENTIAL_RECHECK_POLL_INTERVAL_SECONDS);

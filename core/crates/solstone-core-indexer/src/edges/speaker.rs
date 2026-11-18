@@ -72,7 +72,7 @@ pub(crate) fn extract_speaker_edges(
         });
     }
 
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
+    let ts = segment_start_ts_ms(&context.day, &segment, &resolver.owner_timezone()?)?;
     let entities = resolver.speaker_entities()?;
     let speaker_ids = raw_speaker_ids
         .into_iter()

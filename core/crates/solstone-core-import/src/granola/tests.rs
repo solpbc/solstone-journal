@@ -58,7 +58,7 @@ fn root() -> tempfile::TempDir {
     .unwrap();
     root
 }
-fn now() -> DateTime<Utc> {
+fn now() -> jiff::Timestamp {
     instant("2026-11-02T10:00:00Z").unwrap()
 }
 fn output(root: &Path) -> PathBuf {

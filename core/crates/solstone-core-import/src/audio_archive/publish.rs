@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_format::audio_archive::{
@@ -98,7 +97,7 @@ pub struct AudioArchivePublishOptions<'a> {
     pub import_id: Option<&'a str>,
     pub members: Vec<AudioArchiveMemberInput>,
     pub materializer: &'a dyn AudioArchiveMaterializer,
-    pub owner_zone: Tz,
+    pub owner_zone: TimeZone,
     pub settings: AudioArchiveSettings,
     pub source_timestamp: Option<Timestamp>,
 }
@@ -297,7 +296,7 @@ fn publication_action(saved: bool, intent: bool, stage: bool) -> PublicationActi
 pub fn prepare_audio_archive_plan(
     journal: &Path,
     members: &[AudioArchiveMemberInput],
-    owner_zone: Tz,
+    owner_zone: &TimeZone,
     settings: AudioArchiveSettings,
 ) -> Result<AudioArchivePlan, AudioArchiveError> {
     let mut plan = plan_audio_archive(members, owner_zone, settings)?;
@@ -369,7 +368,7 @@ pub fn publish_audio_archive(
         Some(prepare_audio_archive_plan(
             journal,
             &options.members,
-            options.owner_zone,
+            &options.owner_zone,
             options.settings.clone(),
         )?)
     } else {
@@ -386,8 +385,10 @@ pub fn publish_audio_archive(
     } else {
         let stamp = match options.source_timestamp {
             Some(stamp) => stamp,
-            None => validate_timestamp(&Utc::now().format("%Y%m%d_%H%M%S").to_string())
-                .map_err(|error| AudioArchiveError::Other(error.to_string()))?,
+            None => {
+                validate_timestamp(&jiff::Timestamp::now().strftime("%Y%m%d_%H%M%S").to_string())
+                    .map_err(|error| AudioArchiveError::Other(error.to_string()))?
+            }
         };
         allocate_import_id(journal, &stamp)
             .map_err(|error| AudioArchiveError::Other(error.to_string()))?
@@ -428,12 +429,12 @@ pub fn publish_audio_archive(
             Some(&options.settings.qualifier),
         )
         .map_err(|error| AudioArchiveError::Other(error.to_string()))?;
-        validate_resume_settings(&record, options.owner_zone, &options.settings, &stream)?;
+        validate_resume_settings(&record, &options.owner_zone, &options.settings, &stream)?;
         // Resume uses the frozen plan. Supplied facts may rename a source but cannot change its identity, time or length.
         if !options.members.is_empty() {
             let fresh = plan_audio_archive(
                 &options.members,
-                options.owner_zone,
+                &options.owner_zone,
                 options.settings.clone(),
             )?;
             let mut fresh_facts: Vec<_> = fresh
@@ -1256,7 +1257,7 @@ mod crash_tests {
                 import_id: None,
                 members: vec![member],
                 materializer: &map,
-                owner_zone: Tz::America__New_York,
+                owner_zone: solstone_core_time::zone("America/New_York").unwrap(),
                 settings: AudioArchiveSettings {
                     qualifier: "clips".to_owned(),
                     archive_identity: "crash_test_archive".to_owned(),

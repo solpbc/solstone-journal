@@ -527,7 +527,7 @@ fn commit_entity_merge_inner(
                         successor: target_id.to_owned(),
                         name: Some(plan.source_display_name.clone()),
                         merge_id: Some(merge_id.clone()),
-                        at: Some(chrono::Utc::now().to_rfc3339()),
+                        at: Some(solstone_core_time::utc_rfc3339(jiff::Timestamp::now())),
                     },
                 )
                 .map_err(EntityMergeError::Refused)?;
@@ -1657,8 +1657,8 @@ fn earlier_created(target: Option<&Value>, source: Option<&Value>) -> Option<Val
         },
         (Some(Value::String(t)), Some(Value::String(s))) => {
             match (
-                chrono::DateTime::parse_from_rfc3339(t),
-                chrono::DateTime::parse_from_rfc3339(s),
+                solstone_core_time::parse_rfc3339(t).map(|value| value.timestamp()),
+                solstone_core_time::parse_rfc3339(s).map(|value| value.timestamp()),
             ) {
                 (Ok(tt), Ok(ss)) if ss < tt => Some(Value::String(s.clone())),
                 _ => None,

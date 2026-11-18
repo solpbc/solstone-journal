@@ -3,6 +3,7 @@
 
 use std::{fs, io, path::Path};
 
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{MalformedPolicy, ReadError, read_json};
 
@@ -141,7 +142,7 @@ pub fn build_schedule_report(
             })
             .unwrap_or_else(|| "?".to_owned());
         let last_run = if state_trusted {
-            format_last_run(state_entry(&state, &name), now.zone)
+            format_last_run(state_entry(&state, &name), &now.zone)
         } else {
             "invalid".to_owned()
         };
@@ -157,7 +158,7 @@ pub fn build_schedule_report(
                 every: raw_every.expect("supported interval").to_owned(),
                 max_runtime: None,
             };
-            format_next_due(&entry, state_entry(&state, &name), &config, now)
+            format_next_due(&entry, state_entry(&state, &name), &config, &now)
         };
         rows.push(ScheduleReportRow {
             name,
@@ -261,7 +262,7 @@ fn classify_command(entry: &Map<String, Value>) -> (String, Option<Vec<String>>)
     }
 }
 
-fn format_last_run(state: Option<&Value>, zone: chrono_tz::Tz) -> String {
+fn format_last_run(state: Option<&Value>, zone: &TimeZone) -> String {
     let Some(last_run) = state
         .and_then(Value::as_object)
         .and_then(|entry| entry.get("last_run"))
@@ -277,9 +278,9 @@ fn format_last_run(state: Option<&Value>, zone: chrono_tz::Tz) -> String {
         .unwrap_or_else(|| "invalid".to_owned())
 }
 
-fn format_epoch(value: f64, zone: chrono_tz::Tz) -> String {
+fn format_epoch(value: f64, zone: &TimeZone) -> String {
     local_from_epoch(value, zone)
-        .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
+        .map(|value| value.strftime("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "invalid".to_owned())
 }
 
@@ -287,25 +288,25 @@ fn format_next_due(
     entry: &ScheduleEntry,
     state: Option<&Value>,
     config: &ScheduleConfig,
-    now: ScheduleNow,
+    now: &ScheduleNow,
 ) -> String {
     if super::is_due(entry, state, config, now) {
         return "now".to_owned();
     }
     let epoch_millis = compute_next_run(entry, state, config, now);
     let retrying = super::due::retry_at(entry, state, config, now).is_some();
-    local_from_epoch(epoch_millis as f64 / 1_000.0, now.zone)
+    local_from_epoch(epoch_millis as f64 / 1_000.0, &now.zone)
         .map(|value| match entry.every.as_str() {
-            "hourly" => value.format("%H:%M").to_string(),
-            "daily" if retrying => value.format("%H:%M").to_string(),
+            "hourly" => value.strftime("%H:%M").to_string(),
+            "daily" if retrying => value.strftime("%H:%M").to_string(),
             "daily" => config
                 .daily_time
                 .as_deref()
                 .and_then(parse_daily_time)
                 .map(|(hour, minute)| format!("{hour:02}:{minute:02}"))
                 .unwrap_or_else(|| "midnight".to_owned()),
-            "weekly" => value.format("%A %H:%M").to_string(),
-            _ => value.format("%H:%M").to_string(),
+            "weekly" => value.strftime("%A %H:%M").to_string(),
+            _ => value.strftime("%H:%M").to_string(),
         })
         .unwrap_or_else(|| "invalid".to_owned())
 }
@@ -316,7 +317,10 @@ mod tests {
 
     #[test]
     fn non_finite_epoch_values_are_invalid() {
-        assert_eq!(format_epoch(f64::NAN, chrono_tz::Tz::UTC), "invalid");
-        assert_eq!(format_epoch(f64::INFINITY, chrono_tz::Tz::UTC), "invalid");
+        assert_eq!(format_epoch(f64::NAN, &jiff::tz::TimeZone::UTC), "invalid");
+        assert_eq!(
+            format_epoch(f64::INFINITY, &jiff::tz::TimeZone::UTC),
+            "invalid"
+        );
     }
 }

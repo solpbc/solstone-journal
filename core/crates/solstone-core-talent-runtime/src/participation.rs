@@ -6,9 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
-use chrono::{SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_system_health::find_segment_dir;
+use solstone_core_time::Precision;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -496,7 +496,7 @@ pub(crate) fn apply_result_cancellable(
             .cloned()
             .unwrap_or(Value::Null),
     );
-    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+    let timestamp = solstone_core_time::utc_z(jiff::Timestamp::now(), Precision::Micros);
     solstone_core_facets::update_activity_record_checked(
         journal,
         facet,
@@ -954,7 +954,7 @@ pub fn judge_again(
         return Ok(Rejudged::Same);
     }
     let patch = Map::from_iter([("participation".to_owned(), Value::Array(judged))]);
-    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+    let timestamp = solstone_core_time::utc_z(jiff::Timestamp::now(), Precision::Micros);
     solstone_core_facets::update_activity_record_checked(
         journal,
         facet,

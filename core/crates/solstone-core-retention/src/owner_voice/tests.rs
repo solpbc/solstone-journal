@@ -23,8 +23,8 @@ use super::*;
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 const AUDIO: &[u8] = b"synthetic audio bytes";
 
-fn at() -> DateTime<Utc> {
-    DateTime::from_timestamp_millis(1_772_614_800_000).unwrap()
+fn at() -> Timestamp {
+    Timestamp::from_millisecond(1_772_614_800_000).unwrap()
 }
 
 fn journal() -> std::path::PathBuf {
@@ -154,7 +154,7 @@ fn refusal_record_round_trips() {
     assert_eq!(row["event"], "original_release_refused");
     assert_eq!(row["reason"], "bytes_changed");
     assert_eq!(row["class"], "owner_voice_raw_release");
-    assert_eq!(row["ts"], at().timestamp_millis());
+    assert_eq!(row["ts"], at().as_millisecond());
     assert!(
         retention_events_for_name(&fixture.segment, "120000_300.m4a")
             .unwrap()
@@ -292,12 +292,12 @@ fn deletion_state_truth_table() {
 
 #[test]
 fn owed_days_cover_today_and_the_29_before() {
-    let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+    let today = jiff::civil::date(2026, 10, 20);
     let days: Vec<_> = owner_voice_owed_days(today).collect();
     assert_eq!(days.len(), 30);
     assert_eq!(days.first(), Some(&today));
-    assert!(days.contains(&NaiveDate::from_ymd_opt(2026, 9, 21).unwrap()));
-    assert!(!days.contains(&NaiveDate::from_ymd_opt(2026, 9, 20).unwrap()));
+    assert!(days.contains(&jiff::civil::date(2026, 9, 21)));
+    assert!(!days.contains(&jiff::civil::date(2026, 9, 20)));
 }
 
 #[test]
@@ -382,7 +382,7 @@ fn the_daily_walk_finishes_owed_deletions_in_its_window_only() {
     fs::create_dir_all(&old).unwrap();
     fs::copy(&fixture.original, old.join("120000_300.m4a")).unwrap();
     fs::copy(&fixture.jsonl, old.join("120000_300.jsonl")).unwrap();
-    let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+    let today = jiff::civil::date(2026, 10, 20);
 
     // Busy at first: the deletion stays owed and is retried within the run.
     let root = JournalRoot::open(journal).unwrap();
@@ -472,7 +472,7 @@ fn cancellation_interrupts_busy_retry_wait_without_releasing_the_original() {
         let after_attempt = std::cell::Cell::new(None::<usize>);
         finish_owed_owner_voice_deletions_checked(
             &journal,
-            NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+            jiff::civil::date(2026, 10, 20),
             6,
             Duration::from_secs(120),
             &|| {
@@ -605,7 +605,7 @@ fn a_recovered_original_is_not_released_again_by_voice_only() {
         owner_voice_deletion_state(&fixture.segment, &fixture.jsonl),
         OwedState::NotOwed
     );
-    let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+    let today = jiff::civil::date(2026, 10, 20);
     let counts = finish_owed_owner_voice_deletions(journal, today, 0, Duration::ZERO, &at);
     assert_eq!(counts.deleted, 0);
     assert_eq!(fs::read(&fixture.original).unwrap(), AUDIO, "still there");

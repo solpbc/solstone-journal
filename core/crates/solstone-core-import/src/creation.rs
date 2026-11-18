@@ -8,9 +8,10 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use chrono_tz::Tz;
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::{Offset, TimeZone};
 use regex::Regex;
+use solstone_core_time::{LocalResult, from_local, parse_rfc3339, strptime_fixed};
 
 use crate::timestamp::{Timestamp, validate_timestamp};
 
@@ -18,7 +19,7 @@ use crate::timestamp::{Timestamp, validate_timestamp};
 const QUICKTIME_EPOCH_OFFSET_SECS: i64 = 2_082_844_800;
 
 /// Detect the single consensus creation timestamp for a file, its filename, and container metadata.
-pub fn detect_creation(path: &Path, filename: Option<&str>, zone: Tz) -> Option<Timestamp> {
+pub fn detect_creation(path: &Path, filename: Option<&str>, zone: &TimeZone) -> Option<Timestamp> {
     detect_creation_with_exif(path, filename, zone, None)
 }
 
@@ -26,7 +27,7 @@ pub fn detect_creation(path: &Path, filename: Option<&str>, zone: Tz) -> Option<
 pub fn detect_creation_with_exif(
     path: &Path,
     filename: Option<&str>,
-    zone: Tz,
+    zone: &TimeZone,
     extra_exif: Option<&[u8]>,
 ) -> Option<Timestamp> {
     let mut candidates = Vec::new();
@@ -56,7 +57,7 @@ pub fn detect_creation_with_exif(
 }
 
 /// Parse creation candidates from raw Exif TIFF segment bytes.
-pub fn exif_creation_candidates(exif_bytes: &[u8], zone: Tz) -> Vec<Timestamp> {
+pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Timestamp> {
     if exif_bytes.len() < 8 {
         return Vec::new();
     }
@@ -242,48 +243,51 @@ pub fn decide(candidates: impl IntoIterator<Item = Timestamp>) -> Option<Timesta
 /// `2025-11-02T01:30:00-07:00`. The stamp is that instant's wall clock in `zone`, and the
 /// instant is kept as an instant read from a file is, so the second occurrence of a repeated
 /// hour stays the second occurrence.
-pub fn owner_instant(raw: &str, zone: Tz) -> Option<Timestamp> {
-    utc_stamp(
-        DateTime::parse_from_rfc3339(raw).ok()?.with_timezone(&Utc),
-        zone,
-    )
+pub fn owner_instant(raw: &str, zone: &TimeZone) -> Option<Timestamp> {
+    utc_stamp(parse_rfc3339(raw).ok()?.timestamp(), zone)
 }
 
-fn utc_stamp(instant: DateTime<Utc>, zone: Tz) -> Option<Timestamp> {
-    let instant = DateTime::from_timestamp(instant.timestamp(), 0)?;
+fn utc_stamp(instant: jiff::Timestamp, zone: &TimeZone) -> Option<Timestamp> {
+    // Whole seconds, rounded toward the past.
+    let second = instant.as_second() - i64::from(instant.subsec_nanosecond() < 0);
+    let instant = jiff::Timestamp::new(second, 0).ok()?;
     validate_timestamp(
         &instant
-            .with_timezone(&zone)
-            .format("%Y%m%d_%H%M%S")
+            .to_zoned_datetime(zone.clone())
+            .strftime("%Y%m%d_%H%M%S")
             .to_string(),
     )
     .ok()
     .map(|stamp| stamp.with_source_instant(instant))
 }
 
-fn placeholder(naive: NaiveDateTime) -> bool {
+fn placeholder(naive: DateTime) -> bool {
     naive.year() == 0
         || (matches!(
             (naive.year(), naive.month(), naive.day()),
             (1904, 1, 1) | (1970, 1, 1)
-        ) && naive.time() == NaiveTime::MIN)
+        ) && naive.time() == Time::MIN)
 }
 
-fn wall_stamp(naive: NaiveDateTime, zone: Tz) -> Option<Timestamp> {
+/// A wall clock written with a leap second (`:60`) names no owner-local second.
+/// The parser reads it as `:59`, so the text decides.
+fn leap_second(text: &str, naive: DateTime) -> bool {
+    naive.second() == 59 && text.ends_with("60")
+}
+
+fn wall_stamp(naive: DateTime, zone: &TimeZone) -> Option<Timestamp> {
     if placeholder(naive) {
         return None;
     }
-    let stamp = validate_timestamp(&naive.format("%Y%m%d_%H%M%S").to_string()).ok()?;
-    match zone.from_local_datetime(&naive) {
-        chrono::offset::LocalResult::Single(instant) => {
-            Some(stamp.with_source_instant(instant.with_timezone(&Utc)))
-        }
-        chrono::offset::LocalResult::Ambiguous(_, _) => Some(stamp),
-        chrono::offset::LocalResult::None => None,
+    let stamp = validate_timestamp(&naive.strftime("%Y%m%d_%H%M%S").to_string()).ok()?;
+    match from_local(zone, naive) {
+        LocalResult::Single(instant) => Some(stamp.with_source_instant(instant.timestamp())),
+        LocalResult::Ambiguous(_, _) => Some(stamp),
+        LocalResult::None => None,
     }
 }
 
-fn parse_filename_candidates(filename: &str, zone: Tz) -> Vec<Timestamp> {
+fn parse_filename_candidates(filename: &str, zone: &TimeZone) -> Vec<Timestamp> {
     let limitless = parse_limitless_filename(filename, zone);
     let range = Regex::new(r"limitless_pendant_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}").expect("valid regex");
     let remainder = limitless.as_ref().map(|_| range.replace(filename, ""));
@@ -362,22 +366,21 @@ fn parse_filename_candidates(filename: &str, zone: Tz) -> Vec<Timestamp> {
     found.into_iter().collect()
 }
 
-fn parse_limitless_filename(filename: &str, zone: Tz) -> Option<Timestamp> {
+fn parse_limitless_filename(filename: &str, zone: &TimeZone) -> Option<Timestamp> {
     let re = Regex::new(r"limitless_pendant_(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})_to_")
         .expect("valid regex");
 
     let caps = re.captures(filename)?;
-    let year: i32 = caps[1].parse().ok()?;
-    let month: u32 = caps[2].parse().ok()?;
-    let day: u32 = caps[3].parse().ok()?;
-    let hour: u32 = caps[4].parse().ok()?;
-    let minute: u32 = caps[5].parse().ok()?;
-    let second: u32 = caps[6].parse().ok()?;
+    let year: i16 = caps[1].parse().ok()?;
+    let month: i8 = caps[2].parse().ok()?;
+    let day: i8 = caps[3].parse().ok()?;
+    let hour: i8 = caps[4].parse().ok()?;
+    let minute: i8 = caps[5].parse().ok()?;
+    let second: i8 = caps[6].parse().ok()?;
 
-    let date = NaiveDate::from_ymd_opt(year, month, day)?;
-    let time = NaiveTime::from_hms_opt(hour, minute, second)?;
-    let naive_utc = NaiveDateTime::new(date, time);
-    let utc_dt = Utc.from_utc_datetime(&naive_utc);
+    let date = Date::new(year, month, day).ok()?;
+    let time = Time::new(hour, minute, second, 0).ok()?;
+    let utc_dt = Offset::UTC.to_timestamp(date.to_datetime(time)).ok()?;
     utc_stamp(utc_dt, zone)
 }
 
@@ -388,49 +391,55 @@ fn make_filename_stamp(
     h: &str,
     min: &str,
     s: &str,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Option<Timestamp> {
-    let year: i32 = y.parse().ok()?;
-    let month: u32 = m.parse().ok()?;
-    let day: u32 = d.parse().ok()?;
-    let hour: u32 = h.parse().ok()?;
-    let minute: u32 = min.parse().ok()?;
-    let second: u32 = s.parse().ok()?;
+    let year: i16 = y.parse().ok()?;
+    let month: i8 = m.parse().ok()?;
+    let day: i8 = d.parse().ok()?;
+    let hour: i8 = h.parse().ok()?;
+    let minute: i8 = min.parse().ok()?;
+    let second: i8 = s.parse().ok()?;
 
     if year == 0 {
         return None;
     }
 
-    let date = NaiveDate::from_ymd_opt(year, month, day)?;
-    let time = NaiveTime::from_hms_opt(hour, minute, second)?;
-    let naive = NaiveDateTime::new(date, time);
+    let date = Date::new(year, month, day).ok()?;
+    let time = Time::new(hour, minute, second, 0).ok()?;
+    let naive = date.to_datetime(time);
 
     wall_stamp(naive, zone)
 }
 
-fn parse_exif_date_string(date_str: &str, offset_str: Option<&str>, zone: Tz) -> Option<Timestamp> {
+fn parse_exif_date_string(
+    date_str: &str,
+    offset_str: Option<&str>,
+    zone: &TimeZone,
+) -> Option<Timestamp> {
     let trimmed = date_str.trim();
-    let naive = NaiveDateTime::parse_from_str(trimmed, "%Y:%m:%d %H:%M:%S").ok()?;
+    let naive = DateTime::strptime("%Y:%m:%d %H:%M:%S", trimmed).ok()?;
     if placeholder(naive) {
         return None;
     }
 
     if let Some(off) = offset_str {
         let offset = parse_offset_string(off)?;
-        let fixed_dt = offset.from_local_datetime(&naive).single()?;
-        return utc_stamp(fixed_dt.with_timezone(&Utc), zone);
+        return utc_stamp(offset.to_timestamp(naive).ok()?, zone);
     }
 
+    if leap_second(trimmed, naive) {
+        return None;
+    }
     wall_stamp(naive, zone)
 }
 
-fn parse_offset_string(off: &str) -> Option<FixedOffset> {
+fn parse_offset_string(off: &str) -> Option<Offset> {
     let trimmed = off.trim();
     if !trimmed.is_ascii() {
         return None;
     }
     if trimmed == "Z" || trimmed == "z" {
-        return FixedOffset::east_opt(0);
+        return Some(Offset::UTC);
     }
     let (sign, rest) = if let Some(stripped) = trimmed.strip_prefix('+') {
         (1, stripped)
@@ -456,10 +465,10 @@ fn parse_offset_string(off: &str) -> Option<FixedOffset> {
         return None;
     }
     let total_secs = sign * (hours * 3600 + mins * 60);
-    FixedOffset::east_opt(total_secs)
+    Offset::from_seconds(total_secs).ok()
 }
 
-fn scan_jpeg_creation_candidates(path: &Path, zone: Tz) -> Option<Vec<Timestamp>> {
+fn scan_jpeg_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Timestamp>> {
     let mut file = File::open(path).ok()?;
     let mut header = [0u8; 2];
     file.read_exact(&mut header).ok()?;
@@ -501,7 +510,7 @@ fn scan_jpeg_creation_candidates(path: &Path, zone: Tz) -> Option<Vec<Timestamp>
     None
 }
 
-fn scan_isobmff_creation_candidates(path: &Path, zone: Tz) -> Option<Vec<Timestamp>> {
+fn scan_isobmff_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Timestamp>> {
     let mut file = File::open(path).ok()?;
     let file_len = file.metadata().ok()?.len();
     if file_len < 8 {
@@ -522,7 +531,7 @@ fn walk_isobmff_boxes(
     file: &mut File,
     start: u64,
     end: u64,
-    zone: Tz,
+    zone: &TimeZone,
     out: &mut Vec<Timestamp>,
     depth: usize,
 ) {
@@ -627,7 +636,13 @@ fn metadata_box(file: &mut File, pos: u64, end: u64) -> Option<([u8; 4], u64, u6
     Some((header[4..].try_into().ok()?, pos + header_len, next))
 }
 
-fn scan_keyed_metadata(file: &mut File, start: u64, end: u64, zone: Tz, out: &mut Vec<Timestamp>) {
+fn scan_keyed_metadata(
+    file: &mut File,
+    start: u64,
+    end: u64,
+    zone: &TimeZone,
+    out: &mut Vec<Timestamp>,
+) {
     let mut pos = start;
     let mut keys = BTreeSet::new();
     let mut lists = Vec::new();
@@ -683,7 +698,12 @@ fn scan_keyed_metadata(file: &mut File, start: u64, end: u64, zone: Tz, out: &mu
     }
 }
 
-fn parse_mvhd_mdhd_creation(file: &mut File, start: u64, end: u64, zone: Tz) -> Option<Timestamp> {
+fn parse_mvhd_mdhd_creation(
+    file: &mut File,
+    start: u64,
+    end: u64,
+    zone: &TimeZone,
+) -> Option<Timestamp> {
     if end < start + 12 || file.seek(SeekFrom::Start(start)).is_err() {
         return None;
     }
@@ -713,11 +733,16 @@ fn parse_mvhd_mdhd_creation(file: &mut File, start: u64, end: u64, zone: Tz) -> 
         return None;
     }
 
-    let utc_dt = DateTime::from_timestamp(unix_secs, 0)?;
+    let utc_dt = jiff::Timestamp::new(unix_secs, 0).ok()?;
     utc_stamp(utc_dt, zone)
 }
 
-fn parse_apple_ilst_date(file: &mut File, start: u64, end: u64, zone: Tz) -> Option<Timestamp> {
+fn parse_apple_ilst_date(
+    file: &mut File,
+    start: u64,
+    end: u64,
+    zone: &TimeZone,
+) -> Option<Timestamp> {
     let mut pos = start;
     while pos + 8 <= end {
         if file.seek(SeekFrom::Start(pos)).is_err() {
@@ -761,7 +786,7 @@ fn parse_apple_custom_key_date(
     file: &mut File,
     start: u64,
     end: u64,
-    zone: Tz,
+    zone: &TimeZone,
 ) -> Option<Timestamp> {
     let mut pos = start;
     let mut has_quicktime_mean = false;
@@ -837,23 +862,26 @@ fn parse_apple_custom_key_date(
     }
 }
 
-fn parse_iso_or_wall_string(text: &str, zone: Tz) -> Option<Timestamp> {
-    if let Ok(instant) = DateTime::parse_from_rfc3339(text) {
-        if placeholder(instant.naive_local()) {
+fn parse_iso_or_wall_string(text: &str, zone: &TimeZone) -> Option<Timestamp> {
+    if let Ok(instant) = parse_rfc3339(text) {
+        if placeholder(instant.datetime()) {
             return None;
         }
-        return utc_stamp(instant.with_timezone(&Utc), zone);
+        return utc_stamp(instant.timestamp(), zone);
     }
     for format in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S%z"] {
-        if let Ok(instant) = DateTime::parse_from_str(text, format) {
-            if placeholder(instant.naive_local()) {
+        if let Ok(instant) = strptime_fixed(format, text) {
+            if placeholder(instant.datetime()) {
                 return None;
             }
-            return utc_stamp(instant.with_timezone(&Utc), zone);
+            return utc_stamp(instant.timestamp(), zone);
         }
     }
     for format in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"] {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(text, format) {
+        if let Ok(naive) = DateTime::strptime(format, text) {
+            if leap_second(text, naive) {
+                return None;
+            }
             return wall_stamp(naive, zone);
         }
     }
@@ -863,8 +891,14 @@ fn parse_iso_or_wall_string(text: &str, zone: Tz) -> Option<Timestamp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono_tz::America::New_York;
-    use chrono_tz::Tz;
+
+    fn new_york() -> TimeZone {
+        solstone_core_time::zone("America/New_York").unwrap()
+    }
+
+    fn denver() -> TimeZone {
+        solstone_core_time::zone("America/Denver").unwrap()
+    }
     use std::fs::{self, File, FileTimes};
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -1128,6 +1162,25 @@ mod tests {
     }
 
     #[test]
+    fn a_leap_second_wall_clock_names_no_local_second() {
+        assert_eq!(
+            parse_exif_date_string("2026:06:23 18:30:60", None, &TimeZone::UTC),
+            None
+        );
+        assert_eq!(
+            parse_iso_or_wall_string("2026-06-23T18:30:60", &TimeZone::UTC),
+            None
+        );
+        // With its offset it names an instant, read as the second before.
+        assert_eq!(
+            parse_exif_date_string("2026:06:23 18:30:60", Some("+00:00"), &TimeZone::UTC)
+                .unwrap()
+                .as_str(),
+            "20260623_183059"
+        );
+    }
+
+    #[test]
     fn epoch_placeholders_are_not_creation_evidence() {
         for date in [
             "0000:01:01 00:00:00",
@@ -1135,14 +1188,14 @@ mod tests {
             "1970:01:01 00:00:00",
         ] {
             for offset in [None, Some("-07:00")] {
-                assert_eq!(parse_exif_date_string(date, offset, Tz::UTC), None);
+                assert_eq!(parse_exif_date_string(date, offset, &TimeZone::UTC), None);
             }
         }
         assert_eq!(
-            parse_iso_or_wall_string("1970-01-01T00:00:00-07:00", Tz::UTC),
+            parse_iso_or_wall_string("1970-01-01T00:00:00-07:00", &TimeZone::UTC),
             None
         );
-        assert!(parse_filename_candidates("19700101_000000.txt", Tz::UTC).is_empty());
+        assert!(parse_filename_candidates("19700101_000000.txt", &TimeZone::UTC).is_empty());
     }
 
     #[test]
@@ -1154,7 +1207,7 @@ mod tests {
             include_bytes!("../tests/fixtures/creation-mdta-headerless-conflict.m4a"),
         )
         .unwrap();
-        assert_eq!(detect_creation(&path, None, Tz::UTC), None);
+        assert_eq!(detect_creation(&path, None, &TimeZone::UTC), None);
     }
 
     #[test]
@@ -1173,7 +1226,7 @@ mod tests {
             let path = dir.path().join("voice.m4a");
             fs::write(&path, bytes).unwrap();
             assert_eq!(
-                detect_creation(&path, None, Tz::UTC)
+                detect_creation(&path, None, &TimeZone::UTC)
                     .as_ref()
                     .map(Timestamp::as_str),
                 expected
@@ -1193,7 +1246,9 @@ mod tests {
         let path = dir.path().join("photo.jpg");
         fs::write(&path, jpeg).unwrap();
         assert_eq!(
-            detect_creation(&path, None, Tz::UTC).unwrap().as_str(),
+            detect_creation(&path, None, &TimeZone::UTC)
+                .unwrap()
+                .as_str(),
             "20260510_233000"
         );
     }
@@ -1209,7 +1264,7 @@ mod tests {
                 Some(
                     "limitless_pendant_2026-01-15T03-30-00_to_2026-01-15T04-00-00__20260116_120000.wav"
                 ),
-                Tz::UTC
+                &TimeZone::UTC
             ),
             None
         );
@@ -1232,7 +1287,7 @@ mod tests {
             .set_times(FileTimes::new().set_modified(old_time))
             .unwrap();
 
-        let detected = detect_creation(&path, Some("photo.jpg"), Tz::UTC);
+        let detected = detect_creation(&path, Some("photo.jpg"), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260510_143000")
@@ -1257,7 +1312,7 @@ mod tests {
             .set_times(FileTimes::new().set_modified(old_time))
             .unwrap();
 
-        let detected = detect_creation(&path, Some("video.mp4"), Tz::UTC);
+        let detected = detect_creation(&path, Some("video.mp4"), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260510_120000")
@@ -1271,7 +1326,7 @@ mod tests {
         fs::write(&path, b"dummy").unwrap();
 
         assert_eq!(
-            detect_creation(&path, Some("2026-02-30_12_00_00.jpg"), Tz::UTC),
+            detect_creation(&path, Some("2026-02-30_12_00_00.jpg"), &TimeZone::UTC),
             None
         );
     }
@@ -1283,7 +1338,7 @@ mod tests {
         fs::write(&path, b"dummy").unwrap();
 
         assert_eq!(
-            detect_creation(&path, Some("2026-05-10.jpg"), Tz::UTC),
+            detect_creation(&path, Some("2026-05-10.jpg"), &TimeZone::UTC),
             None
         );
     }
@@ -1295,7 +1350,7 @@ mod tests {
         let path = temp.path().join(name);
         fs::write(&path, b"dummy").unwrap();
 
-        assert_eq!(detect_creation(&path, Some(name), Tz::UTC), None);
+        assert_eq!(detect_creation(&path, Some(name), &TimeZone::UTC), None);
     }
 
     #[test]
@@ -1306,7 +1361,7 @@ mod tests {
         fs::write(&path, b"dummy").unwrap();
 
         // 2026-01-15 03:30:00 UTC in America/New_York (UTC-5) is 2026-01-14 22:30:00
-        let detected = detect_creation(&path, Some(name), New_York);
+        let detected = detect_creation(&path, Some(name), &new_york());
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260114_223000")
@@ -1321,7 +1376,7 @@ mod tests {
         let path = temp.path().join("source.jpg");
         fs::write(&path, b"dummy").unwrap();
 
-        assert_eq!(detect_creation(&path, Some(name), New_York), None);
+        assert_eq!(detect_creation(&path, Some(name), &new_york()), None);
     }
 
     #[test]
@@ -1331,7 +1386,7 @@ mod tests {
         let path = temp.path().join("source.jpg");
         fs::write(&path, b"dummy").unwrap();
 
-        let detected = detect_creation(&path, Some(name), New_York);
+        let detected = detect_creation(&path, Some(name), &new_york());
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260615_154500")
@@ -1346,7 +1401,7 @@ mod tests {
         let jpeg_bytes = make_jpeg_app1("2026:06:15 15:45:00", Some("+02:00"));
         fs::write(&path, jpeg_bytes).unwrap();
 
-        let detected = detect_creation(&path, Some("photo.jpg"), Tz::UTC);
+        let detected = detect_creation(&path, Some("photo.jpg"), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260615_134500")
@@ -1363,7 +1418,7 @@ mod tests {
             make_jpeg_app1_with_two_dates("2026:01:01 10:00:00", "2026:01:02 12:00:00");
         fs::write(&path, jpeg_bytes).unwrap();
 
-        assert_eq!(detect_creation(&path, Some(name), Tz::UTC), None);
+        assert_eq!(detect_creation(&path, Some(name), &TimeZone::UTC), None);
     }
 
     #[test]
@@ -1376,7 +1431,7 @@ mod tests {
         let jpeg_bytes = make_jpeg_app1("2026:06:15 15:45:00", Some("+02:00"));
         fs::write(&path, jpeg_bytes).unwrap();
 
-        let detected = detect_creation(&path, Some(name), Tz::UTC);
+        let detected = detect_creation(&path, Some(name), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260615_134500")
@@ -1391,7 +1446,7 @@ mod tests {
         fs::write(&path, b"dummy").unwrap();
 
         // 2026-03-08 07:00:00 UTC in America/New_York (spring forward to EDT UTC-4 at 2:00 AM) is 2026-03-08 03:00:00 EDT
-        let detected = detect_creation(&path, Some(name), New_York);
+        let detected = detect_creation(&path, Some(name), &new_york());
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260308_030000")
@@ -1406,7 +1461,7 @@ mod tests {
         let m4a_bytes = make_mp4_mvhd_v1(3_861_259_200);
         fs::write(&path, m4a_bytes).unwrap();
 
-        let detected = detect_creation(&path, Some("video.m4a"), Tz::UTC);
+        let detected = detect_creation(&path, Some("video.m4a"), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260510_120000")
@@ -1426,7 +1481,7 @@ mod tests {
         );
         fs::write(&path_create, bytes_create).unwrap();
 
-        let detected = detect_creation(&path_create, Some("created.m4a"), Tz::UTC);
+        let detected = detect_creation(&path_create, Some("created.m4a"), &TimeZone::UTC);
         assert_eq!(
             detected.as_ref().map(|t| t.as_str()),
             Some("20260510_120000")
@@ -1441,7 +1496,7 @@ mod tests {
         );
         fs::write(&path_mod, bytes_mod).unwrap();
 
-        let detected_mod = detect_creation(&path_mod, Some("modified.m4a"), Tz::UTC);
+        let detected_mod = detect_creation(&path_mod, Some("modified.m4a"), &TimeZone::UTC);
         assert_eq!(detected_mod, None);
     }
 
@@ -1452,7 +1507,10 @@ mod tests {
         let jpeg_bytes = make_jpeg_app1("0000:00:00 00:00:00", None);
         fs::write(&path, jpeg_bytes).unwrap();
 
-        assert_eq!(detect_creation(&path, Some("photo.jpg"), Tz::UTC), None);
+        assert_eq!(
+            detect_creation(&path, Some("photo.jpg"), &TimeZone::UTC),
+            None
+        );
     }
 
     #[test]
@@ -1461,7 +1519,10 @@ mod tests {
         let path = temp.path().join("corrupt.jpg");
         fs::write(&path, [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x10, 0x12, 0x34]).unwrap();
 
-        assert_eq!(detect_creation(&path, Some("corrupt.jpg"), Tz::UTC), None);
+        assert_eq!(
+            detect_creation(&path, Some("corrupt.jpg"), &TimeZone::UTC),
+            None
+        );
     }
 
     #[test]
@@ -1471,7 +1532,10 @@ mod tests {
         let mp4_bytes = make_mp4_mvhd(0);
         fs::write(&path, mp4_bytes).unwrap();
 
-        assert_eq!(detect_creation(&path, Some("zero.mp4"), Tz::UTC), None);
+        assert_eq!(
+            detect_creation(&path, Some("zero.mp4"), &TimeZone::UTC),
+            None
+        );
     }
 
     #[test]
@@ -1480,32 +1544,26 @@ mod tests {
         let name = "2026-06-23_18_30_00_2026-06-24_18_30_00.jpg";
         let path = temporary.path().join(name);
         fs::write(&path, make_jpeg_app1("2026:06:23 18:30:00", Some("-06:00"))).unwrap();
-        assert_eq!(
-            detect_creation(&path, Some(name), chrono_tz::America::Denver),
-            None
-        );
+        assert_eq!(detect_creation(&path, Some(name), &denver()), None);
     }
 
     #[test]
     fn conflicting_utc_instants_in_a_repeated_hour_remain_a_conflict() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/creation-conflicting-fold.m4a");
-        assert_eq!(
-            detect_creation(&path, None, chrono_tz::America::Denver),
-            None
-        );
+        assert_eq!(detect_creation(&path, None, &denver()), None);
     }
 
     #[test]
     fn an_owner_instant_names_either_occurrence_of_a_repeated_hour() {
-        let zone = chrono_tz::America::Denver;
+        let zone = &denver();
         let first = owner_instant("2025-11-02T01:30:00-06:00", zone).unwrap();
         let second = owner_instant("2025-11-02T01:30:00-07:00", zone).unwrap();
         assert_eq!(first.as_str(), "20251102_013000");
         assert_eq!(second.as_str(), "20251102_013000");
         assert_eq!(
             second.source_instant().unwrap() - first.source_instant().unwrap(),
-            chrono::Duration::hours(1)
+            jiff::SignedDuration::from_hours(1)
         );
         // Another offset names the same instant on the journal's own clock.
         let utc = owner_instant("2025-07-15T14:03:22Z", zone).unwrap();
@@ -1525,7 +1583,7 @@ mod tests {
             ("2026:06:23 18:30:00", Some("invalid")),
         ] {
             fs::write(&path, make_jpeg_app1(date, offset)).unwrap();
-            assert_eq!(detect_creation(&path, None, Tz::UTC), None);
+            assert_eq!(detect_creation(&path, None, &TimeZone::UTC), None);
         }
     }
 }

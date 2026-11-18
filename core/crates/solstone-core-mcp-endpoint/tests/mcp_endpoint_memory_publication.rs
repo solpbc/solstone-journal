@@ -3,7 +3,6 @@
 
 #![cfg(unix)]
 
-use chrono::{TimeZone, Utc};
 use solstone_core_journal_io::{BoundPublicationPrimitive, run_with_bound_publication_fault};
 
 #[test]
@@ -12,7 +11,7 @@ fn parent_sync_fault_cannot_return_a_stored_result() {
         .prefix("solstone-agent-memory-")
         .tempdir()
         .expect("journal fixture");
-    let now = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
+    let now = "2026-01-02T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
     let (result, fault_consumed) =
         run_with_bound_publication_fault(BoundPublicationPrimitive::ParentSync, 1, 5, || {
             solstone_core_mcp_endpoint::append_connection_memory_test_hook(

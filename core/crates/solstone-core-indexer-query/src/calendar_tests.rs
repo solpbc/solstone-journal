@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -96,8 +96,8 @@ fn golden(index: usize) -> &'static str {
     GOLDEN.lines().nth(index).unwrap()
 }
 
-fn reference() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 20).unwrap()
+fn reference() -> Date {
+    jiff::civil::date(2026, 10, 20)
 }
 
 fn owner(
@@ -280,26 +280,26 @@ fn set_zone(journal: &Journal, zone: &str) {
     .unwrap();
 }
 
-fn all_day_note(title: &str, event: &str, on: NaiveDate, entered: NaiveDate) -> String {
+fn all_day_note(title: &str, event: &str, on: Date, entered: Date) -> String {
     let mut value: serde_json::Value = serde_json::from_str(golden(2)).unwrap();
     value["title"] = json!(title);
     value["event"] = json!(event);
     value["calendar"] = json!("Work");
-    value["start"] = json!(on.format("%Y-%m-%d").to_string());
-    value["end"] = json!((on + chrono::Days::new(1)).format("%Y-%m-%d").to_string());
-    value["changed_at"] = json!(format!("{}T09:00:00Z", entered.format("%Y-%m-%d")));
+    value["start"] = json!(on.strftime("%Y-%m-%d").to_string());
+    value["end"] = json!(on.tomorrow().unwrap().strftime("%Y-%m-%d").to_string());
+    value["changed_at"] = json!(format!("{}T09:00:00Z", entered.strftime("%Y-%m-%d")));
     value.to_string()
 }
 
 fn at(instant: &str) {
-    let now = chrono::DateTime::parse_from_rfc3339(instant)
+    let now = solstone_core_time::parse_rfc3339(instant)
         .unwrap()
-        .with_timezone(&chrono::Utc);
+        .timestamp();
     crate::execute::TEST_NOW.with(|cell| cell.set(Some(now)));
 }
 
-fn date(day: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(day, "%Y%m%d").unwrap()
+fn date(day: &str) -> Date {
+    solstone_core_time::parse_day(day).unwrap()
 }
 
 #[test]
@@ -310,11 +310,8 @@ fn today_is_the_latest_day_begun_anywhere() {
         ("2030-06-10T23:59:59Z", "20300611"),
         ("2030-12-31T12:00:00-06:00", "20310101"),
     ] {
-        let now = chrono::DateTime::parse_from_rfc3339(instant).unwrap();
-        assert_eq!(
-            crate::execute::today_anywhere(now.with_timezone(&chrono::Utc)),
-            day
-        );
+        let now = solstone_core_time::parse_rfc3339(instant).unwrap();
+        assert_eq!(crate::execute::today_anywhere(now.timestamp()), day);
     }
 }
 

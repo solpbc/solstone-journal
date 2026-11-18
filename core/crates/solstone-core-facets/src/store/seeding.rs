@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityResolutionEntity,
@@ -17,6 +17,7 @@ use solstone_core_entity::{
     record_entity_resolution, save_entity_identity,
 };
 use solstone_core_entity_matching::{EntityNameCandidate, entity_slug, find_entity_by_email};
+use solstone_core_time::Precision;
 
 use super::declaration::read_facet_declaration;
 use super::error::{
@@ -556,7 +557,7 @@ fn operation(kind: EntityOperationKind, facet_dir: &str, day: &str) -> EntityOpe
 }
 
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    solstone_core_time::utc_z(Timestamp::now(), Precision::Millis)
 }
 
 fn facet_title(facet_dir: &str) -> String {

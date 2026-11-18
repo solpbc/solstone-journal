@@ -119,10 +119,10 @@ pub fn format_erase_day(day: &str, today: Option<&str>) -> Option<String> {
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let mut text = date.format("%a %b %-d").to_string().to_lowercase();
+    let date = solstone_core_time::parse_day(day)?;
+    let mut text = date.strftime("%a %b %-d").to_string().to_lowercase();
     if today.and_then(|today| today.get(..4)) != day.get(..4) {
-        text.push_str(&date.format(" '%y").to_string());
+        text.push_str(&date.strftime(" '%y").to_string());
     }
     Some(text)
 }

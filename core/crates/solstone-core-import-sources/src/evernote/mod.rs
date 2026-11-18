@@ -20,7 +20,9 @@ use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, TimeZone, Timelike, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_format::obsidian::{
@@ -104,7 +106,7 @@ fn preview_export(export: &ReadExport, notebook: &str) -> FilePreview {
             encrypted += 1;
         }
         if let Some(time) = parse::memory_time(note) {
-            years.push(time.format("%Y").to_string().parse::<i32>().unwrap_or(0));
+            years.push(time.strftime("%Y").to_string().parse::<i32>().unwrap_or(0));
         }
     }
     let mut lines = Vec::new();
@@ -179,17 +181,13 @@ pub struct Plan {
 }
 
 /// Plan an export against the notes already stored for `notebook`.
-pub fn plan<Z>(
+pub fn plan(
     journal: &Path,
     export_path: &Path,
     notebook: &str,
-    zone: &Z,
-    today: NaiveDate,
-) -> Result<Plan, String>
-where
-    Z: TimeZone,
-    Z::Offset: std::fmt::Display,
-{
+    zone: &TimeZone,
+    today: Date,
+) -> Result<Plan, String> {
     let notebook = notebook.trim();
     if notebook.is_empty() {
         return Err("the notebook name is empty".to_owned());
@@ -261,17 +259,17 @@ enum Step {
     Older,
     Unchanged {
         index: usize,
-        time: Option<DateTime<Utc>>,
+        time: Option<Timestamp>,
     },
     Edit {
         index: usize,
         body: String,
-        memory: DateTime<Utc>,
+        memory: Timestamp,
         title: String,
     },
     New {
         index: usize,
-        memory: DateTime<Utc>,
+        memory: Timestamp,
         title: String,
         body: String,
         images: Vec<HeldBytes>,
@@ -279,19 +277,15 @@ enum Step {
     },
 }
 
-fn decide<Z>(
+fn decide(
     journal: &Path,
     notebook: &str,
     notes: &[ParsedNote],
     stored: &[StoredNote],
     ended_early: bool,
-    zone: &Z,
-    today: NaiveDate,
-) -> Result<Plan, String>
-where
-    Z: TimeZone,
-    Z::Offset: std::fmt::Display,
-{
+    zone: &TimeZone,
+    today: Date,
+) -> Result<Plan, String> {
     let mut working = Vec::new();
     for note in stored {
         if segment_live(journal, &note.day, &note.segment)? {
@@ -333,7 +327,7 @@ where
             steps.push(Step::Undated);
             continue;
         };
-        let local_day = memory.with_timezone(zone).date_naive();
+        let local_day = memory.to_zoned_datetime(zone.clone()).date();
         if local_day > today {
             future += 1;
             steps.push(Step::Future);
@@ -501,8 +495,8 @@ where
                 let day = working[*index].day.clone();
                 let segment = working[*index].segment.clone();
                 let owner_timestamp = memory
-                    .with_timezone(zone)
-                    .format("%Y%m%d_%H%M%S")
+                    .to_zoned_datetime(zone.clone())
+                    .strftime("%Y%m%d_%H%M%S")
                     .to_string();
                 for image in note_images {
                     images.push(PlannedBinary {
@@ -699,18 +693,14 @@ fn title_taken(notes: &[StoredNote], candidates: &[usize], title: &str) -> bool 
         .any(|&index| title_matches(&notes[index], title))
 }
 
-fn same_window<Z>(day: &str, segment: &str, memory: DateTime<Utc>, zone: &Z) -> bool
-where
-    Z: TimeZone,
-    Z::Offset: std::fmt::Display,
-{
+fn same_window(day: &str, segment: &str, memory: Timestamp, zone: &TimeZone) -> bool {
     if day.is_empty() || shared::day_key(memory, zone) != day {
         return false;
     }
     let Some(start) = segment_start(segment) else {
         return false;
     };
-    let local = memory.with_timezone(zone);
+    let local = memory.to_zoned_datetime(zone.clone());
     let seconds =
         i64::from(local.hour()) * 3600 + i64::from(local.minute()) * 60 + i64::from(local.second());
     seconds >= start && seconds - start < WINDOW_SECONDS
@@ -816,13 +806,13 @@ fn hex_sha256(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn stamp(time: &DateTime<Utc>) -> String {
-    time.format("%Y%m%dT%H%M%SZ").to_string()
+fn stamp(time: &Timestamp) -> String {
+    time.strftime("%Y%m%dT%H%M%SZ").to_string()
 }
 
-fn parse_stamp(raw: &str) -> Option<DateTime<Utc>> {
-    let naive = chrono::NaiveDateTime::parse_from_str(raw, "%Y%m%dT%H%M%SZ").ok()?;
-    Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
+fn parse_stamp(raw: &str) -> Option<Timestamp> {
+    let wall = jiff::civil::DateTime::strptime("%Y%m%dT%H%M%SZ", raw).ok()?;
+    jiff::tz::Offset::UTC.to_timestamp(wall).ok()
 }
 
 fn normalize(text: &str) -> String {

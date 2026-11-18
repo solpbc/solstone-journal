@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{Duration as ChronoDuration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 
@@ -51,9 +51,9 @@ fn configured_journal(name: &str, provider: &str) -> PathBuf {
 }
 
 fn ready_outcome() -> Value {
-    let now = Utc::now();
-    let observed_at = now.to_rfc3339();
-    let expires_at = (now + ChronoDuration::hours(1)).to_rfc3339();
+    let now = Timestamp::now();
+    let observed_at = solstone_core_time::utc_rfc3339(now);
+    let expires_at = solstone_core_time::utc_rfc3339(now + SignedDuration::from_hours(1));
     let component = || {
         json!({
             "status": "ok",
@@ -156,16 +156,18 @@ fn assert_lease_free(root: &Path) {
 }
 
 fn direct_projection_after_finish(root: &Path, outcome: Value) -> Value {
-    let permit = solstone_core_brain::begin_refresh(root, Utc::now(), None, None, false, None)
-        .expect("begin refresh")
-        .expect("refresh permit");
-    solstone_core_brain::finish_refresh(root, permit, outcome, Utc::now(), None)
+    let permit =
+        solstone_core_brain::begin_refresh(root, Timestamp::now(), None, None, false, None)
+            .expect("begin refresh")
+            .expect("refresh permit");
+    solstone_core_brain::finish_refresh(root, permit, outcome, Timestamp::now(), None)
         .expect("finish refresh");
     let config = solstone_core_brain::read_journal_config(root)
         .expect("read config")
         .config
         .unwrap_or_default();
-    let projection = solstone_core_brain::inspect_brain_state(root, &config, Utc::now()).projection;
+    let projection =
+        solstone_core_brain::inspect_brain_state(root, &config, Timestamp::now()).projection;
     json!({
         "schema": RESULT_SCHEMA,
         "kind": "projection",

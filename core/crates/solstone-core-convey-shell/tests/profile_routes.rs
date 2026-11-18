@@ -10,7 +10,8 @@ use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode, header},
 };
-use chrono::{Duration, Utc};
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
@@ -113,13 +114,17 @@ fn body_json(bytes: &[u8]) -> Value {
 }
 
 fn day_ago(days: i64) -> String {
-    (Utc::now().date_naive() - Duration::days(days))
-        .format("%Y%m%d")
+    Offset::UTC
+        .to_datetime(Timestamp::now())
+        .date()
+        .checked_sub(Span::new().days(days))
+        .expect("day")
+        .strftime("%Y%m%d")
         .to_string()
 }
 
 fn timestamp_ago(days: i64) -> i64 {
-    (Utc::now() - Duration::days(days)).timestamp_millis()
+    (Timestamp::now() - SignedDuration::from_hours(24 * days)).as_millisecond()
 }
 
 fn attendee(id: &str, created_at: i64, entity_id: &str) -> Value {
@@ -344,7 +349,7 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
         .as_i64()
         .expect("generated_at is an integer timestamp");
     assert!(
-        (Utc::now().timestamp_millis() - generated_at).abs() < 60_000,
+        (Timestamp::now().as_millisecond() - generated_at).abs() < 60_000,
         "generated_at should be close to now"
     );
     full.as_object_mut()

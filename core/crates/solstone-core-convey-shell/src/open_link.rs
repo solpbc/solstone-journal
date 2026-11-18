@@ -22,7 +22,7 @@ use axum::extract::{Extension, Path as RoutePath};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
 use solstone_core_convey_http::cant_open::{LinkPageAction, link_cant_open_response};
 use solstone_core_facets::{
     FacetIdResolveError, RetiredFacets, activity_value_truthy, get_activity_record,
@@ -57,12 +57,12 @@ async fn handle_open_link(
 ) -> Response {
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SourceLink,
-        move || open_link(&journal, &link, Utc::now()),
+        move || open_link(&journal, &link, Timestamp::now()),
     )
     .await
 }
 
-fn open_link(journal: &Path, link: &str, now: DateTime<Utc>) -> Response {
+fn open_link(journal: &Path, link: &str, now: Timestamp) -> Response {
     // Base64url has no `~`, so the last one, if any, starts the moment.
     let (sealed, moment) = match link.rsplit_once('~') {
         Some((sealed, moment)) => (sealed, parse_moment(moment)),
@@ -168,7 +168,7 @@ fn parse_moment(text: &str) -> Option<Moment> {
 fn is_calendar_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(day).is_some()
 }
 
 fn redirect(location: String) -> Landing {
@@ -183,7 +183,7 @@ fn resolve_place(
     journal: &Path,
     place: &Place,
     moment: Option<Moment>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Landing, String> {
     // A moment belongs to a recording. On any other place it is dropped.
     match place {
@@ -229,7 +229,7 @@ fn resolve_recording(
     stream: &str,
     segment: &str,
     moment: Option<Moment>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Landing, String> {
     if !is_calendar_day(day) || !journal.join("chronicle").join(day).is_dir() {
         return Ok(Landing::Absent);

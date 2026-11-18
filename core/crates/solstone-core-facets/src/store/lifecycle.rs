@@ -30,7 +30,7 @@ use std::fmt;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_entity::{
@@ -41,6 +41,7 @@ use solstone_core_entity::{
     save_entity_identity_with_map, write_resolved_identity_map_cache,
 };
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries, path_lexists};
+use solstone_core_time::Precision;
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
 
@@ -1040,7 +1041,7 @@ fn entity_write_error(error: EntityWriteError) -> FacetEntityLifecycleError {
 }
 
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+    solstone_core_time::utc_z(Timestamp::now(), Precision::Micros)
 }
 
 fn value_is_truthy(value: &Value) -> bool {

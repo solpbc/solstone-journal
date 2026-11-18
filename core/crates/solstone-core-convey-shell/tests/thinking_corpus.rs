@@ -11,7 +11,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::{begin_refresh, finish_refresh};
@@ -20,6 +20,7 @@ use solstone_core_convey_shell::{
     ConfidentialRuntimeOverride, PollOutcome, router,
 };
 use solstone_core_sol_link::ca::generate_ca;
+use solstone_core_time::utc_rfc3339;
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -817,10 +818,10 @@ fn journal_for_phase(phase: &str) -> TempDir {
 }
 
 fn seed_brain(journal: &Path, phase: &str) {
-    let now = Utc::now();
-    let expires = now + Duration::days(1);
+    let now = Timestamp::now();
+    let expires = now + SignedDuration::from_hours(24);
     let component =
-        json!({"status":"ok","observed_at":now.to_rfc3339(),"expires_at":expires.to_rfc3339()});
+        json!({"status":"ok","observed_at":utc_rfc3339(now),"expires_at":utc_rfc3339(expires)});
     let bundled_runtime = (phase == "bundled_local").then(|| "c".repeat(64));
     let permit = begin_refresh(journal, now, None, None, false, bundled_runtime.clone())
         .expect("brain refresh begins")

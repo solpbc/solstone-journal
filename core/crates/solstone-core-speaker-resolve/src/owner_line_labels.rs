@@ -304,7 +304,8 @@ fn set_locked(
     }
     let trust = hold_trust(journal)?;
     let speaker = resolve_speaker(journal, speaker)?;
-    let set_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    let set_at =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Nanos);
     let mut changes = Vec::new();
     let mut results = Vec::new();
     for (segment_dir, keys) in by_segment(lines.iter().map(|line| {

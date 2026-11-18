@@ -37,7 +37,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::atomic::{atomic_replace, write_bytes_exclusive};
 use solstone_core_journal_io::entry::sync_dir;
@@ -45,6 +45,7 @@ use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
 use solstone_core_journal_io::paths::{contained_path, path_lexists};
 use solstone_core_journal_io::{AtomicWriteOptions, PathError};
 use solstone_core_removals::{Action, Event, OperationId, Removal, Surface, Unit};
+use solstone_core_time::{Precision, parse_rfc3339, utc_z};
 
 /// The trash folder, at the journal root.
 pub use solstone_core_journal::TRASH_DIR;
@@ -220,17 +221,15 @@ pub struct Stretch {
 
 impl Item {
     /// When it moved to the trash.
-    pub fn trashed_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.trashed_at)
+    pub fn trashed_at(&self) -> Option<Timestamp> {
+        parse_rfc3339(&self.trashed_at)
             .ok()
-            .map(|at| at.with_timezone(&Utc))
+            .map(|at| at.timestamp())
     }
 
     /// When the trash erases it.
-    pub fn erase_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.erase_at)
-            .ok()
-            .map(|at| at.with_timezone(&Utc))
+    pub fn erase_at(&self) -> Option<Timestamp> {
+        parse_rfc3339(&self.erase_at).ok().map(|at| at.timestamp())
     }
 }
 
@@ -408,7 +407,7 @@ pub fn detach_labelled(
     detach_as(
         journal,
         kind,
-        item_id(Utc::now()),
+        item_id(Timestamp::now()),
         unit,
         action,
         surface,
@@ -425,9 +424,9 @@ pub fn detach_labelled(
 struct Placed {
     operation: Option<String>,
     stretch: Option<Stretch>,
-    at: Option<DateTime<Utc>>,
+    at: Option<Timestamp>,
     /// The stretch's erase date, fixed when the owner confirmed it.
-    erase_at: Option<DateTime<Utc>>,
+    erase_at: Option<Timestamp>,
 }
 
 /// [`detach_labelled`] under an item id the caller chose, so a set can write
@@ -456,9 +455,10 @@ fn detach_as(
         at,
         erase_at: fixed_erase_at,
     } = placed;
-    let now = at.unwrap_or_else(Utc::now);
-    let erase_at = fixed_erase_at
-        .unwrap_or_else(|| now + Duration::days(i64::from(erase_after_days(journal))));
+    let now = at.unwrap_or_else(Timestamp::now);
+    let erase_at = fixed_erase_at.unwrap_or_else(|| {
+        now + SignedDuration::from_hours(24 * i64::from(erase_after_days(journal)))
+    });
     let mut item = Item {
         schema: SCHEMA,
         id,
@@ -466,9 +466,9 @@ fn detach_as(
         unit,
         action,
         surface,
-        trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        trashed_at: utc_z(now, Precision::Millis),
         settled_at: None,
-        erase_at: erase_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+        erase_at: utc_z(erase_at, Precision::Millis),
         paths,
         bytes: 0,
         pending: None,
@@ -623,7 +623,7 @@ fn attach_as(
         item.pending = Some(Pending {
             action,
             surface,
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation,
             backups: false,
         });
@@ -717,7 +717,7 @@ fn erase_as_choosing(
             item.pending = Some(Pending {
                 action,
                 surface,
-                at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+                at: utc_z(Timestamp::now(), Precision::Millis),
                 operation,
                 backups,
             });
@@ -939,7 +939,7 @@ pub fn recover_stretch(
         let pending = Pending {
             action,
             surface,
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation: Some(operation.to_string()),
             backups: false,
         };
@@ -1021,7 +1021,7 @@ pub fn erase_stretch_with(
         let pending = Pending {
             action,
             surface,
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation: Some(operation.to_string()),
             backups,
         };
@@ -1561,7 +1561,7 @@ fn detach_set_as(
     (erase, backups): (bool, bool),
     stretch: Option<Stretch>,
 ) -> Result<(Option<Stretch>, Vec<SetResult>), TrashError> {
-    let at = Utc::now();
+    let at = Timestamp::now();
     let id = item_id(at);
     let operation = OperationId::durable(at, &id).to_string();
     let stretch = stretch.map(|mut stretch| {
@@ -1572,10 +1572,12 @@ fn detach_set_as(
     let mut set = Set {
         schema: SCHEMA,
         operation: Some(operation),
-        at: fixed.then(|| at.to_rfc3339_opts(SecondsFormat::Millis, true)),
+        at: fixed.then(|| utc_z(at, Precision::Millis)),
         erase_at: fixed.then(|| {
-            (at + Duration::days(i64::from(erase_after_days(journal))))
-                .to_rfc3339_opts(SecondsFormat::Millis, true)
+            utc_z(
+                at + SignedDuration::from_hours(24 * i64::from(erase_after_days(journal))),
+                Precision::Millis,
+            )
         }),
         stretch: stretch.clone(),
         id,
@@ -1630,7 +1632,7 @@ fn run_set(
         // stop part-way knows which item it became.
         let mut entry = entry;
         if entry.item.is_none() {
-            entry.item = Some(item_id(Utc::now()));
+            entry.item = Some(item_id(Timestamp::now()));
             if let Some(slot) = set.entries.get_mut(index) {
                 *slot = entry.clone();
             }
@@ -1803,9 +1805,9 @@ fn settle(
     }
 }
 
-fn parse_utc(at: Option<&str>) -> Option<DateTime<Utc>> {
-    at.and_then(|at| DateTime::parse_from_rfc3339(at).ok())
-        .map(|at| at.with_timezone(&Utc))
+fn parse_utc(at: Option<&str>) -> Option<Timestamp> {
+    at.and_then(|at| parse_rfc3339(at).ok())
+        .map(|at| at.timestamp())
 }
 
 fn set_rel(id: &str) -> String {
@@ -1933,7 +1935,7 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 
 /// Finish every step a stop interrupted, then erase what is due by `now`.
 /// Runs at start and on the maintenance schedule.
-pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
+pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: Timestamp) -> Swept {
     let mut swept = Swept::default();
     // What the timer erases follows the owner's setting for backups. Settings
     // that can't be read leave what's due in the trash until they can: the
@@ -1961,7 +1963,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
         }
     };
     // When each stretch is due: when the last of its items is.
-    let mut stretch_due: std::collections::BTreeMap<String, DateTime<Utc>> =
+    let mut stretch_due: std::collections::BTreeMap<String, Timestamp> =
         std::collections::BTreeMap::new();
     for item in &items {
         if let (Some(stretch), Some(at)) = (&item.stretch, item.erase_at()) {
@@ -2137,7 +2139,7 @@ fn finish_detach(
     }
     kind.references(journal, item, Change::Detached, &files)
         .map_err(TrashError::Io)?;
-    let at = item.trashed_at().unwrap_or_else(Utc::now);
+    let at = item.trashed_at().unwrap_or_else(Timestamp::now);
     removal(
         journal,
         item,
@@ -2148,7 +2150,7 @@ fn finish_detach(
     )
     .record_event(Event::Trashed, item.unit.clone());
     item.state = State::Trashed;
-    item.settled_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
+    item.settled_at = Some(utc_z(Timestamp::now(), Precision::Millis));
     publish(journal, item)
 }
 
@@ -2214,9 +2216,9 @@ fn finish_attach(
 /// Record `event` for an item under the owner act it is attaching or erasing for.
 fn record_pending(journal: &Path, item: &Item, event: Event) {
     if let Some(pending) = &item.pending {
-        let at = DateTime::parse_from_rfc3339(&pending.at)
-            .map(|at| at.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
+        let at = parse_rfc3339(&pending.at)
+            .map(|at| at.timestamp())
+            .unwrap_or_else(|_| Timestamp::now());
         removal(
             journal,
             item,
@@ -2236,7 +2238,7 @@ fn removal(
     journal: &Path,
     item: &Item,
     shared: Option<&str>,
-    at: DateTime<Utc>,
+    at: Timestamp,
     action: Action,
     surface: Surface,
 ) -> Removal {
@@ -2271,13 +2273,13 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
     let pending = item.pending.clone().unwrap_or(Pending {
         action: Action::Erase,
         surface: timer_surface(),
-        at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        at: utc_z(Timestamp::now(), Precision::Millis),
         operation: None,
         backups: false,
     });
-    let at = DateTime::parse_from_rfc3339(&pending.at)
-        .map(|at| at.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now());
+    let at = parse_rfc3339(&pending.at)
+        .map(|at| at.timestamp())
+        .unwrap_or_else(|_| Timestamp::now());
     // The saved list's first half, before anything is unlinked: what it was,
     // where, and when, for the backup to remove it from every backup.
     if pending.backups && backup_erase::backups_on_checked(journal)? {
@@ -2340,14 +2342,14 @@ fn describe(unit: &Unit) -> &'static str {
     }
 }
 
-fn item_id(at: DateTime<Utc>) -> String {
+fn item_id(at: Timestamp) -> String {
     let mut bytes = [0_u8; 4];
     if getrandom::fill(&mut bytes).is_err() {
         bytes = std::process::id().to_be_bytes();
     }
     format!(
         "{}-{:02x}{:02x}{:02x}{:02x}",
-        at.format("%Y%m%dT%H%M%S%3fZ"),
+        at.strftime("%Y%m%dT%H%M%S%3fZ"),
         bytes[0],
         bytes[1],
         bytes[2],
@@ -2762,7 +2764,7 @@ mod tests {
         assert!(item.paths.contains(&"config/private-note.json".into()));
         assert!(!root.join("config/private-note.json").exists());
         kind.fail_references.set(false);
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1);
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
         assert_eq!(
@@ -3023,7 +3025,7 @@ mod tests {
         assert_eq!(unfinished(&root).unwrap(), 0);
         assert!(events(&root).is_empty());
         kind.refuse_check_at.set(0);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(
             root.join(SEGMENT).join("audio.flac").is_file(),
             "no later sweep moves it"
@@ -3057,7 +3059,7 @@ mod tests {
             "nothing recorded before it is settled"
         );
         kind.fail_references.set(false);
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1, "{swept:?}");
         assert_eq!(list(&root).unwrap()[0].id, id);
         assert!(root.join(SEGMENT).join("tombstone.json").is_file());
@@ -3094,14 +3096,14 @@ mod tests {
         let other = trash(&root, &kind);
         let stale = Item {
             schema: SCHEMA,
-            id: item_id(Utc::now() + Duration::seconds(1)),
+            id: item_id(Timestamp::now() + SignedDuration::from_secs(1)),
             state: State::Detaching,
             unit: unit(),
             action: Action::SegmentDelete,
             surface: web(),
-            trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            trashed_at: utc_z(Timestamp::now(), Precision::Millis),
             settled_at: None,
-            erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            erase_at: utc_z(Timestamp::now(), Precision::Millis),
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
@@ -3114,7 +3116,7 @@ mod tests {
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(root.join(SEGMENT).join("tombstone.json").is_file());
         assert!(!root.join(TRASH_DIR).join(&stale.id).exists());
         assert_eq!(list(&root).unwrap().len(), 1);
@@ -3157,10 +3159,21 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         let trashed = item.trashed_at().unwrap();
-        assert_eq!(item.erase_at().unwrap(), trashed + Duration::days(7));
-        let early = sweep(&root, &[&kind], trashed + Duration::days(6));
+        assert_eq!(
+            item.erase_at().unwrap(),
+            trashed + SignedDuration::from_hours(24 * 7)
+        );
+        let early = sweep(
+            &root,
+            &[&kind],
+            trashed + SignedDuration::from_hours(24 * 6),
+        );
         assert_eq!((early.erased, early.waiting), (0, 1));
-        let due = sweep(&root, &[&kind], trashed + Duration::days(7));
+        let due = sweep(
+            &root,
+            &[&kind],
+            trashed + SignedDuration::from_hours(24 * 7),
+        );
         assert_eq!((due.erased, due.waiting), (1, 0));
         assert!(list(&root).unwrap().is_empty());
         let history = solstone_core_removals::history(&root, 10).unwrap();
@@ -3187,7 +3200,7 @@ mod tests {
         item.state = State::Detaching;
         publish(&root, &item).unwrap();
         assert!(list(&root).unwrap().is_empty());
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1);
         assert_eq!(list(&root).unwrap().len(), 1);
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
@@ -3206,7 +3219,7 @@ mod tests {
     fn set_of(erase: bool) -> Set {
         Set {
             schema: SCHEMA,
-            id: item_id(Utc::now()),
+            id: item_id(Timestamp::now()),
             action: Action::SegmentDelete,
             surface: web(),
             erase,
@@ -3232,14 +3245,14 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         publish_set(&root, &set_of(false), true).unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1);
         let items = list(&root).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label.as_deref(), Some("the owner's name"));
         assert!(waiting_sets(&root).is_empty());
         // A second sweep has nothing left of it to do.
-        assert_eq!(sweep(&root, &[&kind], Utc::now()).resumed, 0);
+        assert_eq!(sweep(&root, &[&kind], Timestamp::now()).resumed, 0);
     }
 
     /// A set stopped after its thing moved but before the set said so: the
@@ -3250,7 +3263,7 @@ mod tests {
         let kind = Fake::default();
         publish_set(&root, &set_of(false), true).unwrap();
         trash(&root, &kind);
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 0);
         assert!(swept.failed.is_empty());
         assert_eq!(list(&root).unwrap().len(), 1);
@@ -3267,7 +3280,7 @@ mod tests {
         let mut set = set_of(true);
         set.entries[0].item = Some(item.id.clone());
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(list(&root).unwrap().is_empty());
         assert!(waiting_sets(&root).is_empty());
         assert!(
@@ -3289,7 +3302,7 @@ mod tests {
         let mut set = set_of(true);
         set.entries[0].item = Some(item.id.clone());
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(list(&root).unwrap().is_empty());
         assert!(all_items(&root).unwrap().is_empty());
         assert!(waiting_sets(&root).is_empty());
@@ -3301,9 +3314,9 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let mut set = set_of(true);
-        set.entries[0].item = Some(item_id(Utc::now()));
+        set.entries[0].item = Some(item_id(Timestamp::now()));
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(all_items(&root).unwrap().is_empty());
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(waiting_sets(&root).is_empty());
@@ -3321,7 +3334,7 @@ mod tests {
         set.entries[0].arrived = true;
         publish_set(&root, &set, true).unwrap();
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(root.join(SEGMENT).join("audio.flac").exists());
         assert!(all_items(&root).unwrap().is_empty());
         assert!(waiting_sets(&root).is_empty());
@@ -3337,7 +3350,7 @@ mod tests {
         item.pending = Some(Pending {
             action: Action::Recover,
             surface: web(),
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation: None,
             backups: false,
         });
@@ -3346,7 +3359,7 @@ mod tests {
         set.entries[0].item = Some(item.id.clone());
         set.entries[0].arrived = true;
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(root.join(SEGMENT).join("audio.flac").exists());
         assert!(waiting_sets(&root).is_empty());
     }
@@ -3356,12 +3369,12 @@ mod tests {
     fn a_set_moves_a_thing_whose_item_folder_has_no_record_yet() {
         let (_dir, root) = journal();
         let kind = Fake::default();
-        let id = item_id(Utc::now());
+        let id = item_id(Timestamp::now());
         fs::create_dir_all(root.join(TRASH_DIR).join(&id)).unwrap();
         let mut set = set_of(false);
         set.entries[0].item = Some(id.clone());
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Trashed);
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(waiting_sets(&root).is_empty());
@@ -3401,11 +3414,11 @@ mod tests {
         let kind = Fake::default();
         publish_set(&root, &set_of(false), true).unwrap();
         kind.refuse_check_at.set(1);
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 0);
         assert_eq!(waiting_sets(&root).len(), 1);
         kind.refuse_check_at.set(0);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(list(&root).unwrap().len(), 1);
         assert!(waiting_sets(&root).is_empty());
     }
@@ -3418,10 +3431,10 @@ mod tests {
         let set = set_of(false);
         publish_set(&root, &set, true).unwrap();
         let running = set_lock(&root, &set.id, LockOptions::default()).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(list(&root).unwrap().is_empty());
         drop(running);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(list(&root).unwrap().len(), 1);
         // Nothing of the set is left behind, its lock's sidecar included.
         let sets = std::fs::read_dir(root.join(TRASH_DIR).join(SETS_DIR))
@@ -3571,7 +3584,7 @@ mod tests {
         let mut item = list(&root).unwrap().remove(0);
         item.state = State::Detaching;
         publish(&root, &item).unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1);
         let found = entries(&root);
         assert_eq!(found.len(), 2);
@@ -3589,7 +3602,7 @@ mod tests {
         let kind = Plain::default();
         let set = Set {
             schema: SCHEMA,
-            id: item_id(Utc::now()),
+            id: item_id(Timestamp::now()),
             action: Action::EntityDelete,
             surface: web(),
             erase: false,
@@ -3610,7 +3623,7 @@ mod tests {
             erase_at: None,
         };
         publish_set(&root, &set, true).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         let found = entries(&root);
         assert_eq!(found.len(), 2);
         assert_eq!(Some(one_operation(&found)), set.operation);
@@ -3637,7 +3650,7 @@ mod tests {
         let confirmed = "2026-11-11T00:00:00.000Z";
         let mut set = Set {
             schema: SCHEMA,
-            id: item_id(Utc::now()),
+            id: item_id(Timestamp::now()),
             action: Action::StretchDelete,
             surface: web(),
             erase: false,
@@ -3660,7 +3673,7 @@ mod tests {
         publish_set(&root, &set, true).unwrap();
         // The first thing moves; then the stop.
         let mut first = set.entries.first().cloned().unwrap();
-        first.item = Some(item_id(Utc::now()));
+        first.item = Some(item_id(Timestamp::now()));
         let (first, _) = settle(&root, &[&kind], &set, first, false);
         set.entries[0] = first;
         publish_set(&root, &set, false).unwrap();
@@ -3668,7 +3681,7 @@ mod tests {
         let waiting = stretches_unfinished(&root);
         assert_eq!(waiting.len(), 1);
         assert_eq!(waiting[0].1, 1);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         let members = stretch_members(&root, operation).unwrap();
         assert_eq!(members.len(), 2);
         assert!(stretches_unfinished(&root).is_empty());
@@ -3735,7 +3748,7 @@ mod tests {
         let kind = Balky::default();
         let stretch = stretch_of_people(&root, &kind);
         kind.balks.set(true);
-        let operation = OperationId::fresh(Utc::now());
+        let operation = OperationId::fresh(Timestamp::now());
         let stopped = recover_stretch(
             &root,
             &[&kind],
@@ -3756,7 +3769,7 @@ mod tests {
             "no part of it waits as trashed"
         );
         kind.balks.set(false);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(stretch_members(&root, &stretch.id).unwrap().is_empty());
         for path in PEOPLE {
             assert!(root.join(path).join("entity.json").is_file());
@@ -3769,7 +3782,7 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Plain::default();
         let stretch = stretch_of_people(&root, &kind);
-        let operation = OperationId::fresh(Utc::now());
+        let operation = OperationId::fresh(Timestamp::now());
         let erased = erase_stretch(
             &root,
             &[&kind],
@@ -3797,7 +3810,7 @@ mod tests {
         let operation = "20261111T000000000Z-20261111T000000000Zabcd1234";
         let mut set = Set {
             schema: SCHEMA,
-            id: item_id(Utc::now()),
+            id: item_id(Timestamp::now()),
             action: Action::StretchDelete,
             surface: web(),
             erase: false,
@@ -3819,11 +3832,11 @@ mod tests {
         };
         publish_set(&root, &set, true).unwrap();
         let mut first = set.entries.first().cloned().unwrap();
-        first.item = Some(item_id(Utc::now()));
+        first.item = Some(item_id(Timestamp::now()));
         let (first, _) = settle(&root, &[&kind], &set, first, false);
         set.entries[0] = first;
         publish_set(&root, &set, false).unwrap();
-        let op = OperationId::fresh(Utc::now());
+        let op = OperationId::fresh(Timestamp::now());
         for refused in [
             recover_stretch(&root, &[&kind], operation, Action::Recover, web(), &op).map(|_| ()),
             erase_stretch(&root, &[&kind], operation, Action::Erase, web(), &op).map(|_| ()),
@@ -3833,7 +3846,7 @@ mod tests {
             };
             assert!(text.contains(STRETCH_FINISHING), "{text}");
         }
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(stretch_members(&root, operation).unwrap().len(), 2);
     }
 
@@ -3858,7 +3871,11 @@ mod tests {
         .unwrap();
         assert!(!stretch.id.is_empty());
         assert_eq!(results.len(), 2);
-        let swept = sweep(&root, &[&kind], Utc::now() + Duration::days(60));
+        let swept = sweep(
+            &root,
+            &[&kind],
+            Timestamp::now() + SignedDuration::from_hours(24 * 60),
+        );
         assert_eq!(swept.erased, 2);
         let erased: Vec<_> = entries(&root)
             .into_iter()
@@ -3891,7 +3908,7 @@ mod tests {
                 })
                 .collect()
         };
-        let recover = OperationId::fresh(Utc::now());
+        let recover = OperationId::fresh(Timestamp::now());
         for id in trash_people(&root) {
             attach_in(&root, &[&kind], &id, Action::Recover, web(), &recover).unwrap();
         }
@@ -3902,7 +3919,7 @@ mod tests {
         assert_eq!(recovered.len(), 2);
         assert_eq!(one_operation(&recovered), recover.as_str());
 
-        let erase = OperationId::fresh(Utc::now());
+        let erase = OperationId::fresh(Timestamp::now());
         for id in trash_people(&root) {
             erase_in(&root, &[&kind], &id, Action::Erase, web(), &erase).unwrap();
         }
@@ -3957,14 +3974,14 @@ mod tests {
         let kind = Fake::default();
         let item = Item {
             schema: SCHEMA,
-            id: item_id(Utc::now()),
+            id: item_id(Timestamp::now()),
             state: State::Detaching,
             unit: unit(),
             action: Action::SegmentDelete,
             surface: web(),
-            trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            trashed_at: utc_z(Timestamp::now(), Precision::Millis),
             settled_at: None,
-            erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            erase_at: utc_z(Timestamp::now(), Precision::Millis),
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
@@ -3978,7 +3995,7 @@ mod tests {
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
         publish_new(&root, &item).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert_eq!(list(&root).unwrap().len(), 1);
     }
@@ -3997,7 +4014,7 @@ mod tests {
         item.pending = Some(Pending {
             action: Action::Recover,
             surface: web(),
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation: None,
             backups: false,
         });
@@ -4009,7 +4026,7 @@ mod tests {
             &trash_entry(&root, &displaced).unwrap(),
         )
         .unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1, "{swept:?}");
         assert_eq!(
             fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
@@ -4033,7 +4050,7 @@ mod tests {
         item.pending = Some(Pending {
             action: Action::EmptyTrash,
             surface: web(),
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             operation: None,
             backups: false,
         });
@@ -4046,7 +4063,7 @@ mod tests {
                 .join("audio.flac"),
         )
         .unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now());
+        let swept = sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(swept.resumed, 1);
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(events(&root).contains(&(Event::Erased, Action::EmptyTrash)));
@@ -4095,7 +4112,7 @@ mod tests {
         let swept = sweep(
             &root,
             &[&kind],
-            item.trashed_at().unwrap() + Duration::days(2),
+            item.trashed_at().unwrap() + SignedDuration::from_hours(24 * 2),
         );
         assert_eq!((swept.erased, swept.waiting), (0, 1));
     }
@@ -4227,19 +4244,19 @@ mod tests {
         let linked = link(&root, &kind, &[AUDIO]);
         let id = linked.id().to_owned();
         fs::remove_file(root.join(AUDIO)).unwrap();
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Detaching);
         assert!(stopped(&root).unwrap().is_empty(), "running, not stopped");
         drop(linked);
         assert_eq!(stopped(&root).unwrap().len(), 1);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Trashed);
 
         let (_dir, root) = journal();
         let linked = link(&root, &kind, &[AUDIO]);
         let id = linked.id().to_owned();
         drop(linked);
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert!(item(&root, &id).unwrap().is_none());
         assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
     }
@@ -4272,7 +4289,7 @@ mod tests {
         let kind = Fake::default();
         let linked = link(&root, &kind, &[AUDIO]);
         let before = item(&root, linked.id()).unwrap().unwrap();
-        assert!(before.erase_at().unwrap() > Utc::now() + Duration::days(6));
+        assert!(before.erase_at().unwrap() > Timestamp::now() + SignedDuration::from_hours(24 * 6));
         fs::remove_file(root.join(AUDIO)).unwrap();
         let kept = finish_linked(&root, &kind, linked).unwrap().unwrap();
         assert_eq!(kept.state, State::Trashed);
@@ -4373,8 +4390,8 @@ mod tests {
         publish(&root, &stale).unwrap();
         fs::remove_file(root.join(AUDIO)).unwrap();
         let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
-        assert!(item.erase_at().unwrap() > Utc::now() + Duration::days(6));
-        sweep(&root, &[&kind], Utc::now());
+        assert!(item.erase_at().unwrap() > Timestamp::now() + SignedDuration::from_hours(24 * 6));
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(list(&root).unwrap().len(), 1);
     }
 
@@ -4511,7 +4528,7 @@ mod tests {
         assert!(list(&root).unwrap().is_empty());
 
         let item = trashed_person(&root, &kind);
-        let due = item.erase_at().unwrap() + Duration::hours(1);
+        let due = item.erase_at().unwrap() + SignedDuration::from_hours(1);
         sweep(&root, &[&kind], due);
         assert_eq!(kind.erased.get(), 2);
         assert!(list(&root).unwrap().is_empty());
@@ -4531,7 +4548,7 @@ mod tests {
             State::Erasing
         );
         assert!(trash_root(&root).join(&item.id).join(FILES_DIR).exists());
-        sweep(&root, &[&kind], Utc::now());
+        sweep(&root, &[&kind], Timestamp::now());
         assert_eq!(kind.erased.get(), 1);
         assert!(read_item(&root, &item.id).unwrap().is_none());
     }

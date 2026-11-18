@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::civil::{Date, DateTime};
 use solstone_core_journal_config::SavedLane;
 
 use crate::freshness::{BacklogStatusEvaluation, SummaryFreshness, UnfinishedActivitiesAggregate};
@@ -75,8 +75,8 @@ impl NotYet {
 pub fn not_yet_rule(
     engine_chosen: bool,
     daily_catchup_finished: bool,
-    first_day: Option<NaiveDate>,
-    local_now: NaiveDateTime,
+    first_day: Option<Date>,
+    local_now: DateTime,
 ) -> Option<NotYet> {
     if !engine_chosen {
         return Some(NotYet::AwaitingEngine(None));
@@ -85,17 +85,20 @@ pub fn not_yet_rule(
         return None;
     }
     let first_day = first_day.unwrap_or(local_now.date());
-    let window_end = (first_day + Duration::days(1)).and_time(
-        NaiveTime::from_hms_opt(OVERNIGHT_WINDOW_END_HOUR, 0, 0).expect("valid window hour"),
-    );
-    (local_now < window_end).then_some(NotYet::FirstNight)
+    let hour = i8::try_from(OVERNIGHT_WINDOW_END_HOUR).expect("valid window hour");
+    // A first day at the end of the calendar has its window past every time.
+    let ahead = first_day
+        .tomorrow()
+        .ok()
+        .is_none_or(|next| local_now < next.at(hour, 0, 0, 0));
+    ahead.then_some(NotYet::FirstNight)
 }
 
 /// Read the journal-level facts and apply the rule.
 /// A corrupt config reads as no engine chosen, exactly as the supervisor reads it.
 /// Cheap first: an established journal returns on its catch-up record without
 /// listing its days.
-pub fn journal_not_yet(journal: &Path, local_now: NaiveDateTime) -> Option<NotYet> {
+pub fn journal_not_yet(journal: &Path, local_now: DateTime) -> Option<NotYet> {
     if solstone_core_journal_config::no_thinking_engine_chosen(journal) {
         return Some(NotYet::AwaitingEngine(
             solstone_core_journal_config::saved_thinking_lane(journal),
@@ -112,7 +115,7 @@ pub fn journal_not_yet(journal: &Path, local_now: NaiveDateTime) -> Option<NotYe
 
 /// The backlog summary's own reading: only a summary that does not exist can be
 /// "not yet". Any file there, readable or not, keeps today's rules.
-pub fn summary_not_yet(journal: &Path, local_now: NaiveDateTime) -> Option<NotYet> {
+pub fn summary_not_yet(journal: &Path, local_now: DateTime) -> Option<NotYet> {
     match std::fs::symlink_metadata(journal.join("stats.json")) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             journal_not_yet(journal, local_now)
@@ -136,10 +139,10 @@ pub fn not_yet_evaluation(not_yet: NotYet) -> BacklogStatusEvaluation {
     }
 }
 
-fn earliest_day(journal: &Path) -> Result<Option<NaiveDate>, solstone_core_journal_io::PathError> {
+fn earliest_day(journal: &Path) -> Result<Option<Date>, solstone_core_journal_io::PathError> {
     Ok(solstone_core_journal_io::day_dirs(journal)?
         .keys()
-        .filter_map(|day| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
+        .filter_map(|day| solstone_core_time::parse_day(day))
         .min())
 }
 
@@ -147,15 +150,14 @@ fn earliest_day(journal: &Path) -> Result<Option<NaiveDate>, solstone_core_journ
 mod tests {
     use super::*;
 
-    fn at(day: &str, hour: u32, minute: u32) -> NaiveDateTime {
-        NaiveDate::parse_from_str(day, "%Y%m%d")
+    fn at(day: &str, hour: i8, minute: i8) -> DateTime {
+        solstone_core_time::parse_day(day)
             .unwrap()
-            .and_hms_opt(hour, minute, 0)
-            .unwrap()
+            .at(hour, minute, 0, 0)
     }
 
-    fn day(value: &str) -> Option<NaiveDate> {
-        NaiveDate::parse_from_str(value, "%Y%m%d").ok()
+    fn day(value: &str) -> Option<Date> {
+        solstone_core_time::parse_day(value)
     }
 
     #[test]

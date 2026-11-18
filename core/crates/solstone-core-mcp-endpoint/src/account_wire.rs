@@ -10,11 +10,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use ring::signature::KeyPair as _;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use serde::{Deserialize, Serialize};
+use solstone_core_time::Precision;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
@@ -354,7 +355,7 @@ struct McpAccountResponseWire {
     bridge_address: String,
     /// When the service last moved this address to a new certificate account,
     /// as reported (verbatim), with its time when it reads as one.
-    acme_account_replaced: Option<(String, Option<DateTime<Utc>>)>,
+    acme_account_replaced: Option<(String, Option<Timestamp>)>,
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -751,8 +752,8 @@ fn parse_account_registration_response(
             .map(|value| {
                 let at = value
                     .as_str()
-                    .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
-                    .map(|at| at.with_timezone(&Utc));
+                    .and_then(|text| solstone_core_time::parse_rfc3339(text).ok())
+                    .map(|at| at.timestamp());
                 let reported = value
                     .as_str()
                     .map_or_else(|| value.to_string(), str::to_owned);
@@ -828,7 +829,7 @@ pub(crate) async fn establish_mcp_bridge_carrier(
         &owner.keypair,
         owner.renewal_owner(),
         shutdown,
-        Utc::now().timestamp(),
+        Timestamp::now().as_second(),
     )
     .await
 }
@@ -899,7 +900,7 @@ impl AccountClock for SystemAccountClock {
     }
 
     fn wall_now(&self) -> i64 {
-        Utc::now().timestamp()
+        Timestamp::now().as_second()
     }
 }
 
@@ -943,7 +944,7 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
     let wall_start = clock.wall_now();
     let click = crate::sme_account_replace::pending_request(
         owner.journal_path(),
-        DateTime::from_timestamp(wall_start, 0).unwrap_or_else(Utc::now),
+        Timestamp::new(wall_start, 0).unwrap_or_else(|_| Timestamp::now()),
     );
     let request = build_account_registration_request_replacing(owner, wall_start, click.is_some())
         .map_err(|_| McpAccountError::Request)?;
@@ -1000,7 +1001,7 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
             &wire.hostname,
             reported,
             *replaced_at,
-            Utc::now(),
+            Timestamp::now(),
         );
     }
     let wire = parsed.map_err(|error| match error {
@@ -1502,9 +1503,10 @@ fn validate_account_registration(
     if wire.expires_in != u64::try_from(ttl).map_err(|_| McpAccountRegistrationError::JwtTtl)? {
         return Err(McpAccountRegistrationError::JwtResponseBinding);
     }
-    let expected_expiry = DateTime::<Utc>::from_timestamp(payload.exp, 0)
-        .ok_or(McpAccountRegistrationError::ResponseExpiry)?
-        .to_rfc3339_opts(SecondsFormat::Secs, true);
+    let expected_expiry = solstone_core_time::utc_z(
+        Timestamp::new(payload.exp, 0).map_err(|_| McpAccountRegistrationError::ResponseExpiry)?,
+        Precision::Secs,
+    );
     if wire.expires_at != expected_expiry {
         return Err(McpAccountRegistrationError::ResponseExpiry);
     }
@@ -1579,9 +1581,10 @@ fn validate_fixture_account_registration(
     if wire.expires_in != u64::try_from(ttl).map_err(|_| McpAccountRegistrationError::JwtTtl)? {
         return Err(McpAccountRegistrationError::JwtResponseBinding);
     }
-    let expected_expiry = DateTime::<Utc>::from_timestamp(payload.exp, 0)
-        .ok_or(McpAccountRegistrationError::ResponseExpiry)?
-        .to_rfc3339_opts(SecondsFormat::Secs, true);
+    let expected_expiry = solstone_core_time::utc_z(
+        Timestamp::new(payload.exp, 0).map_err(|_| McpAccountRegistrationError::ResponseExpiry)?,
+        Precision::Secs,
+    );
     if wire.expires_at != expected_expiry {
         return Err(McpAccountRegistrationError::ResponseExpiry);
     }
@@ -4131,9 +4134,10 @@ mod tests {
     const FIXTURE_POP_PUBLIC_KEY: &str = "AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c";
 
     fn registration_expiry(epoch: i64) -> String {
-        DateTime::<Utc>::from_timestamp(epoch, 0)
-            .expect("fixture epoch is representable")
-            .to_rfc3339_opts(SecondsFormat::Secs, true)
+        solstone_core_time::utc_z(
+            Timestamp::new(epoch, 0).expect("fixture epoch is representable"),
+            Precision::Secs,
+        )
     }
 
     fn valid_registration_payload(
@@ -5232,7 +5236,7 @@ mod tests {
     fn click_at_test_time(owner: &McpEndpointOwnerContext) {
         crate::sme_account_replace::record_request(
             owner.journal_path(),
-            DateTime::from_timestamp(REGISTRATION_WALL_START, 0).expect("test time"),
+            Timestamp::new(REGISTRATION_WALL_START, 0).expect("test time"),
         )
         .expect("click records");
     }
@@ -5240,7 +5244,7 @@ mod tests {
     fn click_pending(owner: &McpEndpointOwnerContext) -> bool {
         crate::sme_account_replace::pending_request(
             owner.journal_path(),
-            DateTime::from_timestamp(REGISTRATION_WALL_START, 0).expect("test time"),
+            Timestamp::new(REGISTRATION_WALL_START, 0).expect("test time"),
         )
         .is_some()
     }
@@ -5310,7 +5314,10 @@ mod tests {
         assert!(!click_pending(&owner));
         let notice = crate::sme_account_replace::read_notice(owner.journal_path()).expect("notice");
         assert_eq!(notice.address, "aaaqeaye.solstone.me");
-        assert_eq!(notice.replaced_at.to_rfc3339(), "2023-11-14T22:13:20+00:00");
+        assert_eq!(
+            solstone_core_time::utc_rfc3339(notice.replaced_at),
+            "2023-11-14T22:13:20+00:00"
+        );
 
         // Dismissed, the same report on the next success is not shown again,
         // and the request goes back to the account URL alone.
@@ -5354,7 +5361,10 @@ mod tests {
         assert_eq!(claims.get("acme_account_replace"), None);
         let notice = crate::sme_account_replace::read_notice(owner.journal_path())
             .expect("the move is shown without a click on the request");
-        assert_eq!(notice.replaced_at.to_rfc3339(), "2023-11-14T22:13:20+00:00");
+        assert_eq!(
+            solstone_core_time::utc_rfc3339(notice.replaced_at),
+            "2023-11-14T22:13:20+00:00"
+        );
     }
 
     #[test]

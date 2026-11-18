@@ -10,7 +10,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use chrono::Local;
+use jiff::ZonedDateTime;
 use solstone_core_cli::HEALTH_LOGS_HELP;
 use solstone_core_journal_io::{
     JournalRoot,
@@ -28,7 +28,7 @@ impl TestJournal {
     fn path(&self) -> &Path {
         self.0.path()
     }
-    fn log(&self, source: &str, content: &str, instant: chrono::DateTime<chrono::FixedOffset>) {
+    fn log(&self, source: &str, content: &str, instant: &ZonedDateTime) {
         let mut writer = create_oplog_at(
             JournalRoot::open(self.path()).unwrap(),
             source,
@@ -70,15 +70,15 @@ fn logs(day: &str) -> String {
 #[test]
 fn one_shot_filters_and_count_reach_the_real_command_body() {
     let journal = TestJournal::new();
-    let instant = Local::now().fixed_offset();
-    let content = logs(&instant.format("%Y-%m-%d").to_string());
+    let instant = ZonedDateTime::now();
+    let content = logs(&instant.strftime("%Y-%m-%d").to_string());
     let rows = content.lines().collect::<Vec<_>>();
     journal.log(
         "observer",
         &format!("{}\n{}\n{}\n", rows[0], rows[1], rows[3]),
-        instant,
+        &instant,
     );
-    journal.log("other", &format!("{}\n", rows[2]), instant);
+    journal.log("other", &format!("{}\n", rows[2]), &instant);
     for (args, expected) in [
         (
             ["health", "logs", "-c", "1"].as_slice(),
@@ -237,14 +237,14 @@ fn path_diagnostics_escape_control_bytes_and_backslashes_once() {
     let outer = tempfile::tempdir().unwrap();
     let journal = outer.path().join("journal-\\-\n-\x1b-\u{202e}");
     fs::create_dir_all(&journal).unwrap();
-    let instant = Local::now().fixed_offset();
-    let day = instant.format("%Y%m%d").to_string();
+    let instant = ZonedDateTime::now();
+    let day = solstone_core_time::day_key(instant.date());
     let writer = create_oplog_at(
         JournalRoot::open(&journal).unwrap(),
         "broken",
         "health-logs-cli-test",
         OplogFormat::Log,
-        instant,
+        &instant,
     )
     .unwrap();
     let canonical = journal

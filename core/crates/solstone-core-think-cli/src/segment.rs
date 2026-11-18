@@ -12,7 +12,7 @@ use crate::dispatch::{
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_facets::{
     ActivityRecordStoreError, AppendOutcome, DeclaredFacetInventory,
@@ -254,8 +254,13 @@ fn think(
     if stream == Some(STRAVA_STREAM) {
         return end_body_data_sense(context, log, segment, stream);
     }
-    let state =
-        read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
+    let state = read_segment_data_state(
+        &context.journal,
+        &context.day,
+        segment,
+        stream,
+        Timestamp::now(),
+    );
     if !segment_fully_sensed(&state) {
         // A retryable failure is still owed media analysis, not empty input.
         log_skip(log, context, "sense", segment, "raw_media_pending", stream);
@@ -339,7 +344,7 @@ fn think(
         segment,
         stream,
         &load,
-        Utc::now(),
+        Timestamp::now(),
     ) {
         // Source-derived, not measured: thinking.py:1536-1584 writes a
         // schema-valid idle artifact and change record before terminalizing.
@@ -2202,10 +2207,7 @@ fn flush_replay_machines(
     let mut errors = Vec::new();
     // The owner's today, not UTC's: west of UTC, UTC's date turns over in the
     // evening, and that would read the live day as finished.
-    let now = Utc
-        .timestamp_millis_opt(context.now_ms)
-        .single()
-        .unwrap_or_else(Utc::now);
+    let now = Timestamp::from_millisecond(context.now_ms).unwrap_or_else(|_| Timestamp::now());
     let today = solstone_core_system::daily_coverage::local_day(&context.journal, now);
     for (stream, machine) in &mut machines {
         let Some(last_segment) = machine.last_segment_key().map(ToOwned::to_owned) else {
@@ -3182,7 +3184,7 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
         published.insert(sense_json_path.clone());
 
         let density_json_path = talents.join("density.json");
-        let mut density = serde_json::json!({"classification":sense["density"],"timestamp":Utc::now().to_rfc3339()});
+        let mut density = serde_json::json!({"classification":sense["density"],"timestamp":solstone_core_time::utc_rfc3339(Timestamp::now())});
         if let Some(partial) = sense.get("partial_input").filter(|v| v.is_object()) {
             density["partial_input"] = partial.clone();
         }
@@ -3265,7 +3267,7 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
             segment_name,
             segment,
             predecessor,
-            &Utc::now().to_rfc3339(),
+            &solstone_core_time::utc_rfc3339(Timestamp::now()),
         );
         let change_json_path = segment.join("talents/change.json");
         replace_json_checked(context, &change_json_path, &change)?;
@@ -4003,7 +4005,7 @@ mod activity_date_tests {
         );
         let rows = fold_oplogs(
             JournalRoot::open(root.path()).unwrap(),
-            &[chrono::NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()],
+            &[jiff::civil::date(2026, 9, 7)],
             |rows: &mut Vec<Value>, _, input| {
                 let mut text = String::new();
                 input.read_to_string(&mut text)?;

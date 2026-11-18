@@ -11,7 +11,6 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
-use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_journal_io::JournalRoot;
@@ -226,11 +225,9 @@ pub async fn approve(
         let after_start = approval_tests::take_public_start_hook();
         let result = tokio::task::spawn_blocking(move || {
             let now = clock.now();
+            let today = owner_today(&deps.journal_root, now);
             let started = solstone_core_backup_web::archive_worker::removal::start(
-                &deps,
-                context,
-                now.date_naive(),
-                now,
+                &deps, context, today, now,
             );
             #[cfg(all(test, feature = "full-tests"))]
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -249,6 +246,20 @@ pub async fn approve(
             Err(_) => approval_unavailable(OUTCOME_UNKNOWN, StatusCode::SERVICE_UNAVAILABLE),
         }
     }
+}
+
+/// The owner's day at `now`, in the journal's own zone: the day maintenance
+/// uses to mark raw, so an approval and a mark-raw at the same instant agree.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "android",
+    target_os = "ios"
+))]
+fn owner_today(journal_root: &Path, now: jiff::Timestamp) -> jiff::civil::Date {
+    now.to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+        .date()
 }
 
 fn uncached(mut response: Response) -> Response {
@@ -359,11 +370,12 @@ pub async fn cancel_approval(
 fn dispatch_approval(
     deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>,
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Result<solstone_core_backup_web::archive_worker::removal::ApprovalStart, &'static str> {
     let context = action_context(body).map_err(|(_, state)| state)?;
     let Extension(deps) = deps.ok_or(APPROVE_REFUSED_BEFORE_START)?;
-    solstone_core_backup_web::archive_worker::removal::start(&deps, context, now.date_naive(), now)
+    let today = owner_today(&deps.journal_root, now);
+    solstone_core_backup_web::archive_worker::removal::start(&deps, context, today, now)
         .map_err(|_| APPROVE_REFUSED_BEFORE_START)
 }
 
@@ -604,7 +616,7 @@ pub async fn recover(
     } else {
         None
     };
-    let at = clock.now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let at = solstone_core_time::utc_z(clock.now(), solstone_core_time::Precision::Secs);
     let outcome = match tokio::task::spawn_blocking(move || {
         let _guard = if let Some(deps) = deps {
             match solstone_core_backup_web::admit_write(
@@ -1539,6 +1551,36 @@ mod tests {
         let join = recover_from_call(ClientCall::Join);
         assert_eq!(join.state, OUTCOME_UNKNOWN);
         assert_eq!(join.finished_count, 0);
+    }
+
+    // An approval's day is the owner's day in the journal's zone, the day
+    // maintenance marks raw on, not the UTC day.
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android",
+        target_os = "ios"
+    ))]
+    #[test]
+    fn approval_day_is_the_owner_day_in_the_journal_zone() {
+        let journal = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            json!({"identity": {"timezone": "America/Denver"}}).to_string(),
+        )
+        .unwrap();
+        let evening: jiff::Timestamp = "2026-11-17T03:30:00Z".parse().unwrap();
+        let morning: jiff::Timestamp = "2026-11-17T07:30:00Z".parse().unwrap();
+        assert_eq!(
+            super::owner_today(journal.path(), evening),
+            jiff::civil::date(2026, 11, 16)
+        );
+        assert_eq!(
+            super::owner_today(journal.path(), morning),
+            jiff::civil::date(2026, 11, 17)
+        );
     }
 }
 

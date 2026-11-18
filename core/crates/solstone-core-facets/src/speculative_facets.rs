@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::{NaiveDate, TimeDelta};
+use jiff::civil::Date;
 use serde::Serialize;
 use serde_json::Value;
 use solstone_core_journal_io::{PathError, PathOrDay, day_dirs, iter_segments};
@@ -52,12 +52,14 @@ pub struct SpeculativeFacetCandidate {
 /// compatibility-equivalent names Python keeps separate.
 pub fn aggregate_speculative_facets(
     journal_root: &Path,
-    today: NaiveDate,
+    today: Date,
     min_count: usize,
 ) -> Result<Vec<SpeculativeFacetCandidate>, PathError> {
-    let cutoff = (today - TimeDelta::days(FACET_CANDIDATE_WINDOW_DAYS))
-        .format("%Y%m%d")
-        .to_string();
+    let cutoff = solstone_core_time::day_key(
+        today
+            .checked_sub(jiff::Span::new().days(FACET_CANDIDATE_WINDOW_DAYS))
+            .expect("candidate window start is a real date"),
+    );
     let mut scan_days: Vec<_> = day_dirs(journal_root)?
         .into_keys()
         .filter(|day| day >= &cutoff)

@@ -2406,7 +2406,7 @@ mod tests {
             r#"{"zone":"America/Denver"}"#,
         )
         .unwrap();
-        let date = chrono::NaiveDate::parse_from_str(LOCATION_DAY, "%Y%m%d").unwrap();
+        let date = solstone_core_time::parse_day(LOCATION_DAY).unwrap();
         let mut row = BodyRow::new(
             RowKind::Experience,
             "w1".to_owned(),
@@ -2415,8 +2415,8 @@ mod tests {
             "Running".to_owned(),
         );
         row.experience = Some("workout".to_owned());
-        row.start = Some(format!("{} 07:00:00 -0600", date.format("%Y-%m-%d")));
-        row.end = Some(format!("{} 07:40:00 -0600", date.format("%Y-%m-%d")));
+        row.start = Some(format!("{} 07:00:00 -0600", date.strftime("%Y-%m-%d")));
+        row.end = Some(format!("{} 07:40:00 -0600", date.strftime("%Y-%m-%d")));
         row.by = Some("Synthetic Watch".to_owned());
         row.values
             .insert("distance".to_owned(), "5.0 km".to_owned());

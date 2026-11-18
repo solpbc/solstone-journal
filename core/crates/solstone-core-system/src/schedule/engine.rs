@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use chrono::{NaiveDateTime, Timelike};
+use jiff::civil::DateTime;
 use serde_json::{Map, Value};
 
 use crate::request::{ScheduledArgv, ScheduledRequest};
@@ -36,10 +36,10 @@ pub struct ScheduleEngine {
     state_path: PathBuf,
     config: ScheduleConfig,
     state: Map<String, Value>,
-    last_minute: NaiveDateTime,
-    last_hour: NaiveDateTime,
-    last_daily_mark: NaiveDateTime,
-    last_weekly_mark: NaiveDateTime,
+    last_minute: DateTime,
+    last_hour: DateTime,
+    last_daily_mark: DateTime,
+    last_weekly_mark: DateTime,
     pending_retry: BTreeSet<String>,
     /// The failed `last_run` each entry's retry was submitted for, so a retry
     /// still running is not submitted again on the next minute.
@@ -60,11 +60,7 @@ impl ScheduleEngine {
         let state = load_runtime_state(&state_path)?;
         let (last_hour, last_daily_mark, last_weekly_mark) =
             current_marks(&loaded.config, now.local);
-        let last_minute = now
-            .local
-            .date()
-            .and_hms_opt(now.local.hour(), now.local.minute(), 0)
-            .expect("valid current minute");
+        let last_minute = minute_mark(now.local);
         Ok((
             Self {
                 config_path,
@@ -106,11 +102,7 @@ impl ScheduleEngine {
         let diagnostics = loaded.diagnostics;
         self.pending_retry
             .retain(|name| self.config.entries.contains_key(name));
-        let current_minute = now
-            .local
-            .date()
-            .and_hms_opt(now.local.hour(), now.local.minute(), 0)
-            .expect("valid current minute");
+        let current_minute = minute_mark(now.local);
         let (current_hour, current_daily_mark, current_weekly_mark) =
             current_marks(&self.config, now.local);
         let hour_changed = current_hour != self.last_hour;
@@ -143,12 +135,12 @@ impl ScheduleEngine {
                 self.pending_retry.remove(&name);
                 continue;
             };
-            if !is_due(&entry, state_entry(&self.state, &name), &self.config, now) {
+            if !is_due(&entry, state_entry(&self.state, &name), &self.config, &now) {
                 self.pending_retry.remove(&name);
                 continue;
             }
             attempted.insert(name.clone());
-            if submit(&name, &entry, now, sink) {
+            if submit(&name, &entry, &now, sink) {
                 self.pending_retry.remove(&name);
                 report.retried.push(name);
             }
@@ -165,19 +157,19 @@ impl ScheduleEngine {
                 weekly_changed,
                 minute_changed,
             ) {
-                if minute_changed && self.failure_retry_due(&name, &entry, now) {
+                if minute_changed && self.failure_retry_due(&name, &entry, &now) {
                     attempted.insert(name.clone());
-                    if submit(&name, &entry, now, sink) {
+                    if submit(&name, &entry, &now, sink) {
                         self.note_failure_retry(&name);
                         report.retried.push(name);
                     }
                 }
                 continue;
             }
-            if !is_due(&entry, state_entry(&self.state, &name), &self.config, now) {
+            if !is_due(&entry, state_entry(&self.state, &name), &self.config, &now) {
                 continue;
             }
-            if submit(&name, &entry, now, sink) {
+            if submit(&name, &entry, &now, sink) {
                 report.submitted.push(name);
             } else if minute_interval(&entry.every).is_none() {
                 self.pending_retry.insert(name);
@@ -203,8 +195,8 @@ impl ScheduleEngine {
             if fresh.contains(&name) {
                 continue;
             }
-            if is_due(&entry, state_entry(&self.state, &name), &self.config, now)
-                && submit(&name, &entry, now, sink)
+            if is_due(&entry, state_entry(&self.state, &name), &self.config, &now)
+                && submit(&name, &entry, &now, sink)
             {
                 self.note_failure_retry(&name);
                 report.submitted.push(name);
@@ -218,7 +210,7 @@ impl ScheduleEngine {
         &self,
         name: &str,
         entry: &super::ScheduleEntry,
-        now: ScheduleNow,
+        now: &ScheduleNow,
     ) -> bool {
         let state = state_entry(&self.state, name);
         retry_at(entry, state, &self.config, now).is_some_and(|at| now.local >= at)
@@ -247,8 +239,8 @@ impl ScheduleEngine {
                     name: name.clone(),
                     every: effective_every(&entry.every),
                     last_run,
-                    due: is_due(entry, state, &self.config, now),
-                    next_run: compute_next_run(entry, state, &self.config, now),
+                    due: is_due(entry, state, &self.config, &now),
+                    next_run: compute_next_run(entry, state, &self.config, &now),
                     daily_time: (entry.every == "daily")
                         .then(|| {
                             self.config
@@ -330,10 +322,15 @@ fn matches_boundary(every: &str, hour: bool, daily: bool, weekly: bool, minute: 
     }
 }
 
+/// The start of the wall-clock minute `now` falls in.
+fn minute_mark(now: DateTime) -> DateTime {
+    now.date().at(now.hour(), now.minute(), 0, 0)
+}
+
 fn submit(
     name: &str,
     entry: &super::ScheduleEntry,
-    now: ScheduleNow,
+    now: &ScheduleNow,
     sink: &dyn ScheduleSubmissionSink,
 ) -> bool {
     let command = ScheduledArgv::from_wire(entry.cmd.clone()).expect("validated non-empty command");

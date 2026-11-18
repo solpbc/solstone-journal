@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{Offset, TimeDelta, TimeZone};
-use chrono_tz::Tz;
+use jiff::civil::DateTime;
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use solstone_core_sol_link::http::{SetupProgress, SetupProgressError};
 
@@ -52,7 +53,7 @@ pub type SegmentWordsReader = Box<dyn Fn(&SegmentCandidate) -> Option<String>>;
 
 pub struct FirstMinutesInput {
     pub now_ms: i64,
-    pub owner_zone: Tz,
+    pub owner_zone: TimeZone,
     pub capture: Value,
     pub reported_platforms: Option<BTreeMap<String, Option<String>>>,
     pub ledger_platforms: BTreeMap<String, String>,
@@ -87,20 +88,17 @@ fn transcripts_href(day: &str, stream: &str, key: &str) -> String {
     )
 }
 
-fn segment_wall_start(day: &str, key: &str) -> Option<chrono::NaiveDateTime> {
+fn segment_wall_start(day: &str, key: &str) -> Option<DateTime> {
     let hhmmss = key.get(..6)?;
     let digits =
         |text: &str, len: usize| text.len() == len && text.bytes().all(|b| b.is_ascii_digit());
     if !digits(day, 8) || !digits(hhmmss, 6) {
         return None;
     }
-    chrono::NaiveDateTime::parse_from_str(&format!("{day}{hhmmss}"), "%Y%m%d%H%M%S").ok()
+    DateTime::strptime("%Y%m%d%H%M%S", format!("{day}{hhmmss}")).ok()
 }
 
-fn candidate_instant(
-    input: &FirstMinutesInput,
-    candidate: &SegmentCandidate,
-) -> Option<chrono::DateTime<chrono::Utc>> {
+fn candidate_instant(input: &FirstMinutesInput, candidate: &SegmentCandidate) -> Option<Timestamp> {
     let wall = segment_wall_start(&candidate.day, &candidate.key)?;
     let offset_seconds = if let Some(view) = solstone_core_journal_config::capture_zone_view(
         &candidate.day,
@@ -111,22 +109,21 @@ fn candidate_instant(
     ) {
         view.utc_offset_seconds
     } else {
-        let offset = input
-            .owner_zone
-            .offset_from_local_datetime(&wall)
-            .earliest()?;
-        offset.fix().local_minus_utc()
+        solstone_core_time::from_local(&input.owner_zone, wall)
+            .earliest()?
+            .offset()
+            .seconds()
     };
-    let utc_naive = wall - TimeDelta::seconds(i64::from(offset_seconds));
-    Some(chrono::DateTime::from_naive_utc_and_offset(
-        utc_naive,
-        chrono::Utc,
-    ))
+    Offset::UTC
+        .to_timestamp(wall)
+        .ok()?
+        .checked_sub(SignedDuration::from_secs(i64::from(offset_seconds)))
+        .ok()
 }
 
 pub fn winning_segment(input: &FirstMinutesInput) -> Option<WinningSegment> {
     let segments = input.segments.as_ref()?;
-    let mut winner: Option<(chrono::DateTime<chrono::Utc>, usize)> = None;
+    let mut winner: Option<(Timestamp, usize)> = None;
 
     for (idx, candidate) in segments.iter().enumerate() {
         let instant = match candidate_instant(input, candidate) {
@@ -152,7 +149,7 @@ pub fn winning_segment(input: &FirstMinutesInput) -> Option<WinningSegment> {
             day: cand.day.clone(),
             key: cand.key.clone(),
             stream: cand.stream.clone(),
-            start_at: instant.to_rfc3339(),
+            start_at: solstone_core_time::utc_rfc3339(instant),
             candidate_index: idx,
         }
     })
@@ -289,8 +286,8 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                 let parsed_time = c
                     .get("last_accepted_ingest_at")
                     .and_then(Value::as_str)
-                    .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
-                    .map(|dt| dt.timestamp_millis());
+                    .and_then(|ts| solstone_core_time::parse_rfc3339(ts).ok())
+                    .map(|dt| dt.timestamp().as_millisecond());
 
                 let last_added_label = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
@@ -346,8 +343,8 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                 let parsed_time = c
                     .get("last_accepted_ingest_at")
                     .and_then(Value::as_str)
-                    .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
-                    .map(|dt| dt.timestamp_millis());
+                    .and_then(|ts| solstone_core_time::parse_rfc3339(ts).ok())
+                    .map(|dt| dt.timestamp().as_millisecond());
 
                 let last_added_label = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
@@ -499,7 +496,7 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                 (serde_json::json!({"state": "no_audio"}), Value::Bool(false))
             } else {
                 struct AudioCand<'a> {
-                    instant: chrono::DateTime<chrono::Utc>,
+                    instant: Timestamp,
                     candidate_index: usize,
                     candidate: &'a SegmentCandidate,
                 }
@@ -545,14 +542,14 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                     }
 
                     if let Some((ac, raw_words)) = heard_proof {
-                        let start_at = ac.instant.to_rfc3339();
+                        let start_at = solstone_core_time::utc_rfc3339(ac.instant);
                         let href = transcripts_href(
                             &ac.candidate.day,
                             &ac.candidate.stream,
                             &ac.candidate.key,
                         );
                         let text = trim_proof_text(&raw_words);
-                        let start_ms = ac.instant.timestamp_millis();
+                        let start_ms = ac.instant.as_millisecond();
                         let fresh = input.now_ms - start_ms < 1_800_000;
                         (
                             serde_json::json!({
@@ -576,14 +573,14 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                             Some("pending") | Some("analyzing") => (
                                 serde_json::json!({
                                     "state": "transcribing",
-                                    "start_at": newest.instant.to_rfc3339(),
+                                    "start_at": solstone_core_time::utc_rfc3339(newest.instant),
                                 }),
                                 Value::Bool(false),
                             ),
                             Some("failed") | Some("failed_final") => (
                                 serde_json::json!({
                                     "state": "failed",
-                                    "start_at": newest.instant.to_rfc3339(),
+                                    "start_at": solstone_core_time::utc_rfc3339(newest.instant),
                                     "href": "/app/health/",
                                 }),
                                 Value::Bool(false),
@@ -591,7 +588,7 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
                             Some("empty") => (
                                 serde_json::json!({
                                     "state": "nothing_heard",
-                                    "start_at": newest.instant.to_rfc3339(),
+                                    "start_at": solstone_core_time::utc_rfc3339(newest.instant),
                                 }),
                                 Value::Bool(false),
                             ),
@@ -864,7 +861,7 @@ pub fn read_first_minutes_with(
 
     let mut input = FirstMinutesInput {
         now_ms: context.now_ms(),
-        owner_zone: context.zone(),
+        owner_zone: context.zone().clone(),
         capture,
         reported_platforms,
         ledger_platforms,
@@ -906,7 +903,6 @@ pub fn read_first_minutes_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono_tz::Tz;
     use serde_json::json;
     use solstone_core_system_health::DataStateMap;
 
@@ -1019,8 +1015,8 @@ mod tests {
         .unwrap();
         let open = HomeContext::with_zone(
             journal,
-            chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap(),
-            Tz::UTC,
+            jiff::Timestamp::from_millisecond(completed_at + 86_400_000).unwrap(),
+            TimeZone::UTC,
         );
         let out = read_first_minutes_with(&open, false, fixed_setup_progress);
         assert_eq!(out["window_open"], true);
@@ -1036,8 +1032,8 @@ mod tests {
 
         let closed = HomeContext::with_zone(
             journal,
-            chrono::DateTime::from_timestamp_millis(completed_at + 604_800_000).unwrap(),
-            Tz::UTC,
+            jiff::Timestamp::from_millisecond(completed_at + 604_800_000).unwrap(),
+            TimeZone::UTC,
         );
         assert_eq!(
             read_first_minutes_with(&closed, true, fixed_setup_progress),
@@ -1049,7 +1045,7 @@ mod tests {
     fn devices_unknown_when_registry_unknown() {
         let input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "registry": "registry_unknown",
                 "clients": [],
@@ -1119,12 +1115,12 @@ mod tests {
         });
 
         // 2026-09-29T12:10:00Z in ms is 1790683800000
-        let now_dt = chrono::DateTime::parse_from_rfc3339("2026-09-29T12:10:00Z").unwrap();
-        let now_ms = now_dt.timestamp_millis();
+        let now_dt: Timestamp = "2026-09-29T12:10:00Z".parse().unwrap();
+        let now_ms = now_dt.as_millisecond();
 
         let input = FirstMinutesInput {
             now_ms,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture,
             reported_platforms: Some(reported),
             ledger_platforms: ledger,
@@ -1203,7 +1199,7 @@ mod tests {
 
         let mut input = FirstMinutesInput {
             now_ms: 1_790_683_800_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete", "clients": [], "unassessed": []}),
             reported_platforms: Some(BTreeMap::new()),
             ledger_platforms: BTreeMap::new(),
@@ -1255,7 +1251,7 @@ mod tests {
         // 1. ready
         let mut input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_unknown"}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -1385,7 +1381,7 @@ mod tests {
         let now_closed_exact = completed_at + 604_800_000;
         let ctx_closed_exact = HomeContext::new(
             journal,
-            chrono::DateTime::from_timestamp_millis(now_closed_exact).unwrap(),
+            jiff::Timestamp::from_millisecond(now_closed_exact).unwrap(),
         );
         assert_eq!(
             read_first_minutes_with(&ctx_closed_exact, false, no_setup_progress),
@@ -1395,7 +1391,7 @@ mod tests {
         let now_closed_more = completed_at + 700_000_000;
         let ctx_closed_more = HomeContext::new(
             journal,
-            chrono::DateTime::from_timestamp_millis(now_closed_more).unwrap(),
+            jiff::Timestamp::from_millisecond(now_closed_more).unwrap(),
         );
         assert_eq!(
             read_first_minutes_with(&ctx_closed_more, false, no_setup_progress),
@@ -1413,7 +1409,7 @@ mod tests {
         .unwrap();
         let ctx_missing = HomeContext::new(
             journal_missing,
-            chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap(),
+            jiff::Timestamp::from_millisecond(completed_at + 86_400_000).unwrap(),
         );
         assert_eq!(
             read_first_minutes_with(&ctx_missing, false, no_setup_progress),
@@ -1432,7 +1428,7 @@ mod tests {
         .unwrap();
         let ctx_nonnum = HomeContext::new(
             journal_nonnum,
-            chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap(),
+            jiff::Timestamp::from_millisecond(completed_at + 86_400_000).unwrap(),
         );
         assert_eq!(
             read_first_minutes_with(&ctx_nonnum, false, no_setup_progress),
@@ -1443,7 +1439,7 @@ mod tests {
         let now_open_ms = completed_at + 86_400_000;
         let ctx_open = HomeContext::new(
             journal,
-            chrono::DateTime::from_timestamp_millis(now_open_ms).unwrap(),
+            jiff::Timestamp::from_millisecond(now_open_ms).unwrap(),
         );
         let out_open = read_first_minutes_with(&ctx_open, false, no_setup_progress);
         assert_eq!(out_open["window_open"], true);
@@ -1452,7 +1448,7 @@ mod tests {
             out_open["first_segment"]["href"],
             "/app/transcripts/20261010?stream=phone#120000_300"
         );
-        if ctx_open.zone() == Tz::UTC {
+        if ctx_open.zone().iana_name() == Some("UTC") {
             assert_eq!(
                 out_open["first_segment"]["start_at"],
                 "2026-10-10T12:00:00+00:00"
@@ -1464,7 +1460,7 @@ mod tests {
     fn unassessed_activity_unavailable_and_registry_complete() {
         let input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "status": "unknown",
                 "registry": "registry_complete",
@@ -1501,7 +1497,7 @@ mod tests {
         reported.insert("c_ios".into(), Some("iOS".into()));
         let input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "registry": "registry_complete",
                 "clients": [{
@@ -1532,7 +1528,7 @@ mod tests {
         ledger.insert("c_ledger".into(), "ios".into());
         let input_ledger = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "registry": "registry_complete",
                 "clients": [{
@@ -1563,7 +1559,7 @@ mod tests {
         ledger_desktop.insert("c_mac".into(), "macos".into());
         let input_desktop = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "registry": "registry_complete",
                 "clients": [
@@ -1622,7 +1618,7 @@ mod tests {
 
         let input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete"}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -1659,7 +1655,7 @@ mod tests {
         // earliest_progress: None with fully sensed segment -> returns segment, thinking: "none"
         let input_no_progress = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete"}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -1692,7 +1688,7 @@ mod tests {
         };
         let input_not_sensed = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete"}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -1714,7 +1710,7 @@ mod tests {
         // brain unhealthy -> state: other, step: none, checks.thinking: true
         let mut input = FirstMinutesInput {
             now_ms: 1_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete"}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -1771,7 +1767,7 @@ mod tests {
 
         let base_input = || FirstMinutesInput {
             now_ms: 1_791_639_600_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({
                 "registry": "registry_complete",
                 "clients": [{"cid": "c1", "name": "phone"}],
@@ -1943,9 +1939,10 @@ mod tests {
 
         // 9. fresh boundary
         let start_ms =
-            chrono::DateTime::parse_from_rfc3339(out["proof"]["start_at"].as_str().unwrap())
+            solstone_core_time::parse_rfc3339(out["proof"]["start_at"].as_str().unwrap())
                 .unwrap()
-                .timestamp_millis();
+                .timestamp()
+                .as_millisecond();
         let mut input = base_input();
         input.segment_words = Box::new(|_| Some("words".into()));
 
@@ -1968,11 +1965,9 @@ mod tests {
         use std::rc::Rc;
 
         let mut segments = Vec::new();
-        let start_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let start_date = jiff::civil::date(2026, 1, 1);
         for i in 0..301 {
-            let day = (start_date + chrono::TimeDelta::days(i))
-                .format("%Y%m%d")
-                .to_string();
+            let day = solstone_core_time::day_key(start_date + jiff::Span::new().days(i));
             segments.push(SegmentCandidate {
                 day,
                 key: "120000_300".into(),
@@ -1992,7 +1987,7 @@ mod tests {
 
         let mut input = FirstMinutesInput {
             now_ms: 2_000_000_000_000,
-            owner_zone: Tz::UTC,
+            owner_zone: TimeZone::UTC,
             capture: json!({"registry": "registry_complete", "clients": [{"cid": "c1"}], "unassessed": []}),
             reported_platforms: None,
             ledger_platforms: BTreeMap::new(),
@@ -2289,8 +2284,8 @@ mod tests {
         let now_ms = completed_at + 86_400_000;
         let ctx = HomeContext::with_zone(
             journal,
-            chrono::DateTime::from_timestamp_millis(now_ms).unwrap(),
-            Tz::UTC,
+            jiff::Timestamp::from_millisecond(now_ms).unwrap(),
+            TimeZone::UTC,
         );
         let out = read_first_minutes_with(&ctx, false, no_setup_progress);
 

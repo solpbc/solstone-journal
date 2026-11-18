@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use axum::{body::Bytes, response::Response};
-use chrono::{Days, Local, Utc};
+use jiff::{Span, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
@@ -74,10 +74,15 @@ fn log_retention_config(config: &Map<String, Value>) -> Result<LogRetentionConfi
 }
 
 fn cutoff_day(days: i64) -> Option<String> {
-    Local::now()
-        .date_naive()
-        .checked_sub_days(Days::new(days.try_into().ok()?))
-        .map(|day| day.format("%Y%m%d").to_string())
+    if days < 0 {
+        return None;
+    }
+    let days = Span::new().try_days(days).ok()?;
+    ZonedDateTime::now()
+        .date()
+        .checked_sub(days)
+        .ok()
+        .map(solstone_core_time::day_key)
 }
 
 fn count(value: Option<&Value>) -> i64 {
@@ -597,12 +602,12 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
             json!({"marked":[],"standing_total":read_policy_marks(&before,stream).len(),"held":[],"no_media":[],"not_eligible":[],"unreadable_days":[]}),
         );
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let policy = serde_json::to_string(&policy).expect("policy JSON");
     match retention_executor::mark(
         journal_root.clone(),
-        Local::now().format("%Y-%m-%d").to_string(),
-        now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        ZonedDateTime::now().strftime("%Y-%m-%d").to_string(),
+        solstone_core_time::utc_z(now, solstone_core_time::Precision::Secs),
         policy,
     )
     .await
@@ -661,7 +666,7 @@ pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
     }
     match retention_executor::prune_logs(
         journal_root.clone(),
-        Local::now().format("%Y-%m-%d").to_string(),
+        ZonedDateTime::now().strftime("%Y-%m-%d").to_string(),
         effective.to_string(),
         dry_run_truthy,
     )

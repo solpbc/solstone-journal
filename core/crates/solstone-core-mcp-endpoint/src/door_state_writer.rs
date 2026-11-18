@@ -80,7 +80,7 @@ impl DoorStateWriter {
         heartbeat: Duration,
     ) {
         let mut key = state.clone();
-        key.observed_at = chrono::DateTime::UNIX_EPOCH;
+        key.observed_at = jiff::Timestamp::UNIX_EPOCH;
         Self::report(
             self.lan_disabled
                 .lock()
@@ -96,7 +96,7 @@ impl DoorStateWriter {
     }
     pub(crate) fn publish_byo_disabled(&self, state: &crate::byo_door::ByoDoorState) {
         let mut key = state.clone();
-        key.observed_at = chrono::DateTime::UNIX_EPOCH;
+        key.observed_at = jiff::Timestamp::UNIX_EPOCH;
         Self::report(
             self.byo_disabled
                 .lock()
@@ -263,7 +263,7 @@ mod tests {
         let writer = DoorStateWriter::new(Arc::new(JournalRoot::open(temporary.path()).unwrap()));
         let disabled = crate::lan_door::LanDoorState {
             listening: false,
-            observed_at: chrono::Utc::now(),
+            observed_at: jiff::Timestamp::now(),
             reason: Some("disabled".to_owned()),
             fingerprint: None,
             addresses: None,
@@ -272,7 +272,7 @@ mod tests {
         writer.publish_lan_disabled(&disabled, Duration::from_secs(10));
         let first = std::fs::read(&path).unwrap();
         let mut next = disabled.clone();
-        next.observed_at += chrono::Duration::milliseconds(1);
+        next.observed_at += jiff::SignedDuration::from_millis(1);
         writer.publish_lan_disabled(&next, Duration::from_secs(10));
         assert_eq!(std::fs::read(&path).unwrap(), first);
         for reason in ["config_invalid", "not_running"] {

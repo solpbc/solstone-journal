@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{
     Destination, HostedBinding, backup_paused_at, confirm_recovery_key,
@@ -434,7 +433,12 @@ impl Clock for ProductionClock {
     }
 
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        jiff::tz::Offset::UTC
+            .to_datetime(jiff::Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 
@@ -1457,9 +1461,7 @@ fn offload_restore(args: &[String], journal: &Path, services: &BackupServices<'_
 }
 
 fn valid_day(day: &str) -> bool {
-    day.len() == 8
-        && day.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+    solstone_core_time::parse_day(day).is_some()
 }
 
 fn offload_restore_result(result: OffloadRestoreResult, json_output: bool) -> CliRun {

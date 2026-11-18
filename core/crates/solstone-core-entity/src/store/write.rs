@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::AtomicWriteError;
@@ -33,6 +33,7 @@ use solstone_core_journal_io::read_json;
 use solstone_core_journal_io::remove_dir_all;
 use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::write_text;
+use solstone_core_time::{Precision, utc_z};
 
 use crate::{EntityTrustLockError, ambiguity_id, hold_entity_trust_lock};
 
@@ -1714,24 +1715,23 @@ pub(crate) fn write_history_event_json_for_test(
 }
 
 fn history_now_iso() -> String {
-    format_history_ts(Utc::now())
+    format_history_ts(Timestamp::now())
 }
 
-fn format_history_ts(now: DateTime<Utc>) -> String {
-    let micros = now.timestamp_subsec_micros();
-    if micros == 0 {
-        now.to_rfc3339_opts(SecondsFormat::Secs, true)
+fn format_history_ts(now: Timestamp) -> String {
+    if now.subsec_microsecond() == 0 {
+        utc_z(now, Precision::Secs)
     } else {
-        format!("{}.{micros:06}Z", now.format("%Y-%m-%dT%H:%M:%S"))
+        utc_z(now, Precision::Micros)
     }
 }
 
 pub(crate) fn ambiguity_now_iso() -> String {
-    format_ambiguity_ts(Utc::now())
+    format_ambiguity_ts(Timestamp::now())
 }
 
-fn format_ambiguity_ts(now: DateTime<Utc>) -> String {
-    now.to_rfc3339_opts(SecondsFormat::Secs, true)
+fn format_ambiguity_ts(now: Timestamp) -> String {
+    utc_z(now, Precision::Secs)
 }
 
 fn next_version_id() -> String {
@@ -1881,14 +1881,14 @@ fn write_ascii_escape<W: ?Sized + io::Write>(writer: &mut W, character: char) ->
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeZone, Timelike, Utc};
+    use jiff::Timestamp;
 
     use super::{format_ambiguity_ts, format_history_ts};
 
     #[test]
     fn timestamp_formatters_match_the_entity_store_oracle() {
-        let zero = Utc.with_ymd_and_hms(2026, 8, 5, 0, 32, 2).unwrap();
-        let fractional = zero.with_nanosecond(582_506_000).unwrap();
+        let zero = "2026-08-05T00:32:02Z".parse::<Timestamp>().unwrap();
+        let fractional = "2026-08-05T00:32:02.582506Z".parse::<Timestamp>().unwrap();
 
         assert_eq!(format_history_ts(zero), "2026-08-05T00:32:02Z");
         assert_eq!(format_history_ts(fractional), "2026-08-05T00:32:02.582506Z");

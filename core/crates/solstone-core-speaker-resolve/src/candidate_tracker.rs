@@ -8,12 +8,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, SegmentLayout, atomic_replace, hold_lock,
     lock_is_held,
 };
+use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
 
 use crate::segment_catalog::catalog_day;
@@ -755,7 +756,7 @@ impl CandidateTracker {
             "survivor_id": survivor.cand_id,
             "absorbed_id": absorbed_id,
             "score": score,
-            "merged_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            "merged_at": utc_z(Timestamp::now(), Precision::Secs),
             "absorbed_n_intervals": absorbed.n_intervals,
             "survivor_n_intervals_after": survivor.n_intervals,
         });
@@ -1226,14 +1227,14 @@ impl Position {
 pub struct SourceRetryEntry {
     pub position: Position,
     pub tries: u32,
-    pub tried_at: chrono::DateTime<Utc>,
+    pub tried_at: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DayRetryEntry {
     pub day: String,
     pub tries: u32,
-    pub tried_at: chrono::DateTime<Utc>,
+    pub tried_at: Timestamp,
     pub finished_through: Option<Position>,
 }
 
@@ -1247,14 +1248,14 @@ pub enum RetryEntry {
 pub struct SourceAbandonedEntry {
     pub position: Position,
     pub tries: u32,
-    pub tried_at: chrono::DateTime<Utc>,
+    pub tried_at: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DayAbandonedEntry {
     pub day: String,
     pub tries: u32,
-    pub tried_at: chrono::DateTime<Utc>,
+    pub tried_at: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1302,9 +1303,9 @@ impl BackfillState {
                 return Err(());
             }
             let tried_at_str = item_obj.get("tried_at").and_then(Value::as_str).ok_or(())?;
-            let tried_at = chrono::DateTime::parse_from_rfc3339(tried_at_str)
+            let tried_at = solstone_core_time::parse_rfc3339(tried_at_str)
                 .map_err(|_| ())?
-                .with_timezone(&Utc);
+                .timestamp();
 
             match kind {
                 "source" => {
@@ -1421,9 +1422,9 @@ impl BackfillState {
                 return Err(());
             }
             let tried_at_str = item_obj.get("tried_at").and_then(Value::as_str).ok_or(())?;
-            let tried_at = chrono::DateTime::parse_from_rfc3339(tried_at_str)
+            let tried_at = solstone_core_time::parse_rfc3339(tried_at_str)
                 .map_err(|_| ())?
-                .with_timezone(&Utc);
+                .timestamp();
 
             match kind {
                 "source" => {
@@ -1541,7 +1542,7 @@ impl BackfillState {
                     m.insert("tries".to_string(), json!(s.tries));
                     m.insert(
                         "tried_at".to_string(),
-                        json!(s.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                        json!(utc_z(s.tried_at, Precision::Secs)),
                     );
                     Value::Object(m)
                 }
@@ -1552,7 +1553,7 @@ impl BackfillState {
                     m.insert("tries".to_string(), json!(d.tries));
                     m.insert(
                         "tried_at".to_string(),
-                        json!(d.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                        json!(utc_z(d.tried_at, Precision::Secs)),
                     );
                     m.insert(
                         "finished_through".to_string(),
@@ -1581,7 +1582,7 @@ impl BackfillState {
                     m.insert("tries".to_string(), json!(s.tries));
                     m.insert(
                         "tried_at".to_string(),
-                        json!(s.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                        json!(utc_z(s.tried_at, Precision::Secs)),
                     );
                     Value::Object(m)
                 }
@@ -1592,7 +1593,7 @@ impl BackfillState {
                     m.insert("tries".to_string(), json!(d.tries));
                     m.insert(
                         "tried_at".to_string(),
-                        json!(d.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                        json!(utc_z(d.tried_at, Precision::Secs)),
                     );
                     Value::Object(m)
                 }
@@ -1758,19 +1759,19 @@ pub fn backfill_speaker_pool_checked(
     journal: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> SpeakerPoolCatchUp {
-    let now = Utc::now();
-    let deadline = now + chrono::Duration::minutes(8);
-    backfill_speaker_pool_with_clock_and_deadline(journal, Utc::now, deadline, checkpoint)
+    let now = Timestamp::now();
+    let deadline = now + SignedDuration::from_mins(8);
+    backfill_speaker_pool_with_clock_and_deadline(journal, Timestamp::now, deadline, checkpoint)
 }
 
 pub(crate) fn backfill_speaker_pool_with_clock_and_deadline<F>(
     journal: &Path,
     mut clock: F,
-    deadline: chrono::DateTime<Utc>,
+    deadline: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> SpeakerPoolCatchUp
 where
-    F: FnMut() -> chrono::DateTime<Utc>,
+    F: FnMut() -> Timestamp,
 {
     let state_path = journal.join("awareness/speaker_candidates_backfill.json");
 
@@ -2053,7 +2054,7 @@ where
     }
 
     let run_now = clock();
-    let settle_cutoff = run_now - chrono::Duration::minutes(10);
+    let settle_cutoff = run_now - SignedDuration::from_mins(10);
 
     let mut fed_count = 0;
     let mut sources_read = 0;
@@ -2146,7 +2147,7 @@ where
         .iter()
         .enumerate()
         .filter_map(|(idx, r)| match r {
-            RetryEntry::Day(d) if run_now - d.tried_at >= chrono::Duration::minutes(10) => {
+            RetryEntry::Day(d) if run_now - d.tried_at >= SignedDuration::from_mins(10) => {
                 Some(idx)
             }
             _ => None,
@@ -2319,11 +2320,13 @@ where
 
                     let mtime_jsonl = m1_jsonl
                         .modified()
-                        .map(chrono::DateTime::<Utc>::from)
+                        .ok()
+                        .and_then(|time| Timestamp::try_from(time).ok())
                         .unwrap_or(run_now);
                     let mtime_npz = m1_npz
                         .modified()
-                        .map(chrono::DateTime::<Utc>::from)
+                        .ok()
+                        .and_then(|time| Timestamp::try_from(time).ok())
                         .unwrap_or(run_now);
 
                     if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
@@ -2367,12 +2370,16 @@ where
                     });
 
                     let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
-                    let m2_mtime_j = m2_jsonl
-                        .ok()
-                        .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
-                    let m2_mtime_n = m2_npz
-                        .ok()
-                        .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+                    let m2_mtime_j = m2_jsonl.ok().and_then(|m| {
+                        m.modified()
+                            .ok()
+                            .and_then(|time| Timestamp::try_from(time).ok())
+                    });
+                    let m2_mtime_n = m2_npz.ok().and_then(|m| {
+                        m.modified()
+                            .ok()
+                            .and_then(|time| Timestamp::try_from(time).ok())
+                    });
 
                     if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
                         state.retry.push(RetryEntry::Source(SourceRetryEntry {
@@ -2542,7 +2549,7 @@ where
         .retry
         .iter()
         .filter_map(|r| match r {
-            RetryEntry::Source(s) if run_now - s.tried_at >= chrono::Duration::minutes(10) => {
+            RetryEntry::Source(s) if run_now - s.tried_at >= SignedDuration::from_mins(10) => {
                 Some(s.clone())
             }
             _ => None,
@@ -2647,11 +2654,13 @@ where
 
         let mtime_jsonl = m1_jsonl
             .modified()
-            .map(chrono::DateTime::<Utc>::from)
+            .ok()
+            .and_then(|time| Timestamp::try_from(time).ok())
             .unwrap_or(run_now);
         let mtime_npz = m1_npz
             .modified()
-            .map(chrono::DateTime::<Utc>::from)
+            .ok()
+            .and_then(|time| Timestamp::try_from(time).ok())
             .unwrap_or(run_now);
 
         if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
@@ -2703,12 +2712,16 @@ where
         });
 
         let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
-        let m2_mtime_j = m2_jsonl
-            .ok()
-            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
-        let m2_mtime_n = m2_npz
-            .ok()
-            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+        let m2_mtime_j = m2_jsonl.ok().and_then(|m| {
+            m.modified()
+                .ok()
+                .and_then(|time| Timestamp::try_from(time).ok())
+        });
+        let m2_mtime_n = m2_npz.ok().and_then(|m| {
+            m.modified()
+                .ok()
+                .and_then(|time| Timestamp::try_from(time).ok())
+        });
 
         if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
             let cur_entry = state.retry.iter_mut().find_map(|r| match r {
@@ -2942,11 +2955,13 @@ where
 
         let mtime_jsonl = m1_jsonl
             .modified()
-            .map(chrono::DateTime::<Utc>::from)
+            .ok()
+            .and_then(|time| Timestamp::try_from(time).ok())
             .unwrap_or(run_now);
         let mtime_npz = m1_npz
             .modified()
-            .map(chrono::DateTime::<Utc>::from)
+            .ok()
+            .and_then(|time| Timestamp::try_from(time).ok())
             .unwrap_or(run_now);
 
         if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
@@ -2984,12 +2999,16 @@ where
         });
 
         let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
-        let m2_mtime_j = m2_jsonl
-            .ok()
-            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
-        let m2_mtime_n = m2_npz
-            .ok()
-            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+        let m2_mtime_j = m2_jsonl.ok().and_then(|m| {
+            m.modified()
+                .ok()
+                .and_then(|time| Timestamp::try_from(time).ok())
+        });
+        let m2_mtime_n = m2_npz.ok().and_then(|m| {
+            m.modified()
+                .ok()
+                .and_then(|time| Timestamp::try_from(time).ok())
+        });
 
         if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
             state.retry.push(RetryEntry::Source(SourceRetryEntry {
@@ -4419,12 +4438,12 @@ mod tests {
                         source: "audio".to_owned(),
                     },
                     tries: 2,
-                    tried_at: Utc::now(),
+                    tried_at: Timestamp::now(),
                 }),
                 RetryEntry::Day(DayRetryEntry {
                     day: "20260103".to_owned(),
                     tries: 1,
-                    tried_at: Utc::now(),
+                    tried_at: Timestamp::now(),
                     finished_through: Some(Position {
                         day: "20260103".to_owned(),
                         segment: "100000_60".to_owned(),
@@ -4444,12 +4463,12 @@ mod tests {
                         source: "aux_audio".to_owned(),
                     },
                     tries: 3,
-                    tried_at: Utc::now(),
+                    tried_at: Timestamp::now(),
                 }),
                 AbandonedEntry::Day(DayAbandonedEntry {
                     day: "20260105".to_owned(),
                     tries: 3,
-                    tried_at: Utc::now(),
+                    tried_at: Timestamp::now(),
                 }),
             ],
             complete: false,
@@ -4547,7 +4566,7 @@ mod tests {
 
         let _guard = set_reverse_read_dir_hook(|entries| entries.sort());
 
-        let start = Utc::now();
+        let start = Timestamp::now();
         let mut clock_calls = 0;
         let res = backfill_speaker_pool_with_clock_and_deadline(
             &journal,
@@ -4556,10 +4575,10 @@ mod tests {
                 if clock_calls <= 2 {
                     start
                 } else {
-                    start + chrono::Duration::minutes(10)
+                    start + SignedDuration::from_mins(10)
                 }
             },
-            start + chrono::Duration::minutes(8),
+            start + SignedDuration::from_mins(8),
             &|| Ok(()),
         );
         let SpeakerPoolCatchUp::Done(report) = res else {
@@ -4637,7 +4656,7 @@ mod tests {
 
         // 4 stepped runs (1 source each)
         for _ in 1..=4 {
-            let start = Utc::now();
+            let start = Timestamp::now();
             let mut count = 0;
             let res = backfill_speaker_pool_with_clock_and_deadline(
                 &journal_step,
@@ -4646,10 +4665,10 @@ mod tests {
                     if count <= 2 {
                         start
                     } else {
-                        start + chrono::Duration::minutes(10)
+                        start + SignedDuration::from_mins(10)
                     }
                 },
-                start + chrono::Duration::minutes(8),
+                start + SignedDuration::from_mins(8),
                 &|| Ok(()),
             );
             let SpeakerPoolCatchUp::Done(report) = res else {
@@ -5214,7 +5233,7 @@ mod tests {
             Some(old_time),
         );
 
-        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let t0 = Timestamp::now() - SignedDuration::from_mins(15);
         let state = json!({
             "cursor": null,
             "retry": [
@@ -5222,7 +5241,7 @@ mod tests {
                     "kind": "day",
                     "day": "20260102",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    "tried_at": utc_z(t0, Precision::Secs),
                     "finished_through": null
                 }
             ],
@@ -5236,7 +5255,7 @@ mod tests {
         .unwrap();
 
         for i in 1..=3 {
-            let start = t0 + chrono::Duration::minutes(15 + i);
+            let start = t0 + SignedDuration::from_mins(15 + i);
             let mut count = 0;
             let res = backfill_speaker_pool_with_clock_and_deadline(
                 &journal,
@@ -5245,10 +5264,10 @@ mod tests {
                     if count <= 2 {
                         start
                     } else {
-                        start + chrono::Duration::minutes(10)
+                        start + SignedDuration::from_mins(10)
                     }
                 },
-                start + chrono::Duration::minutes(8),
+                start + SignedDuration::from_mins(8),
                 &|| Ok(()),
             );
             let SpeakerPoolCatchUp::Done(report) = res else {
@@ -5290,14 +5309,14 @@ mod tests {
         }
         // The walk handled the newest day; the oldest day failed to list once
         // and now lists. The middle day has never been walked.
-        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let t0 = Timestamp::now() - SignedDuration::from_mins(15);
         let state = json!({
             "cursor": {"day":"20260103","segment":"090000_60","layout":"named","stream":"mic","source":"audio"},
             "retry": [{
                 "kind": "day",
                 "day": "20260101",
                 "tries": 1,
-                "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                "tried_at": utc_z(t0, Precision::Secs),
                 "finished_through": null
             }],
             "abandoned": [],
@@ -5308,11 +5327,11 @@ mod tests {
             state.to_string().as_bytes(),
         )
         .unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let SpeakerPoolCatchUp::Done(report) = backfill_speaker_pool_with_clock_and_deadline(
             &journal,
             || now,
-            now + chrono::Duration::minutes(8),
+            now + SignedDuration::from_mins(8),
             &|| Ok(()),
         ) else {
             panic!("expected Done");
@@ -5367,7 +5386,7 @@ mod tests {
             256,
             Some(old_time),
         );
-        let t0 = Utc::now() - chrono::Duration::hours(2);
+        let t0 = Timestamp::now() - SignedDuration::from_hours(2);
         let state = json!({
             "cursor": null,
             "retry": [],
@@ -5375,7 +5394,7 @@ mod tests {
                 "kind": "day",
                 "day": "20260101",
                 "tries": 3,
-                "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                "tried_at": utc_z(t0, Precision::Secs)
             }],
             "complete": false
         });
@@ -5386,11 +5405,11 @@ mod tests {
         .unwrap();
         let _fault = set_walk_catalog_fault_hook(|day| day == "20260101");
         for _ in 0..2 {
-            let now = Utc::now();
+            let now = Timestamp::now();
             let res = backfill_speaker_pool_with_clock_and_deadline(
                 &journal,
                 || now,
-                now + chrono::Duration::minutes(8),
+                now + SignedDuration::from_mins(8),
                 &|| Ok(()),
             );
             let SpeakerPoolCatchUp::Done(report) = res else {
@@ -5440,11 +5459,11 @@ mod tests {
         );
         tracker.next_id = 2;
         tracker.write().unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let SpeakerPoolCatchUp::Done(report) = backfill_speaker_pool_with_clock_and_deadline(
             &journal,
             || now,
-            now + chrono::Duration::minutes(8),
+            now + SignedDuration::from_mins(8),
             &|| Ok(()),
         ) else {
             panic!("expected Done");
@@ -5495,7 +5514,7 @@ mod tests {
             Some(old_time),
         );
 
-        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let t0 = Timestamp::now() - SignedDuration::from_mins(15);
         let state = json!({
             "cursor": null,
             "retry": [
@@ -5503,7 +5522,7 @@ mod tests {
                     "kind": "day",
                     "day": "20260102",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    "tried_at": utc_z(t0, Precision::Secs),
                     "finished_through": null
                 }
             ],
@@ -5601,7 +5620,7 @@ mod tests {
         tracker.next_id = 2;
         tracker.write().unwrap();
 
-        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let t0 = Timestamp::now() - SignedDuration::from_mins(15);
         let state = json!({
             "cursor": null,
             "retry": [
@@ -5613,7 +5632,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 },
                 {
                     "kind": "source",
@@ -5623,7 +5642,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 },
                 {
                     "kind": "source",
@@ -5633,7 +5652,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 },
                 {
                     "kind": "source",
@@ -5643,7 +5662,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 }
             ],
             "abandoned": [],
@@ -5687,7 +5706,7 @@ mod tests {
             Some(old_time),
         );
 
-        let t0 = Utc::now();
+        let t0 = Timestamp::now();
         let state = json!({
             "cursor": null,
             "retry": [
@@ -5699,7 +5718,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 1,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 }
             ],
             "abandoned": [],
@@ -5713,8 +5732,8 @@ mod tests {
 
         let res = backfill_speaker_pool_with_clock_and_deadline(
             &journal,
-            || t0 + chrono::Duration::minutes(1),
-            t0 + chrono::Duration::minutes(9),
+            || t0 + SignedDuration::from_mins(1),
+            t0 + SignedDuration::from_mins(9),
             &|| Ok(()),
         );
         let SpeakerPoolCatchUp::Done(report) = res else {
@@ -5750,7 +5769,7 @@ mod tests {
         filetime::set_file_mtime(&corrupt_npz, filetime::FileTime::from_system_time(old_time))
             .unwrap();
 
-        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let t0 = Timestamp::now() - SignedDuration::from_mins(15);
         let state = json!({
             "cursor": null,
             "retry": [
@@ -5762,7 +5781,7 @@ mod tests {
                     "stream": "mic",
                     "source": "audio",
                     "tries": 2,
-                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                    "tried_at": utc_z(t0, Precision::Secs)
                 }
             ],
             "abandoned": [],

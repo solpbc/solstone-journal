@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use jiff::{Timestamp, ZonedDateTime, civil::Date};
 use serde_json::json;
 use solstone_core_backup::archive_activity::{
     ArchivePreparationCustody, OwnedArchivePreparationInput, OwnedPreparedArchiveHold,
@@ -38,17 +38,17 @@ use crate::{
 enum Request {
     Selected {
         selections: Vec<OffloadOfferSelection>,
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
     },
-    Planned(DateTime<FixedOffset>),
+    Planned(ZonedDateTime),
 }
 
 enum Inputs {
     Selected {
         ready: Box<OwnedOffloadInputs>,
-        today: NaiveDate,
-        now: DateTime<Utc>,
+        today: Date,
+        now: Timestamp,
     },
     Planned(Box<OwnedOffloadPlanInputs>),
 }
@@ -402,8 +402,8 @@ pub fn create_selected<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     selections: Vec<OffloadOfferSelection>,
-    today: NaiveDate,
-    now: DateTime<Utc>,
+    today: Date,
+    now: Timestamp,
     restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) {
     execute(
@@ -422,7 +422,7 @@ pub fn create_selected<'a>(
 pub fn create_planned<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
-    at: DateTime<FixedOffset>,
+    at: ZonedDateTime,
     restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) {
     execute(slot, begin, Request::Planned(at), restic.into());

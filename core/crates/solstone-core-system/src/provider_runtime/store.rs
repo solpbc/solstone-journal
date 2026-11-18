@@ -10,7 +10,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{RuntimeRetryRecord, RuntimeRetryTransaction, hold_runtime_operation};
 use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_text};
@@ -51,7 +50,7 @@ impl Default for SystemRuntimeClock {
 
 impl RuntimeClock for SystemRuntimeClock {
     fn now_utc_rfc3339(&self) -> String {
-        Utc::now().to_rfc3339()
+        solstone_core_time::utc_rfc3339(jiff::Timestamp::now())
     }
 
     fn monotonic_seconds(&self) -> f64 {

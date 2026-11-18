@@ -177,7 +177,7 @@ pub async fn run_maintenance_until_stopped(
 pub(crate) fn valid_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|byte| byte.is_ascii_digit())
-        && chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(day).is_some()
 }
 
 pub(crate) fn invalid_day() -> Response {
@@ -193,7 +193,7 @@ pub(crate) fn invalid_day() -> Response {
 pub(crate) fn valid_month(month: &str) -> bool {
     month.len() == 6
         && month.bytes().all(|byte| byte.is_ascii_digit())
-        && chrono::NaiveDate::parse_from_str(&format!("{month}01"), "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(&format!("{month}01")).is_some()
 }
 
 pub(crate) fn invalid_month(status: StatusCode) -> Response {
@@ -371,7 +371,7 @@ async fn day_view(
 }
 
 pub(crate) fn time_json(time: &LocalTime) -> Value {
-    json!({"utc": time.utc.to_rfc3339(), "clock": time.clock(), "day": time.day()})
+    json!({"utc": solstone_core_time::utc_rfc3339(time.utc), "clock": time.clock(), "day": time.day()})
 }
 
 pub(crate) fn round(value: f64) -> f64 {

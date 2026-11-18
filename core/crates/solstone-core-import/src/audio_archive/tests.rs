@@ -8,7 +8,7 @@ use std::fs;
 #[cfg(feature = "full-tests")]
 use std::time::Duration;
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 #[cfg(feature = "full-tests")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "full-tests")]
@@ -18,8 +18,13 @@ use tempfile::TempDir;
 
 use super::*;
 
-const NY: Tz = Tz::America__New_York;
-const UTC_ZONE: Tz = Tz::UTC;
+fn ny() -> TimeZone {
+    solstone_core_time::zone("America/New_York").unwrap()
+}
+
+fn denver() -> TimeZone {
+    solstone_core_time::zone("America/Denver").unwrap()
+}
 
 #[cfg(feature = "full-tests")]
 #[test]
@@ -116,7 +121,7 @@ fn retry_rechecks_another_runs_ownership_of_previously_rejected_member() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &Unreadable,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -238,7 +243,7 @@ fn restored_source_resume_fills_only_rejected_unpublished_parts() {
                 import_id: Some(&id),
                 members: vec![],
                 materializer: &sources,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: default_settings(),
                 source_timestamp: None,
             },
@@ -343,7 +348,7 @@ fn same_tile_multi_part_rejection_prunes_staged_bytes_and_skips_stale_callbacks(
                 import_id: None,
                 members: vec![a, b],
                 materializer: &materializer,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: default_settings(),
                 source_timestamp: None,
             },
@@ -412,7 +417,7 @@ fn rejected_probe_preserves_source_evidence_without_reserving_a_tile() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(std::slice::from_ref(&input), NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(std::slice::from_ref(&input), &ny(), default_settings()).unwrap();
     assert!(plan.tiles.is_empty());
     assert_eq!(plan.size.source_bytes, 123);
     assert_eq!(plan.members[0].source_start, input.start);
@@ -473,7 +478,7 @@ fn source_rejections_preserve_saved_long_parts_and_do_not_block_other_members() 
             import_id: None,
             members: members.clone(),
             materializer: &materializer,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -546,7 +551,7 @@ fn source_rejections_preserve_saved_long_parts_and_do_not_block_other_members() 
             import_id: Some(&result.import_id),
             members,
             materializer: &materializer,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -575,7 +580,7 @@ fn reused_timestamp_does_not_inherit_removed_run_claims_or_pending_coordinates()
                 import_id: None,
                 members,
                 materializer: &materializer,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: AudioArchiveSettings {
                     qualifier: qualifier.into(),
                     archive_identity: qualifier.into(),
@@ -595,7 +600,7 @@ fn reused_timestamp_does_not_inherit_removed_run_claims_or_pending_coordinates()
     let mut settings = default_settings();
     settings.qualifier = "released".into();
     let preview =
-        prepare_audio_archive_plan(journal, std::slice::from_ref(&a), NY, settings).unwrap();
+        prepare_audio_archive_plan(journal, std::slice::from_ref(&a), &ny(), settings).unwrap();
     assert_eq!(preview.members[0].disposition, MemberDisposition::Included);
     let released = run(vec![a], "released");
     assert_eq!(released.parts_saved, 1);
@@ -672,8 +677,7 @@ fn equal_bytes_at_two_times_in_one_tile_have_independent_raw_targets() {
     let mut second = first.clone();
     second.original_relative_name = "renamed.ogg".to_owned();
     second.start.instant = Some("2025-06-01T08:00:12.500-06:00".to_owned());
-    let plan =
-        plan_audio_archive(&[first, second], Tz::America__Denver, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[first, second], &denver(), default_settings()).unwrap();
     assert_eq!(plan.tiles.len(), 1);
     assert_eq!(plan.tiles[0].parts.len(), 2);
     assert_ne!(
@@ -699,8 +703,7 @@ fn held_member_reserves_no_interval_for_a_different_archive_stream() {
     let mut second = first.clone();
     second.sha256 = dummy_hash(93);
     second.original_relative_name = "other.ogg".to_owned();
-    let mut plan =
-        plan_audio_archive(&[first, second], Tz::America__Denver, default_settings()).unwrap();
+    let mut plan = plan_audio_archive(&[first, second], &denver(), default_settings()).unwrap();
     let held = std::collections::HashSet::from([plan.members[0].identity.clone()]);
     super::plan::apply_held_members(&mut plan, &held).unwrap();
     assert_eq!(
@@ -728,12 +731,8 @@ fn run_record_preserves_unsettled_evidence_and_source_population() {
         },
         run_note: Some("owner note".to_owned()),
     };
-    let plan = plan_audio_archive(
-        std::slice::from_ref(&input),
-        Tz::America__Denver,
-        default_settings(),
-    )
-    .unwrap();
+    let plan =
+        plan_audio_archive(std::slice::from_ref(&input), &denver(), default_settings()).unwrap();
     let record = super::record::plan_to_record(&plan);
     assert_eq!(record.members[0].source_start, input.start);
     assert_eq!(record.members[0].duration_ms, 7500);
@@ -777,7 +776,7 @@ fn storage_publish(
             import_id: id,
             members: members.to_vec(),
             materializer: bytes,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -884,7 +883,7 @@ fn pure_plan_bad_durations_and_unsettled_times() {
         },
     ];
 
-    let plan = plan_audio_archive(&inputs, NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&inputs, &ny(), default_settings()).unwrap();
     assert_eq!(plan.members.len(), 6);
     assert_eq!(plan.tiles.len(), 0);
     assert_eq!(plan.size.bytes, 0);
@@ -934,7 +933,7 @@ fn subsecond_and_short_durations() {
         run_note: None,
     }];
 
-    let plan = plan_audio_archive(&inputs, NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&inputs, &ny(), default_settings()).unwrap();
     assert_eq!(plan.tiles.len(), 1);
     assert_eq!(plan.tiles[0].parts.len(), 1);
     let p = &plan.tiles[0].parts[0];
@@ -985,7 +984,7 @@ fn worked_fixtures_hardcoded_numbers() {
         run_note: None,
     };
 
-    let plan = plan_audio_archive(&[short_member, long_member], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[short_member, long_member], &ny(), default_settings()).unwrap();
     assert_eq!(plan.tiles.len(), 3);
 
     // Tile 0: Short member
@@ -1033,8 +1032,12 @@ fn settled_fold_and_unsettled_folds() {
         run_note: None,
     };
 
-    let plan_ny =
-        plan_audio_archive(std::slice::from_ref(&fold_member), NY, default_settings()).unwrap();
+    let plan_ny = plan_audio_archive(
+        std::slice::from_ref(&fold_member),
+        &ny(),
+        default_settings(),
+    )
+    .unwrap();
     assert_eq!(plan_ny.members[0].disposition, MemberDisposition::Included);
     assert_eq!(
         plan_ny.members[0].identity.occurrence,
@@ -1050,7 +1053,7 @@ fn settled_fold_and_unsettled_folds() {
     // Same local start, owner UTC -> UnsettledTime
     let plan_utc = plan_audio_archive(
         std::slice::from_ref(&fold_member),
-        UTC_ZONE,
+        &TimeZone::UTC,
         default_settings(),
     )
     .unwrap();
@@ -1073,7 +1076,7 @@ fn settled_fold_and_unsettled_folds() {
         },
         run_note: None,
     };
-    let plan_long_fold = plan_audio_archive(&[long_fold], NY, default_settings()).unwrap();
+    let plan_long_fold = plan_audio_archive(&[long_fold], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_long_fold.members[0].disposition,
         MemberDisposition::LeftOut(LeftOutReason::UnsettledTime)
@@ -1093,7 +1096,7 @@ fn settled_fold_and_unsettled_folds() {
         },
         run_note: None,
     };
-    let plan_gap = plan_audio_archive(&[gap_member], NY, default_settings()).unwrap();
+    let plan_gap = plan_audio_archive(&[gap_member], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_gap.members[0].disposition,
         MemberDisposition::LeftOut(LeftOutReason::NonexistentLocalTime)
@@ -1116,7 +1119,7 @@ fn agreeing_and_conflicting_evidence() {
         },
         run_note: None,
     };
-    let plan_agree = plan_audio_archive(&[agreeing], NY, default_settings()).unwrap();
+    let plan_agree = plan_audio_archive(&[agreeing], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_agree.members[0].disposition,
         MemberDisposition::Included
@@ -1136,7 +1139,7 @@ fn agreeing_and_conflicting_evidence() {
         },
         run_note: None,
     };
-    let plan_conflict = plan_audio_archive(&[conflicting], NY, default_settings()).unwrap();
+    let plan_conflict = plan_audio_archive(&[conflicting], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_conflict.members[0].disposition,
         MemberDisposition::LeftOut(LeftOutReason::ConflictingEvidence)
@@ -1173,7 +1176,7 @@ fn shared_tile_and_same_start_conflict() {
         run_note: None,
     };
 
-    let plan_shared = plan_audio_archive(&[m1, m2], NY, default_settings()).unwrap();
+    let plan_shared = plan_audio_archive(&[m1, m2], &ny(), default_settings()).unwrap();
     assert_eq!(plan_shared.tiles.len(), 1);
     assert_eq!(plan_shared.tiles[0].parts.len(), 2);
     assert_eq!(plan_shared.tiles[0].parts[0].offset_ms, 0);
@@ -1207,7 +1210,7 @@ fn shared_tile_and_same_start_conflict() {
         run_note: None,
     };
 
-    let plan_conflict = plan_audio_archive(&[c1, c2], NY, default_settings()).unwrap();
+    let plan_conflict = plan_audio_archive(&[c1, c2], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_conflict.members[0].disposition,
         MemberDisposition::Included
@@ -1252,7 +1255,7 @@ fn deduplication_and_naming_rules() {
         run_note: None,
     };
 
-    let plan = plan_audio_archive(&[d1, d2], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[d1, d2], &ny(), default_settings()).unwrap();
     assert_eq!(plan.members.len(), 2);
     assert_eq!(
         plan.members[1].disposition,
@@ -1288,7 +1291,7 @@ fn deduplication_and_naming_rules() {
         },
         run_note: None,
     };
-    let plan_distinct = plan_audio_archive(&[t1, t2], NY, default_settings()).unwrap();
+    let plan_distinct = plan_audio_archive(&[t1, t2], &ny(), default_settings()).unwrap();
     assert_eq!(plan_distinct.members.len(), 2);
     assert_eq!(plan_distinct.tiles.len(), 2);
 }
@@ -1314,7 +1317,7 @@ fn claim_index_semantics_and_missing_run() {
             },
             run_note: None,
         }],
-        NY,
+        &ny(),
         default_settings(),
     )
     .unwrap();
@@ -1410,7 +1413,7 @@ fn publication_and_fault_seams() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1436,7 +1439,7 @@ fn publication_and_fault_seams() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1515,7 +1518,7 @@ fn negative_offset_instant_dedupes_with_z_and_auckland_original_time() {
         run_note: None,
     };
 
-    let plan_dedupe = plan_audio_archive(&[m1, m2], NY, default_settings()).unwrap();
+    let plan_dedupe = plan_audio_archive(&[m1, m2], &ny(), default_settings()).unwrap();
     assert_eq!(plan_dedupe.members.len(), 2);
     assert_eq!(
         plan_dedupe.members[1].disposition,
@@ -1531,7 +1534,7 @@ fn negative_offset_instant_dedupes_with_z_and_auckland_original_time() {
         MemberDisposition::Included
     );
 
-    let plan_auckland = plan_audio_archive(&[short_auckland], NY, default_settings()).unwrap();
+    let plan_auckland = plan_audio_archive(&[short_auckland], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan_auckland.members[0].identity.occurrence,
         "utc|1768424400500"
@@ -1548,7 +1551,7 @@ fn qualifier_audio_refused() {
         qualifier: "audio".to_owned(),
         archive_identity: "test_archive".to_owned(),
     };
-    let res = plan_audio_archive(&[], NY, settings);
+    let res = plan_audio_archive(&[], &ny(), settings);
     assert!(matches!(res, Err(AudioArchiveError::InvalidStreamName(_))));
 }
 
@@ -1594,7 +1597,7 @@ fn distinct_stored_names_and_long_member_second_part() {
         run_note: None,
     };
 
-    let plan = plan_audio_archive(&[m1, m2, long_member], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m1, m2, long_member], &ny(), default_settings()).unwrap();
     let name1 = &plan.tiles[0].parts[0].stored_name;
     let name2 = &plan.tiles[1].parts[0].stored_name;
     assert_ne!(name1, name2);
@@ -1631,7 +1634,7 @@ fn malformed_manifest_ignored_by_claims() {
             },
             run_note: None,
         }],
-        NY,
+        &ny(),
         default_settings(),
     )
     .unwrap();
@@ -1689,7 +1692,7 @@ fn each_archive_fault_and_resume_publishes_raw() {
                 import_id: None,
                 members: vec![member.clone()],
                 materializer: &bytes_map,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: default_settings(),
                 source_timestamp: None,
             },
@@ -1710,7 +1713,7 @@ fn each_archive_fault_and_resume_publishes_raw() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1743,7 +1746,7 @@ fn each_archive_fault_and_resume_publishes_raw() {
             import_id: Some(&run_id),
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1811,7 +1814,7 @@ fn between_multi_tile_parts_fault_semantics() {
             import_id: None,
             members: vec![long_member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1911,7 +1914,7 @@ fn resume_settings_mismatch_leaves_record_unchanged() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -1944,7 +1947,7 @@ fn resume_settings_mismatch_leaves_record_unchanged() {
             import_id: Some(&run_id),
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: mismatched_settings,
             source_timestamp: None,
         },
@@ -1989,7 +1992,7 @@ fn delete_chronicle_raw_and_resume_does_not_recreate() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2015,7 +2018,7 @@ fn delete_chronicle_raw_and_resume_does_not_recreate() {
             import_id: Some(&clean.import_id),
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2085,7 +2088,7 @@ fn foreign_file_in_segment_refused_no_key_advance() {
             import_id: None,
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2259,7 +2262,7 @@ fn emit_seam_invoked_once_per_finished_tile() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2288,7 +2291,7 @@ fn emit_seam_invoked_once_per_finished_tile() {
             import_id: None,
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2359,7 +2362,7 @@ fn before_tile_publish_resume_publishes_one_complete_tile() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2413,7 +2416,7 @@ fn before_tile_publish_resume_publishes_one_complete_tile() {
             import_id: Some(&import_id),
             members: vec![member],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2478,7 +2481,7 @@ fn after_publish_before_saved_mark_delete_raw_resume() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2528,7 +2531,7 @@ fn after_publish_before_saved_mark_delete_raw_resume() {
             import_id: Some(&import_id),
             members: vec![member],
             materializer: &bytes_map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2553,7 +2556,7 @@ fn corrupt_or_missing_run_record_is_not_treated_as_an_absent_run() {
     let temp = TempDir::new().unwrap();
     let journal = temp.path();
     let (member, _) = storage_member(70, "2026-01-14T21:00:00Z", 5000);
-    let plan = plan_audio_archive(&[member], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[member], &ny(), default_settings()).unwrap();
     let id = "20260114_100003";
     save_audio_archive_record(journal, id, &super::record::plan_to_record(&plan)).unwrap();
     insert_tile_claims(
@@ -2597,7 +2600,7 @@ fn dst_fixture_fall_back_boundary() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &ny(), default_settings()).unwrap();
     assert_eq!(plan.members[0].disposition, MemberDisposition::Included);
     assert_eq!(plan.tiles.len(), 2);
 
@@ -2642,7 +2645,7 @@ fn dst_fixture_fall_back_crossing_unique() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &ny(), default_settings()).unwrap();
     assert_eq!(plan.members[0].disposition, MemberDisposition::Included);
     assert_eq!(plan.tiles.len(), 2);
 
@@ -2672,7 +2675,7 @@ fn ambiguous_long_civil_requires_an_instant() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan.members[0].disposition,
         MemberDisposition::LeftOut(LeftOutReason::UnsettledTime)
@@ -2695,7 +2698,7 @@ fn dst_fixture_spring_forward_gap_crossing() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &ny(), default_settings()).unwrap();
     assert_eq!(plan.members[0].disposition, MemberDisposition::Included);
     assert_eq!(plan.tiles.len(), 4);
 
@@ -2744,7 +2747,7 @@ fn utc_spring_forward_date_does_not_merge_remainder() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], UTC_ZONE, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &TimeZone::UTC, default_settings()).unwrap();
     assert_eq!(plan.members[0].disposition, MemberDisposition::Included);
     assert_eq!(plan.tiles.len(), 4);
 
@@ -2792,7 +2795,7 @@ fn duration_i64_max_left_out_unsettled_time() {
         },
         run_note: None,
     };
-    let plan = plan_audio_archive(&[m], NY, default_settings()).unwrap();
+    let plan = plan_audio_archive(&[m], &ny(), default_settings()).unwrap();
     assert_eq!(
         plan.members[0].disposition,
         MemberDisposition::LeftOut(LeftOutReason::UnsettledTime)
@@ -2830,7 +2833,7 @@ fn placement_different_offset_refuses_chronicle_segment() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2871,7 +2874,7 @@ fn placement_different_offset_refuses_chronicle_segment() {
             import_id: Some(&clean.import_id),
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2913,7 +2916,7 @@ fn publication_candidate_file_does_not_refuse_and_resume_does_not_recreate() {
             import_id: None,
             members: vec![member.clone()],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -2941,7 +2944,7 @@ fn publication_candidate_file_does_not_refuse_and_resume_does_not_recreate() {
             import_id: Some(&clean.import_id),
             members: vec![member],
             materializer: &map,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },
@@ -3020,7 +3023,7 @@ fn find_held_members_zero_timeout_under_immediate_returns_busy() {
             },
             run_note: None,
         }],
-        NY,
+        &ny(),
         default_settings(),
     )
     .unwrap();
@@ -3064,7 +3067,7 @@ fn claim_row_with_dot_import_id_returns_claim_database_corrupt() {
             },
             run_note: None,
         }],
-        NY,
+        &ny(),
         default_settings(),
     )
     .unwrap();
@@ -3219,7 +3222,7 @@ fn whole_saved_tile_absence_never_recreates_and_whole_run_absence_releases_ident
                 import_id: None,
                 members: vec![member.clone()],
                 materializer: &materials,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: AudioArchiveSettings {
                     qualifier: "second-archive".to_owned(),
                     archive_identity: "second".to_owned(),
@@ -3241,7 +3244,7 @@ fn whole_saved_tile_absence_never_recreates_and_whole_run_absence_releases_ident
                 import_id: None,
                 members: vec![member],
                 materializer: &materials,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: AudioArchiveSettings {
                     qualifier: "released-archive".to_owned(),
                     archive_identity: "released".to_owned(),
@@ -3340,7 +3343,7 @@ fn archive_progress_precedes_chronicle_and_only_counts_durable_saves() {
                 import_id: None,
                 members: vec![member],
                 materializer: &materials,
-                owner_zone: NY,
+                owner_zone: ny(),
                 settings: default_settings(),
                 source_timestamp: None,
             },
@@ -3416,7 +3419,7 @@ fn publish_with_materializer(
             import_id: id,
             members,
             materializer,
-            owner_zone: NY,
+            owner_zone: ny(),
             settings: default_settings(),
             source_timestamp: None,
         },

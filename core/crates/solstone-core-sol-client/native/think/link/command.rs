@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 use spl_core::pairlink::{PairLinkError, ParsedPairLink};
 
@@ -1556,8 +1556,8 @@ fn peer_json(
 
 fn now_utc(clock: Option<&dyn crate::seam::Clock>) -> String {
     let now = clock.map_or_else(SystemTime::now, |clock| clock.now());
-    let datetime: DateTime<Utc> = now.into();
-    datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+    let datetime = Timestamp::try_from(now).expect("the clock is within the supported range");
+    datetime.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 fn pairing_error_text(error: LinkJoinPairingError) -> String {

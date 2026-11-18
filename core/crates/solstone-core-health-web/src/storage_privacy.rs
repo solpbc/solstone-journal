@@ -48,7 +48,7 @@ fn record_consent(root: &Path, body: &Value) -> Response {
         return (StatusCode::CONFLICT, Json(json!({"error": "your journal's storage changed. please reload this page before choosing."}))).into_response();
     }
     let consent = json!({
-        "accepted_at": chrono::Utc::now().to_rfc3339(),
+        "accepted_at": solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
         "filesystem_type": status.filesystem_type,
         "root": root,
     });

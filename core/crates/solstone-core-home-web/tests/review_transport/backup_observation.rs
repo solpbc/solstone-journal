@@ -128,9 +128,7 @@ async fn read(deps: &BackupWebDeps) -> Value {
     let before = std::fs::read(deps.journal_root.join("config/journal.json")).unwrap();
     let router = solstone_core_home_web::routes_with_backup_deps(
         deps.clone(),
-        solstone_core_home_web::Clock::fixed(
-            chrono::DateTime::from_timestamp(1791910000, 0).unwrap(),
-        ),
+        solstone_core_home_web::Clock::fixed(jiff::Timestamp::new(1791910000, 0).unwrap()),
         |_| false,
     );
     let response = router

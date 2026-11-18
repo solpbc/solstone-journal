@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use chrono::{Datelike, Utc};
 use minisign::KeyPair;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -41,10 +40,15 @@ use solstone_core_retention::archive_catalog::OffloadFile;
 struct WallClock;
 impl Clock for WallClock {
     fn now_unix(&self) -> i64 {
-        Utc::now().timestamp()
+        jiff::Timestamp::now().as_second()
     }
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        jiff::tz::Offset::UTC
+            .to_datetime(jiff::Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 

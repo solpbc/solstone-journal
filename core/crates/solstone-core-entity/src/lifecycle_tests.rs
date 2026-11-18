@@ -7,7 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::{NaiveDate, TimeZone};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 
 use crate::{
@@ -582,24 +583,33 @@ fn type_validation_rejects_trailing_newline_unlike_python_regex_dollar() {
     assert!(!is_valid_entity_type("Person\n"));
 }
 
-fn zone_midnight_ms(year: i32, month: u32, day: u32, zone: chrono_tz::Tz) -> i64 {
-    zone.from_local_datetime(
-        &NaiveDate::from_ymd_opt(year, month, day)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-    )
-    .earliest()
-    .unwrap()
-    .timestamp_millis()
+fn zone_midnight_ms(year: i16, month: i8, day: i8, zone: &TimeZone) -> i64 {
+    solstone_core_time::from_local(zone, jiff::civil::date(year, month, day).at(0, 0, 0, 0))
+        .earliest()
+        .unwrap()
+        .timestamp()
+        .as_millisecond()
+}
+
+fn zone(name: &str) -> TimeZone {
+    solstone_core_time::zone(name).unwrap()
 }
 
 #[test]
 fn last_active_ts_converts_last_seen_at_zone_midnight_not_utc() {
-    let zone = chrono_tz::America::New_York;
+    let zone = zone("America/New_York");
     assert_eq!(
-        entity_last_active_ts(&json!({"last_seen": "20260115"}), zone),
-        Some(zone_midnight_ms(2026, 1, 15, zone))
+        entity_last_active_ts(&json!({"last_seen": "20260115"}), &zone),
+        Some(zone_midnight_ms(2026, 1, 15, &zone))
+    );
+}
+
+#[test]
+fn journal_day_start_skips_to_the_first_hour_a_midnight_gap_leaves() {
+    // Havana springs forward at midnight: 2026-03-08 starts at 01:00 CDT.
+    assert_eq!(
+        crate::journal_day_start_ms("20260308", &zone("America/Havana")),
+        Some(1_772_946_000_000)
     );
 }
 
@@ -608,11 +618,11 @@ fn last_active_ts_reads_rfc3339_and_millisecond_timestamps_alike() {
     let written_as_text = json!({"attached_at": "2026-09-27T18:30:00.000000Z"});
     let written_as_millis = json!({"attached_at": 1_790_533_800_000i64});
     assert_eq!(
-        entity_last_active_ts(&written_as_text, chrono_tz::UTC),
+        entity_last_active_ts(&written_as_text, &TimeZone::UTC),
         Some(1_790_533_800_000)
     );
     assert_eq!(
-        entity_last_active_ts(&written_as_millis, chrono_tz::UTC),
+        entity_last_active_ts(&written_as_millis, &TimeZone::UTC),
         Some(1_790_533_800_000)
     );
 }
@@ -625,12 +635,12 @@ fn last_active_ts_is_the_latest_recorded_activity() {
         "updated_at": "2026-09-27T18:30:00Z",
     });
     assert_eq!(
-        entity_last_active_ts(&entity, chrono_tz::UTC),
+        entity_last_active_ts(&entity, &TimeZone::UTC),
         Some(1_790_533_800_000)
     );
     let created_only = json!({"created_at": 1_790_533_800_000i64});
     assert_eq!(
-        entity_last_active_ts(&created_only, chrono_tz::UTC),
+        entity_last_active_ts(&created_only, &TimeZone::UTC),
         Some(1_790_533_800_000)
     );
 }
@@ -643,33 +653,32 @@ fn last_active_is_unknown_rather_than_invented_without_activity() {
         "updated_at": "",
         "attached_at": 0,
     });
-    assert_eq!(entity_last_active_ts(&entity, chrono_tz::UTC), None);
-    assert_eq!(entity_last_active_day(&entity, chrono_tz::UTC), None);
+    assert_eq!(entity_last_active_ts(&entity, &TimeZone::UTC), None);
+    assert_eq!(entity_last_active_day(&entity, &TimeZone::UTC), None);
 }
 
 #[test]
 fn last_active_day_for_ts_matches_independently_computed_zone_day() {
     let ts = 1_790_533_800_000;
-    let zone = chrono_tz::Asia::Tokyo;
-    let expected = zone
-        .timestamp_millis_opt(ts)
-        .single()
+    let zone = zone("Asia/Tokyo");
+    let expected = Timestamp::from_millisecond(ts)
         .unwrap()
-        .format("%Y%m%d")
+        .to_zoned_datetime(zone.clone())
+        .strftime("%Y%m%d")
         .to_string();
-    assert_eq!(last_active_day_for_ts(ts, zone), Some(expected));
+    assert_eq!(last_active_day_for_ts(ts, &zone), Some(expected));
 }
 
 #[test]
 fn last_active_day_keeps_a_latest_last_seen_day() {
-    let zone = chrono_tz::America::New_York;
+    let zone = zone("America/New_York");
     assert_eq!(
         entity_last_active_day(
             &json!({
                 "last_seen": "20260115",
-                "attached_at": zone_midnight_ms(2026, 1, 10, zone),
+                "attached_at": zone_midnight_ms(2026, 1, 10, &zone),
             }),
-            zone
+            &zone
         ),
         Some("20260115".to_owned())
     );

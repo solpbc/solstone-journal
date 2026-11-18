@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
 use thiserror::Error;
@@ -96,7 +96,7 @@ pub fn record_keep_separate_assertion(
         "source_kind": source_kind,
         "operation_id": operation_id,
         "detection_count": detection_count,
-        "ts": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "ts": solstone_core_time::utc_z(Timestamp::now(), solstone_core_time::Precision::Secs),
     });
     validate_row(&row).map_err(|detail| KeepSeparateError::InvalidRow {
         path: path.clone(),
@@ -137,7 +137,7 @@ pub fn remove_operation_sources(
                 "pair_key": pair_key,
                 "source_kind": source.source_kind,
                 "operation_id": operation_id,
-                "ts": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                "ts": solstone_core_time::utc_z(Timestamp::now(), solstone_core_time::Precision::Secs),
             });
             validate_row(&row).map_err(|detail| KeepSeparateError::InvalidRow {
                 path: path.clone(),

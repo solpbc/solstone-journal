@@ -801,7 +801,11 @@ pub fn list_journal_backups(
         .map(|snapshot| JournalBackup {
             subtree: crate::restic_tree_path(Path::new(&snapshot.path)),
             id: snapshot.id,
-            time: snapshot.time.to_rfc3339(),
+            time: solstone_core_time::zoned_rfc3339(
+                &snapshot.time,
+                solstone_core_time::Precision::AutoSi,
+                false,
+            ),
         })
         .collect())
 }
@@ -1461,7 +1465,8 @@ fn restore_journal_with(
     // Recorded only where the selection is the snapshot's own place: a
     // subtree inside it would name a different place.
     let own_place = crate::restic_tree_path(Path::new(&snapshot.path));
-    let restored_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let restored_at =
+        solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     if status == "ok"
         && own_place == tree_path
         && let Err(error) =

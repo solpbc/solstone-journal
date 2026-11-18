@@ -62,7 +62,9 @@ pub use read::{
 };
 #[cfg(any(unix, windows))]
 pub use read::{read_journal_config_in_directory, read_journal_config_observed_in_directory};
-pub use zone::{Tz, host_zone, owner_day, owner_zone, parse_zone, placed_zone, zone_label};
+pub use zone::{
+    TimeZone, host_zone, owner_day, owner_zone, parse_zone, placed_zone, zone_label, zone_name,
+};
 
 #[cfg(test)]
 mod tests;

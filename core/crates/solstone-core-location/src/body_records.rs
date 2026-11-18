@@ -14,8 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, Timelike};
-use chrono_tz::Tz;
+use jiff::civil::Time;
+use jiff::tz::{Offset, TimeZone};
+use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
@@ -23,6 +24,7 @@ use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, copy_rank, decode_rows, parse_source_time, user_entered,
 };
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
+use solstone_core_time::{day_key, parse_day};
 
 const TOMBSTONE: &str = "tombstone.json";
 /// Separates the stream from the row id in an account key.
@@ -222,13 +224,13 @@ fn read_windows(journal: &Path, day: &str, stream: &str) -> Vec<Window> {
 
 /// Seconds into `day` of an instant, on the clock that placed the source's
 /// windows. `None` when it falls on another day.
-fn seconds_on(day: &str, time: DateTime<FixedOffset>, zone: Option<Tz>) -> Option<u32> {
+fn seconds_on(day: &str, time: &ZonedDateTime, zone: Option<&TimeZone>) -> Option<u32> {
     let local = zone.map_or_else(
-        || time.naive_local(),
-        |zone| time.with_timezone(&zone).naive_local(),
+        || time.datetime(),
+        |zone| zone.to_datetime(time.timestamp()),
     );
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    (local.date() == date).then(|| local.num_seconds_from_midnight())
+    let date = parse_day(day)?;
+    (local.date() == date).then(|| crate::seconds_into_day(local.time()))
 }
 
 fn source_of(stream: &str) -> &str {
@@ -237,7 +239,7 @@ fn source_of(stream: &str) -> &str {
 
 struct Day {
     windows: Vec<Window>,
-    zone: Option<Tz>,
+    zone: Option<TimeZone>,
 }
 
 impl Day {
@@ -252,23 +254,23 @@ impl Day {
 
     /// How far into `day` a span ending at `end` reaches, in seconds: all of
     /// it when it ends later, none when it ended before.
-    fn seconds_reached(&self, day: &str, end: DateTime<FixedOffset>) -> u32 {
-        if let Some(seconds) = seconds_on(day, end, self.zone) {
+    fn seconds_reached(&self, day: &str, end: &ZonedDateTime) -> u32 {
+        if let Some(seconds) = seconds_on(day, end, self.zone.as_ref()) {
             return seconds;
         }
-        let local = self.zone.map_or_else(
-            || end.naive_local(),
-            |zone| end.with_timezone(&zone).naive_local(),
-        );
-        match NaiveDate::parse_from_str(day, "%Y%m%d") {
-            Ok(date) if local.date() > date => 86_400,
+        let local = self
+            .zone
+            .as_ref()
+            .map_or_else(|| end.datetime(), |zone| zone.to_datetime(end.timestamp()));
+        match parse_day(day) {
+            Some(date) if local.date() > date => 86_400,
             _ => 0,
         }
     }
 
     fn covering(&self, day: &str, start: &str) -> Vec<&Window> {
         let Some(seconds) =
-            parse_source_time(start).and_then(|start| seconds_on(day, start, self.zone))
+            parse_source_time(start).and_then(|start| seconds_on(day, &start, self.zone.as_ref()))
         else {
             return Vec::new();
         };
@@ -284,10 +286,10 @@ impl Day {
 const TILE_DAYS: i64 = 14;
 
 fn later_days(day: &str) -> impl Iterator<Item = String> {
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok();
+    let date = parse_day(day);
     (1..=TILE_DAYS).filter_map(move |offset| {
-        date.and_then(|date| date.checked_add_signed(chrono::Duration::days(offset)))
-            .map(|date| date.format("%Y%m%d").to_string())
+        date.and_then(|date| date.checked_add(Span::new().days(offset)).ok())
+            .map(day_key)
     })
 }
 
@@ -335,7 +337,7 @@ fn locate(
     // can't be read might hold one.
     let end = parse_source_time(end);
     let begins = parse_source_time(start)
-        .and_then(|start| seconds_on(day, start, today.zone))
+        .and_then(|start| seconds_on(day, &start, today.zone.as_ref()))
         .unwrap_or(0);
     for on in std::iter::once(day.to_owned()).chain(later_days(day)) {
         load(days, &on);
@@ -344,7 +346,9 @@ fn locate(
             return (Some(name), Account::PartRemoved(Box::new(tile.clone())));
         }
         let from = if on == day { begins } else { 0 };
-        let reaches = end.map_or(0, |end| that_day.seconds_reached(&on, end));
+        let reaches = end
+            .as_ref()
+            .map_or(0, |end| that_day.seconds_reached(&on, end));
         if that_day.windows.iter().any(|window| {
             matches!(window.held, Held::Unreadable) && window.start < reaches && window.end > from
         }) {
@@ -384,7 +388,7 @@ fn later_piece_removed(
                 windows: read_windows(journal, &on, &stored.stream),
                 zone: solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
             });
-        let reaches = that_day.seconds_reached(&on, end);
+        let reaches = that_day.seconds_reached(&on, &end);
         if reaches == 0 && on != stored.day {
             break;
         }
@@ -458,8 +462,10 @@ pub struct StoredBody {
 
 impl StoredBody {
     fn instants(&self) -> Option<(i64, i64)> {
-        let start = parse_source_time(&self.stored_start)?.timestamp();
-        let end = parse_source_time(&self.stored_end)?.timestamp();
+        let start = parse_source_time(&self.stored_start)?
+            .timestamp()
+            .as_second();
+        let end = parse_source_time(&self.stored_end)?.timestamp().as_second();
         (end > start).then_some((start, end))
     }
 }
@@ -530,7 +536,7 @@ pub fn stored_body_records(
 }
 
 /// A day's window names in one stream, with their spans, and the zone that placed them.
-type Listing = (Vec<(String, u32, u32)>, Option<Tz>);
+type Listing = (Vec<(String, u32, u32)>, Option<TimeZone>);
 
 /// What composing reads, kept across records of one request.
 #[derive(Default)]
@@ -581,7 +587,7 @@ impl Windows {
                 )
             });
         let Some(seconds) = parse_source_time(&stored.stored_start)
-            .and_then(|start| seconds_on(&stored.day, start, *zone))
+            .and_then(|start| seconds_on(&stored.day, &start, zone.as_ref()))
         else {
             return Vec::new();
         };
@@ -864,24 +870,24 @@ const GROUP_DAYS_FORWARD: i64 = 1;
 /// the face a member of `day` is shown under.
 #[must_use]
 pub fn days_after(day: &str) -> Vec<String> {
-    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(date) = parse_day(day) else {
         return Vec::new();
     };
     // A member filed on `day` shows under an anchor at most this far either way.
     (-GROUP_DAYS_FORWARD..=GROUP_DAYS_BACK)
         .filter(|offset| *offset != 0)
-        .filter_map(|offset| date.checked_sub_signed(chrono::Duration::days(offset)))
-        .map(|date| date.format("%Y%m%d").to_string())
+        .filter_map(|offset| date.checked_sub(Span::new().days(offset)).ok())
+        .map(day_key)
         .collect()
 }
 
 fn days_around(day: &str) -> Vec<String> {
-    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(date) = parse_day(day) else {
         return vec![day.to_owned()];
     };
     (-GROUP_DAYS_BACK..=GROUP_DAYS_FORWARD)
-        .filter_map(|offset| date.checked_add_signed(chrono::Duration::days(offset)))
-        .map(|date| date.format("%Y%m%d").to_string())
+        .filter_map(|offset| date.checked_add(Span::new().days(offset)).ok())
+        .map(day_key)
         .collect()
 }
 
@@ -1015,18 +1021,18 @@ pub fn body_groups_range(
     if !has_body_data(journal) {
         return Ok(groups);
     }
-    let (Ok(first), Ok(last)) = (
-        NaiveDate::parse_from_str(from, "%Y%m%d"),
-        NaiveDate::parse_from_str(to, "%Y%m%d"),
-    ) else {
+    let (Some(first), Some(last)) = (parse_day(from), parse_day(to)) else {
         return Ok(groups);
     };
-    let start = (first - chrono::Duration::days(GROUP_DAYS_BACK))
-        .format("%Y%m%d")
-        .to_string();
-    let end = (last + chrono::Duration::days(GROUP_DAYS_FORWARD))
-        .format("%Y%m%d")
-        .to_string();
+    let start = day_key(
+        first
+            .checked_sub(Span::new().days(GROUP_DAYS_BACK))
+            .expect("a day a few days back"),
+    );
+    let end = day_key(
+        last.checked_add(Span::new().days(GROUP_DAYS_FORWARD))
+            .expect("a day a few days on"),
+    );
     let mut every = Vec::new();
     // Only the days the facet has a file for: one listing, not a look per day.
     let days = solstone_core_facets::list_activity_day_stems(journal, facet).unwrap_or_default();
@@ -1145,8 +1151,7 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
     if !has_body_data(journal) {
         return Ok(Vec::new());
     }
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|error| ComposeError(error.to_string()))?;
+    let date = parse_day(day).ok_or_else(|| ComposeError(format!("not a day: {day:?}")))?;
     let facets = solstone_core_facets::list_declared_facet_names(journal)
         .map_err(|error| ComposeError(error.to_string()))?;
     let mut muted = BTreeSet::new();
@@ -1187,9 +1192,10 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
         }
         let mut records = Vec::new();
         for offset in -(GROUP_DAYS_BACK + 1)..=(GROUP_DAYS_FORWARD + 1) {
-            let on = (date + chrono::Duration::days(offset))
-                .format("%Y%m%d")
-                .to_string();
+            let on = day_key(
+                date.checked_add(Span::new().days(offset))
+                    .expect("a day a few days either way"),
+            );
             records.extend(stored_body_records(journal, facet, &on)?);
         }
         let mut windows = Windows::default();
@@ -1247,7 +1253,7 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
     // their text doesn't sort as time does.
     faces.sort_by_cached_key(|face| {
         (
-            parse_source_time(&face.anchor.stored_start).map(|start| start.timestamp()),
+            parse_source_time(&face.anchor.stored_start).map(|start| start.timestamp().as_second()),
             face.anchor.stored_start.clone(),
         )
     });
@@ -1287,11 +1293,11 @@ pub fn line_distance(value: &str) -> Option<String> {
 
 /// A time as the owner reads it, on their clock and with no offset: the hour
 /// and minute, and the date only when it isn't the day's. The reader formats it.
-fn clock_time(text: Option<&str>, zone: Tz, day: &str) -> Option<Value> {
-    let local = parse_source_time(text?)?.with_timezone(&zone);
-    let date = local.format("%Y%m%d").to_string();
+fn clock_time(text: Option<&str>, zone: &TimeZone, day: &str) -> Option<Value> {
+    let local = parse_source_time(text?)?.with_time_zone(zone.clone());
+    let date = local.strftime("%Y%m%d").to_string();
     Some(serde_json::json!({
-        "time": local.format("%H:%M").to_string(),
+        "time": local.strftime("%H:%M").to_string(),
         "date": (date != day).then_some(date),
     }))
 }
@@ -1302,7 +1308,7 @@ fn clock_time(text: Option<&str>, zone: Tz, day: &str) -> Option<Value> {
 /// nothing. A name the source or this code gives is lowercase; the owner's own
 /// title keeps theirs.
 #[must_use]
-pub fn face_line(face: &Face, zone: Tz, day: &str) -> Option<Value> {
+pub fn face_line(face: &Face, zone: &TimeZone, day: &str) -> Option<Value> {
     let there = face
         .members
         .iter()
@@ -1374,7 +1380,7 @@ pub fn day_lines(journal: &Path, day: &str) -> Result<Vec<Value>, ComposeError> 
     let zone = solstone_core_journal_config::owner_zone(journal);
     Ok(faces
         .iter()
-        .filter_map(|face| face_line(face, zone, day))
+        .filter_map(|face| face_line(face, &zone, day))
         .collect())
 }
 
@@ -1485,18 +1491,20 @@ pub fn shown_span(face: &Face) -> Option<(i64, i64)> {
         Some(row) => (row.start.clone()?, row.end.clone()?),
         None => (first.stored_start.clone(), first.stored_end.clone()),
     };
-    let start = parse_source_time(&start)?.timestamp();
-    let end = parse_source_time(&end)?.timestamp();
+    let start = parse_source_time(&start)?.timestamp().as_second();
+    let end = parse_source_time(&end)?.timestamp().as_second();
     (end > start).then_some((start, end))
 }
 
 /// A capture segment's span as instants: its key on the zone the device
 /// reported, else on the owner's.
 fn segment_instants(journal: &Path, day: &str, dir: &Path, key: &str) -> Option<(i64, i64)> {
-    use chrono::{Offset, TimeZone};
     let (start, end) = window_span(key)?;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
-    let wall = date.and_hms_opt(0, 0, 0)? + chrono::Duration::seconds(i64::from(start));
+    let date = parse_day(day)?;
+    let wall = date
+        .to_datetime(Time::midnight())
+        .checked_add(SignedDuration::from_secs(i64::from(start)))
+        .ok()?;
     let owner = solstone_core_journal_config::owner_zone(journal);
     let reported = solstone_core_callosum::read_reported_zone(journal, dir).and_then(|zone| {
         solstone_core_journal_config::capture_zone_view(
@@ -1509,13 +1517,12 @@ fn segment_instants(journal: &Path, day: &str, dir: &Path, key: &str) -> Option<
     });
     let offset = match reported {
         Some(view) => view.utc_offset_seconds,
-        None => owner
-            .offset_from_local_datetime(&wall)
+        None => solstone_core_time::from_local(&owner, wall)
             .earliest()?
-            .fix()
-            .local_minus_utc(),
+            .offset()
+            .seconds(),
     };
-    let begin = wall.and_utc().timestamp() - i64::from(offset);
+    let begin = Offset::UTC.to_timestamp(wall).ok()?.as_second() - i64::from(offset);
     Some((begin, begin + i64::from(end - start)))
 }
 
@@ -1574,20 +1581,14 @@ pub fn capture_instants(
 #[must_use]
 pub fn owner_moment(journal: &Path, instant: i64) -> Option<(String, u32)> {
     let owner = solstone_core_journal_config::owner_zone(journal);
-    let time = DateTime::from_timestamp(instant, 0)?.with_timezone(&owner);
-    Some((
-        time.date_naive().format("%Y%m%d").to_string(),
-        time.num_seconds_from_midnight(),
-    ))
+    let time = Timestamp::new(instant, 0).ok()?.to_zoned_datetime(owner);
+    Some((day_key(time.date()), crate::seconds_into_day(time.time())))
 }
 
 /// The day after `day`, where a night that began on it ends.
 #[must_use]
 pub fn next_day(day: &str) -> Option<String> {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()?
-        .succ_opt()
-        .map(|date| date.format("%Y%m%d").to_string())
+    parse_day(day)?.tomorrow().ok().map(day_key)
 }
 
 /// The actor of a separate. No route takes it back.

@@ -1933,8 +1933,10 @@ fn a_journal_holds_body_data_once_strava_placed_a_tile() {
 fn the_strava_zone_is_the_one_its_first_import_fixed() {
     let journal = journal_with_strava();
     assert_eq!(
-        solstone_core_journal_config::placed_zone(journal.path(), "strava"),
-        Some(chrono_tz::America::Denver)
+        solstone_core_journal_config::placed_zone(journal.path(), "strava")
+            .as_ref()
+            .and_then(solstone_core_journal_config::zone_name),
+        Some("America/Denver")
     );
 }
 

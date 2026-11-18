@@ -19,26 +19,26 @@ use std::fs::File;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, NaiveDate};
+use jiff::civil::Date;
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogFileIdentity, catalog_oplogs, probe_retained_oplog_lease,
 };
 
 use crate::layout::oplog_rel;
-use crate::logs::{LogPolicy, chronicle_days, cutoff, day_key};
+use crate::logs::{LogPolicy, chronicle_days, cutoff, day_key, utc_day_from_seconds};
 
 /// One canonical oplog whose containing day is old and whose lease was released.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OplogRetentionTarget {
-    day: NaiveDate,
+    day: Date,
     leaf: String,
     identity: OplogFileIdentity,
     bytes: u64,
 }
 
 impl OplogRetentionTarget {
-    pub fn day(&self) -> NaiveDate {
+    pub fn day(&self) -> Date {
         self.day
     }
 
@@ -93,13 +93,13 @@ impl OplogRetentionKept {
 /// One retained canonical oplog, or a day-level fail-closed diagnostic.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetainedOplog {
-    day: NaiveDate,
+    day: Date,
     leaf: Option<String>,
     reason: OplogRetentionKept,
 }
 
 impl RetainedOplog {
-    pub fn day(&self) -> NaiveDate {
+    pub fn day(&self) -> Date {
         self.day
     }
 
@@ -133,18 +133,14 @@ impl OplogRetentionPlan {
 /// Cataloguing happens one day at a time. `catalog_oplogs` intentionally treats a
 /// malformed or wrong-kind reserved candidate as an all-or-nothing day failure; a
 /// per-day call confines that fail-closed result to the affected partition.
-pub fn plan_oplog_retention(
-    journal: &Path,
-    policy: &LogPolicy,
-    today: NaiveDate,
-) -> OplogRetentionPlan {
+pub fn plan_oplog_retention(journal: &Path, policy: &LogPolicy, today: Date) -> OplogRetentionPlan {
     plan_oplog_retention_with_probe(journal, policy, today, probe_retained_oplog_lease)
 }
 
 fn plan_oplog_retention_with_probe(
     journal: &Path,
     policy: &LogPolicy,
-    today: NaiveDate,
+    today: Date,
     probe: impl Fn(&File, OplogFileIdentity) -> LeaseProbe,
 ) -> OplogRetentionPlan {
     let Some(cutoff) = cutoff(policy, today) else {
@@ -228,9 +224,9 @@ fn plan_oplog_retention_with_probe(
 }
 
 /// The UTC day of a last write, dated the way the mtime log classes date theirs.
-fn utc_day(when: SystemTime) -> Option<NaiveDate> {
+fn utc_day(when: SystemTime) -> Option<Date> {
     let seconds = when.duration_since(UNIX_EPOCH).ok()?.as_secs();
-    DateTime::from_timestamp(i64::try_from(seconds).ok()?, 0).map(|when| when.date_naive())
+    utc_day_from_seconds(i64::try_from(seconds).ok()?)
 }
 
 #[cfg(test)]
@@ -240,13 +236,13 @@ fn utc_day(when: SystemTime) -> Option<NaiveDate> {
     reason = "fixture creation for the deterministic retained-lease probe"
 )]
 mod tests {
-    use chrono::{FixedOffset, TimeZone};
+    use jiff::tz::Offset;
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
 
     use super::*;
 
-    fn day(year: i32, month: u32, day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(year, month, day).expect("day")
+    fn day(year: i16, month: i8, day: i8) -> Date {
+        Date::new(year, month, day).expect("day")
     }
 
     fn policy() -> LogPolicy {
@@ -257,19 +253,18 @@ mod tests {
     }
 
     /// One released oplog in the 2026-01-01 partition, last written on `written`.
-    fn january_oplog(journal: &Path, written: NaiveDate) -> String {
-        let instant = FixedOffset::east_opt(0)
-            .expect("UTC")
-            .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
-            .single()
-            .expect("instant");
+    fn january_oplog(journal: &Path, written: Date) -> String {
+        let instant = solstone_core_time::at_offset(
+            "2026-01-01T12:00:00Z".parse().expect("instant"),
+            Offset::UTC,
+        );
         let leaf = {
             let writer = create_oplog_at(
                 JournalRoot::open(journal).expect("journal root"),
                 "source",
                 "run",
                 OplogFormat::Log,
-                instant,
+                &instant,
             )
             .expect("oplog");
             writer.leaf_name().to_owned()
@@ -278,9 +273,14 @@ mod tests {
             .write(true)
             .open(journal.join("chronicle/20260101/health").join(&leaf))
             .expect("oplog")
-            .set_modified(SystemTime::from(
-                written.and_hms_opt(12, 0, 0).expect("noon").and_utc(),
-            ))
+            .set_modified(
+                SystemTime::try_from(
+                    Offset::UTC
+                        .to_timestamp(written.at(12, 0, 0, 0))
+                        .expect("noon"),
+                )
+                .expect("noon"),
+            )
             .expect("last write");
         leaf
     }

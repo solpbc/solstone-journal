@@ -6,7 +6,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::admission::{
@@ -275,7 +274,7 @@ fn accumulate_with_embeddings_cancellable(
         stream: stream.to_owned(),
         segment_key: segment.to_owned(),
         source: source.to_owned(),
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: jiff::Timestamp::now().as_millisecond(),
         encoder: solstone_core_entity::EncoderIdentity {
             id: "unresolved".to_owned(),
             sha256: "0".repeat(64),
@@ -359,7 +358,7 @@ pub(crate) fn build_cancellable(
         segment,
         layout,
         dry_run,
-        Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     ) {
         Ok(resolved) => resolved,
         Err(error) => {

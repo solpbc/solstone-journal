@@ -17,7 +17,7 @@ pub async fn trends() -> Response {
 }
 
 pub async fn shell_for_day(Path(day): Path<String>) -> Response {
-    if chrono::NaiveDate::parse_from_str(&day, "%Y%m%d").is_ok() {
+    if solstone_core_time::parse_day(&day).is_some() {
         return shell().await;
     }
     day_refusal()

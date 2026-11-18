@@ -17,7 +17,7 @@ workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
-chrono.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
@@ -29,7 +29,6 @@ solstone-core-talent-config.workspace = true
 solstone-core-system-health.workspace = true
 
 [dev-dependencies]
-chrono-tz.workspace = true
 filetime = "0.2.29"
 tempfile = "3.24.0"
 temp-env = "0.3.6"
@@ -37,5 +36,6 @@ tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-system.workspace = true
+solstone-core-time.workspace = true
 # Drives AC7 through the native UTC-timestamp rollup producer without cache writes.
 solstone-core-journal-stats-cli.workspace = true

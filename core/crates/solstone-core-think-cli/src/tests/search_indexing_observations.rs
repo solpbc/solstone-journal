@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use solstone_core_indexer_store::scan::attempt_saved_publication;
 use solstone_core_journal_io::health_marker::{
@@ -32,7 +32,7 @@ fn test_search_indexing_observations_with_real_publication_attempts() {
     let dir = tempdir().unwrap();
     let journal = dir.path();
     setup_utc_journal(journal);
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     // Create chronicle days 20260101 through 20260131 (31 directories)
     for day_num in 1..=31 {
@@ -79,7 +79,7 @@ fn test_search_indexing_observations_with_real_publication_attempts() {
     }
     writer_31.log(
         "index.attempt",
-        (now - Duration::seconds(1)).timestamp_millis(),
+        (now - SignedDuration::from_secs(1)).as_millisecond(),
         fields_31,
     );
     writer_31.finish().unwrap();
@@ -111,7 +111,7 @@ fn test_search_indexing_observations_with_real_publication_attempts() {
     }
     writer_01.log(
         "index.attempt",
-        (now - Duration::seconds(1)).timestamp_millis(),
+        (now - SignedDuration::from_secs(1)).as_millisecond(),
         fields_01,
     );
     writer_01.finish().unwrap();

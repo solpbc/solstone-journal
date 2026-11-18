@@ -222,7 +222,7 @@ fn empty_note(journal: &Path, arguments: Value) -> String {
         },
         entry.tool_name,
         Some(&arguments),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap()
     .empty_note

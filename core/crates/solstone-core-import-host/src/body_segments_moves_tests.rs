@@ -891,8 +891,9 @@ fn travel_moves_within_the_fixed_zones_day_and_keeps_a_split_of_it_as_first_writ
         let root = journal.path();
         let scratch = tempfile::tempdir().unwrap();
         let end = |start: &str| {
-            let at = DateTime::parse_from_rfc3339(start).unwrap() + chrono::Duration::minutes(20);
-            at.to_rfc3339_opts(chrono::SecondsFormat::Millis, false)
+            let at = solstone_core_time::parse_rfc3339(start).unwrap()
+                + jiff::SignedDuration::from_mins(20);
+            solstone_core_time::zoned_rfc3339(&at, solstone_core_time::Precision::Millis, false)
         };
         run(
             root,

@@ -89,7 +89,7 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode};
-    use chrono::Utc;
+    use jiff::Timestamp;
     use serde_json::Value;
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -400,7 +400,7 @@ mod tests {
             solstone_core_journal_stats_cli::DayScanRequest {
                 journal_root: root,
                 day,
-                now: Utc::now(),
+                now: Timestamp::now(),
                 system_talent_root: &system_dir,
                 apps_root: &apps_dir,
                 talent_overrides: None,
@@ -416,7 +416,7 @@ mod tests {
             solstone_core_journal_stats_cli::DayScanRequest {
                 journal_root: root,
                 day: loc_day,
-                now: Utc::now(),
+                now: Timestamp::now(),
                 system_talent_root: &system_dir,
                 apps_root: &apps_dir,
                 talent_overrides: None,
@@ -442,7 +442,7 @@ mod tests {
             solstone_core_journal_stats_cli::DayScanRequest {
                 journal_root: root,
                 day,
-                now: Utc::now(),
+                now: Timestamp::now(),
                 system_talent_root: &system_dir,
                 apps_root: &apps_dir,
                 talent_overrides: None,

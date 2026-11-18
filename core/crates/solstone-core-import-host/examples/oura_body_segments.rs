@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use solstone_core_import_host::body_segments::{
     LiveOuraTransport, OuraAuth, OuraImportRequest, RecordedOura, import_oura,
 };
@@ -31,8 +31,8 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn day(text: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap_or_else(|_| usage())
+fn day(text: &str) -> Date {
+    Date::strptime("%Y-%m-%d", text).unwrap_or_else(|_| usage())
 }
 
 fn main() {

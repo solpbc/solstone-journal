@@ -9,7 +9,6 @@ use crate::{
     run,
     vocabulary::{BacklogDays, CheckResult, ClientRegistryState, Platform, Severity, Status},
 };
-use chrono::TimeZone;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientInspection, ClientLedgerUnavailable,
 };
@@ -125,7 +124,7 @@ fn fixture() -> CheckContext {
         journal_path: root.join("journal"),
         callosum_socket_path: root.join("journal/health/callosum.sock"),
         platform: Platform::Linux,
-        now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        now: "2026-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap(),
         host_arch: "x86_64".into(),
         hostname: "fixture-host".into(),
         checkout_root: None,
@@ -187,16 +186,14 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
         })
         .unwrap_or_default();
     let rfc3339 = |timestamp| {
-        chrono::Utc
-            .timestamp_millis_opt(timestamp)
-            .single()
-            .expect("fixture timestamp")
-            .to_rfc3339()
+        solstone_core_time::utc_rfc3339(
+            jiff::Timestamp::from_millisecond(timestamp).expect("fixture timestamp"),
+        )
     };
     let last_seen = value
         .get("last_seen")
         .and_then(serde_json::Value::as_i64)
-        .unwrap_or_else(|| context.now.timestamp_millis());
+        .unwrap_or_else(|| context.now.as_millisecond());
     let mut entry = serde_json::json!({"last_seen_at": rfc3339(last_seen)});
     if let Some(last_accepted) = value
         .get("last_segment_received_at")
@@ -215,11 +212,11 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
         let first = rejection
             .get("first_ts")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or_else(|| context.now.timestamp_millis());
+            .unwrap_or_else(|| context.now.as_millisecond());
         let latest = rejection
             .get("latest_ts")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or_else(|| context.now.timestamp_millis());
+            .unwrap_or_else(|| context.now.as_millisecond());
         entry["ingest_rejection"] = serde_json::json!({
             "reason_code": rejection.get("reason_code").and_then(serde_json::Value::as_str).unwrap_or("ingest_rejected"),
             "first": rfc3339(first),
@@ -234,7 +231,7 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
         let latest = refusal
             .get("latest_ts")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or_else(|| context.now.timestamp_millis());
+            .unwrap_or_else(|| context.now.as_millisecond());
         entry["transport_refusal"] = serde_json::json!({
             "reason_code": refusal.get("reason_code").and_then(serde_json::Value::as_str).unwrap_or("stream_limit"),
             "first": rfc3339(latest),
@@ -278,7 +275,7 @@ fn write_bound_device_stream(context: &CheckContext, name: &str, cid: &str) {
 /// A segment in the bound stream whose durable ingest row names a different
 /// segment than the directory it sits in: the manifest refuses the whole day.
 fn write_mismatched_device_event(context: &CheckContext, stream: &str, cid: &str) {
-    let day = context.now.format("%Y%m%d").to_string();
+    let day = context.now.strftime("%Y%m%d").to_string();
     let segment = context
         .journal_path
         .join("chronicle")
@@ -350,7 +347,7 @@ fn incomplete(context: &CheckContext, day: &str) {
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             SystemTime::UNIX_EPOCH
-                + Duration::from_millis((context.now.timestamp_millis() - 1_000) as u64),
+                + Duration::from_millis((context.now.as_millisecond() - 1_000) as u64),
         ))
         .unwrap();
 }
@@ -665,7 +662,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             // nothing owed; both branches have one, so the non-OK branch is the
             // recent backlog, not a missing inspection.
             solstone_core_system::work_inventory::WorkInventory {
-                as_of_ms: context.now.timestamp_millis(),
+                as_of_ms: context.now.as_millisecond(),
                 complete: true,
                 ..Default::default()
             }
@@ -685,7 +682,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             fs::write(
                 path,
                 serde_json::to_vec(&serde_json::json!({
-                    "generated_at": context.now.to_rfc3339(),
+                    "generated_at": solstone_core_time::utc_rfc3339(context.now),
                     "evidence_unreadable_days": unreadable,
                     "segment_fold_failed_days": [],
                 }))
@@ -725,7 +722,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "capture_health" => {
-            let now = context.now.timestamp_millis();
+            let now = context.now.as_millisecond();
             if ok {
                 write_client_fixture(
                     &context,
@@ -750,7 +747,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "client_delivery_stall" => {
-            let now = context.now.timestamp_millis();
+            let now = context.now.as_millisecond();
             if ok {
                 write_client_fixture(
                     &context,
@@ -783,7 +780,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "client_ingest_health" => {
-            write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
+            write_unassessed_client(&context, "phone", context.now.as_millisecond() - 1);
             if !ok {
                 write_client_fixture(
                     &context,
@@ -793,7 +790,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "client_transport_refusal" => {
-            write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
+            write_unassessed_client(&context, "phone", context.now.as_millisecond() - 1);
             if !ok {
                 write_client_fixture(
                     &context,
@@ -1129,7 +1126,7 @@ fn lone_long_stop_is_informational() {
     let hour = 3_600_000;
     for (sent_age, seen_age) in [(89 * hour, 1_000), (25 * hour, 25 * hour)] {
         let c = fixture();
-        let now = c.now.timestamp_millis();
+        let now = c.now.as_millisecond();
         write_device(
             &c,
             "abcdefgh",
@@ -1149,7 +1146,7 @@ fn active_peer_does_not_make_a_quiet_device_failed() {
     let hour = 3_600_000;
     for sent_age in [7 * hour, 25 * hour] {
         let c = fixture();
-        let now = c.now.timestamp_millis();
+        let now = c.now.as_millisecond();
         write_device(&c, "abcdefgh", "alpha", now - 1_000, Some(now - 29_000));
         write_device(&c, "ijklmnop", "bravo", now - 1_000, Some(now - sent_age));
         let capture = result("capture_health", &c);
@@ -1162,7 +1159,7 @@ fn active_peer_does_not_make_a_quiet_device_failed() {
 #[test]
 fn overnight_quiet_is_ok() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     let eight = 8 * 3_600_000;
     write_device(&c, "abcdefgh", "alpha", now - eight, Some(now - eight));
     write_device(&c, "ijklmnop", "bravo", now - eight, Some(now - eight));
@@ -1173,7 +1170,7 @@ fn overnight_quiet_is_ok() {
 #[test]
 fn fleet_long_stop_is_informational() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
         .into_iter()
         .enumerate()
@@ -1192,7 +1189,7 @@ fn fleet_long_stop_is_informational() {
 #[test]
 fn no_assessed_skips_both_checks() {
     let c = fixture();
-    write_unassessed_client(&c, "phone", c.now.timestamp_millis() - 1);
+    write_unassessed_client(&c, "phone", c.now.as_millisecond() - 1);
     let capture = result("capture_health", &c);
     let stall = result("client_delivery_stall", &c);
     assert_eq!(capture.status, Status::Skip);
@@ -1214,7 +1211,7 @@ fn no_assessed_skips_both_checks() {
 #[test]
 fn unassessed_residue_does_not_drag() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_unassessed_client(&c, "residue", now - 200_000);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
     let capture = result("capture_health", &c);
@@ -1234,7 +1231,7 @@ fn unassessed_residue_does_not_drag() {
 
 #[test]
 fn delivery_facts_distinguish_remaining_tokens() {
-    let now_offset = |context: &CheckContext, delta: i64| context.now.timestamp_millis() - delta;
+    let now_offset = |context: &CheckContext, delta: i64| context.now.as_millisecond() - delta;
 
     let invalid = fixture();
     write_client_fixture(
@@ -1333,7 +1330,7 @@ fn delivery_facts_distinguish_remaining_tokens() {
 #[test]
 fn delivery_facts_match_across_checks_with_client_ledger() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_unassessed_client(&c, "residue", now - 1);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
     let capture = result("capture_health", &c);
@@ -1351,7 +1348,7 @@ fn delivery_facts_match_across_checks_with_client_ledger() {
 #[test]
 fn lone_six_hour_gap_is_ok() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_device(&c, "abcdefgh", "phone", now - 1_000, Some(now - 21_600_001));
     assert_eq!(status("client_delivery_stall", &c), Status::Ok);
     assert_eq!(status("capture_health", &c), Status::Ok);
@@ -1365,7 +1362,7 @@ fn rejection_without_last_sent_warns_capture() {
         "abcdefgh",
         serde_json::json!({
             "key":"abcdefgh-key","name":"rej","enabled":true,"created_at":1,
-            "last_seen": alone.now.timestamp_millis() - 1,
+            "last_seen": alone.now.as_millisecond() - 1,
             "health":{"ingest_rejection":{"active_count":1}}
         }),
     );
@@ -1384,7 +1381,7 @@ fn rejection_without_last_sent_warns_capture() {
     assert!(facts.unassessed.is_empty());
 
     let with_peer = fixture();
-    let now = with_peer.now.timestamp_millis();
+    let now = with_peer.now.as_millisecond();
     write_client_fixture(
         &with_peer,
         "abcdefgh",
@@ -1401,7 +1398,7 @@ fn rejection_without_last_sent_warns_capture() {
 #[test]
 fn rejection_with_recent_delivery_warns_capture() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_client_fixture(
         &c,
         "abcdefgh",
@@ -1491,7 +1488,7 @@ fn a_turned_away_request_and_a_rejected_upload_are_separate_findings() {
 #[test]
 fn a_journal_that_turned_nothing_away_says_so_rather_than_staying_silent() {
     let context = fixture();
-    write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
+    write_unassessed_client(&context, "phone", context.now.as_millisecond() - 1);
 
     let row = result("client_transport_refusal", &context);
 
@@ -1515,7 +1512,7 @@ fn a_refusal_older_than_a_week_no_longer_warns() {
             "key":"abcdefgh-key", "name":"phone", "enabled":true, "created_at":1,
             "health":{"transport_refusal":{
                 "reason_code":"stream_limit", "active_count":24,
-                "latest_ts": context.now.timestamp_millis() - 8 * day_ms
+                "latest_ts": context.now.as_millisecond() - 8 * day_ms
             }}
         }),
     );
@@ -1526,7 +1523,7 @@ fn a_refusal_older_than_a_week_no_longer_warns() {
             "key":"ijklmnop-key", "name":"tablet", "enabled":true, "created_at":1,
             "health":{"transport_refusal":{
                 "reason_code":"stream_limit", "active_count":3,
-                "latest_ts": context.now.timestamp_millis() - 6 * day_ms
+                "latest_ts": context.now.as_millisecond() - 6 * day_ms
             }}
         }),
     );
@@ -1548,7 +1545,7 @@ fn client_ingest_health_formats_rejection_date_and_unknown_fallback() {
             "key":"abcdefgh-dated", "name":"dated", "enabled":true, "created_at":1,
             "health":{"ingest_rejection":{
                 "version":"1.2", "summary":"bad payload", "active_count":2,
-                "first_ts": dated.now.timestamp_millis()
+                "first_ts": dated.now.as_millisecond()
             }}
         }),
     );
@@ -1666,9 +1663,9 @@ fn brain_ready_and_checking_records_are_healthy() {
 #[test]
 fn brain_refresh_after_battery_start_is_not_a_future_record() {
     let mut context = fixture();
-    context.now = chrono::Utc::now();
+    context.now = jiff::Timestamp::now();
     let _permit = stage_brain_checking(&context);
-    context.now -= chrono::Duration::seconds(30);
+    context.now -= jiff::SignedDuration::from_secs(30);
     let entry = registry::lookup(Battery::Journal, "brain").unwrap();
     let row = (entry.runner)(&context).unwrap();
     assert_eq!(row.status, Status::Ok, "{}", row.detail);
@@ -1678,7 +1675,7 @@ fn brain_refresh_after_battery_start_is_not_a_future_record() {
 #[test]
 fn brain_clock_is_sampled_after_reading_the_record() {
     let mut context = fixture();
-    context.now = chrono::Utc::now();
+    context.now = jiff::Timestamp::now();
     let _permit = stage_brain_checking(&context);
     let path = context.journal_path.join("health/brain.json");
     let before = fs::read(&path).unwrap();
@@ -1686,7 +1683,7 @@ fn brain_clock_is_sampled_after_reading_the_record() {
     let row = crate::checks::brain::run_with_clock(&context, entry.check, || {
         // Replacing the file here must not change the already-read snapshot.
         fs::write(&path, "{").unwrap();
-        context.now + chrono::Duration::seconds(1)
+        context.now + jiff::SignedDuration::from_secs(1)
     })
     .unwrap();
     assert_eq!(row.status, Status::Ok, "{}", row.detail);
@@ -1696,7 +1693,7 @@ fn brain_clock_is_sampled_after_reading_the_record() {
 #[test]
 fn brain_fresh_clock_preserves_future_and_expiry_warnings() {
     let mut future = fixture();
-    future.now = chrono::Utc::now() + chrono::Duration::hours(1);
+    future.now = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1);
     let _permit = stage_brain_checking(&future);
     let entry = registry::lookup(Battery::Journal, "brain").unwrap();
     let row = (entry.runner)(&future).unwrap();
@@ -1710,7 +1707,7 @@ fn brain_fresh_clock_preserves_future_and_expiry_warnings() {
     let expired = fixture();
     stage_brain_ready(&expired);
     let row = crate::checks::brain::run_with_clock(&expired, entry.check, || {
-        expired.now + chrono::Duration::days(2)
+        expired.now + jiff::SignedDuration::from_hours(24 * 2)
     })
     .unwrap();
     assert_eq!(row.status, Status::Warn, "{}", row.detail);
@@ -1837,7 +1834,7 @@ fn caught_up_native_backlog_fixture_states() {
     stage_raw_audio_pending(
         &fresh_audio,
         SystemTime::UNIX_EPOCH
-            + Duration::from_millis((fresh_audio.now.timestamp_millis() - 1_000) as u64),
+            + Duration::from_millis((fresh_audio.now.as_millisecond() - 1_000) as u64),
     );
     let row = result("journal_caught_up", &fresh_audio);
     assert_eq!(row.status, Status::Warn);
@@ -1848,7 +1845,7 @@ fn caught_up_native_backlog_fixture_states() {
         &aged_audio,
         SystemTime::UNIX_EPOCH
             + Duration::from_millis(
-                (aged_audio.now.timestamp_millis() - MODALITY_INPUT_AGED_MS) as u64,
+                (aged_audio.now.as_millisecond() - MODALITY_INPUT_AGED_MS) as u64,
             ),
     );
     let row = result("journal_caught_up", &aged_audio);
@@ -1909,7 +1906,7 @@ fn journal_sync_does_not_name_the_running_resident_as_another_writer() {
         InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
     };
     let mut context = fixture();
-    context.now = chrono::Utc::now();
+    context.now = jiff::Timestamp::now();
     let pid = std::process::id();
     let InspectResult::Present { instance, .. } = SystemProcessInstanceSource.inspect(pid) else {
         panic!("this test process is observable");
@@ -1924,7 +1921,7 @@ fn journal_sync_does_not_name_the_running_resident_as_another_writer() {
     .unwrap();
     let resident = solstone_core_system::lifecycle::recorded_live_resident(&context.journal_path)
         .expect("the recorded process is alive");
-    let now = context.now.timestamp() as f64;
+    let now = context.now.as_second() as f64;
     let own = write_sync_heartbeat_fixture(
         &context,
         "a91b234e4319ff66f869680d7ab8abd4",
@@ -2288,7 +2285,7 @@ fn vad_runtime_ready_accepts_closed_stdin_usage_contract() {
 #[test]
 fn stall_warn_omits_duplicate_and_queue_clauses() {
     let context = fixture();
-    let now = context.now.timestamp_millis();
+    let now = context.now.as_millisecond();
     write_client_fixture(
         &context,
         "abcdefgh",
@@ -2307,7 +2304,7 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
 }
 
 fn write_rejected_fleet(context: &CheckContext, name: impl Fn(usize) -> String, seen_age: i64) {
-    let now = context.now.timestamp_millis();
+    let now = context.now.as_millisecond();
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
         .into_iter()
         .enumerate()
@@ -2434,7 +2431,7 @@ fn delivery_facts_survive_400_truncation_with_rejections() {
 fn quiet_devices_preserve_reach_facts_without_inventing_failure() {
     let hour = 3_600_000;
     let running = fixture();
-    let now = running.now.timestamp_millis();
+    let now = running.now.as_millisecond();
     write_device(
         &running,
         "abcdefgh",
@@ -2443,7 +2440,7 @@ fn quiet_devices_preserve_reach_facts_without_inventing_failure() {
         Some(now - 89 * hour),
     );
     let stale = fixture();
-    let now = stale.now.timestamp_millis();
+    let now = stale.now.as_millisecond();
     write_device(
         &stale,
         "abcdefgh",
@@ -2452,7 +2449,7 @@ fn quiet_devices_preserve_reach_facts_without_inventing_failure() {
         Some(now - 89 * hour),
     );
     let asleep = fixture();
-    let now = asleep.now.timestamp_millis();
+    let now = asleep.now.as_millisecond();
     write_device(
         &asleep,
         "abcdefgh",
@@ -2509,11 +2506,9 @@ fn quiet_devices_preserve_reach_facts_without_inventing_failure() {
 }
 
 fn rfc3339_millis(timestamp: i64) -> String {
-    chrono::Utc
-        .timestamp_millis_opt(timestamp)
-        .single()
-        .expect("fixture timestamp")
-        .to_rfc3339()
+    solstone_core_time::utc_rfc3339(
+        jiff::Timestamp::from_millisecond(timestamp).expect("fixture timestamp"),
+    )
 }
 
 #[test]
@@ -2532,7 +2527,7 @@ fn quiet_single_source_capture_and_stall_are_informational() {
         })),
     ] {
         let c = fixture();
-        let now = c.now.timestamp_millis();
+        let now = c.now.as_millisecond();
         let last_sent = now - 89 * hour;
         let stamp = rfc3339_millis(last_sent);
         let mut value = serde_json::json!({
@@ -2567,7 +2562,7 @@ fn quiet_single_source_capture_and_stall_are_informational() {
 #[test]
 fn multi_source_needs_attention_names_the_rejected_source() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_client_fixture(
         &c,
         "abcdefgh",
@@ -2601,7 +2596,7 @@ fn multi_source_needs_attention_names_the_rejected_source() {
 #[test]
 fn multi_source_plural_need_attention_joins_rejected_names() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     let quiet = rfc3339_millis(now - 700_000);
     write_client_fixture(
         &c,
@@ -2645,7 +2640,7 @@ fn multi_source_plural_need_attention_joins_rejected_names() {
 #[test]
 fn empty_source_is_named_default_on_a_multi_source_device() {
     let c = fixture();
-    let now = c.now.timestamp_millis();
+    let now = c.now.as_millisecond();
     write_client_fixture(
         &c,
         "abcdefgh",
@@ -2884,9 +2879,7 @@ fn unretryable_transcribe_input_ac4_with_unrelated_pending_trips_caught_up() {
     );
 
     let aged = SystemTime::UNIX_EPOCH
-        + Duration::from_millis(
-            (c.now.timestamp_millis() - (MODALITY_INPUT_AGED_MS + 1_000)) as u64,
-        );
+        + Duration::from_millis((c.now.as_millisecond() - (MODALITY_INPUT_AGED_MS + 1_000)) as u64);
     stage_raw_audio_pending(&c, aged);
 
     let caught_up_row = result("journal_caught_up", &c);
@@ -3214,11 +3207,11 @@ fn unretryable_transcribe_input_ac4_fixture_reports_backlog_view_complete() {
 fn stale_statistics_reach_the_owner_instead_of_being_skipped() {
     let context = fixture();
     fs::create_dir_all(&context.journal_path).unwrap();
-    let generated = context.now - chrono::Duration::hours(48);
+    let generated = context.now - jiff::SignedDuration::from_hours(48);
     fs::write(
         context.journal_path.join("stats.json"),
         serde_json::to_vec(&serde_json::json!({
-            "generated_at": generated.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(generated),
             "evidence_unreadable_days": [],
             "segment_fold_failed_days": [],
         }))
@@ -3251,7 +3244,7 @@ fn the_fix_line_names_a_file_only_when_one_was_named() {
     fs::write(
         context.journal_path.join("stats.json"),
         serde_json::to_vec(&serde_json::json!({
-            "generated_at": context.now.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(context.now),
             "evidence_unreadable_days": [],
             "segment_fold_failed_days": ["20251231"],
         }))
@@ -3290,12 +3283,15 @@ fn the_fix_line_names_a_file_only_when_one_was_named() {
 fn a_document_that_is_both_stale_and_pre_field_still_reaches_the_owner() {
     let context = fixture();
     fs::create_dir_all(&context.journal_path).unwrap();
-    let generated = context.now - chrono::Duration::hours(72);
+    let generated = context.now - jiff::SignedDuration::from_hours(72);
     fs::write(
         context.journal_path.join("stats.json"),
         // ⚠ No `evidence_unreadable_days` key at all: this is the shape a
         // document written before the field existed has.
-        serde_json::to_vec(&serde_json::json!({ "generated_at": generated.to_rfc3339() })).unwrap(),
+        serde_json::to_vec(
+            &serde_json::json!({ "generated_at": solstone_core_time::utc_rfc3339(generated) }),
+        )
+        .unwrap(),
     )
     .unwrap();
 
@@ -3325,7 +3321,7 @@ fn a_pathless_cause_does_not_promise_a_file() {
     fs::write(
         context.journal_path.join("stats.json"),
         serde_json::to_vec(&serde_json::json!({
-            "generated_at": context.now.to_rfc3339(),
+            "generated_at": solstone_core_time::utc_rfc3339(context.now),
             "evidence_unreadable_days": [
                 { "day": "20260230", "cause": "invalid day 20260230; expected YYYYMMDD calendar date" }
             ],
@@ -4150,7 +4146,7 @@ fn journal_caught_up_outside_window_inactive_facet_produces_no_alarm() {
 fn whole_journal_progress_requires_fresh_complete_inspection_and_reports_each_band() {
     let context = fixture();
     let mut report = solstone_core_system::work_inventory::WorkInventory {
-        as_of_ms: context.now.timestamp_millis(),
+        as_of_ms: context.now.as_millisecond(),
         complete: true,
         ..Default::default()
     };

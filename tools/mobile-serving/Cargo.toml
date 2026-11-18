@@ -24,8 +24,8 @@ processing = [
     "dep:solstone-core-journal-config",
     "dep:solstone-core-cortex-client",
     "dep:solstone-core-generate",
-    "dep:chrono",
-    "dep:chrono-tz",
+    "dep:jiff",
+    "dep:solstone-core-time",
     "dep:solstone-core-facets",
     "dep:solstone-core-speaker-resolve",
     "dep:solstone-core-speakers",
@@ -81,8 +81,8 @@ solstone-core-system = { path = "../../core/crates/solstone-core-system", option
 solstone-core-journal-config = { path = "../../core/crates/solstone-core-journal-config", optional = true }
 solstone-core-cortex-client = { path = "../../core/crates/solstone-core-cortex-client", optional = true }
 solstone-core-generate = { path = "../../core/crates/solstone-core-generate", optional = true }
-chrono = { version = "0.4", optional = true }
-chrono-tz = { version = "0.10", optional = true }
+jiff = { version = "1.0.0", features = ["serde", "tzdb-bundle-always"], optional = true }
+solstone-core-time = { path = "../../core/crates/solstone-core-time", optional = true }
 solstone-core-facets = { path = "../../core/crates/solstone-core-facets", optional = true }
 solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speaker-resolve", optional = true }
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }

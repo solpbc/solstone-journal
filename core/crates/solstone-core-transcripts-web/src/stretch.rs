@@ -37,7 +37,7 @@ struct StretchBody {
 #[allow(clippy::result_large_err)]
 fn read_body(
     body: &Bytes,
-) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool, bool), Response> {
+) -> Result<(jiff::civil::DateTime, jiff::civil::DateTime, bool, bool), Response> {
     let unreadable = || {
         legacy_error_response(
             "invalid_request",

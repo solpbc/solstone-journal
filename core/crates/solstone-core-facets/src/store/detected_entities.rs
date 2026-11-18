@@ -234,7 +234,7 @@ pub fn upsert_detection_segment(
             );
             object.insert(
                 "updated_at".to_owned(),
-                Value::Number(chrono::Utc::now().timestamp_millis().into()),
+                Value::Number(jiff::Timestamp::now().as_millisecond().into()),
             );
             wrote += 1;
         }
@@ -247,7 +247,7 @@ pub fn upsert_detection_segment(
                 "description": detection.description,
                 DESCRIBED_BY: segment,
                 "segments": [segment],
-                "updated_at": chrono::Utc::now().timestamp_millis(),
+                "updated_at": jiff::Timestamp::now().as_millisecond(),
             }));
             wrote += 1;
         }

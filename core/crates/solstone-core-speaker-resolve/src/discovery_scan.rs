@@ -4,7 +4,7 @@
 //! Shared native speaker discovery and derived-cache publication.
 
 use crate::segment_catalog::catalog_journal;
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_io::SegmentLayout;
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
@@ -467,7 +467,7 @@ fn write_discovery_cache(
         DISCOVERY_CACHE_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed),
     ));
     let payload = json!({
-        "version": Utc::now().to_rfc3339(),
+        "version": solstone_core_time::utc_rfc3339(Timestamp::now()),
         "clusters": clusters,
     });
     let bytes = serde_json::to_vec_pretty(&payload).map_err(|error| error.to_string())?;

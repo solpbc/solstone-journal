@@ -16,7 +16,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
@@ -61,7 +60,8 @@ async fn view_route(
     }
     spawn_blocking_response(OwnerReadRole::YearView, move || {
         let zone = solstone_core_journal_config::owner_zone(&root);
-        let today = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
+        let today =
+            solstone_core_time::day_key(jiff::Timestamp::now().to_zoned_datetime(zone).date());
         Json(year_view(&root, &today, year.as_deref())).into_response()
     })
     .await

@@ -40,7 +40,7 @@ impl Default for Health {
 impl Health {
     pub fn success(&mut self) {
         self.recent_error_count = 0;
-        self.last_successful_sync = Some(chrono::Utc::now().timestamp_millis());
+        self.last_successful_sync = Some(jiff::Timestamp::now().as_millisecond());
     }
     pub fn failure(&mut self, reason: &str) {
         self.recent_error_count = self.recent_error_count.saturating_add(1).min(99);

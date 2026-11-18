@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::Utc;
+use jiff::tz::TimeZone;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,7 +26,7 @@ fn ics_oracle_detect_and_preview_match_fixture() {
         ics::detect(&calendar),
         expected["detect"].as_bool().unwrap()
     );
-    let preview = ics::preview(&calendar, &Utc).unwrap();
+    let preview = ics::preview(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(
         preview.date_range.0,
         expected["preview"]["date_range"][0].as_str().unwrap()
@@ -57,7 +57,7 @@ fn ics_preview_uses_utc_creation_days() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260311T235900Z\r\nLAST-MODIFIED:20260311T235900Z\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20260312T000100Z\r\nCREATED:20260312T000100Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let preview = ics::preview(&calendar, &Utc).unwrap();
+    let preview = ics::preview(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(
         preview.date_range,
         ("20260311".to_owned(), "20260312".to_owned())
@@ -72,14 +72,14 @@ fn tzid_dates_are_resolved_before_calendar_entry_facts() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Kolkata:20260311T001500\r\nDTEND;TZID=Asia/Kolkata:20260311T014500\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar, &Utc).unwrap();
+    let entries = ics::parse_events(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(
-        entries[0].create_ts.to_rfc3339(),
+        solstone_core_time::utc_rfc3339(entries[0].create_ts),
         "2026-03-10T18:45:00+00:00"
     );
     assert_eq!(
-        entries[0].create_ts.format("%Y%m%d").to_string(),
+        entries[0].create_ts.strftime("%Y%m%d").to_string(),
         "20260310"
     );
     assert_eq!(entries[0].ts.as_deref(), Some("2026-03-11T00:15:00+05:30"));
@@ -100,11 +100,13 @@ fn ics_preview_distinguishes_missing_data_from_empty_calendar() {
     let empty_calendar = tree.file("empty.ics", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
 
     assert_eq!(
-        ics::preview(&archive, &Utc).unwrap().summary,
+        ics::preview(&archive, &TimeZone::UTC).unwrap().summary,
         "No ICS data found"
     );
     assert_eq!(
-        ics::preview(&empty_calendar, &Utc).unwrap().summary,
+        ics::preview(&empty_calendar, &TimeZone::UTC)
+            .unwrap()
+            .summary,
         "No events found in ICS data"
     );
 }
@@ -114,7 +116,7 @@ fn ics_preview_skips_malformed_calendar_data() {
     let tree = Tree::new();
     let calendar = tree.file("malformed.ics", "this is not a calendar");
 
-    let preview = ics::preview(&calendar, &Utc).unwrap();
+    let preview = ics::preview(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(preview.item_count, 0);
     assert_eq!(preview.summary, "No events found in ICS data");
 }
@@ -127,7 +129,7 @@ fn duration_uses_wall_time_for_mixed_awareness() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Kolkata:20260311T090000\r\nDTEND:20260311T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar, &Utc).unwrap();
+    let entries = ics::parse_events(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(entries[0].duration_minutes, Some(60));
 }
 
@@ -139,9 +141,9 @@ fn parse_events_uses_creation_timestamp_priority_and_computes_duration() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Last modified wins\r\nDTSTART:20260304T100000Z\r\nCREATED:20260303T100000Z\r\nLAST-MODIFIED:20260302T100000Z\r\nDTEND:20260304T103000\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Created wins\r\nDTSTART:20260306T100000Z\r\nCREATED:20260305\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Start fallback\r\nDTSTART:20260307\r\nDTEND:20260308\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar, &Utc).unwrap();
+    let entries = ics::parse_events(&calendar, &TimeZone::UTC).unwrap();
     assert_eq!(entries.len(), 3);
-    let day = |index: usize| entries[index].create_ts.format("%Y%m%d").to_string();
+    let day = |index: usize| entries[index].create_ts.strftime("%Y%m%d").to_string();
     assert_eq!(day(0), "20260302");
     assert_eq!(entries[0].duration_minutes, Some(30));
     assert_eq!(day(1), "20260305");
@@ -193,7 +195,7 @@ fn floating_and_all_day_times_are_read_in_the_owner_zone_not_utc() {
         "floating.ics",
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:All-day\r\nDTSTART;VALUE=DATE:20260305\r\nDTEND;VALUE=DATE:20260306\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Floating\r\nDTSTART:20260305T090000\r\nDTEND:20260305T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
-    let denver = chrono_tz::Tz::America__Denver;
+    let denver = solstone_core_time::zone("America/Denver").unwrap();
 
     let entries = ics::parse_events(&calendar, &denver).unwrap();
 
@@ -202,8 +204,8 @@ fn floating_and_all_day_times_are_read_in_the_owner_zone_not_utc() {
         assert_eq!(
             entry
                 .create_ts
-                .with_timezone(&denver)
-                .format("%Y%m%d")
+                .to_zoned_datetime(denver.clone())
+                .strftime("%Y%m%d")
                 .to_string(),
             "20260305"
         );
@@ -211,8 +213,8 @@ fn floating_and_all_day_times_are_read_in_the_owner_zone_not_utc() {
     assert_eq!(
         entries[1]
             .create_ts
-            .with_timezone(&denver)
-            .format("%H:%M")
+            .to_zoned_datetime(denver.clone())
+            .strftime("%H:%M")
             .to_string(),
         "09:00"
     );
@@ -246,7 +248,7 @@ END:VEVENT\r\n\
 END:VCALENDAR\r\n";
 
     let calendar = tree.file("fallback.ics", cal_text);
-    let rendered = save::render(RegistrySource::Ics, &calendar, "imp-ics", zone, None)
+    let rendered = save::render(RegistrySource::Ics, &calendar, "imp-ics", &zone, None)
         .unwrap()
         .unwrap();
 

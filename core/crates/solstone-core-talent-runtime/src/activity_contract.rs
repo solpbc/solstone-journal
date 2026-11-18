@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
 use serde_json::{Map, Value};
 
 /// Activity records produced by planning are not evidence-bearing completed
@@ -50,9 +49,9 @@ pub fn is_explicit_generate(config: &Map<String, Value>) -> bool {
 /// The exact prompt production dispatch supplies to activity-scheduled
 /// talents outside the explicit-generate branch.
 pub fn untyped_activity_prompt(activity_id: &str, kind: &str, facet: &str, day: &str) -> String {
-    let day = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|date| date.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|_| day.to_owned());
+    let day = solstone_core_time::parse_day(day)
+        .map(|date| date.strftime("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| day.to_owned());
     format!("Processing activity '{activity_id}' ({kind}) in facet '{facet}' for {day}.")
 }
 

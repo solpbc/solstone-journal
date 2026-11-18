@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Map, Value, json};
 
 fn bin() -> &'static str {
@@ -93,9 +93,9 @@ fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
 }
 
 fn ready_outcome() -> Value {
-    let now = Utc::now();
-    let observed_at = now.to_rfc3339();
-    let expires_at = (now + Duration::hours(1)).to_rfc3339();
+    let now = Timestamp::now();
+    let observed_at = solstone_core_time::utc_rfc3339(now);
+    let expires_at = solstone_core_time::utc_rfc3339(now + SignedDuration::from_hours(1));
     let component = || {
         json!({
             "status": "ok",
@@ -127,7 +127,7 @@ fn direct_inspection(root: &Path) -> solstone_core_brain::BrainInspection {
         .expect("read config")
         .config
         .unwrap_or_default();
-    solstone_core_brain::inspect_brain_state(root, &config, Utc::now())
+    solstone_core_brain::inspect_brain_state(root, &config, Timestamp::now())
 }
 
 fn expected_active_fingerprint(root: &Path) -> Value {
@@ -156,10 +156,11 @@ fn expected_active_fingerprint(root: &Path) -> Value {
 #[test]
 fn inspect_matches_the_library_for_a_valid_ready_record() {
     let root = configured_journal("ready", true);
-    let permit = solstone_core_brain::begin_refresh(&root, Utc::now(), None, None, false, None)
-        .expect("begin refresh")
-        .expect("refresh permit");
-    solstone_core_brain::finish_refresh(&root, permit, ready_outcome(), Utc::now(), None)
+    let permit =
+        solstone_core_brain::begin_refresh(&root, Timestamp::now(), None, None, false, None)
+            .expect("begin refresh")
+            .expect("refresh permit");
+    solstone_core_brain::finish_refresh(&root, permit, ready_outcome(), Timestamp::now(), None)
         .expect("finish refresh");
 
     let expected = direct_inspection(&root);

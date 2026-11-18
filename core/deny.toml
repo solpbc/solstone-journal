@@ -66,10 +66,6 @@ ignore = [
     # These two reports also concern DNSSEC validation in hickory-proto 0.24.4.
     { id = "RUSTSEC-2026-0550", reason = "hickory-proto 0.24.4 DNSSEC nonexistence validation defect. DNSSEC features are disabled. Revisit on DNSSEC enablement, resolver changes or a compatible patch." },
     { id = "RUSTSEC-2026-0551", reason = "hickory-proto 0.24.4 DNSSEC record-class validation defect. DNSSEC features are disabled. Revisit on DNSSEC enablement, resolver changes or a compatible patch." },
-    # Interim maintenance exceptions. Product engineering reviews both by
-    # 2026-11-23, or sooner if upstream maintenance or the advisory status changes.
-    { id = "RUSTSEC-2026-0543", reason = "Informational maintenance advisory for chrono. RustSec lists no patched release. Retain during the timestamp-compatible replacement assessment." },
-    { id = "RUSTSEC-2026-0555", reason = "chrono-tz 0.10.4 ships tzdata 2025b and gives incorrect offsets and local-day boundaries in zones whose rules changed. RustSec lists no patched release. Retain temporarily while product engineering qualifies replacement time-zone data." },
     # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
     # reached only through the pinned Velopack =1.2.0 Windows-installer callback
     # dependency. RustSec lists no patched derivative release; Velopack's own current

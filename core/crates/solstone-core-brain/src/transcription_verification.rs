@@ -4,7 +4,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{AtomicWriteError, AtomicWriteOptions, atomic_replace};
 
@@ -63,7 +63,7 @@ pub fn record_transcription_verification(
 ) -> Result<(), TranscriptionVerificationError> {
     let path = transcription_verification_path(journal);
     let reason = valid_spp_reason(raw_reason);
-    let observed_at = Utc::now().to_rfc3339();
+    let observed_at = solstone_core_time::utc_rfc3339(Timestamp::now());
     let body = json!({
         "reason": reason,
         "observed_at": observed_at,
@@ -117,7 +117,6 @@ pub fn read_transcription_verification(journal: &Path) -> Option<TranscriptionVe
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
     use std::path::{Path, PathBuf};
 
     use super::*;
@@ -167,7 +166,7 @@ mod tests {
         assert_eq!(status.reason, "attestation_not_verified");
         assert_eq!(status.endpoint, "https://endpoint.example");
         let observed = status.observed_at.expect("observed_at is present");
-        assert!(DateTime::parse_from_rfc3339(&observed).is_ok());
+        assert!(solstone_core_time::parse_rfc3339(&observed).is_ok());
 
         clear_transcription_verification(journal).unwrap();
         assert_eq!(read_transcription_verification(journal), None);

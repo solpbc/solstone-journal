@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use solstone_core_journal_io::{
     DEFAULT_LOCK_POLL_INTERVAL, JournalRoot, JournalRootError, LockError, LockOptions,
     ObjectIdentity, hold_lock,
@@ -201,7 +201,7 @@ fn accept_backfill(
             schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
             event_id: format!("{operation_id}:accepted"),
             operation_id: operation_id.clone(),
-            ts: Utc::now().to_rfc3339(),
+            ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
             payload: BackfillOperationPayload::Accepted {
                 commit: request.commit,
                 reattribute: request.reattribute,
@@ -408,7 +408,7 @@ fn run_backfill_attempt(
             schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
             event_id: format!("{operation_id}:attempt-{generation}:start"),
             operation_id: operation_id.clone(),
-            ts: Utc::now().to_rfc3339(),
+            ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
             payload: BackfillOperationPayload::AttemptStarted { generation },
         },
     ) {
@@ -418,7 +418,7 @@ fn run_backfill_attempt(
                 schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                 event_id: format!("{operation_id}:fail-{generation}"),
                 operation_id: operation_id.clone(),
-                ts: Utc::now().to_rfc3339(),
+                ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 payload: BackfillOperationPayload::AttemptFailed {
                     generation,
                     stage: BackfillFailureStage::Executor,
@@ -454,7 +454,7 @@ fn run_backfill_attempt(
                     schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                     event_id: format!("{operation_id}:fail-{generation}"),
                     operation_id: operation_id.clone(),
-                    ts: Utc::now().to_rfc3339(),
+                    ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     payload: BackfillOperationPayload::AttemptFailed {
                         generation,
                         stage: BackfillFailureStage::Scan,
@@ -470,7 +470,7 @@ fn run_backfill_attempt(
             if state.planned_segments.is_empty() {
                 match plan_backfill_segments(&journal_root, state.reattribute) {
                     Ok(plan) => {
-                        let now = Utc::now().to_rfc3339();
+                        let now = solstone_core_time::utc_rfc3339(Timestamp::now());
                         let append_res = append_backfill_event(
                             &ledger_path,
                             &BackfillOperationEvent {
@@ -496,7 +496,7 @@ fn run_backfill_attempt(
                                     schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                                     event_id: format!("{operation_id}:fail-{generation}"),
                                     operation_id: operation_id.clone(),
-                                    ts: Utc::now().to_rfc3339(),
+                                    ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                                     payload: BackfillOperationPayload::AttemptFailed {
                                         generation,
                                         stage: BackfillFailureStage::Scan,
@@ -520,7 +520,7 @@ fn run_backfill_attempt(
                                 schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                                 event_id: format!("{operation_id}:fail-{generation}"),
                                 operation_id: operation_id.clone(),
-                                ts: Utc::now().to_rfc3339(),
+                                ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                                 payload: BackfillOperationPayload::AttemptFailed {
                                     generation,
                                     stage: BackfillFailureStage::Scan,
@@ -553,7 +553,7 @@ fn run_backfill_attempt(
                     schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                     event_id: format!("{operation_id}:fail-{generation}"),
                     operation_id: operation_id.clone(),
-                    ts: Utc::now().to_rfc3339(),
+                    ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     payload: BackfillOperationPayload::AttemptFailed {
                         generation,
                         stage: BackfillFailureStage::Executor,
@@ -682,9 +682,9 @@ fn run_backfill_attempt(
                     schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                     event_id: format!("{operation_id}:completed"),
                     operation_id: operation_id.clone(),
-                    ts: Utc::now().to_rfc3339(),
+                    ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     payload: BackfillOperationPayload::Completed {
-                        completed_at: Utc::now().to_rfc3339(),
+                        completed_at: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     },
                 },
             );
@@ -698,7 +698,7 @@ fn run_backfill_attempt(
                 schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                 event_id: format!("{operation_id}:fail-{generation}"),
                 operation_id: operation_id.clone(),
-                ts: Utc::now().to_rfc3339(),
+                ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                 payload: BackfillOperationPayload::AttemptFailed {
                     generation,
                     stage: BackfillFailureStage::Panic,
@@ -749,7 +749,7 @@ fn append_batch(
             schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
             event_id: format!("{operation_id}:batch-{generation}:{batch_index}"),
             operation_id: operation_id.to_owned(),
-            ts: Utc::now().to_rfc3339(),
+            ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
             payload: BackfillOperationPayload::CheckpointBatch {
                 generation,
                 results,
@@ -1279,7 +1279,7 @@ mod tests {
                     schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
                     event_id: format!("{op_id}:accepted"),
                     operation_id: op_id.to_owned(),
-                    ts: Utc::now().to_rfc3339(),
+                    ts: solstone_core_time::utc_rfc3339(Timestamp::now()),
                     payload: BackfillOperationPayload::Accepted {
                         commit: true,
                         reattribute: false,

@@ -3,7 +3,7 @@
 
 //! Plan additional offers from the original admission and actual current relief.
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use solstone_core_retention::archive_offer::{
     OffloadReconciliation, OffloadReconciliationFailure, OffloadReconciliationReport,
 };
@@ -159,11 +159,11 @@ impl OffloadPlanningReport {
 pub fn create_planned_offload_offers<'clock>(
     operation: PreparedArchiveOperation<'clock>,
     services: &BackupServices<'clock>,
-    at: DateTime<FixedOffset>,
+    at: ZonedDateTime,
 ) -> OffloadCreation<'clock> {
     #[cfg(any(unix, windows))]
     {
-        bound::create(operation, services, at)
+        bound::create(operation, services, &at)
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -245,7 +245,7 @@ mod bound {
     pub(super) fn candidates(
         admitted: CurrentArchive<'_, '_>,
         report: &OffloadPlanning,
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
     ) -> Result<Vec<OffloadOfferSelection>, OffloadCreationRefusal> {
         let local = report.local.as_ref().expect("complete local population");
         let decision = report.decision.as_ref().expect("current inspection");
@@ -315,8 +315,8 @@ mod bound {
                 &target,
                 layout,
                 &policy,
-                at.date_naive(),
-                at.with_timezone(&Utc),
+                at.date(),
+                at.timestamp(),
                 DecisionPurpose::OffloadProposal,
             );
             let key = (
@@ -365,10 +365,10 @@ mod bound {
     pub(super) fn preflight(
         operation: &PreparedArchiveOperation<'_>,
         report: &mut OffloadPlanning,
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
     ) -> Result<(), OffloadCreationRefusal> {
-        let today = at.date_naive();
-        let now = at.with_timezone(&Utc);
+        let today = at.date();
+        let now = at.timestamp();
         operation
             .revalidate()
             .map_err(|error| native::inputs(OffloadOfferRefusal::Admission(error)))?;
@@ -395,7 +395,7 @@ mod bound {
     pub(super) fn inspect_plan(
         admitted: CurrentArchive<'_, '_>,
         report: &mut OffloadPlanning,
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
     ) -> Result<Option<Vec<OffloadOfferSelection>>, OffloadCreationRefusal> {
         let register = load_at_root(admitted.journal_root())
             .map_err(|error| native::inputs(OffloadOfferRefusal::Review(error)))?;
@@ -436,10 +436,10 @@ mod bound {
     pub(super) fn create<'clock>(
         operation: PreparedArchiveOperation<'clock>,
         services: &BackupServices<'clock>,
-        at: DateTime<FixedOffset>,
+        at: &ZonedDateTime,
     ) -> OffloadCreation<'clock> {
-        let today = at.date_naive();
-        let now = at.with_timezone(&Utc);
+        let today = at.date();
+        let now = at.timestamp();
         let mut report = OffloadPlanning::new();
         let mut resources = Resources::default();
         let prepared = preflight(&operation, &mut report, at);

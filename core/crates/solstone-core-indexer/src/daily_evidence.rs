@@ -3,7 +3,8 @@
 
 //! Read-only daily source projection. This is independent of the search database.
 
-use chrono::{Duration, NaiveDate};
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -218,14 +219,9 @@ impl DailyInput {
             .map_err(|error| error.to_string())?;
         Ok(self.version_since(hook, day, cutoff).is_some())
     }
-    fn version_since(
-        &self,
-        hook: &str,
-        day: &str,
-        cutoff: Option<NaiveDate>,
-    ) -> Option<&'static str> {
+    fn version_since(&self, hook: &str, day: &str, cutoff: Option<Date>) -> Option<&'static str> {
         let cutoff = cutoff?;
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+        let day = solstone_core_time::parse_day(day)?;
         (self.recipients.contains(&hook) && day >= cutoff).then_some(self.version)
     }
 }
@@ -268,7 +264,7 @@ pub fn capture_day_sources(journal: &Path, day: &str) -> Result<Vec<SourceChunk>
 }
 
 pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProjection, String> {
-    NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| format!("invalid day: {e}"))?;
+    solstone_core_time::parse_day(day).ok_or_else(|| format!("invalid day: {day}"))?;
     let chronicle = journal.join("chronicle");
     let mut files = BTreeMap::new();
     collect(&chronicle, &chronicle.join(day), &mut files)?;
@@ -830,7 +826,7 @@ pub fn compute_daily_evidence_cached(
     let inputs = daily_input_contract(&hook, day, &configured)?;
     let contract =
         compute_contract_digest(journal, name, metadata, body, overrides, Some(&inputs))?;
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
+    let date = solstone_core_time::parse_day(day).ok_or_else(|| format!("invalid day: {day}"))?;
     let evidence = if hook == "daily_schedule" {
         let anchor = journal_today(journal);
         let lookback = metadata
@@ -844,9 +840,11 @@ pub fn compute_daily_evidence_cached(
         }
         let mut windows = BTreeMap::new();
         for offset in 0..lookback {
-            let d = (anchor - Duration::days(offset))
-                .format("%Y%m%d")
-                .to_string();
+            let d = solstone_core_time::day_key(
+                anchor
+                    .checked_sub(Span::new().days(offset))
+                    .map_err(|e| e.to_string())?,
+            );
             // The schedule reads segment times as when the owner was active,
             // which a calendar note or a body record is not.
             let keys = iter_segments(journal, PathOrDay::Day(&d))
@@ -868,7 +866,10 @@ pub fn compute_daily_evidence_cached(
         // (`solstone_core_system::daily_coverage::accepted_reuse`).
         let mut sources = Vec::new();
         for offset in evidence_day_offsets(&hook) {
-            let d = (date + Duration::days(offset)).format("%Y%m%d").to_string();
+            let d = solstone_core_time::day_key(
+                date.checked_add(Span::new().days(offset))
+                    .map_err(|e| e.to_string())?,
+            );
             sources.extend(if hook == "entities:entities_review" {
                 capture_facet_day_sources(journal, &d, "entities", facet)?.sources
             } else if cache.journal == journal && cache.day == d {
@@ -912,10 +913,10 @@ pub fn evidence_day_offsets(hook: &str) -> Vec<i64> {
 }
 
 /// Today in the journal's owner zone.
-pub fn journal_today(journal: &Path) -> NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive()
+pub fn journal_today(journal: &Path) -> Date {
+    solstone_core_journal_config::owner_zone(journal)
+        .to_datetime(Timestamp::now())
+        .date()
 }
 
 fn template_contract(
@@ -1226,7 +1227,7 @@ mod tests {
     #[test]
     fn calendar_notes_never_move_a_daily_units_evidence() {
         let root = root("calendar-not-daily-evidence");
-        let today = journal_today(&root).format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(journal_today(&root));
         write(
             &root,
             "streams/phone_calendar.json",
@@ -1275,7 +1276,7 @@ mod tests {
     #[test]
     fn an_imported_calendar_s_notes_never_move_a_daily_units_evidence() {
         let root = root("calendar-import-not-daily-evidence");
-        let today = journal_today(&root).format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(journal_today(&root));
         let window = format!("chronicle/{today}/import.ics/094130_301");
         write(
             &root,
@@ -1888,7 +1889,7 @@ mod tests {
 
     #[test]
     fn daily_location_input_version_is_none_until_the_cutoff() {
-        let cutoff = chrono::NaiveDate::parse_from_str("20260910", "%Y%m%d").unwrap();
+        let cutoff = jiff::civil::date(2026, 9, 10);
         for hook in [
             "entities:entity_suggest",
             "entities:entity_observer",
@@ -1929,9 +1930,9 @@ mod tests {
     fn daily_maintenance_shares_calendar_window_and_observes_named_segment_topology() {
         let root = root("daily-maintenance-window");
         let anchor = journal_today(&root);
-        let today = anchor.format("%Y%m%d").to_string();
-        let old = (anchor - Duration::days(7)).format("%Y%m%d").to_string();
-        let future = (anchor + Duration::days(1)).format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(anchor);
+        let old = solstone_core_time::day_key(anchor - Span::new().days(7));
+        let future = solstone_core_time::day_key(anchor + Span::new().days(1));
         let meta = Map::from_iter([
             ("meta".to_owned(), json!({"lookback_days":7})),
             (

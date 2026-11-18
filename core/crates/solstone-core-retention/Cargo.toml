@@ -23,7 +23,7 @@ solstone-core-trash.workspace = true
 log.workspace = true
 solstone-core-backup.workspace = true
 getrandom.workspace = true
-chrono = { workspace = true }
+jiff.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 # Declared before any type here references it: the deny.toml wrappers entry this
@@ -35,6 +35,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-format.workspace = true
 solstone-core-processing-record = { workspace = true }
+solstone-core-time.workspace = true
 serde_json = { workspace = true }
 
 [dev-dependencies]

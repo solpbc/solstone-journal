@@ -14,7 +14,7 @@ use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::{get, post};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 mod assemble;
 mod attach;
 mod audio_capture;
@@ -48,7 +48,7 @@ pub use inventory::{
 };
 
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
+pub struct Clock(Arc<dyn Fn() -> Timestamp + Send + Sync>);
 
 /// Capabilities retained by Convey for native reprocessing children.
 #[cfg(windows)]
@@ -59,19 +59,19 @@ pub struct SenseLaunchContext {
 }
 
 impl Clock {
-    pub fn new(now: impl Fn() -> DateTime<Utc> + Send + Sync + 'static) -> Self {
+    pub fn new(now: impl Fn() -> Timestamp + Send + Sync + 'static) -> Self {
         Self(Arc::new(now))
     }
 
     pub fn system() -> Self {
-        Self(Arc::new(Utc::now))
+        Self(Arc::new(Timestamp::now))
     }
 
-    pub fn fixed(now: DateTime<Utc>) -> Self {
+    pub fn fixed(now: Timestamp) -> Self {
         Self(Arc::new(move || now))
     }
 
-    pub fn now(&self) -> DateTime<Utc> {
+    pub fn now(&self) -> Timestamp {
         (self.0)()
     }
 }

@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::TimeZone;
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
@@ -52,10 +52,7 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
 }
 
 /// Preview the atomic message count and local date range for Gemini activities.
-pub fn preview(
-    path: &Path,
-    zone: &impl TimeZone<Offset: std::fmt::Display>,
-) -> Result<ImportPreview, SourceError> {
+pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, SourceError> {
     let plan = plan(path, zone)?;
     Ok(ImportPreview {
         date_range: plan.date_range,
@@ -66,10 +63,7 @@ pub fn preview(
 }
 
 /// Parse Gemini activities into a write-free segment plan on the given zone's days.
-pub fn plan(
-    path: &Path,
-    zone: &impl TimeZone<Offset: std::fmt::Display>,
-) -> Result<ImportPlan, SourceError> {
+pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     let value = load_activities(path)?;
     let activities = value
         .as_array()

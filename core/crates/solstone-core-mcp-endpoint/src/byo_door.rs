@@ -21,7 +21,7 @@ use crate::server::{RequestGuard, serve_stream};
 use crate::session::SessionTable;
 use crate::tls::{McpEndpointTlsService, mcp_endpoint_server_config};
 use crate::unix;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_config::{
     ByoHostnameConfigStatus, ByoRelayConfig, byo_hostname_config, byo_relay_config,
@@ -57,7 +57,8 @@ pub struct ByoDoorState {
     pub account_uri: Option<String>,
     pub caa: Option<String>,
     pub dns_verdict: Option<String>,
-    pub dns_observed_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    pub dns_observed_at: Option<Timestamp>,
     pub socket_listening: bool,
     pub certificate_active: bool,
     pub socket_path: Option<String>,
@@ -65,9 +66,11 @@ pub struct ByoDoorState {
     pub next_action: Option<String>,
     pub relay_state: String,
     pub relay_detail: Option<String>,
-    pub relay_observed_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    pub relay_observed_at: Option<Timestamp>,
     pub dns_addresses: Vec<String>,
-    pub observed_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub observed_at: Timestamp,
 }
 
 /// Read the BYO door state file.
@@ -475,7 +478,7 @@ impl ByoServiceRuntime {
                 relay_detail: None,
                 relay_observed_at: None,
                 dns_addresses: Vec::new(),
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             });
             return;
         }
@@ -506,7 +509,7 @@ impl ByoServiceRuntime {
                 relay_detail: None,
                 relay_observed_at: None,
                 dns_addresses: Vec::new(),
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             });
         }
 
@@ -574,11 +577,12 @@ impl ByoServiceRuntime {
                     relay_detail,
                     relay_observed_at,
                     dns_addresses: self.last_dns_addresses.clone(),
-                    observed_at: Utc::now(),
+                    observed_at: Timestamp::now(),
                 });
             }
 
-            let (verdict, addresses) = resolve_byo_dns(&self.hostname, &uri_str, Utc::now()).await;
+            let (verdict, addresses) =
+                resolve_byo_dns(&self.hostname, &uri_str, Timestamp::now()).await;
             self.last_dns_verdict = Some(verdict);
             self.last_dns_addresses = addresses;
             self.last_dns_account_uri = Some(uri_str.clone());
@@ -586,7 +590,8 @@ impl ByoServiceRuntime {
         }
 
         let verdict = self.last_dns_verdict.clone().unwrap();
-        let dns_fresh = (Utc::now() - verdict.observed_at) <= chrono::Duration::seconds(60);
+        let dns_fresh =
+            (Timestamp::now() - verdict.observed_at) <= jiff::SignedDuration::from_secs(60);
         let dns_admitted = verdict.is_admitted() && dns_fresh;
 
         if !dns_admitted {
@@ -608,7 +613,7 @@ impl ByoServiceRuntime {
                 relay_detail: None,
                 relay_observed_at: None,
                 dns_addresses: self.last_dns_addresses.clone(),
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             });
             return;
         }
@@ -635,7 +640,7 @@ impl ByoServiceRuntime {
                         relay_detail: None,
                         relay_observed_at: None,
                         dns_addresses: self.last_dns_addresses.clone(),
-                        observed_at: Utc::now(),
+                        observed_at: Timestamp::now(),
                     });
                     return;
                 }
@@ -735,7 +740,7 @@ impl ByoServiceRuntime {
                     let (status_tx, status_rx) = watch::channel(crate::byo_relay::RelayStatus {
                         state: "connecting",
                         detail: None,
-                        observed_at: Some(Utc::now()),
+                        observed_at: Some(Timestamp::now()),
                     });
                     let abort_handles = Arc::new(std::sync::Mutex::new(Vec::new()));
                     let task = tokio::spawn(crate::byo_relay::run_byo_relay_tunnel(
@@ -812,7 +817,7 @@ impl ByoServiceRuntime {
             relay_detail,
             relay_observed_at,
             dns_addresses: self.last_dns_addresses.clone(),
-            observed_at: Utc::now(),
+            observed_at: Timestamp::now(),
         });
     }
 }
@@ -835,7 +840,7 @@ fn disabled_state(hostname: Option<String>, enabled: bool, generation: u64) -> B
         relay_detail: None,
         relay_observed_at: None,
         dns_addresses: Vec::new(),
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
     }
 }
 
@@ -1149,7 +1154,7 @@ mod tests {
                 account_uri: Some("https://acme.example.com/acct/123".to_string()),
                 caa: None,
                 dns_verdict: Some("admitted".to_string()),
-                dns_observed_at: Some(Utc::now()),
+                dns_observed_at: Some(Timestamp::now()),
                 socket_listening: true,
                 certificate_active: true,
                 socket_path: Some("/var/tmp/ingress.sock".to_string()),
@@ -1159,7 +1164,7 @@ mod tests {
                 relay_detail: None,
                 relay_observed_at: None,
                 dns_addresses: Vec::new(),
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             },
         );
 
@@ -1184,7 +1189,7 @@ mod tests {
                 account_uri: None,
                 caa: Some("caa_missing".to_string()),
                 dns_verdict: Some("caa_missing".to_string()),
-                dns_observed_at: Some(Utc::now()),
+                dns_observed_at: Some(Timestamp::now()),
                 socket_listening: false,
                 certificate_active: false,
                 socket_path: None,
@@ -1194,7 +1199,7 @@ mod tests {
                 relay_detail: None,
                 relay_observed_at: None,
                 dns_addresses: Vec::new(),
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             },
         );
 
@@ -1299,7 +1304,7 @@ mod full_tests {
             if !replace {
                 // A new unchanged-disabled request just after publication still
                 // needs a fresh acknowledgment within the existing two seconds.
-                let requested_at = Utc::now();
+                let requested_at = Timestamp::now();
                 assert!(first.observed_at < requested_at);
                 let expected = (Some("mcp.example.com".to_owned()), false, 7);
                 assert!(
@@ -1349,7 +1354,7 @@ mod full_tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use solstone_core_journal_io::journal_root::JournalRoot;
     use tempfile::TempDir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1473,7 +1478,7 @@ mod full_tests {
                 *g = Some((
                     DnsVerdict {
                         code: DnsVerdictCode::CaaMissing,
-                        observed_at: Utc::now(),
+                        observed_at: Timestamp::now(),
                     },
                     Vec::new(),
                 ));
@@ -1510,7 +1515,7 @@ mod full_tests {
                 *g = Some((
                     DnsVerdict {
                         code: DnsVerdictCode::Admitted,
-                        observed_at: Utc::now(),
+                        observed_at: Timestamp::now(),
                     },
                     vec!["198.51.100.1".to_string()],
                 ));
@@ -1595,7 +1600,7 @@ mod full_tests {
             *g = Some((
                 DnsVerdict {
                     code: DnsVerdictCode::Admitted,
-                    observed_at: Utc::now(),
+                    observed_at: Timestamp::now(),
                 },
                 vec!["198.51.100.1".to_string()],
             ));
@@ -1763,7 +1768,7 @@ mod full_tests {
             *g = Some((
                 DnsVerdict {
                     code: DnsVerdictCode::Admitted,
-                    observed_at: Utc::now(),
+                    observed_at: Timestamp::now(),
                 },
                 vec!["198.51.100.1".to_string()],
             ));
@@ -1841,7 +1846,7 @@ mod full_tests {
             *g = Some((
                 DnsVerdict {
                     code: DnsVerdictCode::Admitted,
-                    observed_at: Utc::now(),
+                    observed_at: Timestamp::now(),
                 },
                 vec![],
             ));
@@ -1915,7 +1920,7 @@ mod windows_full_tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use solstone_core_journal_config::MCP_BYO_INGRESS_PORT;
     use solstone_core_journal_io::journal_root::JournalRoot;
     use tempfile::TempDir;
@@ -1958,7 +1963,7 @@ mod windows_full_tests {
         *crate::byo_dns::TEST_VERDICT_OVERRIDE.write().unwrap() = Some((
             DnsVerdict {
                 code,
-                observed_at: Utc::now(),
+                observed_at: Timestamp::now(),
             },
             vec!["198.51.100.1".to_string()],
         ));
@@ -2021,7 +2026,7 @@ mod windows_full_tests {
         let _ = stop.send(true);
         service.await.unwrap();
 
-        let base_now = Utc::now().timestamp();
+        let base_now = Timestamp::now().as_second();
         let (not_before, not_after) = (base_now - 1000, base_now + 10000);
         let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
         let mut params = rcgen::CertificateParams::new(vec![HOST.to_string()]).unwrap();

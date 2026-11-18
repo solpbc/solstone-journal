@@ -16,7 +16,7 @@
 //! did not know stays unknown, and a line this reader does not recognise is
 //! counted so the owner sees it rather than losing it silently.
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 
 pub const SEGMENT_SCHEMA: &str = "solstone.location.segment/1";
@@ -97,7 +97,7 @@ pub struct Header {
 pub struct Fix {
     /// Zero-based line number in the file.
     pub line: u32,
-    pub time: DateTime<Utc>,
+    pub time: Timestamp,
     pub latitude: f64,
     pub longitude: f64,
     /// Horizontal accuracy in metres, when the phone reported a valid one.
@@ -109,9 +109,9 @@ pub struct Fix {
 pub struct Visit {
     pub line: u32,
     /// `None` when the phone did not know when the visit began.
-    pub arrival: Option<DateTime<Utc>>,
+    pub arrival: Option<Timestamp>,
     /// `None` when the phone had not reported leaving.
-    pub departure: Option<DateTime<Utc>>,
+    pub departure: Option<Timestamp>,
     pub latitude: f64,
     pub longitude: f64,
     pub accuracy_m: Option<f64>,
@@ -177,15 +177,15 @@ fn accuracy(object: &Map<String, Value>, key: &str) -> Option<f64> {
     number(object, key).filter(|value| *value >= 0.0)
 }
 
-fn iso_time(object: &Map<String, Value>, key: &str) -> Result<Option<DateTime<Utc>>, ()> {
+fn iso_time(object: &Map<String, Value>, key: &str) -> Result<Option<Timestamp>, ()> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => {
-            let parsed = DateTime::parse_from_rfc3339(text).map_err(|_| ())?;
-            let utc = parsed.with_timezone(&Utc);
+            let parsed = solstone_core_time::parse_rfc3339(text).map_err(|_| ())?;
+            let utc = parsed.timestamp();
             // CLVisit writes its "distant past" for an unknown arrival, and its
             // "distant future" for a visit still going on.
-            if utc.timestamp() < 946_684_800 || utc.timestamp() > 32_503_680_000 {
+            if utc.as_second() < 946_684_800 || utc.as_second() > 32_503_680_000 {
                 return Ok(None);
             }
             Ok(Some(utc))
@@ -258,7 +258,7 @@ pub fn parse_segment_file(bytes: &[u8]) -> SegmentFile {
                 let time = object
                     .get("timestamp")
                     .and_then(Value::as_i64)
-                    .and_then(|millis| Utc.timestamp_millis_opt(millis).single());
+                    .and_then(|millis| Timestamp::from_millisecond(millis).ok());
                 match (coordinates(&object), time) {
                     (Some((latitude, longitude)), Some(time)) => file.fixes.push(Fix {
                         line: line_number,
@@ -327,7 +327,7 @@ mod tests {
         assert!(file.header.is_none());
         assert_eq!(file.precision(Platform::Android), Precision::Approximate);
         assert_eq!(file.fixes.len(), 2);
-        assert_eq!(file.fixes[0].time.timestamp(), 1_759_334_735);
+        assert_eq!(file.fixes[0].time.as_second(), 1_759_334_735);
         assert_eq!(
             file.fixes[1].accuracy_m, None,
             "an omitted accuracy is unknown"

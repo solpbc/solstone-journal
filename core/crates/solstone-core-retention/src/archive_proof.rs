@@ -120,7 +120,7 @@ impl OffloadProof {
         ) || !plain_component(&self.manifest_id)
             || self.target.day.len() != 8
             || !self.target.day.bytes().all(|byte| byte.is_ascii_digit())
-            || chrono::NaiveDate::parse_from_str(&self.target.day, "%Y%m%d").is_err()
+            || solstone_core_time::parse_day(&self.target.day).is_none()
             || !plain_component(&self.target.stream)
             || (self.layout == SegmentLayout::Direct && self.target.stream != DEFAULT_STREAM)
             || !plain_component(&self.target.dir)

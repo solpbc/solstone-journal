@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
-use chrono::Utc;
 use ring::rand::{SecureRandom as _, SystemRandom};
 use spl_core::frame::{Frame, RECOMMENDED_CHUNK};
 use spl_core::mux::INITIAL_WINDOW;
@@ -270,7 +269,7 @@ pub(crate) fn start_bridge_session(
         entries: Mutex::new(Vec::with_capacity(PUBLIC_STREAM_CAPACITY)),
     });
     let binding = authority.binding();
-    let epoch = MonotonicEpoch::new(Utc::now().timestamp());
+    let epoch = MonotonicEpoch::new(jiff::Timestamp::now().as_second());
     let proof_key = renewal_owner.proof_keypair();
     let renewal = tokio::spawn(run_renewal_fetcher(
         renewal_owner,
@@ -607,9 +606,9 @@ async fn run_renewal_fetcher(
                 }
                 Err(ref err) => {
                     if let Some((hold, delay)) = crate::bridge_carrier::registration_hold(err) {
-                        let next_attempt = chrono::Utc::now()
-                            + chrono::Duration::from_std(delay)
-                                .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                        let next_attempt = jiff::Timestamp::now()
+                            + jiff::SignedDuration::try_from(delay)
+                                .unwrap_or(jiff::SignedDuration::from_secs(300));
                         crate::owner_state::write_mcp_hold_state(
                             owner.journal_path(),
                             hold,
@@ -796,7 +795,7 @@ async fn run_driver(
                 &next,
                 proof_key.as_ref(),
                 &frame,
-                Utc::now().timestamp(),
+                jiff::Timestamp::now().as_second(),
             ) {
                 Ok(response) => response,
                 Err(_) => {

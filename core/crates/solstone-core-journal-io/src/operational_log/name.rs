@@ -9,8 +9,11 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use jiff::ZonedDateTime;
+use jiff::civil::DateTime;
+use jiff::tz::Offset;
 use sha2::{Digest, Sha256};
+use solstone_core_time::day_key;
 
 use crate::name_admission::check_portable_component;
 
@@ -231,11 +234,13 @@ pub enum OplogNameClassification {
 }
 
 /// Local day key and UTC opened field from one instant.
-pub fn derive_day_key_and_opened_field(instant: DateTime<FixedOffset>) -> (String, String) {
-    let day = instant.format("%Y%m%d").to_string();
+pub fn derive_day_key_and_opened_field(instant: &ZonedDateTime) -> (String, String) {
+    let day = day_key(instant.date());
     let opened = format!(
         "{}Z",
-        instant.with_timezone(&Utc).format("%Y%m%dT%H%M%S%.6f")
+        Offset::UTC
+            .to_datetime(instant.timestamp())
+            .strftime("%Y%m%dT%H%M%S%.6f")
     );
     (day, opened)
 }
@@ -423,7 +428,7 @@ pub(super) fn is_opened_field(value: &str) -> bool {
         && bytes[..8].iter().all(u8::is_ascii_digit)
         && bytes[9..15].iter().all(u8::is_ascii_digit)
         && bytes[16..22].iter().all(u8::is_ascii_digit)
-        && NaiveDateTime::parse_from_str(&value[..22], "%Y%m%dT%H%M%S%.6f").is_ok()
+        && DateTime::strptime("%Y%m%dT%H%M%S%.6f", &value[..22]).is_ok()
 }
 
 fn is_hex_field(value: &str, len: usize) -> bool {
@@ -496,7 +501,7 @@ mod tests {
     use std::error::Error;
     use std::ffi::OsStr;
 
-    use chrono::DateTime;
+    use solstone_core_time::parse_rfc3339;
 
     use super::*;
 
@@ -524,8 +529,8 @@ mod tests {
 
     #[test]
     fn reference_vector_round_trips_typed_identity_and_log_format() {
-        let instant = DateTime::parse_from_rfc3339("2026-09-01T16:42:33.381904Z").unwrap();
-        let (day, opened) = derive_day_key_and_opened_field(instant);
+        let instant = parse_rfc3339("2026-09-01T16:42:33.381904Z").unwrap();
+        let (day, opened) = derive_day_key_and_opened_field(&instant);
         assert_eq!(day, "20260901");
         assert_eq!(opened, "20260901T164233.381904Z");
         assert_eq!(opened.len(), 23);
@@ -782,8 +787,8 @@ mod tests {
 
     #[test]
     fn midnight_offset_instant_shares_one_derivation() {
-        let instant = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
-        let (day, opened) = derive_day_key_and_opened_field(instant);
+        let instant = parse_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
+        let (day, opened) = derive_day_key_and_opened_field(&instant);
         assert_eq!(day, "20260901");
         assert_eq!(opened, "20260902T043000.000000Z");
     }

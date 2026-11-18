@@ -30,7 +30,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use jiff::civil::Date;
+use jiff::{Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::atomic::{
@@ -166,7 +167,8 @@ pub struct InteractionRecord {
     #[serde(default = "schema_one")]
     pub schema: u32,
     pub agent_identity: String,
-    pub timestamp: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub timestamp: Timestamp,
     pub tool_name: ToolName,
     /// The durable connection key. Schema 2 and later.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -244,8 +246,12 @@ pub struct ResultShape {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Value>,
     /// First reservation time for a private memory record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "solstone_core_time::serde::timestamp::option"
+    )]
+    pub created_at: Option<Timestamp>,
     /// Exact UTF-8 byte count for a private memory record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_count: Option<usize>,
@@ -268,7 +274,8 @@ pub struct MemoryResultFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutcomeRecord {
     pub schema: u32,
-    pub timestamp: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub timestamp: Timestamp,
     pub outcome: Outcome,
     /// The owner-visible reason. ⚠ Deliberately richer than the wire refusal,
     /// which stays closed and indistinguishable.
@@ -283,7 +290,7 @@ pub struct OutcomeRecord {
 /// Location of one durably published interaction record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditCoordinates {
-    pub day: NaiveDate,
+    pub day: Date,
     pub stream: String,
     pub segment: String,
 }
@@ -379,9 +386,9 @@ impl Error for AuditWriteError {
 /// UTC instant; the day and segment are the wall time in `now`'s zone, which
 /// production passes as the journal's local zone so the record files under the
 /// same day as everything else that happened then.
-pub fn write_interaction_record<Z: TimeZone>(
+pub fn write_interaction_record(
     journal_root: &Path,
-    now: DateTime<Z>,
+    now: &ZonedDateTime,
     admission: &Admission<'_>,
 ) -> Result<AuditCoordinates, AuditWriteError> {
     write_interaction_record_with_before_publish(journal_root, now, admission, || {})
@@ -412,20 +419,19 @@ fn bounded_request(
     }
 }
 
-fn write_interaction_record_with_before_publish<Z, F>(
+fn write_interaction_record_with_before_publish<F>(
     journal_root: &Path,
-    now: DateTime<Z>,
+    now: &ZonedDateTime,
     admission: &Admission<'_>,
     mut before_publish: F,
 ) -> Result<AuditCoordinates, AuditWriteError>
 where
-    Z: TimeZone,
     F: FnMut(),
 {
-    let wall = now.naive_local();
-    let now = now.with_timezone(&Utc);
+    let wall = now.datetime();
+    let now = now.timestamp();
     let day = wall.date();
-    let day_key = day.format("%Y%m%d").to_string();
+    let day_key = solstone_core_time::day_key(day);
     let day_directory = day_path(journal_root, &day_key, true).map_err(AuditWriteError::DayPath)?;
     let stream_directory = day_directory.join(AUDIT_STREAM);
     let record = InteractionRecord {
@@ -440,7 +446,7 @@ where
         )),
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
-    let mut candidate = format!("{}_1", wall.format("%H%M%S"));
+    let mut candidate = format!("{}_1", wall.strftime("%H%M%S"));
 
     for _ in 0..MAX_SEGMENT_ATTEMPTS {
         let Some(segment) =
@@ -483,7 +489,7 @@ where
 pub fn write_outcome_record(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
-    now: DateTime<Utc>,
+    now: Timestamp,
     outcome: Outcome,
     reason: Option<&str>,
     result: Option<ResultShape>,
@@ -503,13 +509,13 @@ pub fn write_outcome_record(
 pub fn write_outcome_record_with_paused(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
-    now: DateTime<Utc>,
+    now: Timestamp,
     outcome: Outcome,
     reason: Option<&str>,
     result: Option<ResultShape>,
     paused: bool,
 ) -> Result<(), AuditWriteError> {
-    let day_key = coordinates.day.format("%Y%m%d").to_string();
+    let day_key = solstone_core_time::day_key(coordinates.day);
     let segment_directory = segment_path(
         journal_root,
         &day_key,
@@ -599,7 +605,9 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread;
 
-    use chrono::{FixedOffset, TimeZone, Utc};
+    use jiff::ZonedDateTime;
+    use jiff::civil::date;
+    use jiff::tz::{Offset, TimeZone};
     use serde_json::json;
 
     use super::{
@@ -623,6 +631,13 @@ mod tests {
         ));
         fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> ZonedDateTime {
+        date(year, month, day)
+            .at(hour, minute, second, 0)
+            .to_zoned_datetime(TimeZone::UTC)
+            .unwrap()
     }
 
     fn admission(connection: &str, tool_name: ToolName) -> Admission<'_> {
@@ -685,7 +700,7 @@ mod tests {
         let record = InteractionRecord {
             schema: INTERACTION_SCHEMA,
             agent_identity: "operator".to_owned(),
-            timestamp: Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap(),
+            timestamp: utc(2026, 8, 31, 12, 34, 56).timestamp(),
             tool_name: ToolName::Search,
             connection: Some("bearer:abc".to_owned()),
             request: Some(RequestRecord {
@@ -709,6 +724,41 @@ mod tests {
     }
 
     #[test]
+    fn an_outcome_keeps_its_instant_text_and_reads_it_back() {
+        let at = date(2026, 8, 31)
+            .at(12, 0, 1, 120_000_000)
+            .to_zoned_datetime(TimeZone::UTC)
+            .unwrap()
+            .timestamp();
+        let mut result = result_shape(1, vec!["a".to_owned()], "d".to_owned());
+        result.created_at = Some(utc(2026, 8, 30, 9, 8, 7).timestamp());
+        let record = super::OutcomeRecord {
+            schema: 1,
+            timestamp: at,
+            outcome: Outcome::Stored,
+            reason: None,
+            result: Some(result),
+            paused: false,
+        };
+
+        let encoded = serde_json::to_value(&record).unwrap();
+        assert_eq!(encoded["timestamp"], "2026-08-31T12:00:01.120Z");
+        assert_eq!(encoded["result"]["created_at"], "2026-08-30T09:08:07Z");
+        assert_eq!(
+            serde_json::from_value::<super::OutcomeRecord>(encoded).unwrap(),
+            record
+        );
+        let legacy = serde_json::from_value::<super::OutcomeRecord>(json!({
+            "schema": 1,
+            "timestamp": "2026-08-31T12:00:01+00:00",
+            "outcome": "empty",
+        }))
+        .unwrap();
+        assert_eq!(legacy.timestamp, utc(2026, 8, 31, 12, 0, 1).timestamp());
+        assert!(legacy.result.is_none());
+    }
+
+    #[test]
     fn a_schema_one_record_deserializes_without_inventing_its_missing_halves() {
         let record = serde_json::from_value::<InteractionRecord>(json!({
             "agent_identity": "operator",
@@ -727,10 +777,10 @@ mod tests {
     #[test]
     fn writes_one_closed_record_at_the_returned_coordinates() {
         let root = journal_root();
-        let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
+        let now = utc(2026, 8, 31, 12, 34, 56);
 
         let coordinates =
-            write_interaction_record(&root, now, &admission("bearer:one", ToolName::Fetch))
+            write_interaction_record(&root, &now, &admission("bearer:one", ToolName::Fetch))
                 .unwrap();
 
         assert_eq!(coordinates.day.to_string(), "2026-08-31");
@@ -751,13 +801,13 @@ mod tests {
     fn an_evening_call_files_under_the_local_day_and_keeps_the_utc_instant() {
         let root = journal_root();
         // 19:30 on Sep 28 at UTC-6 is 01:30 UTC on Sep 29.
-        let now = FixedOffset::west_opt(6 * 3600)
-            .unwrap()
-            .with_ymd_and_hms(2026, 9, 28, 19, 30, 0)
+        let now = date(2026, 9, 28)
+            .at(19, 30, 0, 0)
+            .to_zoned_datetime(TimeZone::fixed(Offset::from_seconds(-6 * 3600).unwrap()))
             .unwrap();
 
         let coordinates =
-            write_interaction_record(&root, now, &admission("bearer:one", ToolName::Fetch))
+            write_interaction_record(&root, &now, &admission("bearer:one", ToolName::Fetch))
                 .unwrap();
 
         assert_eq!(coordinates.day.to_string(), "2026-09-28");
@@ -776,11 +826,11 @@ mod tests {
         let root = journal_root();
         let coordinates = write_interaction_record(
             &root,
-            Utc.with_ymd_and_hms(2026, 8, 31, 12, 0, 0).unwrap(),
+            &utc(2026, 8, 31, 12, 0, 0),
             &admission("bearer:one", ToolName::Search),
         )
         .unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 0, 1).unwrap();
+        let now = utc(2026, 8, 31, 12, 0, 1).timestamp();
         write_outcome_record(&root, &coordinates, now, Outcome::Empty, None, None).unwrap();
         assert!(
             write_outcome_record(&root, &coordinates, now, Outcome::Served, None, None).is_err()
@@ -816,7 +866,7 @@ mod tests {
         );
         let coordinates = write_interaction_record(
             &root,
-            Utc.with_ymd_and_hms(2026, 8, 31, 12, 0, 0).unwrap(),
+            &utc(2026, 8, 31, 12, 0, 0),
             &Admission {
                 connection: "bearer:one",
                 agent_identity: "bearer:one",
@@ -877,7 +927,7 @@ mod tests {
     #[test]
     fn concurrent_interactions_retry_an_exclusive_write_collision() {
         let root = Arc::new(journal_root());
-        let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
+        let now = utc(2026, 8, 31, 12, 34, 56);
         let selected = Arc::new(Barrier::new(2));
         let selections = Arc::new(AtomicUsize::new(0));
 
@@ -885,10 +935,11 @@ mod tests {
             let root = Arc::clone(&root);
             let selected = Arc::clone(&selected);
             let selections = Arc::clone(&selections);
+            let now = now.clone();
             thread::spawn(move || {
                 write_interaction_record_with_before_publish(
                     &root,
-                    now,
+                    &now,
                     &admission("first-agent", ToolName::Search),
                     move || {
                         if selections.fetch_add(1, Ordering::SeqCst) < 2 {
@@ -903,10 +954,11 @@ mod tests {
             let root = Arc::clone(&root);
             let selected = Arc::clone(&selected);
             let selections = Arc::clone(&selections);
+            let now = now.clone();
             thread::spawn(move || {
                 write_interaction_record_with_before_publish(
                     &root,
-                    now,
+                    &now,
                     &admission("second-agent", ToolName::Fetch),
                     move || {
                         if selections.fetch_add(1, Ordering::SeqCst) < 2 {
@@ -927,7 +979,7 @@ mod tests {
         ] {
             let record = fs::read_to_string(
                 root.join("chronicle")
-                    .join(coordinates.day.format("%Y%m%d").to_string())
+                    .join(coordinates.day.strftime("%Y%m%d").to_string())
                     .join(coordinates.stream)
                     .join(coordinates.segment)
                     .join(INTERACTION_FILE),

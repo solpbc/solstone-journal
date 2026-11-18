@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{Datelike, NaiveDate};
+use jiff::Span;
+use jiff::civil::Date;
 use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
 use solstone_core_system::daily_coverage::{self, CoverageState};
 use solstone_core_system::owner_ask::{self, OwnerAsk, WEEK_BUILT};
@@ -289,7 +290,7 @@ impl AskPass {
         &mut self,
         journal: &Path,
         roots: Option<(&Path, &Path)>,
-        today: NaiveDate,
+        today: Date,
         policy: WorkPolicy,
         now_ms: i64,
         checkpoint: &dyn Fn() -> Result<(), String>,
@@ -343,7 +344,7 @@ impl AskPass {
                 && (!ask.thaw || ask.thaw_done)
                 && !briefings[&ask.day].owed
         };
-        let mut weeks = BTreeMap::<NaiveDate, Vec<String>>::new();
+        let mut weeks = BTreeMap::<Date, Vec<String>>::new();
         for id in &ids {
             let Some(ask) = self.asks.get(id) else {
                 continue;
@@ -358,7 +359,9 @@ impl AskPass {
         let mut tasks = Vec::new();
         for (sunday, members) in weeks {
             checkpoint()?;
-            let saturday = sunday + chrono::Duration::days(6);
+            let saturday = sunday
+                .checked_add(Span::new().days(6))
+                .map_err(|error| error.to_string())?;
             if saturday >= today {
                 for id in &members {
                     self.waiting_on.insert(id.clone(), "week_not_ended");
@@ -380,7 +383,7 @@ impl AskPass {
                 })
                 .max()
                 .expect("a week has an ask");
-            let start = sunday.format("%Y%m%d").to_string();
+            let start = solstone_core_time::day_key(sunday);
             let trash = members.iter().any(|id| self.asks[id].from_trash());
             let owed = match week_page(journal, &start, reference, trash) {
                 Page::Ended(reason) => {
@@ -447,7 +450,7 @@ impl AskPass {
             if !policy.permits(band) {
                 continue;
             }
-            let saturday = saturday.format("%Y%m%d").to_string();
+            let saturday = solstone_core_time::day_key(saturday);
             let mut priority = solstone_core_system::priority::classify(
                 &canonical_journal_command(["think", "--day", &saturday, "--weekly"]),
                 today,
@@ -572,9 +575,14 @@ fn requeue(journal: &Path, rel: &str) {
 }
 
 /// The Sunday that starts the week holding `day`.
-fn week_start(day: &str) -> Result<NaiveDate, String> {
-    let day = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|error| error.to_string())?;
-    Ok(day - chrono::Duration::days(i64::from(day.weekday().num_days_from_sunday())))
+fn week_start(day: &str) -> Result<Date, String> {
+    let day = parse_day(day)?;
+    day.checked_sub(Span::new().days(day.weekday().to_sunday_zero_offset()))
+        .map_err(|error| error.to_string())
+}
+
+fn parse_day(day: &str) -> Result<Date, String> {
+    solstone_core_time::parse_day(day).ok_or_else(|| format!("{day} is not a YYYYMMDD day"))
 }
 
 /// What a day's morning briefing says about an ask on that day.
@@ -669,7 +677,7 @@ pub(crate) fn asked_days(journal: &Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
         .into_values()
         .filter_map(|ask| {
-            let start = week_start(&ask.day).ok()?.format("%Y%m%d").to_string();
+            let start = solstone_core_time::day_key(week_start(&ask.day).ok()?);
             Some((ask.day, week_reference(&start)))
         })
         .collect()
@@ -695,9 +703,10 @@ fn week_task(start: &str, saturday: &str, priority: WorkPriority) -> DiscoveredT
 /// Whether a queued week page run for the week ending `saturday` is still
 /// asked for. The pass that offered it judged the page.
 pub(crate) fn week_still_owed(journal: &Path, saturday: &str) -> Result<bool, String> {
-    let saturday =
-        NaiveDate::parse_from_str(saturday, "%Y%m%d").map_err(|error| error.to_string())?;
-    let sunday = saturday - chrono::Duration::days(6);
+    let saturday = parse_day(saturday)?;
+    let sunday = saturday
+        .checked_sub(Span::new().days(6))
+        .map_err(|error| error.to_string())?;
     Ok(read_asks(journal)?.values().any(|ask| {
         ask.week.ended.is_none() && week_start(&ask.day).is_ok_and(|start| start == sunday)
     }))

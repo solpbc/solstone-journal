@@ -20,8 +20,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
-use chrono_tz::Tz;
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     HealthMarkerKind, HealthMarkerState, PathOrDay, day_dirs, iter_segments, read_health_marker,
@@ -84,8 +83,8 @@ pub fn stay_records(view: &DayLocation) -> Vec<StayRecord> {
                 ..
             } => (
                 *device,
-                arrival.map(|time| time.utc.timestamp()),
-                departure.map(|time| time.utc.timestamp()),
+                arrival.map(|time| time.utc.as_second()),
+                departure.map(|time| time.utc.as_second()),
                 point,
                 "reported",
             ),
@@ -97,8 +96,8 @@ pub fn stay_records(view: &DayLocation) -> Vec<StayRecord> {
                 ..
             } => (
                 *device,
-                Some(first.utc.timestamp()),
-                Some(last.utc.timestamp()),
+                Some(first.utc.as_second()),
+                Some(last.utc.as_second()),
                 point,
                 "worked",
             ),
@@ -200,10 +199,9 @@ pub(crate) fn marker_token(journal: &Path, day: &str, kind: HealthMarkerKind) ->
 /// What a day's build depends on: its own segments and the next day's, where
 /// a visit's complete report lands when the owner leaves after midnight.
 pub fn build_token(journal: &Path, day: &str) -> String {
-    let next = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.succ_opt())
-        .map(|date| source_token(journal, &date.format("%Y%m%d").to_string()))
+    let next = solstone_core_time::parse_day(day)
+        .and_then(|date| date.tomorrow().ok())
+        .map(|date| source_token(journal, &solstone_core_time::day_key(date)))
         .unwrap_or_default();
     format!("{}+{next}", source_token(journal, day))
 }
@@ -303,9 +301,9 @@ fn moment(time: &LocalTime, day: &str) -> String {
     if local_day == day {
         return time.clock();
     }
-    match NaiveDate::parse_from_str(&local_day, "%Y%m%d") {
-        Ok(date) => format!("{} at {}", date.format("%B %-d"), time.clock()),
-        Err(_) => time.clock(),
+    match solstone_core_time::parse_day(&local_day) {
+        Some(date) => format!("{} at {}", date.strftime("%B %-d"), time.clock()),
+        None => time.clock(),
     }
 }
 
@@ -364,9 +362,9 @@ pub(crate) fn hidden_reach(store: &PlaceStore, entry: &Entry) -> Reach {
 /// is written: a stay or visit there is left out, a run of readings all there
 /// is left out, and a run partly there keeps its times without its area.
 pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
-    let heading = NaiveDate::parse_from_str(&day.day, "%Y%m%d")
-        .map(|date| date.format("%A, %B %-d, %Y").to_string())
-        .unwrap_or_else(|_| day.day.clone());
+    let heading = solstone_core_time::parse_day(&day.day)
+        .map(|date| date.strftime("%A, %B %-d, %Y").to_string())
+        .unwrap_or_else(|| day.day.clone());
     let mut text = format!("# location on {heading}\n\n");
     let mut lines = 0;
     for entry in &day.entries {
@@ -506,7 +504,7 @@ pub fn rebuild_day(
     packs: Option<&Packs>,
     store: &PlaceStore,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> Result<Rebuilt, ProjectionError> {
     crate::reconcile_io::transaction(|| {
         rebuild_day_inner(journal, day, tier, packs, store, directory, owner)
@@ -520,7 +518,7 @@ fn rebuild_day_inner(
     packs: Option<&Packs>,
     store: &PlaceStore,
     directory: &dyn DeviceDirectory,
-    owner: Tz,
+    owner: &TimeZone,
 ) -> Result<Rebuilt, ProjectionError> {
     // Read the marker before the segments: a removal that lands while this
     // build reads advances it, and the next pass rebuilds again.
@@ -619,7 +617,7 @@ impl Reconciler {
         tier: &AreaTier,
         packs: Option<&Packs>,
         directory: &dyn DeviceDirectory,
-        owner: Tz,
+        owner: &TimeZone,
     ) -> ReconcileReport {
         let mut report = ReconcileReport::default();
         let identity = packs
@@ -793,7 +791,7 @@ mod tests {
             None,
             &PlaceStore::default(),
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         )
         .unwrap()
     }
@@ -914,7 +912,7 @@ mod tests {
                 None,
                 &store,
                 &directory(),
-                chrono_tz::America::Denver,
+                &solstone_core_time::zone("America/Denver").unwrap(),
             )
             .unwrap(),
             Rebuilt::Written
@@ -968,7 +966,7 @@ mod tests {
             Some(&packs),
             &PlaceStore::default(),
             &directory(),
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
         )
         .unwrap();
         assert_eq!(built, Rebuilt::Written);
@@ -1017,7 +1015,7 @@ mod tests {
                 tier(),
                 None,
                 &directory(),
-                chrono_tz::America::Denver,
+                &solstone_core_time::zone("America/Denver").unwrap(),
             )
         };
         let first = pass();
@@ -1078,7 +1076,7 @@ mod tests {
                 tier(),
                 None,
                 &directory(),
-                chrono_tz::America::Denver,
+                &solstone_core_time::zone("America/Denver").unwrap(),
             )
         };
         assert_eq!(pass().written, 1);
@@ -1122,7 +1120,7 @@ mod tests {
                 tier(),
                 packs,
                 &directory(),
-                chrono_tz::America::Denver,
+                &solstone_core_time::zone("America/Denver").unwrap(),
             )
         };
         assert_eq!(pass(None).written, 1);
@@ -1211,7 +1209,7 @@ mod tests {
                 tier(),
                 None,
                 &directory(),
-                chrono_tz::America::Denver,
+                &solstone_core_time::zone("America/Denver").unwrap(),
             )
         };
         let first = pass(&mut reconciler);

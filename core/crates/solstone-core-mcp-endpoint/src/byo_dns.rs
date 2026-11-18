@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// DNS lookup outcome codes.
@@ -69,12 +69,12 @@ pub struct HostDnsRecords {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsVerdict {
     pub code: DnsVerdictCode,
-    pub observed_at: DateTime<Utc>,
+    pub observed_at: Timestamp,
 }
 
 impl DnsVerdict {
     #[must_use]
-    pub fn new(code: DnsVerdictCode, observed_at: DateTime<Utc>) -> Self {
+    pub fn new(code: DnsVerdictCode, observed_at: Timestamp) -> Self {
         Self { code, observed_at }
     }
 
@@ -89,7 +89,7 @@ pub fn evaluate_byo_dns_policy(
     hostname: &str,
     account_uri: &str,
     records_by_domain: &HashMap<String, HostDnsRecords>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DnsVerdict {
     let lower_host = hostname.to_ascii_lowercase();
 
@@ -340,7 +340,7 @@ fn resolver_config_from_nameservers(
 pub async fn resolve_byo_dns(
     hostname: &str,
     account_uri: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> (DnsVerdict, Vec<String>) {
     #[cfg(test)]
     {
@@ -674,7 +674,7 @@ mod tests {
     #[test]
     fn policy_admitted_case() {
         let map = base_records();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let verdict = evaluate_byo_dns_policy(HOST, URI, &map, now);
         assert_eq!(verdict.code, DnsVerdictCode::Admitted);
         assert!(verdict.is_admitted());
@@ -686,7 +686,7 @@ mod tests {
         map.get_mut(HOST).unwrap().caa[0].value =
             format!("letsencrypt.org.; accounturi={URI}; validationmethods=tls-alpn-01");
         assert_eq!(
-            evaluate_byo_dns_policy(HOST, URI, &map, Utc::now()).code,
+            evaluate_byo_dns_policy(HOST, URI, &map, Timestamp::now()).code,
             DnsVerdictCode::Admitted
         );
     }
@@ -698,7 +698,7 @@ mod tests {
             "letsencrypt.org; accounturi=https://acme.example/acct/other; accounturi={URI}; validationmethods=tls-alpn-01"
         );
         assert_ne!(
-            evaluate_byo_dns_policy(HOST, URI, &map, Utc::now()).code,
+            evaluate_byo_dns_policy(HOST, URI, &map, Timestamp::now()).code,
             DnsVerdictCode::Admitted
         );
     }
@@ -707,7 +707,7 @@ mod tests {
     fn policy_cname_rejected() {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().cname = vec!["alias.example.com".to_string()];
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::Cname
@@ -719,7 +719,7 @@ mod tests {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().a = vec![];
         map.get_mut(HOST).unwrap().aaaa = vec![];
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::NoAddress
@@ -730,7 +730,7 @@ mod tests {
     fn policy_caa_missing() {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().caa = vec![];
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::CaaMissing
@@ -756,7 +756,7 @@ mod tests {
                 }],
             },
         );
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::Admitted
@@ -771,7 +771,7 @@ mod tests {
             tag: "issuewild".to_string(),
             value: ";".to_string(),
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::Issuewild
@@ -786,7 +786,7 @@ mod tests {
             tag: "issue".to_string(),
             value: "otherca.com".to_string(),
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::ExtraIssue
@@ -798,7 +798,7 @@ mod tests {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().caa[0].value =
             format!("digicert.com; accounturi={URI}; validationmethods=tls-alpn-01");
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::OtherCa
@@ -809,7 +809,7 @@ mod tests {
     fn policy_account_uri_mismatch_rejected() {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().caa[0].value = "letsencrypt.org; accounturi=https://acme.org/acct/wrong; validationmethods=tls-alpn-01".to_string();
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::AccountUri
@@ -821,7 +821,7 @@ mod tests {
         let mut map = base_records();
         map.get_mut(HOST).unwrap().caa[0].value =
             format!("letsencrypt.org; accounturi={URI}; validationmethods=http-01");
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert_eq!(
             evaluate_byo_dns_policy(HOST, URI, &map, now).code,
             DnsVerdictCode::ValidationMethod

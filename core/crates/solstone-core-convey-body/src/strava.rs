@@ -13,7 +13,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::DateTime;
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::day_of;
 
@@ -68,7 +67,7 @@ pub(crate) fn workouts_on(
             let started = workout
                 .get("start")
                 .and_then(Value::as_str)
-                .and_then(|start| day_of(start, zone));
+                .and_then(|start| day_of(start, zone.as_ref()));
             match started {
                 Some(started) if hidden.contains(&started) => {
                     took.insert(started);
@@ -103,16 +102,16 @@ fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
     let start = workout
         .get("start")
         .and_then(Value::as_str)
-        .and_then(|start| DateTime::parse_from_rfc3339(start).ok());
-    let start_label = start.map(|start| {
-        let local = start.naive_local();
+        .and_then(|start| solstone_core_time::parse_rfc3339(start).ok());
+    let start_label = start.as_ref().map(|start| {
+        let local = start.datetime();
         let label = clock(local);
-        if local.format("%Y%m%d").to_string() == day {
+        if solstone_core_time::day_key(local.date()) == day {
             label
         } else {
             format!(
                 "{}, {label}",
-                local.format("%b %-d").to_string().to_lowercase()
+                local.strftime("%b %-d").to_string().to_lowercase()
             )
         }
     });
@@ -182,7 +181,9 @@ fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
         "details": details,
         "more_from_strava": more_from_strava,
         "strava_activity_id": activity_id.to_string(),
-        "sort": start.map(|s| s.to_rfc3339()).unwrap_or_default(),
+        "sort": start
+            .map(|s| solstone_core_time::zoned_rfc3339(&s, solstone_core_time::Precision::AutoSi, false))
+            .unwrap_or_default(),
     })
 }
 

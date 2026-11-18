@@ -6,7 +6,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use chrono::{Datelike, Duration, NaiveDate};
+use jiff::civil::{Date, Weekday};
 use serde_json::{Value, json};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
 use solstone_core_journal_io::observation::FlatDirectoryEntry;
@@ -77,11 +77,11 @@ pub struct TrustedSource {
     pub refs: Vec<String>,
 }
 
-pub fn week_day(segment: &str) -> Option<NaiveDate> {
+pub fn week_day(segment: &str) -> Option<Date> {
     if segment.len() != 8 || !segment.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    NaiveDate::parse_from_str(segment, "%Y%m%d").ok()
+    solstone_core_time::parse_day(segment)
 }
 
 const MAX_WEEK_ENTRIES: usize = 10_000;
@@ -255,8 +255,8 @@ fn read_and_judge(journal: &Path, day: &str, listed_json: bool) -> Result<WeekJu
     Ok(judge_contents(day, start_date, &content_bytes))
 }
 
-fn judge_contents(day: &str, start_date: NaiveDate, content_bytes: &[u8]) -> WeekJudgment {
-    if start_date.weekday() != chrono::Weekday::Sun {
+fn judge_contents(day: &str, start_date: Date, content_bytes: &[u8]) -> WeekJudgment {
+    if start_date.weekday() != Weekday::Sunday {
         return WeekJudgment::CouldntCheck;
     }
 
@@ -361,8 +361,10 @@ fn judge_contents(day: &str, start_date: NaiveDate, content_bytes: &[u8]) -> Wee
     let mut trusted_days = Vec::with_capacity(7);
 
     for (i, d) in days_arr.iter().enumerate() {
-        let expected_date = start_date + Duration::days(i as i64);
-        let expected_day_str = expected_date.format("%Y%m%d").to_string();
+        let Ok(expected_date) = start_date.checked_add(jiff::Span::new().days(i as i64)) else {
+            return WeekJudgment::CouldntCheck;
+        };
+        let expected_day_str = solstone_core_time::day_key(expected_date);
 
         let (Some(day_str), Some(state)) = (
             d.get("day").and_then(Value::as_str),
@@ -420,8 +422,8 @@ fn judge_contents(day: &str, start_date: NaiveDate, content_bytes: &[u8]) -> Wee
     let generated_at_ms = value
         .get("generated_at")
         .and_then(Value::as_str)
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-        .map(|at| at.timestamp_millis());
+        .and_then(|at| solstone_core_time::parse_rfc3339(at).ok())
+        .map(|at| at.timestamp().as_millisecond());
 
     WeekJudgment::Page(TrustedWeek {
         start_day,
@@ -612,7 +614,7 @@ fn neighbors(journal: &Path, day: &str, require_readable_candidates: bool) -> We
         let Some(date) = week_day(stem) else {
             continue;
         };
-        if date.weekday() != chrono::Weekday::Sun {
+        if date.weekday() != Weekday::Sunday {
             continue;
         }
         match read_and_judge(journal, stem, true) {
@@ -643,7 +645,7 @@ fn neighbors(journal: &Path, day: &str, require_readable_candidates: bool) -> We
 }
 
 // Private lowercase date formatting helpers
-fn month_name(month: u32) -> &'static str {
+fn month_name(month: i8) -> &'static str {
     match month {
         1 => "january",
         2 => "february",
@@ -661,44 +663,44 @@ fn month_name(month: u32) -> &'static str {
     }
 }
 
-fn weekday_name(date: NaiveDate) -> &'static str {
+fn weekday_name(date: Date) -> &'static str {
     match date.weekday() {
-        chrono::Weekday::Mon => "monday",
-        chrono::Weekday::Tue => "tuesday",
-        chrono::Weekday::Wed => "wednesday",
-        chrono::Weekday::Thu => "thursday",
-        chrono::Weekday::Fri => "friday",
-        chrono::Weekday::Sat => "saturday",
-        chrono::Weekday::Sun => "sunday",
+        Weekday::Monday => "monday",
+        Weekday::Tuesday => "tuesday",
+        Weekday::Wednesday => "wednesday",
+        Weekday::Thursday => "thursday",
+        Weekday::Friday => "friday",
+        Weekday::Saturday => "saturday",
+        Weekday::Sunday => "sunday",
     }
 }
 
-fn short_weekday(date: NaiveDate) -> &'static str {
+fn short_weekday(date: Date) -> &'static str {
     match date.weekday() {
-        chrono::Weekday::Mon => "mon",
-        chrono::Weekday::Tue => "tue",
-        chrono::Weekday::Wed => "wed",
-        chrono::Weekday::Thu => "thu",
-        chrono::Weekday::Fri => "fri",
-        chrono::Weekday::Sat => "sat",
-        chrono::Weekday::Sun => "sun",
+        Weekday::Monday => "mon",
+        Weekday::Tuesday => "tue",
+        Weekday::Wednesday => "wed",
+        Weekday::Thursday => "thu",
+        Weekday::Friday => "fri",
+        Weekday::Saturday => "sat",
+        Weekday::Sunday => "sun",
     }
 }
 
-fn format_week_title(date: NaiveDate, current_year: i32) -> String {
+fn format_week_title(date: Date, current_year: i32) -> String {
     let month = month_name(date.month());
     let day = date.day();
-    if date.year() == current_year {
+    if i32::from(date.year()) == current_year {
         format!("week of {month} {day}")
     } else {
         format!("week of {month} {day}, {}", date.year())
     }
 }
 
-fn format_unreadable_line(date: NaiveDate, current_year: i32) -> String {
+fn format_unreadable_line(date: Date, current_year: i32) -> String {
     let month = month_name(date.month());
     let day = date.day();
-    if date.year() == current_year {
+    if i32::from(date.year()) == current_year {
         format!("the week of {month} {day} couldn't be read.")
     } else {
         format!(
@@ -978,7 +980,7 @@ fn shown_quote_count(said: &Said, left_out_keys: &BTreeSet<String>) -> usize {
     }
 }
 
-fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: NaiveDate) -> Value {
+fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: Date) -> Value {
     match said {
         Said::Entries(entries) if entries.is_empty() => Value::Null,
         Said::Unreadable => json!({ "unreadable": SAID_UNREADABLE_LINE }),
@@ -1326,7 +1328,7 @@ pub fn card(context: &HomeContext) -> Value {
         candidate_json_stems.sort();
         let newest = candidate_json_stems.pop().unwrap();
 
-        let current_year = context.local_date().year();
+        let current_year = i32::from(context.local_date().year());
         let stem_date = week_day(&newest).unwrap();
 
         match judge(context.journal_root(), &newest) {
@@ -1459,7 +1461,6 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
-    use chrono::{TimeZone, Utc};
     use solstone_core_format::content::week_left_out::left_out_bytes;
     use tempfile::TempDir;
 
@@ -1501,10 +1502,10 @@ mod tests {
     }
 
     fn valid_week_json(sunday: &str) -> String {
-        let date = NaiveDate::parse_from_str(sunday, "%Y%m%d").unwrap();
+        let date = solstone_core_time::parse_day(sunday).unwrap();
         let days_json = (0..7)
             .map(|i| {
-                let d = (date + Duration::days(i)).format("%Y%m%d").to_string();
+                let d = solstone_core_time::day_key(date + jiff::Span::new().days(i));
                 if i == 0 {
                     format!(r#"{{"day":"{d}","state":"memory","memory_id":"m0"}}"#)
                 } else {
@@ -1534,7 +1535,7 @@ mod tests {
                     }}
                 ]
             }}"#,
-            end = (date + Duration::days(6)).format("%Y%m%d")
+            end = solstone_core_time::day_key(date + jiff::Span::new().days(6))
         )
     }
 
@@ -1873,8 +1874,8 @@ mod tests {
     #[test]
     fn card_states_and_schedule_day_and_engine_setting() {
         let root = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap();
-        let ctx = HomeContext::with_zone(root.path(), now, chrono_tz::Tz::UTC);
+        let now = crate::test_time::utc_at(2026, 8, 14, 12, 0, 0);
+        let ctx = HomeContext::with_zone(root.path(), now, jiff::tz::TimeZone::UTC);
 
         // 1. empty directory and no engine
         assert_eq!(card(&ctx)["state"], "first");
@@ -1932,7 +1933,7 @@ mod tests {
 
         // 6. Pre-format .md only with engine set -> next week card
         let root2 = TempDir::new().unwrap();
-        let ctx2 = HomeContext::with_zone(root2.path(), now, chrono_tz::Tz::UTC);
+        let ctx2 = HomeContext::with_zone(root2.path(), now, jiff::tz::TimeZone::UTC);
         write(
             root2.path(),
             "config/journal.json",
@@ -1954,7 +1955,7 @@ mod tests {
 
         // 7. Pre-format .md only with no engine set -> next week engine line
         let root3 = TempDir::new().unwrap();
-        let ctx3 = HomeContext::with_zone(root3.path(), now, chrono_tz::Tz::UTC);
+        let ctx3 = HomeContext::with_zone(root3.path(), now, jiff::tz::TimeZone::UTC);
         write(
             root3.path(),
             "reflections/weekly/20260810.md",
@@ -1984,7 +1985,7 @@ mod tests {
 
         // 9. Card walks days order, not memories order
         let root4 = TempDir::new().unwrap();
-        let ctx4 = HomeContext::with_zone(root4.path(), now, chrono_tz::Tz::UTC);
+        let ctx4 = HomeContext::with_zone(root4.path(), now, jiff::tz::TimeZone::UTC);
         let days_order_json = r#"{
             "version": 1,
             "week": {"start":"20260308","end":"20260314"},
@@ -2348,9 +2349,10 @@ mod tests {
         assert_eq!(
             judged_page(root.path(), &dated).generated_at_ms,
             Some(
-                chrono::DateTime::parse_from_rfc3339("2026-03-15T18:00:00.250Z")
+                "2026-03-15T18:00:00.250Z"
+                    .parse::<jiff::Timestamp>()
                     .unwrap()
-                    .timestamp_millis()
+                    .as_millisecond()
             )
         );
     }
@@ -2655,7 +2657,7 @@ mod tests {
         let absent = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
         assert!(absent["said"].is_null());
 
-        let now = Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap();
+        let now = crate::test_time::utc_at(2026, 3, 16, 12, 0, 0);
         let quotes_only = format!(
             r#"{{"version":1,"days":{days},"memories":[],"said":[{}]}}"#,
             activity_said(
@@ -2671,7 +2673,7 @@ mod tests {
             "reflections/weekly/20260308.json",
             &quotes_only,
         );
-        let ctx = HomeContext::with_zone(root.path(), now, chrono_tz::Tz::UTC);
+        let ctx = HomeContext::with_zone(root.path(), now, jiff::tz::TimeZone::UTC);
         let card_quotes = card(&ctx);
         assert_eq!(card_quotes["state"], "week");
         assert!(card_quotes["memory"].is_null());

@@ -6,10 +6,11 @@
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDate, Utc};
-use chrono_tz::Tz;
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::json;
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_journal_config::TimeZone;
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
 use solstone_core_system_health::{FilesystemSegmentSource, scan_day};
 
@@ -75,7 +76,7 @@ pub enum DayOutcome {
 /// Run with the real socket transport and the journal's zone.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliRun {
     let zone = solstone_core_journal_config::owner_zone(journal_path);
-    run_cli_with(args, journal_path, Utc::now(), zone, |envelope| {
+    run_cli_with(args, journal_path, Timestamp::now(), &zone, |envelope| {
         send_envelope(journal_path, envelope)
     })
 }
@@ -84,8 +85,8 @@ pub fn run_cli(args: &[String], journal_path: &Path) -> CliRun {
 pub fn run_cli_with<F>(
     args: &[String],
     journal_path: &Path,
-    now: DateTime<Utc>,
-    zone: Tz,
+    now: Timestamp,
+    zone: &TimeZone,
     mut transport: F,
 ) -> CliRun
 where
@@ -101,7 +102,7 @@ where
         let Some(day_date) = parse_day(journal_path, &parsed.day) else {
             return failure("expected day in YYYYMMDD format");
         };
-        let today = now.with_timezone(&zone).date_naive();
+        let today = now.to_zoned_datetime(zone.clone()).date();
         if day_date >= today {
             return failure("reprocess is past-only (cannot reprocess today or a future day)");
         }
@@ -141,7 +142,7 @@ where
         let Some(through) = parse_day(journal_path, through_raw) else {
             return failure("expected day in YYYYMMDD format");
         };
-        let today = now.with_timezone(&zone).date_naive();
+        let today = now.to_zoned_datetime(zone.clone()).date();
         if start >= today || through >= today {
             return failure("reprocess is past-only (cannot reprocess today or a future day)");
         }
@@ -318,9 +319,14 @@ enum ParseResult {
 /// Reprocess one day using the current time and the journal's zone.
 pub fn reprocess_day(journal_path: &Path, day: &str, flavor: Flavor) -> DayOutcome {
     let zone = solstone_core_journal_config::owner_zone(journal_path);
-    reprocess_day_with(journal_path, day, flavor, Utc::now(), zone, |envelope| {
-        send_envelope(journal_path, envelope)
-    })
+    reprocess_day_with(
+        journal_path,
+        day,
+        flavor,
+        Timestamp::now(),
+        &zone,
+        |envelope| send_envelope(journal_path, envelope),
+    )
 }
 
 /// Reprocess one day with explicit time, zone, and transport seams.
@@ -328,8 +334,8 @@ pub fn reprocess_day_with<F>(
     journal: &Path,
     day: &str,
     flavor: Flavor,
-    now: DateTime<Utc>,
-    zone: Tz,
+    now: Timestamp,
+    zone: &TimeZone,
     mut transport: F,
 ) -> DayOutcome
 where
@@ -341,7 +347,7 @@ where
     let Some(parsed) = parse_day(journal, day) else {
         return DayOutcome::Malformed;
     };
-    if parsed >= now.with_timezone(&zone).date_naive() {
+    if parsed >= now.to_zoned_datetime(zone.clone()).date() {
         return DayOutcome::PastOnly;
     }
     let Ok(day_directory) = day_path(journal, day, false) else {
@@ -421,14 +427,14 @@ fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
 
 fn enumerate_range_days(
     journal: &Path,
-    start: NaiveDate,
-    through: NaiveDate,
-    now: DateTime<Utc>,
+    start: Date,
+    through: Date,
+    now: Timestamp,
 ) -> Vec<RangeDay> {
     let mut days = Vec::new();
     let mut current = start;
     while current <= through {
-        let day = current.format("%Y%m%d").to_string();
+        let day = solstone_core_time::day_key(current);
         let segments = iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default();
         let has_iter_segments_data =
             day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) && !segments.is_empty();
@@ -445,8 +451,8 @@ fn enumerate_range_days(
             scan_day_segment_count,
         });
         current = current
-            .succ_opt()
-            .expect("range day advances within chrono bounds");
+            .tomorrow()
+            .expect("range day advances within date bounds");
     }
     days
 }
@@ -475,8 +481,8 @@ fn range_plan(days: &[RangeDay]) -> String {
 fn run_from_scratch_range<F>(
     journal: &Path,
     days: &[RangeDay],
-    now: DateTime<Utc>,
-    zone: Tz,
+    now: Timestamp,
+    zone: &TimeZone,
     transport: &mut F,
 ) -> CliRun
 where
@@ -526,8 +532,8 @@ fn owed_report(
     journal: &Path,
     start_raw: &str,
     through_raw: Option<&str>,
-    now: DateTime<Utc>,
-    zone: Tz,
+    now: Timestamp,
+    zone: &TimeZone,
     json: bool,
 ) -> CliRun {
     let Some(start) = parse_day(journal, start_raw) else {
@@ -543,16 +549,18 @@ fn owed_report(
     if through < start {
         return failure(THROUGH_BEFORE_START);
     }
-    let today = now.with_timezone(&zone).date_naive();
-    let through = through.min(today - chrono::Duration::days(1));
+    let today = now.to_zoned_datetime(zone.clone()).date();
+    let through = through.min(today.yesterday().expect("today has a yesterday"));
     let mut lines = Vec::new();
     let mut json_days = Vec::new();
     let mut causes = std::collections::BTreeMap::<String, usize>::new();
     let (mut owed, mut days, mut unreadable) = (0usize, 0usize, 0usize);
     let mut current = start;
     while current <= through {
-        let day = current.format("%Y%m%d").to_string();
-        current += chrono::Duration::days(1);
+        let day = solstone_core_time::day_key(current);
+        current = current
+            .tomorrow()
+            .expect("owed day advances within date bounds");
         if !day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) {
             continue;
         }
@@ -633,9 +641,9 @@ fn owed_report(
     success(lines.join("\n") + "\n")
 }
 
-fn parse_day(journal: &Path, day: &str) -> Option<NaiveDate> {
+fn parse_day(journal: &Path, day: &str) -> Option<Date> {
     day_path(journal, day, false).ok()?;
-    NaiveDate::parse_from_str(day, "%Y%m%d").ok()
+    solstone_core_time::parse_day(day)
 }
 
 fn drain_envelope(day: &str) -> CallosumEnvelope {
@@ -719,7 +727,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 
     use super::*;
@@ -732,8 +739,8 @@ mod tests {
         values.iter().map(|value| (*value).to_owned()).collect()
     }
 
-    fn now() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap()
+    fn now() -> Timestamp {
+        "2026-01-03T12:00:00Z".parse().unwrap()
     }
 
     fn segment(root: &Path, day: &str, name: &str) -> std::path::PathBuf {
@@ -837,7 +844,7 @@ mod tests {
                 &words(&["--help"]),
                 Path::new("."),
                 now(),
-                chrono_tz::UTC,
+                &TimeZone::UTC,
                 |_| false
             )
             .stdout,
@@ -852,7 +859,7 @@ mod tests {
             &words(&["--nonsense"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(no_day.exit_code, 2);
@@ -861,7 +868,7 @@ mod tests {
             &words(&[DAY, "--nonsense"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(
@@ -879,7 +886,7 @@ mod tests {
                 &words(&[first, second]),
                 root.path(),
                 now(),
-                chrono_tz::UTC,
+                &TimeZone::UTC,
                 |_| false,
             );
             assert_eq!(
@@ -912,9 +919,9 @@ mod tests {
                     flagged.push(flavor.to_owned());
                     baseline.push(flavor.to_owned());
                 }
-                let result = run_cli_with(&flagged, root.path(), now(), chrono_tz::UTC, |_| true);
+                let result = run_cli_with(&flagged, root.path(), now(), &TimeZone::UTC, |_| true);
                 let expected =
-                    run_cli_with(&baseline, root.path(), now(), chrono_tz::UTC, |_| true);
+                    run_cli_with(&baseline, root.path(), now(), &TimeZone::UTC, |_| true);
                 assert_eq!(result.exit_code, 0, "{flag} {flavor:?}");
                 assert_eq!(result.stdout, expected.stdout, "{flag} {flavor:?}");
                 assert_eq!(result.stderr, expected.stderr, "{flag} {flavor:?}");
@@ -925,25 +932,27 @@ mod tests {
     #[test]
     fn past_only_is_the_journals_today_not_this_computers() {
         let root = TempDir::new().unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let host_today = now
-            .with_timezone(&solstone_core_journal_config::host_zone())
-            .date_naive();
-        let zone = [chrono_tz::Pacific::Kiritimati, chrono_tz::Etc::GMTPlus12]
+            .to_zoned_datetime(solstone_core_journal_config::host_zone())
+            .date();
+        let zone = ["Pacific/Kiritimati", "Etc/GMT+12"]
             .into_iter()
-            .find(|zone| now.with_timezone(zone).date_naive() != host_today)
+            .map(|name| solstone_core_time::zone(name).expect("zone is known"))
+            .find(|zone| now.to_zoned_datetime(zone.clone()).date() != host_today)
             .expect("UTC+14 and UTC-12 never share a date");
-        let owner_today = now.with_timezone(&zone).date_naive();
+        let owner_today = now.to_zoned_datetime(zone.clone()).date();
         fs::create_dir_all(root.path().join("config")).unwrap();
         fs::write(
             root.path().join("config/journal.json"),
-            json!({"identity": {"timezone": zone.name()}}).to_string(),
+            json!({"identity": {"timezone": solstone_core_journal_config::zone_name(&zone)}})
+                .to_string(),
         )
         .unwrap();
-        let day = |date: chrono::NaiveDate| date.format("%Y%m%d").to_string();
+        let day = solstone_core_time::day_key;
         let owner_day = reprocess_day(root.path(), &day(owner_today), Flavor::FromScratch);
         let host_day = reprocess_day(root.path(), &day(host_today), Flavor::FromScratch);
-        if Utc::now().with_timezone(&zone).date_naive() != owner_today {
+        if Timestamp::now().to_zoned_datetime(zone.clone()).date() != owner_today {
             return; // the journal's midnight passed mid-test
         }
         assert!(matches!(owner_day, DayOutcome::PastOnly), "{owner_day:?}");
@@ -958,12 +967,12 @@ mod tests {
     #[test]
     fn past_only_uses_the_supplied_local_zone() {
         let root = TempDir::new().unwrap();
-        let instant = Utc.with_ymd_and_hms(2026, 1, 2, 0, 30, 0).unwrap();
+        let instant: Timestamp = "2026-01-02T00:30:00Z".parse().unwrap();
         let result = run_cli_with(
             &words(&["20260101"]),
             root.path(),
             instant,
-            chrono_tz::America::Denver,
+            &solstone_core_time::zone("America/Denver").unwrap(),
             |_| true,
         );
         assert_eq!(
@@ -986,7 +995,7 @@ mod tests {
             &words(&[DAY, "--from-scratch"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |envelope| {
                 sent = frame_envelope(envelope).unwrap();
                 true
@@ -1021,7 +1030,7 @@ mod tests {
             &words(&[DAY, "--owed"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 sent += 1;
                 true
@@ -1061,7 +1070,7 @@ mod tests {
             &words(&[DAY, "--owed", "--json"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| panic!("--owed submits nothing"),
         );
         assert_eq!(result.exit_code, 0, "{}", result.stderr);
@@ -1092,7 +1101,7 @@ mod tests {
             &words(&[DAY, "--json"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| true,
         );
         assert_eq!(refused.exit_code, 2);
@@ -1117,7 +1126,7 @@ mod tests {
             &words(&[DAY, "--mark-updated"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 assert!(marker.is_file());
                 false
@@ -1147,7 +1156,7 @@ mod tests {
         fs::write(health.join("stream.updated"), "").unwrap();
         fs::write(health.join("daily.updated"), "").unwrap();
         let mut calls = 0;
-        let result = run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
+        let result = run_cli_with(&words(&[DAY]), root.path(), now(), &TimeZone::UTC, |_| {
             calls += 1;
             true
         });
@@ -1217,7 +1226,7 @@ mod tests {
             DAY,
             Flavor::ProcessNow,
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1230,7 +1239,7 @@ mod tests {
             DAY,
             Flavor::FromScratch,
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1245,7 +1254,7 @@ mod tests {
             DAY,
             Flavor::ProcessNow,
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1271,7 +1280,7 @@ mod tests {
             &words(&[DAY, "--through", DAY, "--from-scratch"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1293,7 +1302,7 @@ mod tests {
             &words(&["20251231"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| true,
         );
         assert_eq!(single.exit_code, 1);
@@ -1309,7 +1318,7 @@ mod tests {
             &words(&["20251231", "--through", DAY, "--from-scratch"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1344,7 +1353,7 @@ mod tests {
             ]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 calls < 3
@@ -1363,7 +1372,7 @@ mod tests {
     fn range_yes_queues_data_days_oldest_first() {
         let root = TempDir::new().unwrap();
         write_test_provider(root.path());
-        let range_now = Utc.with_ymd_and_hms(2026, 1, 4, 12, 0, 0).unwrap();
+        let range_now: Timestamp = "2026-01-04T12:00:00Z".parse().unwrap();
         for day in ["20251230", DAY, "20260103"] {
             fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
         }
@@ -1385,7 +1394,7 @@ mod tests {
             ]),
             root.path(),
             range_now,
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |envelope| {
                 sent_days.push(
                     envelope.extra["day"]
@@ -1421,7 +1430,7 @@ mod tests {
             solstone_core_system::catchup::read_raw_input_fingerprint(root.path(), DAY).unwrap();
         let state_path = root.path().join("health/catchup-state.json");
         fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-        let later_retry = now().timestamp() as f64 + 10_800.0;
+        let later_retry = now().as_second() as f64 + 10_800.0;
 
         // This is the former Held shape: the dirty day's raw fingerprint and
         // both catchup kinds are backoff-held until a future retry watermark.
@@ -1448,7 +1457,7 @@ mod tests {
         .unwrap();
 
         let mut calls = 0;
-        let result = run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
+        let result = run_cli_with(&words(&[DAY]), root.path(), now(), &TimeZone::UTC, |_| {
             calls += 1;
             true
         });
@@ -1481,7 +1490,7 @@ mod tests {
                     "unrelated": ["garbage"],
                     format!("{DAY}:daily-catchup"): {
                         "active": null,
-                        "next_retry_at": now().timestamp() as f64 + 3_600.0,
+                        "next_retry_at": now().as_second() as f64 + 3_600.0,
                         "fingerprint": "matching-fingerprint",
                     },
                 },
@@ -1490,7 +1499,7 @@ mod tests {
         )
         .unwrap();
         let mut calls = 0;
-        let result = run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
+        let result = run_cli_with(&words(&[DAY]), root.path(), now(), &TimeZone::UTC, |_| {
             calls += 1;
             true
         });
@@ -1508,7 +1517,7 @@ mod tests {
             &words(&["20260101", "--through", "20260103", "--from-scratch"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| true,
         );
         assert_eq!(
@@ -1525,7 +1534,7 @@ mod tests {
             &words(&["20260231"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| true,
         );
         assert_eq!(invalid.stderr, "expected day in YYYYMMDD format\n");
@@ -1542,7 +1551,7 @@ mod tests {
             &words(&[DAY]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |envelope| {
                 sent = frame_envelope(envelope).unwrap();
                 true
@@ -1568,7 +1577,7 @@ mod tests {
         for flavor in [Flavor::ProcessNow, Flavor::FromScratch, Flavor::MarkUpdated] {
             let mut calls = 0;
             let outcome =
-                reprocess_day_with(root.path(), DAY, flavor, now(), chrono_tz::UTC, |_| {
+                reprocess_day_with(root.path(), DAY, flavor, now(), &TimeZone::UTC, |_| {
                     calls += 1;
                     true
                 });
@@ -1595,7 +1604,7 @@ mod tests {
         for flavor in [Flavor::ProcessNow, Flavor::FromScratch, Flavor::MarkUpdated] {
             let mut calls = 0;
             let outcome =
-                reprocess_day_with(root.path(), DAY, flavor, now(), chrono_tz::UTC, |_| {
+                reprocess_day_with(root.path(), DAY, flavor, now(), &TimeZone::UTC, |_| {
                     calls += 1;
                     true
                 });
@@ -1617,7 +1626,7 @@ mod tests {
             &words(&[DAY, "--through", DAY, "--from-scratch"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1642,7 +1651,7 @@ mod tests {
             &words(&[DAY, "--through", DAY, "--from-scratch", "--yes"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 calls += 1;
                 true
@@ -1691,7 +1700,7 @@ mod tests {
             &words(&[DAY, "--unit", "morning_briefing"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 transport_calls += 1;
                 true
@@ -1738,7 +1747,7 @@ mod tests {
             &words(&[DAY, "--unit", "entities", "--facet", "work"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| {
                 transport_calls += 1;
                 true
@@ -1773,7 +1782,7 @@ mod tests {
             &words(&[DAY, "--facet", "work"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(no_unit.exit_code, 2);
@@ -1823,7 +1832,7 @@ mod tests {
             ),
         ];
         for (args, expected_fragment) in pairs {
-            let res = run_cli_with(&words(&args), root.path(), now(), chrono_tz::UTC, |_| false);
+            let res = run_cli_with(&words(&args), root.path(), now(), &TimeZone::UTC, |_| false);
             assert_eq!(res.exit_code, 2, "failed for args: {:?}", args);
             assert!(
                 res.stderr.contains(expected_fragment)
@@ -1850,7 +1859,7 @@ mod tests {
             &words(&["20260103", "--unit", "morning_briefing"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(res_today.exit_code, 1);
@@ -1861,7 +1870,7 @@ mod tests {
             &words(&["not-a-day", "--unit", "morning_briefing"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(res_malformed.exit_code, 1);
@@ -1876,7 +1885,7 @@ mod tests {
             &words(&[DAY, "--unit", "morning_briefing"]),
             root.path(),
             now(),
-            chrono_tz::UTC,
+            &TimeZone::UTC,
             |_| false,
         );
         assert_eq!(res_not_found.exit_code, 1);

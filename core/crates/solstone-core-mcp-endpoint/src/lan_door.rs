@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use chrono::{DateTime, Utc};
 use futures::FutureExt;
+use jiff::Timestamp;
 #[cfg(unix)]
 use nix::libc;
 use rcgen::{
@@ -172,7 +172,8 @@ pub struct LanAddressState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LanDoorState {
     pub listening: bool,
-    pub observed_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub observed_at: Timestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,7 +199,7 @@ pub fn write_lan_door_state(
     // a crash leaves the last record; until that record ages out of the reader window a turn-off can reach its wait bound, and the agents page can keep showing the door open until the owner reloads.
     let state = LanDoorState {
         listening,
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
         reason: reason.map(str::to_owned),
         fingerprint: fingerprint.map(str::to_owned),
         addresses,
@@ -228,7 +229,7 @@ fn write_lan_state_at_root(
 ) {
     state.publish_lan(&LanDoorState {
         listening,
-        observed_at: Utc::now(),
+        observed_at: Timestamp::now(),
         reason: reason.map(str::to_owned),
         fingerprint: fingerprint.map(str::to_owned),
         addresses,
@@ -627,7 +628,7 @@ fn classify_existing_leaf(
     let leaf_fingerprint = compute_cert_fingerprint(&cert_der);
     let leaf_sans = parse_cert_san_ips(&leaf_x509);
 
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let not_before = leaf_x509.validity().not_before.timestamp();
     let not_after = leaf_x509.validity().not_after.timestamp();
 
@@ -1222,7 +1223,7 @@ async fn run_lan_door_loop_at_root(
                     state.publish_lan_disabled(
                         &LanDoorState {
                             listening: false,
-                            observed_at: Utc::now(),
+                            observed_at: Timestamp::now(),
                             reason: Some("disabled".to_owned()),
                             fingerprint: None,
                             addresses: None,
@@ -2897,7 +2898,7 @@ mod full_tests {
         async fn assert_state_after(
             journal: &Path,
             port: u16,
-            after: DateTime<Utc>,
+            after: Timestamp,
             listening: bool,
             reason: Option<&str>,
         ) {
@@ -2967,7 +2968,7 @@ mod full_tests {
             let (shutdown_tx, shutdown_rx) = watch::channel(false);
             let root = journal.to_path_buf();
             let oauth = Arc::new(OAuthRuntime::new_lan_door(journal));
-            let after = Utc::now();
+            let after = Timestamp::now();
             let task = tokio::spawn(async move {
                 run_lan_door_loop_with_sources(&root, run, shutdown_rx, oauth, &interfaces)
                     .await
@@ -2977,20 +2978,34 @@ mod full_tests {
             // Failure at startup and after an explicit off both keep the socket closed.
             assert_state_after(journal, port, after, false, Some(failure.reason())).await;
             failure.restore(journal, false);
-            assert_state_after(journal, port, Utc::now(), false, Some("disabled")).await;
+            assert_state_after(journal, port, Timestamp::now(), false, Some("disabled")).await;
             failure.apply(journal);
-            assert_state_after(journal, port, Utc::now(), false, Some(failure.reason())).await;
+            assert_state_after(
+                journal,
+                port,
+                Timestamp::now(),
+                false,
+                Some(failure.reason()),
+            )
+            .await;
 
             // Valid opt-in opens the listener, and a later failure closes it.
             failure.restore(journal, true);
-            assert_state_after(journal, port, Utc::now(), true, None).await;
+            assert_state_after(journal, port, Timestamp::now(), true, None).await;
             // Restored off stays closed, and readable true permits recovery.
             failure.apply(journal);
-            assert_state_after(journal, port, Utc::now(), false, Some(failure.reason())).await;
+            assert_state_after(
+                journal,
+                port,
+                Timestamp::now(),
+                false,
+                Some(failure.reason()),
+            )
+            .await;
             failure.restore(journal, false);
-            assert_state_after(journal, port, Utc::now(), false, Some("disabled")).await;
+            assert_state_after(journal, port, Timestamp::now(), false, Some("disabled")).await;
             write_config(journal, Some(true));
-            assert_state_after(journal, port, Utc::now(), true, None).await;
+            assert_state_after(journal, port, Timestamp::now(), true, None).await;
             // Probe authentication after the rebind checks: production sockets do not
             // reuse addresses, so a completed HTTP connection can hold TIME_WAIT.
             let (status, _, _) = tokio::time::timeout(
@@ -3007,7 +3022,7 @@ mod full_tests {
             assert_eq!(status, 401, "{failure:?}");
 
             write_config(journal, Some(false));
-            assert_state_after(journal, port, Utc::now(), false, Some("disabled")).await;
+            assert_state_after(journal, port, Timestamp::now(), false, Some("disabled")).await;
 
             shutdown_tx.send(true).unwrap();
             task.await.unwrap();
@@ -4444,7 +4459,7 @@ mod full_tests {
             serde_json::from_slice(&fs::read(&oauth_path).unwrap()).unwrap();
         file["pairing"] = serde_json::json!({
             "verifier": verifier,
-            "expires_at": (Utc::now() + chrono::Duration::seconds(600)).to_rfc3339(),
+            "expires_at": solstone_core_time::utc_rfc3339(Timestamp::now() + jiff::SignedDuration::from_secs(600)),
             "generation": 2,
             "locked": false,
             "door": null,

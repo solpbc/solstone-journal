@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_entity::hidden_names::{HiddenNames, hidden_names_rel, read_hidden_names};
 
@@ -23,8 +23,8 @@ fn journal() -> tempfile::TempDir {
     journal
 }
 
-fn now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 11, 12, 0, 0).unwrap()
+fn now() -> Timestamp {
+    "2026-11-11T12:00:00Z".parse().unwrap()
 }
 
 fn detected(root: &Path, facet: &str, day: &str, names: &[&str]) {

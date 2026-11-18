@@ -16,9 +16,11 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone};
-use chrono_tz::Tz;
+use jiff::SignedDuration;
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value};
+use solstone_core_time::{LocalResult, from_local};
 
 use crate::edges::candidates::{EdgeLookup, EdgeResolver};
 use crate::edges::registry::{EdgeSourceKind, edge_source_for_rel};
@@ -581,9 +583,9 @@ pub fn valid_edge_day(day: &str) -> bool {
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return false;
     }
-    match NaiveDate::parse_from_str(day, "%Y%m%d") {
-        Ok(date) => (1..=9999).contains(&date.year()),
-        Err(_error) => false,
+    match solstone_core_time::parse_day(day) {
+        Some(date) => (1..=9999).contains(&date.year()),
+        None => false,
     }
 }
 
@@ -632,7 +634,7 @@ fn read_json_object(path: &Path, source: &'static str) -> Result<JsonObject, Edg
 /// The journal's owner zone. A config that exists but does not parse fails
 /// the scan rather than guessing; a missing or unknown zone falls back to this
 /// computer's zone.
-pub fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
+pub fn owner_timezone_for_journal(journal: &Path) -> Result<TimeZone, EdgeError> {
     read_journal_config(journal).map_err(|error| EdgeError::JournalConfigCorrupt {
         path: get_journal_config_path(journal),
         message: error.to_string(),
@@ -643,7 +645,7 @@ pub fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
 pub(crate) fn segment_start_ts_ms(
     day: &str,
     segment: &str,
-    timezone: Tz,
+    timezone: &TimeZone,
 ) -> Result<i64, EdgeError> {
     let Some(times) = segment_parse(segment) else {
         return Err(EdgeError::InvalidSegmentKey(segment.to_string()));
@@ -652,48 +654,49 @@ pub(crate) fn segment_start_ts_ms(
         return Err(EdgeError::InvalidSegmentDay(day.to_string()));
     }
     let year = day[0..4]
-        .parse::<i32>()
+        .parse::<i16>()
         .map_err(|_error| EdgeError::InvalidSegmentDay(day.to_string()))?;
     let month = day[4..6]
-        .parse::<u32>()
+        .parse::<i8>()
         .map_err(|_error| EdgeError::InvalidSegmentDay(day.to_string()))?;
     let day_of_month = day[6..8]
-        .parse::<u32>()
+        .parse::<i8>()
         .map_err(|_error| EdgeError::InvalidSegmentDay(day.to_string()))?;
-    let Some(date) = NaiveDate::from_ymd_opt(year, month, day_of_month) else {
+    let Ok(date) = Date::new(year, month, day_of_month) else {
         return Err(EdgeError::InvalidSegmentDay(day.to_string()));
     };
-    let Some(local) = date.and_hms_opt(
-        u32::from(times.hour),
-        u32::from(times.minute),
-        u32::from(times.second),
-    ) else {
+    let field = |value: u8| i8::try_from(value).ok();
+    let Some(time) = field(times.hour)
+        .zip(field(times.minute))
+        .zip(field(times.second))
+        .and_then(|((hour, minute), second)| Time::new(hour, minute, second, 0).ok())
+    else {
         return Err(EdgeError::InvalidSegmentKey(segment.to_string()));
     };
-    local_timestamp_ms(timezone, local)
+    local_timestamp_ms(timezone, date.to_datetime(time))
 }
 
-fn local_timestamp_ms(timezone: Tz, local: NaiveDateTime) -> Result<i64, EdgeError> {
-    match event::select_local_result(timezone.from_local_datetime(&local)) {
+fn local_timestamp_ms(timezone: &TimeZone, local: DateTime) -> Result<i64, EdgeError> {
+    match event::select_local_result(from_local(timezone, local)) {
         event::LocalSelection::EpochMillis(ts) => Ok(ts),
         event::LocalSelection::Gap => gap_pre_transition_timestamp_ms(timezone, local),
     }
 }
 
-fn gap_pre_transition_timestamp_ms(timezone: Tz, local: NaiveDateTime) -> Result<i64, EdgeError> {
+fn gap_pre_transition_timestamp_ms(timezone: &TimeZone, local: DateTime) -> Result<i64, EdgeError> {
     for seconds in 1..=172_800 {
-        let Some(candidate) = local.checked_sub_signed(Duration::seconds(seconds)) else {
+        let Ok(candidate) = local.checked_sub(SignedDuration::from_secs(seconds)) else {
             break;
         };
-        let offset_seconds = match timezone.from_local_datetime(&candidate) {
-            LocalResult::Single(value) => value.offset().fix().local_minus_utc(),
+        let offset_seconds = match from_local(timezone, candidate) {
+            LocalResult::Single(value) => value.offset().seconds(),
             LocalResult::Ambiguous(left, right) => {
-                let selected = if left.timestamp_millis() <= right.timestamp_millis() {
+                let selected = if left.timestamp() <= right.timestamp() {
                     left
                 } else {
                     right
                 };
-                selected.offset().fix().local_minus_utc()
+                selected.offset().seconds()
             }
             LocalResult::None => continue,
         };
@@ -702,16 +705,14 @@ fn gap_pre_transition_timestamp_ms(timezone: Tz, local: NaiveDateTime) -> Result
     Err(EdgeError::SegmentTimestampOutOfRange)
 }
 
-fn timestamp_with_pre_gap_offset(
-    local: NaiveDateTime,
-    offset_seconds: i32,
-) -> Result<i64, EdgeError> {
+fn timestamp_with_pre_gap_offset(local: DateTime, offset_seconds: i32) -> Result<i64, EdgeError> {
+    const UNIX_EPOCH: DateTime = jiff::civil::date(1970, 1, 1).at(0, 0, 0, 0);
     let offset_ms = i64::from(offset_seconds)
         .checked_mul(1000)
         .ok_or(EdgeError::SegmentTimestampOutOfRange)?;
-    local
-        .and_utc()
-        .timestamp_millis()
+    let local_ms = i64::try_from(local.duration_since(UNIX_EPOCH).as_millis())
+        .map_err(|_error| EdgeError::SegmentTimestampOutOfRange)?;
+    local_ms
         .checked_sub(offset_ms)
         .ok_or(EdgeError::SegmentTimestampOutOfRange)
 }
@@ -1560,12 +1561,12 @@ mod tests {
         );
         let timezone = owner_timezone_for_journal(&configured).expect("read configured timezone");
         assert_eq!(
-            segment_start_ts_ms("20260308", "023000_300", timezone)
+            segment_start_ts_ms("20260308", "023000_300", &timezone)
                 .expect("compute denver spring gap timestamp"),
             1_772_962_200_000
         );
         assert_eq!(
-            segment_start_ts_ms("20261101", "013000_300", timezone)
+            segment_start_ts_ms("20261101", "013000_300", &timezone)
                 .expect("compute denver fall ambiguous timestamp"),
             1_793_518_200_000
         );

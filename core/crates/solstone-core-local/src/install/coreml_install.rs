@@ -513,7 +513,7 @@ pub fn heal_missing_parakeet_coreml(
         journal,
         installed,
         catalog_version,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         || download_publish_coreml(journal, home_dir, config, false),
     )
 }
@@ -522,7 +522,7 @@ fn heal_with(
     journal: &Path,
     installed: bool,
     catalog_version: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
     install: impl FnOnce() -> Result<PathBuf, CoremlInstallError>,
 ) -> Result<CoremlHeal, String> {
     use super::{lease, status};
@@ -541,8 +541,8 @@ fn heal_with(
         let cooling = record
             .last_transition_at
             .as_deref()
-            .and_then(|stamp| chrono::DateTime::parse_from_rfc3339(stamp).ok())
-            .and_then(|at| (now - at.with_timezone(&chrono::Utc)).to_std().ok())
+            .and_then(|stamp| solstone_core_time::parse_rfc3339(stamp).ok())
+            .and_then(|at| Duration::try_from(now.duration_since(at.timestamp())).ok())
             .is_some_and(|since| since < COREML_HEAL_COOLDOWN);
         if cooling {
             return Ok(CoremlHeal::CoolingDown);
@@ -1933,7 +1933,7 @@ mod tests {
     fn heal_installs_a_missing_model_and_records_it_in_the_journal() {
         let journal = tempfile::tempdir().unwrap();
         let mut calls = 0;
-        let outcome = heal_with(journal.path(), false, "v1", chrono::Utc::now(), || {
+        let outcome = heal_with(journal.path(), false, "v1", jiff::Timestamp::now(), || {
             calls += 1;
             Ok(PathBuf::from("/model"))
         })
@@ -1953,7 +1953,7 @@ mod tests {
     #[test]
     fn a_failed_heal_is_recorded_and_waits_out_the_cooldown() {
         let journal = tempfile::tempdir().unwrap();
-        let outcome = heal_with(journal.path(), false, "v1", chrono::Utc::now(), || {
+        let outcome = heal_with(journal.path(), false, "v1", jiff::Timestamp::now(), || {
             Err(CoremlInstallError::new(
                 "download_failed",
                 "network down",
@@ -1966,14 +1966,14 @@ mod tests {
         assert_eq!(record.install_state, "failed");
         assert_eq!(record.error_code.as_deref(), Some("download_failed"));
 
-        let soon = chrono::Utc::now() + chrono::Duration::minutes(1);
+        let soon = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(1);
         let outcome = heal_with(journal.path(), false, "v1", soon, || {
             panic!("no attempt inside the cooldown")
         })
         .unwrap();
         assert_eq!(outcome, CoremlHeal::CoolingDown);
 
-        let later = chrono::Utc::now() + chrono::Duration::minutes(31);
+        let later = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(31);
         let outcome = heal_with(journal.path(), false, "v1", later, || {
             Ok(PathBuf::from("/model"))
         })
@@ -2003,7 +2003,7 @@ mod tests {
         )
         .unwrap();
         status::write_status(journal.path(), cancelled).unwrap();
-        let later = chrono::Utc::now() + chrono::Duration::hours(2);
+        let later = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(2);
         assert_eq!(
             heal_with(journal.path(), false, "v1", later, || panic!(
                 "owner cancelled"
@@ -2015,7 +2015,7 @@ mod tests {
         let other = tempfile::tempdir().unwrap();
         let _held = lease::acquire(other.path(), "parakeet").unwrap().unwrap();
         assert_eq!(
-            heal_with(other.path(), false, "v1", chrono::Utc::now(), || {
+            heal_with(other.path(), false, "v1", jiff::Timestamp::now(), || {
                 panic!("an install is already running")
             })
             .unwrap(),
@@ -2026,7 +2026,7 @@ mod tests {
     #[test]
     fn a_model_installed_another_way_clears_a_recorded_failure() {
         let journal = tempfile::tempdir().unwrap();
-        heal_with(journal.path(), false, "v1", chrono::Utc::now(), || {
+        heal_with(journal.path(), false, "v1", jiff::Timestamp::now(), || {
             Err(CoremlInstallError::new(
                 "download_failed",
                 "network down",
@@ -2034,7 +2034,7 @@ mod tests {
             ))
         })
         .unwrap();
-        let outcome = heal_with(journal.path(), true, "v1", chrono::Utc::now(), || {
+        let outcome = heal_with(journal.path(), true, "v1", jiff::Timestamp::now(), || {
             panic!("already installed")
         })
         .unwrap();
@@ -2047,7 +2047,7 @@ mod tests {
     #[test]
     fn heal_with_lease_held_and_installed_true_returns_install_running() {
         let journal = tempfile::tempdir().unwrap();
-        heal_with(journal.path(), false, "v1", chrono::Utc::now(), || {
+        heal_with(journal.path(), false, "v1", jiff::Timestamp::now(), || {
             Err(CoremlInstallError::new(
                 "download_failed",
                 "network down",
@@ -2058,7 +2058,7 @@ mod tests {
         let _lease = super::super::lease::acquire(journal.path(), "parakeet")
             .unwrap()
             .unwrap();
-        let outcome = heal_with(journal.path(), true, "v1", chrono::Utc::now(), || {
+        let outcome = heal_with(journal.path(), true, "v1", jiff::Timestamp::now(), || {
             panic!("lease is held")
         })
         .unwrap();
@@ -2104,7 +2104,7 @@ mod tests {
             }
         });
         let mut observed = Vec::new();
-        let outcome = heal_with(&journal, false, "test", chrono::Utc::now(), || {
+        let outcome = heal_with(&journal, false, "test", jiff::Timestamp::now(), || {
             with_runtime_fetch_loopback(
                 RuntimeFetchLoopback {
                     base_url,
@@ -2178,7 +2178,7 @@ mod tests {
                 .unwrap();
         });
         let mut called = false;
-        let result = heal_with(&journal, false, "test", chrono::Utc::now(), || {
+        let result = heal_with(&journal, false, "test", jiff::Timestamp::now(), || {
             with_runtime_fetch_loopback(
                 RuntimeFetchLoopback {
                     base_url,
@@ -3489,7 +3489,7 @@ mod tests {
         .unwrap();
         status::write_status(journal, failed).unwrap();
 
-        let r = heal_with(journal, false, "v1", chrono::Utc::now(), || {
+        let r = heal_with(journal, false, "v1", jiff::Timestamp::now(), || {
             panic!("cancelled")
         });
         assert_eq!(r, Ok(CoremlHeal::OwnerCancelled));
@@ -3497,7 +3497,7 @@ mod tests {
 
         let root2 = tempfile::tempdir().unwrap();
         let journal2 = root2.path();
-        let r1 = heal_with(journal2, false, "v1", chrono::Utc::now(), || {
+        let r1 = heal_with(journal2, false, "v1", jiff::Timestamp::now(), || {
             Err(CoremlInstallError::new(
                 "download_failed",
                 "network down",
@@ -3505,7 +3505,7 @@ mod tests {
             ))
         });
         assert!(matches!(r1, Ok(CoremlHeal::Failed(_))));
-        let r2 = heal_with(journal2, false, "v1", chrono::Utc::now(), || {
+        let r2 = heal_with(journal2, false, "v1", jiff::Timestamp::now(), || {
             panic!("cooling down")
         });
         assert_eq!(r2, Ok(CoremlHeal::CoolingDown));

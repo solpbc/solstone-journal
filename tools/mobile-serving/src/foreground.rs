@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_backup_web::BackupWebDeps;
 use solstone_core_cortex::{CallableCortex, CallableRoots};
@@ -532,9 +532,9 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
                         publish_status(&journal, &queue, &engine, &running, started);
                     }
                     queue.resume_processing();
-                    let today = Utc::now()
-                        .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
-                        .format("%Y%m%d")
+                    let today = Timestamp::now()
+                        .to_zoned_datetime(solstone_core_journal_config::owner_zone(&journal))
+                        .strftime("%Y%m%d")
                         .to_string();
                     if let Ok(mut flush) = flush.lock()
                         && !cancelled()
@@ -580,7 +580,7 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
                             break;
                         }
                         let now = ScheduleNow::in_zone(
-                            Utc::now(),
+                            Timestamp::now(),
                             solstone_core_journal_config::owner_zone(&journal),
                         );
                         if let Err(error) = engine.check(
@@ -1043,7 +1043,7 @@ fn publish_status(
 ) {
     let Ok(schedules) = engine.lock().map(|engine| {
         engine.collect_status(ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(journal),
         ))
     }) else {
@@ -1481,9 +1481,9 @@ impl SenseExecutor for HostSenseExecutor {
                     "--segment".into(),
                     context.key.segment.clone(),
                 ],
-                Utc::now()
-                    .with_timezone(&solstone_core_journal_config::owner_zone(&self.journal))
-                    .date_naive(),
+                Timestamp::now()
+                    .to_zoned_datetime(solstone_core_journal_config::owner_zone(&self.journal))
+                    .date(),
             )
         });
         if self.admitted_priority.is_none()
@@ -1672,7 +1672,7 @@ async fn next_request_event(
 impl ForegroundProcessingHost {
     pub fn open(journal: &Path, payload: &Path, backup: BackupWebDeps) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(journal),
         );
         Self::open_internal(journal, payload, now, None, backup)
@@ -1721,7 +1721,7 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound(root, payload, now, None, external, stop, backup, false)
@@ -1734,7 +1734,7 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound(root, payload, now, None, external, stop, backup, true)
@@ -1749,7 +1749,7 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound_observed(
@@ -1771,7 +1771,7 @@ impl ForegroundProcessingHost {
         observe_daily: bool,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound_observed(
@@ -1801,7 +1801,7 @@ impl ForegroundProcessingHost {
         observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound_with_brain(
@@ -1836,7 +1836,7 @@ impl ForegroundProcessingHost {
         observe_daily: bool,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
-            Utc::now(),
+            Timestamp::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
         Self::open_bound_observed(
@@ -1875,7 +1875,7 @@ impl ForegroundProcessingHost {
         };
         let current = self.queue.try_read_daily()?;
         // No config/root I/O or serialization runs under the queue state lock.
-        let policy_now = Utc::now();
+        let policy_now = Timestamp::now();
         let (settings, gate) =
             solstone_core_system::processing::policy_at(&self.journal, policy_now)
                 .map_err(|_| "observer_policy_unavailable")?;
@@ -1897,11 +1897,11 @@ impl ForegroundProcessingHost {
             "ready":current.ready,"shutdown":current.shutdown,"global_hold":current.global_hold,
             "held":current.held,"running_or_reserved":current.running_or_reserved,
             "slot":current.slot,"index_conflict":current.index_conflict,"queued":current.queued,
-            "policy_checked_at":policy_now.to_rfc3339(),
+            "policy_checked_at":solstone_core_time::utc_rfc3339(policy_now),
             "policy":{"deferred":settings.deferred,"gate_open":gate.open,
                 "time_window":{"enabled":gate.time_window.enabled,"available":gate.time_window.available,
-                    "open":gate.time_window.open,"start":settings.gate.time_window.start.to_string(),
-                    "end":settings.gate.time_window.end.to_string()},
+                    "open":gate.time_window.open,"start":solstone_core_time::time_display(settings.gate.time_window.start),
+                    "end":solstone_core_time::time_display(settings.gate.time_window.end)},
                 "display_powersave":{"enabled":gate.display_powersave.enabled,
                     "available":gate.display_powersave.available,"open":gate.display_powersave.open}},
             "atomic_with_policy_or_settings":false,"authorizes_release":false
@@ -2040,7 +2040,7 @@ impl ForegroundProcessingHost {
                 .map_err(|e| e.to_string())?;
             // Let the existing tolerant loader handle damaged config first.
             let (mut engine, _) =
-                ScheduleEngine::init(&config, &state, now).map_err(|e| e.to_string())?;
+                ScheduleEngine::init(&config, &state, now.clone()).map_err(|e| e.to_string())?;
             let mut fresh = BTreeSet::new();
             match engine.register_defaults() {
                 Ok(added) => fresh.extend(added),
@@ -2058,7 +2058,7 @@ impl ForegroundProcessingHost {
                 }
             }) {
                 Ok(()) => {
-                    engine = ScheduleEngine::init(&config, &state, now)
+                    engine = ScheduleEngine::init(&config, &state, now.clone())
                         .map_err(|e| e.to_string())?
                         .0;
                 }
@@ -2076,7 +2076,7 @@ impl ForegroundProcessingHost {
                             .iter()
                             .map(|id| solstone_core_maintenance::schedule_sync::schedule_name(id)),
                     );
-                    match ScheduleEngine::init(&config, &state, now) {
+                    match ScheduleEngine::init(&config, &state, now.clone()) {
                         Ok((reloaded, _)) => engine = reloaded,
                         Err(error) => log::warn!("foreground schedule reload: {error}"),
                     }
@@ -2378,9 +2378,9 @@ impl ForegroundProcessingHost {
         let Some(args) = admit_argv(raw) else {
             return scheduled_commands::run(hosted, &command, &checkpoint, &control.reference);
         };
-        let today = Utc::now()
-            .with_timezone(&solstone_core_journal_config::owner_zone(&hosted.journal))
-            .date_naive();
+        let today = Timestamp::now()
+            .to_zoned_datetime(solstone_core_journal_config::owner_zone(&hosted.journal))
+            .date();
         let day = match solstone_core_think_cli::hosted_command_day(&args, today) {
             Ok(day) => day,
             Err(error) => {
@@ -2468,9 +2468,9 @@ impl ForegroundProcessingHost {
                 cancelled: Arc::clone(&self.stop),
                 priority: solstone_core_system::priority::classify(
                     args,
-                    Utc::now()
-                        .with_timezone(&solstone_core_journal_config::owner_zone(&self.journal))
-                        .date_naive(),
+                    Timestamp::now()
+                        .to_zoned_datetime(solstone_core_journal_config::owner_zone(&self.journal))
+                        .date(),
                 ),
                 deadline: Instant::now() + Duration::from_secs(480),
             },
@@ -3065,7 +3065,6 @@ mod detector_contract {
 #[cfg(all(test, feature = "processing", feature = "full-tests"))]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
     use solstone_core_generate::GeneratedResponse;
     use solstone_core_system::work_retry::{self, Unit};
 
@@ -3259,7 +3258,7 @@ mod tests {
             let host = ForegroundProcessingHost::open_with_executor(
                 temp.path(),
                 &payload,
-                ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+                ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
                 Arc::new(StubGenerateExecutor),
                 backup_deps(temp.path()),
             )
@@ -3370,7 +3369,7 @@ mod tests {
         let mut host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             Arc::new(StubGenerateExecutor),
             backup_deps(temp.path()),
         )
@@ -3472,8 +3471,8 @@ mod tests {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let start_time = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3485,8 +3484,8 @@ mod tests {
         .unwrap();
 
         let check_time = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 5, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:05:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let report = host.check_schedule(check_time).unwrap();
         assert!(
@@ -3532,8 +3531,8 @@ mod tests {
         .unwrap();
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3640,8 +3639,8 @@ mod tests {
         write_image(&image_path);
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3689,8 +3688,8 @@ mod tests {
         fs::write(&cadence_path, seeded.to_string()).unwrap();
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3757,8 +3756,8 @@ mod tests {
             temp.path(),
             &payload,
             ScheduleNow::in_zone(
-                Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-                chrono_tz::UTC,
+                "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+                jiff::tz::TimeZone::UTC,
             ),
             Arc::new(StubGenerateExecutor),
             backup_deps(temp.path()),
@@ -3799,8 +3798,8 @@ mod tests {
         work_retry::observe_held(temp.path(), &unit, "generate-wire-failed", "sample.png").unwrap();
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3877,8 +3876,8 @@ mod tests {
             .expect("retry permission must be granted");
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -3969,8 +3968,8 @@ mod tests {
             .expect("retry permission must be granted");
 
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -4004,8 +4003,8 @@ mod tests {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let now = ScheduleNow::in_zone(
-            Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-            chrono_tz::UTC,
+            "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+            jiff::tz::TimeZone::UTC,
         );
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
@@ -4076,7 +4075,7 @@ mod tests {
         let mut host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             Arc::new(StubGenerateExecutor),
             backup_deps(temp.path()),
         )
@@ -4121,7 +4120,7 @@ mod tests {
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             Arc::new(executor),
             backup_deps(temp.path()),
         )
@@ -4181,7 +4180,7 @@ mod tests {
         let mut host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             Arc::new(executor),
             backup_deps(temp.path()),
         )
@@ -4278,8 +4277,8 @@ mod tests {
             journal,
             payload,
             ScheduleNow::in_zone(
-                Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-                chrono_tz::UTC,
+                "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+                jiff::tz::TimeZone::UTC,
             ),
             executor,
             backup_deps(journal),
@@ -4927,7 +4926,6 @@ mod tests {
 #[cfg(all(test, feature = "processing", feature = "full-tests"))]
 mod processing_proofs {
     use super::*;
-    use chrono::{Datelike, TimeZone};
     use serde_json::json;
     use solstone_core_backup::Destination;
     use solstone_core_journal_io::operational_log::fold_oplogs;
@@ -5113,11 +5111,11 @@ mod processing_proofs {
         (temp, payload)
     }
 
-    fn open_host(journal: &Path, payload: &Path, now: DateTimeUtc) -> ForegroundProcessingHost {
+    fn open_host(journal: &Path, payload: &Path, now: Timestamp) -> ForegroundProcessingHost {
         ForegroundProcessingHost::open_at(
             journal,
             payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             BackupWebDeps::new(journal.to_path_buf()),
         )
         .unwrap()
@@ -5164,7 +5162,7 @@ mod processing_proofs {
         }
 
         let (journal, payload) = journal_fixture();
-        let host = open_host(journal.path(), &payload, Utc::now());
+        let host = open_host(journal.path(), &payload, Timestamp::now());
         let scratch = journal.path().join("uncreated-scratch");
         // A ready journal configures without touching the model or scratch.
         host.enable_audio(
@@ -5185,7 +5183,7 @@ mod processing_proofs {
         drop(host);
 
         let (journal, payload) = journal_fixture();
-        let host = open_host(journal.path(), &payload, Utc::now());
+        let host = open_host(journal.path(), &payload, Timestamp::now());
         let parked = tempfile::tempdir().unwrap();
         fs::rename(journal.path(), parked.path().join("original")).unwrap();
         fs::create_dir(journal.path()).unwrap();
@@ -5242,7 +5240,7 @@ mod processing_proofs {
         let mut host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(journal.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             external,
             Arc::new(AtomicBool::new(false)),
@@ -5335,7 +5333,7 @@ mod processing_proofs {
         let host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(journal.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             external,
             Arc::new(AtomicBool::new(false)),
@@ -5464,7 +5462,7 @@ mod processing_proofs {
                 journal.path().join("health/callosum.sock"),
             ))
             .unwrap();
-        let mut host = open_host(journal.path(), &payload, Utc::now());
+        let mut host = open_host(journal.path(), &payload, Timestamp::now());
         host.start_workers().unwrap();
         let installed = current_installed(journal.path()).unwrap();
         relinquish_admitted_work(journal.path()).unwrap();
@@ -5588,7 +5586,7 @@ mod processing_proofs {
         let host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(journal.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             external,
             Arc::new(AtomicBool::new(false)),
@@ -5665,7 +5663,7 @@ mod processing_proofs {
             resume_after_whole_journal_restore(held_root.canonical_path());
             Ok(())
         }));
-        let host = open_host(journal.path(), &payload, Utc::now());
+        let host = open_host(journal.path(), &payload, Timestamp::now());
         let reference = pending.lock().unwrap().clone();
         wait_until(|| {
             host.queue
@@ -5735,7 +5733,7 @@ mod processing_proofs {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (journal, payload) = journal_fixture();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let first = open_host(journal.path(), &payload, now);
         first.shutdown().expect("first retirement");
         let successor = open_host(journal.path(), &payload, now);
@@ -5768,13 +5766,13 @@ mod processing_proofs {
             hold_analysis(temp.path(), true);
             let config = fs::read(temp.path().join("config/journal.json")).unwrap();
             let (settings, gate) =
-                solstone_core_system::processing::policy_at(temp.path(), Utc::now()).unwrap();
+                solstone_core_system::processing::policy_at(temp.path(), Timestamp::now()).unwrap();
             assert!(settings.deferred && !gate.open);
             let day = "20260104";
             fs::create_dir_all(temp.path().join("chronicle").join(day)).unwrap();
             let intent =
                 solstone_core_system::work_intent::register(temp.path(), day, true).unwrap();
-            let now = ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC);
+            let now = ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC);
             let host = ForegroundProcessingHost::open_bound_observed(
                 Arc::new(JournalRoot::open(temp.path()).unwrap()),
                 &payload,
@@ -5874,8 +5872,6 @@ mod processing_proofs {
         }
     }
 
-    type DateTimeUtc = chrono::DateTime<Utc>;
-
     #[test]
     fn daily_observation_rechecks_cancellation_after_read() {
         use std::sync::atomic::AtomicUsize;
@@ -5899,7 +5895,7 @@ mod processing_proofs {
         let host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(temp.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             external,
             Arc::new(AtomicBool::new(false)),
@@ -5929,7 +5925,7 @@ mod processing_proofs {
             let host = ForegroundProcessingHost::open_bound_observed(
                 Arc::new(JournalRoot::open(temp.path()).unwrap()),
                 &payload,
-                ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+                ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
                 None,
                 Arc::new(|| false),
                 Arc::new(AtomicBool::new(false)),
@@ -5957,7 +5953,7 @@ mod processing_proofs {
         let host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(temp.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             Arc::new(|| false),
             Arc::new(AtomicBool::new(false)),
@@ -6015,7 +6011,7 @@ mod processing_proofs {
         let host = ForegroundProcessingHost::open_bound_observed(
             Arc::new(JournalRoot::open(temp.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             None,
             external,
             Arc::new(AtomicBool::new(false)),
@@ -6064,11 +6060,11 @@ mod processing_proofs {
         .unwrap();
         let original = fs::read(&pending).unwrap();
         let request = solstone_core_system::work_intent::register(temp.path(), day, true).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = ForegroundProcessingHost::open_bound(
             Arc::new(JournalRoot::open(temp.path()).unwrap()),
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             None,
             Arc::new(|| false),
             Arc::new(AtomicBool::new(false)),
@@ -6085,7 +6081,7 @@ mod processing_proofs {
             &request.id,
         ]));
         assert_ne!(code, 0);
-        let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let date = solstone_core_time::parse_day(day).unwrap();
         let events = fold_oplogs(
             JournalRoot::open(temp.path()).unwrap(),
             &[date],
@@ -6218,8 +6214,8 @@ mod processing_proofs {
 
     fn heartbeat_events(journal: &Path, event: &str) -> usize {
         let root = JournalRoot::open(journal).unwrap();
-        let today = chrono::Local::now().date_naive();
-        let previous = today.pred_opt().unwrap();
+        let today = jiff::ZonedDateTime::now().date();
+        let previous = today.yesterday().unwrap();
         fold_oplogs(
             root,
             &[previous, today],
@@ -6385,7 +6381,7 @@ mod processing_proofs {
         let (temp, payload) = journal_fixture();
         let saved = temp.path().join("stats.json");
         fs::write(&saved, br#"{"generated_at":"old","day_count":99}"#).unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let host = open_host(temp.path(), &payload, now);
         wait_until(|| {
             scheduler_field(temp.path(), "journal-stats", "last_status").as_deref()
@@ -6394,8 +6390,8 @@ mod processing_proofs {
         let first = read_json(&saved);
         assert_ne!(first["generated_at"], "old");
         assert_eq!(first["day_count"], 0);
-        let day = (now - chrono::Duration::days(1))
-            .format("%Y%m%d")
+        let day = (now - jiff::SignedDuration::from_hours(24))
+            .strftime("%Y%m%d")
             .to_string();
         let segment = temp
             .path()
@@ -6412,8 +6408,8 @@ mod processing_proofs {
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.").unwrap();
         let report = host
             .check_schedule(ScheduleNow::in_zone(
-                now + chrono::Duration::minutes(6),
-                chrono_tz::UTC,
+                now + jiff::SignedDuration::from_mins(6),
+                jiff::tz::TimeZone::UTC,
             ))
             .unwrap();
         assert!(report.submitted.iter().any(|name| name == "journal-stats"));
@@ -6433,7 +6429,7 @@ mod processing_proofs {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = journal_fixture();
         fs::write(temp.path().join("config/schedules.json"), b"{broken").unwrap();
-        let host = open_host(temp.path(), &payload, Utc::now());
+        let host = open_host(temp.path(), &payload, Timestamp::now());
         wait_until(|| {
             scheduler_field(temp.path(), "journal-stats", "last_status").as_deref()
                 == Some("success")
@@ -6458,12 +6454,12 @@ mod processing_proofs {
         );
         let before = b"previous summary";
         fs::write(temp.path().join("stats.json"), before).unwrap();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let host = open_host(temp.path(), &payload, now);
         let report = host
             .check_schedule(ScheduleNow::in_zone(
-                now + chrono::Duration::hours(2),
-                chrono_tz::UTC,
+                now + jiff::SignedDuration::from_hours(2),
+                jiff::tz::TimeZone::UTC,
             ))
             .unwrap();
         assert!(!report.submitted.iter().any(|name| name == "journal-stats"));
@@ -6481,7 +6477,7 @@ mod processing_proofs {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         assert_eq!(host.execute_worker_command(&owned(&["heartbeat"])), 0);
         assert_eq!(heartbeat_events(temp.path(), "pass"), 1);
@@ -6534,7 +6530,7 @@ mod processing_proofs {
         entries.insert("broken".into(), json!("not-an-entry"));
         entries.get_mut("heartbeat").unwrap()["enabled"] = json!(true);
         write_schedules(temp.path(), entries);
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         let schedules = read_json(&temp.path().join("config/schedules.json"));
         let removed = host_unscheduled().contains(&"backup:offload");
@@ -6617,8 +6613,8 @@ mod processing_proofs {
             temp.path(),
             &payload,
             ScheduleNow::in_zone(
-                Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
-                chrono_tz::UTC,
+                "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap(),
+                jiff::tz::TimeZone::UTC,
             ),
             backup,
         )
@@ -6643,7 +6639,7 @@ mod processing_proofs {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
-        let start = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let start = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let mut entries = quiet_entries();
         entries.insert(
             "heartbeat".into(),
@@ -6657,7 +6653,7 @@ mod processing_proofs {
         write_schedules(temp.path(), entries);
         write_scheduler_state(
             temp.path(),
-            json!({"heartbeat": {"last_run": start.timestamp() as f64}}),
+            json!({"heartbeat": {"last_run": start.as_second() as f64}}),
         );
         let first = open_host(temp.path(), &payload, start);
         assert!(scheduler_field(temp.path(), "heartbeat", "last_status").is_none());
@@ -6669,7 +6665,7 @@ mod processing_proofs {
             serde_json::to_vec_pretty(&schedules).unwrap(),
         )
         .unwrap();
-        let later = start + chrono::Duration::minutes(6);
+        let later = start + jiff::SignedDuration::from_mins(6);
         let second = open_host(temp.path(), &payload, later);
         wait_until(|| {
             scheduler_field(temp.path(), "heartbeat", "last_status") == Some("success".into())
@@ -6721,7 +6717,7 @@ mod processing_proofs {
                 },
             )))
         };
-        let now = ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC);
+        let now = ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC);
         let host = ForegroundProcessingHost::open_with_executor(
             temp.path(),
             &payload,
@@ -6740,7 +6736,7 @@ mod processing_proofs {
         );
         let output = read_json(&temp.path().join(format!(
             "chronicle/{}/talents/daily_schedule.json",
-            Utc::now().format("%Y%m%d")
+            Timestamp::now().strftime("%Y%m%d")
         )));
         assert_eq!(output["primary"], "00:00");
         assert_eq!(
@@ -6759,7 +6755,7 @@ mod processing_proofs {
         let reopened = ForegroundProcessingHost::open_at(
             temp.path(),
             &payload,
-            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
             BackupWebDeps::new(temp.path().to_path_buf()),
         )
         .unwrap();
@@ -6777,8 +6773,8 @@ mod processing_proofs {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
-        let now = Utc::now();
-        let day = now.format("%Y%m%d").to_string();
+        let now = Timestamp::now();
+        let day = now.strftime("%Y%m%d").to_string();
         let segment = temp
             .path()
             .join("chronicle")
@@ -6791,7 +6787,7 @@ mod processing_proofs {
         fs::write(&original, audio).unwrap();
         let header = json!({"raw":"120000_300.m4a","_solstone_processing":{
             "schema":solstone_core_processing_record::vocab::SCHEMA,"state":"analyzed","reason_code":"ok","handler":"transcribe",
-            "attempted_at":now.to_rfc3339(),"input_size":audio.len(),"owner_voice_filter":true,
+            "attempted_at":solstone_core_time::utc_rfc3339(now),"input_size":audio.len(),"owner_voice_filter":true,
             "owner_voice":{"version":1,"speech_s":10.0,"kept_s":6.0,"left_out_s":4.0,"windows_scored":5,"windows_kept":3,
                 "original":{"name":"120000_300.m4a","size":audio.len(),"sha256":format!("{:x}",Sha256::digest(audio))},"print":{"sha256":"0".repeat(64)}}
         }});
@@ -6908,7 +6904,7 @@ mod processing_proofs {
         let host = open_host(
             temp.path(),
             &payload,
-            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+            "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         );
         let (entered_send, entered) = std::sync::mpsc::channel();
         let wanted = temp.path().to_path_buf();
@@ -7040,7 +7036,7 @@ mod processing_proofs {
                 open_host(
                     &journal,
                     &payload,
-                    Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+                    "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap(),
                 )
             })
             .await
@@ -7208,8 +7204,8 @@ mod processing_proofs {
                 Arc::clone(&root),
                 &payload,
                 ScheduleNow::in_zone(
-                    Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
-                    chrono_tz::UTC,
+                    "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap(),
+                    jiff::tz::TimeZone::UTC,
                 ),
                 None,
                 Arc::new(|| false),
@@ -7391,7 +7387,7 @@ mod processing_proofs {
         let host = Arc::new(open_host(
             temp.path(),
             &payload,
-            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+            "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         ));
         let reference = submit_owner_maintenance(&host.root, "backup:offload").unwrap();
         let frame = reached.recv_timeout(Duration::from_secs(5));
@@ -7466,7 +7462,7 @@ mod processing_proofs {
         let host = open_host(
             temp.path(),
             &payload,
-            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+            "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap(),
         );
         let (entered_send, entered) = std::sync::mpsc::channel();
         let (release_send, release) = std::sync::mpsc::channel();
@@ -7559,7 +7555,7 @@ mod processing_proofs {
                 let _ = reader.get_mut().write_all(line.as_bytes());
             }
         });
-        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let now = "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let mut entries = quiet_entries();
         entries.get_mut(&schedule_name("backup:verify")).unwrap()["enabled"] = json!(true);
         write_schedules(temp.path(), entries);
@@ -7657,7 +7653,7 @@ mod processing_proofs {
         // Backup is intentionally unconfigured: these are real native skip
         // terminals, testing dispatch/publication separately from FC4's
         // eligible repository and target-native leaf proofs.
-        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let now = "2030-01-01T12:00:00Z".parse::<Timestamp>().unwrap();
         let mut host = open_host(temp.path(), &payload, now);
         let terminal = runtime.block_on(async {
             let mut terminal = BTreeSet::new();
@@ -7848,7 +7844,7 @@ mod processing_proofs {
         )
         .unwrap();
         solstone_core_backup::set_enabled(temp.path(), true).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         wait_until(|| {
             scheduler_field(temp.path(), "maintenance:backup:run", "last_status").is_some()
@@ -7923,7 +7919,7 @@ mod processing_proofs {
         let mut entries = quiet_entries();
         entries.get_mut("weekly-agents").unwrap()["enabled"] = json!(true);
         write_schedules(temp.path(), entries);
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         wait_until(|| {
             scheduler_field(temp.path(), "weekly-agents", "last_status") == Some("success".into())
@@ -7949,7 +7945,7 @@ mod processing_proofs {
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
         enable_only(temp.path(), "facet-candidates");
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         wait_until(|| {
             scheduler_field(temp.path(), "facet-candidates", "last_status")
@@ -7966,7 +7962,7 @@ mod processing_proofs {
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
         enable_only(temp.path(), "rebuild-edges");
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         wait_until(|| {
             scheduler_field(temp.path(), "rebuild-edges", "last_status") == Some("success".into())
@@ -7984,16 +7980,16 @@ mod processing_proofs {
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
         enable_only(temp.path(), "brain");
-        let start = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let start = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         write_scheduler_state(
             temp.path(),
-            json!({"brain": {"last_run": start.timestamp() as f64}}),
+            json!({"brain": {"last_run": start.as_second() as f64}}),
         );
         let host = open_host(temp.path(), &payload, start);
         assert!(scheduler_field(temp.path(), "brain", "last_status").is_none());
         host.request_stop();
-        let later = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
-        host.check_schedule(ScheduleNow::in_zone(later, chrono_tz::UTC))
+        let later = "2026-10-18T12:00:00Z".parse::<Timestamp>().unwrap();
+        host.check_schedule(ScheduleNow::in_zone(later, jiff::tz::TimeZone::UTC))
             .unwrap();
         assert!(!temp.path().join("health/brain.json").exists());
         assert!(scheduler_field(temp.path(), "brain", "last_status").is_none());
@@ -8029,7 +8025,7 @@ mod processing_proofs {
             "{\"id\":\"11111111-1111-4111-8111-111111111111\"}\n",
         )
         .unwrap();
-        let today = solstone_core_system::daily_coverage::local_day(temp.path(), Utc::now());
+        let today = solstone_core_system::daily_coverage::local_day(temp.path(), Timestamp::now());
         // A ready health-card segment classifies the facet without requiring
         // processing, so the packaged multi-facet review enters coverage.
         let segment = temp
@@ -8075,7 +8071,7 @@ mod processing_proofs {
         record.reason_code = Some("daily_failed".into());
         solstone_core_journal_io::save_daily_unit_record(temp.path(), &record).unwrap();
         write_schedules(temp.path(), quiet_entries());
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         assert!(host.queue().history().is_empty());
         host.deliver_discovery_once();
@@ -8159,7 +8155,7 @@ mod processing_proofs {
         )
         .unwrap();
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
+        let now = "2026-10-18T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         assert_eq!(
             host.execute_worker_command(&owned(&["think", "--weekly", "--day", "20260104",])),
@@ -8202,7 +8198,7 @@ mod processing_proofs {
         entries.get_mut("weekly-agents").unwrap()["enabled"] = json!(true);
         write_schedules(temp.path(), entries);
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         let mut status = None;
         for _ in 0..2_000_000 {
@@ -8221,13 +8217,15 @@ mod processing_proofs {
     }
 
     fn week_start_for_today() -> String {
-        let today = Utc::now().with_timezone(&chrono_tz::UTC).date_naive();
-        let days_since_saturday = today.weekday().num_days_from_sunday() + 1;
-        let end = today - chrono::Duration::days(i64::from(days_since_saturday));
-        let start = end - chrono::Duration::days(6);
+        let today = Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date();
+        let days_since_saturday = today.weekday().to_sunday_zero_offset() + 1;
+        let end = today - jiff::Span::new().days(days_since_saturday);
+        let start = end - jiff::Span::new().days(6);
         assert!(end < today);
-        assert_eq!(start.weekday(), chrono::Weekday::Sun);
-        start.format("%Y%m%d").to_string()
+        assert_eq!(start.weekday(), jiff::civil::Weekday::Sunday);
+        start.strftime("%Y%m%d").to_string()
     }
 
     fn plant_morning_briefing(journal: &Path, day: &str) {
@@ -8376,11 +8374,11 @@ mod processing_proofs {
         enable_weekly(&journal, "30m");
         let stub = selection_stub(temp.path());
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = ForegroundProcessingHost::open_with_executor(
             &journal,
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             Arc::new(OneShotClient::at_path(stub)),
             BackupWebDeps::new(journal.clone()),
         )
@@ -8432,11 +8430,11 @@ mod processing_proofs {
             Ok::<_, ClientError>(selected_reflection(r#"{"selections":{"S00":"M001"}}"#))
         };
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = ForegroundProcessingHost::open_with_executor(
             &journal,
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             Arc::new(executor),
             BackupWebDeps::new(journal.clone()),
         )
@@ -8475,11 +8473,11 @@ mod processing_proofs {
             Ok::<_, ClientError>(selected_reflection(r#"{"selections":{"S00":"M001"}}"#))
         };
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = ForegroundProcessingHost::open_with_executor(
             &journal,
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             Arc::new(executor),
             BackupWebDeps::new(journal.clone()),
         )
@@ -8522,11 +8520,11 @@ mod processing_proofs {
             Ok::<_, ClientError>(selected_reflection(r#"{"selections":{"S00":"M001"}}"#))
         };
         let payload = checkout_payload();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = ForegroundProcessingHost::open_with_executor(
             &journal,
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             Arc::new(executor),
             BackupWebDeps::new(journal.clone()),
         )
@@ -8580,7 +8578,7 @@ mod processing_proofs {
         )
         .unwrap();
         let before = awareness_files(temp.path());
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         let mut status = None;
         for _ in 0..1_000_000 {
@@ -8613,7 +8611,7 @@ mod processing_proofs {
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
         enable_only(temp.path(), "maintenance:speakers:backfill-pool");
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         let mut status = None;
         for _ in 0..1_000_000 {
@@ -8681,7 +8679,7 @@ mod processing_proofs {
         let day = "20260104";
         fs::create_dir_all(temp.path().join("chronicle").join(day)).unwrap();
         let intent = solstone_core_system::work_intent::register(temp.path(), day, true).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
+        let now = "2026-10-18T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         host.deliver_discovery_once();
         wait_until(|| {
@@ -8748,12 +8746,12 @@ mod processing_proofs {
         };
         let root = Arc::new(JournalRoot::open(journal).unwrap());
         let binding = root.identity().observation_id();
-        let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
+        let now = "2026-10-18T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = Arc::new(
             ForegroundProcessingHost::open_bound(
                 root,
                 &payload,
-                ScheduleNow::in_zone(now, chrono_tz::UTC),
+                ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
                 Some(Arc::new(executor)),
                 Arc::new(|| false),
                 Arc::new(AtomicBool::new(false)),
@@ -8795,7 +8793,7 @@ mod processing_proofs {
         let reopen_refused = ForegroundProcessingHost::open_at(
             journal,
             &payload,
-            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            ScheduleNow::in_zone(now, jiff::tz::TimeZone::UTC),
             BackupWebDeps::new(journal.to_path_buf()),
         )
         .is_err();
@@ -8838,7 +8836,7 @@ mod processing_proofs {
         let day = "20260104";
         fs::create_dir_all(temp.path().join("chronicle").join(day)).unwrap();
         let intent = solstone_core_system::work_intent::register(temp.path(), day, true).unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
+        let now = "2026-10-18T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = std::sync::Arc::new(open_host(temp.path(), &payload, now));
         let journal = temp.path().to_path_buf();
         let intent_id = intent.id.clone();
@@ -8901,7 +8899,7 @@ mod processing_proofs {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let now = "2026-10-17T12:00:00Z".parse::<Timestamp>().unwrap();
         let host = open_host(temp.path(), &payload, now);
         let schedules = read_json(&temp.path().join("config/schedules.json"));
         assert!(schedules.get("maintenance:health:prune-logs").is_some());
@@ -8913,9 +8911,9 @@ mod processing_proofs {
         );
         assert_eq!(heartbeat_events(temp.path(), "pass.outcome"), 0);
         assert!(scheduler_field(temp.path(), "heartbeat", "last_status").is_none());
-        let due = Utc.with_ymd_and_hms(2026, 10, 18, 2, 0, 0).unwrap();
+        let due = "2026-10-18T02:00:00Z".parse::<Timestamp>().unwrap();
         let report = host
-            .check_schedule(ScheduleNow::in_zone(due, chrono_tz::UTC))
+            .check_schedule(ScheduleNow::in_zone(due, jiff::tz::TimeZone::UTC))
             .unwrap();
         assert!(
             report.submitted.iter().any(|name| name == "heartbeat"),

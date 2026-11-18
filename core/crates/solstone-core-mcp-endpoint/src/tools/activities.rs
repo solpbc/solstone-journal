@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use chrono::Offset;
+use jiff::Span;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -87,7 +87,7 @@ fn validate_limit(limit: usize) -> Result<(), ToolError> {
 
 pub(crate) fn validate_list(
     params: Option<&Value>,
-    owner_zone: &solstone_core_journal_config::Tz,
+    owner_zone: &solstone_core_journal_config::TimeZone,
 ) -> Result<ValidatedListActivities, ToolError> {
     let params = params.cloned().unwrap_or_else(|| serde_json::json!({}));
     let params =
@@ -116,9 +116,9 @@ pub(crate) fn validate_list(
     } else {
         match (normalized_from, normalized_to) {
             (None, None) => {
-                let today = chrono::Utc::now()
-                    .with_timezone(owner_zone)
-                    .format("%Y%m%d")
+                let today = jiff::Timestamp::now()
+                    .to_zoned_datetime(owner_zone.clone())
+                    .strftime("%Y%m%d")
                     .to_string();
                 (today.clone(), today)
             }
@@ -427,7 +427,7 @@ fn face_span(face: &Value) -> Option<(i64, i64)> {
     let first = face.get("accounts")?.get(0)?;
     let time = |field: &str| {
         solstone_core_format::content::body_records::parse_source_time(first.get(field)?.as_str()?)
-            .map(|time| time.timestamp())
+            .map(|time| time.timestamp().as_second())
     };
     let (start, end) = (time("start")?, time("end")?);
     (end > start).then_some((start, end))
@@ -457,10 +457,9 @@ fn body_lines_near(
     day: &str,
     targets: &mut Vec<String>,
 ) -> Vec<BesideLine> {
-    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.pred_opt())
-        .map(|date| date.format("%Y%m%d").to_string());
+    let previous = solstone_core_time::parse_day(day)
+        .and_then(|date| date.yesterday().ok())
+        .map(solstone_core_time::day_key);
     let mut lines = Vec::new();
     for on in std::iter::once(day.to_owned()).chain(previous) {
         for (_, groups) in body.iter_mut() {
@@ -824,13 +823,9 @@ pub(crate) fn execute_list(
         Some((last_day, ..)) if last_day > &request.from => last_day,
         _ => &request.from,
     };
-    let before_from = chrono::NaiveDate::parse_from_str(first_shown, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.pred_opt())
-        .map_or_else(
-            || first_shown.clone(),
-            |date| date.format("%Y%m%d").to_string(),
-        );
+    let before_from = solstone_core_time::parse_day(first_shown)
+        .and_then(|date| date.yesterday().ok())
+        .map_or_else(|| first_shown.clone(), solstone_core_time::day_key);
     // Body rows as read, by facet, day and id, until their groups are read.
     let mut body_rows: BTreeMap<(String, String, String), CollectedItem> = BTreeMap::new();
     // A body record or Strava line this connection would list with the body
@@ -985,15 +980,18 @@ pub(crate) fn execute_list(
     // settled: everything sorts by day first, so nothing on a later day can
     // come before them. Each stretch groups as its days do alone.
     let mut body: Vec<(String, solstone_core_location::body_records::Groups)> = Vec::new();
-    if let (Ok(mut from), Ok(last)) = (
-        chrono::NaiveDate::parse_from_str(&before_from, "%Y%m%d"),
-        chrono::NaiveDate::parse_from_str(&request.to, "%Y%m%d"),
+    if let (Some(mut from), Some(last)) = (
+        solstone_core_time::parse_day(&before_from),
+        solstone_core_time::parse_day(&request.to),
     ) {
         while from <= last {
-            let to = (from + chrono::Duration::days(BODY_STRETCH_DAYS - 1)).min(last);
+            // A stretch reaching past the last representable day ends at `last`.
+            let to = from
+                .checked_add(Span::new().days(BODY_STRETCH_DAYS - 1))
+                .map_or(last, |to| to.min(last));
             let (from_day, to_day) = (
-                from.format("%Y%m%d").to_string(),
-                to.format("%Y%m%d").to_string(),
+                solstone_core_time::day_key(from),
+                solstone_core_time::day_key(to),
             );
             for (_, facet_dir, _) in &facets_to_search {
                 let groups = match solstone_core_location::body_records::body_groups_range(
@@ -1014,7 +1012,7 @@ pub(crate) fn execute_list(
                 };
                 let mut on = from;
                 while on <= to {
-                    let day = on.format("%Y%m%d").to_string();
+                    let day = solstone_core_time::day_key(on);
                     for group in groups.on(&day) {
                         if let Some(mut item) = body_rows.remove(&(
                             facet_dir.clone(),
@@ -1025,7 +1023,10 @@ pub(crate) fn execute_list(
                             collected.push(item);
                         }
                     }
-                    on += chrono::Duration::days(1);
+                    let Ok(next) = on.tomorrow() else {
+                        break;
+                    };
+                    on = next;
                 }
                 body.push((facet_dir.clone(), groups));
             }
@@ -1041,7 +1042,10 @@ pub(crate) fn execute_list(
             if settled > request.limit {
                 break;
             }
-            from = to + chrono::Duration::days(1);
+            let Ok(next) = to.tomorrow() else {
+                break;
+            };
+            from = next;
         }
     }
 
@@ -1060,11 +1064,9 @@ pub(crate) fn execute_list(
     let page: Vec<CollectedItem> = unskipped.into_iter().take(request.limit).collect();
 
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
-    let now = chrono::Utc::now().with_timezone(&owner_zone);
-    let zone_str = solstone_core_journal_config::zone_label(
-        Some(owner_zone),
-        now.offset().fix().local_minus_utc(),
-    );
+    let now = jiff::Timestamp::now().to_zoned_datetime(owner_zone.clone());
+    let zone_str =
+        solstone_core_journal_config::zone_label(Some(&owner_zone), now.offset().seconds());
 
     // The calendar and a day's location belong to no facet: only a connection
     // that already reads the whole journal's transcripts, where calendar notes
@@ -1755,15 +1757,25 @@ fn compose_segment_source(heading: Option<&str>, lines: &[SourcedLine]) -> Strin
 fn format_segment_heading(day: &str, seg_key: &str) -> Option<String> {
     let times = solstone_core_format::segment::segment_parse(seg_key)?;
     let length = seg_key.split_once('_')?.1.parse::<i64>().ok()?;
-    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .or_else(|_| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d"))
-        .ok()?;
-    let start = date.and_hms_opt(times.hour as u32, times.minute as u32, times.second as u32)?;
-    let end = start + chrono::Duration::seconds(length);
+    let date = solstone_core_time::parse_day(day)
+        .or_else(|| jiff::civil::Date::strptime("%Y-%m-%d", day).ok())?;
+    let start = date.to_datetime(
+        jiff::civil::Time::new(
+            i8::try_from(times.hour).ok()?,
+            i8::try_from(times.minute).ok()?,
+            i8::try_from(times.second).ok()?,
+            0,
+        )
+        .ok()?,
+    );
+    // Only the end's time of day is shown, so it wraps past midnight.
+    let end = start
+        .time()
+        .wrapping_add(jiff::SignedDuration::from_secs(length));
     Some(format!(
         "## {} - {}",
-        start.format("%Y-%m-%d %H:%M:%S"),
-        end.format("%H:%M:%S")
+        start.strftime("%Y-%m-%d %H:%M:%S"),
+        end.strftime("%H:%M:%S")
     ))
 }
 

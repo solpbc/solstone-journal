@@ -5,13 +5,13 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    run_with_clock(context, check, chrono::Utc::now)
+    run_with_clock(context, check, jiff::Timestamp::now)
 }
 
 pub(crate) fn run_with_clock(
     context: &CheckContext,
     check: Check,
-    clock: impl FnOnce() -> chrono::DateTime<chrono::Utc>,
+    clock: impl FnOnce() -> jiff::Timestamp,
 ) -> RunnerResult {
     let config = solstone_core_journal_config::read_journal_config(&context.journal_path)
         .map_err(|error| crate::vocabulary::ExecutionError {

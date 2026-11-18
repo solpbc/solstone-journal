@@ -52,7 +52,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::AtomicWriteOptions;
@@ -61,6 +61,7 @@ use solstone_core_journal_io::entry::Removed;
 use solstone_core_journal_io::errors::AtomicWriteError;
 use solstone_core_journal_io::errors::PathError;
 use solstone_core_journal_io::paths::contained_path;
+use solstone_core_time::{Precision, utc_z};
 
 /// Where the deletion record lives, relative to the journal root.
 ///
@@ -305,7 +306,7 @@ impl OperationId {
     /// A new operation that began at `at`: for one owner act that a durable
     /// record carries across restarts and that spans several things, such as
     /// a selection recovered together.
-    pub fn fresh(at: DateTime<Utc>) -> Self {
+    pub fn fresh(at: Timestamp) -> Self {
         let mut bytes = [0_u8; 4];
         // A failed random source still yields a unique id within this
         // process through the sequence, and the time prefix separates runs.
@@ -314,7 +315,7 @@ impl OperationId {
         }
         Self(format!(
             "{}-{:02x}{:02x}{:02x}{:02x}",
-            at.format("%Y%m%dT%H%M%S%3fZ"),
+            at.strftime("%Y%m%dT%H%M%S%3fZ"),
             bytes[0],
             bytes[1],
             bytes[2],
@@ -325,14 +326,14 @@ impl OperationId {
     /// The id of an operation that a durable record carries across restarts,
     /// such as a held delete: the same record always yields the same id, so a
     /// resumed removal records its unit once.
-    pub fn durable(requested_at: DateTime<Utc>, record_id: &str) -> Self {
+    pub fn durable(requested_at: Timestamp, record_id: &str) -> Self {
         let safe: String = record_id
             .chars()
             .filter(|character| character.is_ascii_alphanumeric())
             .collect();
         Self(format!(
             "{}-{safe}",
-            requested_at.format("%Y%m%dT%H%M%S%3fZ")
+            requested_at.strftime("%Y%m%dT%H%M%S%3fZ")
         ))
     }
 
@@ -374,7 +375,7 @@ impl Removal {
     pub fn begin(journal_root: &Path, action: Action, surface: Surface) -> Self {
         let mut removal = Self::with_id(
             journal_root,
-            OperationId::fresh(Utc::now()),
+            OperationId::fresh(Timestamp::now()),
             action,
             surface,
         );
@@ -542,7 +543,7 @@ impl Removal {
             id,
             operation: self.id.to_string(),
             event,
-            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            at: utc_z(Timestamp::now(), Precision::Millis),
             action: self.action,
             surface: self.surface,
             unit,
@@ -716,7 +717,7 @@ mod tests {
             let root = std::env::temp_dir().join(format!(
                 "solstone-removals-{name}-{}-{}",
                 std::process::id(),
-                OperationId::fresh(Utc::now())
+                OperationId::fresh(Timestamp::now())
             ));
             std::fs::create_dir_all(&root).unwrap();
             Self(root)
@@ -778,9 +779,21 @@ mod tests {
     }
 
     #[test]
+    fn an_operation_id_begins_with_its_utc_time_to_the_millisecond() {
+        let at = Timestamp::new(1_763_000_000, 123_999_999).unwrap();
+        assert_eq!(
+            OperationId::durable(at, "ab-cd_01").as_str(),
+            "20251113T021320123Z-abcd01"
+        );
+        let fresh = OperationId::fresh(at);
+        assert!(fresh.as_str().starts_with("20251113T021320123Z-"));
+        assert_eq!(fresh.as_str().len(), "20251113T021320123Z-".len() + 8);
+    }
+
+    #[test]
     fn a_resumed_operation_records_its_unit_once() {
         let journal = Journal::new("resume");
-        let requested = Utc::now();
+        let requested = Timestamp::now();
         for _ in 0..2 {
             let removal = Removal::with_id(
                 &journal.0,
@@ -839,7 +852,7 @@ mod tests {
     #[test]
     fn a_resumed_operation_finds_each_unit_again_in_any_order() {
         let journal = Journal::new("reorder");
-        let requested = Utc::now();
+        let requested = Timestamp::now();
         let durable = || {
             Removal::with_id(
                 &journal.0,
@@ -860,7 +873,7 @@ mod tests {
         // Two entities read the same as units: only the item tells them
         // apart, so each is named by its item and a resumed one is found.
         let journal = Journal::new("several");
-        let operation = OperationId::fresh(Utc::now());
+        let operation = OperationId::fresh(Timestamp::now());
         let removal = |item: &str| {
             Removal::with_id(
                 &journal.0,
@@ -887,7 +900,7 @@ mod tests {
     #[test]
     fn names_written_without_an_item_still_read_beside_those_with_one() {
         let journal = Journal::new("names");
-        let requested = Utc::now();
+        let requested = Timestamp::now();
         Removal::with_id(
             &journal.0,
             OperationId::durable(requested, "20261111T000000000Z-aaaaaaaa"),

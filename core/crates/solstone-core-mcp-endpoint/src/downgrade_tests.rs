@@ -7,7 +7,7 @@ use std::io;
 use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
@@ -157,7 +157,8 @@ struct StoredToken {
     id: String,
     label: String,
     verifier: String,
-    created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: Timestamp,
 }
 
 // --- Copied verbatim from git show 790a0ae42:core/crates/solstone-core-mcp-endpoint/src/oauth/store.rs ---
@@ -199,8 +200,10 @@ struct StoredClient {
     redirect_uris: Vec<String>,
     client_name: Option<String>,
     source: String,
-    created_at: DateTime<Utc>,
-    last_used_at: Option<DateTime<Utc>>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: Timestamp,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    last_used_at: Option<Timestamp>,
     revocation_generation: u64,
 }
 
@@ -214,9 +217,12 @@ struct StoredGrant {
     refresh_verifier: String,
     refresh_generation: u64,
     revocation_generation: u64,
-    access_expires_at: DateTime<Utc>,
-    refresh_expires_at: DateTime<Utc>,
-    created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    access_expires_at: Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    refresh_expires_at: Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resource: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,11 +241,14 @@ struct StoredPending {
     pkce_method: String,
     state: Option<String>,
     source: String,
-    created_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    created_at: Timestamp,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    expires_at: Timestamp,
     failure_count: u8,
     authorization_code_verifier: Option<String>,
-    code_expires_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "solstone_core_time::serde::timestamp::option")]
+    code_expires_at: Option<Timestamp>,
     #[serde(default)]
     permission: Option<ReadPermission>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -254,7 +263,8 @@ struct StoredPending {
 #[serde(deny_unknown_fields)]
 struct StoredPairing {
     verifier: String,
-    expires_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    expires_at: Timestamp,
     generation: u64,
     locked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -487,7 +497,7 @@ fn downgrade_owner_pause_idle_pause_resume_takeover_and_source_redemption() {
         .unwrap()
         .unwrap();
     let perm_bytes_before = fs::read(root.join("mcp-endpoint/permissions.json")).unwrap();
-    crate::oauth::store::set_routine_now(Some(expiry.timestamp() + 1));
+    crate::oauth::store::set_routine_now(Some(expiry.as_second() + 1));
     assert!(
         crate::agent_state::is_owner_paused(root, &oauth_conn)
             .unwrap()
@@ -1045,7 +1055,7 @@ fn downgrade_hold_evaluation_denial_split() {
     crate::permissions::PermissionStore::open(root)
         .set_evaluation_only(&grant_conn, "hold")
         .unwrap();
-    crate::oauth::store::set_routine_now(Some(expiry.timestamp() + 10));
+    crate::oauth::store::set_routine_now(Some(expiry.as_second() + 10));
 
     // Stop after resume_refresh_expiry and clear_owner_pause, leaving hold
     oauth.store.resume_refresh_expiry(&grant_id).unwrap();

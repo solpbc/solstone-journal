@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use jiff::{Timestamp, ZonedDateTime};
 use serde_json::{Value, json};
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{
@@ -89,7 +89,7 @@ fn journal_stats(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
     let result = solstone_core_journal_stats_cli::run_cli_with_cache_checked(
         &[],
         &hosted.journal,
-        Utc::now(),
+        Timestamp::now(),
         &hosted.talent_root,
         &hosted.apps_root,
         &solstone_core_journal_stats_cli::FilesystemBacklogViewReader,
@@ -162,8 +162,8 @@ fn heartbeat(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
     if stopped(checkpoint) {
         return 1;
     }
-    let now = Local::now().fixed_offset();
-    if heartbeat_recent(&hosted.journal, now) {
+    let now = ZonedDateTime::now();
+    if heartbeat_recent(&hosted.journal, &now) {
         return 0;
     }
     if stopped(checkpoint) {
@@ -178,7 +178,7 @@ fn heartbeat(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
         "heartbeat",
         "pass",
         OplogFormat::Jsonl,
-        now,
+        &now,
         checkpoint.as_ref(),
     ) {
         Ok(log) => log,
@@ -194,7 +194,7 @@ fn heartbeat(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
             "escalated_targets": [],
             "event": "pass",
             "fired": [],
-            "ts": Utc::now().timestamp_millis(),
+            "ts": Timestamp::now().as_millisecond(),
         }),
         checkpoint.as_ref(),
     );
@@ -211,7 +211,7 @@ fn heartbeat(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
             "duration_seconds": started.elapsed().as_secs(),
             "event": "pass.outcome",
             "outcome": outcome,
-            "ts": Utc::now().timestamp_millis(),
+            "ts": Timestamp::now().as_millisecond(),
         }),
         checkpoint.as_ref(),
     );
@@ -222,9 +222,9 @@ fn heartbeat(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
     }
 }
 
-fn heartbeat_recent(journal: &std::path::Path, now: DateTime<FixedOffset>) -> bool {
-    let today = now.date_naive();
-    let Some(previous) = today.pred_opt() else {
+fn heartbeat_recent(journal: &std::path::Path, now: &ZonedDateTime) -> bool {
+    let today = now.date();
+    let Ok(previous) = today.yesterday() else {
         return false;
     };
     let Ok(root) = JournalRoot::open(journal) else {
@@ -264,7 +264,9 @@ fn heartbeat_recent(journal: &std::path::Path, now: DateTime<FixedOffset>) -> bo
     )
     .ok()
     .flatten();
-    newest.is_some_and(|ts| now.timestamp_millis().saturating_sub(ts) < HEARTBEAT_RECENCY_MS)
+    newest.is_some_and(|ts| {
+        now.timestamp().as_millisecond().saturating_sub(ts) < HEARTBEAT_RECENCY_MS
+    })
 }
 
 fn write_heartbeat_record(
@@ -282,8 +284,8 @@ fn facet_candidates(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 
         return 1;
     }
     let zone = solstone_core_journal_config::owner_zone(&hosted.journal);
-    let today = Utc::now().with_timezone(&zone).date_naive();
-    let day = today.format("%Y%m%d").to_string();
+    let today = Timestamp::now().to_zoned_datetime(zone).date();
+    let day = today.strftime("%Y%m%d").to_string();
     let candidates = match solstone_core_facets::aggregate_speculative_facets(
         &hosted.journal,
         today,
@@ -375,7 +377,7 @@ fn maintenance(
         }
         "retention:owner-voice-originals" => {
             let services = solstone_core_maintenance::HealthServices {
-                now: Utc::now(),
+                now: Timestamp::now(),
                 zone: solstone_core_journal_config::owner_zone(&hosted.journal),
             };
             let outcome =
@@ -510,7 +512,7 @@ fn backfill_labels(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
         commit: true,
         reattribute: false,
         accumulation: false,
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: Timestamp::now().as_millisecond(),
     };
     match solstone_core_speaker_resolve::backfill_coordinator::run_backfill_blocking_checked(
         &hosted.journal,
@@ -561,7 +563,7 @@ fn health(hosted: &HostedCommand, id: &str, checkpoint: &StopCheckpoint) -> i32 
         return 1;
     }
     let services = solstone_core_maintenance::HealthServices {
-        now: Utc::now(),
+        now: Timestamp::now(),
         zone: solstone_core_journal_config::owner_zone(&hosted.journal),
     };
     let admit = || checkpoint();

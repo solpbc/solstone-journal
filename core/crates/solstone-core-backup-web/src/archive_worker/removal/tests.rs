@@ -4,7 +4,7 @@
 use super::*;
 use std::{cell::Cell, fs, path::PathBuf, sync::Arc, thread, time::Instant};
 
-use chrono::TimeZone;
+use jiff::tz::Offset;
 use serde::Deserialize;
 use solstone_core_backup::archive_admission::Clock;
 use solstone_core_backup_runtime::DirectReadFinishState;
@@ -147,8 +147,9 @@ fn pending_fixture() -> (
 fn stopped_lifetime_releases_actual_unused_approval_without_status_response() {
     let (journal, deps, _, context, _) = pending_fixture();
     let before = fs::read(journal.path().join("config/journal.json")).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
-    start(&deps, context, now.date_naive(), now).unwrap();
+    let today = jiff::civil::date(2026, 10, 11);
+    let now = Offset::UTC.to_timestamp(today.at(12, 0, 0, 0)).unwrap();
+    start(&deps, context, today, now).unwrap();
     let deadline = Instant::now() + std::time::Duration::from_secs(5);
     loop {
         if deps
@@ -222,8 +223,9 @@ fn approval_pending_inputs_preserve_original_budget_custody_and_exact_response()
                 }
             });
         }
-        let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
-        let started = start(&deps, context.clone(), now.date_naive(), now).unwrap();
+        let today = jiff::civil::date(2026, 10, 11);
+        let now = Offset::UTC.to_timestamp(today.at(12, 0, 0, 0)).unwrap();
+        let started = start(&deps, context.clone(), today, now).unwrap();
         if cut != "spawn" {
             entered_rx.recv().unwrap();
             assert!(
@@ -376,8 +378,9 @@ fn approval_cancellation_refuses_other_generations_kinds_tickets_and_poison() {
         DISPATCH.with(|control| {
             control.borrow_mut().pause = Some((entered_tx, resume_rx));
         });
-        let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
-        let started = start(&deps, context, now.date_naive(), now).unwrap();
+        let today = jiff::civil::date(2026, 10, 11);
+        let now = Offset::UTC.to_timestamp(today.at(12, 0, 0, 0)).unwrap();
+        let started = start(&deps, context, today, now).unwrap();
         entered_rx.recv().unwrap();
         let flag = deps
             .operations
@@ -693,8 +696,9 @@ fn packaged_owned_approval_entrance() {
     let clock: super::super::OwnedClock = Arc::new(LiveClock(Instant::now()));
     deps.clock = Arc::clone(&clock);
     DISPATCH.with(|control| control.borrow_mut().cut = Some(input.mode));
-    let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
-    let started = start(&deps, context, now.date_naive(), now).unwrap();
+    let today = jiff::civil::date(2026, 10, 11);
+    let now = Offset::UTC.to_timestamp(today.at(12, 0, 0, 0)).unwrap();
+    let started = start(&deps, context, today, now).unwrap();
     join_pending(&deps.operations);
     assert!(!segment.join("audio.flac").exists());
     assert!(load_at_root(&root).unwrap().marks.is_empty());
@@ -903,9 +907,9 @@ fn packaged_owned_removal_worker() {
                 &worker_slot,
                 ready,
                 checked,
-                NaiveDate::from_ymd_opt(2026, 10, 11).unwrap(),
-                Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0)
-                    .single()
+                jiff::civil::date(2026, 10, 11),
+                Offset::UTC
+                    .to_timestamp(jiff::civil::date(2026, 10, 11).at(12, 0, 0, 0))
                     .unwrap(),
             )
         };
@@ -1261,8 +1265,9 @@ fn policy_start(
     let mut deps = crate::BackupWebDeps::new(journal.path().to_path_buf());
     // A local policy release never resolves or runs the backup tools.
     deps.executable = journal.path().join("missing/bin/solstone");
-    let now = Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap();
-    let started = start(&deps, context, now.date_naive(), now);
+    let today = jiff::civil::date(2026, 10, 11);
+    let now = Offset::UTC.to_timestamp(today.at(12, 0, 0, 0)).unwrap();
+    let started = start(&deps, context, today, now);
     join_pending(&deps.operations);
     (deps, started)
 }

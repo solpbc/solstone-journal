@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value};
 
 use crate::hold_entity_trust_lock;
@@ -44,7 +44,7 @@ pub fn create_journal_entity(
         ("type".to_owned(), Value::String(entity_type.to_owned())),
         (
             "created_at".to_owned(),
-            Value::Number(Utc::now().timestamp_millis().into()),
+            Value::Number(Timestamp::now().as_millisecond().into()),
         ),
     ]);
     if let Some(aka) = aka.filter(|aka| !aka.is_empty()) {

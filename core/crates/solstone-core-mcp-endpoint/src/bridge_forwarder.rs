@@ -45,8 +45,8 @@ async fn wait_after_failed_connect(
     backoff_cap_seconds: &mut u64,
 ) {
     if let Some((hold, delay)) = crate::bridge_carrier::registration_hold(error) {
-        let next_attempt = chrono::Utc::now()
-            + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(300));
+        let next_attempt = jiff::Timestamp::now()
+            + jiff::SignedDuration::try_from(delay).unwrap_or(jiff::SignedDuration::from_secs(300));
         crate::owner_state::write_mcp_hold_state(journal_root, hold, address, legs, next_attempt);
         tokio::select! {
             changed = shutdown.changed() => {

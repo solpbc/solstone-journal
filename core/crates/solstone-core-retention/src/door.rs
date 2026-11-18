@@ -26,7 +26,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::activity::{ActivityAdmissionError, ActivityLease};
@@ -155,7 +155,7 @@ pub fn release_raw(
     journal: &Path,
     proven: &[ProvenRaw],
     class: RawReleaseClass,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> (Outcome, EvidenceTally) {
     if proven.is_empty() {
         return (
@@ -179,7 +179,7 @@ pub fn release_raw_with_activity(
     carrier: Option<&RootActivityCarrier>,
     proven: &[ProvenRaw],
     class: RawReleaseClass,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> (Outcome, EvidenceTally) {
     let guard = WholeSegmentActivity::borrowed(activity, carrier);
     let refusal = if proven.is_empty() {
@@ -195,7 +195,7 @@ fn release_raw_guarded(
     refusal: Option<String>,
     proven: &[ProvenRaw],
     class: RawReleaseClass,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> (Outcome, EvidenceTally) {
     let mut outcome = Outcome {
         targets: Vec::new(),
@@ -306,7 +306,7 @@ fn release_raw_guarded(
                     let envelope = CallosumEnvelope {
                         tract: "retention".to_owned(),
                         event: "original_deleted".to_owned(),
-                        ts: Some(at.timestamp_millis()),
+                        ts: Some(at.as_millisecond()),
                         extra,
                     };
                     append_durable_event(&resolved_dir, &DurableEvent::Callosum(envelope))
@@ -2069,8 +2069,8 @@ mod tests {
         matches!(name.extension().as_deref(), Some("flac" | "mp4" | "wav"))
     }
 
-    fn test_at() -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(1_772_614_800_000).unwrap()
+    fn test_at() -> Timestamp {
+        Timestamp::from_millisecond(1_772_614_800_000).unwrap()
     }
 
     fn proof(day: &str, stream: &str, dir: &str, name: &str, size: u64) -> ProvenRaw {
@@ -2387,14 +2387,14 @@ mod tests {
         let first: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(first["tract"], "retention");
         assert_eq!(first["event"], "original_deleted");
-        assert_eq!(first["ts"], at.timestamp_millis());
+        assert_eq!(first["ts"], at.as_millisecond());
         assert_eq!(first["name"], "a.flac");
         assert_eq!(first["class"], "policy_raw_release");
 
         let second: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
         assert_eq!(second["tract"], "retention");
         assert_eq!(second["event"], "original_deleted");
-        assert_eq!(second["ts"], at.timestamp_millis());
+        assert_eq!(second["ts"], at.as_millisecond());
         assert_eq!(second["name"], "b.flac");
         assert_eq!(second["class"], "policy_raw_release");
 

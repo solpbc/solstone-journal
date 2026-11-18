@@ -4,7 +4,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use serde_json::Value;
 use solstone_core_journal_io::{
     JournalRoot,
@@ -22,7 +22,7 @@ pub struct PruneAuditWriter {
     recording_failure: Option<String>,
 }
 
-pub fn open_prune_audit(journal: &Path, opened: DateTime<FixedOffset>) -> PruneAuditWriter {
+pub fn open_prune_audit(journal: &Path, opened: &ZonedDateTime) -> PruneAuditWriter {
     let writer = JournalRoot::open(journal)
         .map_err(|error| error.to_string())
         .and_then(|root| {
@@ -101,7 +101,6 @@ pub fn write_prune_audit(
 mod tests {
     use std::sync::{Arc, Barrier};
 
-    use chrono::{FixedOffset, TimeZone};
     use solstone_core_journal_io::{
         JournalRoot, MalformedPolicy,
         operational_log::{OplogFormat, catalog_oplogs},
@@ -114,19 +113,16 @@ mod tests {
     fn concurrent_offload_invocations_create_distinct_intact_oplogs() {
         let journal = tempfile::tempdir().unwrap();
         let root = Arc::new(journal.path().to_path_buf());
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
-            .single()
-            .unwrap();
+        let opened = solstone_core_time::parse_rfc3339("2026-08-07T12:00:00Z").unwrap();
         let barrier = Arc::new(Barrier::new(3));
         let workers = (0..2)
             .map(|worker| {
                 let root = Arc::clone(&root);
                 let barrier = Arc::clone(&barrier);
+                let opened = opened.clone();
                 std::thread::spawn(move || {
                     barrier.wait();
-                    let mut audit = open_prune_audit(&root, opened);
+                    let mut audit = open_prune_audit(&root, &opened);
                     let outcome = write_prune_audit(
                         &mut audit,
                         &serde_json::json!({"event": "raw_media_offload", "worker": worker}),
@@ -142,7 +138,7 @@ mod tests {
             worker.join().unwrap();
         }
 
-        let day = opened.date_naive();
+        let day = opened.date();
         let snapshot = catalog_oplogs(JournalRoot::open(journal.path()).unwrap(), &[day]).unwrap();
         let entries = snapshot
             .entries()

@@ -69,7 +69,7 @@ impl ToolRunner for Restic {
                 "late",
                 "worker",
                 OplogFormat::Log,
-                chrono::DateTime::parse_from_rfc3339("2026-11-12T12:00:00+00:00").unwrap(),
+                &solstone_core_time::parse_rfc3339("2026-11-12T12:00:00+00:00").unwrap(),
             )
             .unwrap();
             writer
@@ -196,14 +196,14 @@ impl Fixture {
         for path in OWNER_CONTROLS.iter().chain(extra_controls) {
             write(root, path, "owner original");
         }
-        let instant = chrono::DateTime::parse_from_rfc3339("2026-11-12T12:00:00+00:00").unwrap();
+        let instant = solstone_core_time::parse_rfc3339("2026-11-12T12:00:00+00:00").unwrap();
         let opened = solstone_core_journal_io::JournalRoot::open(root).unwrap();
         let mut older_log = create_oplog_at(
             solstone_core_journal_io::JournalRoot::open(root).unwrap(),
             "service",
             "supervisor",
             OplogFormat::Log,
-            instant,
+            &instant,
         )
         .unwrap();
         older_log
@@ -214,7 +214,7 @@ impl Fixture {
             .append_bytes_checked(b"destination before restore\n", &|| Ok(()))
             .unwrap();
         let mut newer_log =
-            create_oplog_at(opened, "sense", "sense", OplogFormat::Log, instant).unwrap();
+            create_oplog_at(opened, "sense", "sense", OplogFormat::Log, &instant).unwrap();
         newer_log
             .append_bytes_checked(b"destination before restore\n", &|| Ok(()))
             .unwrap();
@@ -570,7 +570,7 @@ fn legacy_restore_and_retry_keep_live_authority_and_original_log_writers() {
             }
             let catalog = catalog_oplogs(
                 solstone_core_journal_io::JournalRoot::open(root).unwrap(),
-                &[chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()],
+                &[jiff::civil::date(2026, 11, 12)],
             )
             .unwrap();
             assert_eq!(catalog.entries().len(), 2);
@@ -675,7 +675,7 @@ fn late_log_writers_and_private_exclusion_files_survive_until_child_settlement()
             .unwrap();
         let catalog = catalog_oplogs(
             solstone_core_journal_io::JournalRoot::open(fixture.journal.path()).unwrap(),
-            &[chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()],
+            &[jiff::civil::date(2026, 11, 12)],
         )
         .unwrap();
         let (_, mut file) = catalog

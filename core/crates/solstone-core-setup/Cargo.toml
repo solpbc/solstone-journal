@@ -15,7 +15,7 @@ full-tests = []
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 toml_edit = { workspace = true, features = ["display"] }
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
@@ -26,6 +26,7 @@ solstone-core-system.workspace = true
 solstone-core-check.workspace = true
 solstone-core-skill-state.workspace = true
 solstone-core-service-unit.workspace = true
+solstone-core-time.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

@@ -5,10 +5,13 @@
 
 use std::fs;
 
-use chrono_tz::America::Denver;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 
 use super::*;
+
+fn denver() -> jiff::tz::TimeZone {
+    solstone_core_time::zone("America/Denver").unwrap()
+}
 
 const WATCH: &str = r#"sourceName="Synthetic Watch" sourceVersion="11.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Watch, uuid:ABC-DEF&gt;" creationDate="2026-10-10 08:00:00 -0600""#;
 
@@ -134,7 +137,7 @@ fn a_workout_keeps_every_field_and_tiles_its_real_span() {
     );
 
     let journal = tempfile::tempdir().unwrap();
-    let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let plan = plan(journal.path(), &export, &denver(), None, false).unwrap();
     let first = rows_of(&plan, "20261010", "063000_300");
     assert!(first.iter().any(|row| row.kind == RowKind::Experience));
     let tile = rows_of(&plan, "20261010", "071500_300");
@@ -233,7 +236,7 @@ fn a_night_is_this_sources_adjacent_stages_and_says_so() {
     );
 
     let journal = tempfile::tempdir().unwrap();
-    let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let plan = plan(journal.path(), &export, &denver(), None, false).unwrap();
     // Crosses midnight, tiled on both days' hours, with a stage where it starts.
     let first = rows_of(&plan, "20261010", "220000_3600");
     assert!(first.iter().any(|row| row.kind == RowKind::Experience));
@@ -254,7 +257,7 @@ fn a_night_is_this_sources_adjacent_stages_and_says_so() {
 fn counts_stay_unsplit_and_logged_rows_keep_their_shape_and_words() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
-    let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let plan = plan(journal.path(), &export, &denver(), None, false).unwrap();
     let count = rows_of(&plan, "20261010", "060000_3600");
     let count = count.iter().find(|row| row.kind == RowKind::Count).unwrap();
     assert_eq!(count.value.as_deref(), Some("1200"));
@@ -296,7 +299,7 @@ fn a_dated_row_lands_in_its_whole_day_window_with_no_time() {
     row.value = Some("82".into());
     export.rows.push(row);
     let journal = tempfile::tempdir().unwrap();
-    let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let plan = plan(journal.path(), &export, &denver(), None, false).unwrap();
     assert_eq!(plan.files[0].day, "20261010");
     assert_eq!(plan.files[0].segment, DATED_WINDOW);
 }
@@ -314,12 +317,12 @@ fn the_same_data_in_another_order_is_the_same_bytes() {
     records.push(same_second("200", "Butter"));
     let export = read(&records);
     let journal = tempfile::tempdir().unwrap();
-    let forward = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let forward = plan(journal.path(), &export, &denver(), None, false).unwrap();
 
     let mut shuffled = records.clone();
     shuffled.reverse();
     let export = read(&shuffled);
-    let backward = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let backward = plan(journal.path(), &export, &denver(), None, false).unwrap();
     assert_eq!(forward.files, backward.files);
 
     let lunch = rows_of(&forward, "20261010", "120000_3600");
@@ -382,7 +385,7 @@ fn a_dated_row_without_a_real_date_refuses_the_plan() {
     row.date = Some("../../etc".into());
     export.rows.push(row);
     let journal = tempfile::tempdir().unwrap();
-    assert!(plan(journal.path(), &export, Denver, None, false).is_err());
+    assert!(plan(journal.path(), &export, &denver(), None, false).is_err());
 }
 
 #[test]
@@ -403,7 +406,7 @@ fn a_tombstone_that_cant_say_what_it_removed_stays_deleted() {
     fs::create_dir_all(&window).unwrap();
     fs::write(window.join("tombstone.json"), "{}").unwrap();
     let export = read(&[heart("2026-10-10 00:01:00 -0600", "70")]);
-    let planned = plan(root, &export, Denver, None, false).unwrap();
+    let planned = plan(root, &export, &denver(), None, false).unwrap();
     assert!(planned.files.is_empty());
     assert_eq!(planned.stayed_deleted, 1);
 }
@@ -425,7 +428,7 @@ fn a_window_lands_beside_older_content_and_stays_there() {
         ),
         heart("2026-10-10 00:01:00 -0600", "70"),
     ]);
-    let planned = plan(root, &export, Denver, None, false).unwrap();
+    let planned = plan(root, &export, &denver(), None, false).unwrap();
     assert_eq!(planned.files.len(), 1);
     assert_eq!(planned.files[0].segment, "000000_301");
     assert!(planned.files[0].contents.contains(r#""value":"70""#));
@@ -457,7 +460,7 @@ fn a_window_that_cant_be_read_is_left_alone_and_counted() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join(BODY_RECORDS_FILE), "{broken\n").unwrap();
     let export = read(&[heart("2026-10-10 06:31:10 -0600", "70")]);
-    let planned = plan(root, &export, Denver, None, false).unwrap();
+    let planned = plan(root, &export, &denver(), None, false).unwrap();
     assert!(planned.files.is_empty() && planned.publish.is_empty());
     assert_eq!(planned.unreadable, 1);
 }
@@ -485,7 +488,7 @@ fn the_summary_says_what_moved_what_didnt_and_what_waits() {
         earlier_waiting: 1,
         ..SummaryCounts::default()
     };
-    let summary = summary_text(&APPLE, &counts, Some("body"), Denver);
+    let summary = summary_text(&APPLE, &counts, Some("body"), &denver());
     for line in [
         "2 records already listed on the activities page moved to this import's facet, from your Work facet.",
         "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you weren't shown any.",
@@ -500,12 +503,12 @@ fn the_summary_says_what_moved_what_didnt_and_what_waits() {
 fn the_summary_names_and_counts_and_holds_no_value() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
-    let planned = plan(journal.path(), &export, Denver, None, false).unwrap();
+    let planned = plan(journal.path(), &export, &denver(), None, false).unwrap();
     let summary = summary_text(
         &APPLE,
         &SummaryCounts::of(&export, &planned, 3),
         None,
-        Denver,
+        &denver(),
     );
     assert!(summary.contains("active energy burned: 1"));
     assert!(summary.contains("ended before it started: 2"));
@@ -516,7 +519,7 @@ fn the_summary_names_and_counts_and_holds_no_value() {
             &APPLE,
             &SummaryCounts::of(&export, &planned, 3),
             Some("health"),
-            Denver
+            &denver()
         )
         .contains("health facet")
     );

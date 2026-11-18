@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use chrono::{Datelike, Utc};
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use solstone_core_backup::archive_admission::ArchiveCancellation;
 use solstone_core_backup::{
@@ -41,10 +42,15 @@ const KEPT: &str = "091000_300";
 struct WallClock;
 impl Clock for WallClock {
     fn now_unix(&self) -> i64 {
-        Utc::now().timestamp()
+        Timestamp::now().as_second()
     }
     fn iso_week(&self) -> u8 {
-        Utc::now().iso_week().week() as u8
+        Offset::UTC
+            .to_datetime(Timestamp::now())
+            .date()
+            .iso_week_date()
+            .week()
+            .unsigned_abs()
     }
 }
 
@@ -653,7 +659,7 @@ fn a_timed_erase_follows_the_setting_and_backup_off_writes_no_entry() {
     let mut value: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
     value["trash"] = json!({"erase_from_backups": true, "erase_after_days": 1});
     fs::write(&config, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
-    let later = Utc::now() + chrono::Duration::days(31);
+    let later = Timestamp::now() + SignedDuration::from_hours(24 * 31);
     solstone_core_import::trash_kinds::sweep(journal, later);
     let (entries, _) = solstone_core_trash::backup_erase::pending(journal);
     assert_eq!(
@@ -685,11 +691,11 @@ fn each_entry_stands_alone_and_nothing_unreadable_is_dropped() {
     erase(journal, &second, true);
     let dir = journal.join("health/backup-erase");
     // The second waits on its own, not yet due; a torn entry sits beside them.
-    let later = (Utc::now() + chrono::Duration::hours(3)).to_rfc3339();
+    let later = solstone_core_time::utc_rfc3339(Timestamp::now() + SignedDuration::from_hours(3));
     fs::write(
         dir.join("status.json"),
         serde_json::to_vec(&json!({
-            "state": "failed", "pending": 2, "updated": Utc::now().to_rfc3339(),
+            "state": "failed", "pending": 2, "updated": solstone_core_time::utc_rfc3339(Timestamp::now()),
             "held": {second.clone(): {"reason": "ledger", "attempts": 1, "next_try": later}},
         }))
         .unwrap(),
@@ -769,7 +775,7 @@ fn earlier_copy(fixture: &Fixture, name: &str) -> PathBuf {
     let old = old.canonicalize().unwrap();
     fixture.restic(&["backup", old.to_str().unwrap(), "-q"]);
     std::thread::sleep(Duration::from_millis(1100));
-    let at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let at = solstone_core_time::utc_z(Timestamp::now(), solstone_core_time::Precision::Secs);
     std::thread::sleep(Duration::from_millis(1100));
     solstone_core_backup_runtime::erase_paths::record_origin(
         &fixture.journal,

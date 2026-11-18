@@ -15,12 +15,13 @@ path = "src/main.rs"
 
 [dependencies]
 solstone-core-removals.workspace = true
-chrono = { workspace = true }
+jiff.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
 solstone-core-retention = { workspace = true }
 solstone-core-import.workspace = true
+solstone-core-time.workspace = true
 solstone-core-trash.workspace = true
 
 [dev-dependencies]

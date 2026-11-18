@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_system_health::{
     HealthLogSource, SegmentInput, SegmentSource, classify_segment_completion,
     read_segment_progress, scan_day as scan_health_day,
@@ -25,7 +25,7 @@ pub(crate) fn fold_segments<S: SegmentSource, H: HealthLogSource>(
     health_source: &H,
     journal_root: &Path,
     day: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> SegmentFoldOutcome {
     let Ok((audio_ranges, screen_ranges, segments)) =
         scan_health_day(segment_source, journal_root, day, now)

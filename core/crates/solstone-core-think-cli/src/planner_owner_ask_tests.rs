@@ -46,9 +46,13 @@ fn journal() -> tempfile::TempDir {
 }
 
 fn days_ago(days: i64) -> String {
-    (chrono::Utc::now().date_naive() - chrono::Duration::days(days))
-        .format("%Y%m%d")
-        .to_string()
+    solstone_core_time::day_key(
+        jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date()
+            .checked_sub(jiff::Span::new().days(days))
+            .unwrap(),
+    )
 }
 
 /// A recorded, sensed segment and a reading activity over it.
@@ -94,15 +98,18 @@ fn thought(root: &Path, day: &str, keys: &[&str]) {
         "think",
         "segment",
         OplogFormat::Jsonl,
-        chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-            .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .fixed_offset(),
+        &solstone_core_time::at_offset(
+            solstone_core_time::parse_day(day)
+                .unwrap()
+                .at(12, 0, 0, 0)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .timestamp(),
+            jiff::tz::Offset::UTC,
+        ),
     )
     .unwrap();
-    let sensed = chrono::Utc::now().timestamp_millis() + 3_600_000;
+    let sensed = jiff::Timestamp::now().as_millisecond() + 3_600_000;
     for key in keys {
         let segment = root.join("chronicle").join(day).join("notes").join(key);
         std::fs::create_dir_all(&segment).unwrap();
@@ -462,7 +469,7 @@ fn a_frozen_briefing_regenerates_while_thawed_and_freezes_again_once_current() {
         root.path(),
         &day,
         "a packet prepared before the ask",
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
     );
     plan(root.path(), &queue);
@@ -474,7 +481,7 @@ fn a_frozen_briefing_regenerates_while_thawed_and_freezes_again_once_current() {
         root.path(),
         &day,
         &current,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
     );
     std::fs::remove_dir_all(root.path().join("health/activity-work")).unwrap();
@@ -564,7 +571,7 @@ fn a_later_ask_still_holding_activities_keeps_an_earlier_thaw_open() {
         root.path(),
         &day,
         &current,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
         solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
     );
     plan(root.path(), &queue);
@@ -666,7 +673,7 @@ fn a_process_request_waives_only_the_retry_wait_earned_before_it() {
         )
         .unwrap();
     };
-    let after_the_request = || chrono::Utc::now().timestamp() as f64 + 60.0;
+    let after_the_request = || jiff::Timestamp::now().as_second() as f64 + 60.0;
     let queue = queue(root.path());
     backoff(1000.0);
     assert!(!daily_for(&plan(root.path(), &queue), &day));
@@ -884,11 +891,10 @@ fn page(root: &Path, generated_at_ms: Option<i64>) {
         "intro": [], "memories": [], "days": days, "said": []
     });
     if let Some(at) = generated_at_ms {
-        body["generated_at"] = serde_json::json!(
-            chrono::DateTime::from_timestamp_millis(at)
-                .unwrap()
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-        );
+        body["generated_at"] = serde_json::json!(solstone_core_time::utc_z(
+            jiff::Timestamp::from_millisecond(at).unwrap(),
+            solstone_core_time::Precision::Millis,
+        ));
     }
     let path = root.join("reflections/weekly/20260809.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -927,7 +933,7 @@ fn week_steps(root: &Path) -> Vec<owner_ask::WeekStep> {
 #[test]
 fn asks_across_an_ended_week_remake_its_page_once_every_day_is_settled() {
     let root = journal();
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = jiff::Timestamp::now().as_millisecond();
     // One day's facet makes daily outputs other than its briefing owed there.
     thought(root.path(), "20260812", &["090000_300"]);
     std::fs::create_dir_all(
@@ -1001,7 +1007,10 @@ fn asks_across_an_ended_week_remake_its_page_once_every_day_is_settled() {
             .all(|step| step.attempts == 1)
     );
     // The page is made after the asks: every step ends and the asks are done.
-    page(root.path(), Some(chrono::Utc::now().timestamp_millis() + 1));
+    page(
+        root.path(),
+        Some(jiff::Timestamp::now().as_millisecond() + 1),
+    );
     assert!(week_task(&plan(root.path(), &queue)).is_empty());
     assert!(asks(root.path()).is_empty());
 }
@@ -1009,7 +1018,7 @@ fn asks_across_an_ended_week_remake_its_page_once_every_day_is_settled() {
 #[test]
 fn a_page_made_from_a_briefing_older_than_the_last_one_is_made_again() {
     let root = journal();
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = jiff::Timestamp::now().as_millisecond();
     // The ask came first; the page was built before the latest briefing commit.
     settled_week(root.path(), now - 10_000, now - 30_000);
     page(root.path(), Some(now - 20_000));
@@ -1033,7 +1042,7 @@ fn a_page_that_cannot_be_trusted_or_read_ends_the_step_without_a_run() {
         ("unreadable", "page_unreadable"),
     ] {
         let root = journal();
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         settled_week(root.path(), 1, now - 60_000);
         let weekly = root.path().join("reflections/weekly");
         std::fs::create_dir_all(&weekly).unwrap();
@@ -1056,7 +1065,7 @@ fn a_page_that_cannot_be_trusted_or_read_ends_the_step_without_a_run() {
 #[test]
 fn a_page_with_malformed_content_is_made_again_and_counted() {
     let root = journal();
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = jiff::Timestamp::now().as_millisecond();
     settled_week(root.path(), 1, now - 60_000);
     let weekly = root.path().join("reflections/weekly");
     std::fs::create_dir_all(&weekly).unwrap();
@@ -1105,7 +1114,7 @@ fn an_ask_in_a_week_that_has_not_ended_queues_no_page_run() {
 #[test]
 fn a_page_run_is_offered_every_pass_and_counted_at_most_once_an_hour_up_to_three() {
     let root = journal();
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = jiff::Timestamp::now().as_millisecond();
     settled_week(root.path(), 1, now - 60_000);
     page(root.path(), Some(now - 120_000));
     let queue = queue(root.path());

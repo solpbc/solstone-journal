@@ -4,8 +4,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::NaiveDate;
-
 use crate::HealthError;
 
 pub trait SegmentSource {
@@ -78,8 +76,8 @@ impl FilesystemHealthLogSource {
     }
 
     fn health_dir(&self, day: &str) -> Result<PathBuf, HealthError> {
-        NaiveDate::parse_from_str(day, "%Y%m%d")
-            .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
+        solstone_core_time::parse_day(day)
+            .ok_or_else(|| HealthError::InvalidDay(day.to_owned()))?;
         Ok(self.journal_root.join("chronicle").join(day).join("health"))
     }
 }

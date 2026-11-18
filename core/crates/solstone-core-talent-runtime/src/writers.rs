@@ -585,7 +585,7 @@ fn append_day_record_with_sources(
     if !record.contains_key("ts") {
         record.insert(
             "ts".to_owned(),
-            Value::from(chrono::Utc::now().timestamp_millis()),
+            Value::from(jiff::Timestamp::now().as_millisecond()),
         );
     }
     let path = journal
@@ -642,8 +642,6 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
 
-    #[cfg(all(test, feature = "full-tests"))]
-    use chrono::{TimeZone, Utc};
     #[cfg(unix)]
     use nix::fcntl::{Flock, FlockArg};
     use serde_json::json;
@@ -992,7 +990,7 @@ mod tests {
             .unwrap();
         let talents = root.path().join("chronicle/20260102/talents");
         fs::create_dir_all(&talents).unwrap();
-        let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        let created_at = "2026-01-02T03:04:05Z".parse::<jiff::Timestamp>().unwrap();
         let consumed = |identity: &str, segment: &str, label: &str| {
             let source_key = SourceKey::from_verified_id(identity);
             let coordinate = Coordinate {
@@ -1069,7 +1067,7 @@ mod tests {
                 kind: OriginKind::AgentMemory,
                 source_key,
                 creation_label: "rollback test".to_owned(),
-                created_at: Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+                created_at: "2026-01-02T03:04:05Z".parse::<jiff::Timestamp>().unwrap(),
                 stream: coordinate.stream.clone(),
                 segment: coordinate.segment.clone(),
             },

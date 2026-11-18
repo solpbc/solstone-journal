@@ -101,7 +101,7 @@ fn save(
     if options
         .expected_owner_zone
         .as_deref()
-        .is_some_and(|expected| expected != owner_zone.name())
+        .is_some_and(|expected| Some(expected) != owner_zone.iana_name())
     {
         return Err(AudioArchiveError::Other(
             "the time zone changed after preview; preview it again".into(),
@@ -156,7 +156,7 @@ fn save(
             ));
         }
         let archive_identity = settings.archive_identity.clone();
-        let plan = prepare_audio_archive_plan(journal, &members, owner_zone, settings)?;
+        let plan = prepare_audio_archive_plan(journal, &members, &owner_zone, settings)?;
         return Ok(success(if options.json {
             format!(
                 "{}\n",
@@ -204,7 +204,7 @@ fn save(
         AudioArchivePublishOptions {
             import_id: existing.as_deref(),
             members: members.clone(),
-            owner_zone,
+            owner_zone: owner_zone.clone(),
             settings: settings.clone(),
             materializer: &*materializer,
             source_timestamp: None,

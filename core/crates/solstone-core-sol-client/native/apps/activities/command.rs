@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
+use jiff::civil::Date;
 use serde_json::{Map, Value};
 
 use crate::command::{CommandContext, CommandOutput, journal_today};
@@ -501,9 +501,9 @@ fn resolve_facet(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, C
     ))
 }
 
-fn parse_day(value: &str, label: &str) -> Result<NaiveDate, CommandOutput> {
-    NaiveDate::parse_from_str(value, "%Y%m%d")
-        .map_err(|_| stderr(format!("Error: invalid {label} '{value}'")))
+fn parse_day(value: &str, label: &str) -> Result<Date, CommandOutput> {
+    solstone_core_time::parse_day(value)
+        .ok_or_else(|| stderr(format!("Error: invalid {label} '{value}'")))
 }
 
 fn iter_days(start_day: &str, end_day: &str) -> Result<Vec<String>, CommandOutput> {
@@ -517,8 +517,11 @@ fn iter_days(start_day: &str, end_day: &str) -> Result<Vec<String>, CommandOutpu
     let mut days = Vec::new();
     let mut cursor = start;
     while cursor <= end {
-        days.push(cursor.format("%Y%m%d").to_string());
-        cursor += Duration::days(1);
+        days.push(solstone_core_time::day_key(cursor));
+        let Ok(next) = cursor.tomorrow() else {
+            break;
+        };
+        cursor = next;
     }
     Ok(days)
 }

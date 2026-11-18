@@ -129,7 +129,7 @@ fn think_again(root: &Path, target: &Target) -> Map<String, Value> {
         &target.day,
         &activities,
         true,
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     );
     let mut reply = Map::from_iter([("ok".to_owned(), Value::Bool(true))]);
     match asked {

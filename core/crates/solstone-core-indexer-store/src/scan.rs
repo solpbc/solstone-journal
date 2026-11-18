@@ -677,7 +677,7 @@ fn scan_journal_pass(
     // Newest day first, in the order the to-do list serves: a mass rewrite or
     // a rebuild repairs the days the owner most likely searches first. Files
     // with no day, and facet files named by theirs, sort by that day or today.
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
     to_index.sort_by(|(a, _, _), (b, _, _)| {
         solstone_core_indexer_todo::sort_day(b, &today)
             .cmp(solstone_core_indexer_todo::sort_day(a, &today))
@@ -990,7 +990,7 @@ pub(crate) fn plan_scan_turns(
             planned.push(PlannedFile { rel, path });
         }
     }
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
     planned.sort_by(|a, b| {
         solstone_core_indexer_todo::sort_day(&b.rel, &today)
             .cmp(solstone_core_indexer_todo::sort_day(&a.rel, &today))
@@ -2997,7 +2997,7 @@ fn index_file(
                 origin_json,
                 original.ready.digest,
                 original.ready.byte_count as i64,
-                original.ready.created_at.to_rfc3339(),
+                solstone_core_time::utc_rfc3339(original.ready.created_at),
                 original.origin.creation_label,
                 chain_json,
             ],

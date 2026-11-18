@@ -107,7 +107,7 @@ impl LegacyRestoreBinding {
             || !codec::digest(&self.revision)
             || !codec::digest(&self.repository_id)
             || !codec::digest(&self.snapshot_id)
-            || chrono::NaiveDate::parse_from_str(&self.target.day, "%Y%m%d").is_err()
+            || solstone_core_time::parse_day(&self.target.day).is_none()
             || !codec::valid_day(&self.target.day)
             || check_portable_component(&self.target.stream).is_err()
             || check_portable_component(&self.target.dir).is_err()

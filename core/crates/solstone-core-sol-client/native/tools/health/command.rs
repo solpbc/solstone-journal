@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Duration, NaiveDate};
 use serde_json::Value;
 
 use crate::command::{CommandContext, CommandOutput, journal_today};
@@ -175,9 +174,9 @@ fn request_json(
 }
 
 fn yesterday(today: &str) -> String {
-    NaiveDate::parse_from_str(today, "%Y%m%d")
-        .map(|date| (date - Duration::days(1)).format("%Y%m%d").to_string())
-        .unwrap_or_else(|_error| today.to_string())
+    solstone_core_time::parse_day(today)
+        .and_then(|date| date.yesterday().ok())
+        .map_or_else(|| today.to_string(), solstone_core_time::day_key)
 }
 
 fn prune_retired_consumer_signals(report: &mut Value) {

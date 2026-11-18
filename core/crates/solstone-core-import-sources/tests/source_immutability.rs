@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, UNIX_EPOCH};
 
-use chrono::{DateTime, Local, Utc};
 use image::{ImageBuffer, Rgb};
+use jiff::tz::TimeZone;
 use solstone_core_generate::{
     ClientError, GenerateRequest, GenerateResponse, RefusalReason, RefusedResponse,
 };
@@ -116,14 +116,14 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
     // non-mutating reserved seam.
     let report = observe_source_immutability(tree.path(), |_| {
         assert!(claude::detect(&claude_path).unwrap());
-        claude::preview(&claude_path, &Utc).unwrap();
-        claude::plan(&claude_path, &Utc).unwrap();
+        claude::preview(&claude_path, &TimeZone::UTC).unwrap();
+        claude::plan(&claude_path, &TimeZone::UTC).unwrap();
         assert!(chatgpt::detect(&chatgpt_path).unwrap());
-        chatgpt::preview(&chatgpt_path, &Utc).unwrap();
-        chatgpt::plan(&chatgpt_path, &Utc).unwrap();
+        chatgpt::preview(&chatgpt_path, &TimeZone::UTC).unwrap();
+        chatgpt::plan(&chatgpt_path, &TimeZone::UTC).unwrap();
         assert!(gemini::detect(&gemini_path).unwrap());
-        gemini::preview(&gemini_path, &Utc).unwrap();
-        gemini::plan(&gemini_path, &Utc).unwrap();
+        gemini::preview(&gemini_path, &TimeZone::UTC).unwrap();
+        gemini::plan(&gemini_path, &TimeZone::UTC).unwrap();
     })
     .unwrap();
 
@@ -138,17 +138,16 @@ fn image_import_preserves_source_and_records_its_segment_contract() {
     fs::create_dir(&source_root).unwrap();
     let source = source_root.join(format!(
         "picture_{}.PNG",
-        DateTime::<Local>::from(UNIX_EPOCH + Duration::from_secs(1_768_977_600))
-            .format("%Y%m%d_%H%M%S")
+        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
     ));
     ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
         .save(&source)
         .unwrap();
     fs::set_permissions(&source, fs::Permissions::from_mode(0o640)).unwrap();
     let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
-    let source_time: DateTime<Local> = source_mtime.into();
-    let day = source_time.format("%Y%m%d").to_string();
-    let segment_key = format!("{}_0", source_time.format("%H%M%S"));
+    let source_time = local_time(source_mtime);
+    let day = source_time.strftime("%Y%m%d").to_string();
+    let segment_key = format!("{}_0", source_time.strftime("%H%M%S"));
     fs::File::open(&source)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
@@ -160,7 +159,7 @@ fn image_import_preserves_source_and_records_its_segment_contract() {
     let size = solstone_core_import_sources::image::preview_size(
         &source,
         &journal,
-        solstone_core_journal_config::owner_zone(&journal),
+        &solstone_core_journal_config::owner_zone(&journal),
         None,
         None,
     )
@@ -241,8 +240,7 @@ fn unavailable_description_doors_preserve_the_installed_original() {
         let tree = TempTree::new();
         let source = tree.path().join(format!(
             "picture_{}.png",
-            DateTime::<Local>::from(UNIX_EPOCH + Duration::from_secs(1_768_977_600))
-                .format("%Y%m%d_%H%M%S")
+            local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
         ));
         let journal = tree.path().join("journal");
         ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
@@ -288,8 +286,7 @@ fn image_original_is_dirtied_before_a_later_transcript_failure() {
     let tree = TempTree::new();
     let source = tree.path().join(format!(
         "picture_{}.png",
-        DateTime::<Local>::from(UNIX_EPOCH + Duration::from_secs(1_768_977_600))
-            .format("%Y%m%d_%H%M%S")
+        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
     ));
     let journal = tree.path().join("journal");
     ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
@@ -300,9 +297,7 @@ fn image_original_is_dirtied_before_a_later_transcript_failure() {
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
         .unwrap();
-    let day = DateTime::<Local>::from(source_mtime)
-        .format("%Y%m%d")
-        .to_string();
+    let day = local_time(source_mtime).strftime("%Y%m%d").to_string();
     let publication = ImagePublication::sabotage_transcript();
 
     let error = import_image(
@@ -341,8 +336,7 @@ fn image_install_marker_failure_is_typed_and_retains_original() {
     let tree = TempTree::new();
     let source = tree.path().join(format!(
         "picture_{}.png",
-        DateTime::<Local>::from(UNIX_EPOCH + Duration::from_secs(1_768_977_600))
-            .format("%Y%m%d_%H%M%S")
+        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
     ));
     let journal = tree.path().join("journal");
     ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
@@ -353,9 +347,7 @@ fn image_install_marker_failure_is_typed_and_retains_original() {
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
         .unwrap();
-    let day = DateTime::<Local>::from(source_mtime)
-        .format("%Y%m%d")
-        .to_string();
+    let day = local_time(source_mtime).strftime("%Y%m%d").to_string();
     let publication = ImagePublication::failing_marker();
 
     let error = import_image(
@@ -471,9 +463,12 @@ fn implemented_source_reads_leave_the_owner_source_unchanged() {
 
     let report = observe_source_immutability(tree.path(), |_| {
         assert!(ics::detect(&archive));
-        let events = ics::parse_events(&archive, &Utc).unwrap();
+        let events = ics::parse_events(&archive, &TimeZone::UTC).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(ics::preview(&archive, &Utc).unwrap().item_count, 1);
+        assert_eq!(
+            ics::preview(&archive, &TimeZone::UTC).unwrap().item_count,
+            1
+        );
     })
     .unwrap();
 
@@ -540,4 +535,11 @@ fn collect_metadata(
             collect_metadata(root, &path, snapshot);
         }
     }
+}
+
+/// A system time on this computer's own zone.
+fn local_time(time: std::time::SystemTime) -> jiff::ZonedDateTime {
+    jiff::Timestamp::try_from(time)
+        .unwrap()
+        .to_zoned_datetime(TimeZone::system())
 }

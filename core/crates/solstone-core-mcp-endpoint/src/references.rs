@@ -130,7 +130,7 @@ pub(crate) struct MemoryRecallCursor {
     pub source_key: String,
     pub credential_lineage: String,
     pub query: Option<String>,
-    pub reference_date: chrono::NaiveDate,
+    pub reference_date: jiff::civil::Date,
     pub compiled_mode: solstone_core_indexer_query::OwnMemoryQueryMode,
     pub effective_date: solstone_core_indexer_query::EffectiveDateConstraint,
     pub anchor_day: String,

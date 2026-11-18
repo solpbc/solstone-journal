@@ -172,7 +172,7 @@ fn raw_path_busy_and_same_activity_positive_preserve_sidecars_and_evidence() {
         &fixture.root,
         std::slice::from_ref(&proven),
         RawReleaseClass::Policy,
-        DateTime::UNIX_EPOCH,
+        Timestamp::UNIX_EPOCH,
     );
     assert!(held.targets[0].removed.is_empty());
     assert_eq!(tally.on_record, 0);
@@ -189,7 +189,7 @@ fn raw_path_busy_and_same_activity_positive_preserve_sidecars_and_evidence() {
         None,
         std::slice::from_ref(&proven),
         RawReleaseClass::Policy,
-        DateTime::UNIX_EPOCH,
+        Timestamp::UNIX_EPOCH,
     );
     assert_eq!(done.targets[0].removed.len(), 1);
     assert_eq!(tally.on_record, 1);
@@ -216,7 +216,7 @@ fn raw_reserved_proof_and_carrier_exemption_never_authorize_reserved_paths() {
         &fixture.root,
         std::slice::from_ref(&reserved),
         RawReleaseClass::Policy,
-        DateTime::UNIX_EPOCH,
+        Timestamp::UNIX_EPOCH,
     );
     assert!(held.targets[0].removed.is_empty());
     assert_eq!(tally.on_record, 0);
@@ -239,7 +239,7 @@ fn raw_reserved_proof_and_carrier_exemption_never_authorize_reserved_paths() {
         Some(&carrier),
         std::slice::from_ref(&ancestor_proof),
         RawReleaseClass::Policy,
-        DateTime::UNIX_EPOCH,
+        Timestamp::UNIX_EPOCH,
     );
     assert!(held.targets[0].removed.is_empty());
     assert!(clean.root.join(ancestor_proof.rel()).exists());
@@ -250,7 +250,7 @@ fn raw_reserved_proof_and_carrier_exemption_never_authorize_reserved_paths() {
         Some(&carrier),
         &[ordinary_proof],
         RawReleaseClass::Policy,
-        DateTime::UNIX_EPOCH,
+        Timestamp::UNIX_EPOCH,
     );
     assert_eq!(done.targets[0].removed.len(), 1);
 }
@@ -276,7 +276,7 @@ fn raw_late_binding_refusal_retains_confirmed_first_deletion_and_tally() {
                 &fixture.root,
                 &[first.clone(), second.clone()],
                 RawReleaseClass::Policy,
-                DateTime::UNIX_EPOCH,
+                Timestamp::UNIX_EPOCH,
             )
         },
     );
@@ -321,8 +321,8 @@ fn legacy_final_cas_fresh_census_keeps_current_effect_full_marks_and_later_raw()
         &fixture.root,
         &marks,
         &policy,
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 11).unwrap(),
-        DateTime::UNIX_EPOCH,
+        jiff::civil::date(2026, 10, 11),
+        Timestamp::UNIX_EPOCH,
         &mut errors,
     );
     assert!(held.targets.is_empty());
@@ -353,8 +353,8 @@ fn legacy_final_cas_fresh_census_keeps_current_effect_full_marks_and_later_raw()
                 &fixture.root,
                 &marks,
                 &policy,
-                chrono::NaiveDate::from_ymd_opt(2026, 10, 11).unwrap(),
-                DateTime::UNIX_EPOCH,
+                jiff::civil::date(2026, 10, 11),
+                Timestamp::UNIX_EPOCH,
                 &mut errors,
             )
         },

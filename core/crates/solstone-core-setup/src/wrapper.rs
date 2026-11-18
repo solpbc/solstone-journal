@@ -11,7 +11,6 @@ use std::io::{self, Write};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
 use solstone_core_installation_identity::{
     CleanupTargetDecision, CleanupTargetKind, GuardFields, InstallationBinding, ProtectedJournals,
@@ -526,7 +525,7 @@ fn backup_snapshot(
     if matches!(snapshot, PathSnapshot::Absent) {
         return Ok(None);
     }
-    let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let timestamp = jiff::Timestamp::now().strftime("%Y%m%d%H%M%S").to_string();
     let backup = legacy_backup_path(binary, directory, &timestamp)?;
     match snapshot {
         PathSnapshot::Absent => unreachable!(),

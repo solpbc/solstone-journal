@@ -4,9 +4,9 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::DateTime;
+use jiff::Timestamp;
 use serde_json::Value;
-use solstone_core_journal_config::Tz;
+use solstone_core_journal_config::TimeZone;
 
 use crate::CliRun;
 use crate::args::LogOptions;
@@ -74,19 +74,23 @@ fn event_detail(event: &Value, etype: &str) -> String {
     }
 }
 
-fn format_event_line(event: &Value, full: bool, zone: Tz) -> String {
+fn format_event_line(event: &Value, full: bool, zone: &TimeZone) -> String {
     // An event without a usable `ts` shows no time rather than the epoch. The
     // time reads on the journal's clock, the one the run's day is filed on.
     let time = event
         .get("ts")
         .and_then(Value::as_i64)
-        .and_then(|ts| DateTime::from_timestamp_millis(ts).map(|instant| (ts, instant)))
+        .and_then(|ts| {
+            Timestamp::from_millisecond(ts)
+                .ok()
+                .map(|instant| (ts, instant))
+        })
         .map_or_else(
             || format!("{:<12}", "-"),
             |(ts, instant)| {
                 format!(
                     "{}.{:03}",
-                    instant.with_timezone(&zone).format("%H:%M:%S"),
+                    zone.to_datetime(instant).strftime("%H:%M:%S"),
                     ts.rem_euclid(1_000)
                 )
             },
@@ -110,7 +114,7 @@ fn format_event_line(event: &Value, full: bool, zone: Tz) -> String {
     format!("{time}  {label:<8}  {detail}")
 }
 
-pub(crate) fn run_log(talents_dir: &Path, options: &LogOptions, zone: Tz) -> CliRun {
+pub(crate) fn run_log(talents_dir: &Path, options: &LogOptions, zone: &TimeZone) -> CliRun {
     let Some(run_file) = runs::find_run_file(talents_dir, &options.id) else {
         return CliRun {
             stdout: String::new(),
@@ -161,6 +165,10 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    fn tokyo() -> TimeZone {
+        solstone_core_journal_config::parse_zone("Asia/Tokyo").expect("Asia/Tokyo")
+    }
 
     fn options(id: &str, json: bool, full: bool) -> LogOptions {
         LogOptions {
@@ -298,7 +306,7 @@ mod tests {
             serde_json::json!({"ts":timestamp,"content":boundary}),
         );
         assert_eq!(
-            format_event_line(&thinking, false, Tz::Asia__Tokyo),
+            format_event_line(&thinking, false, &tokyo()),
             format!("{expected_time}.123  think     {}", "x".repeat(76))
         );
 
@@ -306,7 +314,7 @@ mod tests {
             "thinking",
             serde_json::json!({"ts":timestamp,"content":"y".repeat(77)}),
         );
-        let line = format_event_line(&longer, false, Tz::Asia__Tokyo);
+        let line = format_event_line(&longer, false, &tokyo());
         let detail = line.rsplit("  ").next().expect("detail");
         assert_eq!(detail.chars().count(), 76);
         assert_eq!(detail, format!("{}…", "y".repeat(75)));
@@ -317,7 +325,7 @@ mod tests {
             serde_json::json!({"ts":timestamp,"tool":"probe","args":{}}),
         );
         assert_eq!(
-            format_event_line(&tool, false, Tz::Asia__Tokyo),
+            format_event_line(&tool, false, &tokyo()),
             format!("{expected_time}.123  tool      probe()")
         );
 
@@ -326,17 +334,17 @@ mod tests {
             serde_json::json!({"ts":timestamp,"talent":"row-one\nrow-two"}),
         );
         assert_eq!(
-            format_event_line(&full, true, Tz::Asia__Tokyo),
+            format_event_line(&full, true, &tokyo()),
             format!("{expected_time}.123  updated   row-one\\nrow-two")
         );
         let passthrough = event("custom", serde_json::json!({"ts":timestamp}));
-        assert!(format_event_line(&passthrough, false, Tz::Asia__Tokyo).contains("  custom    "));
+        assert!(format_event_line(&passthrough, false, &tokyo()).contains("  custom    "));
     }
 
     #[test]
     fn an_event_without_a_usable_time_shows_none() {
         for fields in [serde_json::json!({}), serde_json::json!({"ts": i64::MAX})] {
-            let line = format_event_line(&event("custom", fields), false, Tz::Asia__Tokyo);
+            let line = format_event_line(&event("custom", fields), false, &tokyo());
             assert!(line.starts_with("-  "), "{line}");
             assert!(line.contains("  custom"), "{line}");
         }
@@ -349,7 +357,7 @@ mod tests {
         fs::create_dir_all(talents.join("synthetic")).expect("talent directory");
         let raw = "{\"event\":\"request\",\"use_id\":\"run-z\",\"ts\":1700000000123,\"prompt\":\"synthetic\"}\nnot-json\n";
         fs::write(talents.join("synthetic/run-z.jsonl"), raw).expect("run");
-        let json = run_log(&talents, &options("run-z", true, false), Tz::Asia__Tokyo);
+        let json = run_log(&talents, &options("run-z", true, false), &tokyo());
         assert_eq!(
             json,
             CliRun {
@@ -358,7 +366,7 @@ mod tests {
                 exit_code: 0
             }
         );
-        let rendered = run_log(&talents, &options("run-z", false, false), Tz::Asia__Tokyo);
+        let rendered = run_log(&talents, &options("run-z", false, false), &tokyo());
         assert_eq!(rendered.exit_code, 0, "{}", rendered.stderr);
         assert_eq!(rendered.stdout.lines().count(), 1);
         assert!(!rendered.stdout.contains("not-json"));
@@ -370,7 +378,7 @@ mod tests {
         let output = run_log(
             &root.path().join("talents"),
             &options("missing-run", false, false),
-            Tz::UTC,
+            &TimeZone::UTC,
         );
         assert_eq!(
             output,

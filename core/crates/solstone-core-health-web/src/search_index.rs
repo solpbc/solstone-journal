@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use solstone_core_indexer_store::StoreError;
 use solstone_core_indexer_store::db::{
@@ -57,7 +57,7 @@ pub struct SearchIndexHealth {
 pub fn evaluate_search_index(
     journal_root: &Path,
     metadata_source: &dyn IndexMetadata,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> SearchIndexHealth {
     let observations = read_indexing_observations(journal_root, now);
     let observed_failure = observations
@@ -86,10 +86,10 @@ pub fn evaluate_search_index(
             let newest_dt = newest_mtime
                 .duration_since(UNIX_EPOCH)
                 .ok()
-                .and_then(|d| Utc.timestamp_millis_opt(d.as_millis() as i64).single());
+                .and_then(|d| Timestamp::from_millisecond(d.as_millis() as i64).ok());
 
             match newest_dt {
-                Some(dt) if dt <= now + Duration::seconds(300) => Some(dt.timestamp_millis()),
+                Some(dt) if dt <= now + SignedDuration::from_secs(300) => Some(dt.as_millisecond()),
                 _ => None,
             }
         }
@@ -225,7 +225,7 @@ mod full_tests {
     fn full_tests_classification_and_real_sqlite() {
         let dir = tempdir().unwrap();
         setup_utc_journal(dir.path());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // 1. Missing database (no file) stays the first case
         let health_absent = evaluate_search_index(dir.path(), &FsIndexMetadata, now);
@@ -273,7 +273,7 @@ mod full_tests {
 
         // 3. open_index again to recreate schema
         let conn = open_index(dir.path()).unwrap();
-        let mtime_secs = (now - Duration::seconds(5)).timestamp();
+        let mtime_secs = (now - SignedDuration::from_secs(5)).as_second();
         let mtime_ms = mtime_secs * 1000;
         let db_path = dir.path().join("indexer/journal.sqlite");
         let wal_path = dir.path().join("indexer/journal.sqlite-wal");
@@ -371,7 +371,7 @@ mod full_tests {
 
         // Then a think health index.attempt failure with ts inside the window, for a
         // file that is not on disk: observed, but nothing is behind, so still ok.
-        let today = now.format("%Y%m%d").to_string();
+        let today = solstone_core_time::day_key(jiff::tz::Offset::UTC.to_datetime(now).date());
         let health_dir = dir.path().join("chronicle").join(&today).join("health");
         fs::create_dir_all(&health_dir).unwrap();
         fs::write(
@@ -380,7 +380,7 @@ mod full_tests {
                 "{}\n",
                 serde_json::json!({
                     "event": "index.attempt",
-                    "ts": now.timestamp_millis() - 1000,
+                    "ts": now.as_millisecond() - 1000,
                     "path": format!("{today}/note.md"),
                     "outcome": "failed"
                 })

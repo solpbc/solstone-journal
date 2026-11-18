@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::hidden_names::{
     HiddenBy, HiddenName, HiddenNames, HideUndecidable, facet_hidden_keys, hidden_name_key,
@@ -77,7 +78,7 @@ pub fn load_detected_entities_recent(
     facet_dir: &str,
     days: i64,
 ) -> Result<DetectedRecent, FacetEntityWriteError> {
-    load_detected_entities_recent_at(journal_root, facet_dir, days, Utc::now())
+    load_detected_entities_recent_at(journal_root, facet_dir, days, Timestamp::now())
 }
 
 /// [`load_detected_entities_recent`] relative to an explicit instant.
@@ -85,7 +86,7 @@ pub fn load_detected_entities_recent_at(
     journal_root: &Path,
     facet_dir: &str,
     days: i64,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<DetectedRecent, FacetEntityWriteError> {
     let hidden_names = match read_hidden_names(journal_root, facet_dir) {
         HiddenNames::Damaged { path, detail } => {
@@ -97,8 +98,8 @@ pub fn load_detected_entities_recent_at(
     let hides = facet_hidden_keys(journal_root, facet_dir)?;
     let keys = ExclusionKeys::from_candidates(&exclusion_candidates(journal_root, facet_dir)?);
     let today = now
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
-        .date_naive();
+        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+        .date();
     let cutoff = cutoff_day(today, days);
     let mut verdicts: HashMap<String, Verdict> = HashMap::new();
     let mut detected: Vec<Value> = Vec::new();
@@ -307,10 +308,12 @@ pub(crate) fn exclusion_tier(
     )
 }
 
-pub(crate) fn cutoff_day(local_today: NaiveDate, days: i64) -> String {
-    (local_today - TimeDelta::days(days))
-        .format("%Y%m%d")
-        .to_string()
+pub(crate) fn cutoff_day(local_today: Date, days: i64) -> String {
+    solstone_core_time::day_key(
+        local_today
+            .checked_sub(jiff::Span::new().days(days))
+            .expect("cutoff day is a real date"),
+    )
 }
 
 fn exclusion_candidates(

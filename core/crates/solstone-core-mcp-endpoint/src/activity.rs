@@ -23,7 +23,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use solstone_core_journal_io::PathError;
 use solstone_core_journal_io::paths::{day_dirs, list_dir_entries};
 use solstone_core_mcp_audit::{
@@ -124,7 +124,7 @@ pub struct ActivityEntry {
     pub schema: u32,
     pub agent_identity: String,
     pub connection: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub tool_name: ToolName,
     pub request: Option<RequestRecord>,
     pub outcome: RecordedOutcome,
@@ -382,7 +382,8 @@ pub fn tally(entries: &[ActivityEntry]) -> BTreeMap<&'static str, usize> {
 mod tests {
     use std::fs;
 
-    use chrono::{TimeZone, Utc};
+    use jiff::Timestamp;
+    use jiff::tz::TimeZone;
     use serde_json::json;
     use solstone_core_mcp_audit::{
         Admission, AuditCoordinates, INTERACTION_FILE, Outcome, ToolName, result_shape,
@@ -404,12 +405,15 @@ mod tests {
         journal: &tempfile::TempDir,
         connection: &str,
         tool_name: ToolName,
-        hour: u32,
-        minute: u32,
+        hour: i8,
+        minute: i8,
     ) -> AuditCoordinates {
         write_interaction_record(
             journal.path(),
-            Utc.with_ymd_and_hms(2026, 8, 31, hour, minute, 0).unwrap(),
+            &jiff::civil::date(2026, 8, 31)
+                .at(hour, minute, 0, 0)
+                .to_zoned_datetime(TimeZone::UTC)
+                .unwrap(),
             &Admission {
                 connection,
                 agent_identity: connection,
@@ -435,7 +439,7 @@ mod tests {
         write_outcome_record(
             journal.path(),
             &refused,
-            Utc::now(),
+            Timestamp::now(),
             Outcome::Refused,
             Some("the transcripts category is not granted to this connection"),
             None,
@@ -445,7 +449,7 @@ mod tests {
         write_outcome_record(
             journal.path(),
             &served,
-            Utc::now(),
+            Timestamp::now(),
             Outcome::Served,
             None,
             Some(result_shape(
@@ -701,7 +705,10 @@ mod tests {
         let journal = fixture();
         write_interaction_record(
             journal.path(),
-            Utc.with_ymd_and_hms(2026, 8, 30, 9, 0, 0).unwrap(),
+            &jiff::civil::date(2026, 8, 30)
+                .at(9, 0, 0, 0)
+                .to_zoned_datetime(TimeZone::UTC)
+                .unwrap(),
             &Admission {
                 connection: "bearer:one",
                 agent_identity: "bearer:one",

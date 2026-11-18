@@ -9,7 +9,6 @@
 
 use std::fmt::Write;
 
-use chrono::NaiveDate;
 use serde_json::Value;
 use solstone_core_system_health::{
     FilesystemHealthLogSource, FilesystemSegmentSource, read_completed_since, scan_day,
@@ -63,9 +62,13 @@ pub(crate) fn run(
     }
     if args.segments {
         let source = FilesystemSegmentSource;
-        let (_, _, segments) =
-            scan_day(&source, &context.journal, &context.day, chrono::Utc::now())
-                .map_err(|error| error.to_string())?;
+        let (_, _, segments) = scan_day(
+            &source,
+            &context.journal,
+            &context.day,
+            jiff::Timestamp::now(),
+        )
+        .map_err(|error| error.to_string())?;
         if segments.is_empty() {
             return Ok(format!("No segments found for {}\n", context.day));
         }
@@ -533,7 +536,7 @@ fn is_generate(config: &TalentConfig) -> bool {
 }
 
 fn display_day(day: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|value| value.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|_| day.to_owned())
+    solstone_core_time::parse_day(day)
+        .map(|value| value.strftime("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| day.to_owned())
 }

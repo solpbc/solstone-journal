@@ -106,7 +106,7 @@ fn terminal_confirm() -> bool {
 }
 
 fn utc_now() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs)
 }
 
 fn package_install_receipt_path(home_dir: &std::path::Path) -> PathBuf {

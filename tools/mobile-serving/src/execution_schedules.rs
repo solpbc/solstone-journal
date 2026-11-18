@@ -175,8 +175,13 @@ fn invalid() -> Response {
 fn valid_think(root: &JournalRoot, args: &[String]) -> bool {
     args.len() <= 128
         && args.iter().map(String::len).sum::<usize>() <= 64 * 1024
-        && solstone_core_think_cli::hosted_command_day(args, chrono::Utc::now().date_naive())
-            .is_ok()
+        && solstone_core_think_cli::hosted_command_day(
+            args,
+            jiff::Timestamp::now()
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date(),
+        )
+        .is_ok()
         && crate::foreground::admit_command(root.canonical_path(), &think_command(args.to_vec()))
 }
 

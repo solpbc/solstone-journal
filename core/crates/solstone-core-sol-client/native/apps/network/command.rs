@@ -3,7 +3,9 @@
 
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::DateTime;
+use jiff::tz::Offset;
 use serde_json::{Value, json};
 
 use crate::args::parse_args;
@@ -919,12 +921,14 @@ fn relative_time_field(ctx: CommandContext<'_>, object: &Value, key: &str) -> St
     if value.is_empty() {
         return "never".to_string();
     }
-    let Ok(naive) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%SZ") else {
+    let Some(then) = DateTime::strptime("%Y-%m-%dT%H:%M:%SZ", value)
+        .ok()
+        .and_then(|wall| Offset::UTC.to_timestamp(wall).ok())
+    else {
         return value.to_string();
     };
-    let then = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-    let now = DateTime::<Utc>::from(clock_now(ctx));
-    let seconds = (now.timestamp() - then.timestamp()).max(0);
+    let now = Timestamp::try_from(clock_now(ctx)).expect("the clock is within the supported range");
+    let seconds = (now.as_second() - then.as_second()).max(0);
     format!("{} ago", relative_time(seconds))
 }
 

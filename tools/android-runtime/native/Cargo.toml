@@ -29,7 +29,7 @@ solstone-core-talent-runtime = { path = "../../../core/crates/solstone-core-tale
 solstone-core-spp-ratls = { path = "../../../core/crates/solstone-core-spp-ratls" }
 solstone-core-spp-attest = { path = "../../../core/crates/solstone-core-spp-attest" }
 solstone-core-backup-runtime = { path = "../../../core/crates/solstone-core-backup-runtime" }
-chrono = "0.4"
+jiff = { version = "1.0.0", features = ["serde", "tzdb-bundle-always"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 libc = "0.2"
 

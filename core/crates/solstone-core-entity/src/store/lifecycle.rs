@@ -7,9 +7,10 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_journal_io::remove_dir_all;
+use solstone_core_time::{Precision, utc_z};
 
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
@@ -551,7 +552,7 @@ fn update_operation() -> EntityOperationContext {
 }
 
 fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+    utc_z(Timestamp::now(), Precision::Micros)
 }
 
 pub fn entity_is_hidden(identity: &Value) -> bool {

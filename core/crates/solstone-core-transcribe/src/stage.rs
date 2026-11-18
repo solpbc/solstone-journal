@@ -1777,7 +1777,7 @@ pub(crate) fn finish_voice_only_deletion(
         return;
     }
     let jsonl = facts.path.with_extension("jsonl");
-    match finish_owner_voice_deletion(journal_path, &jsonl, claim, commit, chrono::Utc::now()) {
+    match finish_owner_voice_deletion(journal_path, &jsonl, claim, commit, jiff::Timestamp::now()) {
         outcome @ (OwnerVoiceDeletion::Deleted | OwnerVoiceDeletion::DeletedUnrecorded) => {
             if outcome == OwnerVoiceDeletion::DeletedUnrecorded {
                 log::warn!("voice-only original deleted but deletion event was not recorded");
@@ -1933,7 +1933,6 @@ mod tests {
         );
     }
 
-    use chrono::DateTime;
     use serde_json::{Value, json};
     use solstone_core_observe_audio::{AudioError, VadResult};
     use solstone_core_processing_record::vocab;
@@ -3654,7 +3653,7 @@ mod tests {
         let record = read_header(&jsonl_path)["_solstone_processing"].clone();
 
         assert!(record.get("attempts").is_none());
-        DateTime::parse_from_rfc3339(
+        solstone_core_time::parse_rfc3339(
             record["attempted_at"]
                 .as_str()
                 .expect("attempted_at must be a string"),

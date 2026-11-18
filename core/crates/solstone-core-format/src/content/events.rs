@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{NaiveDate, NaiveTime};
+use jiff::civil::Time;
+use jiff::tz::Offset;
 use serde_json::Value;
 
 use super::{
@@ -133,13 +134,15 @@ fn event_timestamp(rel: &str, start: &str) -> i64 {
     else {
         return 0;
     };
-    let Ok(day) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+    let Some(day) = solstone_core_time::parse_day(day) else {
         return 0;
     };
-    let time = NaiveTime::parse_from_str(start, "%H:%M:%S")
-        .or_else(|_| NaiveTime::parse_from_str(start, "%H:%M"))
-        .unwrap_or(NaiveTime::MIN);
-    day.and_time(time).and_utc().timestamp_millis()
+    let time = Time::strptime("%H:%M:%S", start)
+        .or_else(|_| Time::strptime("%H:%M", start))
+        .unwrap_or(Time::midnight());
+    Offset::UTC
+        .to_timestamp(day.to_datetime(time))
+        .map_or(0, |instant| instant.as_millisecond())
 }
 
 fn first_five(value: &str) -> String {

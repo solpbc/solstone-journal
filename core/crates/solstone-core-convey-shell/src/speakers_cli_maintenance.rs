@@ -12,7 +12,7 @@ use axum::body::to_bytes;
 use axum::extract::{Extension, Path as RoutePath, Request};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
@@ -42,7 +42,7 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
     let request = solstone_core_speaker_resolve::bootstrap::BootstrapRequest {
         journal_root: root.0.clone(),
         encoder: encoder(),
-        added_at: Utc::now().timestamp_millis(),
+        added_at: Timestamp::now().as_millisecond(),
         dry_run: !body.get("commit").and_then(Value::as_bool).unwrap_or(false),
     };
     let result = if imports {
@@ -221,7 +221,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         }
     };
     let stream_layout = layout;
-    let now = Utc::now().timestamp_millis();
+    let now = Timestamp::now().as_millisecond();
     let outcome = match solstone_core_speaker_resolve::resolve::resolve(
         &root.0,
         day,
@@ -335,7 +335,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         commit,
         reattribute,
         accumulation,
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: Timestamp::now().as_millisecond(),
     };
 
     match solstone_core_speaker_resolve::backfill_coordinator::start_backfill(&root.0, &req) {
@@ -398,7 +398,7 @@ pub async fn backfill_resume(
     match solstone_core_speaker_resolve::backfill_coordinator::resume_backfill(
         &root.0,
         &operation_id,
-        Utc::now().timestamp_millis(),
+        Timestamp::now().as_millisecond(),
     ) {
         Ok(status) => {
             Json(serde_json::to_value(&status).unwrap_or_else(|_| json!({}))).into_response()
@@ -433,7 +433,7 @@ pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     let req = solstone_core_speaker_resolve::repair_coordinator::StartRepairRequest {
         operation_id,
         commit,
-        now_ms: Utc::now().timestamp_millis(),
+        now_ms: Timestamp::now().as_millisecond(),
     };
 
     match solstone_core_speaker_resolve::repair_coordinator::launch_repair(&root.0, req) {
@@ -504,7 +504,7 @@ pub async fn repair_resume(
     match solstone_core_speaker_resolve::repair_coordinator::launch_repair_resume(
         &root.0,
         &operation_id,
-        Utc::now().timestamp_millis(),
+        Timestamp::now().as_millisecond(),
     ) {
         Ok(
             solstone_core_speaker_resolve::repair_coordinator::RepairLaunch::Running(value)
@@ -741,7 +741,7 @@ fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, u
         labels_read += 1;
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|error| format!("invalid labels {}: {error}", labels.display()))?;
-        let ts = segment_start_ts_ms(timezone, &segment.day, &segment.key).ok_or_else(|| {
+        let ts = segment_start_ts_ms(&timezone, &segment.day, &segment.key).ok_or_else(|| {
             format!(
                 "{}/{}/{}: invalid day or segment time",
                 segment.day, segment.stream, segment.name

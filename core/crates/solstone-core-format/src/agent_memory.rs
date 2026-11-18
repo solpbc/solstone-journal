@@ -3,7 +3,8 @@
 
 //! Shared, credential-free format for private connection-owned agent memory.
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::Time;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -72,7 +73,8 @@ pub struct Origin {
     pub source_key: SourceKey,
     /// Trusted label captured at creation; later connection renames do not amend it.
     pub creation_label: String,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub created_at: Timestamp,
     pub stream: String,
     pub segment: String,
 }
@@ -119,7 +121,8 @@ pub struct OperationRecord {
     pub operation_id: String,
     pub digest: String,
     pub byte_count: usize,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub created_at: Timestamp,
     /// Server-authored origin kind, retained with recovery state.
     pub origin_kind: OriginKind,
     /// Trusted creation label captured when this operation was first reserved.
@@ -136,7 +139,8 @@ pub struct ReadyDocument {
     pub source_key: SourceKey,
     pub origin: Origin,
     pub coordinate: Coordinate,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "solstone_core_time::serde::timestamp")]
+    pub created_at: Timestamp,
     pub digest: String,
     pub byte_count: usize,
     pub chain: ChainPredecessor,
@@ -371,7 +375,7 @@ fn valid_segment(value: &str) -> bool {
         return false;
     };
     time.len() == 6
-        && NaiveTime::parse_from_str(time, "%H%M%S").is_ok()
+        && Time::strptime("%H%M%S", time).is_ok()
         && ordinal.bytes().all(|byte| byte.is_ascii_digit())
         && ordinal.parse::<u64>().is_ok_and(|duration| duration > 0)
         && safe_component(value)
@@ -380,7 +384,7 @@ fn valid_segment(value: &str) -> bool {
 fn valid_day(value: &str) -> bool {
     value.len() == 8
         && value.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
+        && solstone_core_time::parse_day(value).is_some()
 }
 
 fn safe_component(value: &str) -> bool {
@@ -403,7 +407,7 @@ fn is_lower_hex_64(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeZone, Utc};
+    use jiff::Timestamp;
 
     use super::{
         ChainPredecessor, Coordinate, OperationRecord, Origin, OriginKind, Readiness, SourceKey,
@@ -411,12 +415,16 @@ mod tests {
         validate_ready_document, validate_record,
     };
 
+    fn created_at() -> Timestamp {
+        "2026-01-02T03:04:05Z".parse().unwrap()
+    }
+
     fn record(source: &SourceKey, bytes: &[u8]) -> OperationRecord {
         OperationRecord {
             operation_id: "op:1".into(),
             digest: digest(bytes),
             byte_count: bytes.len(),
-            created_at: Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+            created_at: created_at(),
             origin_kind: OriginKind::AgentMemory,
             creation_label: "authenticated connection".into(),
             coordinate: Coordinate {
@@ -479,12 +487,15 @@ mod tests {
             kind: OriginKind::AgentMemory,
             source_key: source.clone(),
             creation_label: "authenticated connection".into(),
-            created_at: Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+            created_at: created_at(),
             stream: format!("agent-memory-{}", source.component()),
             segment: "030405_1".into(),
         };
         validate_origin(&origin, &source).unwrap();
         let encoded = serde_json::to_vec(&origin).unwrap();
+        assert!(
+            String::from_utf8_lossy(&encoded).contains(r#""created_at":"2026-01-02T03:04:05Z""#)
+        );
         let decoded: Origin = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded, origin);
         let mut record = record(&source, b"note");

@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{BrainInspection, inspect_brain_state, present_brain_inspection};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
@@ -49,7 +49,7 @@ fn presentation_on(
     spp_configured: bool,
     verifier_on_platform: bool,
 ) -> Value {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let inspection = inspect_brain_state(journal, config, now);
     let view = present_brain_inspection(&inspection, now);
     let record = inspection.record.as_ref();

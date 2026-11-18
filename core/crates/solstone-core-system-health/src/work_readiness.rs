@@ -157,7 +157,7 @@ pub fn day_unpublished_segments(journal: &Path, day: &str) -> Result<Option<Vec<
         &crate::FilesystemSegmentSource,
         journal,
         day,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .map_err(|error| error.to_string())?;
     let progress =

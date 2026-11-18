@@ -237,7 +237,7 @@ impl OwnerProbe for RefusalProbe {
 
 struct NoSpp;
 impl OwnerSppPrerequisite for NoSpp {
-    fn assess(&self, _: &Path, _: &Map<String, Value>, _: DateTime<Utc>) -> Value {
+    fn assess(&self, _: &Path, _: &Map<String, Value>, _: Timestamp) -> Value {
         panic!("own endpoint never attests")
     }
 }

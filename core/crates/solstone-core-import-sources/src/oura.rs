@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{Duration, NaiveDate};
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_format::content::body_records::{
@@ -21,6 +21,7 @@ use solstone_core_format::content::body_records::{
 use crate::ImportSourcesError;
 use crate::apple_health::{MAX_EXPERIENCE_SECONDS, sha256_hex};
 use crate::body_stream::OURA;
+use crate::shared::epoch_millisecond;
 
 pub fn reserved_seam() -> Result<(), ImportSourcesError> {
     Err(ImportSourcesError::Unimplemented { module: "oura" })
@@ -102,7 +103,7 @@ pub(crate) enum Document {
     NotANight {
         id: String,
         kind: String,
-        oura_day: Option<NaiveDate>,
+        oura_day: Option<Date>,
         start: Option<String>,
     },
     /// Not read, counted under this name.
@@ -117,7 +118,7 @@ pub(crate) struct ReadRow {
     pub(crate) identity: String,
     pub(crate) row: BodyRow,
     /// Oura's own date for the document: `day`, or a tag's `start_day`.
-    pub(crate) oura_day: Option<NaiveDate>,
+    pub(crate) oura_day: Option<Date>,
 }
 
 /// An Oura document's identity: its endpoint and Oura's own id. A heartrate
@@ -143,8 +144,8 @@ fn number_text(document: &Map<String, Value>, key: &str) -> Option<String> {
         .map(Value::to_string)
 }
 
-fn oura_date(document: &Map<String, Value>, key: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text(document, key)?, "%Y-%m-%d").ok()
+fn oura_date(document: &Map<String, Value>, key: &str) -> Option<Date> {
+    Date::strptime("%Y-%m-%d", text(document, key)?).ok()
 }
 
 /// A span's two ends, refusing what can't be one.
@@ -161,10 +162,10 @@ fn span(
     let (Some(first), Some(last)) = (parse_source_time(from), parse_source_time(to)) else {
         return Err(refused("time"));
     };
-    if last < first {
+    if last.timestamp() < first.timestamp() {
         return Err(refused("end_before_start"));
     }
-    if (last - first).num_seconds() > MAX_EXPERIENCE_SECONDS {
+    if last.timestamp().duration_since(first.timestamp()).as_secs() > MAX_EXPERIENCE_SECONDS {
         return Err(refused("span_too_long"));
     }
     Ok((from.to_owned(), to.to_owned()))
@@ -333,7 +334,7 @@ fn read_shape(
             // Scores and assessment words stay in `fields`: the row states the
             // document exists for its date, and no value of it.
             let mut row = new_row(RowKind::Dated, endpoint, label.to_owned(), document);
-            row.date = Some(day.format("%Y-%m-%d").to_string());
+            row.date = Some(day.strftime("%Y-%m-%d").to_string());
             row
         }
         Shape::Heartrate => unreachable!("read above"),
@@ -352,9 +353,7 @@ fn read_heartrate(document: &Map<String, Value>) -> Result<ReadRow, String> {
     let at = text(document, "timestamp")
         .filter(|at| parse_source_time(at).is_some())
         .ok_or("heartrate: time")?;
-    let instant = parse_source_time(at)
-        .expect("checked above")
-        .timestamp_millis();
+    let instant = epoch_millisecond(parse_source_time(at).expect("checked above").timestamp());
     let bpm = number_text(document, "bpm").ok_or("heartrate: bpm")?;
     let mut row = new_row(
         RowKind::Reading,
@@ -457,14 +456,14 @@ fn endpoint_of(row: &BodyRow) -> Option<&'static str> {
 }
 
 /// The date part of a time as Oura wrote it, which is the wearer's own.
-fn written_date(text: Option<&str>) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text?.get(..10)?, "%Y-%m-%d").ok()
+fn written_date(text: Option<&str>) -> Option<Date> {
+    Date::strptime("%Y-%m-%d", text?.get(..10)?).ok()
 }
 
 /// The hour a heartrate reading falls in, in UTC.
 fn reading_hour(row: &BodyRow) -> Option<String> {
-    let at = parse_source_time(row.at.as_deref()?)?.with_timezone(&chrono::Utc);
-    Some(at.format("%Y-%m-%dT%H:00:00Z").to_string())
+    let at = parse_source_time(row.at.as_deref()?)?.timestamp();
+    Some(at.strftime("%Y-%m-%dT%H:00:00Z").to_string())
 }
 
 /// Where an Oura row's absence would be a hole: its endpoint and Oura day, or the
@@ -480,10 +479,10 @@ pub fn hole_points(row: &BodyRow) -> Vec<(&'static str, String)> {
         row.fields
             .get(key)
             .and_then(Value::as_str)
-            .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
+            .and_then(|day| Date::strptime("%Y-%m-%d", day).ok())
             .or_else(|| written_date(row.start.as_deref()))
     };
-    let dates: Vec<NaiveDate> = match row.kind {
+    let dates: Vec<Date> = match row.kind {
         RowKind::Reading => {
             return reading_hour(row)
                 .map(|hour| vec![(endpoint, hour)])
@@ -492,7 +491,7 @@ pub fn hole_points(row: &BodyRow) -> Vec<(&'static str, String)> {
         RowKind::Dated => row
             .date
             .as_deref()
-            .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
+            .and_then(|date| Date::strptime("%Y-%m-%d", date).ok())
             .into_iter()
             .collect(),
         RowKind::Logged => day("start_day").into_iter().collect(),
@@ -507,7 +506,10 @@ pub fn hole_points(row: &BodyRow) -> Vec<(&'static str, String)> {
             let mut date = first;
             while date <= last && dates.len() <= 15 {
                 dates.push(date);
-                date += Duration::days(1);
+                let Ok(next) = date.tomorrow() else {
+                    break;
+                };
+                date = next;
             }
             dates
         }
@@ -515,7 +517,7 @@ pub fn hole_points(row: &BodyRow) -> Vec<(&'static str, String)> {
     };
     dates
         .into_iter()
-        .map(|date| (endpoint, date.format("%Y-%m-%d").to_string()))
+        .map(|date| (endpoint, date.strftime("%Y-%m-%d").to_string()))
         .collect()
 }
 

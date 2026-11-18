@@ -294,7 +294,7 @@ fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
         .and_then(|account| account.get("start"))
         .and_then(Value::as_str)
         .and_then(super::body_records::parse_source_time)
-        .map_or(0, |start| start.timestamp_millis());
+        .map_or(0, |start| start.timestamp().as_millisecond());
     // What search keeps beside the entry names the record, and nothing of the
     // source's account.
     let mut source = JsonObject::new();

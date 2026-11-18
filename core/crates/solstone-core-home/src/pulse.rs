@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::{Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
 use solstone_core_entity::read_journal_principal;
 use solstone_core_facets::{ConnectionsHorizon, read_connections_horizon};
@@ -33,14 +33,14 @@ const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful
 /// end times, so a UTC wall clock would misjudge which events are past.
 struct PulseContext {
     fields: Map<String, Value>,
-    now: DateTime<FixedOffset>,
+    now: ZonedDateTime,
 }
 
 impl PulseContext {
     fn into_pulse_payload(mut self) -> Value {
         self.fields.remove("show_welcome");
         self.fields
-            .insert("now".to_owned(), format_now(self.now).into());
+            .insert("now".to_owned(), format_now(&self.now).into());
         if let Some(attention) = self.fields.get("attention").and_then(Value::as_object) {
             self.fields.insert(
                 "attention".to_owned(),
@@ -55,11 +55,14 @@ impl PulseContext {
 }
 
 /// Assemble all fields used by the Python home context in its build order.
-fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> PulseContext {
-    let account =
-        account_time.map(|now| HomeContext::with_zone(context.journal_root(), now, context.zone()));
+fn build_pulse_context(
+    context: &HomeContext,
+    account_time: Option<jiff::Timestamp>,
+) -> PulseContext {
+    let account = account_time
+        .map(|now| HomeContext::with_zone(context.journal_root(), now, context.zone().clone()));
     let account_context = account.as_ref().unwrap_or(context);
-    let latest = account_time.map(|instant| instant.timestamp_millis());
+    let latest = account_time.map(|instant| instant.as_millisecond());
     let today = account_context.today();
     let yesterday = account_context.yesterday();
     let journal_age_days = count_journal_age_days(context);
@@ -81,8 +84,9 @@ fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>
         .unwrap_or_else(|| json!({}));
     let flow = load_flow_md(account_context, &today, latest);
     let flow_updated_at = flow.updated_at.and_then(|timestamp| {
-        DateTime::from_timestamp(timestamp as i64, 0)
-            .map(|time| time.with_timezone(&Utc).to_rfc3339())
+        Timestamp::new(timestamp as i64, 0)
+            .ok()
+            .map(solstone_core_time::utc_rfc3339)
     });
     let narrative = load_pulse_narrative_at(account_context, &today, latest);
     let (
@@ -139,7 +143,7 @@ fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>
     } else {
         solstone_core_system_health::journal_not_yet(
             context.journal_root(),
-            account_context.now_local().naive_local(),
+            account_context.now_local().datetime(),
         )
     };
     let body_data = solstone_core_location::body_records::has_body_data(context.journal_root());
@@ -162,7 +166,7 @@ fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>
             compute_briefing_phase(segment_count, account_context.local_hour(), briefing_exists)
         })
     };
-    let briefing_lateness = briefing_lateness_state(account_context.now_local(), briefing_phase);
+    let briefing_lateness = briefing_lateness_state(&account_context.now_local(), briefing_phase);
     let reflection_state = latest_weekly_reflection
         .get("state")
         .and_then(Value::as_str);
@@ -202,9 +206,11 @@ fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>
                     context.journal_root(),
                 )
             },
+            // The date as the owner's clock will read it then, at that day's
+            // own offset.
             |at| {
-                at.with_timezone(&context.now_local().timezone())
-                    .format("%a %b %-d")
+                at.to_zoned_datetime(context.zone().clone())
+                    .strftime("%a %b %-d")
                     .to_string()
             },
         )
@@ -320,7 +326,7 @@ pub fn pulse_payload(context: &HomeContext) -> Value {
 }
 
 /// Override the account clock for this read while keeping operational status live.
-pub fn pulse_payload_at(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> Value {
+pub fn pulse_payload_at(context: &HomeContext, account_time: Option<jiff::Timestamp>) -> Value {
     build_pulse_context(context, account_time).into_pulse_payload()
 }
 
@@ -361,7 +367,7 @@ pub fn briefing_payload(context: &HomeContext) -> Value {
     briefing_payload_at(context, None)
 }
 
-pub fn briefing_payload_at(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> Value {
+pub fn briefing_payload_at(context: &HomeContext, account_time: Option<jiff::Timestamp>) -> Value {
     let payload = pulse_payload_at(context, account_time);
     let field = |name: &str| payload.get(name).cloned().unwrap_or(Value::Null);
     json!({
@@ -375,8 +381,8 @@ pub fn briefing_payload_at(context: &HomeContext, account_time: Option<DateTime<
     })
 }
 
-fn format_now(now: DateTime<FixedOffset>) -> String {
-    now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
+fn format_now(now: &ZonedDateTime) -> String {
+    now.strftime("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }
 
 fn load_connections_card(context: &HomeContext, horizon: Option<ConnectionsHorizon>) -> Value {
@@ -486,7 +492,6 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    use chrono::{FixedOffset, NaiveDate, TimeZone, Timelike};
     use solstone_core_journal_io::{
         JournalRoot,
         operational_log::{OplogFormat, create_oplog_at},
@@ -496,18 +501,19 @@ mod tests {
     use super::*;
 
     fn write_think_oplog(root: &Path, day: &str, run: &str, text: &str) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
-        let opened = FixedOffset::east_opt(0)
-            .unwrap()
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
-            .single()
-            .unwrap();
+        let day = solstone_core_time::parse_day(day).unwrap();
+        let opened = solstone_core_time::at_offset(
+            jiff::tz::Offset::UTC
+                .to_timestamp(day.at(12, 0, 0, 0))
+                .unwrap(),
+            jiff::tz::Offset::UTC,
+        );
         let mut writer = create_oplog_at(
             JournalRoot::open(root).unwrap(),
             "think",
             run,
             OplogFormat::Jsonl,
-            opened,
+            &opened,
         )
         .unwrap();
         writer.write_all(text.as_bytes()).unwrap();
@@ -544,9 +550,9 @@ mod tests {
         .unwrap();
         // Thinking on the owner's own cloud key, checked and ready.
         solstone_core_brain::generate_fingerprint_key(root.path()).unwrap();
-        let now = Utc::now();
-        let observed = now.to_rfc3339();
-        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        let now = Timestamp::now();
+        let observed = solstone_core_time::utc_rfc3339(now);
+        let expires = solstone_core_time::utc_rfc3339(now + jiff::SignedDuration::from_hours(2));
         let ok = json!({"status": "ok", "observed_at": observed, "expires_at": expires});
         let permit = solstone_core_brain::begin_refresh(root.path(), now, None, None, false, None)
             .unwrap()
@@ -651,7 +657,7 @@ mod tests {
         let root = body_journal();
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 10, 11, 12, 0, 0),
             utc_day(),
         );
         let payload = briefing_payload(&context);
@@ -682,7 +688,7 @@ mod tests {
         let at = |day: u32| {
             HomeContext::with_zone(
                 root.path(),
-                Utc.with_ymd_and_hms(2026, 10, day, 12, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 10, day, 12, 0, 0),
                 utc_day(),
             )
         };
@@ -708,7 +714,7 @@ mod tests {
         let plain = TempDir::new().unwrap();
         let context = HomeContext::with_zone(
             plain.path(),
-            Utc.with_ymd_and_hms(2026, 10, 12, 12, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 10, 12, 12, 0, 0),
             utc_day(),
         );
         let pulse = pulse_payload(&context);
@@ -726,7 +732,7 @@ mod tests {
         let day = |hour: u32| {
             HomeContext::with_zone(
                 root.path(),
-                Utc.with_ymd_and_hms(2026, 9, 6, hour, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 9, 6, hour, 0, 0),
                 mountain_day(),
             )
         };
@@ -791,10 +797,8 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
-                .unwrap()
-                .with_nanosecond(430_840_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 22, 28, 35)
+                + jiff::SignedDuration::from_nanos(430_840_000),
             utc_day(),
         );
         let payload = pulse_payload(&context);
@@ -870,7 +874,7 @@ mod tests {
 
         let day0 = pulse_payload(&utc_context(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 15, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 15, 0, 0),
         ));
         assert_eq!(
             day0["health_glance"]["note"]["text"],
@@ -882,7 +886,7 @@ mod tests {
 
         let day1 = pulse_payload(&utc_context(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 15, 10, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 8, 15, 10, 0, 0),
         ));
         assert!(day1["health_glance"].get("note").is_none());
         assert!(has_unclear(&day1), "{}", day1["health_glance"]);
@@ -892,7 +896,7 @@ mod tests {
         captured(root.path(), "20260814");
         let day1 = pulse_payload(&utc_context(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 15, 10, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 8, 15, 10, 0, 0),
         ));
         assert_eq!(day1["briefing_phase"], "missing");
     }
@@ -902,7 +906,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35).unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 22, 28, 35),
             utc_day(),
         );
 
@@ -971,10 +975,8 @@ mod tests {
     fn empty_fixture_matches_the_captured_pulse_and_briefing() {
         let (_fixture, context) = fixture_context(
             "convey_home_empty_journal",
-            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
-                .unwrap()
-                .with_nanosecond(430_840_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 22, 28, 35)
+                + jiff::SignedDuration::from_nanos(430_840_000),
         );
         let mut reference = reference_payload("reference-pulse-empty-journal.json");
         reference["pulse"]["narrative_window"] = Value::Null;
@@ -999,10 +1001,8 @@ mod tests {
     fn seeded_fixture_matches_the_captured_pulse_and_briefing() {
         let (_fixture, context) = fixture_context(
             "convey_home_seeded_journal",
-            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
-                .unwrap()
-                .with_nanosecond(793_525_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 23, 25, 13)
+                + jiff::SignedDuration::from_nanos(793_525_000),
         );
         let payload = pulse_payload(&context);
         let mut reference = reference_payload("reference-pulse-seeded-journal.json");
@@ -1110,7 +1110,7 @@ mod tests {
         for hour in [11, 21] {
             let (fixture, context) = fixture_context(
                 "convey_home_seeded_journal",
-                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 8, 14, hour, 0, 0),
             );
             fs::write(
                 fixture
@@ -1141,7 +1141,7 @@ mod tests {
         for hour in 0..24 {
             let context = utc_context(
                 root.path(),
-                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 8, 14, hour, 0, 0),
             );
             // A briefing that was never prepared is late from the morning end
             // until the evening, and the card that says so is rendered there.
@@ -1160,12 +1160,12 @@ mod tests {
         ] {
             let context = utc_context(
                 root.path(),
-                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 8, 14, hour, 0, 0),
             );
             assert_eq!(pulse_payload(&context)["briefing_phase"], expected);
         }
         let late = crate::briefing::lateness_state(
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 13, 0, 0),
             "pending",
         );
         assert_eq!(late, json!({"late":true,"late_hours":3}));
@@ -1176,7 +1176,7 @@ mod tests {
         for hour in [9, 13, 22] {
             let context = utc_context(
                 blank.path(),
-                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+                crate::test_time::utc_at(2026, 8, 14, hour, 0, 0),
             );
             let payload = pulse_payload(&context);
             assert_eq!(payload["briefing_phase"], "awaiting_engine", "hour {hour}");
@@ -1187,8 +1187,8 @@ mod tests {
         }
     }
 
-    fn mountain_day() -> chrono_tz::Tz {
-        chrono_tz::Tz::America__Denver
+    fn mountain_day() -> jiff::tz::TimeZone {
+        solstone_core_time::zone("America/Denver").unwrap()
     }
 
     /// Two local days of stats: september 4th and the september 5th that is
@@ -1224,7 +1224,7 @@ mod tests {
         fs::write(health.join("oplog--invalid.log"), "bad").unwrap();
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
+            crate::test_time::utc_at(2026, 9, 6, 3, 30, 0),
             mountain_day(),
         );
         let processing = summarize_yesterday_processing(&context, 2).unwrap();
@@ -1246,7 +1246,7 @@ mod tests {
         engine_chosen(root.path());
         let context = HomeContext::with_zone(
             root.path(),
-            Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
+            crate::test_time::utc_at(2026, 9, 6, 3, 30, 0),
             mountain_day(),
         );
         let payload = pulse_payload(&context);
@@ -1280,7 +1280,7 @@ mod tests {
         let early = HomeContext::with_zone(
             root.path(),
             // 2026-09-05 08:00 in Denver: the morning briefing is still due.
-            Utc.with_ymd_and_hms(2026, 9, 5, 14, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 9, 5, 14, 0, 0),
             mountain_day(),
         );
         let payload = pulse_payload(&early);
@@ -1298,7 +1298,7 @@ mod tests {
         let late = HomeContext::with_zone(
             root.path(),
             // 2026-09-05 11:00 in Denver: the window has closed.
-            Utc.with_ymd_and_hms(2026, 9, 5, 17, 0, 0).unwrap(),
+            crate::test_time::utc_at(2026, 9, 5, 17, 0, 0),
             mountain_day(),
         );
         let payload = pulse_payload(&late);
@@ -1318,10 +1318,7 @@ mod tests {
     #[test]
     fn absent_yesterday_stats_and_empty_yesterday_return_none() {
         let root = TempDir::new().unwrap();
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 13, 0, 0));
         assert!(summarize_yesterday_processing(&context, 1).is_none());
 
         fs::create_dir_all(root.path().join("chronicle/20260813")).unwrap();
@@ -1342,10 +1339,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
         )
         .unwrap();
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 13, 0, 0));
         assert!(summarize_yesterday_processing(&context, 0).is_none());
     }
 
@@ -1359,10 +1353,7 @@ mod tests {
         )
         .unwrap();
         captured(root.path(), "20260813");
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 13, 0, 0));
         let processing = summarize_yesterday_processing(&context, 1).unwrap();
         assert_eq!(processing["mode"], "sparse");
         // A sparse night carries its reasons but is not a failure, so it
@@ -1391,10 +1382,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         write_think_oplog(root.path(), "20260813", "daily", &format!("{failures}\n"));
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 13, 0, 0));
         let pipeline = summarize_pipeline_day(&context, "20260813");
         assert_eq!(
             pipeline["anomalies"]
@@ -1427,10 +1415,10 @@ mod tests {
         );
         let payload = PulseContext {
             fields,
-            now: Utc
-                .with_ymd_and_hms(2026, 8, 14, 13, 0, 0)
-                .unwrap()
-                .fixed_offset(),
+            now: solstone_core_time::at_offset(
+                crate::test_time::utc_at(2026, 8, 14, 13, 0, 0),
+                jiff::tz::Offset::UTC,
+            ),
         }
         .into_pulse_payload();
         assert_eq!(
@@ -1452,10 +1440,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":0},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
         )
         .unwrap();
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 13, 0, 0));
         assert_eq!(
             summarize_pipeline_day(&context, "20260813")["status"],
             "stale"
@@ -1475,10 +1460,8 @@ mod tests {
         let before = tree_entries(&root);
         let context = utc_context(
             &root,
-            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
-                .unwrap()
-                .with_nanosecond(430_840_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 22, 28, 35)
+                + jiff::SignedDuration::from_nanos(430_840_000),
         );
         let _ = pulse_payload(&context);
         assert_eq!(tree_entries(&root), before);
@@ -1501,9 +1484,7 @@ mod tests {
         .unwrap();
         let context = utc_context(
             root.path(),
-            Utc.timestamp_millis_opt(1_786_749_913_793)
-                .single()
-                .unwrap(),
+            jiff::Timestamp::from_millisecond(1_786_749_913_793).unwrap(),
         );
         assert_eq!(
             crate::readers::get_capture_health(&context)["status"],
@@ -1516,14 +1497,14 @@ mod tests {
     fn reflection_fixture_ignores_an_unparseable_eight_digit_stem() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/convey_home_reflection_journal");
-        let context = utc_context(root, Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap());
+        let context = utc_context(root, crate::test_time::utc_at(2026, 8, 14, 12, 0, 0));
         assert_eq!(crate::weekly::card(&context)["state"], "first");
     }
 
     #[test]
     fn welcome_state_respects_weekly_reflection_presence() {
         let root = TempDir::new().unwrap();
-        let now = Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap();
+        let now = crate::test_time::utc_at(2026, 8, 14, 12, 0, 0);
         let context = utc_context(root.path(), now);
 
         // 1. Empty journal -> welcome
@@ -1554,10 +1535,8 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_seeded_journal");
         let context = utc_context(
             root,
-            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
-                .unwrap()
-                .with_nanosecond(793_525_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 23, 25, 13)
+                + jiff::SignedDuration::from_nanos(793_525_000),
         );
         assert_eq!(
             pulse_payload(&context)["health_glance"]["cta"]["href"],
@@ -1569,10 +1548,8 @@ mod tests {
     fn assembly_keeps_muted_activities_but_excludes_them_from_yesterday_processing() {
         let (_fixture, context) = fixture_context(
             "convey_home_seeded_journal",
-            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
-                .unwrap()
-                .with_nanosecond(793_525_000)
-                .unwrap(),
+            crate::test_time::utc_at(2026, 8, 14, 23, 25, 13)
+                + jiff::SignedDuration::from_nanos(793_525_000),
         );
         let payload = pulse_payload(&context);
         assert!(
@@ -1596,7 +1573,7 @@ mod tests {
     }
 
     fn horizon_context(root: &Path) -> HomeContext {
-        utc_context(root, Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap())
+        utc_context(root, crate::test_time::utc_at(2026, 6, 2, 13, 0, 0))
     }
 
     fn assert_horizon_failure_does_not_change_card(root: &Path) {
@@ -1684,13 +1661,13 @@ mod tests {
         assert!(card.get("horizon_note").is_none());
     }
 
-    fn utc_day() -> chrono_tz::Tz {
-        chrono_tz::Tz::UTC
+    fn utc_day() -> jiff::tz::TimeZone {
+        jiff::tz::TimeZone::UTC
     }
 
     /// Pin the day coordinate so a test's expectations do not depend on the
     /// host's zone; the local-day behaviour has its own tests below.
-    fn utc_context(root: impl Into<std::path::PathBuf>, now: DateTime<Utc>) -> HomeContext {
+    fn utc_context(root: impl Into<std::path::PathBuf>, now: Timestamp) -> HomeContext {
         HomeContext::with_zone(root, now, utc_day())
     }
 
@@ -1715,7 +1692,7 @@ mod tests {
         .unwrap();
     }
 
-    fn fixture_context(fixture: &str, now: DateTime<Utc>) -> (TempDir, HomeContext) {
+    fn fixture_context(fixture: &str, now: Timestamp) -> (TempDir, HomeContext) {
         let source = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
             .join(fixture);
@@ -1864,10 +1841,7 @@ mod tests {
     fn pulse_includes_not_established_owner_voice_item_when_admitted_without_centroid() {
         let root = TempDir::new().unwrap();
         seed_principal(root.path());
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 12, 0, 0));
         let payload = pulse_payload(&context);
         let items = payload["needs_you_items"]
             .as_array()
@@ -1897,10 +1871,7 @@ mod tests {
             b"not an archive",
         )
         .expect("write corrupt centroid");
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 12, 0, 0));
         let payload = pulse_payload(&context);
         let items = payload["needs_you_items"]
             .as_array()
@@ -1936,10 +1907,7 @@ mod tests {
             },
         )
         .expect("write owner centroid");
-        let context = utc_context(
-            root.path(),
-            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
-        );
+        let context = utc_context(root.path(), crate::test_time::utc_at(2026, 8, 14, 12, 0, 0));
         let payload = pulse_payload(&context);
         let items = payload["needs_you_items"]
             .as_array()

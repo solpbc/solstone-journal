@@ -3,7 +3,8 @@
 
 //! Pure health-glance projection.
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::tz::Offset;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 
 use crate::formatting::relative_time;
@@ -49,7 +50,7 @@ pub fn build_health_glance(
     last_observe: Option<&str>,
     backlog: &BacklogSource,
     brain: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     transcription_issue: Option<&Value>,
 ) -> Value {
     let mut glance = derive_glance(
@@ -90,7 +91,7 @@ fn derive_glance(
     last_observe: Option<&str>,
     backlog: &BacklogSource,
     brain: &Value,
-    now: DateTime<Utc>,
+    now: Timestamp,
     transcription_issue: Option<&Value>,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now);
@@ -271,7 +272,7 @@ fn calm_json(kind: CalmKind) -> Value {
     }
 }
 
-fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
+fn backlog_issues(source: &BacklogSource, now: Timestamp) -> Vec<Value> {
     if matches!(source.validity, BacklogValidity::NotYet(_)) {
         return Vec::new();
     }
@@ -403,7 +404,7 @@ fn capture_issue(capture: &Value) -> Option<Value> {
 /// Health's `describeRegisteredClient` and its `HEALTH_GLANCE_DEVICE*_SILENT`
 /// strings are the single source for this sentence; home echoes them, in
 /// health's order (the quietest device first). X-03.
-fn quiet_capture_summary(capture: &Value, now: DateTime<Utc>) -> String {
+fn quiet_capture_summary(capture: &Value, now: Timestamp) -> String {
     let idle = idle_clients(capture, now);
     match idle.as_slice() {
         [] => UNNAMED_IDLE_ISSUE.to_owned(),
@@ -424,7 +425,7 @@ fn quiet_capture_summary(capture: &Value, now: DateTime<Utc>) -> String {
 }
 // The names the owner sees decide the number the sentence is written in, so the
 // devices are collected before the line is composed rather than after.
-fn idle_clients(capture: &Value, now: DateTime<Utc>) -> Vec<(String, Option<String>)> {
+fn idle_clients(capture: &Value, now: Timestamp) -> Vec<(String, Option<String>)> {
     let mut rows = capture
         .get("clients")
         .and_then(Value::as_array)
@@ -458,12 +459,12 @@ fn idle_clients(capture: &Value, now: DateTime<Utc>) -> Vec<(String, Option<Stri
         .map(|(name, seconds)| (name, seconds.map(format_idle_age)))
         .collect()
 }
-fn idle_seconds(client: &Value, now: DateTime<Utc>) -> Option<i64> {
+fn idle_seconds(client: &Value, now: Timestamp) -> Option<i64> {
     let last = client
         .get("last_accepted_ingest_at")
         .and_then(Value::as_str)
         .and_then(parse_time)?;
-    let seconds = (now - last).num_seconds();
+    let seconds = (now - last).as_secs();
     (seconds >= 0).then_some(seconds)
 }
 fn format_idle_age(seconds: i64) -> String {
@@ -493,19 +494,18 @@ fn brain_issue(brain: &Value) -> Option<Value> {
         json!({"text":text,"severity":"amber","href":brain.pointer("/action/href").and_then(Value::as_str).unwrap_or("/app/health/#brain")}),
     )
 }
-fn parse_time(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
+fn parse_time(value: &str) -> Option<Timestamp> {
+    solstone_core_time::parse_rfc3339(value)
         .ok()
-        .map(|time| time.with_timezone(&Utc))
+        .map(|time| time.timestamp())
         .or_else(|| {
-            value
-                .parse::<chrono::NaiveDateTime>()
+            solstone_core_time::parse_civil_datetime(value)
                 .ok()
-                .map(|time| time.and_utc())
+                .and_then(|time| Offset::UTC.to_timestamp(time).ok())
         })
 }
-fn age(delta: Duration) -> String {
-    let seconds = delta.num_seconds().max(0);
+fn age(delta: SignedDuration) -> String {
+    let seconds = delta.as_secs().max(0);
     let hours = seconds / 3600;
     if hours >= 1 {
         format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
@@ -517,7 +517,6 @@ fn age(delta: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
     use serde_json::json;
 
     use super::*;
@@ -527,11 +526,11 @@ mod tests {
     fn future_generated_at_skew_handling() {
         let n = now();
         // 10 minutes in the future -> unknown age issue
-        let ten_min_future = n + Duration::minutes(10);
+        let ten_min_future = n + SignedDuration::from_mins(10);
         let backlog_future = BacklogSource {
             backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
             validity: BacklogValidity::Valid,
-            generated_at: Some(ten_min_future.to_rfc3339()),
+            generated_at: Some(solstone_core_time::utc_rfc3339(ten_min_future)),
             saved_lane: None,
         };
         let glance_ten = build_health_glance(
@@ -550,11 +549,11 @@ mod tests {
         );
 
         // 2 minutes in the future -> tolerated within 5 min skew, no age issue
-        let two_min_future = n + Duration::minutes(2);
+        let two_min_future = n + SignedDuration::from_mins(2);
         let backlog_two = BacklogSource {
             backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
             validity: BacklogValidity::Valid,
-            generated_at: Some(two_min_future.to_rfc3339()),
+            generated_at: Some(solstone_core_time::utc_rfc3339(two_min_future)),
             saved_lane: None,
         };
         let glance_two = build_health_glance(
@@ -578,8 +577,8 @@ mod tests {
         }
     }
 
-    fn now() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 5, 14, 15, 30, 0).unwrap()
+    fn now() -> Timestamp {
+        crate::test_time::utc_at(2026, 5, 14, 15, 30, 0)
     }
 
     fn glance(capture: &Value) -> Value {
@@ -590,7 +589,7 @@ mod tests {
         capture: &Value,
         last_observe: Option<&str>,
         brain: &Value,
-        at: DateTime<Utc>,
+        at: Timestamp,
     ) -> Value {
         build_health_glance(capture, last_observe, &fresh_backlog(), brain, at, None)
     }
@@ -1085,12 +1084,12 @@ mod tests {
         assert_eq!(progressing["verdict"], "progressing");
         assert_eq!(progressing["severity"], "amber");
 
-        let later = now() + Duration::days(30);
-        let at_clock = |at: DateTime<Utc>| {
+        let later = now() + SignedDuration::from_hours(24 * 30);
+        let at_clock = |at: Timestamp| {
             let backlog = BacklogSource {
                 backlog: Some(json!({"stuck_days":0}).as_object().unwrap().clone()),
                 validity: BacklogValidity::Valid,
-                generated_at: Some(at.to_rfc3339()),
+                generated_at: Some(solstone_core_time::utc_rfc3339(at)),
                 saved_lane: None,
             };
             build_health_glance(&awaiting, None, &backlog, &Value::Null, at, None)
