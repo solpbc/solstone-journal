@@ -131,6 +131,10 @@
   ],
   "namespaces": [
     {
+      "namespace": "account",
+      "owner": "account"
+    },
+    {
       "namespace": "synth.notes",
       "owner": "synth"
     },
@@ -184,6 +188,12 @@
     }
   ],
   "bundles": [
+    {
+      "id": "account",
+      "locales": [
+        "en-US"
+      ]
+    },
     {
       "id": "synth-app",
       "locales": [
