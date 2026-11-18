@@ -34,14 +34,16 @@ pub use windows_action::{
 };
 
 pub use windows_task_readback::{
-    WindowsTaskDefinition, decode_windows_task_xml, encode_windows_task_xml, parse_windows_task_xml,
+    WindowsTaskDefinition, decode_windows_task_xml, encode_windows_task_xml,
+    parse_windows_task_xml, windows_registration_is_current,
 };
 
 pub use windows_task_reason::{WINDOWS_TASK_FAILURE_SCHEMA, windows_task_failure_reason};
 
 pub use windows_update::{
-    OwnerRunIntent, WINDOWS_UPDATE_INTENT_SCHEMA, WindowsServiceUpdatePlan, WindowsUpdateQuiesce,
-    WindowsUpdateRestore, parse_windows_update_intent, windows_service_update_plan,
-    windows_update_intent_bytes, windows_update_quiesce, windows_update_restore,
+    OwnerRunIntent, WINDOWS_UPDATE_INTENT_SCHEMA, WindowsRegistrationUpdateSteps,
+    WindowsServiceUpdatePlan, WindowsUpdateQuiesce, WindowsUpdateRestore,
+    parse_windows_update_intent, windows_service_update_plan, windows_update_intent_bytes,
+    windows_update_present_registration, windows_update_quiesce, windows_update_restore,
     windows_update_stop_failure_restore,
 };
