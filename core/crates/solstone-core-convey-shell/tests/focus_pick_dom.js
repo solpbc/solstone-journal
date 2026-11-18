@@ -530,6 +530,130 @@ test('no life: a page that isn\'t a view gets the same landing, on the page\'s t
   assert.ok(p.clock.live() === 0 && p.listening(p.doc) === 0, 'the window ends it');
 });
 
+// ---- done: told once when the wait ends, after its landing
+
+const doneCounter = (p) => {
+  const calls = [];
+  const fn = () => calls.push({ at: p.doc.activeElement });
+  fn.calls = calls;
+  return fn;
+};
+const pickWith = (p, select, life, done) => {
+  select.focus();
+  return p.SolFocus.keepAfterPick(select, life, done);
+};
+
+test('done: after the late blur\'s landing, once, with focus already back', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const select = p.make('SELECT');
+  const done = doneCounter(p);
+  assert.ok(pickWith(p, select, view.ctx, done) === true, 'arms');
+  p.clock.advance(865);
+  p.blurToBody(select);
+  assert.ok(done.calls.length === 0, 'not at the blur');
+  p.clock.advance(0);
+  assert.ok(done.calls.length === 1 && done.calls[0].at === select, `once, after the landing: ${done.calls.length}`);
+  p.clock.advance(3000);
+  p.blurToBody(select);
+  p.clock.advance(10);
+  assert.ok(done.calls.length === 1, 'never again');
+});
+
+for (const type of ['pointerdown', 'touchstart', 'mousedown', 'keydown']) {
+  test(`done: a ${type} ends the wait and tells it once`, async () => {
+    const p = makePage();
+    const view = await p.mountView();
+    const select = p.make('SELECT');
+    const text = p.make('P');
+    const done = doneCounter(p);
+    pickWith(p, select, view.ctx, done);
+    p.clock.advance(300);
+    p.press(text, type);
+    assert.ok(done.calls.length === 1, `at the ${type}`);
+    p.press(text, type);
+    p.clock.advance(3000);
+    assert.ok(done.calls.length === 1, 'once');
+  });
+}
+
+test('done: the window, with no late blur', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const select = p.make('SELECT');
+  const done = doneCounter(p);
+  pickWith(p, select, view.ctx, done);
+  p.clock.advance(1729);
+  assert.ok(done.calls.length === 0, 'not before the window');
+  p.clock.advance(1);
+  assert.ok(done.calls.length === 1 && done.calls[0].at === select, 'at the window, focus untouched');
+});
+
+test('done: the next pick ends the first and tells it; a null select tells the earlier and its own at once', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const a = p.make('SELECT');
+  const b = p.make('SELECT');
+  const first = doneCounter(p);
+  const second = doneCounter(p);
+  const third = doneCounter(p);
+  pickWith(p, a, view.ctx, first);
+  pickWith(p, b, view.ctx, second);
+  assert.ok(first.calls.length === 1 && second.calls.length === 0, 'the first is told by the second pick');
+  assert.ok(p.SolFocus.keepAfterPick(null, view.ctx, third) === false, 'null arms nothing');
+  assert.ok(second.calls.length === 1 && third.calls.length === 1, 'the earlier told, and the null at once');
+});
+
+test('done: told at once when nothing arms (focus elsewhere, hidden, gone)', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const elsewhere = p.make('SELECT');
+  const hidden = p.make('SELECT');
+  hidden.hidden = true;
+  const gone = p.make('SELECT');
+  gone.remove();
+  for (const select of [elsewhere, hidden, gone]) {
+    const done = doneCounter(p);
+    assert.ok(p.SolFocus.keepAfterPick(select, view.ctx, done) === false, 'not armed');
+    assert.ok(done.calls.length === 1, 'told at once');
+  }
+});
+
+test('done: never when the view goes first, before the blur or between it and its landing', async () => {
+  for (const when of ['before', 'between']) {
+    const p = makePage();
+    const view = await p.mountView();
+    const select = p.make('SELECT');
+    const done = doneCounter(p);
+    pickWith(p, select, view.ctx, done);
+    p.clock.advance(300);
+    if (when === 'between') p.blurToBody(select);
+    view.end();
+    p.blurToBody(select);
+    p.clock.advance(3000);
+    assert.ok(done.calls.length === 0, `${when}: never told`);
+  }
+});
+
+test('done: a select blurred as the page takes it out doesn\'t tell it; the copy\'s later blur does, after landing', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const old = p.make('SELECT');
+  const done = doneCounter(p);
+  pickWith(p, old, view.ctx, done);
+  p.clock.advance(400);
+  p.blurToBody(old);
+  old.remove();
+  const copy = p.make('SELECT');
+  copy.focus();
+  p.clock.advance(0);
+  assert.ok(done.calls.length === 0, 'not at the removal');
+  p.clock.advance(465);
+  p.blurToBody(copy);
+  p.clock.advance(0);
+  assert.ok(done.calls.length === 1 && done.calls[0].at === copy, 'after the copy\'s landing');
+});
+
 (async () => {
   for (const c of cases) {
     try {
