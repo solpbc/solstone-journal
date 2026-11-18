@@ -763,6 +763,7 @@
         <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
       </div>
     </div>
+    <div id="quickOriginals"></div>
     <input type="hidden" id="savedPath" />
     <div id="detectDuplicateNotice"></div>
     <div class="modal-actions">
@@ -1435,6 +1436,60 @@ function duplicateNoticeText(duplicate = {}, inProgress = false) {
   return `this file was already staged${importId ? ` as ${importId}` : ''}.`;
 }
 
+const importOriginalsSources = new Set([
+  'audio', 'audio_archive', 'chatgpt', 'claude', 'document', 'evernote', 'gemini',
+]);
+
+async function showImportOriginals(host, source) {
+  if (!host) return;
+  host.replaceChildren();
+  delete host.dataset.originalsPending;
+  if (!importOriginalsSources.has(source)) return;
+  host.innerHTML = `
+    <label><input type="checkbox" disabled> keep originals</label>
+    <p class="import-field-hint">turn this on if you want a local copy of the originals in your journal.</p>
+    <p class="import-field-hint" role="status"></p>
+  `;
+  const checkbox = host.querySelector('input');
+  const status = host.querySelector('[role="status"]');
+  const endpoint = '/app/import/api/keep-originals';
+  host.dataset.originalsPending = "true";
+  const displayError = () => {
+    status.textContent = "couldn't load this choice. reopen the import to try again.";
+  };
+  try {
+    const response = await importWrite(endpoint);
+    if (!response.ok) throw new Error('keep originals');
+    const data = await response.json();
+    checkbox.checked = data.keep_originals?.[source] === true;
+    checkbox.disabled = false;
+    delete host.dataset.originalsPending;
+  } catch (_) {
+    displayError();
+    return;
+  }
+  checkbox.addEventListener('change', async () => {
+    const next = checkbox.checked;
+    checkbox.disabled = true;
+    status.textContent = '';
+    host.dataset.originalsPending = "true";
+    try {
+      const response = await importWrite(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, keep: next }),
+      });
+      if (!response.ok) throw new Error('keep originals');
+    } catch (_) {
+      checkbox.checked = !next;
+      status.textContent = "couldn't save this choice. try again.";
+    } finally {
+      checkbox.disabled = false;
+      delete host.dataset.originalsPending;
+    }
+  });
+}
+
 function showDetect(res) {
   invalidateImportPreview('quick');
   importDraft.quickSaved = res;
@@ -1460,6 +1515,8 @@ function showDetect(res) {
     startBtn.style.display = 'none';
   }
   settingInput.value = res.setting || '';
+  const choices = document.getElementById('quickOriginals');
+  if (choices) showImportOriginals(choices, res.metadata?.source_hint || res.source);
   previousDetectFocus = document.activeElement;
   document.getElementById('detectModal').style.display = 'block';
   document.getElementById('timestampInput').focus();
@@ -3136,6 +3193,7 @@ async function loadGuidedFlow(sourceName) {
             <input id="guidedArchiveManifest" class="import-path-input" placeholder="manifest.json" autocomplete="off" autocapitalize="none" />
             <p class="import-field-hint">leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.</p>
           </div>
+          <div id="guidedOriginals"></div>
           <div class="import-action-row"><button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button></div>
         ` : `
           <h4>configure and start</h4>
@@ -3147,6 +3205,7 @@ async function loadGuidedFlow(sourceName) {
             </div>
           </div>
           ${['strava', 'apple_health'].includes(source.name) ? '<div id="guidedFacet" class="import-facet"></div>' : ''}
+          <div id="guidedOriginals"></div>
           <div class="import-action-row">
             <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
           </div>
@@ -3186,6 +3245,8 @@ async function loadGuidedFlow(sourceName) {
   }
   const guidedStartBtn = document.getElementById('guidedStartBtn');
   if (guidedStartBtn) {
+    const choices = document.getElementById('guidedOriginals');
+    if (choices) showImportOriginals(choices, source.name);
     guidedStartBtn.addEventListener('click', () => startGuidedImport(source));
   }
   const guidedForm = document.getElementById('guidedImportForm');
@@ -3951,6 +4012,7 @@ async function startGuidedImport(source) {
   const startButton = document.getElementById('guidedStartBtn');
   // Busy with its own write, or held while the folder's save or check is out.
   if (importInFlight.guided || window.SolFocus.isBusy(startButton)) return;
+  if (document.getElementById('guidedOriginals')?.dataset?.originalsPending === "true") return;
   importInFlight.guided = true;
   const revision = previewRevisions.guided;
   let preparedPreview = false;
@@ -4319,6 +4381,7 @@ function showProgressView(importId, eventData = null) {
 
 startBtn.addEventListener('click', async () => {
   if (importInFlight.quick || window.SolFocus.isBusy(startBtn)) return;
+  if (document.getElementById('quickOriginals')?.dataset?.originalsPending === "true") return;
   const revision = previewRevisions.quick;
   let preparedPreview = false;
   const ts = document.getElementById('timestampInput').value.trim();
@@ -5035,7 +5098,10 @@ function loadImportDetail(keepSavedStart = false) {
       // A re-read that says nothing new leaves the page as it is.
       const metaDrawn = drawMarkup(document.getElementById('importMeta'), window.ImportDetail.renderMeta(data));
       const overviewDrawn = drawMarkup(overview, window.ImportDetail.renderDetail(data));
-      window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus);
+      window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus, {
+        render: showImportOriginals,
+        pending: host => host?.dataset.originalsPending === "true",
+      });
       if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
         const heading = document.getElementById('importDetailHeading');
         heading?.setAttribute('tabindex', '-1');

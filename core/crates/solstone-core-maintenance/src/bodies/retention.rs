@@ -55,6 +55,13 @@ pub fn owner_voice_originals_checked(
             };
         }
     };
+    if let Err(error) = solstone_core_import::audio_originals::finish_owed(journal, checkpoint) {
+        return CliRun {
+            stdout: String::new(),
+            stderr: format!("imported audio cleanup incomplete: {error}\n"),
+            exit_code: 1,
+        };
+    }
     CliRun {
         stdout: format!(
             "owner-voice-originals: deleted {}, deleted without a record {}, already gone {}, still owed {}, kept for good {}, not provable {}, nothing owed {}, skipped while busy {}, events unreadable {}\n",

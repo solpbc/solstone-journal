@@ -263,6 +263,7 @@ pub fn sync_plaud_save(
                 break;
             }
             FiledPlaud::Imported(resolved) => {
+                let selected = resolved.timestamp.clone();
                 entry.insert("status".to_owned(), Value::String("imported".to_owned()));
                 entry.insert(
                     "import_timestamp".to_owned(),
@@ -282,6 +283,10 @@ pub fn sync_plaud_save(
                     .state_writer
                     .checkpoint(&request.journal_root, &catalogued.state)
                     .map_err(state_error)?;
+                if let Err(error) = crate::audio_originals::finish(&request.journal_root, &selected)
+                {
+                    log::warn!("Plaud audio cleanup {selected}: {error}");
+                }
             }
             FiledPlaud::Failed(kind) => {
                 entry.insert("status".to_owned(), Value::String("available".to_owned()));
@@ -458,10 +463,27 @@ fn import_file(
     if let Err(kind) = seams.download.download(&url, &destination) {
         return FiledPlaud::Failed(kind);
     }
-    if destination.is_file()
-        && let Ok(source_hash) = crate::hash_source(&destination)
-    {
-        let _ = crate::remember_source_hash(journal_root, &selected, &source_hash);
+    if destination.is_file() {
+        let registered = (|| -> Result<(), String> {
+            let hash = crate::hash_source(&destination).map_err(|error| error.to_string())?;
+            let mut metadata = crate::read_import_metadata(journal_root, &selected)
+                .map_err(|error| error.to_string())?;
+            crate::originals::record_staged_upload(&mut metadata, &destination);
+            metadata.insert("source_hash".to_owned(), Value::String(hash.into_inner()));
+            metadata.insert("file_path".to_owned(), serde_json::json!(destination));
+            metadata.insert(
+                "original_filename".to_owned(),
+                Value::String(file.filename.clone()),
+            );
+            metadata.insert("plaud_file_id".to_owned(), Value::String(file.id.clone()));
+            crate::write_import_metadata(journal_root, &selected, &metadata)
+                .map_err(|error| error.to_string())?;
+            crate::originals::capture_choice(journal_root, &selected, "plaud")
+        })();
+        if let Err(error) = registered {
+            log::warn!("Plaud audio registration {selected}: {error}");
+            return FiledPlaud::Failed(PlaudFailureKind::Pipeline);
+        }
     }
     // The download and its admitted copy stay. The next audio unit does not start.
     if !crate::work_continues() {

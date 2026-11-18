@@ -863,6 +863,7 @@ pub fn register_admitted_folder(
     });
     metadata.insert("import_id".into(), json!(folder.import_id.as_str()));
     metadata.insert("source_timestamp".into(), json!(source_timestamp.as_str()));
+    solstone_core_import::originals::record_new_import(&mut metadata);
     metadata.insert("folder_snapshot".into(), json!(folder.snapshot));
     solstone_core_import::saved_start::initialize_saved_start(
         &mut metadata,
@@ -1204,6 +1205,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         is_local_path: false,
         method,
     });
+    solstone_core_import::originals::record_staged_upload(&mut metadata, &file_path);
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
     if is_photo {
@@ -1334,6 +1336,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         is_local_path: true,
         method,
     });
+    solstone_core_import::originals::record_new_import(&mut metadata);
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
     metadata.insert(
@@ -2121,6 +2124,23 @@ fn plan_owner_date(
     })
 }
 
+fn capture_originals_choice(root: &Path, plan: &OwnerDatePlan) -> Result<(), Box<Response>> {
+    if !solstone_core_import::originals::is_new_import(&plan.metadata) {
+        return Ok(());
+    }
+    let name = source_hint(&plan.metadata).or_else(|| {
+        plan.metadata
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    if let Some(name) = name {
+        solstone_core_import::originals::capture_choice(root, &plan.record_id, &name)
+            .map_err(|error| Box::new(metadata_failed(error)))?;
+    }
+    Ok(())
+}
+
 fn apply_owner_date<W>(
     root: &Path,
     plan: &OwnerDatePlan,
@@ -2325,6 +2345,9 @@ where
             drop(captured);
             return response;
         }
+        if let Err(response) = capture_originals_choice(root, &plan) {
+            return *response;
+        }
         let task_id = now_ms().to_string();
         let settle_id = plan.record_id.clone();
         let slot_for_done = Arc::clone(&slot);
@@ -2360,6 +2383,9 @@ where
         )
     {
         return response;
+    }
+    if let Err(response) = capture_originals_choice(root, &plan) {
+        return *response;
     }
     let inprocess_source = detect_inprocess_source(&plan.metadata, &plan.command_path);
     let task_id = now_ms().to_string();

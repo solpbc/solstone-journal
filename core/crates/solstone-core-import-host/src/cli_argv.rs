@@ -1187,6 +1187,14 @@ fn run_audio(
         }
     };
     let import_id = bound.import_id.as_str().to_owned();
+    if let Err(error) =
+        solstone_core_import::originals::capture_choice(journal_path, &import_id, "audio")
+    {
+        return (
+            failure("", &format!("audio import failed: {error}\n"), 1),
+            import_id,
+        );
+    }
     let source_timestamp = bound.source_timestamp;
     let base_timestamp =
         match jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", source_timestamp.as_str()) {
@@ -1276,6 +1284,43 @@ fn run_audio(
         }
         _ => None,
     };
+    if matches!(manifest, Some(Ok(())))
+        || outcome.as_ref().is_ok_and(|imported| {
+            imported.writes_dedupe_manifest()
+                && imported.created().processing.failed_segments.is_empty()
+        })
+    {
+        let cleanup = (|| -> Result<(), String> {
+            if solstone_core_import::originals::captured_choice(journal_path, &import_id).is_none()
+            {
+                return Ok(());
+            }
+            let record = crate::audio::read_audio_import_record(journal_path, &import_id)
+                .map_err(|error| error.to_string())?
+                .ok_or("missing audio import record")?;
+            let parts = record
+                .created_segments
+                .into_iter()
+                .map(|part| {
+                    (
+                        part.file_path,
+                        (part.start_offset_seconds * 1_000.0).round() as i64,
+                    )
+                })
+                .collect::<Vec<_>>();
+            solstone_core_import::audio_originals::plan(
+                journal_path,
+                &import_id,
+                attempt.generation,
+                Path::new(media),
+                &parts,
+            )?;
+            solstone_core_import::audio_originals::finish(journal_path, &import_id)
+        })();
+        if let Err(error) = cleanup {
+            log::warn!("imported audio cleanup {import_id}: {error}");
+        }
+    }
     let run = audio_import_cli_run(outcome);
     let run = match manifest {
         Some(Err(error)) if run.exit_code == 0 => failure(
@@ -2143,6 +2188,7 @@ impl PlaudManifestLookup for ImportFilenameMatches<'_> {
         files: &[PlaudFile],
     ) -> Result<std::collections::BTreeMap<String, String>, PlaudFailureKind> {
         let mut imported = std::collections::HashMap::new();
+        let mut remote_ids = std::collections::HashMap::new();
         let entries = match fs::read_dir(self.journal_path.join("imports")) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -2154,16 +2200,31 @@ impl PlaudManifestLookup for ImportFilenameMatches<'_> {
             let Some(import_id) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
-            let Some(original) = fs::read(entry.path().join("import.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                .and_then(|metadata| {
-                    metadata
-                        .get("original_filename")?
-                        .as_str()
-                        .map(str::to_owned)
-                })
+            let Ok(metadata) =
+                solstone_core_import::read_import_metadata(self.journal_path, &import_id)
+            else {
+                continue;
+            };
+            if let Some(remote_id) = metadata.get("plaud_file_id").and_then(Value::as_str) {
+                if entry.path().join("manifest.json").is_file()
+                    && solstone_core_import::project_import_result(self.journal_path, &import_id)
+                        .status
+                        == solstone_core_import::ProjectionStatus::Success
+                {
+                    remote_ids.insert(remote_id.to_owned(), import_id);
+                }
+                continue;
+            }
+            // A filename remains a legacy hint for hand imports only. New records
+            // never identify somebody else's remote recording by its title.
+            if solstone_core_import::originals::is_new_import(&metadata) {
+                continue;
+            }
+            let Some(original) = metadata
+                .get("original_filename")
+                .and_then(Value::as_str)
                 .filter(|name| !name.is_empty())
+                .map(str::to_owned)
             else {
                 continue;
             };
@@ -2181,6 +2242,9 @@ impl PlaudManifestLookup for ImportFilenameMatches<'_> {
         Ok(files
             .iter()
             .filter_map(|file| {
+                if let Some(import_id) = remote_ids.get(&file.id) {
+                    return Some((file.id.clone(), import_id.clone()));
+                }
                 let extension = Path::new(&file.fullname)
                     .extension()
                     .and_then(|extension| extension.to_str())

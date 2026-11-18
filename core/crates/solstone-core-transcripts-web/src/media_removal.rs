@@ -113,6 +113,9 @@ fn reason_for_modality(
         [RawReleaseClass::OwnerVoice] => {
             format!("your journal deleted {what} after saving your words")
         }
+        [RawReleaseClass::Import] if modality == "audio" => {
+            "the recording wasn't kept when you imported it".to_owned()
+        }
         _ => format!("{what} is no longer in your journal"),
     }
 }

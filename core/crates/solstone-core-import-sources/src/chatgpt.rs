@@ -12,8 +12,8 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, SourcePathKind, has_extension, plan_entries, read_zip_json, skip_conversation,
-    skip_message, source_path_kind,
+    ParsedEntry, PlannedThread, SourcePathKind, has_extension, plan_entries, read_zip_json,
+    skip_conversation, skip_message, source_path_kind,
 };
 use crate::{ImportPlan, SkipReason, SkippedEntry, SourceError};
 
@@ -72,10 +72,11 @@ pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     let mut skipped = Vec::new();
     let mut threads = Vec::with_capacity(conversations.len());
     for (conversation_index, conversation) in conversations.iter().enumerate() {
-        threads.push(conversation_title(
+        threads.push(PlannedThread::from_export(
             conversation,
-            "title",
-            conversation_index,
+            conversation_title(conversation, "title", conversation_index),
+            &["conversation_id", "id"],
+            &["conversation_url", "url"],
         ));
         parse_conversation(conversation, conversation_index, &mut entries, &mut skipped);
     }

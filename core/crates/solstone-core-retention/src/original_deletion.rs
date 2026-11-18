@@ -31,6 +31,8 @@ pub enum RawReleaseClass {
     /// open handle to the original, all immediately before the release. Like every release, the
     /// call runs the door's journal-wide recovery and activity census.
     OwnerVoice,
+    /// Released after the journal completed importing a recording without keeping it.
+    Import,
 }
 
 impl RawReleaseClass {
@@ -42,6 +44,7 @@ impl RawReleaseClass {
             Self::Offload => "offload_raw_release",
             Self::Owner => "owner_raw_release",
             Self::OwnerVoice => "owner_voice_raw_release",
+            Self::Import => "import_raw_release",
         }
     }
 
@@ -53,6 +56,7 @@ impl RawReleaseClass {
             "offload_raw_release" => Some(Self::Offload),
             "owner_raw_release" => Some(Self::Owner),
             "owner_voice_raw_release" => Some(Self::OwnerVoice),
+            "import_raw_release" => Some(Self::Import),
             _ => None,
         }
     }
@@ -77,7 +81,7 @@ impl RawReleaseClass {
             Self::Policy => Some(RemovalClass::PolicyRawRelease),
             Self::Offload => Some(RemovalClass::OffloadRawRelease),
             Self::Owner => Some(RemovalClass::OwnerRawRelease),
-            Self::OwnerVoice => None,
+            Self::OwnerVoice | Self::Import => None,
         }
     }
 }

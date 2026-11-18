@@ -14,8 +14,23 @@ use std::{
 /// Includes dates because image, document and note placement can depend on them.
 /// Refuses links and special files; directory traversal has one stable order.
 pub fn fingerprint(source: &Path) -> io::Result<String> {
+    fingerprint_tree(source, &mut None)
+}
+
+pub(crate) fn fingerprint_with_files(
+    source: &Path,
+) -> io::Result<(String, Vec<(PathBuf, String)>)> {
+    let mut files = Some(Vec::new());
+    let digest = fingerprint_tree(source, &mut files)?;
+    Ok((digest, files.unwrap_or_default()))
+}
+
+fn fingerprint_tree(
+    source: &Path,
+    files: &mut Option<Vec<(PathBuf, String)>>,
+) -> io::Result<String> {
     let mut hash = Sha256::new();
-    hash_tree(source, &mut hash)?;
+    hash_tree(source, &mut hash, files)?;
     Ok(format!("{:x}", hash.finalize()))
 }
 
@@ -27,7 +42,11 @@ fn children(path: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(children)
 }
 
-fn hash_tree(path: &Path, hash: &mut Sha256) -> io::Result<()> {
+fn hash_tree(
+    path: &Path,
+    hash: &mut Sha256,
+    files: &mut Option<Vec<(PathBuf, String)>>,
+) -> io::Result<()> {
     let meta = fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() || !(meta.is_file() || meta.is_dir()) {
         return Err(io::Error::other(
@@ -43,7 +62,7 @@ fn hash_tree(path: &Path, hash: &mut Sha256) -> io::Result<()> {
                 .ok_or_else(|| io::Error::other("an import filename is not UTF-8"))?;
             hash.update((name.len() as u64).to_le_bytes());
             hash.update(name.as_bytes());
-            hash_tree(&child, hash)?;
+            hash_tree(&child, hash, files)?;
         }
     } else {
         hash.update(b"file");
@@ -56,12 +75,19 @@ fn hash_tree(path: &Path, hash: &mut Sha256) -> io::Result<()> {
         hash.update(modified.subsec_nanos().to_le_bytes());
         let mut file = fs::File::open(path)?;
         let mut buffer = [0; 64 * 1024];
+        let mut content_hash = files.as_ref().map(|_| Sha256::new());
         loop {
             let read = file.read(&mut buffer)?;
             if read == 0 {
                 break;
             }
             hash.update(&buffer[..read]);
+            if let Some(content_hash) = &mut content_hash {
+                content_hash.update(&buffer[..read]);
+            }
+        }
+        if let Some((files, digest)) = files.as_mut().zip(content_hash) {
+            files.push((path.to_path_buf(), format!("{:x}", digest.finalize())));
         }
     }
     Ok(())

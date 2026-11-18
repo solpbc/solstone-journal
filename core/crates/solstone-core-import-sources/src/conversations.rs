@@ -34,13 +34,21 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
             } else {
                 &entry.speaker
             };
-            let row = json!({
+            let mut row = json!({
                 "start": entry.start,
                 "speaker": speaker,
                 "text": entry.text,
                 "source": "import",
                 "source_ms": entry.source_ms,
             });
+            if let Some(thread) = plan.threads.get(entry.thread) {
+                if let Some(id) = &thread.id {
+                    row["conversation_id"] = json!(id);
+                }
+                if let Some(url) = &thread.url {
+                    row["conversation_url"] = json!(url);
+                }
+            }
             contents.push_str(&row.to_string());
             contents.push('\n');
 
@@ -73,9 +81,10 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
     let items = ordered
         .into_iter()
         .map(|(index, thread)| {
-            json!({
+            let reference = &plan.threads[index];
+            let mut item = json!({
                 "id": format!("conv-{index}"),
-                "title": plan.threads.get(index).cloned().unwrap_or_default(),
+                "title": reference.title,
                 "date": thread.date,
                 "type": "conversation",
                 "preview": thread.preview.unwrap_or_default(),
@@ -85,7 +94,14 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
                     .iter()
                     .map(|(day, key)| json!({ "day": day, "key": key, "stream": stream }))
                     .collect::<Vec<_>>(),
-            })
+            });
+            if let Some(id) = &reference.id {
+                item["meta"]["conversation_id"] = json!(id);
+            }
+            if let Some(url) = &reference.url {
+                item["meta"]["conversation_url"] = json!(url);
+            }
+            item
         })
         .collect::<Vec<_>>();
 

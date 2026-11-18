@@ -24,8 +24,8 @@ use solstone_core_import::{
     write_manifest,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, contained_path, create_directory_with_mode, install_file, path_lexists,
-    write_text,
+    AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
+    path_lexists, write_text,
 };
 use solstone_core_segment::SegmentDir;
 use tempfile::NamedTempFile;
@@ -749,24 +749,27 @@ pub fn install_image_at(
     journal_root: &Path,
     start: DateTime,
     publication: &dyn PublicationOperations,
+    attachment: Option<(&str, &str)>,
 ) -> Result<ImageImportResult, ImageImportError> {
     if !solstone_core_import::work_continues() {
         return Err(ImageImportError::Stopped);
     }
     let claimed = claim_image_segment(journal_root, start, &prepared.path, &prepared.extension)?;
 
-    let original_path = claimed
-        .directory
-        .join(format!("original{}", prepared.extension));
-    install_source(
-        &prepared.path,
-        &original_path,
-        prepared.modified,
-        &claimed.binding,
-        journal_root,
-        &claimed.day,
-        publication,
-    )?;
+    if attachment.is_none() {
+        let original_path = claimed
+            .directory
+            .join(format!("original{}", prepared.extension));
+        install_source(
+            &prepared.path,
+            &original_path,
+            prepared.modified,
+            &claimed.binding,
+            journal_root,
+            &claimed.day,
+            publication,
+        )?;
+    }
 
     let transcript_path = claimed.directory.join(TRANSCRIPT_FILENAME);
     let transcript_date = format!(
@@ -805,6 +808,29 @@ pub fn install_image_at(
             path: transcript_path.clone(),
             detail: error.to_string(),
         })?;
+    if let Some((import_id, filename)) = attachment {
+        let hash = hash_source(&prepared.path).map_err(|error| ImageImportError::Manifest {
+            detail: error.to_string(),
+        })?;
+        let reference = serde_json::json!({
+            "import_id": import_id,
+            "source_name": filename,
+            "source_sha256": hash.as_str(),
+            "source_timestamp": prepared.timestamp.timestamp().as_second(),
+        });
+        let path = claimed.directory.join("image_source.json");
+        atomic_replace(
+            &path,
+            reference.to_string().as_bytes(),
+            AtomicWriteOptions {
+                mode: Some(PRIVATE_IMPORT_FILE_MODE),
+            },
+        )
+        .map_err(|error| ImageImportError::JournalIo {
+            path,
+            detail: error.to_string(),
+        })?;
+    }
     write_text(
         &transcript_path,
         &transcript,
@@ -850,7 +876,7 @@ pub fn install_and_publish_image(
         .and_then(|m| solstone_core_import::stored_source_timestamp(&m, import_id).ok())
         .and_then(|ts| DateTime::strptime("%Y%m%d_%H%M%S", ts.as_str()).ok())
         .unwrap_or_else(|| prepared.timestamp.datetime());
-    let result = install_image_at(prepared, journal_root, effective_start, publication)?;
+    let result = install_image_at(prepared, journal_root, effective_start, publication, None)?;
     write_import_manifest(
         &prepared.path,
         journal_root,

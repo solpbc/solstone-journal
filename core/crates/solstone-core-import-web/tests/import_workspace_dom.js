@@ -3155,6 +3155,7 @@ function runLoadErrorsAreShown() {
   };
   context.importDetailPathSegment = 'import-1';
   context.importDetailRequest = 0;
+  context.showImportOriginals = () => {};
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
   vm.runInContext(functionSource(workspace, 'renderLoadMoreError'), context);
@@ -3956,11 +3957,13 @@ async function runFileAndFolderChoicesUseTheSameSourceCard() {
     }});
     let uploads=0;
     const selected=[];
+    const originals=[];
     const context=makeContext({
       document:{getElementById:id=>id==='guideSteps'?guide:nodes[id]||null},
       window:{JournalOwnerFolders:native?{cancel(){}}:null},
       loadSourceGrid:async()=>{},sourceMetadataByName:{[source]:{name:source,input_type:'file',has_guide:false,display_name:source,accept:'.zip,.pdf'}},
       currentGuideSource:null,currentGuidedFile:null,currentGuidedSaved:null,
+      showImportOriginals(host,value){originals.push([host,value]);},
       setupGuidedUploadArea(){uploads++;},reconcileGuidedFolder:async()=>{},chooseGuidedFolder(value){selected.push(value.name);},
     });
     installRealEscapeHtml(context);
@@ -3968,6 +3971,7 @@ async function runFileAndFolderChoicesUseTheSameSourceCard() {
     vm.runInContext(functionSource(workspace,'loadGuidedFlow'),context);
     await vm.runInContext(`loadGuidedFlow('${source}')`,context);
     assert.ok(nodes.guidedFileInput,'existing file entry stays available');
+    assert.deepEqual(originals,[[nodes.guidedOriginals,source]],'file and folder starts use the same originals choice');
     assert.equal(uploads,1,'the file control remains wired alongside a folder choice');
     if (native) {
       assert.ok(nodes.guidedFolderBtn,`${source} must expose its supported native folder entry`);
@@ -4086,6 +4090,7 @@ async function runNativeFolderBusyStateSurvivesGuideRemount() {
       ? {imports:[{timestamp:'20261014_090000',client_item_id:reference}]}
       : {import_json:{client_item_id:reference,source_hint:'gemini',file_path:'saved/tree',original_filename:'export'}}};};
     installRealEscapeHtml(h.context);
+    h.context.showImportOriginals = () => {};
     vm.runInContext(functionSource(workspace,'loadGuidedFlow'),h.context);
     await h.run(`loadGuidedFlow('${nextSource}')`);
     assert.equal(h.run('guidedFolderBusy'),true);

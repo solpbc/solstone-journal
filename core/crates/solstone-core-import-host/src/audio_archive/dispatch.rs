@@ -186,7 +186,7 @@ fn save(
         .map(|id| ArchiveStore::open(journal, id, false)?.status())
         .transpose()?;
     let materializer = custom_materializer
-        .unwrap_or_else(|| Box::new(HostAudioArchiveMaterializer::new(Some(source_root))));
+        .unwrap_or_else(|| Box::new(HostAudioArchiveMaterializer::new(Some(source_root.clone()))));
     let json_output = options.json;
     let seams = || AudioArchivePublishSeams {
         fault,
@@ -229,6 +229,9 @@ fn save(
         }
         other => other?,
     };
+    solstone_core_import::audio_originals::plan_archive(journal, &result.import_id, &source_root)
+        .and_then(|()| solstone_core_import::audio_originals::finish(journal, &result.import_id))
+        .map_err(AudioArchiveError::Other)?;
     let status = ArchiveStore::open(journal, &result.import_id, false)?.status()?;
     let operation = if existing.is_none() {
         "new"

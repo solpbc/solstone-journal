@@ -787,39 +787,47 @@ fn audio_chunks(
         .find(|entry| !entry.contains_key("start") && entry.contains_key("raw"))
         .and_then(|entry| entry.get("raw"))
         .and_then(Value::as_str);
+    let mut placement_media = None;
     if let Some(raw) = header_raw {
         media.register_audio(context.day, context.stream, context.key, context.dir, raw);
-    }
-    let placement_media = header_raw.and_then(|raw| {
-        placement.and_then(|p| {
-            p.parts
-                .iter()
-                .find(|part| part.stored_name == raw)
-                .map(|part| {
-                    let segment_clock_ms = segment_parse(context.key)
-                        .map(|start| {
-                            day_timestamp(
-                                &context.zone,
-                                context.day,
-                                &format!(
-                                    "{:02}:{:02}:{:02}",
-                                    start.hour, start.minute, start.second
-                                ),
-                                0,
-                            )
-                        })
-                        .unwrap_or(0);
-                    let origin_ms = segment_clock_ms + part.offset_ms;
-                    let audio_url = crate::segment_media::audio_url(
+        let retained = if context.dir.join(raw).is_file() {
+            None
+        } else {
+            solstone_core_import::audio_originals::retained_playback(context.root, context.dir, raw)
+        };
+        if retained.is_some() {
+            media.has_raw_file.insert("audio".into(), true);
+            media.has_raw_present.insert("audio".into(), true);
+            media.audio_file = Some(crate::segment_media::audio_url(
+                context.day,
+                context.stream,
+                context.key,
+                raw,
+            ));
+        }
+        let part = placement
+            .and_then(|placement| placement.parts.iter().find(|part| part.stored_name == raw));
+        if (retained.is_some() || part.is_some())
+            && (retained.is_some() || context.dir.join(raw).is_file())
+        {
+            let start = segment_parse(context.key)
+                .map(|start| {
+                    day_timestamp(
+                        &context.zone,
                         context.day,
-                        context.stream,
-                        context.key,
-                        raw,
-                    );
-                    (audio_url, origin_ms)
+                        &format!("{:02}:{:02}:{:02}", start.hour, start.minute, start.second),
+                        0,
+                    )
                 })
-        })
-    });
+                .unwrap_or(0);
+            let origin_ms = start + part.map_or(0, |part| part.offset_ms)
+                - retained.as_ref().map_or(0, |(_, offset_ms)| *offset_ms);
+            placement_media = Some((
+                crate::segment_media::audio_url(context.day, context.stream, context.key, raw),
+                origin_ms,
+            ));
+        }
+    }
     for (index, row) in entries.iter().enumerate() {
         let Some(start) = row.get("start").and_then(Value::as_str) else {
             continue;

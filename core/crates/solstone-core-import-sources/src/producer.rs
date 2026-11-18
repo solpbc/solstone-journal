@@ -114,6 +114,8 @@ pub struct NativeProducerOutcome {
     pub unavailable_pages: Option<u64>,
     pub publication: Option<PublicationRecord>,
     pub errors: Vec<String>,
+    input_complete: bool,
+    folder_outputs: Vec<(PathBuf, String)>,
 }
 
 #[derive(Debug)]
@@ -240,6 +242,14 @@ pub fn run_native_producer(
         }
     };
 
+    if request.source == RegistrySource::Document {
+        solstone_core_import::originals::capture_choice(
+            request.journal_root,
+            request.import_id,
+            request.source.name(),
+        )
+        .map_err(|detail| NativeProducerError::AttemptInitFailed { detail })?;
+    }
     let stream = match request.source {
         RegistrySource::Image => "import.image".to_owned(),
         RegistrySource::Document => "import.document".to_owned(),
@@ -615,6 +625,8 @@ pub fn run_native_producer(
                                     unavailable_pages: None,
                                     publication: Some(pub_rec),
                                     errors: Vec::new(),
+                                    input_complete: true,
+                                    folder_outputs: Vec::new(),
                                 })
                             })
                         }
@@ -794,6 +806,26 @@ pub fn run_native_producer(
                                 unavailable_description: proj.unavailable_description,
                                 unavailable_pages: proj.unavailable_pages,
                                 publication: None,
+                                input_complete: request.source_path.is_file()
+                                    && prep_doc.items.len() == 1
+                                    && prep_doc.items[0].prepared.extraction_complete()
+                                    && import_res.entries_written == 1,
+                                folder_outputs: if request.source_path.is_dir()
+                                    && import_res.entries_written as usize == prep_doc.items.len()
+                                    && import_res.errors.is_empty()
+                                    && prep_doc
+                                        .items
+                                        .iter()
+                                        .all(|item| item.prepared.extraction_complete())
+                                {
+                                    prep_doc
+                                        .items
+                                        .iter()
+                                        .map(|item| (item.source.clone(), item.source_hash.clone()))
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                },
                                 errors: import_res.errors,
                             })
                         })
@@ -847,8 +879,30 @@ pub fn run_native_producer(
                 }
             }
         })();
-    exit.map(HeartbeatExit::into_inner)
-        .map_err(HeartbeatExit::into_inner)
+    let outcome = exit
+        .map(HeartbeatExit::into_inner)
+        .map_err(HeartbeatExit::into_inner)?;
+    if outcome.input_complete {
+        solstone_core_import::originals::discard_finished_upload(
+            request.journal_root,
+            request.import_id,
+            request.source_path,
+            generation,
+            true,
+        )
+        .map_err(|detail| NativeProducerError::SourceFailed { detail })?;
+    }
+    if !outcome.folder_outputs.is_empty() {
+        solstone_core_import::originals::discard_folder_members(
+            request.journal_root,
+            request.import_id,
+            generation,
+            &outcome.folder_outputs,
+            true,
+        )
+        .map_err(|detail| NativeProducerError::SourceFailed { detail })?;
+    }
+    Ok(outcome)
 }
 
 #[cfg(test)]
@@ -1122,6 +1176,56 @@ mod tests {
     }
 
     #[test]
+    fn direct_photo_keeps_one_copy_after_its_segment_is_published() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let id = "20260408_140000";
+        let directory = root.join("imports").join(id);
+        fs::create_dir_all(&directory).unwrap();
+        let upload = directory.join("photo.png");
+        fs::write(&upload, TINY_PNG).unwrap();
+        let sha = solstone_core_import::hash_source(&upload).unwrap();
+        let mut metadata = serde_json::json!({
+            "import_id": id,
+            "source_timestamp": id,
+            "source_hash": sha.as_str(),
+            "file_path": upload,
+            "original_filename": "photo.png",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::originals::record_staged_upload(&mut metadata, &upload);
+        solstone_core_import::write_import_metadata(&root, id, &metadata).unwrap();
+        let outcome = run_native_producer(
+            NativeProducerRequest {
+                journal_root: &root,
+                source_path: &upload,
+                import_id: id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                owner_timestamp: Some(id),
+                fallback_timestamp: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .unwrap();
+        assert!(!upload.exists());
+        assert_eq!(outcome.files_created.len(), 1);
+        let original = outcome.files_created[0].with_file_name("original.png");
+        assert_eq!(solstone_core_import::hash_source(&original).unwrap(), sha);
+        assert!(outcome.files_created[0].is_file());
+    }
+
+    #[test]
     fn test_native_producer_image_lifecycle_success() {
         let temp = tempfile::Builder::new()
             .prefix("test-native-producer-")
@@ -1219,6 +1323,113 @@ mod tests {
         let proj = solstone_core_import::project_import_result(root, id);
         assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Success);
         assert_eq!(proj.entries_written, Some(1));
+    }
+
+    #[test]
+    fn pdf_import_keeps_extraction_and_the_chosen_original() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let bytes = b"%PDF-1.4 fixture for extraction";
+        let text = "This page has a complete text layer and asks nothing of the image model.";
+        let worker = FakePdfWorker::new(document::PdfPayload {
+            schema: "sol-pdf/1".to_owned(),
+            page_count: 1,
+            pages: vec![document::PdfPage {
+                index: 0,
+                chars: text.len(),
+                text: Some(text.to_owned()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        for (index, (id, keep, folder)) in [
+            ("20260408_160000", false, false),
+            ("20260409_160000", true, false),
+            ("20260410_160000", false, true),
+            ("20260411_160000", true, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let directory = root.join("imports").join(id);
+            let source = if folder {
+                directory.join("tree")
+            } else {
+                directory.clone()
+            };
+            fs::create_dir_all(&source).unwrap();
+            let upload = source.join("document.pdf");
+            fs::write(&upload, bytes).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&upload)
+                .unwrap()
+                .set_modified(
+                    UNIX_EPOCH
+                        + std::time::Duration::from_secs(1_776_000_000 + index as u64 * 86_400),
+                )
+                .unwrap();
+            let sha = solstone_core_import::hash_source(&upload).unwrap();
+            let media = if folder { &source } else { &upload };
+            let source_hash = solstone_core_import::hash_source(media).unwrap();
+            let mut metadata = serde_json::json!({
+                "import_id": id, "source_timestamp": id, "source_hash": source_hash.as_str(),
+                "file_path": media, "original_filename": "document.pdf",
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            if folder {
+                solstone_core_import::originals::record_new_import(&mut metadata);
+                metadata.insert(
+                    "folder_snapshot".to_owned(),
+                    serde_json::json!(
+                        solstone_core_import::snapshot::fingerprint(&source).unwrap()
+                    ),
+                );
+            } else {
+                solstone_core_import::originals::record_staged_upload(&mut metadata, &upload);
+            }
+            solstone_core_import::write_import_metadata(&root, id, &metadata).unwrap();
+            solstone_core_import::originals::set_preference(&root, "document", keep).unwrap();
+            let outcome = run_native_producer(
+                NativeProducerRequest {
+                    journal_root: &root,
+                    source_path: media,
+                    import_id: id,
+                    source: RegistrySource::Document,
+                    revision: None,
+                    password: None,
+                    force: false,
+                    expected_generation: None,
+                    heartbeat_interval: None,
+                    owner_timestamp: (!folder).then_some(id),
+                    fallback_timestamp: None,
+                    before_publication: None,
+                },
+                &NullWireClient,
+                &worker,
+                &NullDocumentModelClient,
+                &solstone_core_import::NativePublicationOperations,
+            )
+            .unwrap();
+            assert_eq!(outcome.import_id, id);
+            assert!(!upload.exists(), "staged file remains for {id}");
+            let transcript = &outcome.files_created[0];
+            assert!(fs::read_to_string(transcript).unwrap().contains(text));
+            let original = transcript.with_file_name("original.pdf");
+            if keep {
+                assert_eq!(fs::read(original).unwrap(), bytes);
+            } else {
+                assert!(!original.exists());
+                let reference: Value = serde_json::from_slice(
+                    &fs::read(transcript.with_file_name("document_source.json")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(reference["source_sha256"], sha.as_str());
+                assert_eq!(reference["source_name"], "document.pdf");
+            }
+        }
     }
 
     #[test]

@@ -329,6 +329,12 @@ fn run_save(
         return refused;
     }
     let import_id = dispatch.timestamp.as_str();
+    if let Err(error) = solstone_core_import::originals::capture_choice(journal, import_id, name) {
+        log::warn!("import originals setting {name}: {error}");
+        return failure(
+            "couldn't read the keep originals choice. reopen the import to try again.\n".to_owned(),
+        );
+    }
     let generation =
         match solstone_core_import::admit_running_attempt(journal, import_id, now_ms(), Some(name))
         {
@@ -342,6 +348,24 @@ fn run_save(
             let _ = finish(ImportTerminalInput::Failed(&[]));
             return failure(format!("{name} import failed: {error}\n"));
         }
+    };
+    let folder_files = if source == RegistrySource::Gemini && dispatch.media.is_dir() {
+        match solstone_core_import::originals::admitted_export_files(
+            journal,
+            import_id,
+            &dispatch.media,
+        ) {
+            Ok(files) => files,
+            Err(error) => {
+                let _ = finish(ImportTerminalInput::Failed(&[]));
+                log::warn!("Gemini export folder {import_id}: {error}");
+                return failure(
+                    "Gemini import failed. couldn't read the saved export folder.\n".to_owned(),
+                );
+            }
+        }
+    } else {
+        Vec::new()
     };
 
     let zone = solstone_core_journal_config::owner_zone(journal);
@@ -359,6 +383,16 @@ fn run_save(
             return failure(format!("{name} import failed: {detail}\n"));
         }
     };
+    if let Err(error) = solstone_core_import::originals::preserve_unstaged_choice(
+        journal,
+        import_id,
+        &dispatch.media,
+        source_hash.as_str(),
+    ) {
+        let _ = finish(ImportTerminalInput::Failed(&[]));
+        log::warn!("import original copy {import_id}: {error}");
+        return failure("couldn't keep a copy of the original. try again.\n".to_owned());
+    }
     let written = save::write_rendered(journal, Some(import_id), &rendered);
     let manifest = match written.error {
         Some(error) => Err(error.to_string()),
@@ -398,6 +432,28 @@ fn run_save(
         return failure(format!(
             "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
         ));
+    }
+    if let Err(error) = solstone_core_import::originals::discard_finished_upload(
+        journal,
+        import_id,
+        &dispatch.media,
+        generation,
+        false,
+    ) {
+        log::warn!("import original cleanup {name}: {error}");
+        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
+    }
+    if !folder_files.is_empty()
+        && let Err(error) = solstone_core_import::originals::discard_folder_members(
+            journal,
+            import_id,
+            generation,
+            &folder_files,
+            false,
+        )
+    {
+        log::warn!("import original cleanup {name}: {error}");
+        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
     }
     success(cli_render::source_import_complete(
         source,
@@ -582,12 +638,26 @@ fn run_evernote(
         return fail(format!("{refusal}\n"));
     }
 
+    if let Err(error) = solstone_core_import::originals::capture_choice(journal, &import_id, name) {
+        log::warn!("import originals setting {name}: {error}");
+        return fail(
+            "couldn't read the keep originals choice. reopen the import to try again.\n".to_owned(),
+        );
+    }
+
+    let container_policy = solstone_core_import::originals::captured_choice(journal, &import_id);
     let mut held = Vec::new();
     let (attachment_segments, attachment_files) = match install_evernote_attachments(
-        journal, &import_id, &zone, seams, &planned, &mut held,
+        journal,
+        &import_id,
+        &zone,
+        seams,
+        &planned,
+        &mut held,
+        container_policy.is_some(),
     ) {
         Ok(installed) => installed,
-        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+        Err(error) => return fail(format!("Evernote import failed. {error}\n")),
     };
 
     let rendered = evernote_rendered(&planned);
@@ -596,6 +666,15 @@ fn run_evernote(
         return fail(format!("{name} import failed: {error}\n"));
     }
 
+    if let Err(error) = solstone_core_import::originals::preserve_unstaged_choice(
+        journal,
+        &import_id,
+        &dispatch.media,
+        source_hash.as_str(),
+    ) {
+        log::warn!("import original copy {import_id}: {error}");
+        return fail("couldn't keep a copy of the original. try again.\n".to_owned());
+    }
     let note_segments = written.created.clone();
     let extra_segments = attachment_segments.clone();
     let extra_files = attachment_files.clone();
@@ -697,6 +776,16 @@ fn run_evernote(
     if let Err(error) = evernote::commit(journal, &planned.updates) {
         return failure(format!("{name} import failed: {error}\n"));
     }
+    if let Err(error) = solstone_core_import::originals::discard_finished_upload(
+        journal,
+        &import_id,
+        &dispatch.media,
+        generation,
+        false,
+    ) {
+        log::warn!("import original cleanup {name}: {error}");
+        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
+    }
     let projection = solstone_core_import::project_import_result(journal, &import_id);
     success(cli_render::source_import_complete(
         source,
@@ -760,6 +849,7 @@ fn install_evernote_attachments(
     seams: &SourceSeams<'_>,
     plan: &evernote::Plan,
     held: &mut Vec<tempfile::NamedTempFile>,
+    container_authoritative: bool,
 ) -> Result<(Vec<solstone_core_import::CreatedSegment>, Vec<PathBuf>), String> {
     let mut segments = Vec::new();
     let mut files = Vec::new();
@@ -774,9 +864,27 @@ fn install_evernote_attachments(
         )
         .map_err(|error| error.to_string())?;
         let start = prepared.timestamp.datetime();
-        let installed =
-            image::install_image_at(&prepared, journal, start, &NativePublicationOperations)
-                .map_err(|error| error.to_string())?;
+        if container_authoritative
+            && matches!(
+                prepared.description,
+                image::DescriptionOutcome::Unavailable { .. }
+            )
+        {
+            return Err(format!(
+                "couldn't describe the Evernote image {}",
+                image_file.file_name
+            ));
+        }
+        let attachment =
+            container_authoritative.then_some((import_id, image_file.file_name.as_str()));
+        let installed = image::install_image_at(
+            &prepared,
+            journal,
+            start,
+            &NativePublicationOperations,
+            attachment,
+        )
+        .map_err(|error| error.to_string())?;
         files.extend(installed.files_created);
         segments.push(installed.created_segment);
     }
@@ -798,7 +906,7 @@ fn install_evernote_attachments(
             now: SystemTime::now(),
             owner_timestamp: Some(&pdf.owner_timestamp),
         };
-        let prepared = document::prepare_document_import(&request, seams.pdf, seams.model);
+        let mut prepared = document::prepare_document_import(&request, seams.pdf, seams.model);
         if !prepared.hard_failures.is_empty() {
             return Err(prepared.hard_failures.join("\n"));
         }
@@ -809,8 +917,23 @@ fn install_evernote_attachments(
                 .cloned()
                 .unwrap_or_else(|| "the document did not come in".to_owned()));
         }
-        let created =
-            document::install_document_segments(&prepared, journal, &NativePublicationOperations)?;
+        if container_authoritative {
+            for item in &mut prepared.items {
+                if !item.prepared.extraction_complete() {
+                    return Err(format!(
+                        "couldn't extract all pages of the Evernote attachment {}",
+                        pdf.file_name
+                    ));
+                }
+                item.container_reference = Some((import_id.to_owned(), pdf.file_name.clone()));
+            }
+        }
+        let created = document::install_document_segments(
+            &prepared,
+            journal,
+            &NativePublicationOperations,
+            container_authoritative,
+        )?;
         for segment in &created {
             files.push(
                 journal
@@ -3606,6 +3729,192 @@ mod tests {
 
         let proj = solstone_core_import::project_import_result(journal.path(), import_id);
         assert_ne!(proj.status, solstone_core_import::ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn chat_import_keeps_references_and_releases_only_new_owned_uploads() {
+        use solstone_core_import::{hash_source, originals, write_import_metadata};
+        use std::io::Write;
+
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path().canonicalize().unwrap();
+        write_utc_zone(&root);
+        let install = |id: &str, account: &str, current: bool| {
+            let directory = root.join("imports").join(id);
+            fs::create_dir_all(&directory).unwrap();
+            let upload = directory.join("conversations.zip");
+            let mut zip = zip::ZipWriter::new(fs::File::create(&upload).unwrap());
+            zip.start_file(
+                "conversations.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            let claude = account.starts_with("claude-");
+            let conversations = [("alpha", 0), ("beta", 1)].map(|(name, offset)| {
+                let conversation = format!("{account}-{name}");
+                if claude {
+                    return serde_json::json!({
+                        "uuid": conversation,
+                        "url": format!("https://claude.ai/chat/{conversation}"),
+                        "name": "Same title",
+                        "created_at": "2026-01-02T00:00:00Z",
+                        "chat_messages": [{"sender": "human", "text": conversation}],
+                    });
+                }
+                serde_json::json!({
+                    "id": conversation,
+                    "url": format!("https://chatgpt.com/c/{conversation}"),
+                    "title": "Same title",
+                    "current_node": name,
+                    "mapping": {
+                        (name): {"id":name,"parent":null,"message":{
+                            "author":{"role":"user"},"content":{"parts":[conversation]},
+                            "create_time":1767225600 + offset
+                        }}
+                    }
+                })
+            });
+            zip.write_all(&serde_json::to_vec(&conversations).unwrap())
+                .unwrap();
+            zip.finish().unwrap();
+            let external = root.join(format!("original-{account}.zip"));
+            fs::copy(&upload, &external).unwrap();
+            let hash = hash_source(&upload).unwrap();
+            let mut metadata = serde_json::json!({
+                "import_id": id, "source_timestamp": id, "source_hash": hash.as_str(),
+                "original_filename": "conversations.zip", "file_path": upload,
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            if current {
+                originals::record_staged_upload(&mut metadata, &upload);
+            }
+            write_import_metadata(&root, id, &metadata).unwrap();
+            let snapshot = solstone_core_import::snapshot::create(&root, id, &upload).unwrap();
+            let snapshot_path = directory.join(&snapshot.relative);
+            metadata.insert(
+                "preview".to_owned(),
+                serde_json::json!({
+                    "source": upload, "relative": snapshot.relative, "digest": snapshot.digest,
+                }),
+            );
+            write_import_metadata(&root, id, &metadata).unwrap();
+            snapshot.persist();
+            let (run, selected) = run_bound(
+                RegistryDispatch {
+                    source: if claude {
+                        RegistrySource::Claude
+                    } else {
+                        RegistrySource::Chatgpt
+                    },
+                    media: snapshot_path.clone(),
+                    timestamp: id.to_owned(),
+                    dry_run: false,
+                    json: false,
+                    force: false,
+                    owner_timestamp: None,
+                    fallback_timestamp: None,
+                    facet: Default::default(),
+                    listed_moves_shown: None,
+                },
+                &root,
+            );
+            assert_eq!(run.exit_code, 0, "{}", run.stderr);
+            assert_eq!(selected.as_deref(), Some(id));
+            assert_eq!(hash_source(&external).unwrap(), hash);
+            (upload, snapshot_path)
+        };
+
+        let (legacy, legacy_preview) = install("20261101_160000", "existing", false);
+        let (discarded, discard_preview) = install("20261102_160000", "discard", true);
+        assert!(!discarded.exists());
+        assert!(!discard_preview.exists());
+        let transcript = fs::read_to_string(
+            root.join("chronicle/20260101/import.chatgpt/000000_300/conversation_transcript.jsonl"),
+        )
+        .unwrap();
+        let messages: Vec<serde_json::Value> = transcript
+            .lines()
+            .skip(1)
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        for name in ["alpha", "beta"] {
+            let expected = format!("discard-{name}");
+            assert!(messages.iter().any(|row| row["text"] == expected
+                && row["conversation_id"] == expected
+                && row["conversation_url"] == format!("https://chatgpt.com/c/{expected}")));
+        }
+
+        originals::set_preference(&root, "chatgpt", true).unwrap();
+        let (kept, keep_preview) = install("20261103_160000", "keep", true);
+        assert!(kept.is_file());
+        assert!(!keep_preview.exists());
+        originals::set_preference(&root, "chatgpt", false).unwrap();
+        assert!(kept.is_file());
+        assert!(legacy.is_file());
+        assert!(legacy_preview.is_file());
+
+        let (discarded, preview) = install("20261106_160000", "claude-discard", true);
+        assert!(!discarded.exists());
+        assert!(!preview.exists());
+        let transcript = fs::read_to_string(
+            root.join("chronicle/20260102/import.claude/000000_300/conversation_transcript.jsonl"),
+        )
+        .unwrap();
+        for name in ["alpha", "beta"] {
+            let reference = format!("claude-discard-{name}");
+            assert!(transcript.contains(&format!("\"conversation_id\":\"{reference}\"")));
+            assert!(transcript.contains(&format!("https://claude.ai/chat/{reference}")));
+        }
+        originals::set_preference(&root, "claude", true).unwrap();
+        let (kept, preview) = install("20261107_160000", "claude-keep", true);
+        assert!(kept.is_file());
+        assert!(!preview.exists());
+
+        for (id, keep) in [("20261104_160000", false), ("20261105_160000", true)] {
+            let tree = root.join("imports").join(id).join("tree");
+            fs::create_dir_all(&tree).unwrap();
+            let activity = serde_json::json!([{
+                "header": "Gemini Apps", "title": format!("Prompted {id}"),
+                "subtitles": [{"value": if keep { "A longer question to keep" } else { "A question" }}],
+                "time": "2026-06-01T12:30:00Z", "titleUrl": "https://gemini.google.com/app/source-id"
+            }]);
+            let json = tree.join("MyActivity.json");
+            let attachment = tree.join("export-attachment.png");
+            fs::write(&json, activity.to_string()).unwrap();
+            fs::write(&attachment, b"an unused export attachment").unwrap();
+            let mut metadata = serde_json::json!({
+                "import_id": id, "source_timestamp": id, "file_path": tree,
+                "source_hash": hash_source(&tree).unwrap().as_str(),
+                "folder_snapshot": solstone_core_import::snapshot::fingerprint(&tree).unwrap(),
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            originals::record_new_import(&mut metadata);
+            write_import_metadata(&root, id, &metadata).unwrap();
+            originals::set_preference(&root, "gemini", keep).unwrap();
+            let (run, selected) = run_bound(
+                RegistryDispatch {
+                    source: RegistrySource::Gemini,
+                    media: tree.clone(),
+                    timestamp: id.to_owned(),
+                    dry_run: false,
+                    json: false,
+                    force: false,
+                    owner_timestamp: None,
+                    fallback_timestamp: None,
+                    facet: Default::default(),
+                    listed_moves_shown: None,
+                },
+                &root,
+            );
+            assert_eq!(run.exit_code, 0, "{}", run.stderr);
+            assert_eq!(selected.as_deref(), Some(id));
+            assert_eq!(json.is_file(), keep);
+            assert_eq!(attachment.is_file(), keep);
+        }
     }
 
     #[test]

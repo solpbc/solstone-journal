@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 
 pub mod allocate;
 pub mod audio_archive;
+pub mod audio_originals;
 pub mod body_ingest_error;
 pub mod body_trash;
 pub mod cli_render;
@@ -27,6 +28,7 @@ pub mod heartbeat;
 pub mod import_trash;
 pub mod made_from;
 pub mod metadata;
+pub mod originals;
 pub mod oura_connect;
 pub mod oura_fetched;
 pub mod oura_http;

@@ -207,7 +207,7 @@ fn missing_video_reason(cause: Option<RawReleaseClass>) -> &'static str {
         }
         Some(RawReleaseClass::Owner) => "you deleted the original video",
         // Voice-only filtering never deletes video.
-        Some(RawReleaseClass::OwnerVoice) | None => {
+        Some(RawReleaseClass::OwnerVoice | RawReleaseClass::Import) | None => {
             "the original video is no longer in your journal"
         }
     }
@@ -222,7 +222,7 @@ fn missing_video_status(cause: Option<RawReleaseClass>) -> &'static str {
             "analyzed; you deleted the original video after your backup copied it"
         }
         Some(RawReleaseClass::Owner) => "analyzed; you deleted the original video",
-        Some(RawReleaseClass::OwnerVoice) | None => {
+        Some(RawReleaseClass::OwnerVoice | RawReleaseClass::Import) | None => {
             "analyzed; the original video is no longer in your journal"
         }
     }

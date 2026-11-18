@@ -770,7 +770,7 @@
     return { ready: Boolean(ready), summary: ready ? summary : strings.nothing_to_import };
   }
 
-  function mountSavedStart(root, data, refresh, restoreFocus = false) {
+  function mountSavedStart(root, data, refresh, restoreFocus = false, originals = null) {
     const slot = root.querySelector('[data-saved-start-slot]');
     const id = data.timestamp;
     let flow = savedFlows.get(id);
@@ -818,8 +818,11 @@
             : flow.phase === 'ready' ? strings.start_import : strings.preview_import;
       if (!flow.slot.querySelector('[data-saved-start-status]')) {
         flow.slot.innerHTML = '<section class="import-saved-start"><p role="status" aria-live="polite" data-saved-start-status></p>'
+          + '<div data-saved-start-originals></div>'
           + '<div class="import-action-row" data-saved-start-actions></div>'
           + '<div role="alert" data-saved-start-error></div></section>';
+        const source = flow.data.import_json?.source_hint || flow.data.import_json?.source;
+        originals?.render(flow.slot.querySelector('[data-saved-start-originals]'), source);
       }
       // The button is drawn once and kept, so its focus stays on the same node.
       let button = flow.slot.querySelector('[data-saved-start-action]');
@@ -847,6 +850,7 @@
         return;
       }
       if (!savedEligible(flow.data)) return;
+      if (originals?.pending(flow.slot.querySelector('[data-saved-start-originals]'))) return;
       const metadata = flow.data.import_json;
       const payload = { import_id: id, path: metadata.file_path,
         timestamp: metadata.source_timestamp, setting: metadata.setting || '' };

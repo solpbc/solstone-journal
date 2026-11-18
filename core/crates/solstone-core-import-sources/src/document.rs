@@ -57,6 +57,7 @@ pub const PDF_WORKER_COMMITTED_MEMORY_BYTES: usize = 2 * 1024 * 1024 * 1024;
 const STREAM: &str = "import.document";
 const TRANSCRIPT: &str = "document_transcript.md";
 const ORIGINAL: &str = "original.pdf";
+const SOURCE_REFERENCE: &str = "document_source.json";
 const FILE_MODE: u32 = 0o600;
 const DIRECTORY_MODE: u32 = 0o700;
 const DOCUMENT_SEGMENT_PROBE_LIMIT: u32 = 60;
@@ -1054,6 +1055,8 @@ pub fn preview_size(
 pub struct PreparedDocumentItem {
     pub input_index: usize,
     pub source: PathBuf,
+    pub source_hash: String,
+    pub container_reference: Option<(String, String)>,
     pub segment_dir: PathBuf,
     pub prepared: PreparedDocument,
     pub claim: SegmentClaim,
@@ -1147,6 +1150,12 @@ pub fn prepare_document_import(
                 continue;
             }
         };
+        if !first.sha256.is_empty() && first.sha256 != source_hash {
+            let error = format!("{}: PDF changed during extraction", display_name(source));
+            errors.push(error.clone());
+            hard_failures.push(error);
+            continue;
+        }
         let timestamp = claim_timestamp(
             &first,
             source,
@@ -1155,18 +1164,36 @@ pub fn prepare_document_import(
             request.owner_timestamp,
             !request.source.is_dir(),
         );
-        let claim = match claim_segment(
-            request.journal_root,
-            &zone,
-            timestamp.timestamp,
-            if first.sha256.is_empty() {
-                &source_hash
-            } else {
-                &first.sha256
-            },
-            &mut occupied,
-            request.force,
-        ) {
+        let mut reserve = |force| {
+            claim_segment(
+                request.journal_root,
+                &zone,
+                timestamp.timestamp,
+                &source_hash,
+                &mut occupied,
+                force,
+            )
+        };
+        let claim = reserve(request.force).and_then(|claim| {
+            if claim.already_imported {
+                let directory = request
+                    .journal_root
+                    .join("chronicle")
+                    .join(&claim.day)
+                    .join(STREAM)
+                    .join(&claim.segment);
+                if let Some(reference) = document_source_reference(&directory)
+                    && reference["import_id"].as_str() == Some(request.import_id)
+                    && (request.source.is_dir()
+                        || reference["extraction_complete"].as_bool() == Some(false)
+                        || reference["container_import_id"].as_str() == Some(request.import_id))
+                {
+                    return reserve(true);
+                }
+            }
+            Ok(claim)
+        });
+        let claim = match claim {
             Ok(claim) => claim,
             Err(error) => {
                 let message = error.to_string();
@@ -1273,6 +1300,8 @@ pub fn prepare_document_import(
         items.push(PreparedDocumentItem {
             input_index,
             source: source.clone(),
+            source_hash,
+            container_reference: None,
             segment_dir,
             prepared,
             claim,
@@ -1302,6 +1331,7 @@ pub fn install_document_segments(
     prepared_import: &PreparedDocumentImport,
     journal_root: &Path,
     publication: &dyn PublicationOperations,
+    extract_only: bool,
 ) -> Result<Vec<CreatedSegment>, String> {
     let mut created = Vec::new();
     for item in &prepared_import.items {
@@ -1309,13 +1339,13 @@ pub fn install_document_segments(
             break;
         }
         install_artifacts(
-            &item.source,
-            &item.segment_dir,
-            &item.prepared,
-            item.claim.binding.as_deref(),
+            item,
             journal_root,
             &item.claim.day,
             publication,
+            !extract_only,
+            !extract_only,
+            item.container_reference.as_ref().map(|(id, _)| id.as_str()),
         )
         .map_err(|error| error.to_string())?;
         created.push(CreatedSegment {
@@ -1334,6 +1364,8 @@ pub fn install_and_publish_document(
     publication: &dyn PublicationOperations,
     may_write_record: Option<&dyn Fn() -> bool>,
 ) -> ImportResult {
+    let keep =
+        solstone_core_import::originals::captured_choice(request.journal_root, request.import_id);
     if prepared_import.items.is_empty()
         && prepared_import.hard_failures.is_empty()
         && prepared_import.errors.is_empty()
@@ -1350,14 +1382,15 @@ pub fn install_and_publish_document(
         if !solstone_core_import::work_continues() {
             break;
         }
+        let complete = item.prepared.extraction_complete();
         match install_artifacts(
-            &item.source,
-            &item.segment_dir,
-            &item.prepared,
-            item.claim.binding.as_deref(),
+            item,
             request.journal_root,
             &item.claim.day,
             publication,
+            keep.is_none() || (keep == Some(true) && complete),
+            keep.is_none(),
+            keep.map(|_| request.import_id),
         ) {
             Ok(transcript) => files_created.push(transcript),
             Err(error) => {
@@ -1966,8 +1999,16 @@ fn empty_directory(path: &Path) -> Result<bool, DocumentSegmentError> {
     Ok(fs::read_dir(path).map_err(io)?.next().is_none())
 }
 
-/// `Ok(true)` only for the same regular `original.pdf`. Every other occupant is
-/// skipped with no mutation. `Ok(false)` means probe the next second.
+fn document_source_reference(candidate: &Path) -> Option<serde_json::Value> {
+    let reference = candidate.join(SOURCE_REFERENCE);
+    if !fs::symlink_metadata(&reference).ok()?.is_file() {
+        return None;
+    }
+    serde_json::from_slice(&fs::read(reference).ok()?).ok()
+}
+
+/// Accept the same regular original or an extracted document with the same
+/// source hash. Any other occupant is left alone.
 fn reusable_original(candidate: &Path, sha256: &str) -> Result<bool, DocumentSegmentError> {
     let metadata = match fs::symlink_metadata(candidate) {
         Ok(metadata) => metadata,
@@ -2007,6 +2048,12 @@ fn reusable_original(candidate: &Path, sha256: &str) -> Result<bool, DocumentSeg
         if name.starts_with("original.") && !name.ends_with(".lock") {
             originals.push(entry.path());
         }
+    }
+    if originals.is_empty() {
+        return Ok(document_source_reference(candidate)
+            .as_ref()
+            .and_then(|row| row["source_sha256"].as_str())
+            == Some(sha256));
     }
     if originals.len() != 1
         || originals[0].file_name().and_then(|name| name.to_str()) != Some(ORIGINAL)
@@ -2086,6 +2133,7 @@ pub struct RenderStats {
     pub text_layer_pages: u64,
     pub model_extracted_pages: u64,
     pub unavailable_pages: u64,
+    pub unavailable_descriptions: u64,
     pub image_described_pages: u64,
     pub model_calls: u64,
 }
@@ -2095,6 +2143,12 @@ pub struct PreparedDocument {
     pub rasters: std::collections::BTreeMap<usize, PathBuf>,
     pub warnings: Vec<String>,
     pub stats: RenderStats,
+}
+
+impl PreparedDocument {
+    pub fn extraction_complete(&self) -> bool {
+        self.stats.unavailable_pages == 0 && self.stats.unavailable_descriptions == 0
+    }
 }
 
 struct RenderDocumentInput<'a> {
@@ -2176,13 +2230,17 @@ fn render_page(
                             &text,
                         ));
                     }
-                    Err(reason) => section.push_str(&marker(
-                        MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_WITH_RASTER,
-                        page.index,
-                        Some(&reason),
-                    )),
+                    Err(reason) => {
+                        stats.unavailable_descriptions += 1;
+                        section.push_str(&marker(
+                            MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_WITH_RASTER,
+                            page.index,
+                            Some(&reason),
+                        ));
+                    }
                 }
             } else {
+                stats.unavailable_descriptions += 1;
                 section.push_str(&marker(
                     MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_NO_RASTER,
                     page.index,
@@ -2419,14 +2477,17 @@ impl fmt::Display for ArtifactInstallError {
 }
 
 fn install_artifacts(
-    source: &Path,
-    segment_dir: &Path,
-    prepared: &PreparedDocument,
-    binding: Option<&solstone_core_journal_io::JournalRoot>,
+    item: &PreparedDocumentItem,
     journal_root: &Path,
     day: &str,
     publication: &dyn PublicationOperations,
+    keep_original: bool,
+    keep_rasters: bool,
+    import_id: Option<&str>,
 ) -> Result<String, ArtifactInstallError> {
+    let source = &item.source;
+    let segment_dir = &item.segment_dir;
+    let prepared = &item.prepared;
     let claims = solstone_core_segment::output_attempt::OutputClaims::acquire(
         [
             segment_dir.join(ORIGINAL).with_extension("jsonl"),
@@ -2439,37 +2500,88 @@ fn install_artifacts(
     let commit = claims
         .commit(segment_dir)
         .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
-    binding
+    item.claim
+        .binding
+        .as_deref()
         .ok_or_else(|| ArtifactInstallError::Write("document segment was not admitted".into()))?
         .revalidate_canonical_binding()
         .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
-    create_document_artifact_directories(segment_dir, &pages_dir)
-        .map_err(ArtifactInstallError::Write)?;
     drop(commit);
-    install_original_pdf(
-        &claims,
-        segment_dir,
-        source,
-        &segment_dir.join(ORIGINAL),
-        journal_root,
-        day,
-        publication,
-    )?;
-    for (index, raster) in &prepared.rasters {
-        install_page_raster(
+    if keep_original {
+        install_original_pdf(
             &claims,
             segment_dir,
-            raster,
-            &pages_dir.join(page_name(*index)),
-        )
-        .map_err(ArtifactInstallError::Write)?;
+            source,
+            &segment_dir.join(ORIGINAL),
+            journal_root,
+            day,
+            publication,
+        )?;
+    }
+    if keep_rasters && !prepared.rasters.is_empty() {
+        create_document_artifact_directories(segment_dir, &pages_dir)
+            .map_err(ArtifactInstallError::Write)?;
+        for (index, raster) in &prepared.rasters {
+            install_page_raster(
+                &claims,
+                segment_dir,
+                raster,
+                &pages_dir.join(page_name(*index)),
+            )
+            .map_err(ArtifactInstallError::Write)?;
+        }
     }
     let transcript = segment_dir.join(TRANSCRIPT);
     let _commit = claims
         .commit(segment_dir)
         .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
-    write_document_transcript(&transcript, &prepared.transcript)
-        .map_err(ArtifactInstallError::Write)?;
+    if let Some(import_id) = import_id {
+        solstone_core_journal_io::atomic_replace(
+            segment_dir.join(SOURCE_REFERENCE),
+            serde_json::json!({
+                "source_name": item.container_reference.as_ref()
+                    .map_or_else(|| display_name(source), |(_, name)| name.clone()),
+                "container_import_id": item.container_reference.as_ref().map(|(id, _)| id),
+                "import_id": import_id,
+                "extraction_complete": item.prepared.extraction_complete(),
+                "source_sha256": item.source_hash,
+                "source_timestamp": item.claim.timestamp.duration_since(UNIX_EPOCH).ok()
+                    .map(|duration| duration.as_secs()),
+            })
+            .to_string()
+            .as_bytes(),
+            AtomicWriteOptions {
+                mode: Some(FILE_MODE),
+            },
+        )
+        .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
+    }
+    if !keep_rasters {
+        let extracted = prepared
+            .transcript
+            .lines()
+            .map(|line| {
+                if (line.starts_with("> [model-extracted from page image")
+                    || line.starts_with("> [image description — model-generated"))
+                    && let Some((marker, _)) = line.split_once("; original: pages/")
+                {
+                    return format!("{marker}]");
+                }
+                if (line.starts_with("> [page text unavailable — ")
+                    || line.starts_with("> [image description unavailable — "))
+                    && let Some((marker, _)) = line.split_once("; page image preserved at pages/")
+                {
+                    return format!("{marker}]");
+                }
+                line.to_owned()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_document_transcript(&transcript, &extracted)
+    } else {
+        write_document_transcript(&transcript, &prepared.transcript)
+    }
+    .map_err(ArtifactInstallError::Write)?;
     Ok(transcript.display().to_string())
 }
 

@@ -5,15 +5,39 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use solstone_core_import::RegistrySource;
+use solstone_core_import_sources::NullDocumentModelClient;
 use solstone_core_import_sources::document::{
     PdfPage, PdfPayload, PdfWorker, PdfWorkerRequest, WorkerFailure,
 };
-use solstone_core_import_sources::{NullDocumentModelClient, NullWireClient};
 use solstone_core_removals::{Action, Page, Surface, Unit};
 use solstone_core_retention::{NoIndex, Target, recording_trash::Recordings};
 
 use super::{IndexScan, SourceSeams, run_bound, run_with_seams};
 use crate::cli_argv::{ImportFacet, RegistryDispatch};
+
+struct DescribedImage;
+
+impl solstone_core_import_sources::image::WireClient for DescribedImage {
+    fn execute(
+        &self,
+        _: &solstone_core_generate::GenerateRequest,
+    ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError> {
+        use solstone_core_generate::{GenerateResponse, GeneratedResponse};
+        Ok(GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: None,
+            text: "a dot".into(),
+            model: "test".into(),
+            usage: serde_json::json!({}),
+            finish_reason: "stop".into(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        })))
+    }
+}
 
 struct TextPdf;
 
@@ -197,23 +221,24 @@ fn an_image_and_a_pdf_come_in_with_the_note_and_open_no_second_import() {
     let png_hash = "93ca32a536da1698ea979f183679af29";
     let pdf_hash = "d5c4275571fefdc8ef063247b9cca9eb";
     let path = root.path().join("Files.enex");
-    fs::write(
-        &path,
+    let export = |created, updated| {
         note(
             "Files",
-            "20200101T120000Z",
-            "20200101T120500Z",
-            &format!("<div>with files</div><en-media hash=\"{png_hash}\"/><en-media hash=\"{pdf_hash}\"/>"),
+            created,
+            updated,
+            &format!(
+                "<div>with files</div><en-media hash=\"{png_hash}\"/><en-media hash=\"{pdf_hash}\"/>"
+            ),
             &format!(
                 "<resource><data encoding=\"base64\">{png_b64}</data><mime>image/png</mime><file-name>dot.png</file-name></resource>\
                  <resource><data encoding=\"base64\">{pdf_b64}</data><mime>application/pdf</mime><file-name>page.pdf</file-name></resource>"
             ),
-        ),
-    )
-    .unwrap();
+        )
+    };
+    fs::write(&path, export("20200101T120000Z", "20200101T120500Z")).unwrap();
     let pdf_worker = TextPdf;
     let model = NullDocumentModelClient;
-    let image = NullWireClient;
+    let image = DescribedImage;
     let reindex = IndexScan {
         journal: root.path().to_path_buf(),
     };
@@ -259,16 +284,67 @@ fn an_image_and_a_pdf_come_in_with_the_note_and_open_no_second_import() {
     );
     let image_files = files_under(&root.path().join("chronicle/20200101/import.image"));
     assert!(
-        image_files
+        !image_files
             .iter()
             .any(|path| path.ends_with("original.png"))
     );
+    let reference = image_files
+        .iter()
+        .find(|path| path.ends_with("image_source.json"))
+        .unwrap();
+    let reference: serde_json::Value =
+        serde_json::from_slice(&fs::read(reference).unwrap()).unwrap();
+    assert_eq!(reference["source_name"], "dot.png");
+    assert!(path.is_file());
     let doc_text = files_under(&root.path().join("chronicle/20200101/import.document"))
         .into_iter()
         .filter(|path| path.ends_with("document_transcript.md"))
         .map(|path| fs::read_to_string(path).unwrap())
         .collect::<String>();
     assert!(doc_text.contains("long enough"), "{doc_text}");
+
+    for (id, day, created, keep) in [
+        ("20200102_120500", "20200102", "20200102T120500Z", false),
+        ("20200103_120500", "20200103", "20200103T120500Z", true),
+    ] {
+        let import = root.path().join("imports").join(id);
+        fs::create_dir_all(&import).unwrap();
+        let staged = import.join("Files.enex");
+        let bytes = export(created, created);
+        fs::write(&staged, &bytes).unwrap();
+        let hash = solstone_core_import::hash_source(&staged).unwrap();
+        let mut metadata = serde_json::json!({
+            "import_id": id, "source_timestamp": id, "source_hash": hash.as_str(),
+            "original_filename": "Files.enex", "file_path": staged,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::originals::record_staged_upload(&mut metadata, &staged);
+        solstone_core_import::write_import_metadata(root.path(), id, &metadata).unwrap();
+        solstone_core_import::originals::set_preference(root.path(), "evernote", keep).unwrap();
+        let (run, selected) =
+            run_with_seams(dispatch(&staged, id, false, false), root.path(), &seams);
+        assert_eq!(run.exit_code, 0, "{}\n{}", run.stderr, run.stdout);
+        assert_eq!(selected.as_deref(), Some(id));
+        assert_eq!(staged.is_file(), keep);
+        if keep {
+            assert_eq!(fs::read_to_string(&staged).unwrap(), bytes);
+        }
+        let artifacts = files_under(&root.path().join("chronicle").join(day));
+        for name in [
+            "note_transcript.md",
+            "image_source.json",
+            "document_source.json",
+        ] {
+            assert!(artifacts.iter().any(|file| file.ends_with(name)), "{name}");
+        }
+        assert!(
+            artifacts
+                .iter()
+                .all(|file| !file.ends_with("original.png") && !file.ends_with("original.pdf"))
+        );
+    }
 }
 
 fn files_under(dir: &Path) -> Vec<PathBuf> {

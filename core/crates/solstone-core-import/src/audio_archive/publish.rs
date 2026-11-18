@@ -420,6 +420,13 @@ pub fn publish_audio_archive(
         .map_err(|error| AudioArchiveError::Other(error.to_string()))?;
         generation = facts.generation;
         attempt_id = facts.attempt_id;
+        let mut metadata = crate::read_import_metadata(journal, &import_id)
+            .map_err(|error| AudioArchiveError::Other(error.to_string()))?;
+        crate::originals::record_new_import(&mut metadata);
+        crate::write_import_metadata(journal, &import_id, &metadata)
+            .map_err(|error| AudioArchiveError::Other(error.to_string()))?;
+        crate::originals::capture_choice(journal, &import_id, "audio_archive")
+            .map_err(AudioArchiveError::Other)?;
         save_audio_archive_record(journal, &import_id, &plan_to_record(&plan))?;
     } else {
         let record = read_audio_archive(journal, &import_id)?

@@ -800,6 +800,86 @@ fn storage_run(journal: &std::path::Path) -> String {
     ids[0].clone()
 }
 
+#[cfg(feature = "full-tests")]
+#[test]
+fn archive_originals_follow_the_choice_after_the_processing_frontier_finishes() {
+    use crate::{audio_originals, originals};
+    use serde_json::json;
+    use solstone_core_processing_record::vocab;
+
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path().canonicalize().unwrap();
+    for (id, seed, keep) in [
+        ("20260114_210000", 190, false),
+        ("20260115_210000", 191, true),
+    ] {
+        let (member, bytes) = storage_member(
+            seed,
+            if keep {
+                "2026-01-15T21:00:00Z"
+            } else {
+                "2026-01-14T21:00:00Z"
+            },
+            7500,
+        );
+        let tree = journal.join("imports").join(id).join("tree");
+        fs::create_dir_all(&tree).unwrap();
+        let staged = tree.join(&member.original_relative_name);
+        fs::write(&staged, &bytes).unwrap();
+        let mut metadata = json!({
+            "import_id": id, "source_timestamp": id, "file_path": tree,
+            "folder_snapshot": crate::snapshot::fingerprint(&tree).unwrap(),
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        originals::record_new_import(&mut metadata);
+        crate::write_import_metadata(&journal, id, &metadata).unwrap();
+        originals::set_preference(&journal, "audio_archive", keep).unwrap();
+        let materials = HashMap::from([(member.sha256.clone(), bytes.clone())]);
+        let saved = storage_publish(&journal, None, &[member], &materials, None).unwrap();
+        audio_originals::plan_archive(&journal, &saved.import_id, &tree).unwrap();
+        let part = &saved.record.parts[0];
+        let segment = journal
+            .join("chronicle")
+            .join(&part.day)
+            .join(&saved.record.settings.stream)
+            .join(&part.segment_key);
+        let raw = segment.join(&part.stored_name);
+        let transcript = raw.with_extension("jsonl");
+        let header = json!({"raw": part.stored_name, "_solstone_processing": {
+            "schema": vocab::SCHEMA, "handler": vocab::HANDLER_TRANSCRIBE,
+            "state": vocab::STATE_ANALYZED, "input_size": fs::metadata(&raw).unwrap().len(),
+        }});
+        fs::write(
+            &transcript,
+            format!("{header}\n{{\"start\":\"16:00:00\",\"text\":\"saved words\"}}\n"),
+        )
+        .unwrap();
+        audio_originals::finish(&journal, &saved.import_id).unwrap();
+        assert!(staged.is_file());
+        assert!(raw.is_file());
+        finish_archive_part(
+            &journal,
+            &saved.import_id,
+            &part.day,
+            &part.segment_key,
+            &part.stored_name,
+            false,
+        )
+        .unwrap();
+        audio_originals::finish(&journal, &saved.import_id).unwrap();
+        assert!(!staged.exists());
+        assert!(!raw.exists());
+        assert!(transcript.is_file());
+        let playback = audio_originals::retained_playback(&journal, &segment, &part.stored_name);
+        assert_eq!(playback.is_some(), keep);
+        if let Some((path, _)) = playback {
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+    }
+}
+
 #[test]
 fn pure_plan_bad_durations_and_unsettled_times() {
     let inputs = vec![

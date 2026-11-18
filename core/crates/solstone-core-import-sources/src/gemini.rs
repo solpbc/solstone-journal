@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, SourcePathKind, has_extension, parse_iso_utc, plan_entries, read_json_file,
-    read_zip_json, read_zip_member, source_path_kind,
+    ParsedEntry, PlannedThread, SourcePathKind, has_extension, parse_iso_utc, plan_entries,
+    read_json_file, read_zip_json, read_zip_member, source_path_kind,
 };
 use crate::{ImportPlan, SkipLocator, SkipReason, SkippedEntry, SourceError};
 
@@ -75,7 +75,22 @@ pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     let mut skipped = Vec::new();
     let mut threads = Vec::with_capacity(activities.len());
     for (activity_index, activity) in activities.iter().enumerate() {
-        threads.push(activity_title(activity, activity_index));
+        let mut thread = PlannedThread::from_export(
+            activity,
+            activity_title(activity, activity_index),
+            &["conversationId", "conversation_id", "id"],
+            &["conversationUrl", "url", "titleUrl"],
+        );
+        if thread.id.is_none() {
+            thread.id = thread
+                .url
+                .as_deref()
+                .and_then(|url| url.strip_prefix("https://gemini.google.com/app/"))
+                .and_then(|path| path.split(['/', '?', '#']).next())
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned);
+        }
+        threads.push(thread);
         parse_activity(activity, activity_index, &mut entries, &mut skipped);
     }
     Ok(plan_entries(entries, skipped, threads, zone))
@@ -100,14 +115,7 @@ fn load_activities(path: &Path) -> Result<Value, SourceError> {
             read_json_file(path, "Gemini activities")
         }
         SourcePathKind::Directory => {
-            for activity_path in ACTIVITY_PATHS {
-                let candidate = path.join(activity_path);
-                if candidate.is_file() {
-                    return read_json_file(&candidate, "Gemini activities");
-                }
-            }
-            let candidate = path.join("MyActivity.json");
-            if candidate.is_file() {
+            if let Some(candidate) = activity_file(path) {
                 return read_json_file(&candidate, "Gemini activities");
             }
             Err(SourceError::ArchiveMemberMissing {
@@ -119,6 +127,16 @@ fn load_activities(path: &Path) -> Result<Value, SourceError> {
             path: path.to_owned(),
         }),
     }
+}
+
+/// The export member the folder reader consumes.
+fn activity_file(path: &Path) -> Option<std::path::PathBuf> {
+    ACTIVITY_PATHS
+        .iter()
+        .copied()
+        .chain(["MyActivity.json"])
+        .map(|name| path.join(name))
+        .find(|path| path.is_file())
 }
 
 fn parse_activity(

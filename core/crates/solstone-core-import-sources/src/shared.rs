@@ -23,8 +23,38 @@ pub struct ImportPlan {
     pub item_count: u64,
     pub date_range: (String, String),
     pub skipped: Vec<SkippedEntry>,
-    /// Title of each conversation, indexed by [`PlannedEntry::thread`].
-    pub threads: Vec<String>,
+    /// Source reference for each conversation, indexed by [`PlannedEntry::thread`].
+    pub threads: Vec<PlannedThread>,
+}
+
+/// The title and source locator for a conversation in an export.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PlannedThread {
+    pub title: String,
+    pub id: Option<String>,
+    pub url: Option<String>,
+}
+
+impl PlannedThread {
+    pub(crate) fn from_export(
+        export: &Value,
+        title: String,
+        id_fields: &[&str],
+        url_fields: &[&str],
+    ) -> Self {
+        let first = |keys: &[&str]| {
+            keys.iter()
+                .filter_map(|key| export.get(key).and_then(Value::as_str))
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+                .map(str::to_owned)
+        };
+        Self {
+            title,
+            id: first(id_fields),
+            url: first(url_fields),
+        }
+    }
 }
 
 /// One five-minute segment on the owner's local day.
@@ -225,7 +255,7 @@ pub(crate) enum SourcePathKind {
 pub(crate) fn plan_entries(
     entries: Vec<ParsedEntry>,
     skipped: Vec<SkippedEntry>,
-    threads: Vec<String>,
+    threads: Vec<PlannedThread>,
     zone: &TimeZone,
 ) -> ImportPlan {
     let item_count = u64::try_from(entries.len()).unwrap_or(u64::MAX);

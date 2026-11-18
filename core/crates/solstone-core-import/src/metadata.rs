@@ -811,6 +811,8 @@ pub fn write_import_metadata(
 
 pub(crate) fn preserve_durable_attempt(merged: &mut ImportMetadata, existing: &ImportMetadata) {
     crate::saved_start::preserve_saved_start(merged, existing);
+    crate::originals::preserve_custody(merged, existing);
+    crate::audio_originals::preserve_release_evidence(merged, existing);
     if let Some(att) = existing.get("attempt") {
         merged.insert("attempt".to_owned(), att.clone());
     } else {

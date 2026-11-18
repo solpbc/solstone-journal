@@ -29,6 +29,7 @@ mod lifecycle;
 pub use lifecycle::register_admitted_folder;
 pub mod mobile_import_contract;
 mod multipart;
+mod originals;
 mod preview;
 mod progress;
 mod save_stream;
@@ -70,6 +71,10 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
         .route("/app/import/background", get(assets::background_not_found))
         .route("/app/import/static/{*path}", get(assets::static_asset))
         .route("/app/import/api/sources", get(imports::sources))
+        .route(
+            "/app/import/api/keep-originals",
+            get(originals::read).put(originals::write),
+        )
         .route("/app/import/api/list", get(imports::list))
         .route("/app/import/api/guide/{source}", get(assets::guide))
         .route(

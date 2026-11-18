@@ -444,6 +444,7 @@ fn persist_identity(
     source_hash: Option<&SourceHash>,
 ) -> Result<(), ImportError> {
     let mut metadata = Map::new();
+    crate::originals::record_new_import(&mut metadata);
     metadata.insert("import_id".to_owned(), json!(allocated.import_id.as_str()));
     metadata.insert(
         "source_timestamp".to_owned(),

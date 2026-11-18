@@ -29,7 +29,8 @@ pub(crate) async fn serve_file(
             StatusCode::NOT_FOUND,
         );
     }
-    let day_root = state.journal_root.join("chronicle").join(&day);
+    let journal = state.journal_root.clone();
+    let day_root = journal.join("chronicle").join(&day);
     let path = match contained_path(&day_root, &rel_path) {
         Ok(path) => path,
         Err(_) => {
@@ -44,14 +45,24 @@ pub(crate) async fn serve_file(
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsServeFile,
         move || {
-            if !path.is_file() {
+            let path = if path.is_file() {
+                path
+            } else if let Some((original, _)) = path
+                .parent()
+                .zip(path.file_name().and_then(|name| name.to_str()))
+                .and_then(|(segment, raw)| {
+                    solstone_core_import::audio_originals::retained_playback(&journal, segment, raw)
+                })
+            {
+                original
+            } else {
                 return error(
                     "file_not_found",
                     "that file isn't available.",
                     "File not found",
                     StatusCode::NOT_FOUND,
                 );
-            }
+            };
             let Some(mime) = mime_type(&path) else {
                 return error(
                     "invalid_request_value",

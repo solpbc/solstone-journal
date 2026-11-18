@@ -2901,6 +2901,11 @@ button:focus:not(:focus-visible) {
           </div>
         </div>
 
+        <div class="settings-field" id="plaudOriginalsField">
+          <label><input type="checkbox" id="field-plaud-keep-originals" disabled> keep originals</label>
+          <p class="settings-subsection-desc">turn this on if you want a local copy of the originals in your journal.</p>
+        </div>
+
         <p id="plaudSyncTokenNote" style="display: none; color: var(--ink-faint); font-size: 0.85em; margin-top: 1em; padding: 0.75em; background: var(--cream-bright); border-radius: 4px;">
           configure your Plaud token in <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-text-aa);">API keys</a> to enable sync.
         </p>
@@ -6314,7 +6319,13 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
 async function loadSync() {
   loadGranola();
   try {
-    const data = await settingsApi('/app/settings/api/sync');
+    const [data, originals] = await Promise.all([
+      settingsApi('/app/settings/api/sync'),
+      settingsApi('/app/import/api/keep-originals'),
+    ]);
+    const keep = document.getElementById('field-plaud-keep-originals');
+    keep.checked = originals.keep_originals?.plaud === true;
+    keep.disabled = !data.plaud?.available;
     setLoadState('syncLoadState');
     setSyncControlsDisabled(false);
     populateSync(data);
@@ -6353,6 +6364,25 @@ function populateSync(data) {
     note.style.display = 'block';
   }
 }
+
+document.getElementById('field-plaud-keep-originals').addEventListener('change', async function() {
+  const keep = this.checked;
+  const errorHost = prepareFieldErrorHost(this);
+  try {
+    await window.saveControl({
+      el: this,
+      errorHost,
+      fetchArgs: () => settingsApi('/app/import/api/keep-originals', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'plaud', keep }),
+      }),
+      onSuccess: () => showFieldStatus(this, 'saved'),
+    });
+  } catch (_) {
+    this.checked = !keep;
+  }
+});
 
 document.getElementById('field-plaud-sync-enabled').addEventListener('change', async function() {
   const enabled = this.checked;
