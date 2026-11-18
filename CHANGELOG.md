@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- thinking has a new thoughts per hour tab. it shows how many thoughts your journal finishes in a typical hour of thinking over the last 24 hours, 7 days or 30 days, how much of it was catching up on older days, and how much didn't finish. setup shows that number for the last 24 hours and links to it.
 - for demos, add `#today=2025-10-22T15:30` to your journal's home page address, using your journal's time zone. the today summary, weekly reflection, and connections use that time, and yesterday shows the previous day's saved summary.
 - a new year page shows a whole year of your journal at once. the days view shows each day, colored by how many activities or location records your journal holds for it. the threads view shows each place and each name your journal found as a row across the year's weeks. find it under more.
 - your connected agents can now suggest that two people in your journal are the same person, such as two spellings of one name. it waits in suggestions and shows both people from your journal. you choose which name they go by, and accepting merges them into one person. a merge can't be undone.

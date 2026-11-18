@@ -501,6 +501,10 @@ pub(crate) fn router_with_roots(
             "/app/thinking/api/index",
             get(crate::thinking_sol_reads::api_index),
         )
+        .route(
+            "/app/thinking/api/pace",
+            get(crate::thinking_pace::api_pace),
+        )
         .route("/app/thinking/api/chatgpt/sign-in", post(chatgpt_sign_in))
         .route(
             "/app/thinking/api/chatgpt/sign-in/{attempt_id}",

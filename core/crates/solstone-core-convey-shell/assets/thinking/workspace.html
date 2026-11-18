@@ -1106,6 +1106,62 @@
     }
    .thinking-runs-filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:16px 0}.thinking-runs-filters label{display:flex;align-items:center;gap:8px;min-height:44px}.thinking-runs-filters input{width:20px;height:20px}.thinking-run-failed{background:var(--danger-wash)}.thinking-runs-filters a{color:var(--orange-text-aa)}#thinkingRunsContent>section{overflow-x:auto}
 #thinkingIdentityDetails summary {cursor:pointer;min-height:46px;padding:10px 0}
+
+    /* Thoughts per hour. Recent days are the brand orange's ink; older
+       days a gold mixed toward it, so the pair stays apart for every reader. */
+    .thinking-workspace { --pace-recent: var(--orange-ink); --pace-older: color-mix(in srgb, var(--gold) 60%, var(--orange-ink)); }
+    .thinking-workspace .thinking-pace-panel, .thinking-workspace .pace-body { display: grid; gap: 16px; }
+    /* The intro stays with setup, so a section starts a step below the tabs. */
+    .thinking-workspace .thinking-pace-panel, .thinking-workspace .thinking-runs-panel { margin-top: 10px; }
+    .thinking-workspace .pace-note { border: 1px solid var(--hairline); border-radius: 9px; display: grid; gap: 8px; justify-items: start; line-height: 1.45; margin: 0; padding: 12px 14px; }
+    .thinking-workspace .pace-note p { margin: 0; }
+    .thinking-workspace .pace-ranges { background: var(--cream); border: 1px solid var(--hairline); border-radius: 11px; display: inline-flex; gap: 2px; justify-self: start; padding: 3px; }
+    .thinking-workspace .pace-range { background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--ink-soft); cursor: pointer; font: inherit; min-height: 40px; padding: 6px 14px; }
+    .thinking-workspace .pace-range[aria-pressed="true"] { background: var(--paper); border-color: var(--hairline-2); color: var(--ink); font-weight: 650; }
+    .thinking-workspace .pace-range:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+    @media (max-width: 720px) { .thinking-workspace .pace-range { min-height: 44px; } }
+    .thinking-workspace .pace-tiles { display: grid; gap: 12px; grid-template-columns: 1.4fr repeat(3, 1fr); }
+    .thinking-workspace .pace-tile { background: var(--paper); border: 1px solid var(--hairline); border-radius: 14px; display: grid; align-content: start; gap: 4px; padding: 14px 16px; }
+    .thinking-workspace .pace-tile .micro { margin: 0; }
+    .thinking-workspace .pace-value { color: var(--ink); font-size: 1.7rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.1; }
+    .thinking-workspace .pace-lead .pace-value { font-size: clamp(2.2rem, 5vw, 3rem); }
+    .thinking-workspace .pace-chart-card { background: var(--paper); border: 1px solid var(--hairline); border-radius: 14px; display: grid; gap: 10px; padding: 16px; }
+    .thinking-workspace .pace-chart-head { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; }
+    .thinking-workspace .pace-chart-head h3 { font-size: 1rem; margin: 0; }
+    .thinking-workspace .pace-legend { color: var(--ink-soft); display: flex; flex-wrap: wrap; font-size: 0.86rem; gap: 6px 16px; list-style: none; margin: 0; padding: 0; }
+    .thinking-workspace .pace-legend li { align-items: center; display: flex; gap: 6px; }
+    .thinking-workspace .pace-swatch { border-radius: 3px; display: inline-block; height: 12px; width: 12px; }
+    .thinking-workspace .pace-recent-swatch { background: var(--pace-recent); }
+    .thinking-workspace .pace-older-swatch { background: var(--pace-older); }
+    .thinking-workspace #thinkingPaceTrail { justify-self: start; text-align: left; }
+    .thinking-workspace .pace-typical-swatch { border-radius: 0; border-top: 2px dashed var(--ink-soft); height: 0; width: 16px; }
+    .thinking-workspace .pace-chart { border-radius: 6px; cursor: crosshair; min-height: 200px; touch-action: pan-y; }
+    .thinking-workspace .pace-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+    .thinking-workspace .pace-chart svg { display: block; }
+    .thinking-workspace .pace-recent { fill: var(--pace-recent); }
+    .thinking-workspace .pace-older { fill: var(--pace-older); }
+    .thinking-workspace .pace-bar.selected rect { stroke: var(--ink); stroke-width: 1; }
+    .thinking-workspace .pace-grid { stroke: var(--hairline); stroke-width: 1; }
+    .thinking-workspace .pace-median { stroke: var(--ink-soft); stroke-dasharray: 4 3; stroke-width: 1.5; }
+    .thinking-workspace .pace-cursor { stroke: var(--ink-faint); stroke-width: 1; }
+    .thinking-workspace .pace-axis { fill: var(--ink-faint-paper); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .thinking-workspace .pace-median-label { fill: var(--ink-soft); }
+    .thinking-workspace .pace-readout { margin: 0; min-height: 1.45em; }
+    .thinking-workspace .pace-numbers summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+    .thinking-workspace .pace-table-wrap { max-height: 420px; overflow: auto; }
+    .thinking-workspace .pace-numbers table { border-collapse: collapse; font-variant-numeric: tabular-nums; width: 100%; }
+    .thinking-workspace .pace-numbers th, .thinking-workspace .pace-numbers td { border-bottom: 1px solid var(--hairline); padding: 6px 8px; text-align: right; }
+    .thinking-workspace .pace-numbers th[scope="row"], .thinking-workspace .pace-numbers thead th:first-child { text-align: left; }
+    @media (max-width: 720px) {
+      .thinking-workspace .thinking-runs-tabs { flex-wrap: wrap; }
+      .thinking-workspace .pace-tiles { gap: 8px; grid-template-columns: repeat(3, 1fr); }
+      .thinking-workspace .pace-lead { grid-column: 1 / -1; }
+      .thinking-workspace .pace-tile { padding: 12px; }
+      .thinking-workspace .pace-tile:not(.pace-lead) .pace-value { font-size: 1.35rem; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .thinking-workspace { --pace-recent: var(--orange); --pace-older: color-mix(in srgb, var(--gold) 52%, var(--surface-dark)); }
+    }
 </style>
 
   <div id="thinking-loading">
@@ -1122,6 +1178,7 @@
       <div class="thinking-runs-tabs" id="thinkingSectionTabs" role="tablist">
         <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">setup</button>
         <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">runs</button>
+        <button type="button" class="thinking-runs-tab" id="thinkingPaceTab" role="tab" aria-selected="false" aria-controls="thinkingPacePanel" tabindex="-1">thoughts per hour</button>
       </div>
       <p class="intro" id="thinkingIntro">loading your processing setup…</p>
       <p class="devices-invite" id="thinkingDevicesInvite" hidden>
@@ -1162,6 +1219,7 @@
         <button type="button" class="btn ghost" id="chatgptGlancePickOther" hidden></button>
         <details id="thinkingIdentityDetails" hidden><summary>processing details</summary><p class="gsub" id="thinkingActiveIdentity"></p></details>
         <button type="button" class="trail" id="brainCheckAction" hidden></button>
+        <button type="button" class="trail" id="thinkingPaceTrail" hidden></button>
       </div>
 
       <div class="panelbody">
@@ -1518,6 +1576,71 @@
           <button type="button" class="btn primary" id="switchConfirmPrimary" data-switch-lane=""></button>
           <button type="button" class="btn ghost" id="switchCancel" data-open-view="main"></button>
         </div>
+      </div>
+    </section>
+
+    <section class="thinking-pace-panel" id="thinkingPacePanel" data-thinking-section="pace" role="tabpanel" aria-labelledby="thinkingPaceTab" hidden>
+      <h2 id="thinkingPaceHeading" tabindex="-1">thoughts per hour</h2>
+      <p class="micro">each thought is one run your journal finished, counted in the hour it finished.</p>
+      <p class="pace-note" id="paceLoading" role="status">reading your journal's thinking…</p>
+      <div class="pace-note" id="paceFailed" role="alert" hidden>
+        <p>thoughts per hour couldn't be read.</p>
+        <button type="button" class="thinking-runs-retry" id="paceRetry">try again</button>
+      </div>
+      <div class="pace-note" id="paceEmpty" hidden>
+        <p id="paceEmptyText"></p>
+        <button type="button" class="trail" id="paceEmptySetup">check setup →</button>
+      </div>
+      <div class="pace-body" id="paceBody" hidden>
+        <div class="pace-ranges" role="group" aria-label="show the last">
+          <button type="button" class="pace-range" id="paceRange-day" aria-pressed="true">24 hours</button>
+          <button type="button" class="pace-range" id="paceRange-week" aria-pressed="false">7 days</button>
+          <button type="button" class="pace-range" id="paceRange-month" aria-pressed="false">30 days</button>
+        </div>
+        <div class="pace-tiles">
+          <div class="pace-tile pace-lead">
+            <div class="glabel">thoughts per hour</div>
+            <div class="pace-value" id="paceMedian"></div>
+            <p class="micro" id="paceMedianSub"></p>
+          </div>
+          <div class="pace-tile">
+            <div class="glabel">busiest hour</div>
+            <div class="pace-value" id="paceBusiest"></div>
+            <p class="micro" id="paceBusiestSub"></p>
+          </div>
+          <div class="pace-tile">
+            <div class="glabel">catching up</div>
+            <div class="pace-value" id="paceOlder"></div>
+            <p class="micro" id="paceOlderSub"></p>
+          </div>
+          <div class="pace-tile">
+            <div class="glabel">didn't finish</div>
+            <div class="pace-value" id="paceUnfinished"></div>
+            <p class="micro" id="paceUnfinishedSub"></p>
+          </div>
+        </div>
+        <section class="pace-chart-card" aria-labelledby="paceChartTitle">
+          <div class="pace-chart-head">
+            <h3 id="paceChartTitle"></h3>
+            <ul class="pace-legend">
+              <li><span class="pace-swatch pace-recent-swatch" aria-hidden="true"></span>recent days</li>
+              <li><span class="pace-swatch pace-older-swatch" aria-hidden="true"></span>older days</li>
+              <li><span class="pace-swatch pace-typical-swatch" aria-hidden="true"></span>typical hour</li>
+            </ul>
+          </div>
+          <div class="pace-chart" id="paceChart" role="group" aria-roledescription="chart" tabindex="0" aria-describedby="paceReadout" aria-label="thoughts per hour chart. use the arrow keys to read each bar."></div>
+          <p class="micro pace-readout" id="paceReadout" aria-live="polite"></p>
+        </section>
+        <p class="micro" id="paceThrough"></p>
+        <details class="pace-numbers">
+          <summary>show the numbers</summary>
+          <div class="pace-table-wrap">
+            <table>
+              <thead><tr><th scope="col" id="paceTableWhen">hour</th><th scope="col" id="paceTableUnit">thoughts</th><th scope="col" id="paceTableRecent">recent days</th><th scope="col" id="paceTableOlder">older days</th></tr></thead>
+              <tbody id="paceTableBody"></tbody>
+            </table>
+          </div>
+        </details>
       </div>
     </section>
 

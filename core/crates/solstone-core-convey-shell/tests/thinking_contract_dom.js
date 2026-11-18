@@ -407,6 +407,7 @@ function makeDocument(location) {
   doc.title = 'thinking - journal';
   doc.readyState = 'complete';
   doc.createElement = (tag) => new Element(doc, tag);
+  doc.createElementNS = (_namespace, tag) => new Element(doc, tag);
   doc.createTextNode = (t) => new TextNode(t);
   doc.createDocumentFragment = () => {
     const f = new Element(doc, 'fragment');
@@ -1295,11 +1296,71 @@ module.exports = async function thinkingContractCases(crateDir) {
     assert.ok(p.errors.every((e) => !/is not defined/.test(String(e.error?.message))), 'no handler reaches for a global');
   });
 
+  // The journal's pace answer: one thinking hour of 12 in each view.
+  function paceAnswer({thoughts = 12, thisHour = 0} = {}) {
+    const hour = (start) => ({start, day: '20261118', hour: 10, recent: thoughts, older: 0});
+    const view = (key, bars) => ({
+      key, hours: 24, thinking_hours: thoughts ? 1 : 0, thoughts, older: 0, unfinished: 0,
+      median: thoughts ? thoughts : null,
+      busiest: thoughts ? {start: 1795021200, day: '20261118', hour: 10, thoughts} : null,
+      ...bars,
+    });
+    return {
+      zone: 'America/Denver', through: 1795024800, this_hour: thisHour,
+      views: [
+        view('day', {hour_bars: [hour(1795021200)]}),
+        view('week', {hour_bars: [hour(1795021200)]}),
+        view('month', {day_bars: [{day: '20261118', hours: 11, thinking_hours: thoughts ? 1 : 0, recent: thoughts, older: 0, thoughts, older_thoughts: 0}]}),
+      ],
+    };
+  }
+
+  await test('thoughts per hour: the glance reads the pace once, its line opens the tab, and the tab draws the answer', async () => {
+    const overrides = {'GET /app/thinking/api/pace': paceAnswer()};
+    const p = await boot(env, '/app/thinking/', {overrides});
+    assert.ok(p.reads('/app/thinking/api/pace').length === 1, 'the setup glance asks once');
+    const trail = p.byId('thinkingPaceTrail');
+    assert.ok(trail.hidden === false, 'the glance line shows a typical hour');
+    p.press(trail);
+    await settle();
+    assert.ok(p.window.location.hash === '#per-hour', `the line opens the tab (${p.window.location.hash})`);
+    assert.deepStrictEqual(shownSections(p), ['pace']);
+    assert.ok(p.byId('thinkingPaceTab').getAttribute('aria-selected') === 'true', 'its tab is selected');
+    assert.ok(p.byId('thinkingIntro').hidden === true, "setup's intro stays with setup");
+    assert.ok(p.byId('paceBody').hidden === false && p.byId('paceEmpty').hidden === true, 'the answer is drawn');
+    assert.ok(p.byId('paceMedian').textContent === '12', `the typical hour (${p.byId('paceMedian').textContent})`);
+    assert.ok(p.byId('paceRange-day').getAttribute('aria-pressed') === 'true', 'it opens on the last 24 hours');
+    p.press(p.byId('paceRange-month'));
+    await settle();
+    assert.ok(p.byId('paceRange-month').getAttribute('aria-pressed') === 'true', 'a range is picked');
+    assert.ok(p.byId('paceRange-day').getAttribute('aria-pressed') === 'false', 'and only one');
+    assert.ok(p.byId('paceTableBody').children.length === 1, 'the table holds the range\'s bars');
+    p.press(p.byId('thinkingSetupTab'));
+    await settle();
+    assert.ok(p.byId('thinkingIntro').hidden === false, 'setup brings its intro back');
+    assert.ok(p.errors.length === 0, `no error (${p.errors.map((e) => e.error?.message).join(' ')})`);
+  });
+
+  await test('thoughts per hour: a quiet journal says so, and a failed or wrong answer offers a retry, never a drawing', async () => {
+    const overrides = {'GET /app/thinking/api/pace': paceAnswer({thoughts: 0, thisHour: 3})};
+    const p = await boot(env, '/app/thinking/#per-hour', {overrides});
+    assert.ok(p.byId('paceEmpty').hidden === false && p.byId('paceBody').hidden === true, 'nothing finished: the empty note');
+    assert.ok(p.byId('paceEmptySetup').hidden === true, 'thinking this hour: no setup link');
+    assert.ok(p.byId('thinkingPaceTrail').hidden === true, 'no typical hour, no glance line');
+    const fresh = await boot(env, '/app/thinking/#per-hour', {overrides: {'GET /app/thinking/api/pace': {}}});
+    assert.ok(fresh.byId('paceFailed').hidden === false, 'a wrong answer is a failed read');
+    assert.ok(fresh.byId('paceBody').hidden === true, 'and draws nothing');
+    const asked = fresh.reads('/app/thinking/api/pace').length;
+    fresh.press(fresh.byId('paceRetry'));
+    await settle();
+    assert.ok(fresh.reads('/app/thinking/api/pace').length === asked + 1, 'retry reads again');
+  });
+
   await test('each address is an arrival that lands where a full load does, keeping its entry id', async () => {
     const cases = [
       ['', ['main']], ['#main', ['main']], ['#byo-setup', ['byo-setup']], ['#confidential-setup', ['confidential-setup']],
       ['#local-setup', ['local-setup']], ['#lane-switch', ['main']], [`#runs/${RUN_DAY}`, ['runs']], [`#runs/${RUN_DAY}/pulse`, ['runs']],
-      [`#runs/${RUN_DAY}/pulse/use-1`, ['runs']], ['#runs', ['runs']], ['#runs/run/use-1', ['runs']],
+      [`#runs/${RUN_DAY}/pulse/use-1`, ['runs']], ['#runs', ['runs']], ['#runs/run/use-1', ['runs']], ['#per-hour', ['pace']],
     ];
     const full = new Map();
     for (const [hash, sections] of cases) {

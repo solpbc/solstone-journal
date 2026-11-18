@@ -219,6 +219,8 @@ pub use thinking_install::{
     stop_mobile_local_installer,
 };
 #[cfg(feature = "host")]
+mod thinking_pace;
+#[cfg(feature = "host")]
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;

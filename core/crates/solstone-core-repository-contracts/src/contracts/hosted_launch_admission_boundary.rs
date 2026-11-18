@@ -622,6 +622,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "thinking_pace",
+        include_str!("../../../solstone-core-convey-shell/src/thinking_pace.rs"),
+    ),
+    (
+        "convey",
         "thinking_sol_reads",
         include_str!("../../../solstone-core-convey-shell/src/thinking_sol_reads.rs"),
     ),

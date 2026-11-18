@@ -56,6 +56,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     ctx.history.replace(`${THINKING_PATH}${window.location.search}${window.location.hash}`);
   }
 
+  // Thoughts per hour: its own section (attachPace, below).
+  const PACE_HASH = '#per-hour';
+  let pace = null;
+
   const state = {
     providers: {},
     keys: {},
@@ -1602,6 +1606,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function thinkingPanelHeading(tabId) {
     if (tabId === 'thinkingRunsTab') return $('thinkingRunsHeading');
+    if (tabId === 'thinkingPaceTab') return $('thinkingPaceHeading');
     return $('thinkingHeading');
   }
 
@@ -1638,7 +1643,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     markup().querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = panel.dataset.thinkingSection !== section;
     });
-    activateThinkingSectionTab('thinkingRunsTab', origin);
+    // The intro speaks for setup, so it goes with it.
+    writeHidden($('thinkingIntro'), true);
+    activateThinkingSectionTab(section === 'pace' ? 'thinkingPaceTab' : 'thinkingRunsTab', origin);
+    if (section === 'pace') pace?.show().catch(() => {});
     if (section === 'runs') {
       if (route.kind === 'runs') loadThinkingRuns(route);
       if (route.useId) loadThinkingRun(route);
@@ -1648,7 +1656,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function navigateThinkingSection(section, origin) {
     const hash = section === 'setup'
       ? '#main'
-      : (state.runsLastHash || '#runs');
+      : section === 'pace' ? PACE_HASH : (state.runsLastHash || '#runs');
     if (window.location.hash !== hash) writeEntry('push', hash);
     routeThinkingHash(origin);
   }
@@ -1658,6 +1666,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     markup().querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = true;
     });
+    writeHidden($('thinkingIntro'), false);
     showView(viewFromHash(), {replace: true, keepHashless: true});
     activateThinkingSectionTab('thinkingSetupTab', origin);
   }
@@ -1666,6 +1675,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const hash = window.location.hash;
     if (!hash) {
       showThinkingSetup(origin);
+      return;
+    }
+    if (hash === PACE_HASH) {
+      showThinkingSection('pace', {key: 'pace'}, origin);
       return;
     }
     const route = parseThinkingHash();
@@ -1717,6 +1730,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const thinkingSectionForTab = (tab) => ({
       thinkingSetupTab: 'setup',
       thinkingRunsTab: 'runs',
+      thinkingPaceTab: 'pace',
     })[tab.id];
     bindThinkingTablist('thinkingSectionTabs', (tab, origin) => {
       navigateThinkingSection(thinkingSectionForTab(tab), origin);
@@ -5909,12 +5923,351 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (failed) throw failed.reason;
   }
 
+  // Thoughts per hour: its own section and a line on the setup glance. The
+  // journal does the counting (`/app/thinking/api/pace`); this only draws it.
+  function attachPace({onSetup, onPace}) {
+    const RANGES = ['day', 'week', 'month'];
+    const SVG = 'http://www.w3.org/2000/svg';
+    const paceState = {data: null, range: 'day', selected: -1, loading: null, failed: false};
+    const $ = (id) => markup().querySelector(`#${id}`); // this view's markup only
+
+    const number = (value) => Math.round(value).toLocaleString();
+    const plural = (count, one, many) => `${number(count)} ${Math.round(count) === 1 ? one : many}`;
+    const percent = (part, whole) => {
+      if (!whole) return '0%';
+      const value = (part / whole) * 100;
+      if (value > 0 && value < 1) return 'under 1%';
+      return `${Math.round(value)}%`;
+    };
+    const dayLabel = (day) => window.JournalFormat.day(day).toLowerCase();
+    const hourLabel = (start) => {
+      const at = new Date(start * 1000);
+      const text = window.JournalClock
+        ? window.JournalClock.formatInstant(at, {hour: 'numeric'})
+        : at.toLocaleString(undefined, {hour: 'numeric'});
+      return text.toLowerCase().replace(/ /g, ' ');
+    };
+    const whenLabel = (bar) => (bar.start === undefined
+      ? dayLabel(bar.day)
+      : `${dayLabel(bar.day)}, ${hourLabel(bar.start)}`);
+
+    function view() {
+      return paceState.data?.views?.find((candidate) => candidate.key === paceState.range) || null;
+    }
+
+    function bars(current) {
+      if (!current) return [];
+      return current.hour_bars?.length ? current.hour_bars : (current.day_bars || []);
+    }
+
+    function setText(id, text) {
+      const element = $(id);
+      if (element) element.textContent = text;
+    }
+
+    function show(id, visible) {
+      const element = $(id);
+      if (element) element.hidden = !visible;
+    }
+
+    async function load() {
+      if (paceState.loading) return paceState.loading;
+      paceState.loading = (async () => {
+        if (!paceState.data) {
+          paceState.failed = false;
+          render();
+        }
+        try {
+          const data = await ctx.read('/app/thinking/api/pace');
+          // Anything but the journal's answer is a failed read, never a drawing.
+          if (!Array.isArray(data?.views) || data.views.length !== RANGES.length) throw new Error('pace answer');
+          paceState.data = data;
+          paceState.failed = false;
+        } catch (_err) {
+          if (ctx.disposed) return;
+          paceState.failed = !paceState.data;
+        } finally {
+          paceState.loading = null;
+        }
+        if (!ctx.disposed) {
+          render();
+          renderGlance();
+        }
+      })();
+      return paceState.loading;
+    }
+
+    function renderGlance() {
+      const trail = $('thinkingPaceTrail');
+      const median = paceState.data?.views?.[0]?.median;
+      if (!trail) return;
+      trail.hidden = median === null || median === undefined;
+      if (!trail.hidden) {
+        trail.textContent = `${plural(median, 'thought', 'thoughts')} in a typical hour of thinking over the last 24 hours →`;
+      }
+    }
+
+    function renderTiles(current) {
+      const thinking = current.thinking_hours;
+      setText('paceMedian', current.median === null ? '—' : number(current.median));
+      setText('paceMedianSub', thinking
+        ? `in a typical hour of thinking. your journal finished thinking in ${number(thinking)} of the last ${plural(current.hours, 'hour', 'hours')}.`
+        : `nothing finished in the last ${plural(current.hours, 'hour', 'hours')}.`);
+      const busiest = current.busiest;
+      setText('paceBusiest', busiest ? number(busiest.thoughts) : '—');
+      setText('paceBusiestSub', busiest ? whenLabel(busiest) : 'no busy hour yet');
+      setText('paceOlder', current.thoughts ? percent(current.older, current.thoughts) : '—');
+      setText('paceOlderSub', 'of the thinking was about older days');
+      setText('paceUnfinished', number(current.unfinished));
+      const ran = current.thoughts + current.unfinished;
+      setText('paceUnfinishedSub', ran ? `${percent(current.unfinished, ran)} of what your journal ran` : '');
+    }
+
+    function chartTitle(current) {
+      if (current.key === 'month') return "each day of the last 30, by that day's typical hour";
+      if (current.key === 'week') return 'each hour of the last 7 days';
+      return 'each hour of the last 24';
+    }
+
+    function readout(bar) {
+      if (!bar) return 'point at a bar, or select the chart and use the arrow keys.';
+      const total = bar.recent + bar.older;
+      if (bar.start === undefined) {
+        if (!bar.thinking_hours) return `${whenLabel(bar)}: nothing finished`;
+        return `${whenLabel(bar)}: ${plural(total, 'thought', 'thoughts')} in a typical hour, ${plural(bar.thoughts, 'thought', 'thoughts')} over ${plural(bar.thinking_hours, 'hour', 'hours')} of thinking, ${percent(bar.older_thoughts, bar.thoughts)} about older days`;
+      }
+      if (!total) return `${whenLabel(bar)}: nothing finished`;
+      return `${whenLabel(bar)}: ${plural(total, 'thought', 'thoughts')}, ${number(bar.older)} about older days`;
+    }
+
+    // The axis top: four round steps that clear the tallest bar.
+    function niceMax(value) {
+      const raw = value / 4;
+      if (raw <= 1) return 4;
+      const power = 10 ** Math.floor(Math.log10(raw));
+      const step = [1, 2, 2.5, 5, 10].map((factor) => factor * power)
+        .find((candidate) => candidate >= raw && Number.isInteger(candidate)) || 10 * power;
+      return step * 4;
+    }
+
+    function element(name, attributes = {}, parent = null) {
+      const node = document.createElementNS(SVG, name);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+
+    function drawChart(current) {
+      const holder = $('paceChart');
+      if (!holder) return;
+      holder.replaceChildren();
+      const list = bars(current);
+      const width = Math.max(280, holder.clientWidth || 640);
+      const height = width < 520 ? 200 : 240;
+      const left = 40;
+      const narrow = width < 520;
+      const right = narrow ? 24 : 92;
+      const top = 12;
+      const bottom = 28;
+      const plotWidth = width - left - right;
+      const plotHeight = height - top - bottom;
+      const totals = list.map((bar) => bar.recent + bar.older);
+      const max = niceMax(Math.max(current.median || 0, ...totals, 1));
+      const y = (value) => top + plotHeight - (value / max) * plotHeight;
+      const slot = plotWidth / Math.max(list.length, 1);
+      const gap = slot >= 6 ? 2 : 0;
+      const barWidth = Math.max(1, slot - gap);
+      const svg = element('svg', {width, height, viewBox: `0 0 ${width} ${height}`, 'aria-hidden': 'true'}, holder);
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = (max / 4) * tick;
+        element('line', {class: 'pace-grid', x1: left, x2: left + plotWidth, y1: y(value), y2: y(value)}, svg);
+        const label = element('text', {class: 'pace-axis', x: left - 6, y: y(value) + 4, 'text-anchor': 'end'}, svg);
+        label.textContent = number(value);
+      }
+      list.forEach((bar, index) => {
+        const x = left + index * slot + gap / 2;
+        const group = element('g', {class: index === paceState.selected ? 'pace-bar selected' : 'pace-bar'}, svg);
+        // Recent days sit on the baseline; older days stack above, past a gap.
+        const recentTop = y(bar.recent);
+        if (bar.recent > 0) {
+          element('rect', {class: 'pace-recent', x, y: recentTop, width: barWidth, height: Math.max(1, y(0) - recentTop)}, group);
+        }
+        if (bar.older > 0) {
+          const base = bar.recent > 0 ? recentTop - (gap ? 2 : 0) : y(0);
+          const olderTop = Math.min(base - 1, y(bar.recent + bar.older));
+          element('rect', {class: 'pace-older', x, y: olderTop, width: barWidth, height: base - olderTop}, group);
+        }
+      });
+      if (current.median !== null && current.median !== undefined) {
+        // The line sits on the number the tiles show.
+        const typical = Math.round(current.median);
+        element('line', {class: 'pace-median', x1: left, x2: left + plotWidth, y1: y(typical), y2: y(typical)}, svg);
+        if (right > 30) {
+          const label = element('text', {class: 'pace-axis pace-median-label', x: left + plotWidth + 6, y: y(typical) + 4}, svg);
+          label.textContent = `typical ${number(typical)}`;
+        }
+      }
+      if (paceState.selected >= 0 && list[paceState.selected]) {
+        const x = left + paceState.selected * slot + slot / 2;
+        element('line', {class: 'pace-cursor', x1: x, x2: x, y1: top, y2: top + plotHeight}, svg);
+      }
+      // A handful of time labels along the bottom.
+      const labels = current.key === 'month' ? (narrow ? 3 : 5) : (narrow ? 4 : 6);
+      const every = Math.max(1, Math.round(list.length / labels));
+      let midnights = 0;
+      list.forEach((bar, index) => {
+        const start = bar.start;
+        // A week marks its midnights: every one when wide, every other when narrow.
+        const marks = current.key === 'week'
+          ? bar.hour === 0 && (!narrow || (midnights++ % 2 === 1))
+          : index % every === every - 1;
+        if (!marks) return;
+        const text = element('text', {class: 'pace-axis', x: left + index * slot + slot / 2, y: height - 8, 'text-anchor': 'middle'}, svg);
+        text.textContent = current.key === 'day' && start !== undefined ? hourLabel(start) : dayLabel(bar.day);
+      });
+      holder.dataset.left = String(left);
+      holder.dataset.slot = String(slot);
+    }
+
+    function renderTable(current) {
+      const body = $('paceTableBody');
+      if (!body) return;
+      setText('paceTableWhen', current.key === 'month' ? 'day' : 'hour');
+      const byDay = current.key === 'month';
+      setText('paceTableUnit', byDay ? 'typical hour' : 'thoughts');
+      setText('paceTableRecent', byDay ? 'thoughts that day' : 'recent days');
+      setText('paceTableOlder', byDay ? 'about older days' : 'older days');
+      const rows = bars(current).slice().reverse().map((bar) => {
+        const row = document.createElement('tr');
+        // A day's row gives its typical hour, then the day's own totals.
+        const cells = bar.start === undefined
+          ? [whenLabel(bar), number(bar.recent + bar.older), number(bar.thoughts), number(bar.older_thoughts)]
+          : [whenLabel(bar), number(bar.recent + bar.older), number(bar.recent), number(bar.older)];
+        cells.forEach((text, index) => {
+          const cell = document.createElement(index === 0 ? 'th' : 'td');
+          if (index === 0) cell.scope = 'row';
+          cell.textContent = text;
+          row.appendChild(cell);
+        });
+        return row;
+      });
+      body.replaceChildren(...rows);
+    }
+
+    function render() {
+      const current = view();
+      const empty = Boolean(paceState.data) && paceState.data.views.every((candidate) => candidate.thoughts === 0);
+      show('paceLoading', !paceState.data && !paceState.failed);
+      show('paceFailed', paceState.failed);
+      show('paceEmpty', empty);
+      show('paceBody', Boolean(current) && !empty);
+      RANGES.forEach((range) => {
+        const button = $(`paceRange-${range}`);
+        if (button) button.setAttribute('aria-pressed', String(range === paceState.range));
+      });
+      if (empty) {
+        const now = paceState.data.this_hour;
+        setText('paceEmptyText', now
+          ? `your journal is thinking: ${plural(now, 'thought', 'thoughts')} so far this hour. its pace shows here once the hour is over.`
+          : "your journal hasn't finished any thinking in the last 30 days. once it does, its pace shows here.");
+        show('paceEmptySetup', !now);
+      }
+      if (!current || empty) return;
+      renderTiles(current);
+      setText('paceChartTitle', chartTitle(current));
+      const list = bars(current);
+      if (paceState.selected >= list.length) paceState.selected = -1;
+      setText('paceReadout', readout(list[paceState.selected]));
+      const through = hourLabel(paceState.data.through);
+      setText('paceThrough', paceState.data.this_hour
+        ? `counted through ${through}. this hour so far: ${plural(paceState.data.this_hour, 'thought', 'thoughts')}.`
+        : `counted through ${through}.`);
+      drawChart(current);
+      renderTable(current);
+    }
+
+    function select(index) {
+      const list = bars(view());
+      paceState.selected = Math.max(-1, Math.min(index, list.length - 1));
+      setText('paceReadout', readout(list[paceState.selected]));
+      drawChart(view());
+    }
+
+    function pointerIndex(event) {
+      const holder = $('paceChart');
+      const rect = holder.getBoundingClientRect();
+      const left = Number(holder.dataset.left || 0);
+      const slot = Number(holder.dataset.slot || 1);
+      const index = Math.floor((event.clientX - rect.left - left) / slot);
+      return index >= 0 && index < bars(view()).length ? index : -1;
+    }
+
+    function bind() {
+      RANGES.forEach((range) => {
+        $(`paceRange-${range}`)?.addEventListener('click', () => {
+          paceState.range = range;
+          paceState.selected = -1;
+          render();
+        });
+      });
+      const holder = $('paceChart');
+      holder?.addEventListener('pointermove', (event) => {
+        const index = pointerIndex(event);
+        if (index !== paceState.selected) select(index);
+      });
+      // A tap reads a bar and keeps it: touch has no hover to follow.
+      holder?.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'mouse') select(pointerIndex(event));
+      });
+      holder?.addEventListener('pointerleave', (event) => {
+        if (event.pointerType === 'mouse' && document.activeElement !== holder) select(-1);
+      });
+      holder?.addEventListener('blur', () => select(-1));
+      holder?.addEventListener('keydown', (event) => {
+        const list = bars(view());
+        if (!list.length) return;
+        let next = paceState.selected;
+        if (event.key === 'ArrowLeft') next = paceState.selected <= 0 ? 0 : paceState.selected - 1;
+        else if (event.key === 'ArrowRight') next = paceState.selected < 0 ? list.length - 1 : Math.min(list.length - 1, paceState.selected + 1);
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = list.length - 1;
+        else return;
+        event.preventDefault();
+        select(next);
+      });
+      $('paceRetry')?.addEventListener('click', () => load());
+      $('paceEmptySetup')?.addEventListener('click', () => onSetup());
+      $('thinkingPaceTrail')?.addEventListener('click', () => onPace());
+      ctx.on(window, 'resize', () => {
+        if (!$('thinkingPacePanel')?.hidden && view()) drawChart(view());
+      });
+      ctx.on(document, 'visibilitychange', () => {
+        if (document.visibilityState === 'visible') load();
+      });
+    }
+
+    bind();
+    return {
+      // The panel was opened: draw what is known, then read again.
+      show() {
+        render();
+        return load();
+      },
+      // The setup glance's line.
+      glance: load,
+    };
+  }
+
   async function init() {
     const loaded = await loadInitialState();
     if (!loaded) return;
     bind();
     bindThinkingSectionTabs();
     bindThinkingRuns();
+    pace = attachPace({
+      onSetup: () => navigateThinkingSection('setup', 'pointer'),
+      onPace: () => navigateThinkingSection('pace', 'pointer'),
+    });
     setSelectedByoProvider(defaultByoProvider());
 
     await resumeChatGptAttempt();
@@ -5923,6 +6276,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     routeThinkingHash('reload');
     reportThinkingReady('content');
     refreshDevicesInvite();
+    if (window.location.hash !== PACE_HASH) pace?.glance().catch(() => {});
     try {
       await loadAfterFirstPaint();
       if (state.chatgpt.status?.signed_in) {
