@@ -34,6 +34,9 @@ pub(crate) struct ModeResult {
     /// Subset of [`Self::terminal_units`] whose deterministic failure cap
     /// made them terminal for daily-completion purposes.
     pub(crate) capped_units: BTreeSet<(String, Option<String>)>,
+    /// A gating talent's provider refused with `blocking: true`: it is
+    /// unusable for now, so a run going through many segments takes no more.
+    pub(crate) provider_blocked: bool,
 }
 
 pub(crate) fn item_label(name: &str, facet: Option<&str>) -> String {
@@ -51,6 +54,7 @@ pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
     into.applicable_units.extend(from.applicable_units);
     into.terminal_units.extend(from.terminal_units);
     into.capped_units.extend(from.capped_units);
+    into.provider_blocked |= from.provider_blocked;
 }
 
 pub(crate) fn record_followup_failure(result: &mut ModeResult, label: &str, error: &str) {
@@ -84,6 +88,17 @@ fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         })
+}
+
+/// Whether a use ended on a refusal its boundary marked `blocking`: the
+/// provider is unusable, not merely failing on this input (`docs/GENERATE.md`).
+pub(crate) fn use_log_blocking(journal: &Path, use_id: &str) -> bool {
+    read_use_events(journal, use_id).is_ok_and(|events| {
+        terminal_error_event(&events)
+            .and_then(|event| event.get("blocking"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    })
 }
 
 /// The structured context a terminal use-log error carries beyond its

@@ -8,7 +8,8 @@ use std::time::Duration;
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    drain_with_failure_policy, merge_mode_result, runtime, use_log_failure_detail,
+    drain_with_failure_policy, merge_mode_result, runtime, use_log_blocking,
+    use_log_failure_detail,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -526,6 +527,10 @@ fn think(
         result.success + result.failed,
     ));
     if result.failed != 0 {
+        result.provider_blocked = sense_observed.iter().any(|(use_id, outcome)| {
+            matches!(outcome, DrainOutcome::Fail { .. })
+                && use_log_blocking(&context.journal, use_id)
+        });
         complete(log, context, segment, stream, result.clone());
         return Ok(result);
     }
@@ -1103,7 +1108,13 @@ fn drain_selected(
     );
     let mut retried_successes = Vec::new();
     let mut retried_failures_removed = Vec::new();
+    let mut blocked = Vec::new();
     for (label, name, use_id, outcome) in observed_outcomes {
+        if matches!(outcome, DrainOutcome::Fail { .. })
+            && !SEGMENT_NONGATING_TALENTS.contains(&name.as_str())
+        {
+            blocked.push((label.clone(), use_id.clone()));
+        }
         if matches!(outcome, DrainOutcome::Fail { .. })
             && is_retryable_capacity_exhausted(&context.journal, &use_id, &outcome)
             && let Some(config) = by_name.get(&name)
@@ -1137,6 +1148,9 @@ fn drain_selected(
         }
     }
     let mut final_result = batch_result;
+    final_result.provider_blocked |= blocked.iter().any(|(label, use_id)| {
+        !retried_failures_removed.contains(label) && use_log_blocking(&context.journal, use_id)
+    });
     for failed_label in retried_failures_removed {
         let prefix = format!("{failed_label} (");
         if let Some(pos) = final_result
@@ -1359,6 +1373,16 @@ pub(crate) fn run_repair_batch(
             let mut log = log.clone_for_shared_writes();
             scope.spawn(move || {
                 loop {
+                    // A provider that refused as blocking is unusable for now:
+                    // the rest of the batch waits for the next run, which the
+                    // task queue spaces out while thinking keeps failing.
+                    if aggregate
+                        .lock()
+                        .expect("repair result lock")
+                        .provider_blocked
+                    {
+                        break;
+                    }
                     let Some((segment, stream)) =
                         queue.lock().expect("repair queue lock").pop_front()
                     else {
@@ -1392,7 +1416,12 @@ pub(crate) fn run_repair_batch(
             });
         }
     });
-    Ok(aggregate.lock().expect("repair result lock").clone())
+    let left = queue.lock().expect("repair queue lock").len();
+    let result = aggregate.lock().expect("repair result lock").clone();
+    if result.provider_blocked && left != 0 {
+        log::warn!("thinking provider is unavailable; {left} segments wait for the next run");
+    }
+    Ok(result)
 }
 
 /// Run the maintained segment-batch operation through its activity-state tail.

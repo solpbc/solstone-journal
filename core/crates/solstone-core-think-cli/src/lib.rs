@@ -6967,6 +6967,70 @@ mod tests {
         );
     }
 
+    // A provider that refuses as blocking is unusable for now, so a day's batch
+    // stops asking it: the rest of the day waits for the next run. A refusal
+    // that is not blocking says nothing about the provider, and the batch goes on.
+    #[test]
+    fn a_blocking_refusal_leaves_the_rest_of_the_batch_unasked() {
+        for blocking in [true, false] {
+            let journal = tempdir().unwrap();
+            let roots = tempdir().unwrap();
+            let (context, recorder) = segment_context(
+                journal.path(),
+                roots.path(),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            );
+            let segments = ["090000_300", "090500_300", "091000_300"];
+            for segment in segments {
+                segment_dir(journal.path(), "20260813", segment);
+            }
+            recorder.end_states.lock().unwrap().insert(
+                "use-1".to_owned(),
+                solstone_core_cortex_client::UseEndState::Error,
+            );
+            let use_log = journal.path().join("talents/sense/use-1.jsonl");
+            fs::create_dir_all(use_log.parent().unwrap()).unwrap();
+            fs::write(
+                &use_log,
+                format!(
+                    concat!(
+                        "{{\"event\":\"start\",\"use_id\":\"use-1\"}}\n",
+                        "{{\"event\":\"error\",\"use_id\":\"use-1\",\"terminal\":true,",
+                        "\"reason_code\":\"provider_unavailable\",",
+                        "\"reason\":\"provider-response-invalid\",",
+                        "\"retryable\":true,\"blocking\":{}}}\n",
+                    ),
+                    blocking
+                ),
+            )
+            .unwrap();
+            let log = test_log(&context, "segments");
+            let batch = segment::run_repair_batch(
+                &context,
+                &log,
+                segments
+                    .iter()
+                    .map(|segment| ((*segment).to_owned(), Some("default".to_owned())))
+                    .collect(),
+                false,
+                0,
+                1,
+                None,
+                Vec::new(),
+                segment::CurrentSegment::Skip,
+            )
+            .unwrap();
+            let asked = recorder.requests.lock().unwrap().len();
+            assert_eq!(batch.provider_blocked, blocking);
+            if blocking {
+                assert_eq!(asked, 1, "nothing after the refusal reaches the provider");
+                assert_eq!(batch.failed, 1, "the refused segment still fails the run");
+            } else {
+                assert_eq!(asked, segments.len(), "every segment is still asked");
+            }
+        }
+    }
+
     #[test]
     fn segment_capacity_exhausted_retries_and_succeeds() {
         let journal = tempdir().unwrap();

@@ -33,6 +33,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a facet's color now updates when you choose a swatch and press "apply color".
 - the names tab and search results show names alongside their context. screenshot entries show the caption without the category label.
 
+- when your thinking provider refuses a request because it can't be used right now, your journal stops asking it about the rest of a day's backlog. your journal tries again every few minutes and picks the rest of the day back up once the provider answers.
 - your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
 - the entities list shows every name again when the list is narrow, such as beside the folders on an ipad. before, the names could be pushed out of each row. rows also stop saying what kind of name each one is, since the folders already sort them that way.
 - times were an hour off in places that changed their clock rules recently, including british columbia, alberta, manitoba and morocco. they're right again.
