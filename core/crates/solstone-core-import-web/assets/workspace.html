@@ -1096,6 +1096,7 @@ function importHistoryHeading() {
   return importFocusable(document.querySelector('.import-list > h2'));
 }
 const never = () => window.SolStore.never();
+let pendingFileUploads = 0;
 // A write the owner started finishes, uncut, and its answer is handled only
 // while import is up: once it has gone, nothing after the write runs, as a
 // page load left it at the base. Once gone, no write starts (a chain's next
@@ -1104,7 +1105,17 @@ const never = () => window.SolStore.never();
 function importWrite(url, init = {}, options = {}) {
   if (ctx.disposed) return never();
   const signal = options.upload ? window.SolStore.eitherSignal(init.signal || null, ctx.signal) : init.signal;
-  return window.fetch(url, signal ? { ...init, signal } : init).then(
+  let request = window.fetch(url, signal ? { ...init, signal } : init);
+  if (options.fileUpload) {
+    const status = document.getElementById('importUploadStatus');
+    pendingFileUploads += 1;
+    if (status) status.textContent = 'uploading your file… keep this page open until it finishes.';
+    request = request.finally(() => {
+      pendingFileUploads -= 1;
+      if (status && !ctx.disposed) status.textContent = '';
+    });
+  }
+  return request.then(
     response => (ctx.disposed ? never() : response),
     error => (ctx.disposed ? never() : Promise.reject(error)),
   );
@@ -3140,6 +3151,7 @@ async function loadGuidedFlow(sourceName) {
             <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
           </div>
         `}
+        ${source.input_type === 'path_input' ? '' : '<div id="importUploadStatus" class="import-field-hint" role="status"></div>'}
       </div></li>
     </ol></form>
   `;
@@ -3341,6 +3353,7 @@ function renderQuickImportFlow() {
           <div class="import-action-row">
             <button type="submit" id="validateBtn" class="import-primary-btn">validate</button>
           </div>
+          <div id="importUploadStatus" class="import-field-hint" role="status"></div>
         </div></li>
       </ol>
     </form>
@@ -3501,7 +3514,7 @@ function setupQuickImportForm() {
         fd.append('setting', settingValue);
       }
 
-      const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true });
+      const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true, fileUpload: hasFile });
       const data = await response.json();
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = 'validate';
@@ -3556,7 +3569,7 @@ async function uploadGuidedSourceFile(source) {
   const response = await importWrite('/app/import/api/save', {
     method: 'POST',
     body: fd,
-  }, { upload: true });
+  }, { upload: true, fileUpload: true });
   const data = await response.json();
   if (!response.ok) {
     throw new Error(importErrorMessage(data, 'Failed to save import'));
@@ -5130,6 +5143,9 @@ function disposeImport() {
   window.JournalOwnerFolders?.cancel?.();
   window.ImportDetail?.forgetSavedStarts?.();
   window.ConveyModalLayer?.reconcile?.({ restore: false });
+  if (pendingFileUploads > 0) {
+    importNotice({}, { title: 'upload interrupted', message: 'check your import history before trying again.' });
+  }
 }
 
 // The source rows draw on both pages, as their script did when it loaded.

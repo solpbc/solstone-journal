@@ -930,6 +930,20 @@ async function startGuided(p) {
   await settle();
 }
 
+async function validateQuick(p, withFile) {
+  p.press(p.q('[data-import-quick]'));
+  await settle();
+  if (withFile) {
+    const input = p.byId('fileInput');
+    input.files = [{ name: 'notes.txt', size: 10 }];
+    p.doc.dispatch(input, { type: 'change' });
+  } else {
+    p.byId('pasteText').value = 'a note';
+  }
+  p.doc.dispatch(p.byId('importForm'), { type: 'submit' });
+  await settle();
+}
+
 // Run from import_workspace_dom.js: answers with the number of cases.
 module.exports = async function importContractCases(crateDir) {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
@@ -1071,17 +1085,55 @@ module.exports = async function importContractCases(crateDir) {
     }
   });
 
-  await test('an upload out when import goes is aborted, as a page load aborts it, and no later write starts', async () => {
+  const isSave = (call) => call.method === 'POST' && call.url === '/app/import/api/save';
+  for (const [name, start] of [['guided', startGuided], ['quick', (p) => validateQuick(p, true)]]) {
+    await test(`${name} file upload shows its live status and leaving aborts it with one notice`, async () => {
+      const p = await boot(env);
+      p.holds.push(isSave);
+      await start(p);
+      const save = p.calls.find(isSave);
+      assert.ok(save && !save.settled, 'the upload is out');
+      const status = p.byId('importUploadStatus');
+      assert.strictEqual(status?.getAttribute('role'), 'status');
+      assert.ok(status.textContent.trim(), 'the stay-on-page status is shown');
+      assert.strictEqual(p.notices.length, 0, 'no notice before leaving');
+      p.leave();
+      await settle();
+      assert.ok(save.aborted, 'the upload was aborted');
+      assert.deepStrictEqual(p.writes().map((c) => c.url), ['/app/import/api/save'], 'no meta, preview or start went out');
+      assert.deepStrictEqual(p.notices.map((notice) => notice.app), ['import']);
+      assert.ok(p.byId('home-text')?.textContent === 'home as it was');
+    });
+  }
+
+  await test('a settled file upload clears its warning and leaving shows no interruption notice', async () => {
+    for (const code of [200, 500]) {
+      const p = await boot(env);
+      p.holds.push(isSave);
+      await validateQuick(p, true);
+      const status = p.byId('importUploadStatus');
+      assert.ok(status?.textContent.trim());
+      const answer = code === 200 ? { path: '/journal/imports/x', timestamp: SAVED } : { error: 'failed' };
+      answerHeld(p, isSave, answer, code);
+      await settle();
+      assert.strictEqual(status.textContent, '');
+      p.leave();
+      await settle();
+      assert.strictEqual(p.notices.length, 0);
+    }
+  });
+
+  await test('quick pasted text keeps its existing save cancellation without a file-upload warning', async () => {
     const p = await boot(env);
-    p.holds.push((call) => call.method === 'POST' && call.url === '/app/import/api/save');
-    await startGuided(p);
-    const save = p.calls.find((c) => c.url === '/app/import/api/save');
-    assert.ok(save && !save.settled, 'the upload is out');
+    p.holds.push(isSave);
+    await validateQuick(p, false);
+    const save = p.calls.find(isSave);
+    assert.ok(save && !save.settled);
+    assert.strictEqual(p.byId('importUploadStatus').textContent, '');
     p.leave();
     await settle();
-    assert.ok(save.aborted, 'the upload was aborted');
-    assert.deepStrictEqual(p.writes().map((c) => c.url), ['/app/import/api/save'], 'no meta, preview or start went out');
-    assert.ok(p.byId('home-text')?.textContent === 'home as it was');
+    assert.ok(save.aborted);
+    assert.strictEqual(p.notices.length, 0);
   });
 
   await test("a write out when import goes finishes uncut, its answer runs nothing, and the chain's next write never starts", async () => {
