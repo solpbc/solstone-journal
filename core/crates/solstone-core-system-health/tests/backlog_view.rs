@@ -57,7 +57,13 @@ fn pending_audio_jsonl_segment(
     let path = root.join("chronicle").join(day).join(segment);
     fs::create_dir_all(&path).unwrap();
     let jsonl = path.join("audio.jsonl");
-    fs::write(&jsonl, "{}\n").unwrap();
+    // Without a recording, only a processing record that still owes speech
+    // keeps the sidecar pending; a bare header has nothing to transcribe.
+    fs::write(
+        &jsonl,
+        "{\"_solstone_processing\":{\"state\":\"analyzed\"}}\n",
+    )
+    .unwrap();
     fs::File::open(&jsonl)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(modified))

@@ -80,6 +80,7 @@ fn day_scan_reports_hand_derived_seven_segment_fixture() {
     let root = temporary.path();
     let short = segment(root, Some("import.audio"), "070000_17");
     write(&short, "audio.jsonl", "{}\n");
+    write(&short, "raw.flac", "recording");
     let audio = segment(root, Some("import.audio"), "080000_300");
     write(&audio, "audio.jsonl", "{}\n{\"start\":0}\n");
     let screen = segment(root, Some("import.screen"), "081500_300");
@@ -377,8 +378,10 @@ fn jsonl_row_probes_and_processing_record_fallbacks_are_conservative() {
     let root = temporary.path();
     let third_row = segment(root, Some("thirdrow"), "130000_300");
     write(&third_row, "audio.jsonl", "{}\n{}\n{\"start\":0}\n");
+    write(&third_row, "raw.flac", "recording");
     let non_utf8 = segment(root, Some("nonutf8"), "131500_300");
     fs::write(non_utf8.join("audio.jsonl"), b"{}\n\xff{\"start\":0}\n").unwrap();
+    write(&non_utf8, "raw.flac", "recording");
     let fallback = segment(root, Some("fallback"), "133000_300");
     write(&fallback, "a_audio.jsonl", "not-json\n");
     write(
