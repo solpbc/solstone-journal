@@ -9,7 +9,7 @@
 //     SolFocus.isShown(el)
 //     SolFocus.focusLost(doc)
 //     SolFocus.refocus(doc, held, targets)
-//     SolFocus.keepAfterPick(select, life)
+//     SolFocus.keepAfterPick(select, life, done)
 //
 // The shell carries it in its boot part, so every view has it before it mounts
 // and no view asks for it on its own.
@@ -74,6 +74,9 @@
   //
   // `life` is the view's mount: its listeners and timers go with the view.
   // A page that isn't a view leaves it out and lasts as long as the page.
+  // `done`, if given, is called once when the wait ends, after its landing:
+  // for a view that has more to draw once the pick has settled. It is called
+  // at once when nothing arms, and never when the view goes first.
   // The window is twice the slowest delay seen on a phone from the change to
   // that blur (865 ms).
   const PICK_BLUR_MS = 1730;
@@ -87,23 +90,33 @@
   };
   const pickWaits = new WeakMap();
 
-  function keepAfterPick(select, life) {
+  function keepAfterPick(select, life, done) {
     life = life || pageLife;
+    const settled = () => { if (typeof done === 'function') done(); };
     const earlier = pickWaits.get(life);
     if (earlier) earlier();
     const doc = select?.ownerDocument;
-    if (!doc || doc.activeElement !== select || !isShown(select)) return false;
+    if (!doc || doc.activeElement !== select || !isShown(select)) {
+      settled();
+      return false;
+    }
     let landing = 0;
     let expiry = 0;
+    let ended = false;
     const offs = [];
-    const end = () => {
+    const end = (targets) => {
+      if (ended) return;
+      ended = true;
       offs.splice(0).forEach((off) => off());
       life.clearTimeout(expiry);
       life.clearTimeout(landing);
-      if (pickWaits.get(life) === end) pickWaits.delete(life);
+      if (pickWaits.get(life) === stop) pickWaits.delete(life);
+      if (targets) refocus(doc, true, targets);
+      settled();
     };
+    const stop = () => end();
     ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach((type) => {
-      offs.push(life.on(doc, type, end, { capture: true }));
+      offs.push(life.on(doc, type, stop, { capture: true }));
     });
     // Landed a task later: the menu is still closing as the blur arrives.
     // The view may have drawn the select again since the pick (a refused
@@ -119,12 +132,11 @@
       landing = life.setTimeout(() => {
         landing = 0;
         if (!blurred.isConnected) return;
-        end();
-        refocus(doc, true, [blurred, select]);
+        end([blurred, select]);
       }, 0);
     }, { capture: true }));
-    expiry = life.setTimeout(end, PICK_BLUR_MS);
-    pickWaits.set(life, end);
+    expiry = life.setTimeout(stop, PICK_BLUR_MS);
+    pickWaits.set(life, stop);
     return true;
   }
 
