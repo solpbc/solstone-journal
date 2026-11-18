@@ -954,3 +954,130 @@ async fn capability_expiring_during_body_wait_is_not_ready() {
     assert!(cache.try_current(&journal.0, 2000).is_none());
     worker.join().unwrap();
 }
+
+/// Serves one `/token/access` answer per `(jti, iat, exp)`, in order, on one
+/// origin, and reports each request's header block.
+fn sequential_access_server(
+    instance: &str,
+    answers: Vec<(&'static str, i64, i64)>,
+) -> (
+    String,
+    std::sync::mpsc::Receiver<String>,
+    std::thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let (headers_tx, headers_rx) = std::sync::mpsc::channel();
+    let instance = instance.to_owned();
+    let worker = std::thread::spawn(move || {
+        for (jti, iat, exp) in answers {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            let headers = loop {
+                let mut bytes = [0; 4096];
+                let read = stream.read(&mut bytes).unwrap();
+                assert!(read > 0);
+                request.extend_from_slice(&bytes[..read]);
+                if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let headers = std::str::from_utf8(&request[..end]).unwrap().to_owned();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse().unwrap())
+                        })
+                        .expect("POST content length");
+                    if request.len() >= end + 4 + length {
+                        break headers;
+                    }
+                }
+            };
+            headers_tx.send(headers).unwrap();
+            let token = create_test_jwt(
+                DEFAULT_RELAY_ISSUER,
+                &format!("instance:{instance}"),
+                "spl-relay",
+                "session.dial",
+                2,
+                &instance,
+                iat,
+                exp,
+                jti,
+            );
+            let expires_at = time::OffsetDateTime::from_unix_timestamp(exp)
+                .unwrap()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap();
+            let body = json!({"protocol_version":2,"device_token":token,"expires_at":expires_at})
+                .to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+        }
+    });
+    (origin, headers_rx, worker)
+}
+
+fn expiry(snapshot: &solstone_core_sol_link::pairing::RelayAccessSnapshot) -> i64 {
+    time::OffsetDateTime::parse(
+        &snapshot.expires_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap()
+    .unix_timestamp()
+}
+
+#[tokio::test]
+async fn capability_renews_once_a_quarter_of_its_life_has_passed() {
+    let journal = TempJournal::new();
+    // Fetched at 1000 with life to 2000: reused through 1249, renewed from 1250.
+    let (origin, headers, worker) = sequential_access_server(
+        "inst-test",
+        vec![("first", 900, 2000), ("second", 1250, 5000)],
+    );
+    setup_test_journal(&journal.0, "inst-test", "service", &origin);
+    let cache = RelayAccessCache::with_options(DEFAULT_RELAY_ISSUER, Duration::from_secs(2));
+
+    let first = cache.acquire(&journal.0, 1000).await.unwrap();
+    assert_eq!(expiry(&first), 2000);
+    assert_eq!(cache.acquire(&journal.0, 1249).await.unwrap(), first);
+
+    let renewed = cache.acquire(&journal.0, 1250).await.unwrap();
+    assert_eq!(expiry(&renewed), 5000);
+    assert_eq!(cache.try_current(&journal.0, 1250).unwrap(), renewed);
+    worker.join().unwrap();
+
+    // The relay learns that this home renews its devices itself.
+    let requests: Vec<String> = headers.try_iter().collect();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert!(
+            request
+                .lines()
+                .any(|line| line.eq_ignore_ascii_case("spl-device-renewal: home")),
+            "{request}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_renewal_keeps_serving_the_usable_capability_until_it_expires() {
+    let journal = TempJournal::new();
+    let (origin, _headers, worker) =
+        sequential_access_server("inst-test", vec![("only", 900, 2000)]);
+    setup_test_journal(&journal.0, "inst-test", "service", &origin);
+    let cache = RelayAccessCache::with_options(DEFAULT_RELAY_ISSUER, Duration::from_secs(2));
+    let first = cache.acquire(&journal.0, 1000).await.unwrap();
+    // The relay is gone: renewal fails, so the usable capability is served.
+    worker.join().unwrap();
+    assert_eq!(cache.acquire(&journal.0, 1500).await.unwrap(), first);
+    assert_eq!(cache.acquire(&journal.0, 1999).await.unwrap(), first);
+    assert!(cache.acquire(&journal.0, 2000).await.is_err());
+}

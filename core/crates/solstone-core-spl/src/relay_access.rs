@@ -17,6 +17,9 @@ use time::format_description::well_known::Rfc3339;
 pub const DEFAULT_RELAY_ISSUER: &str = "link.solstone.app";
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 65536;
+/// Tells the relay that this home renews its devices' relay access itself, so
+/// the relay may stop renewing them on its own (`proto/tokens.md` § access).
+pub const DEVICE_RENEWAL_HEADER: (&str, &str) = ("SPL-Device-Renewal", "home");
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RelayAccessError {
@@ -248,6 +251,7 @@ pub fn fetch_relay_access(
         .post(&url)
         .header("Content-Type", "application/json")
         .header("User-Agent", "")
+        .header(DEVICE_RENEWAL_HEADER.0, DEVICE_RENEWAL_HEADER.1)
         .send(request_body);
 
     let response = match response {
@@ -472,6 +476,15 @@ pub struct CurrentRelayAccess {
 struct CacheEntry {
     access: CurrentRelayAccess,
     exp_unix: i64,
+    renew_at_unix: i64,
+}
+
+/// Every device renews its relay access only from this cache, so what it hands
+/// out has to keep ample life: renew once a quarter of the remaining life has
+/// passed (15 days of the relay's 60), and a device always leaves with at
+/// least three quarters of a lifetime.
+fn renew_point(fetched_unix: i64, exp_unix: i64) -> i64 {
+    fetched_unix.saturating_add(exp_unix.saturating_sub(fetched_unix).max(0) / 4)
 }
 
 struct InFlightChannel {
@@ -572,6 +585,7 @@ impl RelayAccessCache {
         now: i64,
     ) -> Result<CurrentRelayAccess, RelayAccessError> {
         let started = Instant::now();
+        let mut stale = None;
         let (mut rx, attempt_id, epoch, configuration) = {
             let boundary = configuration_boundary(root);
             let generation = boundary.lock().expect("service configuration");
@@ -597,9 +611,15 @@ impl RelayAccessCache {
             let mut state = self.inner.state.lock().expect("cache state");
             if let Some(entry) = &state.entry {
                 if entry.exp_unix > now && entry.access.configuration == configuration {
-                    return Ok(entry.access.clone());
+                    if now < entry.renew_at_unix {
+                        return Ok(entry.access.clone());
+                    }
+                    // Due for renewal but still usable: renew, and keep it
+                    // to serve if the relay cannot renew it right now.
+                    stale = Some(entry.access.clone());
+                } else {
+                    state.entry = None;
                 }
-                state.entry = None;
             }
             let epoch = self.epoch();
             if let Some(in_flight) = &state.in_flight
@@ -666,6 +686,7 @@ impl RelayAccessCache {
                                 state.entry = Some(CacheEntry {
                                     access: access.clone(),
                                     exp_unix,
+                                    renew_at_unix: renew_point(now, exp_unix),
                                 });
                             }
                             state.in_flight = None;
@@ -699,9 +720,9 @@ impl RelayAccessCache {
                 {
                     state.in_flight = None;
                 }
-                return Err(RelayAccessError::Unavailable(
+                Err(RelayAccessError::Unavailable(
                     "relay access request timed out".into(),
-                ));
+                ))
             }
         };
         let boundary = configuration_boundary(root);
@@ -710,10 +731,16 @@ impl RelayAccessCache {
         if current != configuration || self.epoch() != epoch {
             return Err(unavailable_change());
         }
-        let access = result?;
-        if expires(&access.snapshot)
-            .is_none_or(|exp| exp <= now.saturating_add(started.elapsed().as_secs() as i64))
-        {
+        let now = now.saturating_add(started.elapsed().as_secs() as i64);
+        let live =
+            |access: &CurrentRelayAccess| expires(&access.snapshot).is_some_and(|exp| exp > now);
+        let access = match result {
+            Ok(access) => access,
+            // A relay that cannot renew right now must not cost a device the
+            // access it can still use.
+            Err(error) => return stale.filter(live).ok_or(error),
+        };
+        if !live(&access) {
             return Err(RelayAccessError::Unavailable("token expired".into()));
         }
         Ok(access)
