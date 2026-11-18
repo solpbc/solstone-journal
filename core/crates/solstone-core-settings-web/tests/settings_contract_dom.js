@@ -2802,6 +2802,35 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.writes().length === 2, `two writes: ${p.writes().length}`);
   });
 
+  await test("a priority refused, then a key that picks again before it settles: the key ends the wait, and its own pick, a moment later, still drops the first redraw", async () => {
+    const { p, spec, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    const held = holdGranola(p, spec.write[0], spec.write[1]);
+    p.clock.advance(300);
+    // A browser's ArrowDown: the keydown first, then the change it makes.
+    p.doc.dispatch(picked, { type: 'keydown', key: 'ArrowDown' });
+    pickFrom(p, picked, 'low');
+    p.clock.advance(0);
+    await settle();
+    held.release({ success: true }, 200);
+    await settle();
+    p.clock.advance(3000);
+    await settle();
+    assert.ok(listReads(p) === reads, `not drawn: ${listReads(p) - reads}`);
+    assert.ok(picked.value === 'low' && priorityOf(p, spec.activity) === picked, `the second pick kept: ${picked.value}`);
+  });
+
+  await test("a priority refused, then the list drawn again by another write before it settles: nothing more is drawn when it settles", async () => {
+    const { p, spec, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    p.clock.advance(300);
+    p.doc.dispatch(removeOf(p, 'a3'), { type: 'click' });
+    await settle();
+    const afterRemove = listReads(p);
+    assert.ok(afterRemove > reads && priorityOf(p, spec.activity) !== picked, `the remove drew the list: ${afterRemove - reads}`);
+    p.clock.advance(3000);
+    await settle();
+    assert.ok(listReads(p) === afterRemove, `nothing more at the window: ${listReads(p) - afterRemove}`);
+  });
+
   await test("a saved priority, then a refused one: the choice put back is the one saved, not the one first drawn", async () => {
     const { p, spec } = await pickPage("an activity's priority");
     let held = holdGranola(p, spec.write[0], spec.write[1]);
