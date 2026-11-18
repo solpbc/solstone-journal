@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build ran a linux kernel with a flaw in how it handles some incoming connection requests (CVE-2026-98432): anyone who could reach one of its machines could in principle have run their own code there and reached what it was processing. the published exploit relies on a network feature the service doesn't use. the previous build also let a request from any journal using confidential processing make the machine open a file on itself or fetch from its own internal services, by asking it to load an image or audio from a web link or file path instead of the request carrying it (CVE-2026-15974). the service keeps no record that could show whether either flaw was used. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another. if you use confidential processing, install this update.
 - a Strava or Apple Health export you upload is no longer included in your backups, even before its import starts.
 - photos of people could be missing in large journals after overnight processing. your journal now checks fewer activities to recover those photos.
 - the import page now shows when a file is uploading and asks you to keep the page open until it finishes.

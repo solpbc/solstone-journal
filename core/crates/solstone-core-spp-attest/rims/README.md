@@ -9,9 +9,9 @@ is needed on linux or macos.
 
 ## qualified profiles
 
-each admitted production pcr fingerprint is mapped to one document set. both sets
-share these h100 firmware variants, and each adds the driver its engine runs:
-`595.71.05` for image 5, `595.91.07` for image 6.
+each admitted production pcr fingerprint is mapped to one document set. image 6's
+set is these h100 firmware variants plus driver `595.91.07`. the `595.71.05` driver
+document of the retired image 5 stays here for tests; it is not admitted or packaged.
 
 - `NV_GPU_VBIOS_1010_0210_886_96009F0004`: a fresh, non-content attestation
   captured and appraised on 2026-10-01.
@@ -19,7 +19,7 @@ share these h100 firmware variants, and each adds the driver its engine runs:
   envelope in [the attestation fixtures](../../../../tests/fixtures/spp_attest/),
   appraised again on 2026-10-01.
 
-the 595.71.05 set's outcomes are recorded in [the qualification
+the retired 595.71.05 set's outcomes are recorded in [the qualification
 receipt](qualification.json); the 595.91.07 set has no receipt in this repository.
 the cpu fingerprint selects its set only after cpu verification. nvattest derives
 the requested identities from the gpu report and still checks signatures, certificate chains,

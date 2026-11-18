@@ -10,14 +10,13 @@ use crate::{
     snp::{PcrMode, Policy, TcbFloor},
 };
 
-// Image 5 was reboot-qualified on 2026-10-29 in the post-roll state only.
-// Image 4 is no longer admitted in either firmware state: it lacks image 5's
-// measured partition table. An unqualified prediction never enters this set.
+// Image 6 was reboot-qualified on 2026-11-16 in the post-roll state only.
+// Image 5 is no longer admitted: it runs a kernel without the fix for
+// CVE-2026-98432 and loads media by URL. Image 4 lacks image 5's measured
+// partition table. An unqualified prediction never enters this set.
 // Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
-pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
-    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
-    "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
-];
+pub const PRODUCTION_PCR_SHA256_PINS: &[&str] =
+    &["8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9"];
 
 // The key that signs Azure's confidential-VM firmware (the paravisor that
 // implements the vTPM behind every PCR). The PCR pins say what the engine
@@ -38,34 +37,6 @@ pub const PUBLISHED_QUOTE_PCR_SELECTION: [u32; 14] =
 // transparency record. The structural registers 8, 16, 22 and 23 are the fixed
 // values pcr_appraisal checks.
 pub type ApplicationPcrValues = [(u32, [u8; 32]); 8];
-
-// Complete application registers for conf-proc 9968c21. The qualified
-// post-roll fingerprint selects this vector as one indivisible policy.
-pub const IMAGE_5_APPLICATION_PCRS: ApplicationPcrValues = [
-    (
-        4,
-        decode_hex("9559fd2056f187bb0d13d0de5e131bf3a4df94dbdaa9d5b991725ae8adbde852"),
-    ),
-    (
-        7,
-        decode_hex("6ea866422436b46a50e6f2313be40c782a57aee0c71833f9f3c0b6ccfb67c73d"),
-    ),
-    (
-        9,
-        decode_hex("b7a989edefac316f7ea2bea1eba878baedcd4b0c3ea67d1e13df70911ff932be"),
-    ),
-    (
-        11,
-        decode_hex("3215d3f6decf54daa36dcf6a625829feb506e74ad9d4cfd9a0d5081bad3d5fc9"),
-    ),
-    (12, [0u8; 32]),
-    (13, [0u8; 32]),
-    (14, [0u8; 32]),
-    (
-        15,
-        decode_hex("ee22ecf6651b12ade6fd7ab54a8743ea2606e8ce130446ff86792fdb55d3f0e6"),
-    ),
-];
 
 // Complete application registers for conf-proc 1630bf4. The qualified
 // post-roll fingerprint selects this vector as one indivisible policy.
@@ -96,16 +67,10 @@ pub const IMAGE_6_APPLICATION_PCRS: ApplicationPcrValues = [
 ];
 
 /// Each admitted fingerprint and its complete published register values.
-pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] = &[
-    (
-        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
-        &IMAGE_5_APPLICATION_PCRS,
-    ),
-    (
-        "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
-        &IMAGE_6_APPLICATION_PCRS,
-    ),
-];
+pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] = &[(
+    "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
+    &IMAGE_6_APPLICATION_PCRS,
+)];
 
 /// Complete register policies for the admitted published builds.
 pub fn published_application_pcr_profiles() -> ApplicationPcrProfiles {
@@ -189,12 +154,15 @@ mod tests {
         test_support::fixture_bytes,
     };
 
-    const PUBLISHED_BUILD_QUOTES: &[&str] =
-        &["image5-post-roll-quote.pcrs", "image6-post-roll-quote.pcrs"];
+    const PUBLISHED_BUILD_QUOTES: &[&str] = &["image6-post-roll-quote.pcrs"];
 
-    /// Image 4's two reboot-qualified states, admitted until image 5 replaced it.
-    const RETIRED_BUILD_QUOTES: &[&str] =
-        &["sealed-pre-roll-quote.pcrs", "sealed-post-roll-quote.pcrs"];
+    /// Image 4's two reboot-qualified states, admitted until image 5 replaced
+    /// it, and image 5's post-roll state, admitted until image 6 replaced it.
+    const RETIRED_BUILD_QUOTES: &[&str] = &[
+        "sealed-pre-roll-quote.pcrs",
+        "sealed-post-roll-quote.pcrs",
+        "image5-post-roll-quote.pcrs",
+    ];
 
     /// Where register `position` of the selection keeps its digest in a
     /// quote.pcrs file: two TPML_DIGEST lists of up to eight sized slots after
@@ -243,7 +211,7 @@ mod tests {
         let policy = production_policy();
         let profiles = policy.application_pcrs.as_ref().unwrap();
         let old = fixture_bytes("sealed-post-roll-quote.pcrs");
-        let new = fixture_bytes("image5-post-roll-quote.pcrs");
+        let new = fixture_bytes("image6-post-roll-quote.pcrs");
         let new_pin = check_pcr_fingerprint(&new, &policy).unwrap();
         let mut mixed = new.clone();
         let offset = digest_offset(5); // PCR 9
@@ -263,8 +231,8 @@ mod tests {
             .as_ref()
             .expect("production appraises registers")
             .select(super::PRODUCTION_PCR_SHA256_PINS[0])
-            .expect("image-5 profile");
-        let published = fixture_bytes("image5-post-roll-quote.pcrs");
+            .expect("image-6 profile");
+        let published = fixture_bytes("image6-post-roll-quote.pcrs");
         let mut reasons = BTreeSet::new();
         for (position, pcr) in PUBLISHED_QUOTE_PCR_SELECTION.into_iter().enumerate() {
             let mut quote = published.clone();
@@ -291,7 +259,7 @@ mod tests {
             .as_ref()
             .expect("production appraises registers")
             .select(super::PRODUCTION_PCR_SHA256_PINS[0])
-            .expect("image-5 profile");
+            .expect("image-6 profile");
         // The retired engine's quote carries ten registers, not the published
         // fourteen. Both admission layers refuse it independently.
         let overlap = fixture_bytes("quote.pcrs");

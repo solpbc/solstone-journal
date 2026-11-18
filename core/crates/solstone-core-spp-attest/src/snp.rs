@@ -1807,7 +1807,7 @@ mod tests {
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
         let profiles = GpuProfiles::production();
         // Captured quote-PCR bytes for the admitted, reboot-qualified image state.
-        let mut quote = fixture_bytes("image5-post-roll-quote.pcrs");
+        let mut quote = fixture_bytes("image6-post-roll-quote.pcrs");
         let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");
         assert_eq!(
             profiles.select(&fingerprint).unwrap().status(),
