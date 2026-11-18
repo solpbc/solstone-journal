@@ -19,9 +19,9 @@ use crate::readers::{
     briefing_freshness, briefing_lateness_state, collect_activities,
     collect_top_activities_yesterday, compute_briefing_phase, count_journal_age_days,
     get_capture_health, last_observe_relative_seconds, load_awareness, load_backlog_source,
-    load_briefing, load_connections_network, load_flow_md, load_pulse_narrative, load_stats,
-    load_yesterday_stats, overnight_window_passed, render_briefing_sections, resolve_attention,
-    resolve_owner_voice_tier, summarize_pipeline_day,
+    load_briefing, load_connections_network, load_flow_md, load_pulse_narrative,
+    load_pulse_narrative_at, load_stats, load_yesterday_stats, overnight_window_passed,
+    render_briefing_sections, resolve_attention, resolve_owner_voice_tier, summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
@@ -55,13 +55,18 @@ impl PulseContext {
 }
 
 /// Assemble all fields used by the Python home context in its build order.
-fn build_pulse_context(context: &HomeContext) -> PulseContext {
-    let today = context.today();
+fn build_pulse_context(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> PulseContext {
+    let account =
+        account_time.map(|now| HomeContext::with_zone(context.journal_root(), now, context.zone()));
+    let account_context = account.as_ref().unwrap_or(context);
+    let latest = account_time.map(|instant| instant.timestamp_millis());
+    let today = account_context.today();
+    let yesterday = account_context.yesterday();
     let journal_age_days = count_journal_age_days(context);
     let capture_health = get_capture_health(context);
     let awareness = load_awareness(context);
     let attention = resolve_attention(context, &awareness).unwrap_or(Value::Null);
-    let stats_data = load_stats(context, &today);
+    let stats_data = load_stats(account_context, &today);
     let stats = stats_data
         .get("stats")
         .cloned()
@@ -74,12 +79,12 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         .get("facet_data")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let flow = load_flow_md(context, &today);
+    let flow = load_flow_md(account_context, &today, latest);
     let flow_updated_at = flow.updated_at.and_then(|timestamp| {
         DateTime::from_timestamp(timestamp as i64, 0)
             .map(|time| time.with_timezone(&Utc).to_rfc3339())
     });
-    let narrative = load_pulse_narrative(context, &today);
+    let narrative = load_pulse_narrative_at(account_context, &today, latest);
     let (
         narrative_content,
         narrative_updated_at,
@@ -106,12 +111,12 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             Value::Null,
         )
     };
-    let activities = collect_activities(context, &today);
+    let activities = collect_activities(account_context, &today, latest);
     let latest_weekly_reflection = crate::weekly::card(context);
     let last_observe_relative = last_observe_relative_seconds(context)
         .map(|seconds| format!("{} ago", relative_time(seconds as f64)));
 
-    let briefing = load_briefing(context, &today);
+    let briefing = load_briefing(account_context, &today);
     let briefing_document = briefing.clone().unwrap_or(Value::Null);
     let mut rendered_sections = render_briefing_sections(&briefing_document);
     // A briefing whose only content is its needs-attention section is still a
@@ -134,7 +139,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     } else {
         solstone_core_system_health::journal_not_yet(
             context.journal_root(),
-            context.now_local().naive_local(),
+            account_context.now_local().naive_local(),
         )
     };
     let body_data = solstone_core_location::body_records::has_body_data(context.journal_root());
@@ -149,15 +154,15 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     // stand alone.
     let briefing_phase = if !briefing_exists
         && (body_data || not_yet_phase.is_none())
-        && !owes_a_briefing(context.journal_root(), &context.yesterday())
+        && !owes_a_briefing(context.journal_root(), &yesterday)
     {
         "none_owed"
     } else {
         not_yet_phase.unwrap_or_else(|| {
-            compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
+            compute_briefing_phase(segment_count, account_context.local_hour(), briefing_exists)
         })
     };
-    let briefing_lateness = briefing_lateness_state(context.now_local(), briefing_phase);
+    let briefing_lateness = briefing_lateness_state(account_context.now_local(), briefing_phase);
     let reflection_state = latest_weekly_reflection
         .get("state")
         .and_then(Value::as_str);
@@ -175,7 +180,14 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         needs_keys.insert(needs_dedup_key(&attention));
     }
     let mut deduped_pulse_needs = Vec::new();
-    for need in &pulse_needs {
+    let live_pulse_needs = account.as_ref().map(|_| {
+        load_pulse_narrative(context, &context.today())
+            .needs
+            .into_iter()
+            .map(Value::String)
+            .collect()
+    });
+    for need in live_pulse_needs.as_ref().unwrap_or(&pulse_needs) {
         let key = needs_dedup_key(need);
         if needs_keys.insert(key) {
             deduped_pulse_needs.push(need.clone());
@@ -221,16 +233,19 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         context.now_utc,
         transcription_issue.as_ref(),
     );
-    let yesterday_processing = summarize_yesterday_processing(context, journal_age_days);
+    let yesterday_processing =
+        summarize_yesterday_processing(context, journal_age_days).map(|mut summary| {
+            if account.is_some() {
+                summary["analysis_day"] = context.yesterday().into();
+            }
+            summary
+        });
     let horizon = read_connections_horizon(context.journal_root());
     let connections = load_connections_card(context, horizon);
 
     let mut fields = Map::new();
     fields.insert("today".to_owned(), today.into());
-    fields.insert(
-        "briefing_analysis_day".to_owned(),
-        context.yesterday().into(),
-    );
+    fields.insert("briefing_analysis_day".to_owned(), yesterday.clone().into());
     fields.insert("now".to_owned(), Value::Null);
     fields.insert("health_glance".to_owned(), health_glance);
     fields.insert("capture_health".to_owned(), capture_health);
@@ -254,11 +269,9 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     // The day's body lines, composed when read and never stored: a hide or a
     // late import shows at once, and the briefing stays as its model wrote it.
     // A read that fails leaves the section out, never the panel.
-    let briefing_body = solstone_core_location::body_records::day_lines(
-        context.journal_root(),
-        &context.yesterday(),
-    )
-    .unwrap_or_default();
+    let briefing_body =
+        solstone_core_location::body_records::day_lines(context.journal_root(), &yesterday)
+            .unwrap_or_default();
     fields.insert("briefing_body".to_owned(), Value::Array(briefing_body));
     fields.insert("briefing_meta".to_owned(), briefing_meta);
     fields.insert("briefing_phase".to_owned(), briefing_phase.into());
@@ -297,13 +310,18 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     debug_assert_eq!(fields.len(), 32);
     PulseContext {
         fields,
-        now: context.now_local(),
+        now: account_context.now_local(),
     }
 }
 
 /// Project a full context to the public pulse API shape.
 pub fn pulse_payload(context: &HomeContext) -> Value {
-    build_pulse_context(context).into_pulse_payload()
+    pulse_payload_at(context, None)
+}
+
+/// Override the account clock for this read while keeping operational status live.
+pub fn pulse_payload_at(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> Value {
+    build_pulse_context(context, account_time).into_pulse_payload()
 }
 
 /// Before the nightly run has had its first chance, no briefing is late or
@@ -340,7 +358,11 @@ fn owes_a_briefing(journal: &std::path::Path, day: &str) -> bool {
 
 /// Project the briefing fields from a freshly assembled context for this request.
 pub fn briefing_payload(context: &HomeContext) -> Value {
-    let payload = pulse_payload(context);
+    briefing_payload_at(context, None)
+}
+
+pub fn briefing_payload_at(context: &HomeContext, account_time: Option<DateTime<Utc>>) -> Value {
+    let payload = pulse_payload_at(context, account_time);
     let field = |name: &str| payload.get(name).cloned().unwrap_or(Value::Null);
     json!({
         "exists": field("briefing_exists"),

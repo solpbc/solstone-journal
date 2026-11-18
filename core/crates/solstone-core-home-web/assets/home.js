@@ -7,11 +7,17 @@
   // on the stream's reconnect by itself (connectionRecovery).
   window.SolViews.register('home', { rereadsOnReconnect: true, mount: mountHome });
 
+  function accountTimeFromFragment() {
+    return window.location.hash?.match(/^#today=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)?.[1];
+  }
+
   function mountHome(ctx) {
     const reportHomeReady = ctx.ready;
 
-    const PULSE_URL = '/app/home/api/pulse';
-    const BRIEFING_URL = '/app/home/api/briefing';
+    const accountTime = accountTimeFromFragment();
+    const accountQuery = accountTime ? '?today=' + accountTime : '';
+    const PULSE_URL = '/app/home/api/pulse' + accountQuery;
+    const BRIEFING_URL = '/app/home/api/briefing' + accountQuery;
     const FIRST_MINUTES_URL = '/app/home/api/first-minutes';
     const AGENTS_STATE_URL = '/app/agents/api/state';
     const SETUP_ACTION_URL = '/init/api/action';
@@ -396,7 +402,8 @@
     function nightRows(pulse) {
       const night = pulse?.yesterday_processing;
       if (!isPlainObject(night) || night.mode !== 'degraded') return [];
-      const runs = '/app/thinking/#runs/' + encodeURIComponent(pulse.briefing_analysis_day || '');
+      const day = night.analysis_day || pulse.briefing_analysis_day;
+      const runs = '/app/thinking/#runs/' + encodeURIComponent(day || '');
       const accountRun = runs + '/morning_briefing';
       const links = (Array.isArray(night.gap_links) ? night.gap_links : []).filter(isPlainObject);
       // The missing account and the briefing's own failed run are one event:
@@ -405,7 +412,8 @@
       const accountLinks = links.filter(isAccount);
       const rows = [];
       const account = accountLinks.find(link => link.href === accountRun) || accountLinks[0];
-      if (account && paintedSide !== 'yesterday' && !briefingData?.exists) {
+      const sameDay = day === pulse.briefing_analysis_day;
+      if (account && (!sameDay || (paintedSide !== 'yesterday' && !briefingData?.exists))) {
         rows.push({ text: account.text, href: account.href });
       }
       const rest = links.filter(link => !isAccount(link));
@@ -1097,10 +1105,13 @@
 
     function renderTodayHtml(pulse) {
       const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
+      const day = accountTime && pulse.now?.slice(0, 16) === accountTime ? pulse.today : '';
+      const allActivities = '<a class="pulse-today-link" href="/app/activities/' + esc(day)
+        + '" data-copy-key="home-today-link">all of today\'s activities →</a>';
       if (!activities.length) {
         return '<div class="pulse-today" id="pulse-today">'
           + '<div class="pulse-narrative-empty">no recent activity yet today.</div>'
-          + '<a class="pulse-today-link" href="/app/activities/" data-copy-key="home-today-link">all of today\'s activities →</a>'
+          + allActivities
           + '</div>';
       }
       let html = '<div class="pulse-today" id="pulse-today">';
@@ -1160,7 +1171,7 @@
         });
         html += '</div>';
       }
-      html += '<a class="pulse-today-link" href="/app/activities/" data-copy-key="home-today-link">all of today\'s activities →</a>';
+      html += allActivities;
       html += '</div>';
       return html;
     }
@@ -2057,6 +2068,13 @@
         return;
       }
       isFirstPage = true;
+      ctx.on(window, 'hashchange', function () {
+        // The browser owns same-path fragment changes. Reload only if the
+        // account clock changes, so reads from the old mount cannot win.
+        if (window.location.pathname === pathname && accountTimeFromFragment() !== accountTime) {
+          window.location.reload();
+        }
+      });
       wireInteractions();
       wireRealtime();
       startBriefingEarly();

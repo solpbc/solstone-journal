@@ -13,27 +13,29 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   EXPORT_ANCHOR,
-  `  window.__today = { renderTodayHtml };
+  `  window.__today = { renderTodayHtml, PULSE_URL, BRIEFING_URL };
 ${EXPORT_ANCHOR}`,
 );
 
-const location = { href: '' };
-const document = {
-  readyState: 'loading',
-  addEventListener() {},
-  querySelector() { return null; },
-};
-const window = { createViewReady: () => () => {},
-  location,
-  document,
-  addEventListener() {},
-  JournalFormat: { time: () => '12:00 PM' },
-};
-window.window = window;
-document.defaultView = window;
+function mount(hash = '') {
+  const document = {
+    readyState: 'loading',
+    addEventListener() {},
+    querySelector() { return null; },
+  };
+  const window = { createViewReady: () => () => {},
+    location: { href: '', hash },
+    document,
+    addEventListener() {},
+    JournalFormat: { time: () => '12:00 PM' },
+  };
+  window.window = window;
+  document.defaultView = window;
+  vm.runInNewContext(withViewRuntime(source), { window, document, console }, { filename: 'home.js' });
+  return window.__today;
+}
 
-vm.runInNewContext(withViewRuntime(source), { window, document, console }, { filename: 'home.js' });
-const { renderTodayHtml } = window.__today;
+const { renderTodayHtml, PULSE_URL, BRIEFING_URL } = mount();
 assert(renderTodayHtml, 'renderTodayHtml exported');
 
 // A concurrent pair: both rows render, each with its own source element
@@ -62,3 +64,14 @@ assert(html.includes('href="/app/activities/" data-copy-key="home-today-link"'))
 
 const emptyHtml = renderTodayHtml({});
 assert(emptyHtml.includes('href="/app/activities/" data-copy-key="home-today-link"'));
+
+assert.strictEqual(PULSE_URL, '/app/home/api/pulse');
+assert.strictEqual(BRIEFING_URL, '/app/home/api/briefing');
+const demo = mount('#today=2025-10-22T15:30');
+assert.strictEqual(demo.PULSE_URL, PULSE_URL + '?today=2025-10-22T15:30');
+assert.strictEqual(demo.BRIEFING_URL, BRIEFING_URL + '?today=2025-10-22T15:30');
+assert(demo.renderTodayHtml({ today: '20251022', now: '2025-10-22T15:30:00.000000' })
+  .includes('href="/app/activities/20251022"'));
+assert(demo.renderTodayHtml({ today: '20261117', now: '2026-11-17T15:30:00.000000' })
+  .includes('href="/app/activities/"'));
+assert.strictEqual(mount('#today=bad').PULSE_URL, PULSE_URL);

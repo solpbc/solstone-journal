@@ -62,18 +62,27 @@ pub fn count_journal_age_days(context: &HomeContext) -> i64 {
 }
 
 /// Read `chronicle/<day>/talents/flow.md` without creating its parent directories.
-pub fn load_flow_md(context: &HomeContext, day: &str) -> FlowDocument {
+pub fn load_flow_md(context: &HomeContext, day: &str, latest: Option<i64>) -> FlowDocument {
     let path = day_root(context, day).join("talents/flow.md");
     match fs::read_to_string(&path) {
-        Ok(content) => FlowDocument {
-            content: Some(content),
-            updated_at: path
+        Ok(content) => {
+            let modified_at = path
                 .metadata()
                 .ok()
                 .and_then(|metadata| metadata.modified().ok())
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| duration.as_secs_f64()),
-        },
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok());
+            let within_time = latest.is_none_or(|latest| {
+                modified_at.is_some_and(|time| {
+                    i64::try_from(time.as_millis()).is_ok_and(|at| at <= latest)
+                })
+            });
+            FlowDocument {
+                content: within_time.then_some(content),
+                updated_at: modified_at
+                    .filter(|_| within_time)
+                    .map(|duration| duration.as_secs_f64()),
+            }
+        }
         Err(_) => FlowDocument {
             content: None,
             updated_at: None,
@@ -88,6 +97,16 @@ pub fn read_latest(
     name: &str,
     lookback_days: u32,
 ) -> Option<Value> {
+    read_latest_at(context, day, name, lookback_days, None)
+}
+
+fn read_latest_at(
+    context: &HomeContext,
+    day: &str,
+    name: &str,
+    lookback_days: u32,
+    latest: Option<i64>,
+) -> Option<Value> {
     let start = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
     for offset in 0..=lookback_days {
         let probe = (start - Duration::days(i64::from(offset)))
@@ -96,15 +115,21 @@ pub fn read_latest(
         let path = day_root(context, &probe)
             .join("talents")
             .join(format!("{name}.jsonl"));
-        let rows = read_jsonl_objects(&path);
-        if !rows.is_empty() {
-            return rows
-                .into_iter()
-                .enumerate()
-                .max_by_key(|(index, row)| {
-                    (row.get("ts").and_then(Value::as_i64).unwrap_or(0), *index)
+        let row = read_jsonl_objects(&path)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                latest.is_none_or(|latest| {
+                    row.get("ts")
+                        .and_then(Value::as_i64)
+                        .is_some_and(|at| at <= latest)
                 })
-                .map(|(_, row)| Value::Object(row));
+            })
+            .max_by_key(|(index, row)| {
+                (row.get("ts").and_then(Value::as_i64).unwrap_or(0), *index)
+            });
+        if let Some((_, row)) = row {
+            return Some(Value::Object(row));
         }
     }
     None
@@ -112,7 +137,15 @@ pub fn read_latest(
 
 /// Read today's pulse narrative from the pulse accumulator.
 pub fn load_pulse_narrative(context: &HomeContext, day: &str) -> PulseNarrative {
-    let Some(record) = read_latest(context, day, "pulse", 0) else {
+    load_pulse_narrative_at(context, day, None)
+}
+
+pub(crate) fn load_pulse_narrative_at(
+    context: &HomeContext,
+    day: &str,
+    latest: Option<i64>,
+) -> PulseNarrative {
+    let Some(record) = read_latest_at(context, day, "pulse", 0, latest) else {
         return empty_pulse();
     };
     let Some(content) = record
@@ -262,7 +295,7 @@ fn merge_faceted_activity(kept: &mut Map<String, Value>, other: &Map<String, Val
 ///
 /// Each row carries `display_time`: when the activity happened, not when its
 /// record was written, and the list is ordered by the same value.
-pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
+pub fn collect_activities(context: &HomeContext, day: &str, latest: Option<i64>) -> Vec<Value> {
     let cutoff = context.now_ms() - 4 * 60 * 60 * 1000;
     let zone = context.zone();
     let mut collected: Vec<Map<String, Value>> = Vec::new();
@@ -275,6 +308,14 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
             load_activity_records(context.journal_root(), &facet, day, false)
                 .unwrap_or_default()
                 .into_iter()
+                .filter(move |record| {
+                    latest.is_none_or(|latest| {
+                        record
+                            .get("created_at")
+                            .and_then(Value::as_i64)
+                            .is_some_and(|at| at <= latest)
+                    })
+                })
                 .map(move |record| (facet.clone(), record))
         })
         .collect::<Vec<_>>();
@@ -1421,10 +1462,10 @@ mod tests {
         write(root.path(), "chronicle/20260530/talents/flow.md", "flow");
         assert_eq!(count_journal_age_days(&context), 3);
         assert_eq!(
-            load_flow_md(&context, "20260530").content.as_deref(),
+            load_flow_md(&context, "20260530", None).content.as_deref(),
             Some("flow")
         );
-        assert_eq!(load_flow_md(&context, "20260531").content, None);
+        assert_eq!(load_flow_md(&context, "20260531", None).content, None);
     }
 
     #[test]
@@ -1490,7 +1531,7 @@ mod tests {
         );
         assert_eq!(all_facet_names(&context), vec!["declared"]);
         assert!(enabled_facet_names(&context).contains(&"declared".to_owned()));
-        assert!(collect_activities(&context, "20260602").is_empty());
+        assert!(collect_activities(&context, "20260602", None).is_empty());
     }
 
     #[test]
@@ -1509,7 +1550,7 @@ mod tests {
             "facets/undeclared/activities/20260602.jsonl",
             &format!(r#"{{"source":"user","created_at":{recent},"title":"ignored"}}"#),
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["facet"], "muted");
     }
@@ -1526,11 +1567,13 @@ mod tests {
 {"source":"user","created_at":999999999999999999,"title":"invalid"}
 {"source":"user","created_at":1780387199999,"title":"old"}"#,
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["title"], "invalid");
         assert_eq!(rows[0]["display_time"], "");
         assert_eq!(rows[1]["title"], "recent");
+        let demo_rows = collect_activities(&context, "20260602", Some(context.now_ms()));
+        assert_eq!(demo_rows, rows[1..]);
     }
 
     /// Two capture streams, one facet, one stretch: the desktop and the
@@ -1597,7 +1640,7 @@ mod tests {
 {{"id":"meeting_090000_300","source":"cogitate","created_at":{recent},"segments":["090000_300"],"description":"Earlier, alone."}}"#
             ),
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         assert_eq!(rows.len(), 3, "nothing merged or hidden across streams");
         let label = |id: &str| {
             rows.iter()
@@ -1670,7 +1713,7 @@ mod tests {
                 r#"{{"id":"terminal_184038_305","source":"cogitate","created_at":{recent},"segments":["184038_305"],"description":"Monitored H100 VM boot progress."}}"#
             ),
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         // One activity per id, newest first by when it happened, not by when the
         // talent run wrote it — every record here shares one created_at.
         let ids = rows
@@ -1723,7 +1766,7 @@ mod tests {
                 r#"{"id":"from_write_time","source":"user","created_at":1780426800000,"segments":["20260602-1300"],"title":"timed by when it was written"}"#,
             ),
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         assert_eq!(rows.len(), 2);
         for row in &rows {
             assert_eq!(
@@ -1744,7 +1787,7 @@ mod tests {
             "facets/work/activities/20260602.jsonl",
             r#"{"source":"user","created_at":1780405200000,"segments":["20260602-1000"],"title":"no segment clock"}"#,
         );
-        let rows = collect_activities(&context, "20260602");
+        let rows = collect_activities(&context, "20260602", None);
         assert_eq!(rows[0]["display_time"], "2026-06-02T13:00:00+00:00");
     }
 
@@ -2255,6 +2298,33 @@ mod tests {
                 .to_string(),
         );
         assert!(load_pulse_narrative(&context, "20260602").window.is_none());
+    }
+
+    #[test]
+    fn pulse_reader_uses_the_last_narrative_by_the_requested_time() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        write(
+            root.path(),
+            "chronicle/20260602/talents/pulse.jsonl",
+            "{\"ts\":1000,\"full_details\":\"earlier\"}\n{\"ts\":2000,\"full_details\":\"later\"}",
+        );
+        assert_eq!(
+            load_pulse_narrative_at(&context, "20260602", Some(1000))
+                .content
+                .as_deref(),
+            Some("earlier")
+        );
+        assert_eq!(
+            load_pulse_narrative_at(&context, "20260602", Some(999)).content,
+            None
+        );
+        assert_eq!(
+            load_pulse_narrative(&context, "20260602")
+                .content
+                .as_deref(),
+            Some("later")
+        );
     }
 
     #[test]
@@ -2875,7 +2945,7 @@ mod tests {
         );
 
         // Assert absent from collect_activities (recent list)
-        let recent_activities = collect_activities(&context, "20260602");
+        let recent_activities = collect_activities(&context, "20260602", None);
         assert!(
             recent_activities
                 .iter()

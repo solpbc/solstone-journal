@@ -6,12 +6,15 @@ use std::path::PathBuf;
 use axum::{
     Extension, Json, Router,
     body::Body,
+    extract::RawQuery,
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use chrono::{DateTime, NaiveDateTime, Utc};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_home::HomeContext;
 use solstone_core_home::first_minutes::SetupProgressReader;
 
 mod assets;
@@ -95,10 +98,12 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
         .route(
             "/app/home/api/pulse",
             get(
-                move |deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>| {
+                move |RawQuery(query): RawQuery,
+                      deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>| {
                     pulse(
                         pulse_root.clone(),
                         pulse_clock.clone(),
+                        query,
                         deps.map(|Extension(deps)| deps),
                     )
                 },
@@ -120,7 +125,9 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
         )
         .route(
             "/app/home/api/briefing",
-            get(move || briefing(briefing_root.clone(), clock.clone())),
+            get(move |RawQuery(query): RawQuery| {
+                briefing(briefing_root.clone(), clock.clone(), query)
+            }),
         )
         .layer(Extension(removal_clock))
         .with_state(journal_root)
@@ -154,13 +161,15 @@ async fn first_minutes(
 async fn pulse(
     journal_root: PathBuf,
     clock: Clock,
+    query: Option<String>,
     backup: Option<solstone_core_backup_web::BackupWebDeps>,
 ) -> Response {
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomePulse, move || {
         let originals_total = removals::originals_total(&journal_root);
-        let context = solstone_core_home::HomeContext::new(journal_root, now);
-        let mut payload = solstone_core_home::pulse::pulse_payload(&context);
+        let context = HomeContext::new(journal_root, now);
+        let account_time = requested_account_time(&context, query.as_deref());
+        let mut payload = solstone_core_home::pulse::pulse_payload_at(&context, account_time);
         payload["originals_total"] = originals_total;
         if let Some(deps) = backup {
             payload["backup"] = solstone_core_backup_web::home_backup_observation(&deps);
@@ -170,13 +179,36 @@ async fn pulse(
     .await
 }
 
-async fn briefing(journal_root: PathBuf, clock: Clock) -> Response {
+async fn briefing(journal_root: PathBuf, clock: Clock, query: Option<String>) -> Response {
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomeBriefing, move || {
-        let context = solstone_core_home::HomeContext::new(journal_root, now);
-        Json(solstone_core_home::pulse::briefing_payload(&context)).into_response()
+        let context = HomeContext::new(journal_root, now);
+        let account_time = requested_account_time(&context, query.as_deref());
+        Json(solstone_core_home::pulse::briefing_payload_at(
+            &context,
+            account_time,
+        ))
+        .into_response()
     })
     .await
+}
+
+fn requested_account_time(context: &HomeContext, query: Option<&str>) -> Option<DateTime<Utc>> {
+    // The Home fragment sends one literal wall time in the journal's zone.
+    const FORMAT: &str = "%Y-%m-%dT%H:%M";
+    let value = query?.strip_prefix("today=")?;
+    if value.len() != 16 {
+        return None;
+    }
+    let wall_time = NaiveDateTime::parse_from_str(value, FORMAT).ok()?;
+    if wall_time.format(FORMAT).to_string() != value {
+        return None;
+    }
+    let instant = wall_time
+        .and_local_timezone(context.zone())
+        .single()?
+        .to_utc();
+    (instant <= context.now_utc).then_some(instant)
 }
 
 async fn shell_redirect() -> Response {
@@ -400,6 +432,59 @@ mod tests {
         assert_eq!(response.1, "application/json");
         let body: Value = serde_json::from_slice(&response.3).expect("JSON");
         assert_eq!(body, json!({"window_open": false}));
+    }
+
+    #[tokio::test]
+    async fn account_time_changes_only_the_requested_home_reads() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"timezone":"Europe/London"}}"#,
+        )
+        .unwrap();
+        let now = "2026-08-14T09:00:00Z".parse().unwrap();
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+            false
+        });
+        let read = |endpoint: &str, query: &str| {
+            let router = router.clone();
+            let path = format!("/app/home/api/{endpoint}{query}");
+            async move {
+                let (status, _, _, body) = get(router, &path).await;
+                assert_eq!(status, StatusCode::OK, "{path}");
+                serde_json::from_slice::<Value>(&body).unwrap()
+            }
+        };
+        let live_pulse = read("pulse", "").await;
+        let demo_pulse = read("pulse", "?today=2025-10-22T00:30").await;
+        assert_eq!(demo_pulse["today"], "20251022");
+        assert_eq!(demo_pulse["now"], "2025-10-22T00:30:00.000000");
+        assert_eq!(demo_pulse["briefing_analysis_day"], "20251021");
+        for field in [
+            "capture_health",
+            "health_glance",
+            "journal_age_days",
+            "connections",
+        ] {
+            assert_eq!(demo_pulse[field], live_pulse[field], "{field}");
+        }
+        assert_eq!(read("pulse", "").await, live_pulse);
+        let live_briefing = read("briefing", "").await;
+        assert_eq!(live_briefing["analysis_day"], "20260813");
+        assert_eq!(
+            read("briefing", "?today=2025-10-22T00:30").await["analysis_day"],
+            "20251021"
+        );
+        for query in [
+            "?today=2025-02-30T15:30",
+            "?today=2025-03-30T01:30",
+            "?today=2025-10-26T01:30",
+            "?today=2026-08-14T10:01",
+        ] {
+            assert_eq!(read("pulse", query).await, live_pulse, "{query}");
+            assert_eq!(read("briefing", query).await, live_briefing, "{query}");
+        }
     }
 
     // An open window reads setup progress, which probes this computer.
