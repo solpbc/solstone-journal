@@ -277,6 +277,7 @@ async fn private_request_routing_isolates_reply_and_counts_source_calls() {
             super::server::ClientEntry {
                 outbound: tx1,
                 shutdown: sd1,
+                peer_pid: None,
                 _task: tokio::spawn(async {}),
             },
         );
@@ -285,6 +286,7 @@ async fn private_request_routing_isolates_reply_and_counts_source_calls() {
             super::server::ClientEntry {
                 outbound: tx2,
                 shutdown: sd2,
+                peer_pid: None,
                 _task: tokio::spawn(async {}),
             },
         );
@@ -293,6 +295,7 @@ async fn private_request_routing_isolates_reply_and_counts_source_calls() {
             super::server::ClientEntry {
                 outbound: tx3,
                 shutdown: sd3,
+                peer_pid: None,
                 _task: tokio::spawn(async {}),
             },
         );
@@ -370,6 +373,7 @@ async fn successive_offers_return_latest_snapshot_and_call_source_each_time() {
         super::server::ClientEntry {
             outbound: tx1,
             shutdown: sd1,
+            peer_pid: None,
             _task: tokio::spawn(async {}),
         },
     );
@@ -425,6 +429,7 @@ async fn removed_connection_drops_reply_and_correlation_reuse_is_not_misrouted()
         super::server::ClientEntry {
             outbound: tx1,
             shutdown: sd1,
+            peer_pid: None,
             _task: tokio::spawn(async {}),
         },
     );
@@ -448,6 +453,7 @@ async fn removed_connection_drops_reply_and_correlation_reuse_is_not_misrouted()
         super::server::ClientEntry {
             outbound: tx2,
             shutdown: sd2,
+            peer_pid: None,
             _task: tokio::spawn(async {}),
         },
     );
@@ -486,6 +492,7 @@ async fn unconfigured_source_and_secret_absent_behaviors() {
         super::server::ClientEntry {
             outbound: tx,
             shutdown: sd,
+            peer_pid: None,
             _task: tokio::spawn(async {}),
         },
     );
@@ -538,6 +545,7 @@ async fn private_rejected_frames_feed_through_read_and_route_frame() {
         super::server::ClientEntry {
             outbound: tx1,
             shutdown: sd1,
+            peer_pid: None,
             _task: tokio::spawn(async {}),
         },
     );
@@ -616,6 +624,7 @@ async fn full_outbound_evicts_stalled_client_without_affecting_peers() {
             super::server::ClientEntry {
                 outbound: tx1,
                 shutdown: sd1,
+                peer_pid: None,
                 _task: tokio::spawn(async {}),
             },
         );
@@ -624,6 +633,7 @@ async fn full_outbound_evicts_stalled_client_without_affecting_peers() {
             super::server::ClientEntry {
                 outbound: tx2,
                 shutdown: sd2,
+                peer_pid: None,
                 _task: tokio::spawn(async {}),
             },
         );

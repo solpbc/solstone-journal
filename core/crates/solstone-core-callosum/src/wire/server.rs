@@ -115,6 +115,9 @@ pub(crate) struct ServerInner {
 pub(crate) struct ClientEntry {
     pub(crate) outbound: mpsc::Sender<Vec<u8>>,
     pub(crate) shutdown: watch::Sender<bool>,
+    /// The peer's process id where the platform reports it: telemetry that
+    /// names a client in the eviction log, never an admission input.
+    pub(crate) peer_pid: Option<u32>,
     // Removal transfers this handle to the server's retained join set.
     pub(crate) _task: JoinHandle<()>,
 }
@@ -611,7 +614,8 @@ async fn run_accept_loop(inner: Arc<ServerInner>, listener: ServerListener) {
                         return;
                     }
                     let id = inner.next_client_id.fetch_add(1, Ordering::Relaxed);
-                    start_client(Arc::clone(&inner), id, stream);
+                    let peer_pid = unix_peer_pid(&stream);
+                    start_client(Arc::clone(&inner), id, stream, peer_pid);
                 }
                 Err(_) => return,
             },
@@ -642,12 +646,21 @@ async fn run_accept_loop(inner: Arc<ServerInner>, listener: ServerListener) {
                         continue;
                     }
                     let id = inner.next_client_id.fetch_add(1, Ordering::Relaxed);
-                    start_client(Arc::clone(&inner), id, stream);
+                    start_client(Arc::clone(&inner), id, stream, peer_pid);
                 }
                 Err(_) => return,
             },
         }
     }
+}
+
+#[cfg(unix)]
+fn unix_peer_pid(stream: &ServerStream) -> Option<u32> {
+    stream
+        .peer_cred()
+        .ok()
+        .and_then(|credentials| credentials.pid())
+        .and_then(|pid| u32::try_from(pid).ok())
 }
 
 fn bound_root_valid(inner: &ServerInner) -> bool {
@@ -696,14 +709,15 @@ async fn run_local_accept_loop(
                 let Some(stream) = stream else { return; };
                 if let Ok(stream) = UnixStream::from_std(stream) {
                     let id = inner.next_client_id.fetch_add(1, Ordering::Relaxed);
-                    start_client(Arc::clone(&inner), id, stream);
+                    let peer_pid = unix_peer_pid(&stream);
+                    start_client(Arc::clone(&inner), id, stream, peer_pid);
                 }
             }
         }
     }
 }
 
-fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream) {
+fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream, peer_pid: Option<u32>) {
     let mut clients = lock(&inner.clients);
     if inner.stopped.load(Ordering::Acquire) || !bound_root_valid(&inner) {
         return;
@@ -728,6 +742,7 @@ fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream) {
         ClientEntry {
             outbound,
             shutdown,
+            peer_pid,
             _task: task,
         },
     );
@@ -755,7 +770,7 @@ async fn run_dispatcher(inner: Arc<ServerInner>, mut broadcasts: mpsc::Receiver<
                     .collect();
                 for (id, outbound) in clients {
                     if matches!(outbound.try_send(line.clone()), Err(mpsc::error::TrySendError::Full(_))) {
-                        evict_client(&inner, id);
+                        evict_client(&inner, id, ClientStall::QueueFull);
                     }
                 }
             }
@@ -794,8 +809,13 @@ async fn run_client(
             line = outbound.recv() => match line {
                 Some(line) => {
                     let result = timeout(SERVER_SEND_TIMEOUT, write_client_line(&inner, id, &mut write_half, &line)).await;
-                    if !matches!(result, Ok(Ok(()))) {
-                        evict_client(&inner, id);
+                    let stall = match result {
+                        Ok(Ok(())) => None,
+                        Ok(Err(_)) => Some(ClientStall::WriteFailed),
+                        Err(_) => Some(ClientStall::WriteTimedOut),
+                    };
+                    if let Some(stall) = stall {
+                        evict_client(&inner, id, stall);
                         break;
                     }
                 }
@@ -921,7 +941,7 @@ pub(crate) fn enqueue_client_bytes(inner: &ServerInner, id: u64, bytes: Vec<u8>)
     if let Some(sender) = sender {
         let sent = sender.try_send(bytes);
         if matches!(sent, Err(mpsc::error::TrySendError::Full(_))) {
-            evict_client(inner, id);
+            evict_client(inner, id, ClientStall::QueueFull);
         }
     }
 }
@@ -1085,7 +1105,29 @@ fn record_malformed(inner: &ServerInner) {
     let _ = inner.malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
 }
 
-fn evict_client(inner: &ServerInner, id: u64) {
+/// Why a client was evicted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientStall {
+    /// Its outbound queue held a full `SERVER_CLIENT_OUTBOUND_CAPACITY` frames.
+    QueueFull,
+    /// One write took longer than `SERVER_SEND_TIMEOUT`.
+    WriteTimedOut,
+    /// A write returned an error: usually the peer hung up rather than
+    /// stalled, though the line keeps the one prefix every eviction logs.
+    WriteFailed,
+}
+
+impl ClientStall {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::QueueFull => "outbound-queue-full",
+            Self::WriteTimedOut => "write-timed-out",
+            Self::WriteFailed => "write-failed",
+        }
+    }
+}
+
+fn evict_client(inner: &ServerInner, id: u64, stall: ClientStall) {
     #[cfg(target_os = "linux")]
     lock(&inner.private_peers).remove(&id);
     let mut clients = lock(&inner.clients);
@@ -1093,16 +1135,29 @@ fn evict_client(inner: &ServerInner, id: u64) {
         return;
     };
     let _ = entry.shutdown.send(true);
+    let peer_pid = entry.peer_pid;
     let mut retired = lock(&inner.retired_clients);
     retired.retain(|task| !task.is_finished());
     retired.push(entry._task);
-    if inner
+    let count = inner
         .stalled_client_evictions
         .fetch_add(1, Ordering::AcqRel)
-        == 0
-    {
-        log::warn!("callosum wire: evicting stalled client");
+        .saturating_add(1);
+    // Only a server's first eviction used to log, as one line naming nobody,
+    // so a health timeout logged beside it could not tell whose subscription
+    // was dropped. Name the client and the reason, and keep the log bounded
+    // the way rejected peers are.
+    if count.is_power_of_two() {
+        log::warn!("{}", eviction_line(id, peer_pid, stall, count));
     }
+}
+
+fn eviction_line(id: u64, peer_pid: Option<u32>, stall: ClientStall, count: u64) -> String {
+    let peer_pid = peer_pid.map_or_else(|| "unknown".to_owned(), |pid| pid.to_string());
+    format!(
+        "callosum wire: evicting stalled client; client={id}, peer_pid={peer_pid}, reason={}, count={count}",
+        stall.as_str()
+    )
 }
 
 fn remove_client(inner: &ServerInner, id: u64) {
@@ -1174,6 +1229,26 @@ impl Default for ServerTestHooks {
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "local_transport_tests.rs"]
 mod local_transport_tests;
+
+#[cfg(test)]
+mod eviction_line_tests {
+    use super::{ClientStall, eviction_line};
+
+    #[test]
+    fn an_eviction_names_the_client_its_process_and_why() {
+        assert_eq!(
+            eviction_line(7, Some(10080), ClientStall::WriteTimedOut, 1),
+            "callosum wire: evicting stalled client; client=7, peer_pid=10080, reason=write-timed-out, count=1"
+        );
+        assert_eq!(
+            eviction_line(3, None, ClientStall::QueueFull, 4),
+            "callosum wire: evicting stalled client; client=3, peer_pid=unknown, reason=outbound-queue-full, count=4"
+        );
+        assert!(
+            eviction_line(1, None, ClientStall::WriteFailed, 2).contains("reason=write-failed")
+        );
+    }
+}
 
 #[cfg(all(test, windows, feature = "full-tests"))]
 mod windows_native_tests {
