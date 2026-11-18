@@ -109,11 +109,16 @@
     // The view may have drawn the select again since the pick (a refused
     // write, a poll) and put focus on the new copy, which is then the one
     // blurred; it is heard on the document, and focus goes back to it.
+    // A select the page took out isn't a menu closing: some browsers blur it
+    // as it goes, while it is still in the document, so it is read a task
+    // later, and the wait goes on for the copy drawn in its place.
     offs.push(life.on(doc, 'focusout', (event) => {
       const blurred = event.target;
       if (blurred !== select && blurred?.tagName !== 'SELECT') return;
       life.clearTimeout(landing);
       landing = life.setTimeout(() => {
+        landing = 0;
+        if (!blurred.isConnected) return;
         end();
         refocus(doc, true, [blurred, select]);
       }, 0);

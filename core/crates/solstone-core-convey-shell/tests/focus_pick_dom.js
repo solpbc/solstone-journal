@@ -424,6 +424,43 @@ test('not armed: focus elsewhere, the select hidden, or gone', async () => {
   assert.ok(view.ctx.held().timeouts === 0 && p.listening(p.doc) === 0, 'nothing added');
 });
 
+test('a select blurred as the page takes it out keeps the wait: the copy drawn in its place, blurred later, gets focus back', async () => {
+  // Chromium blurs a focused select while the page removes it, and it is
+  // still in the document when the blur arrives. The view then focuses the
+  // copy it drew; the phone's late blur of that copy comes after.
+  const p = makePage();
+  const view = await p.mountView();
+  const old = p.make('SELECT');
+  p.pick(old, view.ctx);
+  p.clock.advance(400);
+  p.blurToBody(old);
+  old.remove();
+  const copy = p.make('SELECT');
+  copy.focus();
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === copy, 'the view\'s own landing on the copy');
+  assert.ok(p.listening(p.doc) === 5, 'the wait goes on');
+  p.clock.advance(465);
+  p.blurToBody(copy);
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === copy, 'back on the copy after its blur');
+  assert.ok(p.listening(p.doc) === 0 && view.ctx.held().timeouts === 0, 'nothing left');
+});
+
+test('a select blurred as the page takes it out, and nothing after: the window takes the wait', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const old = p.make('SELECT');
+  p.pick(old, view.ctx);
+  p.clock.advance(400);
+  p.blurToBody(old);
+  old.remove();
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === p.doc.body, 'nothing to land on');
+  p.clock.advance(1330);
+  assert.ok(p.listening(p.doc) === 0 && view.ctx.held().timeouts === 0, 'nothing left at the window');
+});
+
 test('the select gone before its landing: nothing lands', async () => {
   const p = makePage();
   const view = await p.mountView();
