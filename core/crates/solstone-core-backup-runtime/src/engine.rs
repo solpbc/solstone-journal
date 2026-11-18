@@ -704,6 +704,13 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+    for member in body_card_downloads(root)? {
+        let pattern = crate::restic_paths::rooted_exclude(root, &member);
+        if pattern.contains(['\r', '\n']) {
+            return Err(std::io::Error::other("journal path contains a line break"));
+        }
+        writeln!(excludes, "{}", pattern.replace('$', "$$"))?;
+    }
     let admitted =
         solstone_core_journal_io::JournalRoot::open(root).map_err(std::io::Error::other)?;
     // A few rooted shapes rather than a line per log: restic scans every line
@@ -728,6 +735,81 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
         args,
         _exclude_file: excludes,
     })
+}
+
+/// The downloads uploaded on the Strava and Apple Health cards, as literal exclude patterns.
+///
+/// The card says the download isn't kept: its import reads it and removes it when the
+/// run ends, and one never started is swept. No snapshot holds it meanwhile, whether
+/// the import has started or not. Metadata that can't be read names nothing.
+fn body_card_downloads(root: &Path) -> std::io::Result<Vec<String>> {
+    const BODY_CARD_SOURCES: &[&str] = &["strava", "apple_health"];
+    let imports = root.join("imports");
+    let entries = match fs::read_dir(&imports) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut members = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let Some(id) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if id.starts_with('.') || !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let Ok(bytes) = fs::read(entry.path().join("import.json")) else {
+            continue;
+        };
+        let Ok(Value::Object(metadata)) = serde_json::from_slice::<Value>(&bytes) else {
+            continue;
+        };
+        let from_card = metadata
+            .get("source_hint")
+            .and_then(Value::as_str)
+            .is_some_and(|hint| BODY_CARD_SOURCES.contains(&hint));
+        if !from_card {
+            continue;
+        }
+        let Some(file_path) = metadata.get("file_path").and_then(Value::as_str) else {
+            continue;
+        };
+        // Gone already: nothing to leave out.
+        let Ok(download) = fs::canonicalize(file_path) else {
+            continue;
+        };
+        let Ok(relative) = download.strip_prefix(imports.join(&id)) else {
+            continue;
+        };
+        let parts: Option<Vec<String>> = relative
+            .components()
+            .map(|part| match part {
+                std::path::Component::Normal(part) => part.to_str().map(literal_glob),
+                _ => None,
+            })
+            .collect();
+        if let Some(parts) = parts.filter(|parts| !parts.is_empty()) {
+            members.push(format!("imports/{}/{}", literal_glob(&id), parts.join("/")));
+        }
+    }
+    Ok(members)
+}
+
+/// A path component matched literally by restic's glob syntax.
+fn literal_glob(component: &str) -> String {
+    let mut literal = String::with_capacity(component.len());
+    for character in component.chars() {
+        match character {
+            '*' => literal.push_str("[*]"),
+            '?' => literal.push_str("[?]"),
+            '[' => literal.push_str("[[]"),
+            #[cfg(not(windows))]
+            '\\' => literal.push_str("\\\\"),
+            _ => literal.push(character),
+        }
+    }
+    literal
 }
 
 fn resolve_backup_journal(journal: &Path) -> std::io::Result<PathBuf> {

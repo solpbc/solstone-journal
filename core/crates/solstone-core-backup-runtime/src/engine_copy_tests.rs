@@ -79,6 +79,7 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "chronicle/20260929/health/daily.updated",
         "chronicle/20260929/health/sense-day.lease-notes",
         "chronicle/notes/health/segment-think/import.document/120001_0.lock",
+        "imports/20261118_120001/notes.zip",
     ];
     let omitted = [
         "chronicle/20261112/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
@@ -128,11 +129,29 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "link/ca/.tmp_123_4.tmp",
         "backup/hosted/.tmp_123_4.tmp",
         "chronicle/20260101/source/.removing_120000_60/tombstone.json",
+        // A Strava or Apple Health card's download isn't kept, so no snapshot holds it.
+        "imports/20261118_120000/export [1].zip",
+        "imports/20261118_120002/export.zip",
     ];
     for name in kept.iter().chain(&omitted) {
         let path = root.join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, name.as_bytes()).unwrap();
+    }
+    for (id, source, file) in [
+        ("20261118_120000", "strava", "export [1].zip"),
+        ("20261118_120002", "apple_health", "export.zip"),
+        ("20261118_120001", "document", "notes.zip"),
+    ] {
+        let metadata = serde_json::json!({
+            "source_hint": source,
+            "file_path": root.join("imports").join(id).join(file),
+        });
+        fs::write(
+            root.join(format!("imports/{id}/import.json")),
+            metadata.to_string(),
+        )
+        .unwrap();
     }
     let restic = std::env::var_os("SOLSTONE_NATIVE_RESTIC");
     #[cfg(windows)]
