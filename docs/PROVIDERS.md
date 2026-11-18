@@ -149,6 +149,19 @@ it answers text and reads images. Whether a server supports it can depend on the
 model's runtime as well as the server: Ollama 0.40's MLX runner refused every
 `response_format`, while the same model on its llama.cpp runner accepted them.
 
+If you run llama.cpp's `llama-server` as your endpoint, two launch options
+matter. Its prompt cache keeps earlier prompts in memory, up to 8,192 MiB by
+default, and the journal's prompts gain little from it, because each segment's
+prompt is mostly new screen text and images. `--cache-ram 0` turns the cache
+off, and a small value such as `--cache-ram 2048` caps it. The bundled
+`llama-server` on Linux and Windows runs with one of those two values. A server
+that starts `llama-server` for you may keep the default: with Ollama 0.40 on a
+Mac and a 4B model, the cache was most of an 11 to 13 GB footprint. Keep the
+Jinja template engine on (`--jinja`, the default) with the model's own chat
+template, so the journal's request not to think reaches the model. With
+`--no-jinja` or a generic template such as `--chat-template chatml`, a Qwen
+model can begin its replies with a `<think>` block.
+
 Bundled and configured local endpoints can use different JSON grammar engines.
 Shipped talent schemas therefore stay inside the measured regex subset shared
 by the two engines they are checked against: llama.cpp's `llama-server` (the
