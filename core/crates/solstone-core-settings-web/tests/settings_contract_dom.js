@@ -2169,6 +2169,27 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(again !== select && p.doc.activeElement === again, `the same choice, drawn again: ${at(p)}`);
   });
 
+  await test("a default's priority, on a facet that shows every default: one PUT of the priority alone, and kept when it's answered, with nothing drawn again", async () => {
+    const all = ['meeting', 'coding', 'email'];
+    const p = await activitiesPage({ attached: all, defaults: all });
+    const url = `/app/settings/api/facet/${SLUG}/activities/coding`;
+    const held = holdGranola(p, 'PUT', url);
+    const select = priorityOf(p, 'coding');
+    const reads = () => p.calls.filter((c) => c.method === 'GET' && c.url === `/app/settings/api/facet/${SLUG}/activities`).length;
+    const readsBefore = reads();
+    select.focus();
+    select.value = 'high';
+    p.doc.dispatch(select, { type: 'change' });
+    await settle();
+    held.release({ success: true, activity: ACT('coding', { priority: 'high' }) }, 200);
+    await settle();
+    const puts = writesTo(p, 'PUT', url);
+    assert.ok(puts.length === 1 && JSON.stringify(JSON.parse(puts[0].body)) === '{"priority":"high"}', `one PUT, the priority alone: ${JSON.stringify(puts)}`);
+    assert.ok(priorityOf(p, 'coding') === select && select.value === 'high', `kept, not drawn again: ${select.value}`);
+    assert.ok(p.doc.activeElement === select, `focus on the select: ${at(p)}`);
+    assert.ok(reads() === readsBefore, `no read after: ${reads() - readsBefore}`);
+  });
+
   await test('a default activity adds by Enter or Space, once while out, and lands on the next one left to add, else on "add custom activity"', async () => {
     const p = await activitiesPage({ attached: [], defaults: ['a1', 'a2'] });
     const held = holdGranola(p, 'POST', `/app/settings/api/facet/${SLUG}/activities`);
