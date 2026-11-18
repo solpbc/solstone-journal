@@ -151,6 +151,10 @@
       "owner": "browser"
     },
     {
+      "namespace": "support",
+      "owner": "support"
+    },
+    {
       "namespace": "trust",
       "owner": "transparency"
     },
@@ -235,6 +239,12 @@
     },
     {
       "id": "browser",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "support",
       "locales": [
         "en-US"
       ]
