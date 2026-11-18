@@ -205,8 +205,21 @@ pub async fn update(
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<Map<_, _>>();
-    match solstone_core_facets::update_activity(&journal_root, &facet_name, &activity_id, &updates)
-    {
+    // A priority on a default the facet shows but doesn't store: the facet
+    // stores what it shows first, so nothing it shows goes (`drawn_to_store`).
+    let result = if updates.len() == 1 && updates.contains_key("priority") {
+        solstone_core_facets::update_activity_attaching(
+            &journal_root,
+            &facet_name,
+            &activity_id,
+            &updates,
+            |rows| drawn_to_store(rows, &activity_id),
+            only_bare_defaults,
+        )
+    } else {
+        solstone_core_facets::update_activity(&journal_root, &facet_name, &activity_id, &updates)
+    };
+    match result {
         Ok(Some(activity)) => {
             if solstone_core_facets::append_action_log(
                 &journal_root,
@@ -281,6 +294,52 @@ fn slug(value: &str) -> String {
     } else {
         slug
     }
+}
+
+/// The rows a facet stores before a default it shows takes a change, so that
+/// it shows the same activities in the same order afterwards. With no rows it
+/// shows every default: all of them, as bare rows. With rows it shows them and
+/// then each `always_on` default they lack, in the defaults' order: those up
+/// to and including `id`. Nothing for an id the facet doesn't show.
+fn drawn_to_store(rows: &[Value], id: &str) -> Vec<Value> {
+    let bare = |record: &Value| json!({"id": record["id"]});
+    if rows.is_empty() {
+        let defaults = raw_default_records();
+        if !defaults
+            .iter()
+            .any(|record| record["id"].as_str() == Some(id))
+        {
+            return Vec::new();
+        }
+        return defaults.iter().map(bare).collect();
+    }
+    let stored = |record: &Value| {
+        rows.iter()
+            .any(|row| row.get("id").and_then(Value::as_str) == record["id"].as_str())
+    };
+    let missing = always_on_records()
+        .into_iter()
+        .filter(|record| !stored(record))
+        .collect::<Vec<_>>();
+    match missing
+        .iter()
+        .position(|record| record["id"].as_str() == Some(id))
+    {
+        Some(at) => missing[..=at].iter().map(bare).collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Rows that are every default, bare, in the defaults' order: a facet that
+/// stores them shows what one that stores nothing shows, so it stores nothing
+/// and follows the defaults as they change.
+fn only_bare_defaults(rows: &[Value]) -> bool {
+    let defaults = raw_default_records();
+    rows.len() == defaults.len()
+        && rows.iter().zip(&defaults).all(|(row, record)| {
+            row.as_object()
+                .is_some_and(|row| row.len() == 1 && row.get("id") == record.get("id"))
+        })
 }
 
 fn default_records() -> Vec<Value> {
@@ -507,5 +566,252 @@ mod tests {
             assert_eq!(coding["priority"], priority);
             assert_eq!(coding["custom"], false);
         }
+    }
+
+    // A facet's priority on a default it shows but doesn't store.
+
+    fn facet_root(facets: &[&str]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("journal");
+        for facet in facets {
+            let dir = root.path().join("facets").join(facet);
+            std::fs::create_dir_all(&dir).expect("facet");
+            std::fs::write(dir.join("facet.json"), r#"{"title":"Facet"}"#).expect("facet.json");
+        }
+        root
+    }
+
+    fn rows_file(root: &tempfile::TempDir, facet: &str) -> std::path::PathBuf {
+        root.path()
+            .join("facets")
+            .join(facet)
+            .join("activities/activities.jsonl")
+    }
+
+    fn stored(root: &tempfile::TempDir, facet: &str) -> Option<String> {
+        std::fs::read_to_string(rows_file(root, facet)).ok()
+    }
+
+    async fn shown(router: &axum::Router, facet: &str) -> Vec<Value> {
+        let (status, body) = send(
+            router,
+            Request::get(format!("/app/settings/api/facet/{facet}/activities"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        body["activities"].as_array().expect("activities").clone()
+    }
+
+    async fn put(router: &axum::Router, facet: &str, id: &str, body: Value) -> (u16, Value) {
+        send(
+            router,
+            Request::put(format!("/app/settings/api/facet/{facet}/activities/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).expect("JSON")))
+                .expect("request"),
+        )
+        .await
+    }
+
+    async fn attach(router: &axum::Router, facet: &str, id: &str) {
+        let (status, _) = send(
+            router,
+            Request::post(format!("/app/settings/api/facet/{facet}/activities"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"id": id})).expect("JSON"),
+                ))
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, 201);
+    }
+
+    fn ids(records: &[Value]) -> Vec<&str> {
+        records
+            .iter()
+            .map(|record| record["id"].as_str().expect("id"))
+            .collect()
+    }
+
+    /// The same records, but for `id`'s priority.
+    fn same_but(before: &[Value], after: &[Value], id: &str, priority: &str) {
+        assert_eq!(ids(before), ids(after), "the same activities, in order");
+        for (was, now) in before.iter().zip(after) {
+            if was["id"] == id {
+                let mut expected = was.clone();
+                expected["priority"] = json!(priority);
+                assert_eq!(now, &expected, "{id}");
+            } else {
+                assert_eq!(now, was, "{}", was["id"]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_default_s_priority_is_kept_in_a_facet_that_stores_none() {
+        for id in ["coding", "meeting"] {
+            let root = facet_root(&["home"]);
+            let router = crate::routes(root.path().to_path_buf());
+            let before = shown(&router, "home").await;
+            assert_eq!(before.len(), 26);
+            let (status, body) = put(&router, "home", id, json!({"priority": "high"})).await;
+            assert_eq!(status, 200, "{id}: {body}");
+            assert_eq!(body["activity"]["priority"], "high");
+            let after = shown(&router, "home").await;
+            same_but(&before, &after, id, "high");
+            assert_eq!(
+                body["activity"],
+                after[ids(&after).iter().position(|x| *x == id).unwrap()]
+            );
+            let lines = stored(&root, "home").expect("stored");
+            assert_eq!(
+                lines.lines().count(),
+                26,
+                "{id}: the facet stores what it shows"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_always_on_default_s_priority_is_kept_in_a_facet_with_rows_and_keeps_its_place() {
+        let root = facet_root(&["home"]);
+        let router = crate::routes(root.path().to_path_buf());
+        attach(&router, "home", "coding").await;
+        let before = shown(&router, "home").await;
+        assert_eq!(ids(&before), ["coding", "meeting", "email", "messaging"]);
+        let (status, _) = put(&router, "home", "email", json!({"priority": "high"})).await;
+        assert_eq!(status, 200);
+        same_but(&before, &shown(&router, "home").await, "email", "high");
+        assert_eq!(
+            stored(&root, "home").expect("stored"),
+            "{\"id\": \"coding\"}\n{\"id\": \"meeting\"}\n{\"id\": \"email\", \"priority\": \"high\"}\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn normal_again_leaves_what_never_picking_leaves() {
+        let root = facet_root(&["home", "quiet", "rows"]);
+        let router = crate::routes(root.path().to_path_buf());
+        let never = shown(&router, "home").await;
+        put(&router, "home", "coding", json!({"priority": "high"})).await;
+        let (status, _) = put(&router, "home", "coding", json!({"priority": "normal"})).await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            stored(&root, "home").as_deref(),
+            Some(""),
+            "an empty file, as no file"
+        );
+        assert_eq!(shown(&router, "home").await, never);
+
+        let (status, body) = put(&router, "quiet", "coding", json!({"priority": "normal"})).await;
+        assert_eq!(status, 200);
+        assert_eq!(body["activity"]["priority"], "normal");
+        assert_eq!(stored(&root, "quiet"), None, "nothing written");
+
+        attach(&router, "rows", "coding").await;
+        let before = shown(&router, "rows").await;
+        put(&router, "rows", "email", json!({"priority": "low"})).await;
+        put(&router, "rows", "email", json!({"priority": "normal"})).await;
+        assert_eq!(shown(&router, "rows").await, before);
+        assert_eq!(
+            stored(&root, "rows").expect("stored"),
+            "{\"id\": \"coding\"}\n{\"id\": \"meeting\"}\n{\"id\": \"email\"}\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn what_a_facet_doesn_t_show_still_answers_not_found_and_stores_nothing() {
+        let root = facet_root(&["home", "rows"]);
+        let router = crate::routes(root.path().to_path_buf());
+        attach(&router, "rows", "coding").await;
+        let rows_before = stored(&root, "rows");
+        for (facet, id, body) in [
+            ("home", "no_such_activity", json!({"priority": "high"})),
+            ("rows", "no_such_activity", json!({"priority": "high"})),
+            ("rows", "writing", json!({"priority": "high"})),
+            ("home", "coding", json!({"description": "mine"})),
+            (
+                "home",
+                "coding",
+                json!({"priority": "high", "description": "mine"}),
+            ),
+        ] {
+            let (status, answer) = put(&router, facet, id, body.clone()).await;
+            assert_eq!(status, 404, "{facet} {id} {body}");
+            assert_eq!(answer["reason_code"], "activity_not_found");
+        }
+        assert_eq!(stored(&root, "home"), None);
+        assert_eq!(stored(&root, "rows"), rows_before);
+    }
+
+    #[tokio::test]
+    async fn a_stored_activity_s_update_writes_as_before() {
+        let root = facet_root(&["rows"]);
+        let router = crate::routes(root.path().to_path_buf());
+        attach(&router, "rows", "coding").await;
+        put(&router, "rows", "coding", json!({"priority": "low"})).await;
+        assert_eq!(
+            stored(&root, "rows").expect("stored"),
+            "{\"id\": \"coding\", \"priority\": \"low\"}\n"
+        );
+        put(&router, "rows", "coding", json!({"priority": "normal"})).await;
+        assert_eq!(
+            stored(&root, "rows").expect("stored"),
+            "{\"id\": \"coding\"}\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_record_store_allows_the_same_activities_after_the_facet_stores_what_it_shows() {
+        let root = facet_root(&["home"]);
+        let router = crate::routes(root.path().to_path_buf());
+        let mut candidates = ids(&shown(&router, "home").await)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        candidates.push("no_such_activity".to_owned());
+        let allowed = |root: &tempfile::TempDir| {
+            candidates
+                .iter()
+                .map(|id| {
+                    solstone_core_facets::activity_is_available(root.path(), "home", id)
+                        .expect("read")
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = allowed(&root);
+        put(&router, "home", "travel", json!({"priority": "high"})).await;
+        assert_eq!(allowed(&root), before);
+        assert_eq!(before.iter().filter(|x| **x).count(), 26);
+    }
+
+    #[test]
+    fn settings_defaults_and_the_record_store_s_defaults_agree() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../fixtures/activity_defaults.json"))
+                .expect("fixture");
+        let theirs = fixture["activities"]
+            .as_array()
+            .expect("activities")
+            .iter()
+            .map(|record| {
+                (
+                    record["id"].clone(),
+                    record["always_on"].as_bool() == Some(true),
+                )
+            })
+            .collect::<Vec<_>>();
+        let ours = super::raw_default_records()
+            .iter()
+            .map(|record| {
+                (
+                    record["id"].clone(),
+                    record["always_on"].as_bool() == Some(true),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ours, theirs);
     }
 }
