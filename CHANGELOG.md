@@ -8,34 +8,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- for demos, add `#today=2025-10-22T15:30` to the address of your journal's home page to show the today and yesterday summaries for an earlier date and time. the time uses your journal's time zone.
-- a new year page shows a whole year of your journal at once. the days view shows each day, colored by how many activities or location records your journal holds for it. the threads view shows each place and each name your journal found as a row across the year's weeks. find it under more.
-- your connected agents can now suggest that two people in your journal are the same person, such as two spellings of one name. it waits in suggestions and shows both people from your journal. you choose which name they go by, and accepting merges them into one person. a merge can't be undone.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- audio folder sync (`--sync audio`) is gone from the journal on your computer. recordings already in your journal stay. you can still import an audio file or an audio archive.
-- the settings page no longer has a "re-validate all keys" button, because your journal can't check a Plaud token in this version. the check mark beside your token still shows whether one is saved.
-- short new messages on a screen that otherwise looks the same, like a chat reply of a line or two, are now described in your journal more often.
-
 ### Fixed
 
-- the names tab and search results show names alongside their context. screenshot entries show the caption without the category label.
-
-- your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
-- the entities list shows every name again when the list is narrow, such as beside the folders on an ipad. before, the names could be pushed out of each row. rows also stop saying what kind of name each one is, since the folders already sort them that way.
-- times were an hour off in places that changed their clock rules recently, including british columbia, alberta, manitoba and morocco. they're right again.
-- some calendar files that were refused, came in with no events, or had lines run together now import correctly. a repeating event that can never happen no longer stalls the import.
-- on a day the clocks change, workouts and other body data now show at the right time in that day's activities.
-- on linux computers with arm processors, media offload no longer stops every run before it begins.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- fixed older days getting stuck before their daily briefing when an empty audio transcript had no recording beside it.
-- people and activity details could be left out when nightly photo maintenance overlapped with thinking. this resolves that conflict.
-- photos of people can now be suggested from more of your older meetings.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -64,11 +44,38 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
+- on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
+
+## [2.0.83] - 2026-11-18
+
+### Added
+
+- for demos, add `#today=2025-10-22T15:30` to the address of your journal's home page to show the today and yesterday summaries for an earlier date and time. the time uses your journal's time zone.
+- a new year page shows a whole year of your journal at once. the days view shows each day, colored by how many activities or location records your journal holds for it. the threads view shows each place and each name your journal found as a row across the year's weeks. find it under "more".
+- your connected agents can now suggest that two people in your journal are the same person, such as two spellings of one name. it waits in suggestions and shows both people from your journal. you choose which name they go by, and accepting merges them into one person. a merge can't be undone.
+
+### Changed
+
+- audio folder sync (`--sync audio`) is gone from the journal on your computer. recordings already in your journal stay, and new recordings in that folder no longer come in on their own. you can still import an audio file or an audio archive with `solstone journal importer`.
+- the settings page no longer has a "re-validate all keys" button, because your journal can't check a Plaud token in this version. the check mark beside your token still shows whether one is saved.
+- short new messages on a screen that otherwise looks the same, like a chat reply of a line or two, are now described in your journal more often.
+
+### Fixed
+
+- in transcripts, the names your journal found in a stretch now read plainly on a tab called names, each with its context and without the tags around it. search results show them the same way. screenshot entries show the caption without the category label.
+- your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
+- the entities list shows every name again when the list is narrow. before, the names could be pushed out of each row. rows also stop saying what kind of name each one is, since the folders already sort them that way.
+- times were an hour off in places that changed their clock rules recently, including British Columbia, Alberta, Manitoba and Morocco. they're right again on windows. on mac and linux your journal now uses your computer's own time zone rules, so its times match your computer's clock once your system has its latest time zone update.
+- some calendar files that were refused, came in with no events, or came in with lines run together, now import correctly. a repeating event that can never happen no longer stalls the import.
+- on a day the clocks change, workouts and other body data now show at the right time in that day's activities.
+- on linux computers with arm processors, media offload no longer stops every run before it begins.
+- some older days could get stuck before their daily briefing. they now finish.
+- people and activity details could be left out when nightly photo maintenance overlapped with thinking. this resolves that conflict.
+- photos of people can now be suggested from more of your older meetings.
 - in settings, a field you changed and moved off, or pressed Enter in, just before reloading the page, closing the tab or opening health, backup or suggestions is now saved too.
 - on the settings page, focus now stays where you were when you press Enter to save your name, aliases, emails, time zone or Plaud token, turn "leave out other voices" or "suggest photos of people" on or off, erase face data, or connect, check or disconnect Granola: in the field, or on the button you pressed while it's working, then on what took its place, such as Granola's "check now" or the line saying what disconnecting kept. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on the settings page, focus now stays where you were when you add a facet, mute or unmute one, press Enter to save its name or emoji, load older entries in its activity log, or add or remove one of its activities: on the button you pressed while it's working, then on what took its place, such as the next activity or the older entries. choosing "facets" from the section menu on a narrow screen now puts focus on the facets heading. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place. an activity under "add activity", a facet's emoji and its color now answer Enter and Space as well as a click.
-- on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
-- on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - fixed a case where home kept loading while live updates were unavailable.
 
 ## [2.0.82] - 2026-11-17
