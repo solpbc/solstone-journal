@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 
 use jiff::Timestamp;
-use jiff::tz::Offset;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity_matching::normalize_resolution_query;
@@ -821,18 +820,7 @@ fn execute_admitted(
                 ));
             }
 
-            let daily_count = records
-                .iter()
-                .filter(|r| {
-                    r.authority_id == principal.connection
-                        && solstone_core_time::parse_rfc3339(&r.created_at)
-                            .map(|dt| {
-                                Offset::UTC.to_datetime(dt.timestamp()).date()
-                                    == Offset::UTC.to_datetime(now).date()
-                            })
-                            .unwrap_or(false)
-                })
-                .count();
+            let daily_count = suggestions_today(journal_root, &records, principal.connection, now);
             if daily_count >= DAILY_AGENT_CAP {
                 return Ok(Prepared::new(
                     json!({
@@ -1200,18 +1188,7 @@ fn execute_admitted(
                 ));
             }
 
-            let daily_count = records
-                .iter()
-                .filter(|r| {
-                    r.authority_id == principal.connection
-                        && solstone_core_time::parse_rfc3339(&r.created_at)
-                            .map(|dt| {
-                                Offset::UTC.to_datetime(dt.timestamp()).date()
-                                    == Offset::UTC.to_datetime(now).date()
-                            })
-                            .unwrap_or(false)
-                })
-                .count();
+            let daily_count = suggestions_today(journal_root, &records, principal.connection, now);
             if daily_count >= DAILY_AGENT_CAP {
                 return Ok(Prepared::new(
                     json!({
@@ -1761,6 +1738,26 @@ fn execute_admitted(
     }
 }
 
+/// How many suggestions `connection` filed on the owner's current day: the
+/// daily cap resets at the owner's midnight, as every journal day does.
+fn suggestions_today(
+    journal_root: &Path,
+    records: &[SuggestionRecord],
+    connection: &str,
+    now: Timestamp,
+) -> usize {
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
+    let today = zone.to_datetime(now).date();
+    records
+        .iter()
+        .filter(|r| {
+            r.authority_id == connection
+                && solstone_core_time::parse_rfc3339(&r.created_at)
+                    .is_ok_and(|dt| zone.to_datetime(dt.timestamp()).date() == today)
+        })
+        .count()
+}
+
 fn cap_result(
     journal_root: &Path,
     records: &[SuggestionRecord],
@@ -1789,18 +1786,7 @@ fn cap_result(
         ));
     }
 
-    let daily_count = records
-        .iter()
-        .filter(|r| {
-            r.authority_id == connection
-                && solstone_core_time::parse_rfc3339(&r.created_at)
-                    .map(|dt| {
-                        Offset::UTC.to_datetime(dt.timestamp()).date()
-                            == Offset::UTC.to_datetime(now).date()
-                    })
-                    .unwrap_or(false)
-        })
-        .count();
+    let daily_count = suggestions_today(journal_root, records, connection, now);
     if daily_count >= DAILY_AGENT_CAP {
         return Some(Prepared::new(
             json!({
@@ -1927,4 +1913,60 @@ pub(crate) fn load_segment_statements(
         source,
         metadata,
     })
+}
+
+#[cfg(test)]
+mod owner_day_tests {
+    use super::*;
+
+    fn record(connection: &str, created_at: &str) -> SuggestionRecord {
+        SuggestionRecord {
+            id: String::new(),
+            schema: 1,
+            status: "pending".to_owned(),
+            kind: String::new(),
+            basis: String::new(),
+            reason: String::new(),
+            value: Value::Null,
+            operation_id: String::new(),
+            request_sha256: String::new(),
+            similarity_key: String::new(),
+            authority_id: connection.to_owned(),
+            source: String::new(),
+            label: String::new(),
+            created_at: created_at.to_owned(),
+            updated_at: created_at.to_owned(),
+            target: Value::Null,
+            baseline: Value::Null,
+            applied_stretch_id: None,
+            receipt: None,
+            asked: None,
+            ask_reason: None,
+            tool_result: Value::Null,
+        }
+    }
+
+    #[test]
+    fn the_daily_cap_counts_the_owners_day_not_utcs() {
+        let journal = tempfile::Builder::new()
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = journal.path();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            json!({"identity": {"timezone": "America/Denver"}}).to_string(),
+        )
+        .unwrap();
+        // 20:00 on 17 Nov in Denver, already 18 Nov in UTC.
+        let now: Timestamp = "2026-11-18T03:00:00Z".parse().unwrap();
+        let records = [
+            // 13:00 on 17 Nov in Denver: today for the owner, yesterday in UTC.
+            record("agent", "2026-11-17T20:00:00+00:00"),
+            // 23:30 on 16 Nov in Denver: yesterday for the owner.
+            record("agent", "2026-11-17T06:30:00+00:00"),
+            record("other", "2026-11-17T20:00:00+00:00"),
+        ];
+        assert_eq!(suggestions_today(root, &records, "agent", now), 1);
+    }
 }
