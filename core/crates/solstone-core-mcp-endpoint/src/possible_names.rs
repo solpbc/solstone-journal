@@ -69,7 +69,13 @@ impl ConnectionPossibleNames {
 
     /// Labels a transcript read shows this connection, bound into its version.
     pub(crate) fn labels(&self, segment_dir: &Path) -> Option<PossibleNameLabels> {
-        if !self.entities() || !sidecar_path(segment_dir).exists() {
+        if !self.entities()
+            || !self
+                .snapshot
+                .categories
+                .contains(&AdmittedCategory::Transcripts)
+            || !sidecar_path(segment_dir).exists()
+        {
             return None;
         }
         transcript_labels(&self.live().entries(segment_dir))

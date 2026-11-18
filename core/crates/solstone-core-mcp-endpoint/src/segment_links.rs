@@ -35,15 +35,20 @@ pub(crate) trait TranscriptPageCheck {
 /// `get_transcript` shows, so a link binds the version that read will see.
 pub(crate) struct LiveTranscriptPages {
     speakers: Option<Option<solstone_core_transcripts::AgentSpeakers>>,
+    categories: BTreeSet<solstone_core_indexer_query::AdmittedCategory>,
     possible_names: Arc<ConnectionPossibleNames>,
     /// What the owner hid of their body data, read once a body window asks.
     hides: Option<crate::body_source::BodyHides>,
 }
 
 impl LiveTranscriptPages {
-    pub(crate) fn new(possible_names: Arc<ConnectionPossibleNames>) -> Self {
+    pub(crate) fn new(
+        possible_names: Arc<ConnectionPossibleNames>,
+        snapshot: &ConnectionReadSnapshot,
+    ) -> Self {
         Self {
             speakers: None,
+            categories: snapshot.categories.clone(),
             possible_names,
             hides: None,
         }
@@ -53,9 +58,11 @@ impl LiveTranscriptPages {
     pub(crate) fn with_speakers(
         speakers: Option<solstone_core_transcripts::AgentSpeakers>,
         possible_names: Arc<ConnectionPossibleNames>,
+        snapshot: &ConnectionReadSnapshot,
     ) -> Self {
         Self {
             speakers: Some(speakers),
+            categories: snapshot.categories.clone(),
             possible_names,
             hides: None,
         }
@@ -99,15 +106,19 @@ impl TranscriptPageCheck for LiveTranscriptPages {
         } else {
             BTreeSet::new()
         };
-        match solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+        match solstone_core_transcripts::read_segment_transcript_page_with_permissions(
             segment,
             None,
             speakers,
             possible_names.as_ref(),
             &left_out,
+            Some(&self.categories),
         ) {
             Ok(page) if !page.entries.is_empty() => Ok(Some(page.version.fingerprint())),
-            Ok(_) => Ok(None),
+            Ok(_)
+            | Err(solstone_core_transcripts::SegmentTranscriptReadError::NoPermittedFiles) => {
+                Ok(None)
+            }
             Err(_) => Err(()),
         }
     }
@@ -543,7 +554,9 @@ mod tests {
             owner: "The owner".to_owned(),
         };
         let snapshot = ConnectionReadSnapshot {
-            categories: BTreeSet::new(),
+            categories: BTreeSet::from([
+                solstone_core_indexer_query::AdmittedCategory::Transcripts,
+            ]),
             scope: ConnectionScope::WholeJournal,
             generation: 1,
         };
@@ -556,8 +569,11 @@ mod tests {
             possible_names.labels(segment.path()).as_ref(),
         )
         .unwrap();
-        let mut checker =
-            LiveTranscriptPages::with_speakers(Some(speakers), Arc::clone(&possible_names));
+        let mut checker = LiveTranscriptPages::with_speakers(
+            Some(speakers),
+            Arc::clone(&possible_names),
+            &snapshot,
+        );
 
         assert_eq!(
             checker.check_first_page(journal.path(), &segment),
@@ -620,7 +636,9 @@ mod tests {
             owner: "The owner".to_owned(),
         };
         let snapshot = ConnectionReadSnapshot {
-            categories: BTreeSet::new(),
+            categories: BTreeSet::from([
+                solstone_core_indexer_query::AdmittedCategory::Transcripts,
+            ]),
             scope: ConnectionScope::WholeJournal,
             generation: 1,
         };
@@ -635,8 +653,12 @@ mod tests {
             .unwrap()
         };
         let check = || {
-            LiveTranscriptPages::with_speakers(Some(speakers.clone()), Arc::clone(&possible_names))
-                .check_first_page(journal.path(), &segment)
+            LiveTranscriptPages::with_speakers(
+                Some(speakers.clone()),
+                Arc::clone(&possible_names),
+                &snapshot,
+            )
+            .check_first_page(journal.path(), &segment)
         };
 
         // A segment the journal never attributed.

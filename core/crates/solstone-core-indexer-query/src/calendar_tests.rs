@@ -239,10 +239,10 @@ fn whole_journal_connections_see_both_kinds_of_hit_and_facet_connections_neither
         ..ConnectionSearchRequest::default()
     };
     let whole =
-        ConnectionBoundary::from_category_tokens(["transcripts"], ConnectionScope::WholeJournal)
+        ConnectionBoundary::from_category_tokens(["calendar"], ConnectionScope::WholeJournal)
             .unwrap();
     let facets = ConnectionBoundary::from_category_tokens(
-        ["transcripts"],
+        ["calendar"],
         ConnectionScope::ChosenFacets {
             ids: BTreeSet::from(["123e4567-e89b-42d3-a456-426614174000".to_owned()]),
         },
@@ -406,7 +406,7 @@ fn nothing_after_today_is_returned_until_that_day_arrives() {
         "{range:?}"
     );
     let whole =
-        ConnectionBoundary::from_category_tokens(["transcripts"], ConnectionScope::WholeJournal)
+        ConnectionBoundary::from_category_tokens(["calendar"], ConnectionScope::WholeJournal)
             .unwrap();
     let agent = search_connection(
         journal.path(),

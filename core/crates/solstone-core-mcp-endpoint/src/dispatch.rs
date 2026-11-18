@@ -160,6 +160,7 @@ pub(crate) struct DispatchPrincipal<'a> {
 pub(crate) enum DispatchError {
     InvalidInput,
     PermissionDenied(&'static str),
+    KindDenied(AdmittedCategory),
     Tool(ToolError),
 }
 
@@ -199,7 +200,9 @@ pub fn run_mcp_probe(
         | DispatchError::Tool(
             ToolError::ActivityDayArguments | ToolError::TranscriptTimeArguments,
         ) => McpProbeError::InvalidInput,
-        DispatchError::PermissionDenied(_) => McpProbeError::PermissionDenied,
+        DispatchError::PermissionDenied(_) | DispatchError::KindDenied(_) => {
+            McpProbeError::PermissionDenied
+        }
         DispatchError::Tool(_) => McpProbeError::Unavailable,
     })
 }
@@ -241,7 +244,9 @@ pub(crate) fn dispatch_authenticated_tool_call(
         }
     };
 
-    if let Some(refusal) = scope_refusal(principal, &snapshot, entry, &validated) {
+    if let Some((refusal, missing_kind)) =
+        scope_refusal(journal_root, principal, &snapshot, entry, &validated)
+    {
         // Missing categories are permission denials and are still durable audit
         // events — now ones an owner can tell apart from a served call.
         let coordinates = audit_call(
@@ -260,7 +265,10 @@ pub(crate) fn dispatch_authenticated_tool_call(
             Some(&refusal),
             None,
         );
-        return Err(DispatchError::PermissionDenied("no_permission"));
+        return Err(missing_kind.map_or(
+            DispatchError::PermissionDenied("no_permission"),
+            DispatchError::KindDenied,
+        ));
     }
 
     let (coordinates, executed) = execute_after_audit(
@@ -398,52 +406,59 @@ fn record_outcome(
     let _ = audit::write_outcome(journal_root, coordinates, now, outcome, reason, result);
 }
 
-/// The owner-visible reason a call was refused, or `None` when it is allowed.
-///
-/// 🔑 These strings reach the owner's log and nothing else. On the wire every
-/// one of them renders as the same closed `no_permission`, which is the
-/// asymmetry this design turns on: the same fact is deliberately hidden from
-/// the agent and deliberately visible to the owner, and ⛔ fixing one must not
-/// weaken the other.
+/// A named kind can be refused in words without revealing what the journal
+/// holds. Other scope details are visible only in the owner's log.
 fn scope_refusal(
+    journal_root: &Path,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     entry: &ToolEntry,
     request: &ValidatedTool,
-) -> Option<String> {
-    if let Some(reason) = requirement_refusal(snapshot, entry) {
-        return Some(reason);
+) -> Option<(String, Option<AdmittedCategory>)> {
+    let named = match request {
+        ValidatedTool::Search(request) => request
+            .category
+            .filter(|category| !snapshot.categories.contains(category)),
+        _ => fetch_target_missing_kind(journal_root, principal, snapshot, request),
+    };
+    if let Some(kind) = named {
+        return Some((kind_refusal(kind), Some(kind)));
     }
-    if let Some(reason) = fetch_target_category_refusal(principal, snapshot, request) {
-        return Some(reason);
+    if let Some(reason) = requirement_refusal(snapshot, entry) {
+        return Some((reason, None));
     }
     if !arguments_within_scope(snapshot, request) {
-        return Some(
+        return Some((
             "the request named a category or facet outside this connection's permission".to_owned(),
-        );
+            None,
+        ));
     }
     None
 }
 
+pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
+    format!(
+        "this connection does not have permission to read {}",
+        kind.kind_spec().label
+    )
+}
+
 /// A reference follows its target's registered material category. An unresolved
 /// token is left for the tool to report as a missing reference.
-fn fetch_target_category_refusal(
+fn fetch_target_missing_kind(
+    journal_root: &Path,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: &ValidatedTool,
-) -> Option<String> {
+) -> Option<AdmittedCategory> {
     let ValidatedTool::Fetch(fetch) = request else {
         return None;
     };
     // An activity's name follows the facets category whatever it names, so
     // the refusal says nothing of whether the activity is there.
     if crate::names::parse_activity(&fetch.reference).is_some() {
-        return (!snapshot.categories.contains(&AdmittedCategory::Facets)).then(|| {
-            format!(
-                "this connection does not have the {} category",
-                category_token(&AdmittedCategory::Facets)
-            )
-        });
+        return (!snapshot.categories.contains(&AdmittedCategory::Facets))
+            .then_some(AdmittedCategory::Facets);
     }
     let Ok(target) = codec().resolve_entry_or_activity(
         &fetch.reference,
@@ -461,16 +476,14 @@ fn fetch_target_category_refusal(
             else {
                 return None;
             };
-            // What a body import brought in is body, whatever it was stored as.
-            let category = if solstone_core_format::content::body_material::is_body_path(path) {
-                AdmittedCategory::Body
-            } else {
-                category
+            use solstone_core_format::content::kinds::{
+                additional_indexed_permission, indexed_permission,
             };
-            if snapshot.categories.contains(&category) {
-                return None;
-            }
-            category
+            let category = indexed_permission(Some(journal_root), path, category);
+            [Some(category), additional_indexed_permission(path)]
+                .into_iter()
+                .flatten()
+                .find(|kind| !snapshot.categories.contains(kind))?
         }
         ReferenceTarget::Activity(_)
             if !snapshot.categories.contains(&AdmittedCategory::Facets) =>
@@ -479,10 +492,7 @@ fn fetch_target_category_refusal(
         }
         _ => return None,
     };
-    Some(format!(
-        "this connection does not have the {} category",
-        category_token(&missing)
-    ))
+    Some(missing)
 }
 
 fn owner_denial_reason(reason: &'static str) -> &'static str {
@@ -543,7 +553,7 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
         DispatchError::Tool(ToolError::SuggestionOperationConflict) => {
             "an operation with this id was already processed with different arguments"
         }
-        DispatchError::PermissionDenied(_) => {
+        DispatchError::PermissionDenied(_) | DispatchError::KindDenied(_) => {
             "the request was outside this connection's permission"
         }
     }
@@ -873,27 +883,15 @@ pub(crate) fn boundary(
         .expect("closed admitted categories construct a boundary")
 }
 
-/// The connection's boundary for reading segments: its transcripts, and its
-/// body windows when it holds the body permission. Each segment is then judged
-/// by what it is, so a body window needs body and any other needs transcripts.
+/// The segment route applies this scope, then checks each eligible file.
 pub(crate) fn segment_boundary(
     snapshot: &ConnectionReadSnapshot,
     facet: Option<&str>,
 ) -> Option<ConnectionBoundary> {
-    let categories = [AdmittedCategory::Transcripts, AdmittedCategory::Body]
-        .into_iter()
-        .filter(|category| snapshot.categories.contains(category))
-        .collect::<BTreeSet<_>>();
-    (!categories.is_empty()).then(|| {
-        let scope = facet.map_or_else(
-            || snapshot.scope.clone(),
-            |id| ConnectionScope::ChosenFacets {
-                ids: BTreeSet::from([id.to_owned()]),
-            },
-        );
-        ConnectionBoundary::from_category_tokens(categories.iter().map(category_token), scope)
-            .expect("closed admitted categories construct a boundary")
-    })
+    crate::registry::SEGMENT_KINDS
+        .iter()
+        .any(|category| snapshot.categories.contains(category))
+        .then(|| boundary(snapshot, None, facet))
 }
 
 pub(crate) fn live_allows(
@@ -1086,6 +1084,9 @@ fn resolve_search_entities(
     if !search_boundary
         .categories()
         .contains(&AdmittedCategory::Entities)
+        || request
+            .category
+            .is_some_and(|kind| kind != AdmittedCategory::Entities)
         || request.query.trim().is_empty()
         || !is_plain_literal_query(&request.query)
     {
@@ -1379,7 +1380,8 @@ fn search(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedSearch,
 ) -> Result<Prepared, DispatchError> {
-    let boundary = boundary(snapshot, request.category, request.facet_id.as_deref());
+    let boundary =
+        boundary(snapshot, None, request.facet_id.as_deref()).filtered_to(request.category);
     let resolution =
         resolve_search_entities(journal_root, principal, snapshot, &boundary, &request);
     let resolution_status_str = match resolution.status {
@@ -1444,7 +1446,7 @@ fn search(
     // Possible-name rows are admitted inside the query, so one this connection
     // may not see never matches, counts, relaxes the query or anchors a cursor.
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
-    let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names));
+    let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
@@ -1855,10 +1857,12 @@ fn search_withheld_body(
     request: &ValidatedSearch,
 ) -> Result<bool, DispatchError> {
     if crate::body_source::holds_body(snapshot)
-        || matches!(
-            request.category,
-            Some(AdmittedCategory::Entities | AdmittedCategory::ScreenText)
-        )
+        || request.category.is_some_and(|kind| {
+            !matches!(
+                kind,
+                AdmittedCategory::Transcripts | AdmittedCategory::Facets | AdmittedCategory::Body
+            )
+        })
     {
         return Ok(false);
     }
@@ -2286,7 +2290,7 @@ fn fetch(
                 more_segments: false,
                 activity_record: record.as_ref(),
             }];
-            let mut checker = LiveTranscriptPages::new(possible_names);
+            let mut checker = LiveTranscriptPages::new(possible_names, snapshot);
             let mut response_checks = 0;
             if allowed {
                 issue_segment_links(
@@ -2390,8 +2394,10 @@ pub(crate) fn fetch_activity(
         more_segments: false,
         activity_record: Some(&record),
     }];
-    let mut checker =
-        LiveTranscriptPages::new(ConnectionPossibleNames::new(journal_root, snapshot));
+    let mut checker = LiveTranscriptPages::new(
+        ConnectionPossibleNames::new(journal_root, snapshot),
+        snapshot,
+    );
     let mut response_checks = 0;
     if allowed {
         issue_segment_links(
@@ -3220,16 +3226,17 @@ fn list_transcripts(
                 &stream,
                 &name,
             );
-            let page = if allowed && segments.len() < request.limit {
+            let page = if allowed {
                 // Read as get_transcript serves it, so `lines` counts nothing
                 // the owner hid.
                 Some(
-                    solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+                    solstone_core_transcripts::read_segment_transcript_page_with_permissions(
                         &segment,
                         None,
                         speakers.as_ref(),
                         possible_names.labels(segment.path()).as_ref(),
                         &left_out,
+                        Some(&snapshot.categories),
                     ),
                 )
             } else {
@@ -3253,20 +3260,22 @@ fn list_transcripts(
                 continue;
             }
 
-            if segments.len() == request.limit {
-                has_more = true;
-                break 'outer;
-            }
-
-            last_examined = Some((day.clone(), stream.clone(), name.clone()));
-
-            let page = match page.expect("allowed and within limit reads page") {
+            let page = match page.expect("allowed reads page") {
                 Ok(page) => page,
+                Err(solstone_core_transcripts::SegmentTranscriptReadError::NoPermittedFiles) => {
+                    continue;
+                }
                 Err(_) => {
                     unreadable += 1;
                     continue;
                 }
             };
+
+            if segments.len() == request.limit {
+                has_more = true;
+                break 'outer;
+            }
+            last_examined = Some((day.clone(), stream.clone(), name.clone()));
 
             let reference = segment_reference(
                 journal_root,
@@ -3565,12 +3574,13 @@ pub(crate) fn read_segment(
         let possible_names =
             ConnectionPossibleNames::new(journal_root, snapshot).labels(segment.path());
         Some(
-            solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+            solstone_core_transcripts::read_segment_transcript_page_with_permissions(
                 &segment,
                 continuation.as_ref(),
                 speakers.as_ref(),
                 possible_names.as_ref(),
                 &left_out,
+                Some(&snapshot.categories),
             ),
         )
     } else {

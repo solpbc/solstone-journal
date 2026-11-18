@@ -63,7 +63,7 @@ fn grant(journal: &Path, scope: ReadScope) {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["calendar".to_owned(), "transcripts".to_owned()],
                 scope,
             },
         )
@@ -100,7 +100,7 @@ fn capture(journal: &Path, day: &str, segment: &str, text: &str) {
         .join(segment);
     fs::create_dir_all(dir.join("talents")).unwrap();
     fs::write(dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
-    fs::write(dir.join("talents/brief.md"), format!("{text}\n")).unwrap();
+    fs::write(dir.join("talents/topics.md"), format!("{text}\n")).unwrap();
 }
 
 fn index(journal: &Path) {
@@ -367,7 +367,7 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
 
     grant_categories(
         root,
-        &["facets", "transcripts", "entities"],
+        &["facets", "calendar", "entities"],
         ReadScope::WholeJournal,
     );
     assert_eq!(
@@ -378,7 +378,7 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
         ]
     );
     // Without the people grant, the meeting comes without names.
-    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    grant_categories(root, &["facets", "calendar"], ReadScope::WholeJournal);
     assert_eq!(
         scheduled_beside_activities(root),
         [
@@ -387,11 +387,11 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
         ]
     );
 
-    // The calendar belongs to no facet, and without transcripts a connection
+    // The calendar belongs to no facet, and without calendar permission a connection
     // doesn't read it at all.
     grant_categories(
         root,
-        &["facets", "transcripts"],
+        &["facets", "calendar"],
         ReadScope::Facets {
             ids: vec![FACET.to_owned()],
         },
@@ -400,7 +400,7 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
         scheduled_beside_activities(root),
         [Value::Null, Value::Null]
     );
-    grant_categories(root, &["facets"], ReadScope::WholeJournal);
+    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
     assert_eq!(
         scheduled_beside_activities(root),
         [Value::Null, Value::Null]
@@ -450,7 +450,7 @@ fn an_activity_says_where_a_device_was_only_to_a_connection_that_reads_the_whole
     .unwrap();
     index(root);
 
-    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    grant_categories(root, &["facets", "places"], ReadScope::WholeJournal);
     let places = place_beside_activities(root);
     let words = places[0]["words"].as_str().unwrap();
     assert!(words.starts_with("near Denver"), "{places:?}");
@@ -465,16 +465,16 @@ fn an_activity_says_where_a_device_was_only_to_a_connection_that_reads_the_whole
     );
     assert_eq!(places[1], Value::Null, "nothing covers 12:00");
 
-    // A day's location belongs to no facet, and without transcripts a
+    // A day's location belongs to no facet, and without places permission a
     // connection doesn't read it at all.
     grant_categories(
         root,
-        &["facets", "transcripts"],
+        &["facets", "places"],
         ReadScope::Facets {
             ids: vec![FACET.to_owned()],
         },
     );
     assert_eq!(place_beside_activities(root), [Value::Null, Value::Null]);
-    grant_categories(root, &["facets"], ReadScope::WholeJournal);
+    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
     assert_eq!(place_beside_activities(root), [Value::Null, Value::Null]);
 }

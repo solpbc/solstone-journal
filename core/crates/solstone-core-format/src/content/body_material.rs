@@ -50,19 +50,15 @@ fn summary_import_id(rel: &str) -> Option<&str> {
 /// count. An unreadable manifest says nothing, so its summary stays what it was.
 #[must_use]
 pub fn is_body_import_summary(journal: &Path, rel: &str) -> bool {
-    let Some(id) = summary_import_id(rel) else {
-        return false;
-    };
-    std::fs::read(journal.join("imports").join(id).join("manifest.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|manifest| {
-            manifest
-                .get("source_type")
-                .and_then(serde_json::Value::as_str)
-                .map(|source| BODY_IMPORT_SOURCES.contains(&source))
-        })
-        .unwrap_or(false)
+    import_summary_source(journal, rel)
+        .is_some_and(|source| BODY_IMPORT_SOURCES.contains(&source.as_str()))
+}
+
+pub(super) fn import_summary_source(journal: &Path, rel: &str) -> Option<String> {
+    let id = summary_import_id(rel)?;
+    let bytes = std::fs::read(journal.join("imports").join(id).join("manifest.json")).ok()?;
+    let manifest: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    Some(manifest.get("source_type")?.as_str()?.to_owned())
 }
 
 /// Whether an indexed path is body material, its path read first and a summary's

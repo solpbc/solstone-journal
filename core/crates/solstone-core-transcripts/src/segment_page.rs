@@ -123,6 +123,7 @@ pub struct SegmentTranscriptPage {
 /// Failure while reading a bounded transcript page.
 #[derive(Debug)]
 pub enum SegmentTranscriptReadError {
+    NoPermittedFiles,
     Changed,
     InvalidCursor,
     Io,
@@ -185,7 +186,28 @@ pub fn read_segment_transcript_page_leaving_out(
     possible_names: Option<&PossibleNameLabels>,
     left_out: &BTreeSet<String>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
-    let files = transcript_files(segment.path())?;
+    read_segment_transcript_page_with_permissions(
+        segment,
+        cursor,
+        speakers,
+        possible_names,
+        left_out,
+        None,
+    )
+}
+
+/// Project only files the connection may read, after segment-route selection.
+/// Filter before numbering, versioning, paging or reading any file contents.
+pub fn read_segment_transcript_page_with_permissions(
+    segment: &Segment,
+    cursor: Option<&SegmentTranscriptCursor>,
+    speakers: Option<&AgentSpeakers>,
+    possible_names: Option<&PossibleNameLabels>,
+    left_out: &BTreeSet<String>,
+    permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
+) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
+    let files = permitted_transcript_files(segment, permissions)?;
+    let segment_origin = segment_origin(segment.path());
     let labels = speakers.and_then(|speakers| local_speaker_names(segment.path(), speakers));
     // An agent read keeps one number on one voice through a continuous recording.
     let run_numbers = speakers
@@ -212,7 +234,6 @@ pub fn read_segment_transcript_page_leaving_out(
         None => (0, 0, 0),
     };
 
-    let segment_origin = segment_origin(segment.path());
     let mut entries = Vec::new();
     while source_index < files.len() && entries.len() < MAX_TRANSCRIPT_PAGE_ITEMS {
         let path = &files[source_index];
@@ -320,6 +341,38 @@ fn is_left_out(name: &str, line: &str, left_out: &BTreeSet<String>) -> bool {
         && name == solstone_core_format::content::body_records::BODY_RECORDS_FILE
         && serde_json::from_str::<solstone_core_format::content::body_records::BodyRow>(line)
             .is_ok_and(|row| left_out.contains(&row.id))
+}
+
+/// Whether this segment can supply a transcript page under these permissions.
+pub fn segment_has_permitted_files(
+    segment: &Segment,
+    permissions: &BTreeSet<solstone_core_format::content::AdmittedCategory>,
+) -> bool {
+    permitted_transcript_files(segment, Some(permissions)).is_ok()
+}
+
+fn permitted_transcript_files(
+    segment: &Segment,
+    permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
+) -> Result<Vec<PathBuf>, SegmentTranscriptReadError> {
+    use solstone_core_format::content::{AdmittedCategory, kinds::segment_file_permission};
+    let mut files = transcript_files(segment.path())?;
+    if let Some(permissions) = permissions {
+        let was_empty = files.is_empty();
+        let origin = segment_origin(segment.path());
+        files.retain(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            permissions.contains(&segment_file_permission(&format!("{origin}/{name}")))
+        });
+        if files.is_empty() && (!was_empty || !permissions.contains(&AdmittedCategory::Transcripts))
+        {
+            return Err(SegmentTranscriptReadError::NoPermittedFiles);
+        }
+    }
+    Ok(files)
 }
 
 fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptReadError> {

@@ -167,6 +167,10 @@ fn readable(
             &item.stream,
             &item.name,
         )
+        && solstone_core_transcripts::segment_has_permitted_files(
+            &item.segment,
+            &snapshot.categories,
+        )
 }
 
 /// Whether the label names anything this connection can read on the day.
@@ -338,7 +342,12 @@ pub(crate) fn read_segment_span(
                 &item.name,
             )
         };
-        if !released() {
+        if !released()
+            || !solstone_core_transcripts::segment_has_permitted_files(
+                &item.segment,
+                &snapshot.categories,
+            )
+        {
             continue;
         }
         // Enough for one call: the next one starts at this segment, which
@@ -379,12 +388,13 @@ pub(crate) fn read_segment_span(
                             ),
                     }
                 });
-                solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+                solstone_core_transcripts::read_segment_transcript_page_with_permissions(
                     &item.segment,
                     continuation.as_ref(),
                     speakers.as_ref(),
                     possible_names.labels(item.segment.path()).as_ref(),
                     &left_out,
+                    Some(&snapshot.categories),
                 )
             });
             // Freeze the page before the last deletion observation, as a

@@ -377,7 +377,7 @@ fn project_sunday(
     let mut activities = Vec::new();
     let mut memories = Vec::new();
     let possible_names = crate::possible_names::ConnectionPossibleNames::new(journal, snapshot);
-    let mut checker = LiveTranscriptPages::new(std::sync::Arc::clone(&possible_names));
+    let mut checker = LiveTranscriptPages::new(std::sync::Arc::clone(&possible_names), snapshot);
     for group in ranked {
         let rep = group.representative;
         let reference = crate::dispatch::activity_reference(

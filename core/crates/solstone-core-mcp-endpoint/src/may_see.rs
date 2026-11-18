@@ -292,12 +292,14 @@ pub(crate) fn segment_in_scope(
     name: &str,
 ) -> bool {
     segment_boundary(snapshot, None).is_some_and(|boundary| {
-        live_allows(
-            journal_root,
-            &boundary,
-            &segment_assignment_probe_path(day, stream, name),
-            Some(stream),
-        )
+        FacetDeclarationSet::from_journal(journal_root).is_ok_and(|declarations| {
+            boundary.allows_scope(&classify_source(
+                journal_root,
+                &segment_assignment_probe_path(day, stream, name),
+                Some(stream),
+                &declarations,
+            ))
+        })
     })
 }
 
@@ -320,14 +322,19 @@ pub(crate) fn segment_shown_within(
         Some(stream),
         declarations,
     );
-    if !boundary.allows_classification(journal_root, &classification) {
+    if !boundary.allows_scope(&classification) {
         return None;
     }
     // Calendar notes are found through search, never read as a segment.
     if solstone_core_segment::is_calendar_segment(journal_root, segment) {
         return None;
     }
-    if solstone_core_segment::is_body_only_segment(segment) && !is_body_window(segment) {
+    if solstone_core_segment::is_body_only_segment(segment)
+        && (!boundary
+            .categories()
+            .contains(&solstone_core_indexer_query::AdmittedCategory::Body)
+            || !is_body_window(segment))
+    {
         return None;
     }
     hides.shown(journal_root, day, stream, segment)

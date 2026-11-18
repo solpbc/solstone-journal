@@ -939,6 +939,9 @@ fn execute_tool_call(
         Err(DispatchError::PermissionDenied(reason)) => {
             JsonRpcResponse::permission_denied(request.id.as_ref(), reason)
         }
+        Err(DispatchError::KindDenied(kind)) => {
+            JsonRpcResponse::kind_denied(request.id.as_ref(), crate::dispatch::kind_refusal(kind))
+        }
         Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => {
             JsonRpcResponse::internal_error(
                 request.id.as_ref(),
@@ -2726,7 +2729,17 @@ mod tests {
                         )
                         .unwrap();
                 }
-                3 => server.grant_permission(identity),
+                3 => {
+                    store
+                        .set_permission(
+                            identity,
+                            ReadPermission {
+                                categories: vec!["notes".into()],
+                                scope: ReadScope::WholeJournal,
+                            },
+                        )
+                        .unwrap();
+                }
                 4 => fs::write(&permission_file, b"malformed permission ledger").unwrap(),
                 _ => unreachable!(),
             }
@@ -3053,6 +3066,18 @@ mod tests {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
         let token = server.create_token("fault original");
+        let verified = TokenStore::open(server.journal.path())
+            .verify(&token.token)
+            .unwrap();
+        crate::permissions::PermissionStore::open(server.journal.path())
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["notes".into()],
+                    scope: crate::permissions::ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
         faults::set(server.journal.path(), Fault::Preparation);
         let call = memory_call(

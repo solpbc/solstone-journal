@@ -47,7 +47,8 @@ pub use segment_page::{
     POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, SegmentClock, SegmentTranscriptCursor,
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
     SegmentTranscriptVersion, read_segment_transcript_page,
-    read_segment_transcript_page_leaving_out, segment_clock,
+    read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_permissions,
+    segment_clock, segment_has_permitted_files,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

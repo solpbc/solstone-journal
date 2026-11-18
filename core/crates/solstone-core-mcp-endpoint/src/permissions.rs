@@ -64,7 +64,7 @@ impl ReadPermission {
     #[must_use]
     pub fn default_whole_journal() -> Self {
         Self {
-            categories: solstone_core_format::content::kinds::permission_words()
+            categories: solstone_core_format::content::kinds::default_permission_words()
                 .map(str::to_owned)
                 .collect(),
             scope: ReadScope::WholeJournal,

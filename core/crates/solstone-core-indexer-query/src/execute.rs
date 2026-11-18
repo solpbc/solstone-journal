@@ -150,9 +150,7 @@ pub fn connection_search_withheld_body(
     // Strava lines only.
     push_keyed(
         &mut plan,
-        &format!(
-            " AND ({BODY_MATERIAL_FUNCTION}(chunks.path) OR chunks.path LIKE 'facets/%/activities/%.jsonl')"
-        ),
+        " AND (solstone_indexed_permission(chunks.path,'transcripts')='body' OR chunks.path LIKE 'facets/%/activities/%.jsonl')",
         &[],
     );
     connection.any_row(&plan)
@@ -547,17 +545,25 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
         push_keyed(plan, " AND 0", &[]);
         return;
     }
-    let categories = category_placeholders(boundary.categories().len());
-    // What a body import brought in is body whatever category it was stored
-    // under, so a row indexed before body existed is gated as body too.
-    let mut clause = format!(
-        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND (CASE WHEN {BODY_MATERIAL_FUNCTION}(chunks.path) THEN 'body' ELSE cc.category END) IN ({categories})"
-    );
-    let mut params: Vec<String> = boundary
+    let categories: Vec<_> = boundary
         .categories()
         .iter()
-        .map(|category| category_sql_name(*category).to_string())
+        .filter(|category| {
+            boundary
+                .category_filter()
+                .is_none_or(|filter| filter == **category)
+        })
+        .map(|category| category.as_str().to_owned())
         .collect();
+    if categories.is_empty() {
+        push_keyed(plan, " AND 0", &[]);
+        return;
+    }
+    let placeholders = category_placeholders(categories.len());
+    let mut clause = format!(
+        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND solstone_indexed_permission(chunks.path,cc.category) IN ({placeholders})"
+    );
+    let mut params = categories;
     match boundary.scope() {
         ConnectionScope::WholeJournal => {}
         ConnectionScope::ChosenFacets { ids } => {
@@ -576,9 +582,9 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     push_keyed(plan, &format!(" AND {clause}"), &params);
     if !boundary
         .categories()
-        .contains(&AdmittedCategory::ScreenText)
+        .contains(&AdmittedCategory::Transcripts)
     {
-        push_keyed(plan, " AND NOT solstone_screen_text_path(chunks.path)", &[]);
+        push_keyed(plan, " AND NOT solstone_indexed_quotes(chunks.path)", &[]);
     }
 }
 
@@ -615,42 +621,44 @@ fn category_placeholders(count: usize) -> String {
         .join(", ")
 }
 
-fn category_sql_name(category: AdmittedCategory) -> &'static str {
-    category.as_str()
-}
-
-const BODY_MATERIAL_FUNCTION: &str = "solstone_body_material";
-
-/// Register `solstone_body_material(path)`: whether an indexed path is what a
-/// body import brought in. A summary's manifest is read once per reader.
-fn register_body_material(
+fn register_indexed_permissions(
     connection: &Connection,
     journal: Option<PathBuf>,
 ) -> rusqlite::Result<()> {
-    let summaries = Mutex::new(BTreeMap::<String, bool>::new());
+    use solstone_core_format::content::kinds::{additional_indexed_permission, indexed_permission};
+    // The same path may back many indexed chunks. Cache only within this
+    // reader, as with body import manifests before the other kinds were added.
+    let paths = Mutex::new(BTreeMap::new());
     connection.create_scalar_function(
-        BODY_MATERIAL_FUNCTION,
-        1,
-        // Not deterministic: a summary's manifest is read from the journal.
+        "solstone_indexed_permission",
+        2,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
         move |context| {
-            let path = context.get_raw(0).as_str().unwrap_or_default();
-            if solstone_core_format::content::body_material::is_body_path(path) {
-                return Ok(true);
-            }
-            let Some(journal) = journal.as_deref() else {
-                return Ok(false);
+            let path = context.get_raw(0).as_str()?;
+            let stored = context
+                .get_raw(1)
+                .as_str()
+                .ok()
+                .and_then(crate::types::category_from_sql_name);
+            let Some(stored) = stored else {
+                return Ok(None);
             };
-            if !path.starts_with("imports/") {
-                return Ok(false);
-            }
-            let mut summaries = summaries
+            let mut paths = paths
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Ok(*summaries.entry(path.to_owned()).or_insert_with(|| {
-                solstone_core_format::content::body_material::is_body_import_summary(journal, path)
-            }))
+            let category = paths
+                .entry((path.to_owned(), stored))
+                .or_insert_with(|| indexed_permission(journal.as_deref(), path, stored));
+            Ok(Some(category.as_str()))
         },
+    )?;
+    connection.create_scalar_function(
+        "solstone_indexed_quotes",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_DIRECTONLY,
+        |context| Ok(additional_indexed_permission(context.get_raw(0).as_str()?).is_some()),
     )
 }
 
@@ -1708,22 +1716,9 @@ pub fn indexed_path_has_later_chunk(
 
 impl QueryConnection {
     pub(crate) fn new(connection: Connection, path: PathBuf) -> Result<Self, IndexAccessError> {
-        connection
-            .create_scalar_function(
-                "solstone_screen_text_path",
-                1,
-                FunctionFlags::SQLITE_UTF8
-                    | FunctionFlags::SQLITE_DETERMINISTIC
-                    | FunctionFlags::SQLITE_INNOCUOUS,
-                |context| {
-                    let path: String = context.get(0)?;
-                    Ok(solstone_core_format::content::screen_text::is_screen_text_path(&path))
-                },
-            )
-            .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
-        register_body_material(
+        register_indexed_permissions(
             &connection,
             path.parent().and_then(Path::parent).map(Path::to_path_buf),
         )

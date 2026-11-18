@@ -58,10 +58,17 @@ const NOTHING: ToolRequirement = ToolRequirement {
     any_of: false,
     one_of: &[],
 };
-/// Transcripts and body windows are read by the same tools, each target under
-/// its own kind: a body window under body, any other segment under transcripts.
-const TRANSCRIPTS_OR_BODY: ToolRequirement = ToolRequirement {
-    read: &[AdmittedCategory::Transcripts, AdmittedCategory::Body],
+/// The kinds eligible for direct segment pages. Other kinds have index routes.
+pub(crate) const SEGMENT_KINDS: &[AdmittedCategory] = &[
+    AdmittedCategory::Transcripts,
+    AdmittedCategory::Body,
+    AdmittedCategory::Notes,
+    AdmittedCategory::Documents,
+    AdmittedCategory::Calendar,
+    AdmittedCategory::Photos,
+];
+const SEGMENT: ToolRequirement = ToolRequirement {
+    read: SEGMENT_KINDS,
     whole_journal: false,
     any_of: true,
     one_of: &[],
@@ -95,26 +102,18 @@ const SEARCH: ToolRequirement = ToolRequirement {
         AdmittedCategory::Transcripts,
         AdmittedCategory::ScreenText,
         AdmittedCategory::Body,
-    ],
-    whole_journal: false,
-    any_of: true,
-    one_of: &[],
-};
-/// `list_activities` mints activity references under a facets grant, and search
-/// mints entry references under a transcripts, screen_text or body grant.
-/// Advertising `fetch` for any grant lets those references round-trip. The call
-/// still refuses an entry without its own kind and an activity without facets.
-const FETCH: ToolRequirement = ToolRequirement {
-    read: &[
-        AdmittedCategory::Transcripts,
         AdmittedCategory::Facets,
-        AdmittedCategory::ScreenText,
-        AdmittedCategory::Body,
+        AdmittedCategory::Notes,
+        AdmittedCategory::Documents,
+        AdmittedCategory::Calendar,
+        AdmittedCategory::Places,
+        AdmittedCategory::Photos,
     ],
     whole_journal: false,
     any_of: true,
     one_of: &[],
 };
+const FETCH: ToolRequirement = SEARCH;
 const SUGGEST_CORRECTION: ToolRequirement = ToolRequirement {
     read: &[
         AdmittedCategory::Facets,
@@ -180,7 +179,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         title: "list transcripts",
         description: "List transcript segments this connection may read, each with its time, its source, which says where it came from, how many seconds it ran and how many lines it holds, with `more_lines` when it holds more than that count. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. Pass a source label, exactly as a row gives it, as source to list only that source's segments, such as the segments from one device's microphone. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A day's list that holds a segment also returns span_reference: pass it to get_transcript as reference to read everything the list matched in time order, instead of one call for each segment. A segment's reference stays the same from one call to the next, so it can be kept and passed again later. A span_reference or next_cursor may stop working later; list again for a new one. Two segments at the same time with different sources are separate recordings. A list leaves out segments holding only body records, and a day's list names their sources in other_sources. Pass one of those labels as source to list those segments. It leaves out Strava workouts too, which no label lists: it counts them in omitted_workouts, and search finds them, and list_activities lists the activity recorded for each, when it has one. Body segments and workouts are read with the body permission; without it, none of these are listed or counted, and body_note says so. A day's list adds gaps, the stretches no listed segment this connection can read covers. A gap means no segment, not that nothing happened. when a row includes link, give it to the owner when pointing to that place in their journal. it needs a solstone app version that supports journal links; older versions may not open the place. keep using reference for tool calls.",
         input_schema: list_transcripts_input_schema,
-        requires: TRANSCRIPTS_OR_BODY,
+        requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
     },
     ToolEntry {
@@ -189,7 +188,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         title: "read a transcript",
         description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day. Pass a span_reference from list_transcripts as reference to read what that list matched in time order. A day's segments come back in `segments`, each with its time, its source and its entries, and a segment with nothing said is left out. A body source's entries come back in `entries`, each attributed. A page can be short, so read on while next_cursor is present. when link is present, it points to the recording for the owner. opening it needs a solstone app version that supports journal links. to point to a line you actually read, append ~HHMMSS from its clock: 09:00:20 becomes ~090020. never invent a time or add one when untimed is true. keep using reference for tool calls.",
         input_schema: transcript_input_schema,
-        requires: TRANSCRIPTS_OR_BODY,
+        requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
     },
     ToolEntry {

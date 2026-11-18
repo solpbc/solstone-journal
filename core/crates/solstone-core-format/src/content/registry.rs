@@ -9,7 +9,9 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KindAssignment {
     Settled(Kind),
-    Unsettled(&'static str),
+    Legacy(Kind),
+    /// The kind of the material named in the import manifest.
+    ImportSummary,
     NotContent,
 }
 
@@ -546,12 +548,10 @@ mod tests {
     }
 
     #[test]
-    fn current_admission_is_path_specific_even_when_kinds_match() {
+    fn effective_admission_is_path_specific_even_when_kinds_match() {
         use super::super::kinds::Kind as K;
         use super::super::{AdmittedCategory as P, classify, resolve_spec};
-        use KindAssignment::{Settled, Unsettled};
-        // This is a statement of today's admission, not a permission policy.
-        // Raw formats have a kind but no grant admits those files to agents.
+        use KindAssignment::{Legacy, Settled};
         let cases = [
             (
                 "20260107/default/120000_60/audio.jsonl",
@@ -561,7 +561,7 @@ mod tests {
             (
                 "20260107/import.document/120000_60/document_transcript.md",
                 Some(K::Documents),
-                Some(P::Transcripts),
+                Some(P::Documents),
             ),
             (
                 "20260107/default/120000_60/talents/screen_text.md",
@@ -571,7 +571,7 @@ mod tests {
             (
                 "20260107/default/120000_60/talents/screen.md",
                 Some(K::Screen),
-                Some(P::Transcripts),
+                Some(P::ScreenText),
             ),
             (
                 "20260107/import.apple_health/120000_60/body.jsonl",
@@ -581,13 +581,9 @@ mod tests {
             (
                 "20260107/import.ics/120000_60/event_transcript.md",
                 Some(K::Calendar),
-                Some(P::Transcripts),
+                Some(P::Calendar),
             ),
-            (
-                "20260107/location.md",
-                Some(K::Places),
-                Some(P::Transcripts),
-            ),
+            ("20260107/location.md", Some(K::Places), Some(P::Places)),
             (
                 "20260107/default/120000_60/location.jsonl",
                 Some(K::Places),
@@ -596,7 +592,7 @@ mod tests {
             (
                 "20260107/import.image/120000_60/image_transcript.md",
                 Some(K::Photos),
-                Some(P::Transcripts),
+                Some(P::Photos),
             ),
             (
                 "20260107/import.image/120000_60/original.jpg",
@@ -615,22 +611,23 @@ mod tests {
             ),
             (
                 "20260107/agent-memory-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/120000_60/note.txt",
-                None,
-                Some(P::Transcripts),
+                Some(K::Notes),
+                Some(P::Notes),
             ),
         ];
         for (path, kind, permission) in cases {
             let spec = file_spec(path).unwrap();
             match (kind, spec.kind) {
-                (Some(expected), Settled(actual)) => assert_eq!(expected, actual),
-                (None, Unsettled(_)) => {}
+                (Some(expected), Settled(actual) | Legacy(actual)) => assert_eq!(expected, actual),
                 _ => panic!("unexpected kind for {path}"),
             }
             let current = if super::super::body_material::is_body_path(path) {
                 Some(P::Body)
             } else if let Some(spec) = resolve_spec(path) {
                 match spec.disposition {
-                    IndexDisposition::Admitted { category, .. } => Some(category),
+                    IndexDisposition::Admitted { category, .. } => Some(
+                        super::super::kinds::indexed_permission(None, path, category),
+                    ),
                     IndexDisposition::Excluded => None,
                 }
             } else if matches!(

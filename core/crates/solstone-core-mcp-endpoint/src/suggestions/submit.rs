@@ -955,17 +955,20 @@ fn execute_admitted(
                 return refusal;
             };
 
-            if crate::may_see::segment_shown(
-                journal_root,
-                snapshot,
-                &crate::body_source::BodyHides::read(journal_root),
-                None,
-                &seg_day,
-                &seg_stream,
-                &seg_segment,
-                &seg_entry,
-            )
-            .is_none()
+            if !snapshot
+                .categories
+                .contains(&solstone_core_indexer_query::AdmittedCategory::Transcripts)
+                || crate::may_see::segment_shown(
+                    journal_root,
+                    snapshot,
+                    &crate::body_source::BodyHides::read(journal_root),
+                    None,
+                    &seg_day,
+                    &seg_stream,
+                    &seg_segment,
+                    &seg_entry,
+                )
+                .is_none()
             {
                 return refusal;
             }

@@ -361,7 +361,7 @@ fn ordinary_readable(journal: &Path, connection: &str, coordinate: &Coordinate) 
     else {
         return false;
     };
-    if !snapshot.categories.contains(&AdmittedCategory::Transcripts) {
+    if !snapshot.categories.contains(&AdmittedCategory::Notes) {
         return false;
     }
     let path = note_path(coordinate);

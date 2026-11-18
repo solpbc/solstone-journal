@@ -1005,12 +1005,13 @@ pub(crate) fn list_source(
     let mut last_name = None;
     for window in remaining.by_ref().take(request.limit) {
         last_name = Some(window.name.clone());
-        let page = solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+        let page = solstone_core_transcripts::read_segment_transcript_page_with_permissions(
             &window.segment,
             None,
             None,
             None,
             &window.left_out,
+            Some(&snapshot.categories),
         );
         // Freeze the page before the last deletion observation, as a single read does.
         if !released(journal_root, day, stream, &window.name) {

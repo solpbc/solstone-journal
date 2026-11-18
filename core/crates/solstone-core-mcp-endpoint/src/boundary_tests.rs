@@ -29,7 +29,7 @@ const FACET_B: &str = "123e4567-e89b-42d3-a456-426614174001";
 const DAY: &str = "20260914";
 const STREAM: &str = "default";
 const SEGMENT: &str = "090000_300";
-const PATH: &str = "20260914/default/090000_300/talents/brief.md";
+const PATH: &str = "20260914/default/090000_300/talents/topics.md";
 
 #[test]
 fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() {
@@ -71,6 +71,17 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
     );
     PermissionStore::open(journal.path())
         .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    let without_notes = probe(&journal, "search", json!({"query":"crossmemoryneedle"})).unwrap();
+    assert!(without_notes["results"].as_array().unwrap().is_empty());
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["notes".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
         .unwrap();
     let result = probe(&journal, "search", json!({"query":"crossmemoryneedle"})).unwrap();
     let results = result["results"].as_array().unwrap();
@@ -129,6 +140,276 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
     );
 }
 
+#[test]
+fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
+    let journal = fixture();
+    let root = journal.path();
+    // Expected word is independent of the registry and of the old SQL category.
+    let mut paths = vec![
+        (
+            "20260914/default/090000_300/audio.jsonl",
+            "speechneedle",
+            "transcripts",
+            true,
+            false,
+        ),
+        (
+            "20260914/default/090000_300/note_transcript.md",
+            "linkednoteneedle",
+            "notes",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.obsidian/090000_300/note_transcript.md",
+            "obsidianneedle",
+            "notes",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.evernote/100000_300/note_transcript.md",
+            "evernoteneedle",
+            "notes",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.document/110000_300/document_transcript.md",
+            "documentneedle",
+            "documents",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.ics/120000_300/event_transcript.md",
+            "calendarneedle",
+            "calendar",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.image/130000_300/image_transcript.md",
+            "photoneedle",
+            "photos",
+            true,
+            true,
+        ),
+        ("20260308/location.md", "placeneedle", "places", false, true),
+        (
+            "20260914/default/090000_300/talents/screen.md",
+            "screenneedle",
+            "screen_text",
+            false,
+            true,
+        ),
+        (
+            "20260914/default/090000_300/talents/activity.md",
+            "activityneedle",
+            "facets",
+            false,
+            true,
+        ),
+        (
+            "20260914/default/090000_300/talents/sense.md",
+            "senseneedle",
+            "facets",
+            false,
+            true,
+        ),
+        (
+            "20260914/default/090000_300/talents/objects.md",
+            "objectsneedle",
+            "facets",
+            false,
+            true,
+        ),
+        (
+            "20260914/default/090000_300/talents/custom.md",
+            "customneedle",
+            "facets",
+            false,
+            true,
+        ),
+        (
+            "20260914/default/090000_300/talents/topics.md",
+            "topicsneedle",
+            "transcripts",
+            false,
+            true,
+        ),
+    ];
+    for &(path, token, _, _, _) in &paths {
+        let path = root.join("chronicle").join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let bytes = if path.ends_with("audio.jsonl") {
+            format!("{}\n", json!({"start":"09:00:00", "text":token}))
+        } else {
+            format!("{token}\n")
+        };
+        fs::write(path, bytes).unwrap();
+    }
+    use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+    let source = solstone_core_format::agent_memory::SourceKey::from_verified_id(
+        "bearer:fixture-other-agent",
+    );
+    let AppendResult::Stored(receipt) = append_connection_memory(
+        root,
+        AuthenticatedMemorySource {
+            verified_id: "bearer:fixture-other-agent",
+            creation_label: "fixture other agent",
+            source: &source,
+        },
+        "otheragentnoteneedle",
+        "fixture-kind-grant",
+        "2026-03-08T12:00:00Z".parse().unwrap(),
+    )
+    .unwrap() else {
+        panic!("the fixture note must be written");
+    };
+    let memory_path = format!(
+        "20260308/{}/{}/note.txt",
+        receipt.origin.stream, receipt.origin.segment
+    );
+    paths.push((&memory_path, "otheragentnoteneedle", "notes", false, true));
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    for (grant, words) in [
+        ("transcripts-only", &["transcripts"][..]),
+        (
+            "all-five",
+            &["transcripts", "entities", "facets", "screen_text", "body"][..],
+        ),
+        ("notes-only", &["notes"][..]),
+        ("documents-only", &["documents"][..]),
+        ("calendar-only", &["calendar"][..]),
+        ("places-only", &["places"][..]),
+        ("photos-only", &["photos"][..]),
+        ("screen-only", &["screen_text"][..]),
+        ("summaries-only", &["facets"][..]),
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let segment_text = probe(&journal, "list_transcripts", json!({"limit": 100}))
+            .map(|list| {
+                list["transcripts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|segment| {
+                        probe(
+                            &journal,
+                            "get_transcript",
+                            json!({"reference": segment["reference"]}),
+                        )
+                        .unwrap()["entries"]
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+        for &(path, token, word, direct, indexed) in &paths {
+            let segment_read = segment_text.contains(token);
+            let results = probe(&journal, "search", json!({"query":token})).unwrap()["results"]
+                .as_array()
+                .unwrap()
+                .clone();
+            let search_read = !results.is_empty();
+            let fetch_read = results.iter().any(|hit| {
+                probe(&journal, "fetch", json!({"reference":hit["reference"]})).is_ok_and(
+                    |fetched| {
+                        fetched["text"]
+                            .as_str()
+                            .is_some_and(|text| text.contains(token))
+                    },
+                )
+            });
+            assert_eq!(
+                (segment_read, search_read, fetch_read),
+                (
+                    direct && words.contains(&word),
+                    indexed && words.contains(&word),
+                    indexed && words.contains(&word)
+                ),
+                "{grant} {path}",
+            );
+        }
+    }
+}
+
+#[test]
+fn a_named_missing_kind_has_a_closed_permission_refusal() {
+    let journal = fixture();
+    let entry = crate::registry::tool_by_wire_name("search").unwrap();
+    let arguments = json!({"query":"unknown material","category":"notes"});
+    let result = crate::dispatch::dispatch_authenticated_tool_call(
+        journal.path(),
+        DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        },
+        entry.tool_name,
+        Some(&arguments),
+        jiff::Timestamp::now(),
+    );
+    assert!(matches!(
+        result,
+        Err(crate::dispatch::DispatchError::KindDenied(
+            AdmittedCategory::Notes
+        ))
+    ));
+}
+
+#[test]
+fn summaries_only_cannot_search_weekly_passages_and_the_summaries_filter_keeps_both_grants() {
+    let journal = fixture();
+    let root = journal.path();
+    fs::create_dir_all(root.join("reflections/weekly")).unwrap();
+    fs::write(
+        root.join("reflections/weekly/2026-W37.md"),
+        "A uniquewitness weekly passage.\n",
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    for (words, expected) in [
+        (&["facets"][..], false),
+        (&["transcripts"][..], false),
+        (&["facets", "transcripts"][..], true),
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let mut arguments = json!({"query":"uniquewitness"});
+        if words.contains(&"facets") {
+            arguments["category"] = json!("facets");
+        }
+        let results = probe(&journal, "search", arguments).unwrap();
+        let hits = results["results"].as_array().unwrap();
+        assert_eq!(!hits.is_empty(), expected, "{words:?} {results}");
+        if let Some(hit) = hits.first() {
+            assert!(
+                probe(&journal, "fetch", json!({"reference":hit["reference"]})).unwrap()["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("uniquewitness")
+            );
+        }
+    }
+}
+
 fn fixture() -> tempfile::TempDir {
     let journal = tempfile::Builder::new()
         .prefix("solstone-mcp-boundary-")
@@ -162,7 +443,7 @@ fn fixture() -> tempfile::TempDir {
     )
     .unwrap();
     fs::write(segment.join("audio.jsonl"), "percept material\n").unwrap();
-    fs::write(segment.join("talents/brief.md"), "disk bytes\n").unwrap();
+    fs::write(segment.join("talents/topics.md"), "disk bytes\n").unwrap();
     for (directory, id, detached) in [
         ("primary", "entity-primary", false),
         ("same-name", "entity-same-name", false),
@@ -477,7 +758,7 @@ fn ac25_a_refusal_is_recorded_and_the_owner_can_tell_it_from_a_served_call() {
     assert_eq!(
         reasons,
         [
-            "this connection does not have the transcripts or screen_text or body category",
+            "this connection does not have the transcripts or screen_text or body or facets or notes or documents or calendar or places or photos category",
             "this connection has no read permission",
         ]
     );
@@ -752,7 +1033,7 @@ fn ac14_unauthorized_chunks_do_not_change_visible_search_page_or_coverage() {
         "[{\"facet\":\"beta\"}]",
     )
     .unwrap();
-    let unauthorized_path = "20260914/default/100000_300/talents/brief.md";
+    let unauthorized_path = "20260914/default/100000_300/talents/topics.md";
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     index
         .execute(
@@ -1781,7 +2062,7 @@ fn setup_shared_link_journal() -> tempfile::TempDir {
         "alpha_transcript_token\n",
     )
     .unwrap();
-    fs::write(alpha_seg.join("talents/brief.md"), "brief bytes\n").unwrap();
+    fs::write(alpha_seg.join("talents/topics.md"), "brief bytes\n").unwrap();
     fs::write(
         alpha_seg.join("stream.json"),
         json!({"stream": "not-alpha"}).to_string(),
@@ -1800,7 +2081,7 @@ fn setup_shared_link_journal() -> tempfile::TempDir {
         "beta_transcript_token\n",
     )
     .unwrap();
-    fs::write(beta_seg.join("talents/brief.md"), "brief bytes\n").unwrap();
+    fs::write(beta_seg.join("talents/topics.md"), "brief bytes\n").unwrap();
 
     let flat_dup = chronicle.join("090000_300");
     fs::create_dir_all(flat_dup.join("talents")).unwrap();
@@ -1874,7 +2155,7 @@ impl TranscriptPageCheck for CountingChecker {
 #[test]
 fn a_summary_hit_links_only_to_its_own_streams_segment() {
     let journal = setup_shared_link_journal();
-    let path = "20261010/beta/090000_300/talents/brief.md";
+    let path = "20261010/beta/090000_300/talents/topics.md";
     plant_chunk(
         journal.path(),
         path,
@@ -2385,11 +2666,11 @@ fn unreadable_or_deleted_segments_get_no_link_and_search_still_succeeds() {
     .unwrap();
 
     let paths = [
-        "20261010/alpha/090000_300/talents/brief.md",
-        "20261010/alpha/100000_300/talents/brief.md",
-        "20261010/alpha/110000_300/talents/brief.md",
-        "20261010/alpha/120000_300/talents/brief.md",
-        "20261010/alpha/130000_300/talents/brief.md",
+        "20261010/alpha/090000_300/talents/topics.md",
+        "20261010/alpha/100000_300/talents/topics.md",
+        "20261010/alpha/110000_300/talents/topics.md",
+        "20261010/alpha/120000_300/talents/topics.md",
+        "20261010/alpha/130000_300/talents/topics.md",
     ];
     for (i, p) in paths.iter().enumerate() {
         plant_chunk(
@@ -2456,7 +2737,7 @@ fn links_keep_the_replay_digest_stable() {
     let journal = setup_shared_link_journal();
     plant_chunk(
         journal.path(),
-        "20261010/beta/090000_300/talents/brief.md",
+        "20261010/beta/090000_300/talents/topics.md",
         "20261010",
         "",
         0,
@@ -2852,7 +3133,7 @@ fn raw_transcript_text_never_reaches_search_or_fetch() {
 
     plant_chunk(
         journal.path(),
-        "20261010/alpha/090000_300/talents/brief.md",
+        "20261010/alpha/090000_300/talents/topics.md",
         "20261010",
         "alpha",
         0,
@@ -3132,7 +3413,7 @@ fn write_chronicle_segment(
         format!("[{{\"facet\":\"{facet}\"}}]"),
     )
     .unwrap();
-    fs::write(seg.join("talents/brief.md"), format!("{text}\n")).unwrap();
+    fs::write(seg.join("talents/topics.md"), format!("{text}\n")).unwrap();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6852,9 +7133,9 @@ fn setup_freeze_barrier_journal() -> tempfile::TempDir {
     )
     .unwrap();
     fs::write(seg1_dir.join("audio.jsonl"), "first percept\n").unwrap();
-    fs::write(seg1_dir.join("talents/brief.md"), "first disk bytes\n").unwrap();
+    fs::write(seg1_dir.join("talents/topics.md"), "first disk bytes\n").unwrap();
 
-    let seg1_path = format!("{DAY}/{STREAM}/{seg1_name}/talents/brief.md");
+    let seg1_path = format!("{DAY}/{STREAM}/{seg1_name}/talents/topics.md");
     plant_chunk(
         journal.path(),
         &seg1_path,
@@ -6867,7 +7148,7 @@ fn setup_freeze_barrier_journal() -> tempfile::TempDir {
         &[FACET_A],
     );
 
-    let seg2_path = format!("{DAY}/{STREAM}/{SEGMENT}/talents/brief.md");
+    let seg2_path = format!("{DAY}/{STREAM}/{SEGMENT}/talents/topics.md");
     plant_chunk(
         journal.path(),
         &seg2_path,
@@ -7371,9 +7652,9 @@ fn unindexed_planted_sibling_outside_facet_does_not_affect_grant() {
 
     let s3 = parent_dir.join("120000_300");
     fs::create_dir_all(s3.join("talents")).unwrap();
-    fs::write(s3.join("talents/brief.md"), "disk bytes\n").unwrap();
+    fs::write(s3.join("talents/topics.md"), "disk bytes\n").unwrap();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(s3.join("talents/brief.md"), s3.join("tombstone.json")).unwrap();
+    std::os::unix::fs::symlink(s3.join("talents/topics.md"), s3.join("tombstone.json")).unwrap();
 
     fs::write(parent_dir.join("130000_300"), b"regular file").unwrap();
 
@@ -7430,9 +7711,9 @@ fn door_seam_remove_segments_withholds_retained_references_without_leak() {
     )
     .unwrap();
     fs::write(seg2_dir.join("audio.jsonl"), "second percept\n").unwrap();
-    fs::write(seg2_dir.join("talents/brief.md"), "second disk bytes\n").unwrap();
+    fs::write(seg2_dir.join("talents/topics.md"), "second disk bytes\n").unwrap();
 
-    let seg2_path = format!("{DAY}/{STREAM}/{seg2_name}/talents/brief.md");
+    let seg2_path = format!("{DAY}/{STREAM}/{seg2_name}/talents/topics.md");
     plant_chunk(
         journal.path(),
         &seg2_path,
@@ -7615,7 +7896,7 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
         let tx = index.transaction().unwrap();
         for i in 1..=1001 {
             let seg = format!("000000_{i:04}");
-            let path = format!("20260914/default/{seg}/talents/brief.md");
+            let path = format!("20260914/default/{seg}/talents/topics.md");
             let seg_dir = journal
                 .path()
                 .join("chronicle")
@@ -7711,7 +7992,7 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
         let tx = index.transaction().unwrap();
         for i in 1..=1000 {
             let seg = format!("000000_{i:04}");
-            let path = format!("20260914/default/{seg}/talents/brief.md");
+            let path = format!("20260914/default/{seg}/talents/topics.md");
             let seg_dir = journal
                 .path()
                 .join("chronicle")
@@ -7748,10 +8029,10 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
             .join("default")
             .join("090000_300");
         fs::create_dir_all(live_seg.join("talents")).unwrap();
-        fs::write(live_seg.join("talents/brief.md"), "live brief bytes\n").unwrap();
+        fs::write(live_seg.join("talents/topics.md"), "live brief bytes\n").unwrap();
         fs::write(live_seg.join("meeting_transcript.md"), "live transcript\n").unwrap();
 
-        let live_path = "20260913/default/090000_300/talents/brief.md";
+        let live_path = "20260913/default/090000_300/talents/topics.md";
         tx.execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
              VALUES ('budgetexamneedle live', ?1, '20260913', '', 'fixture-stream', 'default', 0, '')",
@@ -10135,7 +10416,7 @@ fn facets_only_listing_fetches_the_activity_and_refuses_an_entry() {
     let names = advertised_tool_names(&journal);
     assert!(names.iter().any(|name| name == "fetch"));
     assert!(names.iter().any(|name| name == "list_activities"));
-    assert!(!names.iter().any(|name| name == "search"));
+    assert!(names.iter().any(|name| name == "search"));
     assert!(!names.iter().any(|name| name == "get_activity_sources"));
     assert!(!names.iter().any(|name| name == "get_transcript"));
 
@@ -10144,10 +10425,7 @@ fn facets_only_listing_fetches_the_activity_and_refuses_an_entry() {
     let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
     assert_no_leaked_keys(&fetched);
     assert!(fetched["text"].as_str().unwrap().contains("act_facets"));
-    assert_eq!(
-        probe(&journal, "search", json!({"query": "Facets"})),
-        Err(McpProbeError::PermissionDenied)
-    );
+    assert!(probe(&journal, "search", json!({"query": "Facets"})).is_ok());
     assert_eq!(
         probe(
             &journal,
@@ -10186,7 +10464,7 @@ fn facets_only_listing_fetches_the_activity_and_refuses_an_entry() {
     assert!(
         refused_fetch_reasons(&journal)
             .iter()
-            .any(|reason| reason == "this connection does not have the transcripts category")
+            .any(|reason| reason == "this connection does not have permission to read transcripts")
     );
 }
 
@@ -10250,7 +10528,7 @@ fn transcripts_entities_and_paired_listing_grants_round_trip() {
     assert!(
         refused_fetch_reasons(&transcripts)
             .iter()
-            .any(|reason| reason == "this connection does not have the facets category")
+            .any(|reason| reason == "this connection does not have permission to read summaries")
     );
 
     let entities = fixture();
@@ -12107,6 +12385,13 @@ fn search_derived_flags_across_record_types() {
     let hit3 = &s3["results"].as_array().unwrap()[0];
     assert_eq!(hit3["derived"], true);
 
+    let without_notes = probe(&journal, "search", json!({"query": "agentmemoryneedle"})).unwrap();
+    assert!(without_notes["results"].as_array().unwrap().is_empty());
+    let mut read = ReadPermission::default_whole_journal();
+    read.categories.push("notes".to_owned());
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, read)
+        .unwrap();
     let s4 = probe(&journal, "search", json!({"query": "agentmemoryneedle"})).unwrap();
     assert_no_leaked_keys(&s4);
     let hit4 = &s4["results"].as_array().unwrap()[0];
@@ -14145,7 +14430,10 @@ fn a_body_item_says_where_a_device_was_only_to_a_whole_journal_connection() {
             .find(|activity| activity["source"] == "body")
             .map(|activity| activity.get("place").cloned().unwrap_or(Value::Null))
     };
-    let whole = place(ReadPermission::default_whole_journal()).unwrap();
+    let mut whole = ReadPermission::default_whole_journal();
+    assert_eq!(place(whole.clone()), Some(Value::Null));
+    whole.categories.push("places".to_owned());
+    let whole = place(whole).unwrap();
     assert!(
         whole["words"]
             .as_str()

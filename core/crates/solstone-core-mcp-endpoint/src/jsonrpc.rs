@@ -137,6 +137,10 @@ impl JsonRpcResponse {
         Self::error_with_data(id, -32001, "Access denied", json!({ "reason": reason }))
     }
 
+    pub(crate) fn kind_denied(id: Option<&Value>, message: String) -> Self {
+        Self::error_with_data(id, -32001, message, json!({ "reason": "no_permission" }))
+    }
+
     fn error(id: Option<&Value>, code: i32, message: impl Into<Cow<'static, str>>) -> Self {
         Self::error_with_optional_data(id, code, message, None)
     }

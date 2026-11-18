@@ -518,7 +518,9 @@ fn read(root: &Path, tool: &str, reference: &str) -> Result<Value, DispatchError
 fn refused<T>(result: &Result<T, DispatchError>) -> bool {
     matches!(
         result,
-        Err(DispatchError::Tool(ToolError::ReferenceNotFound) | DispatchError::PermissionDenied(_))
+        Err(DispatchError::Tool(ToolError::ReferenceNotFound)
+            | DispatchError::PermissionDenied(_)
+            | DispatchError::KindDenied(_))
     )
 }
 
@@ -1297,7 +1299,9 @@ fn a_name_an_agent_makes_up_reads_nothing_a_list_wouldnt_show() {
     ] {
         assert!(matches!(
             read(root, "fetch", &name),
-            Err(DispatchError::PermissionDenied(_))
+            Err(DispatchError::KindDenied(
+                solstone_core_indexer_query::AdmittedCategory::Facets
+            ))
         ));
     }
 }

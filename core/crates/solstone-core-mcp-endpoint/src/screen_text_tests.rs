@@ -607,11 +607,11 @@ fn screen_text_entry_fetch_uses_registered_category_for_other_families() {
     for (relative, categories) in [
         (
             format!("chronicle/{DAY}/entities/{SEGMENT}/talents/terminal.md"),
-            vec!["transcripts"],
+            vec!["facets"],
         ),
         (
             "reflections/weekly/20260914.md".to_owned(),
-            vec!["screen_text", "facets"],
+            vec!["screen_text", "facets", "transcripts"],
         ),
     ] {
         let journal = fixture();

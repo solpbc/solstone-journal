@@ -44,6 +44,7 @@ pub enum ConnectionScope {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConnectionBoundary {
     categories: BTreeSet<AdmittedCategory>,
+    category_filter: Option<AdmittedCategory>,
     scope: ConnectionScope,
 }
 
@@ -70,11 +71,24 @@ impl ConnectionBoundary {
             })?;
             categories.insert(category);
         }
-        Ok(Self { categories, scope })
+        Ok(Self {
+            categories,
+            category_filter: None,
+            scope,
+        })
     }
 
     pub fn categories(&self) -> &BTreeSet<AdmittedCategory> {
         &self.categories
+    }
+
+    pub fn filtered_to(mut self, category: Option<AdmittedCategory>) -> Self {
+        self.category_filter = category;
+        self
+    }
+
+    pub fn category_filter(&self) -> Option<AdmittedCategory> {
+        self.category_filter
     }
 
     pub fn scope(&self) -> &ConnectionScope {
@@ -97,23 +111,28 @@ impl ConnectionBoundary {
         if !classification.eligible || classification.unclassified {
             return false;
         }
-        if !self.categories.contains(&AdmittedCategory::ScreenText)
-            && solstone_core_format::content::screen_text::is_screen_text_path(&classification.path)
+        let Some(stored) = classification.category.and_then(category_from_sql_name) else {
+            return false;
+        };
+        let path = &classification.path;
+        let category =
+            solstone_core_format::content::kinds::indexed_permission(Some(journal), path, stored);
+        if !self.categories.contains(&category)
+            || self
+                .category_filter
+                .is_some_and(|filter| filter != category)
+            || solstone_core_format::content::kinds::additional_indexed_permission(path)
+                .is_some_and(|required| !self.categories.contains(&required))
         {
             return false;
         }
-        let Some(category) = classification.category.and_then(category_from_sql_name) else {
-            return false;
-        };
-        let category = if solstone_core_format::content::body_material::is_body_material(
-            Some(journal),
-            &classification.path,
-        ) {
-            AdmittedCategory::Body
-        } else {
-            category
-        };
-        if !self.categories.contains(&category) {
+        self.allows_scope(classification)
+    }
+
+    /// Apply the existing facet rules to a route whose file eligibility and
+    /// kinds are decided independently of the index.
+    pub fn allows_scope(&self, classification: &ChunkClassification) -> bool {
+        if !classification.eligible || classification.unclassified {
             return false;
         }
         match &self.scope {
@@ -130,7 +149,7 @@ impl ConnectionBoundary {
     }
 }
 
-fn category_from_sql_name(value: &str) -> Option<AdmittedCategory> {
+pub(crate) fn category_from_sql_name(value: &str) -> Option<AdmittedCategory> {
     match value {
         "transcripts" => Some(AdmittedCategory::Transcripts),
         "entities" => Some(AdmittedCategory::Entities),

@@ -51,19 +51,12 @@ impl ConsentSelection {
         Self {
             scope: None,
             facets: Vec::new(),
-            categories: solstone_core_format::content::kinds::permission_words()
+            categories: solstone_core_format::content::kinds::default_permission_words()
                 .map(str::to_owned)
                 .collect(),
         }
     }
 }
-
-/// What the `transcripts` tick reads, in the owner's words.
-pub(crate) const TRANSCRIPTS_GLOSS: &str = "what was said in your recordings and imports, as text. never the audio or the screen images themselves. screen text and body have their own permissions.";
-/// The `body` tick's label.
-pub(crate) const BODY_LABEL: &str = "body";
-/// What the `body` tick reads, in the owner's words.
-pub(crate) const BODY_GLOSS: &str = "readings, sleep, workouts, mindfulness sessions and what you logged, such as food or symptoms, imported from apps and devices like Apple Health, Oura or Strava, with their values and any notes you wrote on them.";
 
 /// Which half of the consent flow a page serves. The journal's facets appear
 /// only once the requester has shown they hold the pairing code.
@@ -1070,7 +1063,7 @@ fn consent_page_named(
         ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => "",
     };
     let choices = format!(
-        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">{transcripts_gloss}</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label><label class="check"><input type="checkbox" name="category" value="screen_text"{screen_text_checked}> <strong>screen text</strong><br><span class="muted">text recognized from your screens or shown in your terminal, with the time it appeared. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.</span></label><label class="check"><input type="checkbox" name="category" value="body"{body_checked}> <strong>{body_label}</strong><br><span class="muted">{body_gloss}</span></label></fieldset>"#,
+        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend>{kind_choices}</fieldset>"#,
         whole_checked = checked(selection.scope == Some("whole_journal")),
         facets_checked = checked(selection.scope == Some("facets")),
         facet_list = match stage {
@@ -1079,25 +1072,15 @@ fn consent_page_named(
                 facet_list(oauth, selection)
             }
         },
-        transcripts_checked = checked(
-            selection
-                .categories
-                .iter()
-                .any(|value| value == "transcripts")
-        ),
-        entities_checked = checked(selection.categories.iter().any(|value| value == "entities")),
-        category_facets_checked =
-            checked(selection.categories.iter().any(|value| value == "facets")),
-        screen_text_checked = checked(
-            selection
-                .categories
-                .iter()
-                .any(|value| value == "screen_text")
-        ),
-        body_checked = checked(selection.categories.iter().any(|value| value == "body")),
-        transcripts_gloss = TRANSCRIPTS_GLOSS,
-        body_label = BODY_LABEL,
-        body_gloss = BODY_GLOSS,
+        kind_choices = solstone_core_format::content::kinds::permission_kinds()
+            .map(|kind| format!(
+                r#"<label class="check"><input type="checkbox" name="category" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
+                kind.stored_word,
+                checked(selection.categories.iter().any(|word| word == kind.stored_word)),
+                html_escape(kind.label),
+                html_escape(kind.description),
+            ))
+            .collect::<String>(),
     );
     let body = match stage {
         ConsentStage::Code {
@@ -1578,7 +1561,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_new_connection_starts_with_all_five_kinds_ticked() {
+    async fn consent_lists_all_grantable_kinds_and_preserves_the_default_ticks() {
         let journal = journal_root();
         let oauth = runtime(&journal);
         let response = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
@@ -1589,6 +1572,25 @@ mod tests {
                 "{kind}: {body}"
             );
         }
+
+        for kind in ["notes", "documents", "calendar", "places", "photos"] {
+            assert!(body.contains(&format!("name=\"category\" value=\"{kind}\"")));
+            assert!(!body.contains(&format!("name=\"category\" value=\"{kind}\" checked")));
+        }
+        assert!(!body.contains(r#"name="category" value="video""#));
+        let selected = [
+            "notes",
+            "documents",
+            "calendar",
+            "places",
+            "photos",
+            "video",
+        ]
+        .map(|word| ("category".to_owned(), word.to_owned()));
+        assert_eq!(
+            super::chosen_categories(&selected),
+            ["notes", "documents", "calendar", "places", "photos"]
+        );
     }
 
     #[test]

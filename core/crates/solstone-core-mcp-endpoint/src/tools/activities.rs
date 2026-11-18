@@ -830,7 +830,6 @@ pub(crate) fn execute_list(
     let mut body_rows: BTreeMap<(String, String, String), CollectedItem> = BTreeMap::new();
     // A body record or Strava line this connection would list with the body
     // permission, so the answer says it needs it.
-    let holds_body = crate::body_source::holds_body(snapshot);
     let mut body_withheld = false;
 
     for (facet_id, facet_dir, facet_title) in &facets_to_search {
@@ -1068,14 +1067,10 @@ pub(crate) fn execute_list(
     let zone_str =
         solstone_core_journal_config::zone_label(Some(&owner_zone), now.offset().seconds());
 
-    // The calendar and a day's location belong to no facet: only a connection
-    // that already reads the whole journal's transcripts, where calendar notes
-    // and each day's location in words are, sees what it had scheduled during
-    // an activity and where a device was.
-    let sees_calendar = matches!(snapshot.scope, ConnectionScope::WholeJournal)
-        && snapshot.categories.contains(&AdmittedCategory::Transcripts);
-    // Where a device was during a body face is body data with the face.
-    let sees_body_place = matches!(snapshot.scope, ConnectionScope::WholeJournal) && holds_body;
+    // The calendar and day location belong to no facet.
+    let whole_journal = matches!(snapshot.scope, ConnectionScope::WholeJournal);
+    let sees_calendar = whole_journal && snapshot.categories.contains(&AdmittedCategory::Calendar);
+    let sees_places = whole_journal && snapshot.categories.contains(&AdmittedCategory::Places);
     let mut calendars = BTreeMap::new();
     let mut locations = BTreeMap::new();
 
@@ -1135,7 +1130,7 @@ pub(crate) fn execute_list(
                     activity["beside"] = Value::Array(beside);
                 }
                 // Where a device was at its middle, as that device timed it.
-                if sees_body_place
+                if sees_places
                     && let Some(beside) = solstone_core_location::place_at(
                         journal_root,
                         span.0 + (span.1 - span.0) / 2,
@@ -1188,28 +1183,33 @@ pub(crate) fn execute_list(
         if !item.also_in.is_empty() {
             activity["also_in"] = json!(item.also_in);
         }
-        if sees_calendar && let Some(span) = solstone_core_facets::activity_span(&item.record) {
-            let calendar = calendars
-                .entry(item.day.clone())
-                .or_insert_with(|| solstone_core_facets::calendar_on_day(journal_root, &item.day));
-            let mut scheduled = solstone_core_facets::calendar_beside(calendar, &item.day, span);
-            // Naming the people on an invite takes the people grant too.
-            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
-                for event in &mut scheduled {
-                    if let Some(event) = event.as_object_mut() {
-                        event.remove("people");
+        if let Some(span) = solstone_core_facets::activity_span(&item.record) {
+            if sees_calendar {
+                let calendar = calendars.entry(item.day.clone()).or_insert_with(|| {
+                    solstone_core_facets::calendar_on_day(journal_root, &item.day)
+                });
+                let mut scheduled =
+                    solstone_core_facets::calendar_beside(calendar, &item.day, span);
+                // Naming the people on an invite takes the people grant too.
+                if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+                    for event in &mut scheduled {
+                        if let Some(event) = event.as_object_mut() {
+                            event.remove("people");
+                        }
                     }
                 }
+                if !scheduled.is_empty() {
+                    activity["scheduled"] = Value::Array(scheduled);
+                }
             }
-            if !scheduled.is_empty() {
-                activity["scheduled"] = Value::Array(scheduled);
-            }
-            let location = locations.entry(item.day.clone()).or_insert_with(|| {
-                solstone_core_location::DayBeside::read(journal_root, &item.day)
-            });
-            let stream = item.record.get("stream").and_then(Value::as_str);
-            if let Some(beside) = location.beside(span, stream) {
-                activity["place"] = json!({"device": beside.device, "words": beside.words});
+            if sees_places {
+                let location = locations.entry(item.day.clone()).or_insert_with(|| {
+                    solstone_core_location::DayBeside::read(journal_root, &item.day)
+                });
+                let stream = item.record.get("stream").and_then(Value::as_str);
+                if let Some(beside) = location.beside(span, stream) {
+                    activity["place"] = json!({"device": beside.device, "words": beside.words});
+                }
             }
         }
         // A capture's span is worked out only when a body face could sit
@@ -1466,12 +1466,13 @@ pub(crate) fn sources_of(
         let mut segment_version = None;
 
         loop {
-            match solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+            match solstone_core_transcripts::read_segment_transcript_page_with_permissions(
                 &segment,
                 page_cursor.as_ref(),
                 speakers.as_ref(),
                 None,
                 &left_out,
+                Some(&snapshot.categories),
             ) {
                 Ok(page) => {
                     segment_untimed = page.untimed;
@@ -1546,6 +1547,7 @@ pub(crate) fn sources_of(
         let mut checker = LiveTranscriptPages::with_speakers(
             speakers.clone(),
             std::sync::Arc::clone(&possible_names),
+            snapshot,
         );
         let mut response_checks = 0;
         issue_segment_links(

@@ -673,5 +673,30 @@
     "path": "20260107/custom/120000_60/calendar_note.txt",
     "pattern": "*/*/*/calendar_*",
     "condition": "Path"
+  },
+  {
+    "path": "20260107/custom/120000_60/talents/audio.md",
+    "pattern": "*/*/*/talents/audio.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/custom/120000_60/talents/topics.md",
+    "pattern": "*/*/*/talents/topics.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.kindle/120000_60/kindle_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.kindle/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.text/120000_60/text_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.text/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/custom/120000_60/display_1_screen.mp4",
+    "pattern": "*/*/*/*screen.mp4",
+    "condition": "Path"
   }
 ]
