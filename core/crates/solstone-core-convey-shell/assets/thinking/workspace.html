@@ -724,6 +724,15 @@
       gap: 10px;
     }
 
+    .thinking-workspace .thinking-runs-updated {
+      align-items: baseline;
+      color: var(--muted);
+    }
+
+    .thinking-workspace .thinking-runs-updated a {
+      color: var(--orange-text-aa);
+    }
+
     .thinking-workspace .thinking-runs-controls label,
     .thinking-workspace .thinking-runs-controls select,
     .thinking-workspace .thinking-runs-controls input {
@@ -1655,7 +1664,7 @@
         <label for="thinkingRunsFacet">facet</label>
         <select id="thinkingRunsFacet"><option value="">all</option></select>
       </div>
-      <div class="thinking-runs-updated" id="thinkingRunsUpdated"></div>
+      <div class="thinking-runs-updated" id="thinkingRunsUpdated" hidden></div>
       <div class="thinking-runs-summary" id="thinkingRunsSummary"></div>
       <div id="thinkingRunsContent"></div>
       <section class="thinking-runs-detail" id="thinkingRunsDetail" hidden>

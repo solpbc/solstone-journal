@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - photos of people could be missing in large journals after overnight processing. your journal now checks fewer activities to recover those photos.
 - the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
 - a facet's color now updates when you choose a swatch and press "apply color".
+- in thinking's runs tab, the dates under the day picker now say what they are: days thinking hasn't caught up with yet. they're also colored like thinking's other links, in light and dark mode.
 - when your thinking provider refuses a request because it can't be used right now, your journal stops asking it about the rest of a day's backlog. your journal tries again every few minutes and picks the rest of the day back up once the provider answers.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.

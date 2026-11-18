@@ -2258,7 +2258,17 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const host = $('thinkingRunsUpdated');
     if (!host) return;
     host.replaceChildren();
-    (Array.isArray(days) ? days : []).forEach((day) => {
+    // These are past days whose newest material the day's thinking hasn't
+    // covered. The read can't tell a day waiting its turn from one that is held
+    // back, so the label states where the day stands and promises no progress.
+    const list = Array.isArray(days) ? days : [];
+    host.hidden = list.length === 0;
+    if (!list.length) return;
+    const label = document.createElement('span');
+    label.className = 'thinking-runs-updated-label';
+    label.textContent = "thinking hasn't caught up with these days yet:";
+    host.appendChild(label);
+    list.forEach((day) => {
       const link = document.createElement('a');
       link.href = thinkingRunsHash(currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''}));
       link.textContent = window.JournalFormat.day(day);

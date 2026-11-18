@@ -251,6 +251,7 @@ async function main() {
     activateThinkingSectionTab,
     runContextFromRecord,
     renderThinkingRunList,
+    renderThinkingUpdatedDays,
     loadThinkingRuns,
     loadThinkingRun,
     loadThinkingOutput,
@@ -743,6 +744,14 @@ async function main() {
   assert.strictEqual(format.stream('ja1r'), 'LABEL-ONE');
   const thinking = window.__thinkingRuns;
   assert(thinking, 'test exports present');
+  const updated = nodes.get('thinkingRunsUpdated');
+  thinking.renderThinkingUpdatedDays([]);
+  assert.strictEqual(updated.hidden, true, 'no days not caught up hides the row, label included');
+  thinking.renderThinkingUpdatedDays(['20250101', '20250102']);
+  assert.strictEqual(updated.hidden, false, 'days not caught up show the row');
+  assert.strictEqual(byClass(updated, 'thinking-runs-updated-label').length, 1, 'the row names what its days are');
+  assert.deepStrictEqual(byTag(updated, 'a').map((link) => link.href), ['#runs/20250101', '#runs/20250102'], 'each day links to its runs');
+  thinking.renderThinkingUpdatedDays([]);
   const savedProviders = thinking.state.providers;
   thinking.state.providers = {
     active_lane: {lane: 'none'},
