@@ -80,6 +80,7 @@ pub enum OwnerReadRole {
     ActivitiesDayView,
     ActivitiesIndex,
     ActivitiesMonthStats,
+    YearView,
 }
 
 impl OwnerReadRole {
@@ -147,6 +148,7 @@ impl OwnerReadRole {
         Self::ActivitiesDayView,
         Self::ActivitiesIndex,
         Self::ActivitiesMonthStats,
+        Self::YearView,
     ];
 
     /// The paired-device sync roles. Kept separate from [`Self::ALL`] because
@@ -230,6 +232,7 @@ impl OwnerReadRole {
             Self::ActivitiesDayView => "/app/activities/api/day/20260901/view",
             Self::ActivitiesIndex => "/app/activities/api/index",
             Self::ActivitiesMonthStats => "/app/activities/api/stats/202609",
+            Self::YearView => "/app/year/api/view",
         }
     }
 }

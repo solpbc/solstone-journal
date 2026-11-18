@@ -588,6 +588,22 @@ fn strip_permanent_sources_addition_from_actual(actual: &mut Value) {
     apps.retain(|app| app["name"] != "sources");
 }
 
+/// Permanent documented divergence, introduced 2026-11-17, with no expiry
+/// condition: `year` is served with the shell and is not in the frozen
+/// corpus. As with `sources`, this is keyed to that one name and removes
+/// exactly that element after its metadata has been validated.
+fn strip_permanent_year_addition_from_actual(actual: &mut Value) {
+    let apps = actual["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "year").count(),
+        1,
+        "the live shell contains exactly one year app"
+    );
+    apps.retain(|app| app["name"] != "year");
+}
+
 fn strip_permanent_pinned_from_actual(actual: &mut Value) {
     let pinned = actual
         .get("pinned")
@@ -818,6 +834,25 @@ fn strip_permanent_more_addition_requires_exactly_one_more_app() {
 }
 
 #[test]
+fn strip_permanent_year_addition_requires_exactly_one_year_app() {
+    for actual in [
+        json!({"apps": []}),
+        json!({"apps": [{"name": "year"}, {"name": "year"}]}),
+    ] {
+        let mut actual = actual;
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                strip_permanent_year_addition_from_actual(&mut actual);
+            }))
+            .is_err()
+        );
+    }
+    let mut actual = json!({"apps": [{"name": "transcripts"}, {"name": "year"}]});
+    strip_permanent_year_addition_from_actual(&mut actual);
+    assert_eq!(actual, json!({"apps": [{"name": "transcripts"}]}));
+}
+
+#[test]
 fn strip_permanent_sources_addition_requires_exactly_one_sources_app() {
     for actual in [
         json!({"apps": []}),
@@ -1015,6 +1050,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     strip_permanent_map_addition_from_actual(&mut actual);
                     strip_permanent_more_addition_from_actual(&mut actual);
                     strip_permanent_sources_addition_from_actual(&mut actual);
+                    strip_permanent_year_addition_from_actual(&mut actual);
                     strip_permanent_pinned_from_actual(&mut actual);
                     actual.as_object_mut().unwrap().remove("clock");
                 }
@@ -1162,7 +1198,7 @@ async fn registry_contract_is_stable() {
     assert!(shell.get("chat_bar").is_none());
     // `/api/shell` names the served apps; their definitions ship with the code.
     let names = shell["app_names"].as_array().expect("app names");
-    assert_eq!(names.len(), 19);
+    assert_eq!(names.len(), 20);
     let apps = solstone_core_convey_shell::registry::shell_payload().apps;
     assert_eq!(
         names

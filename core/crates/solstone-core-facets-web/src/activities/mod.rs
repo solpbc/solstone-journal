@@ -27,6 +27,12 @@ use crate::{Clock, http};
 mod lines;
 mod view;
 
+pub(crate) fn activity_day_counts(
+    root: &std::path::Path,
+) -> std::collections::BTreeMap<String, usize> {
+    view::compute_day_counts(root, None)
+}
+
 pub(crate) const ACTOR_HEADER: &str = "x-solstone-actor";
 pub(crate) const ACTOR_OWNER: &str = "owner";
 

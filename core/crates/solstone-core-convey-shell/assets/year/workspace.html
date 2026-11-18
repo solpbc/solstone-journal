@@ -1,0 +1,67 @@
+<!-- first-read: /app/year/ -> /app/year/api/view -->
+<!-- view-contract -->
+<link rel="stylesheet" href="/static/date-nav.css">
+<script src="/static/date-nav.js"></script>
+<link rel="stylesheet" href="/static/day-grid.css">
+<script src="/static/day-grid.js"></script>
+<style>
+  .year-page { max-width: 1100px; margin: 16px auto; padding: 28px 20px 40px; color: var(--ink); background: var(--panel); border-radius: 14px; }
+  .year-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin: 0 0 16px; }
+  .year-title { font-size: 1.6rem; line-height: 1.15; margin: 0; }
+  .year-step { display: flex; gap: 16px; }
+  .year-step-link { color: var(--orange-text-aa); text-decoration: underline; min-height: 44px; display: inline-flex; align-items: center; }
+  .year-switch { display: inline-flex; margin-left: auto; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); overflow: hidden; }
+  .year-switch-item { min-width: 88px; min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); text-decoration: none; background: var(--cream-bright); }
+  .year-switch-item + .year-switch-item { border-left: 1px solid var(--hairline-2); }
+  .year-switch-item[aria-current] { background: var(--ink); color: var(--cream-bright); font-weight: 700; }
+  .year-lede { margin: 0 0 14px; max-width: 44rem; color: var(--ink-soft); }
+  .year-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+  .year-chip { min-height: 44px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; background: var(--cream-bright); }
+  .year-chip[aria-current] { border-color: var(--ink); font-weight: 700; box-shadow: inset 0 0 0 1px var(--ink); }
+  .year-legend { margin-top: 10px; }
+  .year-none, .year-notice { margin: 10px 0; color: var(--ink-soft); }
+  .year-state { margin: 16px 0; }
+  .year-empty-heading { font-weight: 700; margin: 0 0 4px; }
+  .year-empty-action { color: var(--orange-text-aa); text-decoration: underline; }
+  .year-retry { margin-top: 8px; font: inherit; min-height: 44px; padding: 0 14px; }
+  .year-find-label { display: block; margin: 0 0 4px; color: var(--ink-soft); }
+  .year-find { width: 100%; max-width: 340px; min-height: 44px; padding: 0 12px; font: inherit; color: var(--ink); background: var(--cream-bright); border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); margin: 0 0 8px; }
+  .year-th { --year-label: 112px; }
+  .year-th-head, .year-th-row { display: grid; grid-template-columns: var(--year-label) repeat(var(--year-cols, 53), minmax(0, 1fr)); gap: 1px; align-items: center; }
+  .year-th-head { position: sticky; top: 0; z-index: 2; padding: 4px 0; font-size: 12px; color: var(--ink-faint); background: var(--cream-bright); border-bottom: 1px solid var(--hairline); }
+  .year-th-head span { grid-column: calc(var(--year-w) + 2) / span 4; grid-row: 1; white-space: nowrap; }
+  .year-th-head span:nth-of-type(even) { visibility: hidden; }
+  .year-th-section { font-size: 0.95rem; margin: 18px 0 2px; }
+  .year-th-section small { font-weight: 400; color: var(--ink-faint); }
+  .year-th-row { min-height: 28px; }
+  .year-th-row[data-selected] { background: var(--orange-wash); }
+  .year-th-label { grid-column: 1; grid-row: 1; min-height: 28px; padding: 0 6px 0 0; font: inherit; font-size: 13px; text-align: left; color: var(--ink); background: none; border: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .year-th-row[data-selected] .year-th-label { font-weight: 700; }
+  .year-th-cell { grid-column: calc(var(--year-w) + 2); grid-row: 1; height: 16px; padding: 0; border: 0; border-radius: 1px; cursor: pointer; background: color-mix(in srgb, var(--orange) calc(var(--year-heat, 0) * 100%), var(--cream-bright)); }
+  .year-th-cell[data-selected] { outline: 2px solid var(--ink); outline-offset: 0; position: relative; z-index: 1; }
+  .year-th-label:focus-visible, .year-th-cell:focus-visible, .year-switch-item:focus-visible, .year-chip:focus-visible { outline: 2px solid var(--focus-ring, #B06A1A); outline-offset: 2px; }
+  .year-peek { grid-column: 1 / -1; grid-row: 2; margin: 4px 0 8px; padding: 12px 14px; background: var(--cream-bright); border: 1px solid var(--hairline-2); border-radius: 14px; }
+  .year-hint { margin: 0 0 8px; color: var(--ink-soft); }
+  .year-peek-when, .year-peek-meta { margin: 0; color: var(--ink-soft); }
+  .year-peek-title { font-size: 1.05rem; margin: 2px 0 4px; }
+  .year-peek-step { float: right; display: inline-flex; gap: 6px; margin-left: 12px; }
+  .year-peek-step-button, .year-peek-start { min-width: 44px; min-height: 44px; font: inherit; color: var(--ink); background: var(--cream-bright); border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); cursor: pointer; }
+  .year-peek-start { margin-top: 8px; padding: 0 14px; }
+  .year-peek-step-button[disabled] { color: var(--ink-faint); cursor: default; }
+  .year-peek-day { color: var(--orange-text-aa); text-decoration: underline; display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+  [hidden] { display: none !important; }
+  @media (min-width: 760px) {
+    .year-th { --year-label: 240px; }
+    .year-th-head, .year-th-row { gap: 2px; }
+    .year-th-head span:nth-of-type(even) { visibility: visible; }
+    .year-th-label { font-size: 14px; }
+    .year-th-cell { border-radius: 2px; }
+  }
+  @media (max-width: 700px) {
+    .year-page { margin: 8px; padding: 20px 16px 32px; }
+    .year-switch { margin-left: 0; width: 100%; }
+    .year-switch-item { flex: 1; }
+  }
+</style>
+<main id="year-root" class="year-page" tabindex="-1" data-arrival-focus="main"></main>
+<script src="/app/year/static/year.js"></script>

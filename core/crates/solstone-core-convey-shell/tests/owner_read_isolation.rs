@@ -451,9 +451,19 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/app/activities/api/day/{day}/view",
             RouteClassification::Moved(OwnerReadRole::ActivitiesDayView),
         ),
+        ("/app/year/", RouteClassification::NoQualifyingWork),
+        ("/app/year/workspace", RouteClassification::NoQualifyingWork),
+        (
+            "/app/year/static/{*rest}",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/year/api/view",
+            RouteClassification::Moved(OwnerReadRole::YearView),
+        ),
     ];
 
-    assert_eq!(table.len(), 101, "Must classify all 101 live GET routes");
+    assert_eq!(table.len(), 105, "Must classify all 105 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -476,7 +486,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         moved_roles, all_roles,
         "Moved roles must equal OwnerReadRole::ALL exactly"
     );
-    assert_eq!(moved_roles.len(), 63);
+    assert_eq!(moved_roles.len(), 64);
 
     let ten_measured = [
         OwnerReadRole::SpeakersKnown,
@@ -519,8 +529,8 @@ fn owner_read_role_classification_table_exhaustiveness() {
         .collect();
     assert_eq!(
         no_qualifying.len(),
-        35,
-        "NoQualifyingWork must have exactly 35 routes"
+        38,
+        "NoQualifyingWork must have exactly 38 routes"
     );
 }
 

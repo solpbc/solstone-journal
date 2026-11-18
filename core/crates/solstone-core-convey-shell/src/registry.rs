@@ -300,7 +300,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "search",
         "search",
         true,
-        focus(FocusGroup::Keeps, 5),
+        focus(FocusGroup::Keeps, 6),
         "find words and phrases anywhere in your journal",
         "everything your journal keeps",
         &["find", "look"],
@@ -421,6 +421,20 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         None,
         0,
         Some(content_date_nav("segment", "segments", "no segments")),
+    ),
+    view(
+        "year",
+        "🗓️",
+        "year",
+        "calendar-range",
+        true,
+        focus(FocusGroup::Keeps, 5),
+        "a whole year at once: each day, and each place and name by week",
+        "counted from what your journal keeps",
+        &["years", "calendar", "places", "people", "names", "weeks"],
+        None,
+        0,
+        None,
     ),
 ];
 
@@ -687,7 +701,15 @@ mod tests {
         for (group, names) in [
             (
                 "keeps",
-                &["home", "activities", "transcripts", "map", "body", "search"][..],
+                &[
+                    "home",
+                    "activities",
+                    "transcripts",
+                    "map",
+                    "body",
+                    "year",
+                    "search",
+                ][..],
             ),
             ("shape", &["entities", "speakers", "curation"][..]),
             (

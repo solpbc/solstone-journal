@@ -127,6 +127,8 @@ fn main() {
     let more_static = manifest.join("assets/more/more.js");
     let sources_workspace = manifest.join("assets/sources/workspace.html");
     let sources_static = manifest.join("assets/sources/sources.js");
+    let year_workspace = manifest.join("assets/year/workspace.html");
+    let year_static = manifest.join("assets/year/year.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
@@ -148,6 +150,8 @@ fn main() {
         &more_static,
         &sources_workspace,
         &sources_static,
+        &year_workspace,
+        &year_static,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -198,6 +202,8 @@ fn main() {
     assets.push(("/app/more/static/more.js".to_owned(), more_static));
     assets.push(("/app/sources/workspace".to_owned(), sources_workspace));
     assets.push(("/app/sources/static/sources.js".to_owned(), sources_static));
+    assets.push(("/app/year/workspace".to_owned(), year_workspace));
+    assets.push(("/app/year/static/year.js".to_owned(), year_static));
 
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
     let shell_page_path = static_root.join("shell.html");

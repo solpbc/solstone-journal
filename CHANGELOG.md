@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- a new year page shows a whole year of your journal at once. the days view shows each day, colored by how many activities or location records your journal holds for it. the threads view shows each place and each name your journal found as a row across the year's weeks. find it under more.
 - your connected agents can now suggest that two people in your journal are the same person, such as two spellings of one name. it waits in suggestions and shows both people from your journal. you choose which name they go by, and accepting merges them into one person. a merge can't be undone.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.

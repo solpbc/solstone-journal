@@ -19,6 +19,7 @@ mod identity;
 mod lifecycle;
 mod logs;
 mod map;
+mod name_days;
 mod news;
 mod observations;
 mod paths;
@@ -130,6 +131,7 @@ pub use lifecycle::{
 };
 pub use logs::{read_log_file, write_log_file};
 pub use map::{list_declared_facet_names, list_facet_directories, list_facet_entity_directories};
+pub use name_days::{DetectedNameDays, detected_name_days};
 pub use news::read_news_file;
 pub use observations::{
     HistoryEntry, IncomingObservationRow, ObservationChange, ObservationEntityResolution,

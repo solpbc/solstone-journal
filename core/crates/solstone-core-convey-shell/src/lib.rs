@@ -178,6 +178,7 @@ mod service_handoffs;
 pub mod session;
 pub mod session_gate;
 mod setup_host;
+mod year;
 pub use setup_host::PackagedSpeechSetup;
 pub mod open_link;
 #[cfg(test)]
@@ -1880,6 +1881,7 @@ fn router_with_roots(
         .route("/app/body/workspace", get(body::workspace))
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
+        .merge(year::router(journal_root.clone()))
         .merge(match import_route {
             Some(route) => {
                 solstone_core_import_web::routes_with_embedded(journal_root.clone(), route)

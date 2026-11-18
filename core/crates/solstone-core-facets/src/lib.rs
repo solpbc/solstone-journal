@@ -111,6 +111,7 @@ pub use store::{
     complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
     write_body_record_with,
 };
+pub use store::{DetectedNameDays, detected_name_days};
 pub use store::{
     HiddenNameWrite, HiddenNamesError, check_hidden_names_readable, hide_detected_name,
     hide_detected_name_at, merge_hidden_names_locked, queue_every_facet_detections,
