@@ -828,6 +828,26 @@ mod tests {
     }
 
     #[test]
+    fn an_attach_that_names_a_stored_id_doesn_t_store_it_twice() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "{\"id\": \"a\", \"priority\": \"high\"}\n").unwrap();
+        add_activity_attaching(
+            root.path(),
+            "work",
+            serde_json::json!({"id": "x"}),
+            three,
+            |_, _| false,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{\"id\": \"a\", \"priority\": \"high\"}\n{\"id\": \"b\"}\n{\"id\": \"c\"}\n{\"id\": \"x\"}\n"
+        );
+    }
+
+    #[test]
     fn attaching_add_from_nothing_that_collapses_writes_nothing() {
         let root = declared_root();
         let path = root.path().join("facets/work/activities/activities.jsonl");
