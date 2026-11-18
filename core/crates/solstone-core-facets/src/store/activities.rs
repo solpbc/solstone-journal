@@ -64,12 +64,69 @@ pub fn update_activity(
     updates: &serde_json::Map<String, Value>,
 ) -> Result<Option<Value>, FacetWriteError> {
     let mut rows = read_activity_definitions(journal_root, facet_dir)?;
-    let Some(row) = rows
-        .iter_mut()
-        .find(|row| row.get("id").and_then(Value::as_str) == Some(id))
-    else {
+    let Some(output) = apply_activity_updates(&mut rows, id, updates) else {
         return Ok(None);
     };
+    write_rows(journal_root, facet_dir, &rows)?;
+    Ok(Some(output))
+}
+
+/// Update an activity a facet shows but may not store yet. When no row has
+/// `id`, the rows `attach` returns for the stored rows are added first, in its
+/// order, and none when it returns none; then the update applies as in
+/// `update_activity`. When `collapse` says the result stores no more than an
+/// empty file would, the file is emptied instead, or left absent when nothing
+/// was stored. One read, and at most one write.
+pub fn update_activity_attaching(
+    journal_root: &Path,
+    facet_dir: &str,
+    id: &str,
+    updates: &serde_json::Map<String, Value>,
+    attach: impl FnOnce(&[Value]) -> Vec<Value>,
+    collapse: impl FnOnce(&[Value]) -> bool,
+) -> Result<Option<Value>, FacetWriteError> {
+    let mut rows = read_activity_definitions(journal_root, facet_dir)?;
+    let stored = !rows.is_empty();
+    if !rows
+        .iter()
+        .any(|row| row.get("id").and_then(Value::as_str) == Some(id))
+    {
+        for row in attach(&rows) {
+            let row_id = row.get("id").and_then(Value::as_str).map(str::to_owned);
+            if row.is_object()
+                && !rows
+                    .iter()
+                    .any(|stored| stored.get("id").and_then(Value::as_str) == row_id.as_deref())
+            {
+                rows.push(row);
+            }
+        }
+    }
+    let Some(output) = apply_activity_updates(&mut rows, id, updates) else {
+        return Ok(None);
+    };
+    if collapse(&rows) {
+        rows.clear();
+        if !stored {
+            return Ok(Some(output));
+        }
+    }
+    write_rows(journal_root, facet_dir, &rows)?;
+    Ok(Some(output))
+}
+
+/// The row with `id`, changed by `updates` under the semantic rules: a
+/// default's empty description or instructions and its `normal` priority are
+/// stored as no key, and a default's name and icons are its own. `None` when
+/// no row has `id`.
+fn apply_activity_updates(
+    rows: &mut [Value],
+    id: &str,
+    updates: &serde_json::Map<String, Value>,
+) -> Option<Value> {
+    let row = rows
+        .iter_mut()
+        .find(|row| row.get("id").and_then(Value::as_str) == Some(id))?;
     let object = row.as_object_mut().expect("activity rows are objects");
     let custom = object.get("custom").and_then(Value::as_bool) == Some(true);
     for (key, value) in updates {
@@ -89,9 +146,7 @@ pub fn update_activity(
             }
         }
     }
-    let output = row.clone();
-    write_rows(journal_root, facet_dir, &rows)?;
-    Ok(Some(output))
+    Some(row.clone())
 }
 
 /// Remove an explicit activity row by id.
@@ -435,5 +490,131 @@ mod tests {
         assert!(written.contains("\"emoji\": \"🎯\""));
         assert!(written.contains("\"icon\": \"target\""));
         assert!(written.contains("\"icon\": \"old\""));
+    }
+
+    #[test]
+    fn attaching_update_stores_the_attached_rows_once_and_applies_the_same_rules() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        let high = serde_json::json!({"priority": "high"});
+        let normal = serde_json::json!({"priority": "normal"});
+        let bare = |id: &str| serde_json::json!({ "id": id });
+        let attach = |_: &[Value]| vec![bare("a"), bare("b"), bare("c")];
+        let changed = update_activity_attaching(
+            root.path(),
+            "work",
+            "b",
+            high.as_object().unwrap(),
+            attach,
+            |_| false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(changed, serde_json::json!({"id": "b", "priority": "high"}));
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{\"id\": \"a\"}\n{\"id\": \"b\", \"priority\": \"high\"}\n{\"id\": \"c\"}\n"
+        );
+        // Stored now: nothing is attached again, and normal is no key.
+        let never = |_: &[Value]| -> Vec<Value> { panic!("not asked once the row is stored") };
+        update_activity_attaching(
+            root.path(),
+            "work",
+            "b",
+            normal.as_object().unwrap(),
+            never,
+            |_| false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{\"id\": \"a\"}\n{\"id\": \"b\"}\n{\"id\": \"c\"}\n"
+        );
+        // A collapse empties the stored file.
+        update_activity_attaching(
+            root.path(),
+            "work",
+            "b",
+            normal.as_object().unwrap(),
+            never,
+            |rows| rows.len() == 3,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "");
+    }
+
+    #[test]
+    fn attaching_update_writes_nothing_for_an_id_not_attached_or_a_collapse_from_nothing() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        let high = serde_json::json!({"priority": "high"});
+        let none = |_: &[Value]| Vec::new();
+        assert!(
+            update_activity_attaching(
+                root.path(),
+                "work",
+                "x",
+                high.as_object().unwrap(),
+                none,
+                |_| false
+            )
+            .unwrap()
+            .is_none()
+        );
+        let other = |_: &[Value]| vec![serde_json::json!({"id": "y"})];
+        assert!(
+            update_activity_attaching(
+                root.path(),
+                "work",
+                "x",
+                high.as_object().unwrap(),
+                other,
+                |_| false
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(!path_lexists(&path).unwrap());
+        let normal = serde_json::json!({"priority": "normal"});
+        let only = |_: &[Value]| vec![serde_json::json!({"id": "x"})];
+        let output = update_activity_attaching(
+            root.path(),
+            "work",
+            "x",
+            normal.as_object().unwrap(),
+            only,
+            |_| true,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(output, serde_json::json!({"id": "x"}));
+        assert!(
+            !path_lexists(&path).unwrap(),
+            "nothing stored before, nothing written"
+        );
+    }
+
+    #[test]
+    fn attaching_update_refuses_damaged_definitions_without_rewriting_them() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = "{\"id\":\"kept\"}\n{sensitive-sentinel\n";
+        fs::write(&path, original).unwrap();
+        let high = serde_json::json!({"priority": "high"});
+        let attach = |_: &[Value]| vec![serde_json::json!({"id": "new"})];
+        let error = update_activity_attaching(
+            root.path(),
+            "work",
+            "new",
+            high.as_object().unwrap(),
+            attach,
+            |_| false,
+        )
+        .unwrap_err();
+        assert!(!error.to_string().contains("sensitive-sentinel"));
+        assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
     }
 }
