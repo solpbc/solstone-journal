@@ -7140,7 +7140,7 @@ function renderActivities(data) {
           <div class="activity-instructions activity-instructions-editable" data-id="${a.id}" title="double-click to edit instructions">${a.instructions ? escapeHtml(a.instructions) : '<em>no instructions</em>'}</div>
         </div>
         <div class="activity-controls">
-          <select class="activity-priority" data-id="${a.id}">
+          <select class="activity-priority" data-id="${a.id}" data-saved="${escapeHtml(a.priority || 'normal')}">
             <option value="high" ${a.priority === 'high' ? 'selected' : ''}>High</option>
             <option value="normal" ${a.priority === 'normal' ? 'selected' : ''}>Normal</option>
             <option value="low" ${a.priority === 'low' ? 'selected' : ''}>Low</option>
@@ -7222,6 +7222,9 @@ function landActivities(held) {
   settingsLand(true, [same, after, before, rest]);
 }
 
+// Each priority select's latest pick: an earlier pick's redraw gives way to it.
+const priorityPicks = new WeakMap();
+
 function setupAttachedActivityListeners() {
   // Priority change
   document.querySelectorAll('.activity-priority').forEach(select => {
@@ -7233,14 +7236,37 @@ function setupAttachedActivityListeners() {
       }
       const activityId = select.dataset.id;
       const priority = select.value;
+      const pick = (priorityPicks.get(select) || 0) + 1;
+      priorityPicks.set(select, pick);
       select.dataset.sending = priority;
       window.SolFocus.setBusy(select, true);
-      window.SolFocus.keepAfterPick(select, ctx);
+      // A refused choice goes back on this select at once, and the list is
+      // drawn again only once the pick has settled: a phone's menu that is
+      // still closing would open again on a copy drawn and focused under it.
+      let settled = false;
+      let whenSettled = null;
+      window.SolFocus.keepAfterPick(select, ctx, () => {
+        settled = true;
+        if (whenSettled) whenSettled();
+      });
+      let saved = false;
       try {
-        await updateActivity(activityId, { priority });
+        saved = await updateActivity(activityId, { priority }, { redraw: false });
       } finally {
         window.SolFocus.setBusy(select, false);
       }
+      if (saved) {
+        select.dataset.saved = priority;
+        return;
+      }
+      select.value = select.dataset.saved;
+      // A task later, so a key's own change, if it picked again, comes first.
+      const redraw = () => setTimeout(() => {
+        if (priorityPicks.get(select) !== pick || !select.isConnected) return;
+        loadActivities(facetDetailSlugState);
+      }, 0);
+      if (settled) redraw();
+      else whenSettled = redraw;
     });
   });
 
@@ -7348,8 +7374,10 @@ async function addDefaultActivity(activityId, chip = null) {
   }
 }
 
-async function updateActivity(activityId, updates) {
-  if (!facetDetailSlugState) return;
+// True once saved. A refusal says so, and draws the list again to put the
+// saved values back, unless the caller does that itself (`redraw: false`).
+async function updateActivity(activityId, updates, { redraw = true } = {}) {
+  if (!facetDetailSlugState) return false;
 
   try {
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
@@ -7359,11 +7387,13 @@ async function updateActivity(activityId, updates) {
     });
     const result = await response.json();
     if (result.error) throw new Error(result.error);
+    return true;
   } catch (err) {
     console.error('Error updating activity:', err);
     notifyError('update failed', err.message);
     // Reload to revert
-    await loadActivities(facetDetailSlugState);
+    if (redraw) await loadActivities(facetDetailSlugState);
+    return false;
   }
 }
 

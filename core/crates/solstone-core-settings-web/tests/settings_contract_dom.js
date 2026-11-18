@@ -2150,7 +2150,7 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === p.q('#facetDetailActivities h3'), `the heading: ${at(p)}`);
   });
 
-  await test("an activity's priority stays busy while its save is out and keeps the choice sent; a failure lands on the same choice drawn again", async () => {
+  await test("an activity's priority stays busy while its save is out and keeps the choice sent; a failure puts the saved choice back at once, and lands on it drawn again once the pick has settled", async () => {
     const p = await activitiesPage();
     const held = holdGranola(p, 'PUT', `/app/settings/api/facet/${SLUG}/activities/a2`);
     const select = priorityOf(p, 'a2');
@@ -2164,6 +2164,9 @@ module.exports = async function settingsContractCases(crateDir) {
     await settle();
     assert.ok(p.writes().filter((c) => c.method === 'PUT').length === 1 && select.value === 'high', `one save, the choice sent: ${select.value}`);
     held.release({ error: 'lab: failed' }, 503);
+    await settle();
+    assert.ok(priorityOf(p, 'a2') === select && select.value === 'normal' && p.doc.activeElement === select, `put back at once, on the same select: ${select.value} ${at(p)}`);
+    p.clock.advance(2000);
     await settle();
     const again = priorityOf(p, 'a2');
     assert.ok(again !== select && p.doc.activeElement === again, `the same choice, drawn again: ${at(p)}`);
@@ -2710,22 +2713,119 @@ module.exports = async function settingsContractCases(crateDir) {
     }
   });
 
-  await test("a priority refused before a phone's late blur, which then blurs the copy drawn again, lands on that copy", async () => {
+  // A refused priority isn't drawn again under a phone's closing menu: its
+  // choice goes back on the same select, and the list is drawn again once
+  // the pick has settled.
+  const listReads = (p) => p.calls.filter((c) => c.method === 'GET' && c.url === `/app/settings/api/facet/${SLUG}/activities`).length;
+  const refusedPriority = async (refusal) => {
     const { p, spec, select } = await pickPage("an activity's priority");
     const held = holdGranola(p, spec.write[0], spec.write[1]);
+    const reads = listReads(p);
     const picked = pickFrom(p, select(), spec.value);
     await settle();
-    held.release(...REFUSALS["an activity's priority"]);
+    held.release(...refusal);
+    await settle();
+    return { p, spec, picked, reads };
+  };
+  const REFUSED_SHAPES = {
+    'a 404': REFUSALS["an activity's priority"],
+    'a 503 with its error': [{ error: 'refused, never sent' }, 503],
+  };
+
+  for (const [shape, refusal] of Object.entries(REFUSED_SHAPES)) {
+    await test(`a priority refused (${shape}) before a phone's late blur: the saved choice back at once, the blur lands on that select, then one read draws the list again and focus is on the new copy`, async () => {
+      const { p, spec, picked, reads } = await refusedPriority(refusal);
+      assert.ok(priorityOf(p, spec.activity) === picked && picked.value === 'normal', `the same select, its saved choice: ${picked.value}`);
+      assert.ok(p.doc.activeElement === picked && listReads(p) === reads, `not drawn again yet: ${at(p)} ${listReads(p) - reads}`);
+      p.clock.advance(PHONE_BLUR - p.clock.now());
+      lateBlur(p, picked);
+      p.clock.advance(0);
+      assert.ok(p.doc.activeElement === picked, `landed back on it first: ${at(p)}`);
+      await settle();
+      const again = priorityOf(p, spec.activity);
+      assert.ok(listReads(p) === reads + 1, `one read: ${listReads(p) - reads}`);
+      assert.ok(again && again !== picked && p.doc.activeElement === again, `the new copy, focused: ${at(p)}`);
+      p.clock.advance(3000);
+      await settle();
+      assert.ok(p.writes().length === 1 && listReads(p) === reads + 1, `one write, one read: ${p.writes().length} ${listReads(p) - reads}`);
+    });
+  }
+
+  await test("a priority refused when the save can't reach the journal (the fetch fails): the choice back at once, and drawn again once settled", async () => {
+    const { p, spec } = await pickPage("an activity's priority");
+    const reads = listReads(p);
+    const realFetch = p.window.fetch;
+    p.window.fetch = (url, opts) => (String(opts?.method || 'GET').toUpperCase() === 'PUT' ? Promise.reject(new TypeError('Load failed')) : realFetch(url, opts));
+    const picked = pickFrom(p, priorityOf(p, spec.activity), spec.value);
+    await settle();
+    assert.ok(picked.value === 'normal' && p.doc.activeElement === picked && listReads(p) === reads, `back at once, not drawn: ${picked.value}`);
+    p.clock.advance(2000);
+    await settle();
+    assert.ok(listReads(p) === reads + 1 && p.doc.activeElement === priorityOf(p, spec.activity) && priorityOf(p, spec.activity) !== picked, `drawn again at the window: ${at(p)}`);
+  });
+
+  await test("a priority refused with no late blur (a desktop, Android): drawn again at the window, not before, landing on the new copy", async () => {
+    const { p, spec, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    p.clock.advance(1729 - p.clock.now());
+    await settle();
+    assert.ok(listReads(p) === reads && p.doc.activeElement === picked, `not before the window: ${listReads(p) - reads}`);
+    p.clock.advance(1);
+    p.clock.advance(0);
     await settle();
     const again = priorityOf(p, spec.activity);
-    assert.ok(again && again !== picked && p.doc.activeElement === again, `drawn again, focused: ${at(p)}`);
-    p.clock.advance(PHONE_BLUR - p.clock.now());
-    // The phone blurs what has focus now: the copy drawn again.
-    lateBlur(p, again);
-    assert.ok(p.doc.activeElement === p.doc.body, 'the blur leaves the page');
+    assert.ok(listReads(p) === reads + 1 && again !== picked && p.doc.activeElement === again, `at the window, on the new copy: ${at(p)}`);
+  });
+
+  await test("a priority refused, then a tap off it before the window: drawn again at once, and focus stays where the tap put it", async () => {
+    const { p, spec, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    p.clock.advance(300);
+    const heading = p.qa('#facetDetailActivities h3')[0];
+    p.doc.dispatch(heading, { type: 'pointerdown' });
+    lateBlur(p, picked);
     p.clock.advance(0);
-    assert.ok(p.doc.activeElement === again, `back on the copy: ${at(p)}`);
-    assert.ok(p.writes().length === 1, `one write: ${p.writes().length}`);
+    await settle();
+    assert.ok(listReads(p) === reads + 1 && priorityOf(p, spec.activity) !== picked, `drawn again at the tap: ${listReads(p) - reads}`);
+    assert.ok(p.doc.activeElement === p.doc.body, `left where the tap put it: ${at(p)}`);
+  });
+
+  await test("a priority refused, then picked again before it settles: the first redraw gives way, and a saved second pick draws nothing", async () => {
+    const { p, spec, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    const held = holdGranola(p, spec.write[0], spec.write[1]);
+    pickFrom(p, picked, 'low');
+    await settle();
+    held.release({ success: true }, 200);
+    await settle();
+    p.clock.advance(3000);
+    await settle();
+    assert.ok(listReads(p) === reads && priorityOf(p, spec.activity) === picked, `not drawn: ${listReads(p) - reads}`);
+    assert.ok(picked.value === 'low' && picked.dataset.saved === 'low', `the second choice, saved: ${picked.value} ${picked.dataset.saved}`);
+    assert.ok(p.writes().length === 2, `two writes: ${p.writes().length}`);
+  });
+
+  await test("a saved priority, then a refused one: the choice put back is the one saved, not the one first drawn", async () => {
+    const { p, spec } = await pickPage("an activity's priority");
+    let held = holdGranola(p, spec.write[0], spec.write[1]);
+    const select = pickFrom(p, priorityOf(p, spec.activity), 'high');
+    await settle();
+    held.release({ success: true }, 200);
+    await settle();
+    p.clock.advance(2000);
+    await settle();
+    held = holdGranola(p, spec.write[0], spec.write[1]);
+    pickFrom(p, select, 'low');
+    await settle();
+    held.release({ error: 'refused' }, 404);
+    await settle();
+    assert.ok(select.value === 'high', `put back to the saved choice: ${select.value}`);
+  });
+
+  await test("a priority refused, then settings goes before it settles: nothing is drawn", async () => {
+    const { p, picked, reads } = await refusedPriority(REFUSALS["an activity's priority"]);
+    p.leave();
+    p.clock.advance(3000);
+    await settle();
+    assert.ok(listReads(p) === reads, `no read after leaving: ${listReads(p) - reads}`);
+    assert.ok(picked.value === 'normal', `the choice was put back before it went: ${picked.value}`);
   });
 
   await test("speech processing refused after a phone's late blur, its choice unreadable after, lands on the line that says so", async () => {
