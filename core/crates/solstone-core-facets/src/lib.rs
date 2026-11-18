@@ -101,10 +101,11 @@ pub use store::{
     save_facet_entity_link, scan_facet_relationships, seed_entities, serialize_observation_rows,
     set_activity_hidden, set_activity_hidden_checked, set_facet_entity_link_detached,
     set_facet_muted, settle_imported_facet_id, snapshot_retired_files, strip_incoming_facet_id,
-    unblock_journal_entity, unblock_journal_operation, update_activity, update_activity_record,
-    update_activity_record_checked, update_activity_record_with, update_detected_entity,
-    update_facet, upsert_detection_segment, validate_observation_operations, write_activity_file,
-    write_facet_entity_observations, write_log_file,
+    unblock_journal_entity, unblock_journal_operation, update_activity, update_activity_attaching,
+    update_activity_record, update_activity_record_checked, update_activity_record_with,
+    update_detected_entity, update_facet, upsert_detection_segment,
+    validate_observation_operations, write_activity_file, write_facet_entity_observations,
+    write_log_file,
 };
 pub use store::{
     BodyMoveOutcome, BodyRecordPlace, LineRemoval, OpenBodyMove, body_record_key,
