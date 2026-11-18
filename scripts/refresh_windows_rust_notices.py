@@ -81,7 +81,11 @@ and only while every notice text stays referenced by a surviving package or
 path dependency, so the NOTICES file stays byte-identical, unless a text the
 removal orphans is named with `--admit-notice-text-removal SHA256`: then that
 text, and only that, leaves NOTICES and its index span, and no text is added.
-A surviving package that leaves the closure still refuses.
+A surviving package that leaves the closure still refuses, unless it is named
+with `--admit-closure-departure NAME@VERSION`: an unchanged checksummed
+registry package the lock keeps, which the removal takes out of Windows reach.
+Its row stays in the index outside the notice population, and a text only it
+referenced leaves NOTICES only when named as above.
 
 A removal may ride with a **git pin move**. Each half is proven as if it were
 alone: the moved packages are re-vendored as in the first case, with the
@@ -90,6 +94,17 @@ and every removal check above still applies. The script does not prove that
 the move caused the removal (the worked case is spl-rust v0.12.0 leaving the
 p256 0.13 family). An existing or new workspace crate's edge to the moved
 package compares as an edge to the same package.
+
+A removal may also ride with **reviewed in-closure additions**, the shape of
+replacing one dependency family with another (the worked case is chrono and
+chrono-tz giving way to jiff 1.0). It is considered only when the operator
+names both halves, at least one `--admit-closure-addition` and at least one
+`--admit-closure-removal`, and only when no crate name is both added and
+removed, so an upgrade can never pass as a removal plus an addition. Each half
+is then proven as if it were alone: the removals by every removal check above,
+the additions by every addition check in the fourth case, and the closure must
+gain exactly the named additions and lose exactly the named removals and
+departures.
 
 The sixth is a **licence-identical crates.io upgrade**. Each removed version
 must pair with one newer version of the same crate, with lock checksums on
@@ -117,7 +132,8 @@ adds. What it brings into Windows reach is the notice-closure check's to decide.
 It refuses -- loudly, with the reason -- rather than proceed, when:
   * the external package population upgraded a package outside the
     licence-identical crates.io shape above; lost one that is not a checksummed registry package, or lost
-    one alongside an addition or promotion; or added one that
+    one alongside a promotion, or alongside an addition without the reviewed
+    mixed-move names above; or added one that
     is not a checksummed registry package, that reaches the Windows notice
     closure without being named for admission, or whose licence expression is
     not wholly permissive. That is a real
@@ -127,7 +143,7 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
   * an external row changed source and either side is not a `git+` source.
   * the **Windows notice closure** changed -- the non-dev reach of the Windows
     inventory binary roots -- other than by gaining named additions or
-    losing named removals. That is
+    losing named removals and named departures. That is
     the set the notices are derived from, so a graph difference that moves it
     needs a fresh acquisition. A graph difference that leaves it untouched does
     not, and is admitted.
@@ -160,6 +176,7 @@ Usage:
         [--prior-metadata /path/to/old-cargo-metadata.json] \\
         [--admit-closure-addition NAME@VERSION ...] \\
         [--admit-closure-removal NAME@VERSION ...] \\
+        [--admit-closure-departure NAME@VERSION ...] \\
         [--admit-notice-text-removal SHA256 ...] \\
         [--admit-removed-notice-source NAME@VERSION:MEMBER ...] \\
         [--out /path/to/output/dir]
@@ -316,8 +333,14 @@ def split_registry_removals(
     old_external: list[dict[str, Any]],
     new_external: list[dict[str, Any]],
     new_workspace_names: frozenset[str] = frozenset(),
+    allow_additions: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return `(surviving_old_rows, removed_rows)` for a removal-only lock move.
+
+    `allow_additions` is set only for a reviewed move that names both its
+    in-closure additions and its in-closure removals: the removals are then
+    split off even though the lock also adds packages, and the additions go on
+    to `classify_external_delta` and the closure check like any other.
 
     Removals are split off only when the new lock adds no `(name, version)`
     and every removed row is a checksummed registry package whose name does not
@@ -329,7 +352,7 @@ def split_registry_removals(
     new_ids = {(p["name"], p["version"]) for p in new_external}
     old_ids = {(p["name"], p["version"]) for p in old_external}
     removed = [p for p in old_external if (p["name"], p["version"]) not in new_ids]
-    if not removed or new_ids - old_ids or any(
+    if not removed or (new_ids - old_ids and not allow_additions) or any(
         not p.get("source", "").startswith("registry+")
         or not p.get("checksum")
         or p["name"] in new_workspace_names
@@ -342,8 +365,15 @@ def split_registry_removals(
 
 def split_registry_upgrades(
     old: list[dict[str, Any]], new: list[dict[str, Any]],
+    allow_disjoint: bool = False,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Pair an upgrade-only crates.io delta; leave other shapes to the old checks."""
+    """Pair an upgrade-only crates.io delta; leave other shapes to the old checks.
+
+    With `allow_disjoint` (a reviewed move naming both its in-closure additions
+    and removals), a delta whose added and removed crate names share no name
+    is not an upgrade at all: it returns no pairs and is left to the removal
+    and addition checks. A shared name still refuses here, so an upgrade can
+    never pass as a removal plus an addition."""
     key = lambda row: (row["name"], row["version"])
     before = {key(row): row for row in old}
     after = {key(row): row for row in new}
@@ -354,6 +384,8 @@ def split_registry_upgrades(
     if not removed or not added:
         return []
     names = {row["name"] for row in removed}
+    if allow_disjoint and not names & {row["name"] for row in added}:
+        return []
     if (len(names) != len(removed) or len(added) != len(removed)
             or {row["name"] for row in added} != names):
         raise RefreshError("registry upgrades cannot mix additions, removals or ambiguous version pairs")
@@ -882,6 +914,7 @@ def require_explained_notice_closure(
     promoted: frozenset[str] = frozenset(),
     removed: frozenset[str] = frozenset(),
     admitted_removals: frozenset[str] = frozenset(),
+    departed: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
     """Return what the Windows notice closure gained, once every gain is a
     registry addition or unchanged registry package named for admission.
@@ -895,6 +928,8 @@ def require_explained_notice_closure(
     acquired licence texts will be verified against the prior companion.
     `removed` names every registry package the lock drops; the closure may
     lose only those, and only the ones named in `admitted_removals`.
+    `departed` names unchanged registry packages the lock keeps that the
+    operator reviewed leaving the closure; each must actually leave it.
     """
     missing = [
         root
@@ -911,7 +946,12 @@ def require_explained_notice_closure(
     after = selected_from_graph(new_graph, roots)
     gained = after - before
     lost = before - after
-    unexplained = sorted((lost - removed) | (gained - added - promoted))
+    if departed & removed:
+        raise RefreshError(
+            f"package(s) {sorted(departed & removed)} are named as leaving the closure "
+            "but the lock removes them; name a removal with --admit-closure-removal"
+        )
+    unexplained = sorted((lost - removed - departed) | (gained - added - promoted))
     if unexplained:
         raise RefreshError(
             "the Windows notice closure changed beyond the packages this lock "
@@ -934,7 +974,7 @@ def require_explained_notice_closure(
             f"package(s) named for admission {stale} do not reach the Windows "
             "notice closure; refusing a review that does not describe this lock"
         )
-    unnamed_removals = sorted(lost - admitted_removals)
+    unnamed_removals = sorted(lost - admitted_removals - departed)
     if unnamed_removals:
         raise RefreshError(
             f"removed package(s) {unnamed_removals} were in the Windows notice "
@@ -946,6 +986,12 @@ def require_explained_notice_closure(
         raise RefreshError(
             f"package(s) named for removal {stale_removals} did not leave the "
             "Windows notice closure; refusing a review that does not describe this lock"
+        )
+    stale_departures = sorted(departed - lost)
+    if stale_departures:
+        raise RefreshError(
+            f"package(s) named as leaving the closure {stale_departures} did not "
+            "leave the Windows notice closure; refusing a review that does not describe this lock"
         )
     return frozenset(gained)
 
@@ -1905,8 +1951,13 @@ def removed_index_identities(
     lost: frozenset[str],
     committed_texts: set[str],
     text_removals: frozenset[str] = frozenset(),
+    departed: frozenset[str] = frozenset(),
 ) -> set[str]:
     """The committed index rows a registry removal drops, after proving them.
+
+    `departed` names (normalized) surviving rows the removal takes out of the
+    notice population: each must be exactly one row now in the population,
+    and its references no longer keep a text in NOTICES.
 
     Each removed package must have exactly one row, flagged in the notice
     population exactly when it left the Windows notice closure, and dropping
@@ -1929,6 +1980,18 @@ def removed_index_identities(
                 "does not match the recovered Windows notice closure"
             )
 
+    for identity in sorted(departed):
+        rows = [p for p in index["packages"] if normalize_identity(p["identity"]) == identity]
+        if len(rows) != 1 or rows[0]["identity"] in identities:
+            raise RefreshError(
+                f"expected exactly one surviving committed index row for {identity}, found {len(rows)}"
+            )
+        if rows[0]["windows_notice_population"] is not True:
+            raise RefreshError(
+                f"{identity} is named as leaving the notice closure but the committed "
+                "index does not have it in the notice population"
+            )
+
     def referenced(rows: list[dict[str, Any]]) -> set[str]:
         return {
             reference["sha256"]
@@ -1937,7 +2000,10 @@ def removed_index_identities(
             for reference in row["notice_references"]
         }
 
-    surviving = [p for p in index["packages"] if p["identity"] not in identities]
+    surviving = [
+        p for p in index["packages"]
+        if p["identity"] not in identities and normalize_identity(p["identity"]) not in departed
+    ]
     orphaned = sorted(
         (
             referenced(index["packages"])
@@ -2036,6 +2102,7 @@ def refresh(
     removals: frozenset[tuple[str, str]] = frozenset(),
     text_removals: frozenset[str] = frozenset(),
     notice_source_removals: frozenset[tuple[str, str, str]] = frozenset(),
+    departures: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -2081,7 +2148,11 @@ def refresh(
             "Cargo.lock -- it was edited out of band"
         )
 
-    upgrades = split_registry_upgrades(old_external, new_external)
+    # A move that names both in-closure additions and in-closure removals was
+    # reviewed as both; only then may the two halves ride one lock move, each
+    # still proven by the checks that apply to it alone.
+    reviewed_mixed = bool(admissions) and bool(removals)
+    upgrades = split_registry_upgrades(old_external, new_external, allow_disjoint=reviewed_mixed)
     upgrade_old = {(row["name"], row["version"]) for row, _ in upgrades}
     upgrade_new = {(row["name"], row["version"]) for _, row in upgrades}
     if any((name, version) not in upgrade_new for name, version, _ in notice_source_removals):
@@ -2090,6 +2161,7 @@ def refresh(
         [row for row in old_external if (row["name"], row["version"]) not in upgrade_old],
         [row for row in new_external if (row["name"], row["version"]) not in upgrade_new],
         frozenset(p["name"] for p in new_lock["package"] if not p.get("source")),
+        allow_additions=reviewed_mixed,
     )
     moved_git, added_external = classify_external_delta(
         surviving_external,
@@ -2102,6 +2174,29 @@ def refresh(
         raise RefreshError(
             "the lock removes registry packages and also promotes a package; "
             "this script attests a removal only on its own or with a git pin move"
+        )
+    if departures and (upgrades or not removals):
+        raise RefreshError(
+            "a surviving package leaves the notice closure by name only alongside "
+            "the registry removal that takes it out, and never with an upgrade"
+        )
+    departed_rows = [
+        row for row in old_external
+        if (row["name"], row["version"]) in departures
+    ]
+    if {(row["name"], row["version"]) for row in departed_rows} != departures or any(
+        not row.get("source", "").startswith("registry+")
+        or not row.get("checksum")
+        or not any(
+            (p["name"], p["version"], p["source"], p.get("checksum"))
+            == (row["name"], row["version"], row["source"], row["checksum"])
+            for p in new_external
+        )
+        for row in departed_rows
+    ):
+        raise RefreshError(
+            "packages named as leaving the closure must be unchanged checksummed "
+            "registry packages this lock keeps"
         )
     removed_ids = frozenset(
         (p["name"], p["version"], p["source"]) for p in removed_external
@@ -2198,6 +2293,7 @@ def refresh(
             for row in removed_external
             if (row["name"], row["version"]) in removals
         ),
+        departed=frozenset(added_identity(row) for row in departed_rows),
     )
     # The closure check above proved the closure lost exactly the named
     # removals, so they are the population rows that go.
@@ -2206,6 +2302,7 @@ def refresh(
         for row in removed_external
         if (row["name"], row["version"]) in removals
     )
+    departed = frozenset(added_identity(row) for row in departed_rows)
 
     selected = {
         normalize_identity(identity)
@@ -2215,7 +2312,7 @@ def refresh(
         upgrade_forward.get(normalize_identity(p["identity"]), normalize_identity(p["identity"]))
         for p in old["packages"]
         if p["windows_notice_population"]
-    } - lost | gained
+    } - lost - departed | gained
     if selected != wanted:
         raise RefreshError(
             "the Windows notice population computed from the current lock "
@@ -2244,7 +2341,7 @@ def refresh(
     if text_removals and not removed_external:
         raise RefreshError("a notice text leaves NOTICES only with the registry removal that orphans it")
     removed_identities = removed_index_identities(
-        old, removed_external, lost, set(committed_texts), text_removals
+        old, removed_external, lost, set(committed_texts), text_removals, departed
     )
     upgraded_rows, upgraded_members = upgraded_package_rows(
         prior_archive_path, old, upgrades, notice_source_removals=notice_source_removals,
@@ -2548,15 +2645,19 @@ def refresh(
     if promoted_rows:
         by_identity = {row["identity"]: row for row in promoted_rows}
         new_index["packages"] = [by_identity.get(row["identity"], row) for row in new_index["packages"]]
-    if gained or lost:
+    for row in new_index["packages"]:
+        if normalize_identity(row["identity"]) in departed:
+            row["windows_notice_population"] = False
+    if gained or lost or departed:
         count = (
-            old["population"]["windows_notice_package_count"] + len(gained) - len(lost)
+            old["population"]["windows_notice_package_count"]
+            + len(gained) - len(lost) - len(departed)
         )
         if count != len(selected):
             raise RefreshError(
                 f"the committed windows_notice_package_count plus {len(gained)} "
-                f"admitted and minus {len(lost)} removed package(s) is {count}, "
-                f"not the {len(selected)} the current lock selects"
+                f"admitted and minus {len(lost)} removed and {len(departed)} departed "
+                f"package(s) is {count}, not the {len(selected)} the current lock selects"
             )
         new_index["population"]["windows_notice_package_count"] = count
     new_notices = None
@@ -2654,6 +2755,7 @@ def refresh(
             }
             for row in removed_external
         ],
+        "departed_packages_left_in_lock": sorted(departed),
         "removed_vendor_members": len(expected_dropped),
         "added_notice_texts": sorted(set(added_texts) - set(committed_texts)),
         "removed_notice_texts": sorted(text_removals),
@@ -2761,6 +2863,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--admit-closure-departure", action="append", default=[], metavar="NAME@VERSION",
+        help=(
+            "an unchanged registry package this lock keeps that a named removal "
+            "takes out of the Windows notice closure, reviewed as no longer shipped; "
+            "it stays indexed outside the notice population. Repeat once per package."
+        ),
+    )
+    parser.add_argument(
         "--admit-removed-notice-source", action="append", default=[], metavar="NAME@VERSION:MEMBER",
         help="reviewed indexed source removed by a registry upgrade; name the new version and each absent member",
     )
@@ -2795,6 +2905,7 @@ def main(argv: list[str] | None = None) -> int:
             parse_admissions(args.admit_closure_removal),
             parse_text_removals(args.admit_notice_text_removal),
             parse_notice_source_removals(args.admit_removed_notice_source),
+            parse_admissions(args.admit_closure_departure),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)

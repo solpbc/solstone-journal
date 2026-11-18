@@ -942,6 +942,59 @@ class RegistryRemoval(unittest.TestCase):
                 admitted_removals=frozenset({self.digest}),
             )
 
+    def test_named_surviving_package_may_leave_the_closure_alongside_a_removal(self):
+        old, new = self.graphs()
+        new["workspace:app"]["deps"] = []
+        removed = frozenset({self.pdf, self.padding})
+        self.assertEqual(
+            refresh.require_explained_notice_closure(
+                old, new, ["app"], removed=removed, departed=frozenset({self.digest}),
+            ),
+            frozenset(),
+        )
+        old, new = self.graphs()
+        with self.assertRaisesRegex(refresh.RefreshError, "did not leave"):
+            refresh.require_explained_notice_closure(
+                old, new, ["app"], removed=removed, departed=frozenset({self.digest}),
+            )
+        with self.assertRaisesRegex(refresh.RefreshError, "lock removes them"):
+            refresh.require_explained_notice_closure(
+                old, new, ["app"], removed=removed, departed=frozenset({self.pdf}),
+            )
+
+    def test_reviewed_mixed_move_splits_removals_from_disjoint_additions(self):
+        added = self.removed("resolver")
+        before = [package("digest", source=SOURCE), self.removed()]
+        after = [package("digest", source=SOURCE), added]
+        self.assertEqual(refresh.split_registry_removals(before, after), (before, []))
+        surviving, removed = refresh.split_registry_removals(before, after, allow_additions=True)
+        self.assertEqual((surviving, removed), ([before[0]], [before[1]]))
+        self.assertEqual(refresh.classify_external_delta(surviving, after), ([], [added]))
+        self.assertEqual(refresh.split_registry_upgrades(before, after, allow_disjoint=True), [])
+        with self.assertRaisesRegex(refresh.RefreshError, "cannot mix"):
+            refresh.split_registry_upgrades(before, after)
+        same_name = {**self.removed(), "version": "2.0.0"}
+        with self.assertRaises(refresh.RefreshError):
+            refresh.split_registry_upgrades(before, [before[0], same_name, added], allow_disjoint=True)
+
+    def test_departed_row_leaves_the_population_and_orphans_only_named_texts(self):
+        index = self.index()
+        index["path_dependencies"] = []
+        texts = {"a" * 64, "b" * 64}
+        rows = [self.removed("padding")]
+        lost = frozenset({self.padding})
+        departed = frozenset({self.digest})
+        with self.assertRaisesRegex(refresh.RefreshError, "referenced by no"):
+            refresh.removed_index_identities(index, rows, lost, texts, frozenset({"b" * 64}), departed)
+        self.assertEqual(
+            refresh.removed_index_identities(index, rows, lost, texts, frozenset(texts), departed),
+            {self.padding},
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "not have it in the notice population"):
+            refresh.removed_index_identities(
+                index, rows, lost, texts, frozenset({"b" * 64}), frozenset({self.pdf})
+            )
+
     def test_partially_named_in_closure_removals_refuse(self):
         old, new = self.graphs(padding_in_closure=True)
         old[self.digest]["deps"].append({"pkg": self.pdf, "dep_kinds": [{"kind": None}]})
@@ -1441,6 +1494,140 @@ class RegistryUpgrade(unittest.TestCase):
                 data = stream.getvalue()
                 with self.assertRaises(refresh.RefreshError):
                     refresh.acquire_registry_upgrade(self.row("1.0.1", refresh.sha256_bytes(data)), Path(tmp), lambda _: (200, data))
+
+
+class ReviewedMixedMove(unittest.TestCase):
+    """One dependency family replacing another: named in-closure additions ride
+    with named in-closure removals, and a survivor the removal takes out of
+    Windows reach leaves the population by name (the chrono -> jiff shape)."""
+
+    def crate_files(self, name, text):
+        return {"Cargo.toml": f'[package]\nname="{name}"\nversion="1.0.0"\nlicense="MIT"\n'.encode(),
+                "LICENSE": text, "lib.rs": name.encode()}
+
+    def write_vendor(self, vendor, name, files):
+        directory = vendor / f"{name}-1.0.0"
+        directory.mkdir(parents=True)
+        for member, content in files.items():
+            (directory / member).write_bytes(content)
+        checksum = refresh.sha256_bytes(name.encode() + b"-archive")
+        (directory / ".cargo-checksum.json").write_text(json.dumps(
+            {"package": checksum, "files": {m: refresh.sha256_bytes(b) for m, b in files.items()}}))
+        return {**package(name, source=SOURCE), "checksum": checksum}
+
+    def fixture(self, root):
+        texts = {name: f"{name} licence\n".encode() for name in ("digest", "oldtz", "clock", "holder", "newtz")}
+        prior_vendor, new_vendor = root / "prior-vendor", root / "new-vendor"
+        rows = {name: self.write_vendor(prior_vendor, name, self.crate_files(name, texts[name]))
+                for name in ("digest", "oldtz", "clock", "holder")}
+        rows["newtz"] = self.write_vendor(new_vendor, "newtz", self.crate_files("newtz", texts["newtz"]))
+        deps = {"old": {"app": ["digest", "oldtz"], "oldtz": ["clock"], "holder": ["clock"]},
+                "new": {"app": ["digest", "newtz"], "holder": ["clock"]}}
+        names = {"old": ["digest", "oldtz", "clock", "holder"], "new": ["digest", "clock", "holder", "newtz"]}
+        def lock(state):
+            body = 'version=4\n[[package]]\nname="app"\nversion="1.0.0"\ndependencies=' + json.dumps(deps[state]["app"]) + "\n"
+            for name in names[state]:
+                r = rows[name]
+                body += f'[[package]]\nname="{name}"\nversion="1.0.0"\nsource="{SOURCE}"\nchecksum="{r["checksum"]}"\n'
+                if name in deps[state]:
+                    body += "dependencies=" + json.dumps(deps[state][name]) + "\n"
+            return body.encode()
+        def metadata(state):
+            edge = lambda name: {"name": name, "pkg": name, "dep_kinds": [{"kind": None}]}
+            packages = [{"id": "app", "name": "app", "version": "1.0.0", "source": None}] + [
+                {"id": n, "name": n, "version": "1.0.0", "source": SOURCE} for n in names[state]]
+            nodes = [{"id": n, "features": [], "deps": [edge(d) for d in deps[state].get(n, [])]}
+                     for n in ["app"] + names[state]]
+            return {"packages": packages, "resolve": {"nodes": nodes}}
+        distribution = root / "core/distribution"
+        distribution.mkdir(parents=True)
+        (root / "core/Cargo.toml").write_text('[workspace]\nmembers=[]\n')
+        (distribution / "shipped-core-features.txt").write_text("")
+        (distribution / "inventory.toml").write_text('[[entry]]\nkind="bin"\npackage="app"\ntargets=["windows-x86_64"]\n')
+        (root / refresh.LOCK_RELATIVE_PATH).write_bytes(lock("new"))
+        closure = {("digest", "1.0.0"), ("oldtz", "1.0.0"), ("clock", "1.0.0")}
+        index_rows, members, notice_texts = refresh.added_package_rows(
+            [rows[n] for n in ("digest", "oldtz", "clock", "holder")],
+            {(n, "1.0.0"): {"license": "MIT"} for n in ("digest", "oldtz", "clock", "holder")},
+            prior_vendor, frozenset(closure))
+        notices, spans = refresh.render_notices(notice_texts)
+        (root / refresh.NOTICES_RELATIVE_PATH).write_bytes(notices)
+        archive = root / "prior.tar.gz"
+        archive_members = {"Cargo.lock": lock("old"),
+                           refresh.GRAPH_MEMBER_NAME: json.dumps({"graph": refresh.normalize_graph(metadata("old"))}).encode(),
+                           **members}
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, content in archive_members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+        old_external = [rows[n] for n in names["old"]]
+        index = {"schema": "solstone.windows-rust-notices.v2", "packages": index_rows,
+                 "notices_sha256": refresh.sha256_bytes(notices), "notice_texts": spans,
+                 "cargo_lock_sha256": refresh.sha256_bytes(lock("old")),
+                 "population": {"source_sha256": refresh.external_population_sha256(old_external),
+                                "source_package_count": 4, "windows_notice_package_count": 3},
+                 "dependency_source_companion": {"filename": archive.name, "bytes": archive.stat().st_size,
+                                                 "sha256": refresh.sha256_file(archive)}}
+        (root / refresh.INDEX_RELATIVE_PATH).write_text(json.dumps(index))
+        digests = {n: refresh.sha256_bytes(t) for n, t in texts.items()}
+        return archive, metadata("new"), new_vendor, digests
+
+    def run_refresh(self, root, archive, metadata, vendor, **kwargs):
+        with patch.object(refresh, "query_cargo_metadata", return_value=metadata), \
+             patch.object(refresh, "run_cargo_vendor", side_effect=AssertionError("vendor dir given")):
+            return refresh.refresh(root, archive, None, root / "out", vendor, **kwargs)
+
+    def reviewed(self, digests, **overrides):
+        return {"admissions": frozenset({("newtz", "1.0.0")}),
+                "removals": frozenset({("oldtz", "1.0.0")}),
+                "departures": frozenset({("clock", "1.0.0")}),
+                "text_removals": frozenset({digests["oldtz"], digests["clock"]}), **overrides}
+
+    def test_reviewed_mixed_move_with_a_departure_refreshes_each_half(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, vendor, digests = self.fixture(root)
+            result = self.run_refresh(root, archive, metadata, vendor, **self.reviewed(digests))
+            index = result["new_index"]
+            population = {row["name"]: row["windows_notice_population"] for row in index["packages"]}
+            self.assertEqual(population, {"digest": True, "clock": False, "holder": False, "newtz": True})
+            self.assertEqual(index["population"]["windows_notice_package_count"], 2)
+            self.assertEqual(index["population"]["source_package_count"], 4)
+            self.assertEqual({row["sha256"] for row in index["notice_texts"]}, {digests["digest"], digests["newtz"]})
+            self.assertEqual(result["report"]["departed_packages_left_in_lock"], [f"clock@1.0.0 ({SOURCE})"])
+            with tarfile.open(root / "out" / index["dependency_source_companion"]["filename"]) as tar:
+                names = tar.getnames()
+            self.assertFalse(any(n.startswith("vendor/oldtz-") for n in names))
+            self.assertIn("vendor/newtz-1.0.0/LICENSE", names)
+            self.assertIn("vendor/clock-1.0.0/LICENSE", names)
+
+    def test_mixed_move_refusals(self):
+        cases = (
+            ({"removals": frozenset()}, "cannot mix|removed or upgraded"),
+            ({"admissions": frozenset()}, "cannot mix|removed or upgraded"),
+            ({"departures": frozenset()}, "notice closure changed"),
+            ({"departures": frozenset({("clock", "2.0.0")})}, "unchanged checksummed"),
+            ({"departures": frozenset({("clock", "1.0.0"), ("digest", "1.0.0")})}, "did not leave"),
+            ({"text_removals": None}, "referenced by no"),
+        )
+        for overrides, message in cases:
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, vendor, digests = self.fixture(root)
+                kwargs = self.reviewed(digests, **overrides)
+                if overrides.get("text_removals", 0) is None:
+                    kwargs["text_removals"] = frozenset({digests["oldtz"]})
+                with self.assertRaisesRegex(refresh.RefreshError, message):
+                    self.run_refresh(root, archive, metadata, vendor, **kwargs)
+
+    def test_a_departure_alone_does_not_open_the_mixed_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, vendor, digests = self.fixture(root)
+            with self.assertRaisesRegex(refresh.RefreshError, "cannot mix|alongside"):
+                self.run_refresh(root, archive, metadata, vendor, **self.reviewed(
+                    digests, removals=frozenset(), admissions=frozenset()))
 
 
 class NoticesRendering(unittest.TestCase):
