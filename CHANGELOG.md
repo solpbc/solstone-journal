@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- a Strava or Apple Health export you upload is no longer included in your backups, even before its import starts.
 - photos of people could be missing in large journals after overnight processing. your journal now checks fewer activities to recover those photos.
 - the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
 - a facet's color now updates when you choose a swatch and press "apply color".
