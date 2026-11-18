@@ -21,10 +21,12 @@ use crate::screen_ocr::{OcrWorker, OcrWorkerFactory, RawOccurrence};
 
 /// Seconds after the last kept frame, and between checks, before the gate reads a frame.
 const MIN_SECONDS: f64 = 5.0;
-/// A frame with this many new lines is kept.
-const MIN_NEW_LINES: usize = 4;
+/// A frame with this many new lines is kept. Three catches a short message or reply that
+/// stays on an otherwise unchanged screen, which four left out; two would cost more describe
+/// calls than they recover.
+const MIN_NEW_LINES: usize = 3;
 /// A frame with this many words on new lines is kept.
-const MIN_NEW_WORDS: usize = 15;
+const MIN_NEW_WORDS: usize = 10;
 /// Reads per video. Static screens cost nothing; this bounds a screen that never settles.
 const MAX_CHECKS: usize = 20;
 /// Motion is judged on a thumbnail this many times smaller in each dimension.
@@ -486,6 +488,30 @@ mod tests {
                 .collect(),
         };
         assert!(anchor.has_new_text(&fresh));
+    }
+
+    #[test]
+    fn a_short_new_message_is_new_text_and_a_line_or_two_of_chrome_is_not() {
+        let lines = |rows: &[&str]| Lines {
+            lines: rows.iter().filter_map(|line| comparable(line)).collect(),
+        };
+        let anchor = lines(&INBOX);
+        // A three-line reply, or one line of ten words, is a message worth describing.
+        let reply: Vec<&str> = INBOX.iter().chain(&NEW_ROWS[..3]).copied().collect();
+        assert!(anchor.has_new_text(&lines(&reply)));
+        let one_line: Vec<&str> = INBOX
+            .iter()
+            .copied()
+            .chain(["Running about ten minutes late, start the call without me"])
+            .collect();
+        assert!(anchor.has_new_text(&lines(&one_line)));
+        // Two short new labels are not.
+        let chrome: Vec<&str> = INBOX
+            .iter()
+            .copied()
+            .chain(["Updated just now", "Syncing your files"])
+            .collect();
+        assert!(!anchor.has_new_text(&lines(&chrome)));
     }
 
     #[test]
