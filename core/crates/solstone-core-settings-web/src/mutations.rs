@@ -431,7 +431,11 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
         "facets/zeta-project/facet.json",
     ] {
         let produced = fs::read_to_string(root.path().join(path)).expect("produced tree file");
-        let expected = fixture_tree_file(&corpus, path);
+        let expected = crate::settings_corpus_divergence::permanent_custom_add_keeps_shown_defaults(
+            path,
+            fixture_tree_file(&corpus, path),
+        );
+        let expected = expected.as_str();
         if path.ends_with("facet.json") {
             assert_created_facet_matches_fixture(&produced, expected, path);
         } else {

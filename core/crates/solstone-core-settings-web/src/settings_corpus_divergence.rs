@@ -108,6 +108,34 @@ pub fn apply_permanent_processing_default_gate_divergence(expected: &mut Value) 
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced 2026-11-18, with no expiry
+/// condition. The frozen corpus captured a custom activity added to a facet
+/// that stored no activities: it stored the custom alone, and so the facet
+/// stopped showing every default activity it had shown but the three always-on
+/// ones. A custom add there now stores the facet's defaults first, bare and in
+/// their order, then the custom, so the facet keeps showing what it showed.
+/// Keyed to the one file `ac13` produces by two custom adds on a new facet. The
+/// populated phase's tree and its read probes stay as frozen: a journal storing
+/// customs alone is a real one, which added them before. Never generalize this.
+pub fn permanent_custom_add_keeps_shown_defaults(path: &str, expected: &str) -> String {
+    const PATH: &str = "facets/work-life/activities/activities.jsonl";
+    if path != PATH {
+        return expected.to_owned();
+    }
+    assert!(
+        expected.starts_with("{\"id\": \"deep_work\", \"custom\": true"),
+        "frozen settings corpus stores the first custom alone in {PATH}"
+    );
+    let defaults: Vec<Value> =
+        serde_json::from_str(include_str!("../assets/default_activities.json"))
+            .expect("default activities");
+    let bare = defaults
+        .iter()
+        .map(|record| format!("{{\"id\": {}}}\n", record["id"]))
+        .collect::<String>();
+    format!("{bare}{expected}")
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {
