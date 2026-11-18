@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockError, LockOptions, PathError, ReadError, atomic_replace,
-    contained_path, hold_lock, read_text,
+    AtomicWriteOptions, LockError, LockOptions, PathError, PathOrDay, ReadError, atomic_replace,
+    contained_path, hold_lock, iter_segments, read_text,
 };
 
 use super::activities::read_activity_file;
@@ -502,6 +503,41 @@ pub fn reconcile_faceprints_for_segments(
     reconcile_faceprints_selected(root, Some(segments))
 }
 
+fn meeting_segment_names(row: &ActivityRecord) -> impl Iterator<Item = &str> {
+    (row.get("activity").and_then(Value::as_str) == Some("meeting"))
+        .then(|| row.get("segments").and_then(Value::as_array))
+        .flatten()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+}
+
+fn segments_with_face_manifests(
+    root: &Path,
+    day: &str,
+    rows: &[ActivityRecord],
+) -> Result<BTreeSet<String>, String> {
+    let mentioned: BTreeSet<_> = rows.iter().flat_map(meeting_segment_names).collect();
+    let mut found = BTreeSet::new();
+    if mentioned.is_empty() {
+        return Ok(found);
+    }
+    for segment in iter_segments(root, PathOrDay::Day(day)).map_err(|e| e.to_string())? {
+        let Some(name) = segment.name().to_str() else {
+            continue;
+        };
+        // A basename can occur in both layouts or several streams. Let the
+        // authoritative replay verify the stream, screen binding and membership.
+        if mentioned.contains(name)
+            && !found.contains(name)
+            && solstone_core_entity::faceprints::accumulation::has_face_manifest(segment.path())?
+        {
+            found.insert(name.to_owned());
+        }
+    }
+    Ok(found)
+}
+
 fn reconcile_faceprints_selected(
     root: &Path,
     selected: Option<&[(String, String, String)]>,
@@ -509,8 +545,17 @@ fn reconcile_faceprints_selected(
     if !solstone_core_entity::faceprints::enabled(root)? {
         return Ok(0);
     }
-    let mut turn = solstone_core_entity::faceprints::ReconcileYield::default();
-    let mut added = 0;
+    // An archive reference may still need removing even if its row is no
+    // longer a meeting or its source has disappeared.
+    let mut archived: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+    if selected.is_none() {
+        for coordinate in solstone_core_entity::faceprints::activity_coordinates(root)? {
+            let [facet, day, record_id]: [String; 3] =
+                serde_json::from_str(&coordinate).map_err(|e| e.to_string())?;
+            archived.entry((facet, day)).or_default().insert(record_id);
+        }
+    }
+    let mut candidates = Vec::new();
     for name in super::map::list_declared_facet_names(root).map_err(|e| e.to_string())? {
         for day in list_activity_day_stems(root, &name).map_err(|e| e.to_string())? {
             if selected.is_some_and(|ss| !ss.iter().any(|(d, _, _)| d == &day)) {
@@ -523,44 +568,59 @@ fn reconcile_faceprints_selected(
             if !hints.kept.is_empty() {
                 return Err("unreadable activity rows; face reconciliation deferred".into());
             }
-            let mut hints = hints.rows.into_iter().peekable();
-            while hints.peek().is_some() {
-                #[cfg(all(test, feature = "full-tests"))]
-                face_reconcile_tests::hook("discovered");
+            let with_faces = if selected.is_none() {
+                segments_with_face_manifests(root, &day, &hints.rows)?
+            } else {
+                BTreeSet::new()
+            };
+            let archived_ids = archived.get(&(name.clone(), day.clone()));
+            for row in hints.rows {
+                let record_id = id(&row);
+                if selected.is_some()
+                    || meeting_segment_names(&row).any(|segment| with_faces.contains(segment))
+                    || archived_ids.is_some_and(|ids| ids.contains(record_id))
                 {
-                    let started = std::time::Instant::now();
-                    let _trust = solstone_core_entity::hold_entity_trust_lock(root)
-                        .map_err(|e| e.to_string())?;
-                    let mut identities = FaceIdentities::read(root)?;
-                    for row in hints.by_ref() {
-                        added += reconcile_faceprints_activity_selected(
-                            root,
-                            &name,
-                            &day,
-                            id(&row),
-                            selected,
-                            false,
-                            Some(&mut identities),
-                        )?;
-                        if started.elapsed() >= std::time::Duration::from_secs(1) {
-                            break;
-                        }
-                    }
+                    candidates.push((name.clone(), day.clone(), record_id.to_owned()));
                 }
-                // Both the identity census and its trust hold end here. The
-                // next slice must refresh them before publishing anything.
-                turn.after_unit();
-                #[cfg(all(test, feature = "full-tests"))]
-                face_reconcile_tests::hook("released");
             }
         }
     }
-    if selected.is_none() {
-        // Archive references are candidates, never a stale live census. A new
-        // activity in an already-walked day is checked where deletion occurs.
-        for coordinate in solstone_core_entity::faceprints::activity_coordinates(root)? {
-            let [facet, day, record_id]: [String; 3] =
-                serde_json::from_str(&coordinate).map_err(|e| e.to_string())?;
+    let mut turn = solstone_core_entity::faceprints::ReconcileYield::default();
+    let mut added = 0;
+    let mut candidates = candidates.into_iter().peekable();
+    while candidates.peek().is_some() {
+        #[cfg(all(test, feature = "full-tests"))]
+        face_reconcile_tests::hook("discovered");
+        {
+            let started = std::time::Instant::now();
+            let _trust =
+                solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+            let mut identities = FaceIdentities::read(root)?;
+            for (facet, day, record_id) in candidates.by_ref() {
+                added += reconcile_faceprints_activity_selected(
+                    root,
+                    &facet,
+                    &day,
+                    &record_id,
+                    selected,
+                    false,
+                    Some(&mut identities),
+                )?;
+                if started.elapsed() >= std::time::Duration::from_secs(1) {
+                    break;
+                }
+            }
+        }
+        // Both the identity census and its trust hold end here. The next
+        // slice must refresh them before publishing anything.
+        turn.after_unit();
+        #[cfg(all(test, feature = "full-tests"))]
+        face_reconcile_tests::hook("released");
+    }
+    // Archive references are candidates, never a stale live census. A new
+    // activity in an already-walked day is checked where deletion occurs.
+    for ((facet, day), record_ids) in archived {
+        for record_id in record_ids {
             reconcile_faceprints_activity_selected(
                 root, &facet, &day, &record_id, None, true, None,
             )?;
@@ -3059,7 +3119,8 @@ mod face_reconcile_tests {
             .map(|i| {
                 format!(
                     "{}\n",
-                    json!({"id":format!("coding_{i}"),"activity":"coding"})
+                    json!({"id":format!("meeting_{i}"),"activity":"meeting",
+                           "segments":["090000_300"]})
                 )
             })
             .collect();
@@ -3302,6 +3363,7 @@ mod face_reconcile_tests {
             "unreadable_day",
             "absent_day",
             "absent_declaration",
+            "changed_kind",
             "present",
         ] {
             let temp = tempfile::tempdir().unwrap();
@@ -3322,10 +3384,14 @@ mod face_reconcile_tests {
                 }
                 "absent_day" => fs::remove_file(&day).unwrap(),
                 "absent_declaration" => fs::remove_file(&declaration).unwrap(),
+                "changed_kind" => {
+                    // The row committed but its derived write was interrupted.
+                    fs::write(&day, br#"{"id":"meeting","activity":"coding"}"#).unwrap();
+                }
                 _ => (),
             }
             let result = reconcile_faceprints(root);
-            if damage.starts_with("absent") {
+            if damage.starts_with("absent") || damage == "changed_kind" {
                 result.unwrap();
                 assert_eq!(rows(root, "a"), 0, "{damage}");
             } else {

@@ -141,8 +141,11 @@ fn stale_binding_never_fails_publication_and_maintenance_replays_current_assignm
     let mut changed: Value = serde_json::from_str(original_text.lines().nth(1).unwrap()).unwrap();
     changed["revision"] = json!(1);
     fs::write(&screen, format!("{{}}\n{changed}\n")).unwrap();
-    let _ = crate::append_activity_record(root,"work","20261101",json!({"id":"meeting_090000","activity":"meeting","segments":["090000_300"],"stream":"screen","participation":[{"name":"Tile Alias","entity_id":"a"}]}).as_object().unwrap().clone()).unwrap();
+    let _ = crate::append_activity_record(root,"work","20261101",json!({"id":"meeting_090000","activity":"meeting","segments":["090000_300"],"participation":[{"name":"Tile Alias","entity_id":"a"}]}).as_object().unwrap().clone()).unwrap();
     assert_eq!(rows(root, "a"), 0);
+    // A retained manifest still qualifies when the legacy row names no
+    // stream and the recording itself is gone.
+    assert!(!seg.join("screen.webm").exists());
     fs::write(&screen, original).unwrap();
     crate::reconcile_faceprints(root).unwrap();
     assert_eq!(rows(root, "a"), 1);

@@ -25,6 +25,18 @@ pub fn source_prefix(source: &str) -> String {
         &format!("{:x}", Sha256::digest(source.as_bytes()))[..16]
     )
 }
+
+fn is_face_manifest(name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    name.starts_with(".faces-v1-") && name.ends_with(".jsonl")
+}
+
+/// Presence is a recovery hint. Reading and authenticating the manifest still
+/// takes the source's output claim.
+pub fn has_face_manifest(segment: &Path) -> Result<bool> {
+    let entries = solstone_core_journal_io::list_dir_entries(segment).map_err(|e| e.to_string())?;
+    Ok(entries.iter().any(|entry| is_face_manifest(&entry.name)))
+}
 fn text<'a>(v: &'a Value, field: &str) -> &'a str {
     v.get(field).and_then(Value::as_str).unwrap_or("")
 }
@@ -225,10 +237,10 @@ pub fn reconcile_activity_with_entities(
             let claim = OutputClaims::discover(segment.path(), claim_options())
                 .map_err(|e| e.to_string())?;
             for manifest in manifests {
-                let filename = manifest.name.to_string_lossy().into_owned();
-                if !filename.starts_with(".faces-v1-") || !filename.ends_with(".jsonl") {
+                if !is_face_manifest(&manifest.name) {
                     continue;
                 }
+                let filename = manifest.name.to_string_lossy().into_owned();
                 // Claim discovery covers the screen even when its raw is retained away.
                 let bytes = solstone_core_journal_io::read_bytes(&manifest.path, vec![])
                     .map_err(|e| e.to_string())?;
