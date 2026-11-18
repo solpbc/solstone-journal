@@ -79,6 +79,7 @@ pub struct WindowsRegistrationUpdateSteps<'a, S, E> {
     /// that called for it is what the caller reports.
     pub restore_enabled: &'a mut dyn FnMut(),
     /// Read the stopped registration back and prove only the stop changed it.
+    /// No error from it restores `Enabled`: the service stays stopped.
     pub read_stopped: &'a mut dyn FnMut() -> Result<S, E>,
     /// Write the new profile over `current` and return its readback.
     pub update: &'a mut dyn FnMut(&S) -> Result<S, E>,
@@ -90,11 +91,13 @@ pub struct WindowsRegistrationUpdateSteps<'a, S, E> {
 /// After the stop has disabled a running task, a failure that leaves the
 /// resident running or unrestarted puts `Enabled` back, as the update quiesce
 /// does after a failed stop: a stop that never completed, or an update the
-/// scheduler refused against the stopped task. The recovery trigger then
-/// brings the journal back within five minutes, under its old registration.
-/// A stop that completed but found the registration changed by someone else
-/// is different: `read_stopped` refuses it and the service stays stopped, as
-/// its message says.
+/// scheduler refused against the stopped task. Where the registration starts
+/// at sign-in, the recovery trigger then brings the journal back within five
+/// minutes, under its old registration; with sign-in off, both triggers are
+/// off and it waits, enabled, for the owner to start it. A stop that completed
+/// but whose readback fails (an error, or a registration someone else changed)
+/// is different: nothing restores, and the service stays stopped, as the
+/// changed-registration message says.
 pub fn windows_update_present_registration<S, E>(
     plan: WindowsServiceUpdatePlan,
     before: &S,

@@ -1685,10 +1685,10 @@ fn run_stop_for_update_action() -> ExitCode {
     }
 }
 
-/// A stop that failed after disabling the task leaves its resident running
+/// A stop or update that failed after the task was disabled leaves the journal
 /// under a registration that will never start it again, so the registration
-/// is enabled again. Best effort, returning whether it held: the stop's own
-/// failure is what is reported.
+/// is enabled again. Best effort, returning whether it held: the failure that
+/// called for it is what is reported.
 fn restore_enabled_after_failed_stop(ctx: &ServiceContext) -> bool {
     let restore_deadline = Instant::now() + STOP_TIMEOUT;
     inspect_task(ctx, restore_deadline)
