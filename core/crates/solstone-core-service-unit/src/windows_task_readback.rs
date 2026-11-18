@@ -277,6 +277,28 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
     Err("Windows task definition differs from the managed profile")
 }
 
+/// Whether `definition` already carries what rendering `target` would write,
+/// its `Enabled` flag aside: rewriting it would change nothing the task runs.
+///
+/// [`parse_windows_task_xml`] accepts a readback only when it equals a managed
+/// profile rendered from the definition's own fields, so comparing those
+/// fields with `target` (through the same input type the renderer takes)
+/// compares the XML an update would write.
+pub fn windows_registration_is_current(
+    definition: &WindowsTaskDefinition,
+    target: &WindowsTaskInput<'_>,
+) -> bool {
+    definition.profile == WindowsTaskProfile::Current
+        && WindowsTaskInput {
+            principal_sid: &definition.principal_sid,
+            command: &definition.command,
+            action: &definition.action,
+            working_directory: &definition.working_directory,
+            enabled: target.enabled,
+            starts_at_sign_in: definition.starts_at_sign_in,
+        } == *target
+}
+
 const LOGON_TRIGGER_ENABLED: &str = "Task/Triggers/LogonTrigger/Enabled";
 const RECOVERY_TRIGGER_ENABLED: &str = "Task/Triggers/TimeTrigger/Enabled";
 
@@ -568,6 +590,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_registration_is_current_only_when_an_update_would_rewrite_nothing_but_enabled() {
+        let current = parse_windows_task_xml(&xml()).unwrap();
+        let target = |definition: &WindowsTaskDefinition, enabled: bool| {
+            windows_registration_is_current(
+                &current,
+                &WindowsTaskInput {
+                    principal_sid: &definition.principal_sid,
+                    command: &definition.command,
+                    action: &definition.action,
+                    working_directory: &definition.working_directory,
+                    enabled,
+                    starts_at_sign_in: definition.starts_at_sign_in,
+                },
+            )
+        };
+        assert!(target(&current, true));
+        assert!(
+            target(&current, false),
+            "Enabled is the owner's, not the profile's"
+        );
+        let mut moved = current.clone();
+        moved.action.port = 6124;
+        assert!(!target(&moved, true));
+        let mut renamed = current.clone();
+        renamed.command = "C:\\Program Files\\Solstone\\solstone.exe".to_owned();
+        assert!(!target(&renamed, true));
+        let mut sign_in_off = current.clone();
+        sign_in_off.starts_at_sign_in = false;
+        assert!(!target(&sign_in_off, true));
+        let legacy = parse_windows_task_xml(&legacy_xml()).unwrap();
+        assert!(!windows_registration_is_current(
+            &legacy,
+            &WindowsTaskInput {
+                principal_sid: &legacy.principal_sid,
+                command: &legacy.command,
+                action: &legacy.action,
+                working_directory: &legacy.working_directory,
+                enabled: true,
+                starts_at_sign_in: true,
+            }
+        ));
     }
 
     #[test]

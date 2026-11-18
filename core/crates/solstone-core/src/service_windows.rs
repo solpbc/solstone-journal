@@ -20,11 +20,12 @@ use solstone_core_installation_identity::{
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
-    OwnerRunIntent, WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput,
-    WindowsTaskProfile, encode_windows_task_xml, parse_windows_task_xml,
-    parse_windows_update_intent, render_windows_task_xml, windows_registration_profile,
-    windows_service_update_plan, windows_update_intent_bytes, windows_update_quiesce,
-    windows_update_restore, windows_update_stop_failure_restore,
+    OwnerRunIntent, WindowsRegistrationUpdateSteps, WindowsServiceAction, WindowsTaskDefinition,
+    WindowsTaskInput, WindowsTaskProfile, encode_windows_task_xml, parse_windows_task_xml,
+    parse_windows_update_intent, render_windows_task_xml, windows_registration_is_current,
+    windows_registration_profile, windows_service_update_plan, windows_update_intent_bytes,
+    windows_update_present_registration, windows_update_quiesce, windows_update_restore,
+    windows_update_stop_failure_restore,
 };
 use solstone_core_setup::args::InitialStartAtSignIn;
 use solstone_core_setup::clean_uninstall::{
@@ -325,76 +326,103 @@ fn install_task(
         journal: journal_display.to_owned(),
         guard: ctx.guard.clone(),
     };
-    let xml = render_windows_task_xml(&WindowsTaskInput {
+    let input = WindowsTaskInput {
         principal_sid: &ctx.sid,
         command,
         action: &action,
         working_directory: journal_display,
         enabled: profile.enabled,
         starts_at_sign_in: profile.starts_at_sign_in,
-    })
-    .map_err(task_error)?;
+    };
+    let xml = render_windows_task_xml(&input).map_err(task_error)?;
     // The Scheduler accepts an update only against an idle task, so a
     // registration that is running is stopped first and started again after
     // the new profile reads back -- and one the owner had already stopped
-    // stays stopped. Each phase proves itself before the next begins, and a
-    // failed phase returns nonzero carrying the operation's own diagnostic.
-    let plan = windows_service_update_plan(before.instances.len());
-    let stopped;
+    // stays stopped. A registration that already carries this profile is not
+    // rewritten, so a running one is not stopped at all (see
+    // `windows_service_update_plan`). Each phase proves itself before the next
+    // begins, and a failed phase returns nonzero carrying the operation's own
+    // diagnostic.
+    let plan = windows_service_update_plan(
+        before.instances.len(),
+        registered
+            .as_ref()
+            .is_some_and(|definition| windows_registration_is_current(definition, &input)),
+        registered
+            .as_ref()
+            .is_none_or(|definition| definition.enabled),
+    );
+    let (updated, created);
     let after = if before.present {
-        let current = if plan.stop_before_update {
-            stop_task(ctx, true)?;
-            let idle = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
-            let idle_definition = validate_task(ctx, &idle)?;
-            // The stop records itself as a disabled registration, which is the
-            // only difference the update may find; anything else is a change
-            // someone else made.
-            if !same_task_security(&before, &idle)
-                || registered.as_ref().is_none_or(|definition| {
-                    definition.action != idle_definition.action
-                        || definition.profile != idle_definition.profile
-                        || definition.starts_at_sign_in != idle_definition.starts_at_sign_in
-                        || idle_definition.enabled
-                })
-            {
-                // The owner is left with a stopped service and no update, so
-                // the line says both, in the same words the rest of this
-                // surface uses for the thing that was stopped.
-                return Err(task_error(
-                    "background support for your journal was stopped so it could be updated. \
-                     its registration with windows changed first, so the update didn't happen, \
-                     and background support is stopped now.\n\
-                     run `solstone journal service status` to check it, then `solstone journal service install` \
-                     again.",
-                ));
-            }
-            stopped = idle;
-            &stopped
-        } else {
-            &before
-        };
-        task_scheduler::execute_until(
-            &ctx.scheduler,
-            &ctx.sid,
-            &ctx.guard.id.as_hex(),
-            Operation::Update {
-                before: current,
-                xml: &xml,
+        updated = windows_update_present_registration(
+            plan,
+            &before,
+            WindowsRegistrationUpdateSteps {
+                enable: &mut |running| set_task_enabled(ctx, running, true, deadline),
+                stop: &mut || stop_task(ctx, true),
+                restore_enabled: &mut || {
+                    if !restore_enabled_after_failed_stop(ctx) {
+                        log::error!(
+                            "could not restore the service registration after a failed update"
+                        );
+                    }
+                },
+                read_stopped: &mut || {
+                    let idle = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
+                    let idle_definition = validate_task(ctx, &idle)?;
+                    // The stop records itself as a disabled registration, which
+                    // is the only difference the update may find; anything
+                    // else is a change someone else made.
+                    if !same_task_security(&before, &idle)
+                        || registered.as_ref().is_none_or(|definition| {
+                            definition.action != idle_definition.action
+                                || definition.profile != idle_definition.profile
+                                || definition.starts_at_sign_in != idle_definition.starts_at_sign_in
+                                || idle_definition.enabled
+                        })
+                    {
+                        // The owner is left with a stopped service and no
+                        // update, so the line says both, in the same words the
+                        // rest of this surface uses for the thing that was
+                        // stopped.
+                        return Err(task_error(
+                            "background support for your journal was stopped so it could be updated. \
+                             its registration with windows changed first, so the update didn't happen, \
+                             and background support is stopped now.\n\
+                             run `solstone journal service status` to check it, then `solstone journal service install` \
+                             again.",
+                        ));
+                    }
+                    Ok(idle)
+                },
+                update: &mut |current| {
+                    task_scheduler::execute_until(
+                        &ctx.scheduler,
+                        &ctx.sid,
+                        &ctx.guard.id.as_hex(),
+                        Operation::Update {
+                            before: current,
+                            xml: &xml,
+                        },
+                        Instant::now() + STOP_TIMEOUT,
+                    )
+                    .map_err(task_error)
+                },
             },
-            Instant::now() + STOP_TIMEOUT,
-        )
-        .map_err(task_error)?
+        )?;
+        updated.as_ref().unwrap_or(&before)
     } else {
-        task_scheduler::execute_until(
+        created = task_scheduler::execute_until(
             &ctx.scheduler,
             &ctx.sid,
             &ctx.guard.id.as_hex(),
             Operation::Create { xml: &xml },
             Instant::now() + STOP_TIMEOUT,
         )
-        .map_err(task_error)?
+        .map_err(task_error)?;
+        &created
     };
-    let installed = validate_task(ctx, &after)?;
+    let installed = validate_task(ctx, after)?;
     if installed.action != action || installed.starts_at_sign_in != profile.starts_at_sign_in {
         return Err(task_error(
             "installed task action did not match its readback",
@@ -1645,24 +1673,33 @@ fn run_stop_for_update_action() -> ExitCode {
     match stop_task(&ctx, windows_update_quiesce().disable_before_stop) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => {
-            if windows_update_stop_failure_restore(intent.was_enabled).enable_without_start {
-                let restore_deadline = Instant::now() + STOP_TIMEOUT;
-                let restore = inspect_task(&ctx, restore_deadline).and_then(|after| {
-                    if after.present {
-                        // A surviving instance still needs its registration enabled.
-                        set_task_enabled(&ctx, &after, true, restore_deadline)?;
-                    }
-                    Ok(())
-                });
-                if restore.is_err() {
-                    log::error!(
-                        "could not restore the service registration after a failed update stop; saved intent remains"
-                    );
-                }
+            if windows_update_stop_failure_restore(intent.was_enabled).enable_without_start
+                && !restore_enabled_after_failed_stop(&ctx)
+            {
+                log::error!(
+                    "could not restore the service registration after a failed update stop; saved intent remains"
+                );
             }
             code
         }
     }
+}
+
+/// A stop that failed after disabling the task leaves its resident running
+/// under a registration that will never start it again, so the registration
+/// is enabled again. Best effort, returning whether it held: the stop's own
+/// failure is what is reported.
+fn restore_enabled_after_failed_stop(ctx: &ServiceContext) -> bool {
+    let restore_deadline = Instant::now() + STOP_TIMEOUT;
+    inspect_task(ctx, restore_deadline)
+        .and_then(|after| {
+            if after.present {
+                // A surviving instance still needs its registration enabled.
+                set_task_enabled(ctx, &after, true, restore_deadline)?;
+            }
+            Ok(())
+        })
+        .is_ok()
 }
 
 fn run_restart_action(if_installed: bool) -> ExitCode {
@@ -1686,6 +1723,13 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
         }
     }
     if let Err(code) = stop_task(&ctx, true) {
+        // A restart wants the journal running. A stop that failed after it
+        // disabled the task (a resident still in its first launch never
+        // acknowledges one) would leave it running under a task that never
+        // starts it again.
+        if !restore_enabled_after_failed_stop(&ctx) {
+            log::error!("could not restore the service registration after a failed restart");
+        }
         return code;
     }
     match start_task(&ctx) {
