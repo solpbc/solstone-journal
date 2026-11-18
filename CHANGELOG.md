@@ -61,6 +61,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on the settings page, changing the priority of an activity a facet starts with, such as meeting or email, now saves. before, it was refused with "update failed" and went back to normal. on an iphone, when a priority change can't be saved, its menu no longer opens again by itself.
 - on the settings page, adding your own activity to a facet that has only the activities it starts with now keeps them, where before it dropped all but meetings, email and messaging. editing the description or instructions of an activity a facet starts with, or removing one, now saves too (meetings, email and messaging still can't be removed). before, those changes were refused with "update failed" or "remove failed".
+- when an agent you limited to some facets asks for an activity's sources and it may read none of them, your journal now tells it that it may not read them, and that asking again won't change that. before, it said a file couldn't be read and to try again later, so the agent would ask again for something it could never get. thanks @dvanduzer for the report (#415).
 
 ## [2.0.83] - 2026-11-18
 

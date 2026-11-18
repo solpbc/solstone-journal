@@ -11400,13 +11400,22 @@ fn get_activity_sources_cross_facet_permissions() {
         )
         .unwrap();
 
-    let err = probe(
+    // Every source outside this connection's facets is a complete answer, the
+    // same on every retry, never a file that failed to read.
+    let out_of_reach = probe(
         &journal,
         "get_activity_sources",
         json!({"reference": act_ref}),
     )
-    .unwrap_err();
-    assert_eq!(err, McpProbeError::Unavailable);
+    .unwrap();
+    assert_no_leaked_keys(&out_of_reach);
+    assert_eq!(out_of_reach["units"], json!([]));
+    assert_eq!(out_of_reach["unreadable"], true);
+    assert_eq!(
+        out_of_reach["note"],
+        crate::dispatch::ACTIVITY_SOURCES_OUT_OF_REACH
+    );
+    assert!(!out_of_reach.to_string().contains("betatranscriptneedle"));
 
     let seg_a = "090500_300";
     write_segment_transcript(
@@ -11453,6 +11462,37 @@ fn get_activity_sources_cross_facet_permissions() {
     assert!(s.contains("alphatranscriptneedle"));
     assert!(!s.contains("betatranscriptneedle"));
     assert_eq!(mixed_sources["unreadable"], true);
+}
+
+/// A facet that can't be read leaves a segment's scope undecided, which a
+/// read reports as an error to try again, never as out of reach for good.
+#[cfg(unix)]
+#[test]
+fn segment_scope_with_an_unreadable_facet_is_undecided() {
+    use std::os::unix::fs::PermissionsExt;
+    let journal = base_activity_journal();
+    let day = "20260308";
+    write_segment_transcript(journal.path(), day, "default", "090000_300", "alpha", "a\n");
+    write_segment_transcript(journal.path(), day, "default", "090500_300", "beta", "b\n");
+    let snapshot = crate::permissions::ConnectionReadSnapshot {
+        categories: [solstone_core_indexer_query::AdmittedCategory::Transcripts]
+            .into_iter()
+            .collect(),
+        scope: solstone_core_indexer_query::ConnectionScope::ChosenFacets {
+            ids: [FACET_A.to_owned()].into_iter().collect(),
+        },
+        generation: 1,
+    };
+    let scope = |segment: &str| {
+        crate::may_see::segment_scope(journal.path(), &snapshot, day, "default", segment)
+    };
+    assert_eq!(scope("090000_300"), Some(true));
+    assert_eq!(scope("090500_300"), Some(false));
+    let beta = journal.path().join("facets/beta/facet.json");
+    fs::set_permissions(&beta, fs::Permissions::from_mode(0o000)).unwrap();
+    let undecided = scope("090500_300");
+    fs::set_permissions(&beta, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(undecided, None);
 }
 
 #[test]

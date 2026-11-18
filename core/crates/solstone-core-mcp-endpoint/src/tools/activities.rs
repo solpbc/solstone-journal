@@ -1381,13 +1381,16 @@ pub(crate) fn sources_of(
     }
     let hides = crate::body_source::BodyHides::read(journal_root);
     let mut admitted_transcripts = Vec::new();
-    let mut any_denied_or_unreadable = false;
+    let mut any_unreadable = false;
+    // A segment this connection may not read stays out of reach on every
+    // retry, so it is never reported as a file that failed to read.
+    let mut any_out_of_reach = false;
     let mut segment_link_map = std::collections::BTreeMap::new();
     let candidates = activity_segment_candidates(journal_root, &rel_path, &record);
     let mut ordered = Vec::new();
     for seg_val in segment_vals {
         let Some(key) = seg_val.as_str() else {
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         };
         let matched: Vec<_> = candidates
@@ -1396,7 +1399,7 @@ pub(crate) fn sources_of(
             .cloned()
             .collect();
         if matched.is_empty() {
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         }
         ordered.extend(matched);
@@ -1411,15 +1414,22 @@ pub(crate) fn sources_of(
         crate::possible_names::ConnectionPossibleNames::new(journal_root, snapshot);
     for segment in ordered {
         let Ok(identity) = segment.record_identity() else {
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         };
         let stream = identity.stream;
         let seg_key = identity.name;
         // Scope first, before anything of the segment is opened.
-        if !crate::may_see::segment_in_scope(journal_root, snapshot, &place.day, stream, seg_key) {
-            any_denied_or_unreadable = true;
-            continue;
+        match crate::may_see::segment_scope(journal_root, snapshot, &place.day, stream, seg_key) {
+            Some(true) => {}
+            Some(false) => {
+                any_out_of_reach = true;
+                continue;
+            }
+            None => {
+                any_unreadable = true;
+                continue;
+            }
         }
         // A workout tile holds no transcript: nothing of it is a source.
         if solstone_core_segment::is_body_only_segment(&segment)
@@ -1438,7 +1448,7 @@ pub(crate) fn sources_of(
             seg_key,
             &segment,
         ) else {
-            any_denied_or_unreadable = true;
+            any_out_of_reach = true;
             continue;
         };
 
@@ -1455,7 +1465,7 @@ pub(crate) fn sources_of(
             crate::source_freeze_barrier::checkpoint(
                 crate::source_freeze_barrier::FreezePoint::After,
             );
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         }
 
@@ -1506,7 +1516,7 @@ pub(crate) fn sources_of(
         crate::source_freeze_barrier::checkpoint(crate::source_freeze_barrier::FreezePoint::After);
 
         if !allowed_after || read_failed {
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         }
 
@@ -1520,13 +1530,13 @@ pub(crate) fn sources_of(
             match format_segment_heading(&place.day, seg_key) {
                 Some(heading) => Some(heading),
                 None => {
-                    any_denied_or_unreadable = true;
+                    any_unreadable = true;
                     continue;
                 }
             }
         };
         let Some(version) = segment_version else {
-            any_denied_or_unreadable = true;
+            any_unreadable = true;
             continue;
         };
 
@@ -1571,8 +1581,17 @@ pub(crate) fn sources_of(
     }
 
     if admitted_transcripts.is_empty() {
-        if any_denied_or_unreadable {
+        if any_unreadable {
             return Err(DispatchError::Tool(ToolError::FileUnreadable));
+        } else if any_out_of_reach {
+            let target = format!(
+                "facet:{}/activity:{}",
+                place.facet_id, address.record_identity
+            );
+            return Ok(
+                Prepared::new(json!({ "units": [], "unreadable": true }), 0, vec![target])
+                    .when_empty(crate::dispatch::ACTIVITY_SOURCES_OUT_OF_REACH),
+            );
         } else {
             let target = format!(
                 "facet:{}/activity:{}",
@@ -1686,7 +1705,7 @@ pub(crate) fn sources_of(
 
     let count = page_units.len();
     let mut response_val = json!({ "units": page_units });
-    if any_denied_or_unreadable {
+    if any_unreadable || any_out_of_reach {
         response_val["unreadable"] = Value::Bool(true);
     }
     if let Some(next_cursor) = next_cursor {

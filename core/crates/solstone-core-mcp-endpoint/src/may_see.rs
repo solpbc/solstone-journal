@@ -283,24 +283,30 @@ pub(crate) fn segment_shown(
 }
 
 /// Whether a segment is inside this connection's scope and categories, decided
-/// from where it is filed alone: nothing of the segment is opened.
-pub(crate) fn segment_in_scope(
+/// from where it is filed alone: nothing of the segment is opened. `None` when
+/// that couldn't be decided because a facet it names couldn't be read, which
+/// may pass, where `Some(false)` is out of this connection's reach for good.
+pub(crate) fn segment_scope(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
     day: &str,
     stream: &str,
     name: &str,
-) -> bool {
-    segment_boundary(snapshot, None).is_some_and(|boundary| {
-        FacetDeclarationSet::from_journal(journal_root).is_ok_and(|declarations| {
-            boundary.allows_scope(&classify_source(
-                journal_root,
-                &segment_assignment_probe_path(day, stream, name),
-                Some(stream),
-                &declarations,
-            ))
-        })
-    })
+) -> Option<bool> {
+    let Some(boundary) = segment_boundary(snapshot, None) else {
+        return Some(false);
+    };
+    let declarations = FacetDeclarationSet::from_journal(journal_root).ok()?;
+    let classification = classify_source(
+        journal_root,
+        &segment_assignment_probe_path(day, stream, name),
+        Some(stream),
+        &declarations,
+    );
+    if classification.unclassified {
+        return None;
+    }
+    Some(boundary.allows_scope(&classification))
 }
 
 /// [`segment_shown`] for a caller judging many segments in one answer, which

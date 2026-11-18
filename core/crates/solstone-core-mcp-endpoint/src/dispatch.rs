@@ -90,6 +90,9 @@ this connection may read screen text.";
 pub(crate) const ACTIVITY_SOURCES_EMPTY: &str = "This activity has no transcript sources. Text \
 shown on a screen or in a terminal is not a transcript source: search with category screen_text \
 finds it, when this connection may read screen text.";
+// Out of this connection's reach is permanent, so it never reads as a retry.
+pub(crate) const ACTIVITY_SOURCES_OUT_OF_REACH: &str = "This connection may not read this \
+activity's sources. This is a complete answer, not an error: asking again returns the same.";
 
 /// A prepared response together with the owner coordinates it was built from.
 ///
