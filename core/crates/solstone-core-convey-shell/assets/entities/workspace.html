@@ -1956,7 +1956,9 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-folder:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .journal-folder-count { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 0.85em; }
 .journal-folder-heading { margin: 0.9em 0.6em 0.2em; font-size: 0.75em; color: var(--ink-faint); text-transform: none; letter-spacing: 0; }
-.journal-browse-main { min-width: 0; }
+/* The rows answer to the list's own width, not the window's: beside the
+   folders on a tablet the list is narrow while the window is wide. */
+.journal-browse-main { min-width: 0; container-type: inline-size; }
 .journal-list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; margin-bottom: 0.5em; }
 .journal-list-head .entity-search-input { flex: 1 1 14rem; min-width: 0; max-width: 24rem; margin: 0; }
 .journal-list-range { color: var(--ink-soft); font-size: 0.9em; font-variant-numeric: tabular-nums; }
@@ -1964,18 +1966,18 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-list-pager button, .journal-tidy-pager button { min-width: 2.25rem; min-height: 2.25rem; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm, 6px); background: var(--paper); color: var(--ink); cursor: pointer; }
 .journal-list-pager button:disabled, .journal-tidy-pager button:disabled { opacity: 0.4; cursor: default; }
 .journal-rows { border-top: 1px solid var(--hairline); }
-.journal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 6rem 5rem 6rem 13rem; gap: 0.75em; align-items: center; padding: 0.45em 0.6em; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.journal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 5rem 6rem 13rem; gap: 0.75em; align-items: center; padding: 0.45em 0.6em; border-bottom: 1px solid var(--hairline); cursor: pointer; }
 .journal-row:hover { background: var(--cream); }
 .journal-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .journal-row-tick { display: flex; align-items: center; }
 .journal-row-tick input { width: 1.1rem; height: 1.1rem; margin: 0; }
 .journal-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .journal-row-badge { margin-left: 0.5em; padding: 0 0.4em; border-radius: 999px; font-size: 0.75em; background: var(--cream-bright); color: var(--ink-soft); }
-.journal-row-type, .journal-row-notes, .journal-row-date { color: var(--ink-soft); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal-row-notes, .journal-row-date { color: var(--ink-soft); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .journal-row-notes { font-variant-numeric: tabular-nums; }
 .journal-row-dots { display: flex; gap: 3px; flex-wrap: wrap; }
 .journal-row-dots .entity-facet-dot { margin: 0; }
-.journal-rows-plain .journal-row { grid-template-columns: minmax(0, 1fr) 6rem 5rem 6rem 13rem; }
+.journal-rows-plain .journal-row { grid-template-columns: minmax(0, 1fr) 5rem 6rem 13rem; }
 .journal-row-meta { display: contents; }
 .journal-row-date { order: 1; }
 .journal-tidy-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75em; margin-bottom: 1em; }
@@ -2015,6 +2017,10 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-folders { position: static; flex-direction: row; overflow-x: auto; gap: 0.4em; padding-bottom: 0.25em; scrollbar-width: thin; }
   .journal-folder { flex: 0 0 auto; width: auto; gap: 0.4em; padding: 0.35em 0.75em; border: 1px solid var(--hairline-2); border-radius: 999px; white-space: nowrap; }
   .journal-folder-heading { display: none; }
+  .journal-list-pager { margin-left: 0; }
+}
+/* Too narrow for the name beside its columns: two lines, the name first. */
+@container (max-width: 42rem) {
   .journal-row, .journal-rows-plain .journal-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "tick name notes" "tick meta meta"; row-gap: 0.15em; }
   .journal-rows-plain .journal-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name notes" "meta meta"; }
   .journal-row-tick { grid-area: tick; }
@@ -2025,7 +2031,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-dup-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "tick name" "tick meta"; }
   .journal-dup-row .journal-row-name { white-space: normal; }
   .journal-dup-facets { grid-area: meta; white-space: normal; }
-  .journal-list-pager { margin-left: 0; }
+  .journal-row-note { grid-row: 3; }
+  .journal-row-tick { grid-row: 1 / span 3; align-self: start; }
 }
 
 /* Photos of people: the person-page panel, list thumbnails and the reason a
@@ -2083,10 +2090,6 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .trash-set-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
 .trash-set-list li + li { margin-top: 2px; }
 .trash-set-more { color: var(--ink-soft); }
-@media (max-width: 700px) {
-  .journal-row-note { grid-row: 3; }
-  .journal-row-tick { grid-row: 1 / span 3; align-self: start; }
-}
 @media (max-width: 480px) {
   .journal-row-tick { min-width: 20px; }
   .trash-bar-actions button, .ent-select-btn { min-height: 44px; }
@@ -2171,7 +2174,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
               <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-delete"></button><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-done-some"></button></span>
             </div>
           </div>
-          <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in, plus its type.</p>
+          <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in.</p>
           <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
           <div id="journal-entity-cards-content" class="journal-rows"></div>
           <div id="no-journal-entities" class="no-journal-entities" style="display: none;">
@@ -7103,9 +7106,6 @@ function appendJournalRowCells(row, entity, {notes, day}) {
   }
   const meta = document.createElement('span');
   meta.className = 'journal-row-meta';
-  const type = document.createElement('span');
-  type.className = 'journal-row-type';
-  type.textContent = (entity.type_bucket || entity.type || 'other').toLowerCase();
   const dots = document.createElement('span');
   dots.className = 'journal-row-dots';
   (entity.facets || []).forEach(facet => {
@@ -7127,7 +7127,7 @@ function appendJournalRowCells(row, entity, {notes, day}) {
     const absolute = formatMentionedDate(day);
     if (absolute) date.title = `last mentioned ${absolute}`;
   }
-  meta.append(type, dots, date);
+  meta.append(dots, date);
   const notesEl = document.createElement('span');
   notesEl.className = 'journal-row-notes';
   notesEl.textContent = journalNotesLabel(notes);
