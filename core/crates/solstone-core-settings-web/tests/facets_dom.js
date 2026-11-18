@@ -824,6 +824,69 @@ async function testCase(name, fn) {
     assert.strictEqual(harness.facets.get('reading-retreat').color, color);
   });
 
+  await testCase('facet color dialog saves swatches and custom hex values', async () => {
+    const harness = createHarness();
+    const route = '/app/settings/facets/work-life';
+    const api = '/app/settings/api/facet/work-life';
+    harness.window.location.pathname = route;
+    harness.window.location.href = route;
+    await run(harness, 'initSettingsWorkspace()');
+
+    const { document } = harness;
+    const trigger = document.getElementById('colorTrigger');
+    const modal = document.getElementById('colorPickerModal');
+    const apply = document.getElementById('saveColorBtn');
+    const custom = document.getElementById('customColorInput');
+    custom.reportValidity = () => new RegExp('^' + custom.getAttribute('pattern') + '$').test(custom.value);
+
+    // The browser resolves the CSS variables and mixes, then supplies sRGB
+    // bytes to the native color input. The browser proof checks those colors.
+    harness.window.getComputedStyle = () => ({ borderTopColor: 'rgb(200, 120, 40)' });
+    const createElement = document.createElement.bind(document);
+    document.createElement = (tag) => {
+      const el = createElement(tag);
+      if (tag === 'canvas') {
+        el.getContext = () => ({
+          fillRect() {},
+          getImageData() { return { data: [200, 120, 40, 255] }; },
+        });
+      }
+      return el;
+    };
+
+    const colors = document.querySelectorAll('#colorSwatches .color-swatch');
+    for (const prefix of ['var(', 'color-mix(']) {
+      await click(trigger);
+      const swatch = colors.find((el) => el.dataset.color.startsWith(prefix));
+      swatch.dispatchEvent(event('keydown', { key: 'Enter', bubbles: true }));
+      await click(apply);
+      const write = harness.requests.filter((req) => req.method === 'PUT' && req.url === api).at(-1);
+      assert.deepStrictEqual(write?.body, { color: swatch.dataset.color });
+      assert.strictEqual(harness.facets.get('work-life').color, swatch.dataset.color);
+      assert.strictEqual(modal.style.display, 'none');
+      assert.strictEqual(document.activeElement, trigger);
+
+      await click(trigger);
+      assert.ok(swatch.classList.contains('selected'));
+      assert.strictEqual(custom.value, '#c87828');
+      modal.dispatchEvent(event('keydown', { key: 'Escape', bubbles: true }));
+    }
+
+    await click(trigger);
+    custom.value = '#12';
+    custom.dispatchEvent(event('input', { bubbles: true }));
+    const writesBefore = harness.requests.filter((req) => req.method === 'PUT').length;
+    await click(apply);
+    assert.strictEqual(harness.requests.filter((req) => req.method === 'PUT').length, writesBefore);
+    assert.strictEqual(modal.style.display, 'block');
+
+    custom.value = '#123456';
+    custom.dispatchEvent(event('input', { bubbles: true }));
+    await click(apply);
+    assert.strictEqual(harness.facets.get('work-life').color, '#123456');
+    assert.strictEqual(modal.style.display, 'none');
+  });
+
   await testCase('AC5 no selected-facet cookie write on exercised paths', async () => {
     const harness = createHarness();
     await run(harness, 'loadFacetsList()');

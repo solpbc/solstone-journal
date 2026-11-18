@@ -2106,7 +2106,7 @@ module.exports = async function settingsContractCases(crateDir) {
   });
 
   await test("a facet's emoji and color open from the keyboard, and Enter in the emoji lands on it", async () => {
-    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#c00', emoji: '🧪', muted: false } } }) });
+    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧪', muted: false } } }) });
     const emoji = p.byId('emojiDisplay');
     const input = p.byId('emojiInput');
     blurFires(p, input);

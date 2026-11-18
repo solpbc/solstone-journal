@@ -3291,7 +3291,7 @@ button:focus:not(:focus-visible) {
       <label for="customColorInput">custom color:</label>
       <div class="color-input-group">
         <input type="color" id="customColorPicker" value="#667eea">
-        <input type="text" id="customColorInput" placeholder="#667eea" maxlength="7">
+        <input type="text" id="customColorInput" placeholder="#667eea" maxlength="7" pattern="#[0-9A-Fa-f]{6}" required>
       </div>
     </div>
     <div class="color-preview-section">
@@ -5084,8 +5084,9 @@ function setupColorPicker() {
   const swatches = document.getElementById('colorSwatches');
   const picker = document.getElementById('customColorPicker');
   const hexInput = document.getElementById('customColorInput');
-
-  let selectedColor = picker.value;
+  const preview = document.getElementById('modalPreview');
+  const hexColor = new RegExp(`^${hexInput.getAttribute('pattern')}$`);
+  let selectedColor;
 
   // Populate swatches
   swatches.innerHTML = FACET_COLORS.map(c => `<div class="color-swatch" role="button" tabindex="0" aria-label="${colorName(c)}" data-color="${c}" style="background:${c}"></div>`).join('');
@@ -5119,9 +5120,9 @@ function setupColorPicker() {
   };
 
   trigger.onclick = () => {
-    selectedColor = facetConfig?.color || picker.value;
-    updateColorUI(selectedColor);
     modal.style.display = 'block';
+    selectedColor = facetConfig?.color || FACET_COLORS[0];
+    updateColorUI(selectedColor);
     modal._openAccessible(trigger);
   };
   // It's a button: Enter and Space press it, as a click does.
@@ -5136,30 +5137,46 @@ function setupColorPicker() {
 
   picker.oninput = () => { selectedColor = picker.value; updateColorUI(selectedColor); };
   hexInput.oninput = () => {
-    if (/^#[0-9A-Fa-f]{6}$/.test(hexInput.value)) {
+    if (hexColor.test(hexInput.value)) {
       selectedColor = hexInput.value;
       updateColorUI(selectedColor);
     }
   };
 
-  saveBtn.onclick = () => {
-    if (/^#[0-9A-Fa-f]{6}$/.test(selectedColor)) {
-      document.getElementById('colorPreview').style.backgroundColor = selectedColor;
-      document.getElementById('colorHexDisplay').textContent = selectedColor;
-      saveFacetField('color', selectedColor, null);
-      modal._closeAccessible();
+  saveBtn.onclick = async () => {
+    if (window.SolFocus.isBusy(saveBtn) || !hexInput.reportValidity()) return;
+    window.SolFocus.setBusy(saveBtn, true);
+    modal._closeAccessible();
+    try {
+      await saveFacetField('color', selectedColor, null);
+    } finally {
+      window.SolFocus.setBusy(saveBtn, false);
     }
   };
 
+  function pickerHex(color) {
+    if (hexColor.test(color)) return color;
+
+    // The preview resolves variables in the current appearance. Sample its
+    // computed color as sRGB bytes for the native input and keep the original
+    // CSS value in selectedColor for saving.
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const pixel = canvas.getContext('2d');
+    pixel.fillStyle = window.getComputedStyle(preview).borderTopColor;
+    pixel.fillRect(0, 0, 1, 1);
+    const [red, green, blue] = pixel.getImageData(0, 0, 1, 1).data;
+    return '#' + [red, green, blue].map(channel => channel.toString(16).padStart(2, '0')).join('');
+  }
+
   function updateColorUI(color) {
-    picker.value = color;
-    hexInput.value = color;
-    document.querySelectorAll('.color-swatch').forEach(s => {
+    preview.style.borderColor = color;
+    const hex = pickerHex(color);
+    picker.value = hex;
+    hexInput.value = hex;
+    swatches.querySelectorAll('.color-swatch').forEach(s => {
       s.classList.toggle('selected', s.dataset.color.toLowerCase() === color.toLowerCase());
     });
-    // Update preview
-    const preview = document.getElementById('modalPreview');
-    preview.style.borderColor = color;
     preview.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
     document.getElementById('modalPreviewTitle').style.color = color;
     document.getElementById('modalPreviewEmoji').textContent = document.getElementById('emojiDisplay').textContent;
