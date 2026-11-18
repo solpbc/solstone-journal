@@ -2193,6 +2193,108 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(reads() === readsBefore, `no read after: ${reads() - readsBefore}`);
   });
 
+  // A default's description, instructions and remove, on a facet that shows
+  // every default: what the page does with the journal's answer, a refusal (as
+  // a facet that stores none answered before) or a save.
+  const DEFAULTS_SHOWN = ['meeting', 'coding', 'email'];
+  const listGets = (p) => p.calls.filter((c) => c.method === 'GET' && c.url === `/app/settings/api/facet/${SLUG}/activities`).length;
+  const failed = (p) => p.notices.filter((notice) => notice.icon === 'circle-x').length;
+  const NOT_FOUND = [{ error: 'activity not found', reason_code: 'activity_not_found' }, 404];
+  // A double-click opens the field's edit; its input takes focus.
+  function openEdit(p, kind, id) {
+    const made = p.doc.createElement.bind(p.doc);
+    p.doc.createElement = (tag) => { const el = editable(made(tag)); blurFires(p, el); return el; };
+    const field = p.qa(`#attachedActivitiesList .activity-${kind}-editable`).find((el) => el.dataset.id === id);
+    p.press(field);
+    p.press(field);
+    const input = p.q('#attachedActivitiesList .activity-desc-input');
+    assert.ok(input && p.doc.activeElement === input, `editing: ${at(p)}`);
+    return { field, input };
+  }
+  const editedTo = async (p, kind, id, text, answer, leave = 'Enter') => {
+    const url = `/app/settings/api/facet/${SLUG}/activities/${id}`;
+    const held = holdGranola(p, 'PUT', url);
+    const { field, input } = openEdit(p, kind, id);
+    const gets = listGets(p);
+    const next = priorityOf(p, id);
+    input.value = text;
+    if (leave === 'Enter') p.key(input, 'Enter');
+    else { next.focus(); p.doc.dispatch(input, { type: 'blur', bubbles: false }); }
+    await settle();
+    held.release(...answer);
+    await settle();
+    return { field, next, gets, puts: writesTo(p, 'PUT', url) };
+  };
+  for (const [kind, key] of [['desc', 'description'], ['instructions', 'instructions']]) {
+    await test(`a default's ${key} edit, then Enter: refused, one PUT, the list drawn again and focus on the page; saved, one PUT, nothing drawn again, the text kept`, async () => {
+      {
+        const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+        const { field, gets, puts } = await editedTo(p, kind, 'coding', 'mine', NOT_FOUND);
+        assert.ok(puts.length === 1 && JSON.stringify(JSON.parse(puts[0].body)) === JSON.stringify({ [key]: 'mine' }), `one PUT of the ${key}: ${puts.length}`);
+        assert.ok(failed(p) === 1, `a failure notice: ${failed(p)}`);
+        assert.ok(listGets(p) === gets + 1 && !field.isConnected, `drawn again: ${listGets(p) - gets}`);
+        assert.ok(p.doc.activeElement === p.doc.body, `focus on the page: ${at(p)}`);
+      }
+      {
+        const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+        const { field, gets, puts } = await editedTo(p, kind, 'coding', 'mine', [{ success: true, activity: ACT('coding', { [key]: 'mine' }) }, 200]);
+        assert.ok(puts.length === 1, `one PUT: ${puts.length}`);
+        assert.ok(failed(p) === 0, `no failure notice: ${failed(p)}`);
+        assert.ok(listGets(p) === gets && field.isConnected && field.textContent === 'mine', `not drawn again, the text kept: ${listGets(p) - gets}`);
+        assert.ok(p.doc.activeElement === p.doc.body, `focus on the page: ${at(p)}`);
+      }
+    });
+  }
+
+  await test("a default's description edit, then Tab to its priority: refused, focus on that priority drawn again; saved, on the same priority, nothing drawn again", async () => {
+    {
+      const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+      const { next, gets, puts } = await editedTo(p, 'desc', 'coding', 'mine', NOT_FOUND, 'Tab');
+      const again = priorityOf(p, 'coding');
+      assert.ok(puts.length === 1 && listGets(p) === gets + 1, `one PUT, drawn again: ${puts.length} ${listGets(p) - gets}`);
+      assert.ok(again !== next && p.doc.activeElement === again, `the priority drawn again: ${at(p)}`);
+    }
+    {
+      const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+      const { next, gets, puts } = await editedTo(p, 'desc', 'coding', 'mine', [{ success: true, activity: ACT('coding', { description: 'mine' }) }, 200], 'Tab');
+      assert.ok(puts.length === 1 && listGets(p) === gets, `one PUT, not drawn again: ${puts.length} ${listGets(p) - gets}`);
+      assert.ok(priorityOf(p, 'coding') === next && p.doc.activeElement === next, `the same priority: ${at(p)}`);
+    }
+  });
+
+  await test("a default's remove: refused, one DELETE, nothing drawn again and focus kept on it; saved, one DELETE, drawn again and focus on the next row's priority", async () => {
+    const url = `/app/settings/api/facet/${SLUG}/activities/coding`;
+    {
+      const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+      const held = holdGranola(p, 'DELETE', url);
+      const remove = removeOf(p, 'coding');
+      const gets = listGets(p);
+      remove.focus();
+      p.press(remove);
+      await settle();
+      held.release(...NOT_FOUND);
+      await settle();
+      assert.ok(writesTo(p, 'DELETE', url).length === 1 && failed(p) === 1, `one DELETE, a failure notice: ${failed(p)}`);
+      assert.ok(listGets(p) === gets && removeOf(p, 'coding') === remove, `not drawn again: ${listGets(p) - gets}`);
+      assert.ok(p.doc.activeElement === remove && remove.getAttribute('aria-busy') === null, `kept on the remove: ${at(p)}`);
+    }
+    {
+      const p = await activitiesPage({ attached: DEFAULTS_SHOWN, defaults: DEFAULTS_SHOWN });
+      const held = holdGranola(p, 'DELETE', url);
+      const remove = removeOf(p, 'coding');
+      const gets = listGets(p);
+      remove.focus();
+      p.press(remove);
+      await settle();
+      p.take('coding');
+      held.release({ success: true }, 200);
+      await settle();
+      assert.ok(writesTo(p, 'DELETE', url).length === 1 && failed(p) === 0, `one DELETE, no failure notice: ${failed(p)}`);
+      assert.ok(listGets(p) === gets + 1 && !removeOf(p, 'coding'), `drawn again without it: ${listGets(p) - gets}`);
+      assert.ok(p.doc.activeElement === priorityOf(p, 'email'), `the next row: ${at(p)} ${p.doc.activeElement.dataset?.id}`);
+    }
+  });
+
   await test('a default activity adds by Enter or Space, once while out, and lands on the next one left to add, else on "add custom activity"', async () => {
     const p = await activitiesPage({ attached: [], defaults: ['a1', 'a2'] });
     const held = holdGranola(p, 'POST', `/app/settings/api/facet/${SLUG}/activities`);
