@@ -22,6 +22,7 @@ use solstone_core_memory_original::{OriginalRead, read_original};
 
 mod percept_absence;
 mod possible_name_labels;
+mod screen_age;
 mod segment_page;
 mod speaker_coordinates;
 #[cfg(test)]
@@ -353,6 +354,8 @@ struct Segment {
 enum PerceptProjection {
     Generic,
     ScreenTalent,
+    /// Generic, with screen lines marked by how long they have been showing.
+    StoryScreenAge,
     TerminalSense,
     SpeechEvidence,
 }
@@ -562,7 +565,7 @@ fn cluster_period_with_projection_and_memory(
             memory,
         );
     };
-    let entries = process_segment(root, &segment, day, sources, projection, &mut memory);
+    let entries = process_segment(root, &segment, day, sources, projection, &mut memory, None);
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -602,6 +605,26 @@ pub fn cluster_span_with_memory(
         sources,
         stream,
         PerceptProjection::Generic,
+    )
+}
+
+/// [`cluster_span_with_memory`] for an activity's story: a screen line already
+/// shown in an earlier frame of the same capture, the stream's segment before
+/// the activity included, is marked by when it first showed.
+pub fn cluster_span_with_screen_age_with_memory(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
+    cluster_span_with_projection_and_memory(
+        root,
+        day,
+        span,
+        sources,
+        stream,
+        PerceptProjection::StoryScreenAge,
     )
 }
 
@@ -729,10 +752,31 @@ fn span_entries(
             missing.join(", ")
         ));
     }
+    let marked = (projection == PerceptProjection::StoryScreenAge && sources.percepts).then(|| {
+        let prior = found.first().and_then(|first| {
+            all_segments(root, day)
+                .into_iter()
+                .filter(|segment| segment.stream == first.stream && segment.key < first.key)
+                .max_by(|left, right| left.key.cmp(&right.key))
+        });
+        screen_age::mark_span(day, prior.as_ref(), &found, |name| {
+            PerceptFamily::Screen.matches(name)
+        })
+    });
     let mut memory = MemoryContext::default();
     let mut entries = found
         .iter()
-        .flat_map(|segment| process_segment(root, segment, day, sources, projection, &mut memory))
+        .flat_map(|segment| {
+            process_segment(
+                root,
+                segment,
+                day,
+                sources,
+                projection,
+                &mut memory,
+                marked.as_ref(),
+            )
+        })
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok((entries, memory))
@@ -788,6 +832,7 @@ pub fn cluster_range(
                 sources,
                 PerceptProjection::Generic,
                 &mut memory,
+                None,
             )
         })
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
@@ -809,7 +854,7 @@ fn load_day(
 ) -> Vec<Entry> {
     let mut entries = all_segments(root, day)
         .into_iter()
-        .flat_map(|segment| process_segment(root, &segment, day, sources, projection, memory))
+        .flat_map(|segment| process_segment(root, &segment, day, sources, projection, memory, None))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     entries
@@ -822,6 +867,7 @@ fn process_segment(
     sources: &Sources,
     projection: PerceptProjection,
     memory: &mut MemoryContext,
+    marked: Option<&BTreeMap<PathBuf, String>>,
 ) -> Vec<Entry> {
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
@@ -1106,8 +1152,18 @@ fn process_segment(
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| PerceptFamily::Screen.matches(name))
         }) {
-            if let Some(content) =
-                raw_content(path, segment, day, RawPerceptFamily::RawScreen, projection)
+            let content = match marked.and_then(|marked| marked.get(path)) {
+                Some(text) => raw_content_of(
+                    path,
+                    text.clone(),
+                    segment,
+                    day,
+                    RawPerceptFamily::RawScreen,
+                    projection,
+                ),
+                None => raw_content(path, segment, day, RawPerceptFamily::RawScreen, projection),
+            };
+            if let Some(content) = content
                 && !content.text.is_empty()
             {
                 let mut projected = entry(
@@ -1365,6 +1421,55 @@ fn raw_content_with_speakers(
         }
     };
     let source_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
+    raw_content_from_text(
+        path,
+        text,
+        source_sha256,
+        segment,
+        day,
+        family,
+        projection,
+        numbers,
+        speakers,
+    )
+}
+
+/// [`raw_content`] of text prepared from the file at `path`; the source stays
+/// identified by the file's own bytes.
+fn raw_content_of(
+    path: &Path,
+    text: String,
+    segment: &Segment,
+    day: &str,
+    family: RawPerceptFamily,
+    projection: PerceptProjection,
+) -> Option<RawContent> {
+    let source_sha256 = format!("{:x}", Sha256::digest(fs::read(path).ok()?));
+    raw_content_from_text(
+        path,
+        text,
+        source_sha256,
+        segment,
+        day,
+        family,
+        projection,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raw_content_from_text(
+    path: &Path,
+    text: String,
+    source_sha256: String,
+    segment: &Segment,
+    day: &str,
+    family: RawPerceptFamily,
+    projection: PerceptProjection,
+    numbers: Option<&BTreeMap<i64, i64>>,
+    speakers: Option<&BTreeMap<i64, String>>,
+) -> Option<RawContent> {
     let text = match numbers {
         Some(numbers) => text
             .lines()

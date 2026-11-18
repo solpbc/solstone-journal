@@ -18,7 +18,8 @@ use solstone_core_transcripts::{
     EntrySource, MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, TranscriptLayout,
     VoiceNames, cluster_for_screen_talent_with_memory,
     cluster_period_for_screen_talent_with_memory, cluster_period_with_memory,
-    cluster_span_for_screen_talent_with_memory, cluster_span_with_memory, cluster_with_memory,
+    cluster_span_for_screen_talent_with_memory, cluster_span_with_memory,
+    cluster_span_with_screen_age_with_memory, cluster_with_memory,
 };
 
 pub(crate) struct LoadedTranscript {
@@ -234,9 +235,26 @@ pub(crate) fn load_transcript(
         .and_then(Value::as_array)
         .map(|span| span.iter().filter_map(Value::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
+    // A work story reads each screen line marked by how long it has been
+    // showing, so a line that stays put is not told as happening again. Only
+    // over the activity's whole span: one of its segments read alone would
+    // count the activity's own earlier segment as before it began.
+    let screen_age = composed.get("name").and_then(Value::as_str) == Some("work")
+        && composed
+            .get("activity")
+            .and_then(|activity| activity.get("segments"))
+            .and_then(Value::as_array)
+            .is_some_and(|segments| {
+                segments
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .eq(span.iter().copied())
+            });
     let (transcript, counts, memory) = if !span.is_empty() {
         if screen_projection {
             cluster_span_for_screen_talent_with_memory(journal, day, &span, &sources, stream)
+        } else if screen_age {
+            cluster_span_with_screen_age_with_memory(journal, day, &span, &sources, stream)
         } else {
             cluster_span_with_memory(journal, day, &span, &sources, stream)
         }?
@@ -461,6 +479,52 @@ mod tests {
             loaded.text.contains("Terminal session 'main'"),
             "{}",
             loaded.text
+        );
+    }
+
+    #[test]
+    fn only_a_work_story_over_its_whole_activity_reads_screen_lines_marked_by_age() {
+        let journal = TempDir::new().unwrap();
+        for (segment, seconds) in [
+            ("095500_300", 30.0),
+            ("100000_300", 30.0),
+            ("100500_300", 30.0),
+        ] {
+            let dir = journal
+                .path()
+                .join("chronicle/20260101/laptop")
+                .join(segment);
+            fs::create_dir_all(&dir).unwrap();
+            let frame = json!({"frame_id": 1, "timestamp": seconds, "requests": [],
+                "analysis": {"visual_description": "A terminal", "primary": "terminal", "secondary": "none", "overlap": false},
+                "content": {"terminal": "$ chmod 000 notes"}});
+            fs::write(dir.join("center_DP-1_screen.jsonl"), format!("{frame}\n")).unwrap();
+        }
+        let activity = json!({"id": "terminal_100000", "segments": ["100000_300", "100500_300"], "stream": "laptop"});
+        let load = |name: &str, span: Value| {
+            let config = json!({"name": name, "day": "20260101", "span": span, "activity": activity, "sources": {"percepts": true}});
+            load_transcript(journal.path(), config.as_object().unwrap())
+                .unwrap()
+                .text
+        };
+        let whole = load("work", json!(["100000_300", "100500_300"]));
+        assert_eq!(
+            whole
+                .matches("(already on screen before this activity began) $ chmod")
+                .count(),
+            2,
+            "{whole}"
+        );
+        // One of the activity's segments read alone has no before to speak of.
+        let part = load("work", json!(["100500_300"]));
+        assert!(
+            !part.contains("already on screen") && !part.contains("unchanged since"),
+            "{part}"
+        );
+        let other = load("participation", json!(["100000_300", "100500_300"]));
+        assert!(
+            !other.contains("already on screen") && !other.contains("unchanged since"),
+            "{other}"
         );
     }
 
