@@ -41,7 +41,10 @@ pub fn load_bundle_from_file<'a, P: AsRef<Path>>(file_name: P) -> Result<BundleZ
     debug!("Loading bundle from file '{:?}'...", file_name);
     let file = misc::retry_io(|| File::open(file_name))?;
     let cursor: Box<dyn ReadSeek> = Box::new(file);
-    let zip = ZipArchive::new(cursor)?;
+    let zip = open_package_zip(cursor, || {
+        let file = misc::retry_io(|| File::open(file_name))?;
+        Ok(Box::new(file) as Box<dyn ReadSeek>)
+    })?;
     Ok(BundleZip {
         zip: Rc::new(RefCell::new(zip)),
         zip_from_file: true,
@@ -49,6 +52,25 @@ pub fn load_bundle_from_file<'a, P: AsRef<Path>>(file_name: P) -> Result<BundleZ
         zip_range: None,
         manifest: None,
     })
+}
+
+/// Open a package archive at offset 0 before letting zip detect the offset.
+///
+/// zip 9.0.5 detects an archive's offset by scanning the file from its first
+/// byte to the central directory, so every open reads the whole package. The
+/// app's own startup opens each local full package (about 1.2 GB for the
+/// journal), and that read held every `solstone.exe` launch for seconds. A
+/// package written by Velopack starts at offset 0, which zip reads straight
+/// from the central directory; anything else still opens through detection.
+fn open_package_zip<'a>(
+    reader: Box<dyn ReadSeek + 'a>,
+    reopen: impl FnOnce() -> Result<Box<dyn ReadSeek + 'a>, Error>,
+) -> Result<ZipArchive<Box<dyn ReadSeek + 'a>>, Error> {
+    let at_start = zip::read::Config { archive_offset: zip::read::ArchiveOffset::Known(0) };
+    match ZipArchive::with_config(at_start, reader) {
+        Ok(zip) => Ok(zip),
+        Err(_) => Ok(ZipArchive::new(reopen()?)?),
+    }
 }
 
 pub fn load_bundle_from_memory<'a>(zip_range: &'a [u8]) -> Result<BundleZip<'a>, Error> {
@@ -653,4 +675,73 @@ Notes with special chars: & < > " '
     assert_eq!(manifest.machine_architecture, "x64");
     assert_eq!(manifest.channel, "stable");
     assert!(manifest.release_notes.contains("& < > \" '"));
+}
+
+#[cfg(test)]
+mod package_open_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::io::SeekFrom;
+    use std::rc::Rc as SharedCount;
+    use zip::write::SimpleFileOptions;
+
+    /// A reader that counts the bytes read through it.
+    struct Counting<R> {
+        inner: R,
+        read: SharedCount<Cell<u64>>,
+    }
+
+    impl<R: Read> Read for Counting<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.inner.read(buf)?;
+            self.read.set(self.read.get() + n as u64);
+            Ok(n)
+        }
+    }
+
+    impl<R: Seek> Seek for Counting<R> {
+        fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    /// A package with one large stored member ahead of its nuspec, as a full
+    /// package carries its payload ahead of the central directory.
+    fn package(prefix: &[u8]) -> Vec<u8> {
+        let mut out = Cursor::new(prefix.to_vec());
+        out.seek(SeekFrom::End(0)).unwrap();
+        let mut zip = zip::ZipWriter::new(out);
+        let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("lib/app/payload.bin", stored).unwrap();
+        zip.write_all(&vec![0x5a; 32 << 20]).unwrap();
+        zip.start_file("App.nuspec", stored).unwrap();
+        zip.write_all(b"<package/>").unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn open(bytes: Vec<u8>) -> (Result<ZipArchive<Box<dyn ReadSeek>>, Error>, u64) {
+        let read = SharedCount::new(Cell::new(0));
+        let first: Box<dyn ReadSeek> = Box::new(Counting { inner: Cursor::new(bytes.clone()), read: read.clone() });
+        let again = read.clone();
+        let zip = open_package_zip(first, move || {
+            Ok(Box::new(Counting { inner: Cursor::new(bytes), read: again }) as Box<dyn ReadSeek>)
+        });
+        (zip, read.get())
+    }
+
+    #[test]
+    fn a_package_opens_without_reading_its_payload() {
+        let (zip, read) = open(package(b""));
+        let zip = zip.unwrap();
+        assert_eq!(zip.len(), 2);
+        assert!(read < 1 << 20, "opening read {read} bytes of a 32 MiB package");
+    }
+
+    #[test]
+    fn a_package_after_other_bytes_still_opens() {
+        let (zip, _) = open(package(b"not part of the archive"));
+        let mut zip = zip.unwrap();
+        assert_eq!(zip.len(), 2);
+        assert!(zip.by_name("App.nuspec").is_ok());
+    }
 }
