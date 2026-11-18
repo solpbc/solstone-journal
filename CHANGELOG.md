@@ -26,7 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the names tab and search results show names alongside their context. screenshot entries show the caption without the category label.
 
-- work stories are less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
+- your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
 - the entities list shows every name again when the list is narrow, such as beside the folders on an ipad. before, the names could be pushed out of each row. rows also stop saying what kind of name each one is, since the folders already sort them that way.
 - on linux computers with arm processors, media offload no longer stops every run before it begins.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

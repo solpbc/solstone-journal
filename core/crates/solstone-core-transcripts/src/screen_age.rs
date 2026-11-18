@@ -22,18 +22,23 @@ use super::{Segment, segment_times};
 
 /// The mark on a line that showed before the activity's first segment.
 pub(crate) const BEFORE_ACTIVITY: &str = "(already on screen before this activity began) ";
+/// The mark on a line that showed before the segment a segment talent reads.
+pub(crate) const BEFORE_SEGMENT: &str = "(already on screen before this segment began) ";
 
 /// A line this short (a border, a lone bracket) carries no event worth marking.
 const MIN_MARKED_CHARS: usize = 3;
 
 /// The marked text of every screen capture file in `span`, by path. `prior` is
-/// the stream's segment just before the activity: its frames only say what
-/// was already showing.
+/// the stream's segment just before the span: its frames only say what was
+/// already showing, and a line from it reads `before`. With `terminals` off, a
+/// terminal capture's panes are left exactly as written.
 pub(crate) fn mark_span(
     day: &str,
     prior: Option<&Segment>,
     span: &[Segment],
     is_screen: impl Fn(&str) -> bool,
+    before: &'static str,
+    terminals: bool,
 ) -> BTreeMap<PathBuf, String> {
     let mut marked = BTreeMap::new();
     let Some(activity_start) = span
@@ -66,6 +71,8 @@ pub(crate) fn mark_span(
                 activity_start,
                 at: start,
                 mark: in_span,
+                before,
+                terminals,
             };
             let mut out = String::with_capacity(text.len());
             for line in text.lines() {
@@ -86,6 +93,8 @@ struct Ages<'a> {
     activity_start: NaiveDateTime,
     at: NaiveDateTime,
     mark: bool,
+    before: &'static str,
+    terminals: bool,
 }
 
 impl Ages<'_> {
@@ -102,14 +111,21 @@ impl Ages<'_> {
             return line.to_owned();
         };
         let mut seen = Vec::new();
+        let mut changed = false;
         for (category, value) in content.iter_mut() {
             match value {
-                Value::String(text) => *text = self.text(text, &mut seen),
-                Value::Object(tmux) if category == "tmux" => {
+                Value::String(text) => {
+                    let marked = self.text(text, &mut seen);
+                    changed |= marked != *text;
+                    *text = marked;
+                }
+                Value::Object(tmux) if category == "tmux" && self.terminals => {
                     if let Some(Value::Array(panes)) = tmux.get_mut("panes") {
                         for pane in panes.iter_mut().filter_map(Value::as_object_mut) {
                             if let Some(Value::String(text)) = pane.get_mut("content") {
-                                *text = self.text(text, &mut seen);
+                                let marked = self.text(text, &mut seen);
+                                changed |= marked != *text;
+                                *text = marked;
                             }
                         }
                     }
@@ -123,6 +139,9 @@ impl Ages<'_> {
             self.first_seen
                 .entry((self.file.clone(), line))
                 .or_insert(self.at);
+        }
+        if !changed {
+            return line.to_owned();
         }
         serde_json::to_string(&Value::Object(frame)).unwrap_or_else(|_| line.to_owned())
     }
@@ -143,7 +162,7 @@ impl Ages<'_> {
                 }
                 match first {
                     Some(first) if *first < self.activity_start => {
-                        format!("{BEFORE_ACTIVITY}{line}")
+                        format!("{}{line}", self.before)
                     }
                     Some(first) if *first < self.at => {
                         format!("(unchanged since {}) {line}", clock(*first))
@@ -214,7 +233,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        Sources, TalentSource, cluster_span_with_memory, cluster_span_with_screen_age_with_memory,
+        Sources, TalentSource, cluster_period_for_screen_talent, cluster_period_with_memory,
+        cluster_span_with_memory, cluster_span_with_screen_age_with_memory,
     };
 
     const DAY: &str = "20260101";
@@ -339,6 +359,83 @@ mod tests {
             !plain.text.contains("already on screen") && !plain.text.contains("unchanged since"),
             "{}",
             plain.text
+        );
+    }
+
+    #[test]
+    fn the_screen_record_reads_desktop_lines_from_the_segment_before_marked_and_terminals_as_they_were()
+     {
+        let root = TempDir::new().unwrap();
+        let file = "center_DP-1_screen.jsonl";
+        frames(
+            &root,
+            "095500_300",
+            file,
+            &[screen(30.0, json!({"terminal": "$ chmod 000 notes"}))],
+        );
+        frames(
+            &root,
+            "095500_300",
+            "tmux_kit_screen.jsonl",
+            &[tmux(40.0, "$ mv a b")],
+        );
+        frames(
+            &root,
+            "100000_300",
+            file,
+            &[
+                screen(
+                    40.0,
+                    json!({"code": "fn load() {}", "terminal": "$ chmod 000 notes"}),
+                ),
+                screen(
+                    200.0,
+                    json!({"code": "fn load() {}\n    validate()?;", "terminal": "$ chmod 000 notes"}),
+                ),
+            ],
+        );
+        frames(
+            &root,
+            "100000_300",
+            "tmux_kit_screen.jsonl",
+            &[tmux(10.0, "$ mv a b\n$ ls")],
+        );
+        let sources = Sources {
+            transcripts: false,
+            percepts: true,
+            talents: TalentSource::Disabled,
+            voices: None,
+            heard_owner: None,
+            strava_tiles: false,
+        };
+        let (record, _) = cluster_period_for_screen_talent(
+            root.path(),
+            DAY,
+            "100000_300",
+            &sources,
+            Some("laptop"),
+        );
+        let record = record.text;
+        assert_eq!(
+            record
+                .matches("(already on screen before this segment began) $ chmod 000 notes")
+                .count(),
+            2,
+            "{record}"
+        );
+        assert!(
+            record.contains("(unchanged since 10:00 AM) fn load() {}"),
+            "{record}"
+        );
+        assert!(!record.contains("this activity began"), "{record}");
+        // The terminal reading marks earlier work itself: its capture is read as written.
+        assert!(!record.contains(") $ mv a b"), "{record}");
+        let (other, _, _) =
+            cluster_period_with_memory(root.path(), DAY, "100000_300", &sources, Some("laptop"));
+        assert!(
+            !other.text.contains("already on screen") && !other.text.contains("unchanged since"),
+            "{}",
+            other.text
         );
     }
 }

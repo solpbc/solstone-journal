@@ -565,7 +565,32 @@ fn cluster_period_with_projection_and_memory(
             memory,
         );
     };
-    let entries = process_segment(root, &segment, day, sources, projection, &mut memory, None);
+    // The screen talent reads a desktop line already showing in the stream's
+    // segment before, or unchanged since an earlier frame, marked by when it
+    // first showed. Its terminal reading marks earlier work on its own.
+    let marked = (projection == PerceptProjection::ScreenTalent && sources.percepts).then(|| {
+        let prior = all_segments(root, day)
+            .into_iter()
+            .filter(|other| other.stream == segment.stream && other.key < segment.key)
+            .max_by(|left, right| left.key.cmp(&right.key));
+        screen_age::mark_span(
+            day,
+            prior.as_ref(),
+            std::slice::from_ref(&segment),
+            |name| PerceptFamily::Screen.matches(name),
+            screen_age::BEFORE_SEGMENT,
+            false,
+        )
+    });
+    let entries = process_segment(
+        root,
+        &segment,
+        day,
+        sources,
+        projection,
+        &mut memory,
+        marked.as_ref(),
+    );
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -759,9 +784,14 @@ fn span_entries(
                 .filter(|segment| segment.stream == first.stream && segment.key < first.key)
                 .max_by(|left, right| left.key.cmp(&right.key))
         });
-        screen_age::mark_span(day, prior.as_ref(), &found, |name| {
-            PerceptFamily::Screen.matches(name)
-        })
+        screen_age::mark_span(
+            day,
+            prior.as_ref(),
+            &found,
+            |name| PerceptFamily::Screen.matches(name),
+            screen_age::BEFORE_ACTIVITY,
+            true,
+        )
     });
     let mut memory = MemoryContext::default();
     let mut entries = found
