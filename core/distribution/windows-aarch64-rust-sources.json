@@ -19578,7 +19578,7 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "4140b1a2e02fc36b4e5daec7779a97219ebe02e55999a410a373970ae28fd64c"
   },
   "schema": "solstone.rust-notices.v1",
   "shipped_feature_arguments": [

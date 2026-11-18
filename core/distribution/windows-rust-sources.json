@@ -1,9 +1,9 @@
 {
   "cargo_lock_sha256": "0ef056b00a7c10775b0b516ca8d1b4b77c98b6aa1db7d207f96cfe2a6837051f",
   "dependency_source_companion": {
-    "bytes": 103074696,
-    "filename": "windows-rust-dependencies-0ef056b00a7c1077.tar.gz",
-    "sha256": "7725bb2f907f3531efbc5ebea310d349d780228a450edbe17ffd1732e67dbb0c"
+    "bytes": 100907764,
+    "filename": "windows-rust-dependencies-0ef056b00a7c1077-4140b1a2e02f.tar.gz",
+    "sha256": "7991b91651a0005a0b1611aceac7a04c108fbe3ffab955f8b3450f5a00503921"
   },
   "notice_texts": [
     {
@@ -29000,7 +29000,7 @@
           }
         }
       ],
-      "patched_tree_sha256": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba",
+      "patched_tree_sha256": "4140b1a2e02fc36b4e5daec7779a97219ebe02e55999a410a373970ae28fd64c",
       "source": "path+core/vendor/velopack",
       "source_tree_member": "path-dependencies/velopack/",
       "version": "1.2.0",
@@ -29008,7 +29008,7 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "4140b1a2e02fc36b4e5daec7779a97219ebe02e55999a410a373970ae28fd64c"
   },
   "population": {
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
