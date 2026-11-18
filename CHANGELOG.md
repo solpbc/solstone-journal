@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
+- a facet's color now updates when you choose a swatch and press "apply color".
 - the names tab and search results show names alongside their context. screenshot entries show the caption without the category label.
 
 - your journal is less likely to describe an old command or message that stays on your screen, like one in a terminal you left open, as something you just did.
