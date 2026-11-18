@@ -274,11 +274,13 @@ nix = { workspace = true, features = ["signal"] }
 sha2.workspace = true
 serde_json.workspace = true
 # The app table is generated from the registry's own source, and the shell's
-# files are gzipped once at build time instead of on every request.
+# files are compressed once at build time instead of on every request.
 serde.workspace = true
 flate2.workspace = true
+brotli.workspace = true
 
 [dev-dependencies]
+brotli.workspace = true
 flate2.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 regex.workspace = true

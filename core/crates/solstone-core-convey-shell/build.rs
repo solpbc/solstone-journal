@@ -455,6 +455,35 @@ fn gzip(bytes: &[u8]) -> Vec<u8> {
     encoder.finish().expect("gzip finishes")
 }
 
+// These files carry most of the cold Home transfer. Limit the extra copies to
+// this path and leave dynamic responses and other static assets on gzip.
+const BROTLI_ASSETS: &[&str] = &[
+    SHELL_SCRIPT_BUNDLE,
+    SHELL_STYLE_BUNDLE,
+    "/app/home/static/home.js",
+    "/app/home/workspace",
+    "/static/vendor/marked/marked.min.js",
+    "/static/vendor/dompurify/dompurify.min.js",
+];
+
+fn brotli(mut bytes: &[u8]) -> Vec<u8> {
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: 11,
+        size_hint: bytes.len(),
+        ..Default::default()
+    };
+    let mut packed = Vec::new();
+    brotli::BrotliCompress(&mut bytes, &mut packed, &params).expect("Brotli copy compresses");
+    packed
+}
+
+fn compressed_asset_field(file: PathBuf, packed: Vec<u8>) -> String {
+    if fs::read(&file).ok().as_deref() != Some(packed.as_slice()) {
+        fs::write(&file, &packed).expect("compressed asset copy writes");
+    }
+    format!("include_bytes!({file:?})")
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     File,
@@ -769,6 +798,8 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
 
     let gzip_directory = output.join("gzip");
     fs::create_dir_all(&gzip_directory).expect("gzip directory");
+    let brotli_directory = output.join("brotli");
+    fs::create_dir_all(&brotli_directory).expect("Brotli directory");
     let mut generated = String::from("pub static INVENTORY: &[AssetRecord] = &[\n");
     let mut hashed_index = Vec::new();
     for (position, record) in records.iter().enumerate() {
@@ -780,27 +811,27 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
         if let Some(hashed) = &hashed {
             hashed_index.push((hashed.clone(), position));
         }
-        let (etag, gzip_bytes) = match record.kind {
+        let mut gzip_field = "&[]".to_owned();
+        let mut brotli_field = "&[]".to_owned();
+        let etag = match record.kind {
             Kind::File => {
                 let served = served_of(record, &hashes);
-                let tag = format!("\"{}\"", &format!("{:x}", Sha256::digest(&served))[..32]);
                 // Compressed once here, so no request spends a worker on it.
-                let packed = (compressible(&record.content_type) && served.len() >= GZIP_MIN_BYTES)
-                    .then(|| {
-                        let file = gzip_directory.join(format!("{position}.gz"));
-                        let packed = gzip(&served);
-                        if fs::read(&file).ok().as_deref() != Some(packed.as_slice()) {
-                            fs::write(&file, &packed).expect("gzip copy writes");
-                        }
-                        file
-                    });
-                (tag, packed)
+                if compressible(&record.content_type) && served.len() >= GZIP_MIN_BYTES {
+                    gzip_field = compressed_asset_field(
+                        gzip_directory.join(format!("{position}.gz")),
+                        gzip(&served),
+                    );
+                    if BROTLI_ASSETS.contains(&record.route.as_str()) {
+                        brotli_field = compressed_asset_field(
+                            brotli_directory.join(format!("{position}.br")),
+                            brotli(&served),
+                        );
+                    }
+                }
+                format!("\"{}\"", &format!("{:x}", Sha256::digest(&served))[..32])
             }
-            Kind::Template | Kind::Dynamic => (String::new(), None),
-        };
-        let gzip_field = match &gzip_bytes {
-            Some(file) => format!("include_bytes!({file:?})"),
-            None => "&[]".to_owned(),
+            Kind::Template | Kind::Dynamic => String::new(),
         };
         let edits: Vec<String> = edits_of(record, &hashes)
             .iter()
@@ -812,7 +843,7 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
             Kind::Dynamic => "AssetKind::Dynamic",
         };
         generated.push_str(&format!(
-            "    AssetRecord {{ path: {:?}, content_type: {:?}, byte_len: {}, sha256: {raw:?}, kind: {kind}, tree: {:?}, hashed: {:?}, etag: {etag:?}, edits: &[{}], gzip: {gzip_field}, #[cfg(test)] bytes: include_bytes!({:?}) }},\n",
+            "    AssetRecord {{ path: {:?}, content_type: {:?}, byte_len: {}, sha256: {raw:?}, kind: {kind}, tree: {:?}, hashed: {:?}, etag: {etag:?}, edits: &[{}], gzip: {gzip_field}, brotli: {brotli_field}, #[cfg(test)] bytes: include_bytes!({:?}) }},\n",
             record.route,
             record.content_type,
             record.bytes.len(),

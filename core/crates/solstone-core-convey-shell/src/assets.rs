@@ -40,6 +40,8 @@ pub struct AssetRecord {
     /// The served bytes gzipped at build time, for a compressible `File` the
     /// server would gzip anyway; empty otherwise.
     pub gzip: &'static [u8],
+    /// The Brotli copy of a cold Home asset; empty for every other asset.
+    pub brotli: &'static [u8],
     #[cfg(test)]
     pub bytes: &'static [u8],
 }

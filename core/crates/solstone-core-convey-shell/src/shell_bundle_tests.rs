@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! The two-file shell: the bundles, the app table they carry, the build-time
-//! gzip copies, and `/api/shell`'s per-request part. Answers go through the
+//! compressed copies, and `/api/shell`'s per-request part. Answers go through the
 //! same layers a connection serves them with, compression included.
 
 use std::collections::BTreeSet;
@@ -540,8 +540,15 @@ async fn every_precompressed_answer_is_the_plain_answer_with_its_validators() {
             plain_headers.get(header::CONTENT_ENCODING).is_none(),
             "{path}"
         );
-        let (status, headers, packed) =
-            get(&app, path, &[("accept-encoding", "gzip, deflate, br")]).await;
+        let has_brotli = assets::record(path)
+            .or_else(|| assets::hashed_record(path))
+            .is_some_and(|record| !record.brotli.is_empty());
+        let offer = if has_brotli {
+            "gzip, deflate"
+        } else {
+            "gzip, deflate, br"
+        };
+        let (status, headers, packed) = get(&app, path, &[("accept-encoding", offer)]).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         assert_eq!(headers[header::CONTENT_ENCODING], "gzip", "{path}");
         assert_eq!(gunzip(&packed), plain, "{path}");
@@ -565,7 +572,12 @@ async fn every_precompressed_answer_is_the_plain_answer_with_its_validators() {
                 "{path}"
             );
             assert_eq!(plain_headers[header::ETAG], *etag, "{path}");
-            for held in [etag.to_string(), format!("\"{opaque}-gzip\"")] {
+            let gzip_tag = format!("\"{opaque}-gzip\"");
+            let mut held_tags = vec![gzip_tag];
+            if !has_brotli {
+                held_tags.push(etag.to_string());
+            }
+            for held in held_tags {
                 let (status, headers, body) = get(
                     &app,
                     path,
@@ -583,6 +595,97 @@ async fn every_precompressed_answer_is_the_plain_answer_with_its_validators() {
         checked += 1;
     }
     assert!(checked > 100, "{checked}");
+}
+
+#[tokio::test]
+async fn home_assets_negotiate_brotli_without_changing_the_decoded_bytes() {
+    let journal = established_journal();
+    let app = served(journal.path());
+    for stable in [
+        "/static/shell.js",
+        "/static/shell.css",
+        "/app/home/static/home.js",
+        "/app/home/workspace",
+        "/static/vendor/marked/marked.min.js",
+        "/static/vendor/dompurify/dompurify.min.js",
+    ] {
+        let record = assets::record(stable).unwrap();
+        for path in [Some(stable), record.hashed].into_iter().flatten() {
+            let (status, plain_headers, plain) = get(&app, path, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(
+                !plain_headers.contains_key(header::CONTENT_ENCODING),
+                "{path}"
+            );
+            let (status, headers, packed) =
+                get(&app, path, &[("accept-encoding", "gzip, br")]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert_eq!(headers[header::CONTENT_ENCODING], "br", "{path}");
+            assert_eq!(headers[header::CONTENT_LENGTH], packed.len().to_string());
+            assert_eq!(headers[header::VARY], "accept-encoding");
+            assert_eq!(
+                headers[header::CACHE_CONTROL],
+                plain_headers[header::CACHE_CONTROL]
+            );
+            one_line_per_header(path, &headers);
+            let mut decoded = Vec::new();
+            brotli::Decompressor::new(packed.as_slice(), 4096)
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, plain, "{path}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn home_asset_validators_follow_the_negotiated_representation() {
+    let journal = established_journal();
+    let app = served(journal.path());
+    let path = "/app/home/workspace";
+    let mut tags = BTreeSet::new();
+    for (offer, expected) in [
+        ("gzip;q=1, br;q=0.5", Some("gzip")),
+        ("gzip;q=0.5, br;q=0.5", Some("br")),
+        ("gzip, br;q=0", Some("gzip")),
+        ("br;q=0.5, gzip;q=0, identity", None),
+        ("BR", Some("br")),
+        ("*", None),
+    ] {
+        let (status, headers, _) = get(&app, path, &[("accept-encoding", offer)]).await;
+        assert_eq!(status, StatusCode::OK, "{offer}");
+        assert_eq!(
+            headers
+                .get(header::CONTENT_ENCODING)
+                .map(|value| value.to_str().unwrap()),
+            expected,
+            "{offer}"
+        );
+        assert_eq!(headers[header::VARY], "accept-encoding", "{offer}");
+        let tag = headers[header::ETAG].to_str().unwrap().to_owned();
+        tags.insert(tag.clone());
+        let weak_tag = format!("W/{tag}");
+        let (status, revalidated, body) = get(
+            &app,
+            path,
+            &[("accept-encoding", offer), ("if-none-match", &weak_tag)],
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED, "{offer}");
+        assert!(body.is_empty());
+        assert_eq!(revalidated[header::ETAG], tag);
+        assert_eq!(revalidated[header::VARY], "accept-encoding");
+        assert!(!revalidated.contains_key(header::CONTENT_ENCODING));
+        one_line_per_header(path, &revalidated);
+        let other_offer = if expected == Some("br") { "gzip" } else { "br" };
+        let (status, _, _) = get(
+            &app,
+            path,
+            &[("accept-encoding", other_offer), ("if-none-match", &tag)],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{offer} changed to {other_offer}");
+    }
+    assert_eq!(tags.len(), 3);
 }
 
 // The answer to "would the server gzip this?" is the compression layer's own,

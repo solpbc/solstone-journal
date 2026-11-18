@@ -128,21 +128,28 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     let head = *request.method() == Method::HEAD;
     let path = request.uri().path().to_owned();
     let validators = request.headers().get(IF_NONE_MATCH).cloned();
-    let gzip = !head && accepts_gzip(request.headers());
+    let hashed = assets::hashed_record(&path);
+    let record = hashed.or_else(|| assets::record(&path));
+    let has_brotli = record.is_some_and(|record| !record.brotli.is_empty());
+    let encoding = if head {
+        None
+    } else {
+        preferred_encoding(request.headers(), has_brotli)
+    };
     let response = next.run(request).await;
     if !readable || response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
     }
-    if let Some(record) = assets::hashed_record(&path) {
+    if let Some(record) = hashed {
         let response = served(record, head, response).await;
-        return precompressed(record, gzip, classed(response, CacheClass::Hashed));
+        return precompressed(record, encoding, classed(response, CacheClass::Hashed));
     }
-    let Some(record) = assets::record(&path) else {
+    let Some(record) = record else {
         return match shell_page(response).await {
             Ok((response, tag)) => {
                 let response = revalidated(response, tag, validators.as_ref());
                 match assets::record("/static/shell.html") {
-                    Some(page) => precompressed(page, gzip, response),
+                    Some(page) => precompressed(page, encoding, response),
                     None => response,
                 }
             }
@@ -158,18 +165,36 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     if response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
     }
+    if has_brotli {
+        let response = precompressed(record, encoding, response);
+        return revalidated_variant(response, &tag, validators.as_ref());
+    }
     let response = revalidated(response, &tag, validators.as_ref());
     match record.kind {
-        AssetKind::File => precompressed(record, gzip, response),
+        AssetKind::File => precompressed(record, encoding, response),
         _ => response,
     }
 }
 
-/// Whether the server's compression layer would gzip an answer to these
-/// request headers: the same rule (`gzip` or `x-gzip` with a nonzero q-value,
-/// preferred over `identity` at an equal q-value). Kept in step with it by a
-/// test that asks both the same questions.
-pub(crate) fn accepts_gzip(headers: &HeaderMap) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Encoding {
+    Gzip,
+    Brotli,
+}
+
+impl Encoding {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Gzip => "gzip",
+            Self::Brotli => "br",
+        }
+    }
+}
+
+/// Brotli needs an explicit offer and wins ties with gzip. The gzip and
+/// identity choice otherwise follows the server's gzip compression layer.
+fn preferred_encoding(headers: &HeaderMap, has_brotli: bool) -> Option<Encoding> {
+    let mut brotli: Option<u16> = None;
     let mut gzip: Option<u16> = None;
     let mut identity: Option<u16> = None;
     for value in headers.get_all(ACCEPT_ENCODING) {
@@ -185,6 +210,8 @@ pub(crate) fn accepts_gzip(headers: &HeaderMap) -> bool {
             let slot =
                 if coding.eq_ignore_ascii_case("gzip") || coding.eq_ignore_ascii_case("x-gzip") {
                     &mut gzip
+                } else if has_brotli && coding.eq_ignore_ascii_case("br") {
+                    &mut brotli
                 } else if coding.eq_ignore_ascii_case("identity") {
                     &mut identity
                 } else {
@@ -193,10 +220,21 @@ pub(crate) fn accepts_gzip(headers: &HeaderMap) -> bool {
             *slot = Some(slot.map_or(quality, |seen| seen.max(quality)));
         }
     }
-    match gzip {
-        Some(gzip) if gzip > 0 => identity.is_none_or(|identity| gzip >= identity),
-        _ => false,
+    let gzip = gzip.unwrap_or_default();
+    let brotli = brotli.unwrap_or_default();
+    let identity = identity.unwrap_or_default();
+    if brotli > 0 && brotli >= gzip && brotli >= identity {
+        Some(Encoding::Brotli)
+    } else if gzip > 0 && gzip >= identity {
+        Some(Encoding::Gzip)
+    } else {
+        None
     }
+}
+
+#[cfg(test)]
+pub(crate) fn accepts_gzip(headers: &HeaderMap) -> bool {
+    preferred_encoding(headers, false) == Some(Encoding::Gzip)
 }
 
 /// A q-value in thousandths, as `q=0.5` or `q=1`; `None` if malformed.
@@ -240,37 +278,63 @@ fn served_length(record: &AssetRecord) -> usize {
         })
 }
 
-/// Answer with the file's build-time gzip copy where the server would
-/// otherwise gzip the same bytes now. The compression layer passes an encoded
-/// answer through, and marks its validator `-gzip` as it would its own.
-fn precompressed(record: &AssetRecord, gzip: bool, response: Response) -> Response {
+/// Serve a build-time encoding only for a complete, unencoded file. The
+/// compression layer passes encoded answers through and tags their validator.
+fn precompressed(
+    record: &AssetRecord,
+    encoding: Option<Encoding>,
+    mut response: Response,
+) -> Response {
     let headers = response.headers();
-    if !gzip
-        || record.gzip.is_empty()
-        || response.status() != StatusCode::OK
+    if response.status() != StatusCode::OK
         || headers.contains_key(CONTENT_ENCODING)
         || headers.contains_key(CONTENT_RANGE)
         || !solstone_core_convey_http::serve::compressible_content_type(headers)
-        || exact_length(&response) != Some(served_length(record))
     {
         return response;
     }
-    let (mut parts, _) = response.into_parts();
-    let already_varies = parts.headers.get_all(VARY).iter().any(|value| {
-        value
-            .to_str()
-            .is_ok_and(|value| value.to_ascii_lowercase().contains("accept-encoding"))
+    let packed = encoding.and_then(|encoding| {
+        let bytes = match encoding {
+            Encoding::Gzip => record.gzip,
+            Encoding::Brotli => record.brotli,
+        };
+        (!bytes.is_empty() && exact_length(&response) == Some(served_length(record)))
+            .then_some((encoding, bytes))
     });
-    if !already_varies {
-        parts
-            .headers
-            .append(VARY, HeaderValue::from_static("accept-encoding"));
+    if packed.is_some() || !record.brotli.is_empty() {
+        vary_encoding(response.headers_mut());
     }
+    let Some((encoding, packed)) = packed else {
+        return response;
+    };
+    let (mut parts, _) = response.into_parts();
     parts.headers.remove(ACCEPT_RANGES);
     parts
         .headers
-        .insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
-    with_body(parts, Bytes::from_static(record.gzip))
+        .insert(CONTENT_ENCODING, HeaderValue::from_static(encoding.name()));
+    with_body(parts, Bytes::from_static(packed))
+}
+
+/// Some native clients require a single field line per header name.
+fn vary_encoding(headers: &mut HeaderMap) {
+    let mut fields: Vec<_> = headers
+        .get_all(VARY)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|line| line.split(',').map(str::trim))
+        .filter(|field| !field.is_empty())
+        .collect();
+    if !fields
+        .iter()
+        .any(|field| field.eq_ignore_ascii_case("accept-encoding"))
+    {
+        fields.push("accept-encoding");
+    }
+    let value = fields.join(", ");
+    headers.insert(
+        VARY,
+        HeaderValue::from_str(&value).expect("valid Vary fields"),
+    );
 }
 
 fn classed(mut response: Response, class: CacheClass) -> Response {
@@ -394,21 +458,44 @@ fn strong_tag(bytes: &[u8]) -> String {
 
 /// Attach the validator, and answer `304` when the client already holds it.
 fn revalidated(
-    mut response: Response,
+    response: Response,
     tag: impl AsRef<str>,
     validators: Option<&HeaderValue>,
 ) -> Response {
     let tag = tag.as_ref();
+    let held = validators.is_some_and(|validators| matches_validator(validators, tag, true));
+    with_validator(response, tag, held)
+}
+
+/// A Brotli-capable asset has one validator per wire representation. The
+/// outer compression layer adds the encoding suffix to a 200; a bodyless 304
+/// sends the selected tag itself.
+fn revalidated_variant(
+    response: Response,
+    tag: &str,
+    validators: Option<&HeaderValue>,
+) -> Response {
+    let selected = response.headers().get(CONTENT_ENCODING).map(|encoding| {
+        let encoding = encoding.to_str().expect("precompressed encoding is ASCII");
+        format!("\"{}-{encoding}\"", tag.trim_matches('"'))
+    });
+    let selected = selected.as_deref().unwrap_or(tag);
+    let held = validators.is_some_and(|validators| matches_validator(validators, selected, false));
+    with_validator(response, if held { selected } else { tag }, held)
+}
+
+fn with_validator(mut response: Response, tag: &str, held: bool) -> Response {
     let Ok(value) = HeaderValue::from_str(tag) else {
         return classed(response, CacheClass::Personal);
     };
     response.headers_mut().insert(ETAG, value);
     let response = classed(response, CacheClass::Revalidated);
-    if !validators.is_some_and(|validators| matches_validator(validators, tag)) {
+    if !held {
         return response;
     }
     let (mut parts, _) = response.into_parts();
     parts.status = StatusCode::NOT_MODIFIED;
+    parts.headers.remove(CONTENT_ENCODING);
     parts.headers.remove(CONTENT_LENGTH);
     parts.headers.remove(CONTENT_TYPE);
     Response::from_parts(parts, Body::empty()).into_response()
@@ -416,7 +503,7 @@ fn revalidated(
 
 /// `If-None-Match` uses weak comparison, and the server marks a gzipped
 /// answer's tag with its encoding, so both forms of our tag match.
-pub(crate) fn matches_validator(validators: &HeaderValue, tag: &str) -> bool {
+fn matches_validator(validators: &HeaderValue, tag: &str, allow_legacy_gzip: bool) -> bool {
     let Ok(validators) = validators.to_str() else {
         return false;
     };
@@ -432,7 +519,7 @@ pub(crate) fn matches_validator(validators: &HeaderValue, tag: &str) -> bool {
         else {
             return false;
         };
-        opaque == ours || opaque.strip_suffix("-gzip") == Some(ours)
+        opaque == ours || (allow_legacy_gzip && opaque.strip_suffix("-gzip") == Some(ours))
     })
 }
 
@@ -744,7 +831,7 @@ mod tests {
             "/",
             "/app/home/",
             "/app/transcripts/20260101",
-            "/app/home/workspace",
+            "/app/transcripts/workspace",
             "/app/health/workspace",
             "/static/app.js",
         ] {

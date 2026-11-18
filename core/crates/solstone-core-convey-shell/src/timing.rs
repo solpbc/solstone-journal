@@ -142,26 +142,34 @@ mod tests {
     #[tokio::test]
     async fn gated_and_coalesced_routes_repeat_no_header_name() {
         let journal = established_journal();
-        let app = crate::router(journal.path().to_owned());
-        for path in [
-            "/app/home/",
-            "/api/shell",
-            "/app/link/api/identity",
-            "/app/network/api/status",
-            "/app/health/api/state",
-            "/app/transcripts/api/stats/202611",
+        let app = solstone_core_convey_http::serve::common_layers(crate::router(
+            journal.path().to_owned(),
+        ));
+        for (path, encoding) in [
+            ("/app/home/", ""),
+            ("/api/shell", ""),
+            ("/app/link/api/identity", ""),
+            ("/app/network/api/status", ""),
+            ("/app/health/api/state", ""),
+            ("/app/transcripts/api/stats/202611", ""),
+            ("/app/home/workspace", "br"),
         ] {
             let response = app
                 .clone()
                 .oneshot(
                     Request::get(path)
                         .extension(solstone_core_convey_http::identity::AccessBasis::Localhost)
+                        .header("accept-encoding", encoding)
                         .body(Body::empty())
                         .unwrap(),
                 )
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200, "{path}");
+            if encoding == "br" {
+                assert_eq!(response.headers()["content-encoding"], "br");
+                assert_eq!(response.headers()["vary"], "accept-encoding");
+            }
             for name in response.headers().keys() {
                 let lines: Vec<_> = response.headers().get_all(name).iter().collect();
                 assert_eq!(lines.len(), 1, "{path} repeats {name}: {lines:?}");
