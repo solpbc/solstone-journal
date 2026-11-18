@@ -11,6 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const {permissionKinds} = require('./agents_contract_dom.js');
 
 const root = process.argv[2] || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'assets/agents/workspace.html'), 'utf8');
@@ -49,7 +50,7 @@ const ME_ON = {enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.sol
 const FALSE_WITH_A_DOOR = ['nothing is reachable until you turn it on', 'this is off until you turn it on', 'stay connected on paper'];
 
 function baseState(overrides = {}) {
-  return {enabled: false, status: 'off', local_agent_helpers: true, owner_state: null, certificate: {current: false}, connections: [], facets: [], pairing: null, ...overrides};
+  return {enabled: false, status: 'off', local_agent_helpers: true, owner_state: null, certificate: {current: false}, connections: [], facets: [], permission_kinds: permissionKinds, pairing: null, ...overrides};
 }
 function door(extra) { return {local_door: {enabled: true, address: ADDRESS, ...extra}}; }
 const LAN_A = 'https://192.168.4.47:7660/mcp';

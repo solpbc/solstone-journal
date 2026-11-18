@@ -513,11 +513,26 @@ const ENTRY = {
   result: { targets: ['entity:alex', '20261103/default/094200_1/audio.jsonl', 'week:20261102', 'facet:work', `20261101/agent-memory-${SOURCE}/120000_1/note.txt`] },
 };
 
+const permissionKinds = [
+  ['transcripts', 'transcripts', true],
+  ['entities', 'entities', true],
+  ['facets', 'summaries', true],
+  ['screen_text', 'screen text', true],
+  ['body', 'body', true],
+  ['notes', 'notes', false],
+  ['documents', 'documents', false],
+  ['calendar', 'calendar', false],
+  ['places', 'places', false],
+  ['photos', 'photos', false],
+].map(([word, label, checked_by_default]) => ({
+  word, label, checked_by_default, description: `description of ${label}`,
+}));
+
 function agentsState(overrides = {}) {
   return {
     enabled: false, status: 'off', local_agent_helpers: true, owner_state: null, certificate: { current: false },
     local_door: { enabled: true, listening: true, address: 'http://127.0.0.1:7659/mcp' },
-    connections: [CLAUDE, PAUSED, KEY], facets: [], pairing: null, ...overrides,
+    connections: [CLAUDE, PAUSED, KEY], facets: [], permission_kinds: permissionKinds, pairing: null, ...overrides,
   };
 }
 
@@ -1437,6 +1452,11 @@ module.exports = async function agentsContractCases(manifestDir) {
     } });
     const p = await boot(env, '/app/agents/', { answers });
     await goTo(p, 'oauth:g1');
+    for (const kind of permissionKinds) {
+      const input = p.q(`input[name="category"][value="${kind.word}"]`);
+      assert.equal(input.hasAttribute('checked'), kind.checked_by_default, kind.word);
+    }
+    assert.equal(p.q('input[name="category"][value="video"]'), null);
     await keyPress(p, p.q('[data-save-permission="oauth:g1"]'));
     lands(p, row(p, 'oauth:g1'), 'save: its row');
     await goTo(p, 'bearer:k1');
@@ -1897,3 +1917,5 @@ module.exports = async function agentsContractCases(manifestDir) {
 function settleThen(p, fn) {
   return settle().then(fn).then(() => true);
 }
+
+module.exports.permissionKinds = permissionKinds;

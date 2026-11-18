@@ -889,6 +889,14 @@ pub(crate) fn state_value_with_iface(
             })),
         },
         "facets": facets,
+        "permission_kinds": solstone_core_format::content::kinds::permission_kinds()
+            .map(|kind| json!({
+                "word": kind.stored_word,
+                "label": kind.label,
+                "description": kind.description,
+                "checked_by_default": kind.checked_by_default,
+            }))
+            .collect::<Vec<_>>(),
         "pairing": pairing.map(pairing_json),
     });
     // App containers and Windows use the maintained TLS loopback ingress.

@@ -760,7 +760,10 @@ fn mcp_subcommand_help(words: &[&str]) -> &'static str {
             "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
             "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
         ),
-        ["permission", "set", ..] => concat!(
+        ["permission", "set", ..] => {
+            static HELP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            HELP.get_or_init(|| {
+            let mut help = concat!(
             "usage: solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n",
             "                                           --category CATEGORY [--category CATEGORY ...]\n",
             "                                           [--facet FACET ...]\n\n",
@@ -769,9 +772,16 @@ fn mcp_subcommand_help(words: &[&str]) -> &'static str {
             "  --token LABEL        a bearer-token connection, by its label\n",
             "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
             "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
-            "  --category CATEGORY  what it may read: transcripts, entities, facets, screen_text or body; repeat for more\n",
+            "  --category CATEGORY  a kind this connection may read (repeat for each kind)\n",
             "  --facet FACET        only this facet, by name; repeat for more (default: the whole journal)\n",
-        ),
+            ).to_owned();
+            use std::fmt::Write as _;
+            for kind in solstone_core_format::content::kinds::permission_kinds() {
+                let _ = writeln!(help, "  {:<12} {}: {}", kind.stored_word, kind.label, kind.description);
+            }
+            help
+            }).as_str()
+        }
         ["permission", "clear", ..] => concat!(
             "usage: solstone journal mcp permission clear [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n\n",
             "Clear one connection's read permission.\n\n",

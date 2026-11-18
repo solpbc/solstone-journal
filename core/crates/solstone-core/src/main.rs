@@ -5002,8 +5002,11 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
                 println!(
                     "Until you grant it read access, an agent using this token sees only save_memory and recall_memory. To let it read your whole journal (add --facet NAME to allow only that facet):"
                 );
+                let categories = solstone_core_format::content::kinds::default_permission_words()
+                    .map(|word| format!(" --category {word}"))
+                    .collect::<String>();
                 println!(
-                    "  solstone journal mcp permission set --token {:?} --category transcripts --category entities --category facets --category screen_text --category body",
+                    "  solstone journal mcp permission set --token {:?}{categories}",
                     created.label
                 );
                 println!(
@@ -5369,7 +5372,11 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                     }
                                 };
                                 println!("Read scope: {scope_str}");
-                                println!("Categories: {}", read.categories.join(", "));
+                                let kinds = read.categories.iter().map(|word| {
+                                    solstone_core_format::content::AdmittedCategory::from_stored_word(word)
+                                        .map_or(word.as_str(), |category| category.kind_spec().label)
+                                }).collect::<Vec<_>>();
+                                println!("Categories: {}", kinds.join(", "));
                             }
                             None => {
                                 println!("Read:       no read permission configured");
@@ -5403,7 +5410,10 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     .is_some()
             }) {
                 eprintln!(
-                    "solstone journal mcp permission set: category must be transcripts, entities, facets, screen_text or body"
+                    "solstone journal mcp permission set: choose a category from {}",
+                    solstone_core_format::content::kinds::permission_words()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
                 return ExitCode::from(EXIT_DATAERR);
             }
