@@ -366,7 +366,30 @@ fn project_sunday(
             .then_with(|| b.novelty.cmp(&a.novelty))
             .then_with(|| a.earliest_sort_key.cmp(&b.earliest_sort_key))
     });
-    ranked.truncate(7);
+    // One row from each day first, in that order, then fill any seats still
+    // open from the same order. A recurring name stays one row, on its earliest day.
+    let mut spread = Vec::new();
+    let mut deferred = Vec::new();
+    let mut seen_days = BTreeSet::new();
+    for group in ranked {
+        if seen_days.insert(group.representative.day.clone()) {
+            spread.push(group);
+            if spread.len() == 7 {
+                break;
+            }
+        } else {
+            deferred.push(group);
+        }
+    }
+    if spread.len() < 7 {
+        for group in deferred {
+            if spread.len() == 7 {
+                break;
+            }
+            spread.push(group);
+        }
+    }
+    let ranked = spread;
 
     let owner_zone = solstone_core_journal_config::owner_zone(journal);
     let now = jiff::Timestamp::now().to_zoned_datetime(owner_zone.clone());
@@ -1230,6 +1253,114 @@ mod tests {
         let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
         assert_eq!(value["activities"].as_array().unwrap().len(), 7);
         assert_eq!(value["activities_total"], 9);
+    }
+
+    fn meeting_line(id: &str, title: &str, seconds: u32) -> String {
+        format!(
+            "{}\n",
+            json!({
+                "id": id,
+                "activity": "meeting",
+                "title": title,
+                "created_at": 100,
+                "segments": [format!("090000_{seconds}")],
+            })
+        )
+    }
+
+    #[test]
+    fn a_busy_day_does_not_take_every_row() {
+        let root = journal("solstone-week-busy-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let mut busy = String::new();
+        for n in 0..8 {
+            busy.push_str(&meeting_line(
+                &format!("long_{n}"),
+                &format!("Long meeting {n}"),
+                1000 - n * 100,
+            ));
+        }
+        write_raw(root.path(), "facets/work/activities/20260311.jsonl", &busy);
+        for (day, title) in [
+            ("20260308", "Sunday errand"),
+            ("20260309", "Monday errand"),
+            ("20260310", "Tuesday errand"),
+            ("20260312", "Thursday errand"),
+            ("20260313", "Friday errand"),
+            ("20260314", "Saturday errand"),
+        ] {
+            write_raw(
+                root.path(),
+                &format!("facets/work/activities/{day}.jsonl"),
+                &meeting_line(&format!("errand_{day}"), title, 60),
+            );
+        }
+
+        let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
+        let rows = value["activities"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        assert_eq!(value["activities_total"], 14);
+        let days = rows
+            .iter()
+            .map(|row| row["day"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(days.len(), 7);
+        assert_eq!(
+            rows.iter().filter(|row| row["day"] == "20260311").count(),
+            1
+        );
+        assert!(rows.iter().any(|row| row["title"] == "Long meeting 0"));
+        assert_eq!(value["intro"], "your week, a memory from each of 7 days.");
+    }
+
+    #[test]
+    fn a_recurring_activity_keeps_its_place_when_days_spread() {
+        let root = journal("solstone-week-dominant-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        for offset in 0..7 {
+            let day = shift("20260308", offset);
+            let lines = meeting_line("rehearsal", "The rehearsal", 2000)
+                + &meeting_line(&format!("errand_{day}"), &format!("Errand {day}"), 60);
+            write_raw(
+                root.path(),
+                &format!("facets/work/activities/{day}.jsonl"),
+                &lines,
+            );
+        }
+
+        let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
+        let rows = value["activities"].as_array().unwrap();
+        let titles = rows
+            .iter()
+            .map(|row| row["title"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(titles[0], "The rehearsal");
+        assert_eq!(rows[0]["day"], "20260308");
+        assert_eq!(titles.len(), 7);
+        assert_eq!(value["activities_total"], 14);
+        assert!(!titles.contains(&"Errand 20260308"));
+        assert_eq!(
+            titles
+                .iter()
+                .filter(|title| title.starts_with("Errand"))
+                .count(),
+            6
+        );
+        let days = rows
+            .iter()
+            .map(|row| row["day"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(days.len(), 7);
     }
 
     #[test]
