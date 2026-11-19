@@ -2373,6 +2373,7 @@ fn run_native_receipt_driver(
         .env_remove("JOURNAL_WIN_CI_RUN_BACKUP")
         .env_remove("SOLSTONE_NATIVE_RESTIC")
         .env_remove("SOLSTONE_NATIVE_RCLONE")
+        .env_remove("SOLPBC_WINBUILD_TRAIN")
         .envs(extra_environment.iter().copied())
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
@@ -2412,6 +2413,55 @@ fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
             assert!(forwarded.contains("$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\\refs'"));
             assert!(!forwarded.contains("JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION"));
+        }
+    }
+}
+
+#[test]
+fn windows_native_driver_carries_a_reservation_name_only_when_set() {
+    let valid = native_receipt_scenarios()
+        .into_iter()
+        .find(|scenario| scenario.name == "valid")
+        .expect("positive receipt fixture");
+    for (name, value) in [
+        ("unset", None),
+        ("named", Some("overnight-release-261119")),
+        ("quote", Some("release'; Remove-Item C:\\")),
+        ("newline", Some("release\n$env:X = 1")),
+    ] {
+        let temp = windows_transport_fixture(&format!("windows-train-name-{name}"));
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &valid);
+        let environment: Vec<(&str, &str)> = value
+            .map(|v| ("SOLPBC_WINBUILD_TRAIN", v))
+            .into_iter()
+            .collect();
+        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, &environment);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        match name {
+            "unset" | "named" => {
+                assert!(output.status.success(), "{name}: {stderr}");
+                let forwarded = fs::read_to_string(&ssh_log).expect("read forwarded SSH command");
+                let line = "$env:SOLPBC_WINBUILD_TRAIN = 'overnight-release-261119'\n$env:EXPECTED_JOURNAL_COMMIT = ";
+                assert_eq!(
+                    forwarded.contains(line),
+                    name == "named",
+                    "{name}: {forwarded}"
+                );
+                assert_eq!(
+                    forwarded.contains("SOLPBC_WINBUILD_TRAIN"),
+                    name == "named",
+                    "{name}: {forwarded}"
+                );
+            }
+            _ => {
+                assert!(!output.status.success(), "{name} was accepted");
+                assert!(
+                    stderr.contains("SOLPBC_WINBUILD_TRAIN must be"),
+                    "{name}: {stderr}"
+                );
+                assert!(!ssh_log.exists(), "{name} reached the host");
+            }
         }
     }
 }

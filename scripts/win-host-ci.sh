@@ -62,6 +62,23 @@ if ! printf '%s\n' "$owner_account" | grep -Eq '^[A-Za-z0-9_.\\-]+$'; then
   exit 1
 fi
 
+# A reserved build box admits a release run's commands only when they carry the
+# reservation's exact name. Set SOLPBC_WINBUILD_TRAIN on the driver to pass it
+# into the remote process; unset or empty, nothing is added. It bypasses the
+# reservation only, never another hold.
+winbuild_train=${SOLPBC_WINBUILD_TRAIN:-}
+train_environment=
+if [ -n "$winbuild_train" ]; then
+  case "$winbuild_train" in
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+      echo "ERROR: win-host-ci: SOLPBC_WINBUILD_TRAIN must be letters, digits, '.', '_' or '-'" >&2
+      exit 1
+      ;;
+  esac
+  train_environment="\$env:SOLPBC_WINBUILD_TRAIN = '$winbuild_train'
+"
+fi
+
 cleanup() {
   original_status=$1
   trap - EXIT HUP INT TERM
@@ -209,7 +226,7 @@ else
   echo "ERROR: win-host-ci: SSH output file creation failed" >&2
   exit 1
 fi
-remote_command="\$env:EXPECTED_JOURNAL_COMMIT = '$snapshot_sha'
+remote_command="$train_environment\$env:EXPECTED_JOURNAL_COMMIT = '$snapshot_sha'
 \$env:EXPECTED_JOURNAL_CARGO_LOCK_SHA256 = '$cargo_lock_sha256'
 $backup_environment
 \$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '$cloud_sync_test'
