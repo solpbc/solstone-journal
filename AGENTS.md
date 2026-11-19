@@ -137,6 +137,9 @@ already passed; the toolchain is staged and proved up front for that reason. Tre
 not-run list as the evidence boundary; a transport pass is not filesystem,
 Callosum, packaging, install, signing, or smoke evidence.
 Do not rerun an unchanged failure merely to seek green.
+When the build box is reserved for a release run, set `SOLPBC_WINBUILD_TRAIN` to that
+run's reservation name and the gate carries it into the box's remote process; the name
+bypasses the reservation only, never another hold; unset, it adds nothing.
 
 ### Rust test topology
 
