@@ -698,5 +698,30 @@
     "path": "20260107/custom/120000_60/display_1_screen.mp4",
     "pattern": "*/*/*/*screen.mp4",
     "condition": "Path"
+  },
+  {
+    "path": "20260107/import.image/120001_0/screenshot_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/screenshot_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.image/120001_0/original.screenshot.png",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/original.screenshot.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.text/120000_300/note_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.text/*/note_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.text/120001_300/document_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.text/*/document_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.text/120000_300/import_kind.json",
+    "pattern": "*/import.*/*/import_kind.json",
+    "condition": "Path"
   }
 ]

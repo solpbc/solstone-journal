@@ -130,6 +130,56 @@ where
     }
 }
 
+#[test]
+fn generic_caption_and_log_extensions_use_the_import_entry_point() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    for (index, (name, text)) in [
+        (
+            "captions.vtt",
+            "WEBVTT\n\n00:01.000 --> 00:02.000\nA bell rings.\n",
+        ),
+        (
+            "captions.srt",
+            "1\n00:00:01,000 --> 00:00:02,000\nRain.\n\n2\n00:00:02,000 --> 00:00:03,000\nWind.\n",
+        ),
+        ("exchange.log", "Me: Soon?\nThem: Yes.\nMe: Fine.\n"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let media = temp.path().join(name);
+        fs::write(&media, text).unwrap();
+        let clock = format!("09000{index}");
+        let timestamp = format!("20260407_{clock}");
+        let args = ["--timestamp", &timestamp, media.to_str().unwrap()];
+        let run = run_cli_test(
+            &journal,
+            &args,
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+        assert_eq!(run.exit_code, 0, "{name}: {run:?}");
+        let segment = journal.join(format!("chronicle/20260407/import.text/{clock}_300"));
+        let saved = fs::read_to_string(segment.join("conversation_transcript.jsonl")).unwrap();
+        let mut rows = saved
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap());
+        assert_eq!(rows.next().unwrap()["untimed"], true);
+        let saved_text = rows
+            .map(|row| row["text"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            saved_text,
+            text.lines()
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+        );
+        assert!(segment.join("import_kind.json").is_file());
+    }
+}
+
 async fn oneshot_list(app: axum::Router) -> Value {
     let response = app
         .oneshot(

@@ -35,6 +35,8 @@ solstone-core-entity.workspace = true
 jiff.workspace = true
 log.workspace = true
 regex.workspace = true
+file-format.workspace = true
+kamadak-exif.workspace = true
 rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

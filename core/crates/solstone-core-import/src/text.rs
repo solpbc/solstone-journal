@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Generic `.txt` and `.md` transcript import.
+//! Generic text import. The deterministic kind selects the stored representation.
 //!
 //! Times, speakers and words come from the file, never from a model. A transcript in a
 //! recognized layout keeps every turn at the import's start plus its heading offset, on
@@ -37,13 +37,14 @@ use solstone_core_generate::{
 };
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, HealthMarkerKind, SegmentDeconflictError,
-    bump_stream_marker, health_marker_path, write_jsonl,
+    bump_stream_marker, health_marker_path, write_jsonl, write_text,
 };
 use solstone_core_time::{day_key, from_local};
 
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
 
 use crate::CreatedSegment;
+use crate::triage::{self, Kind as ContentKind, Verdict};
 
 /// One segment created and written to disk during text import.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -338,7 +339,7 @@ fn import(
     if !crate::work_continues() {
         return Err(early(TextImportError::Stopped));
     }
-    let text = read_transcript(path).map_err(early)?;
+    let (text, verdict, bytes) = read_source(path).map_err(early)?;
     let raw_filename = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -348,7 +349,8 @@ fn import(
             })
         })?;
     let (journal_root, _) = journal_marker_context(day_dir).map_err(early)?;
-    stage_raw_source(day_dir, import_id, path, raw_filename).map_err(early)?;
+    stage_raw_source(day_dir, import_id, &bytes, raw_filename).map_err(early)?;
+    drop(bytes);
 
     let hints = StreamHints {
         kind: Some(Kind::Imported(ImportSource::Named("text".to_owned()))),
@@ -358,8 +360,19 @@ fn import(
     let mut model_available = true;
     let mut created = Vec::new();
 
-    let (planned, untimed) =
-        plan_tiles(&text, day_dir, start_time, stream, source_instant).map_err(early)?;
+    let (planned, untimed) = plan_tiles(
+        reading_for(&text, &verdict),
+        day_dir,
+        start_time,
+        stream,
+        source_instant,
+    )
+    .map_err(early)?;
+    let filename = match verdict.kind {
+        ContentKind::Documents => "document_transcript.md",
+        ContentKind::Notes => "note_transcript.md",
+        _ => "conversation_transcript.jsonl",
+    };
     for tile_plan in planned {
         if !crate::work_continues() {
             return Err((created, TextImportError::Stopped));
@@ -412,7 +425,7 @@ fn import(
             ));
         }
         let claims = match solstone_core_segment::output_attempt::OutputClaims::acquire(
-            [directory.join("conversation_transcript.jsonl")],
+            [directory.join(filename).with_extension("jsonl")],
             solstone_core_journal_io::LockOptions::default(),
         ) {
             Ok(claims) => claims,
@@ -434,20 +447,7 @@ fn import(
         if !crate::work_continues() {
             return Err((created, TextImportError::Stopped));
         }
-        let output = parent
-            .join(&segment_key)
-            .join("conversation_transcript.jsonl");
-        let rows = jsonl_rows(
-            &turns,
-            start_offset,
-            origin,
-            import_id,
-            raw_filename,
-            facet,
-            setting,
-            context.as_ref(),
-            untimed,
-        );
+        let output = directory.join(filename);
         let commit = match claims.commit(&directory) {
             Ok(commit) => commit,
             Err(source) => {
@@ -460,13 +460,67 @@ fn import(
                 ));
             }
         };
-        if let Err(source) = write_jsonl(
-            &output,
-            rows,
-            AtomicWriteOptions {
-                mode: Some(PRIVATE_IMPORT_FILE_MODE),
-            },
-        ) {
+        let options = AtomicWriteOptions {
+            mode: Some(PRIVATE_IMPORT_FILE_MODE),
+        };
+        let metadata = directory.join(triage::METADATA_FILENAME);
+        #[derive(serde::Serialize)]
+        struct TextMetadata<'a> {
+            #[serde(flatten)]
+            verdict: &'a Verdict,
+            import_id: &'a str,
+            source_ms: i64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            facet: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            setting: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            topics: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            suggested_setting: Option<&'a str>,
+        }
+        let metadata_record = TextMetadata {
+            verdict: &verdict,
+            import_id,
+            source_ms: crate::timestamp::epoch_millis(after(origin, start_offset)),
+            facet,
+            setting,
+            topics: context
+                .as_ref()
+                .and_then(|context| context.topics.as_deref()),
+            suggested_setting: context
+                .as_ref()
+                .and_then(|context| context.setting.as_deref()),
+        };
+        triage::write_metadata(&metadata, &metadata_record).map_err(|source| {
+            (
+                created.clone(),
+                TextImportError::Write {
+                    path: metadata,
+                    source,
+                },
+            )
+        })?;
+        let write = if verdict.kind == ContentKind::Transcripts {
+            write_jsonl(
+                &output,
+                jsonl_rows(
+                    &turns,
+                    start_offset,
+                    origin,
+                    import_id,
+                    raw_filename,
+                    facet,
+                    setting,
+                    context.as_ref(),
+                    untimed,
+                ),
+                options,
+            )
+        } else {
+            write_text(&output, &text, options)
+        };
+        if let Err(source) = write {
             return Err((
                 created,
                 TextImportError::Write {
@@ -531,8 +585,14 @@ pub fn preview(
     stream: &str,
     source_instant: Option<Timestamp>,
 ) -> Result<crate::size::ImportSize, TextImportError> {
-    let text = read_transcript(path)?;
-    let (planned, _) = plan_tiles(&text, day_dir, start_time, stream, source_instant)?;
+    let (text, verdict, _) = read_source(path)?;
+    let (planned, _) = plan_tiles(
+        reading_for(&text, &verdict),
+        day_dir,
+        start_time,
+        stream,
+        source_instant,
+    )?;
     Ok(crate::size::ImportSize {
         recordings: planned
             .into_iter()
@@ -557,7 +617,7 @@ struct PlannedTile {
 }
 
 fn plan_tiles(
-    text: &str,
+    reading: Reading,
     day_dir: &Path,
     start_time: &str,
     stream: &str,
@@ -572,7 +632,6 @@ fn plan_tiles(
     let is_literal_day = parsed_date.is_none();
     let day_date = parsed_date.unwrap_or_else(|| jiff::civil::date(2026, 1, 1));
     let chronicle = day_dir.parent().unwrap_or(day_dir);
-    let reading = read_turns(text);
     let untimed = reading.untimed;
 
     let (anchor, turns) = if let Some(first) = reading.clock_start {
@@ -739,18 +798,95 @@ struct Turn {
     stated: Option<StatedClock>,
 }
 
-/// Read the file's turns: timed when the layout is recognized, otherwise every line at
-/// the start, untimed.
-fn read_turns(text: &str) -> Reading {
+/// Only select legacy timing when the known headers carry the file. The unchanged
+/// parser can also accept a timed excerpt after unrelated prose.
+pub(crate) fn has_existing_timed_layout(text: &str, lines: &[&str]) -> bool {
+    let Some(first) = lines
+        .iter()
+        .position(|line| heading_offset(line).is_some() || inline_turn(line).is_some())
+    else {
+        return false;
+    };
+    let mut plain_titles = 0;
+    for line in lines[..first]
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+    {
+        if line.starts_with("# ") {
+            continue;
+        }
+        plain_titles += 1;
+        if plain_titles > 1
+            || line.split_whitespace().count() > 10
+            || line.ends_with(['.', '!', '?', ':'])
+        {
+            return false;
+        }
+    }
+    let Some(reading) = existing_timed_reading(text) else {
+        return false;
+    };
+    // The older parser deliberately keeps summary headings and prose. Large
+    // trailing sections outside the dialogue are evidence of a pasted excerpt.
+    let from_first = &lines[first..];
+    if let Some(heading) = from_first.iter().rposition(|line| {
+        let line = line.trim_start();
+        line.starts_with('#') && heading_offset(line).is_none()
+    }) {
+        let tail_words = from_first[heading + 1..]
+            .iter()
+            .filter(|line| inline_turn(line).is_none() && heading_offset(line).is_none())
+            .flat_map(|line| line.split_whitespace())
+            .count();
+        let speech_words = reading
+            .turns
+            .iter()
+            .filter(|turn| turn.speaker.is_some())
+            .flat_map(|turn| turn.text.split_whitespace())
+            .count();
+        if tail_words >= 16 && tail_words > speech_words {
+            return false;
+        }
+    }
+    true
+}
+
+fn existing_timed_reading(text: &str) -> Option<Reading> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if let Some(turns) = timed_turns(text) {
-        return Reading {
+        return Some(Reading {
             clock_start: None,
             turns,
             untimed: false,
-        };
+        });
     }
-    inline_turns(text).unwrap_or_else(|| Reading {
+    inline_turns(text)
+}
+
+fn reading_for(text: &str, verdict: &Verdict) -> Reading {
+    if verdict.kind == ContentKind::Transcripts
+        && verdict.reasons.contains(&"existing_timed_layout")
+        && let Some(reading) = existing_timed_reading(text)
+    {
+        return reading;
+    }
+
+    // Whole-file layouts inherit the untimed transcript's line representation.
+    // Bound a long line so a later segment read can read every JSON record.
+    Reading {
+        clock_start: None,
+        turns: untimed_turns(text),
+        untimed: verdict.kind == ContentKind::Transcripts,
+    }
+}
+
+/// Read the file's turns: timed when the layout is recognized, otherwise every line at
+/// the start, untimed.
+#[cfg(test)]
+fn read_turns(text: &str) -> Reading {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    existing_timed_reading(text).unwrap_or_else(|| Reading {
         clock_start: None,
         turns: untimed_turns(text),
         untimed: true,
@@ -940,17 +1076,27 @@ fn inline_turn(line: &str) -> Option<(InlineLayout, u64, &str, &str)> {
     ))
 }
 
-/// Each non-blank line, at the start, as written. Nothing here carries a time.
+/// Untimed entries sit at the import start. The original retains all line breaks.
 fn untimed_turns(text: &str) -> Vec<Turn> {
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| Turn {
-            offset: 0,
-            speaker: None,
-            text: line.to_owned(),
-            stated: None,
-        })
-        .collect()
+    const MAX_TEXT_BYTES: usize = 8 * 1024;
+    let mut turns = Vec::new();
+    for mut line in text.lines().filter(|line| !line.trim().is_empty()) {
+        while !line.is_empty() {
+            let mut end = line.len().min(MAX_TEXT_BYTES);
+            while !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            let (text, rest) = line.split_at(end);
+            turns.push(Turn {
+                offset: 0,
+                speaker: None,
+                text: text.to_owned(),
+                stated: None,
+            });
+            line = rest;
+        }
+    }
+    turns
 }
 
 /// The v1 layout, or `None` when the file is not in it.
@@ -1129,20 +1275,46 @@ fn clock_seconds(value: &str) -> Option<u64> {
         .then_some(hours * 3600 + minutes * 60 + seconds)
 }
 
-fn read_transcript(path: &Path) -> Result<String, TextImportError> {
+fn read_source(path: &Path) -> Result<(String, Verdict, Vec<u8>), TextImportError> {
     let supported = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "txt" | "md"));
+        .is_some_and(crate::detect::is_generic_text_extension);
     if !supported {
         return Err(TextImportError::UnsupportedFormat {
             path: path.to_path_buf(),
         });
     }
-    fs::read_to_string(path).map_err(|source| TextImportError::SourceRead {
+    let source_error = |source| TextImportError::SourceRead {
         path: path.to_path_buf(),
         source,
-    })
+    };
+    let bytes = fs::read(path).map_err(source_error)?;
+    let text = triage::decode_text(&bytes)
+        .ok_or_else(|| {
+            source_error(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            ))
+        })?
+        .into_owned();
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let verdict = triage::classify(
+        &bytes,
+        &name,
+        path.parent().unwrap_or(Path::new("")),
+        None,
+        None,
+    );
+    if !matches!(
+        verdict.kind,
+        ContentKind::Notes | ContentKind::Documents | ContentKind::Transcripts
+    ) {
+        return Err(TextImportError::UnsupportedFormat {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok((text, verdict, bytes))
 }
 
 /// What a model may add to a segment.
@@ -1234,7 +1406,7 @@ fn parse_context(response: &str) -> Option<TileContext> {
 fn stage_raw_source(
     day_dir: &Path,
     import_id: &str,
-    source: &Path,
+    bytes: &[u8],
     raw_filename: &str,
 ) -> Result<(), TextImportError> {
     let Some(journal_root) = day_dir.parent().and_then(Path::parent) else {
@@ -1246,25 +1418,39 @@ fn stage_raw_source(
             ),
         });
     };
-    let dest_dir = journal_root.join("imports").join(import_id);
-    fs::create_dir_all(&dest_dir).map_err(|source| TextImportError::RawCopy {
-        path: dest_dir.clone(),
-        source,
-    })?;
+    let dest_dir =
+        crate::staging::ensure_import_private_chain(journal_root, import_id).map_err(|source| {
+            TextImportError::RawCopy {
+                path: journal_root.join("imports").join(import_id),
+                source: std::io::Error::other(source),
+            }
+        })?;
     let dest = dest_dir.join(raw_filename);
-    if dest.exists() {
-        return Ok(());
+    let options = AtomicWriteOptions {
+        mode: Some(PRIVATE_IMPORT_FILE_MODE),
+    };
+    match fs::read(&dest) {
+        Ok(saved) if saved == bytes => Ok(()),
+        Ok(_) => Err(TextImportError::RawCopy {
+            path: dest,
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "the file no longer matches the copy your journal prepared, so choose the file again",
+            ),
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match solstone_core_journal_io::write_bytes_exclusive(&dest, bytes, options) {
+                Err(AtomicWriteError::Io { ref source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists
+                        && fs::read(&dest).is_ok_and(|saved| saved == bytes) =>
+                {
+                    Ok(())
+                }
+                result => result.map_err(|source| TextImportError::Write { path: dest, source }),
+            }
+        }
+        Err(source) => Err(TextImportError::RawCopy { path: dest, source }),
     }
-    fs::copy(source, &dest).map_err(|source| TextImportError::RawCopy {
-        path: dest.clone(),
-        source,
-    })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(PRIVATE_IMPORT_FILE_MODE));
-    }
-    Ok(())
 }
 
 /// The segment file: a header, then one entry per turn, its `start` counted from the
@@ -1333,6 +1519,16 @@ fn jsonl_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_evidence_wins_before_tiling_a_timed_excerpt() {
+        let text = "*** START OF THE PROJECT GUTENBERG EBOOK CLAY ***\n\n[00:00:00] Val: Ready.\n[00:10:00] Lio: Yes.\n";
+        let verdict = triage::classify(text.as_bytes(), "document.txt", Path::new(""), None, None);
+        assert_eq!(verdict.kind, ContentKind::Documents);
+        assert!(verdict.reasons.contains(&"existing_timed_layout"));
+        let reading = reading_for(text, &verdict);
+        assert!(reading.turns.iter().all(|turn| turn.offset == 0));
+    }
 
     fn turn(offset: u64, speaker: Option<&str>, text: &str) -> Turn {
         Turn {

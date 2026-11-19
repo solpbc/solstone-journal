@@ -1598,12 +1598,6 @@ const GENERIC_AUDIO_EXTENSIONS: &[&str] = &[
     "webm", //
 ];
 
-/// Extensions the reference treats as a generic transcript.
-const GENERIC_TEXT_EXTENSIONS: &[&str] = &[
-    "md",  //
-    "txt", //
-];
-
 fn lowercase_extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|value| value.to_str())
@@ -1630,13 +1624,13 @@ fn requires_registry_classification(path: &Path) -> bool {
         return true;
     };
     !(is_generic_audio_extension(extension.as_str())
-        || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str()))
+        || solstone_core_import::detect::is_generic_text_extension(extension.as_str()))
 }
 
 fn is_generic_media(path: &Path) -> bool {
     lowercase_extension(path).is_some_and(|extension| {
         is_generic_audio_extension(extension.as_str())
-            || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str())
+            || solstone_core_import::detect::is_generic_text_extension(extension.as_str())
     })
 }
 

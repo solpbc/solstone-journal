@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - new audio, PDF, chat, and Evernote imports keep what your journal reads from them. the import screen and Plaud setup now offer a **keep originals** choice. photos you import directly are kept once.
 
+- your journal now sorts the text files you import into notes, documents, and transcripts. agents need screen text access to read the descriptions of images your journal recognizes as screenshots.
 - home can open sooner on a slow connection the first time it loads, because its files now arrive smaller.
 - on home, the time in each facet now shows hours and minutes, like 3h 46m, and "measured for 3 of 5 activities" appears only when some activities have no time measured.
 
