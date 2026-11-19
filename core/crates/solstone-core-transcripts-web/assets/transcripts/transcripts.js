@@ -1849,6 +1849,32 @@
         return;
       }
 
+      // Same-stream moment pills (e.g. burst photos taken in the same minute)
+      // subdivide their stream column so none sit unreachable underneath another.
+      const momentSlots = new Map();
+      for (const stream of streams) {
+        const moments = filtered
+          .filter(seg => seg.stream === stream && isMomentSegment(seg))
+          .map(seg => ({ seg, top: zoomY(Math.max(parseTime(seg.start), range.start)) }))
+          .sort((a, b) => a.top - b.top || String(a.seg.key).localeCompare(String(b.seg.key)));
+        let i = 0;
+        while (i < moments.length) {
+          let j = i + 1;
+          let maxBottom = moments[i].top + 20;
+          while (j < moments.length && moments[j].top < maxBottom) {
+            maxBottom = Math.max(maxBottom, moments[j].top + 20);
+            j += 1;
+          }
+          const count = j - i;
+          if (count > 1) {
+            for (let k = 0; k < count; k += 1) {
+              momentSlots.set(moments[i + k].seg, { idx: k, count });
+            }
+          }
+          i = j;
+        }
+      }
+
       filtered.forEach(seg => {
         const segStart = parseTime(seg.start);
         const segEnd = parseTime(seg.end);
@@ -1862,13 +1888,17 @@
         pill.setAttribute('role', 'button');
         pill.setAttribute('tabindex', '0');
 
-        if (colCount > 1) {
+        const slot = momentSlots.get(seg);
+        if (colCount > 1 || slot) {
           const colIdx = streams.indexOf(seg.stream);
           const colWidth = 100 / colCount;
+          const subIdx = slot ? slot.idx : 0;
+          const subCount = slot ? slot.count : 1;
+          const subWidth = colWidth / subCount;
           const gap = 0.5;
-          pill.style.left = (colIdx * colWidth + gap / 2) + '%';
+          pill.style.left = (colIdx * colWidth + subIdx * subWidth + gap / 2) + '%';
           pill.style.right = 'auto';
-          pill.style.width = (colWidth - gap) + '%';
+          pill.style.width = (subWidth - gap) + '%';
         }
 
         // Determine pill type based on content

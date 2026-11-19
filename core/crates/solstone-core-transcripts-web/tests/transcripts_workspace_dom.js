@@ -4162,3 +4162,20 @@ test('imported photo: past day with only a morning photo recenters range onto th
   assert.strictEqual(pills.length, 1, 'sparse past day recenters onto its morning photo pill');
   assert.ok(pills[0].classList.contains('tr-zoom-pill-photo'));
 });
+
+test('imported photo: burst photos in the same minute split horizontally instead of stacking', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      { key: '083000_0', stream: 'import.image', start: '08:30', end: '08:30', types: ['image'], data_state: { image: 'analyzed' } },
+      { key: '083001_0', stream: 'import.image', start: '08:30', end: '08:30', types: ['image'], data_state: { image: 'analyzed' } },
+      { key: '083002_0', stream: 'import.image', start: '08:30', end: '08:30', types: ['image'], data_state: { image: 'analyzed' } },
+    ],
+  );
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pills.length, 3, 'all three burst photos render in the zoom rail');
+  const lefts = pills.map(pill => pill.style.left);
+  assert.strictEqual(new Set(lefts).size, 3, 'each burst photo receives its own horizontal sub-column: ' + lefts.join(', '));
+});
