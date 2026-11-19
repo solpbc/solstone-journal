@@ -31,7 +31,7 @@ pub enum RawReleaseClass {
     /// open handle to the original, all immediately before the release. Like every release, the
     /// call runs the door's journal-wide recovery and activity census.
     OwnerVoice,
-    /// Released after the journal completed importing a recording without keeping it.
+    /// The import released the segment's audio copy. A kept original lives in `imports/<id>/originals/`.
     Import,
 }
 
