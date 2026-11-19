@@ -103,26 +103,24 @@ pub fn read_device_ingest_events(
     Ok(report)
 }
 
-/// The zone the device reported for this segment, from its latest ingest
-/// receipt that carried one. A segment without receipts, or whose receipts
-/// cannot be read, has no reported zone.
+/// The zone reported for this segment, either from its latest device ingest
+/// receipt or from an imported photo's `image_meta.json`. A segment without
+/// receipts or photo zone metadata, or whose metadata cannot be read, has no
+/// reported zone.
 pub fn read_reported_zone(journal_root: &Path, segment_path: &Path) -> Option<ReportedZone> {
     // Zone metadata is optional. Refuse symbolic links, nonregular files and oversized
-    // logs without affecting the segment's readable transcript.
+    // files without affecting the segment's readable transcript.
     const MAX_REPORTED_ZONE_BYTES: usize = 1024 * 1024;
+    const MAX_IMAGE_META_BYTES: usize = 64 * 1024;
     let absolute_root = std::path::absolute(journal_root).ok()?;
     let root = solstone_core_journal_io::JournalRoot::open(&absolute_root).ok()?;
-    let relative = segment_path
-        .strip_prefix(journal_root)
-        .ok()?
-        .join(EVENTS_FILE);
-    let observed = solstone_core_journal_io::read_relative_file_bounded(
+    let segment_relative = segment_path.strip_prefix(journal_root).ok()?;
+    let events_relative = segment_relative.join(EVENTS_FILE);
+    if let Ok(Some(observed)) = solstone_core_journal_io::read_relative_file_bounded(
         &root,
-        &relative,
+        &events_relative,
         MAX_REPORTED_ZONE_BYTES,
-    )
-    .ok()??;
-    parse_durable_events(&observed.bytes)
+    ) && let Some(zone) = parse_durable_events(&observed.bytes)
         .records
         .iter()
         .rev()
@@ -130,6 +128,41 @@ pub fn read_reported_zone(journal_root: &Path, segment_path: &Path) -> Option<Re
             DurableEvent::DeviceIngest(event) => event.reported_zone(),
             DurableEvent::Callosum(_) => None,
         })
+    {
+        return Some(zone);
+    }
+
+    let meta_relative = segment_relative.join("image_meta.json");
+    let observed = solstone_core_journal_io::read_relative_file_bounded(
+        &root,
+        &meta_relative,
+        MAX_IMAGE_META_BYTES,
+    )
+    .ok()??;
+    parse_image_meta_zone(&observed.bytes)
+}
+
+fn parse_image_meta_zone(bytes: &[u8]) -> Option<ReportedZone> {
+    let value: Value = serde_json::from_slice(bytes).ok()?;
+    let object = value.as_object()?;
+    let tz = object
+        .get("tz")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let utc_offset_seconds = object
+        .get("utc_offset_seconds")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .filter(|value| (-86_399..=86_399).contains(value));
+    if tz.is_none() && utc_offset_seconds.is_none() {
+        return None;
+    }
+    Some(ReportedZone {
+        tz,
+        utc_offset_seconds,
+    })
 }
 
 fn classify(line: &[u8]) -> Result<Option<DurableEvent>, ()> {
@@ -420,5 +453,42 @@ mod tests {
             Some(32400)
         );
         fs::write("relative-zone-verified", b"passed").unwrap();
+    }
+
+    #[test]
+    fn reported_zone_falls_back_to_image_meta_and_refuses_symlinks() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal
+            .path()
+            .join("chronicle/20261112/import.image/211400_0");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("image_meta.json"),
+            br#"{"schema":1,"time_source":"capture","utc_offset_seconds":32400}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_reported_zone(journal.path(), &segment),
+            Some(ReportedZone {
+                tz: None,
+                utc_offset_seconds: Some(32400),
+            })
+        );
+
+        fs::write(
+            segment.join("image_meta.json"),
+            br#"{"schema":1,"time_source":"upload_fallback"}"#,
+        )
+        .unwrap();
+        assert_eq!(read_reported_zone(journal.path(), &segment), None);
+
+        #[cfg(unix)]
+        {
+            let target = journal.path().join("outside.json");
+            fs::write(&target, br#"{"utc_offset_seconds":32400}"#).unwrap();
+            fs::remove_file(segment.join("image_meta.json")).unwrap();
+            std::os::unix::fs::symlink(&target, segment.join("image_meta.json")).unwrap();
+            assert_eq!(read_reported_zone(journal.path(), &segment), None);
+        }
     }
 }

@@ -58,6 +58,59 @@ fn deterministic_timestamp(path: &Path, filename: &str, zone: &TimeZone) -> Opti
         .map(|ts| ts.as_str().to_owned())
 }
 
+const HEIC_REFUSAL_MESSAGE: &str = "your journal can't open HEIC or HEIF photos directly. add it through the solstone app on your phone or computer, or convert it to JPEG first.";
+
+fn is_heic_upload(filename: &str, content_type: Option<&str>) -> bool {
+    let ext_heic = Path::new(filename)
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("heic") || ext.eq_ignore_ascii_case("heif"));
+    let mime_heic = content_type.is_some_and(|raw| {
+        let base = raw.split(';').next().unwrap_or(raw).trim();
+        base.eq_ignore_ascii_case("image/heic")
+            || base.eq_ignore_ascii_case("image/heif")
+            || base.eq_ignore_ascii_case("image/heic-sequence")
+            || base.eq_ignore_ascii_case("image/heif-sequence")
+    });
+    ext_heic || mime_heic
+}
+
+struct UploadTimestamp {
+    semantic: String,
+    method: &'static str,
+    no_match_reason: Option<&'static str>,
+    utc_offset_seconds: Option<i32>,
+    tz: Option<String>,
+}
+
+fn photo_timestamp_for_upload(
+    path: &Path,
+    captured_at: Option<&str>,
+    zone: &TimeZone,
+) -> UploadTimestamp {
+    if let Some(moment) = solstone_core_import_sources::image::detected_photo_capture_moment(
+        path, zone,
+    )
+    .or_else(|| {
+        captured_at.and_then(|raw| solstone_core_import::parse_client_captured_at(raw, zone))
+    }) {
+        return UploadTimestamp {
+            semantic: moment.stamp.as_str().to_owned(),
+            method: "deterministic",
+            no_match_reason: None,
+            utc_offset_seconds: moment.utc_offset_seconds,
+            tz: moment.tz,
+        };
+    }
+    UploadTimestamp {
+        semantic: import_timestamp(zone),
+        method: "upload_fallback",
+        no_match_reason: Some("no_deterministic_match"),
+        utc_offset_seconds: None,
+        tz: None,
+    }
+}
+
 /// The upload's timestamp and how it was found. Saving consults no model: a file with no
 /// deterministic timestamp takes the upload time, so its no-match reason names only the
 /// deterministic sources and its recorded diagnostics never claim a model was called.
@@ -73,6 +126,11 @@ fn timestamp_for_upload(
         .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
     {
         return (import_timestamp(zone), "document_dates", None);
+    }
+    // A photo is dated by what it holds, never by its filename.
+    if source_for(filename, None) == SavedSource::Image.as_wire() {
+        let placed = photo_timestamp_for_upload(path, None, zone);
+        return (placed.semantic, placed.method, placed.no_match_reason);
     }
     if let Some(timestamp) = deterministic_timestamp(path, filename, zone) {
         return (timestamp, "deterministic", None);
@@ -577,12 +635,18 @@ fn resolved_summary(
     filename: Option<&str>,
     zone: &TimeZone,
 ) -> Value {
-    response["resolved_timestamp"] = solstone_core_import_sources::image::detected_creation_stamp(
-        path,
-        filename.or_else(|| path.file_name().and_then(|name| name.to_str())),
-        zone,
-    )
-    .map_or(Value::Null, |stamp| json!(stamp.as_str()));
+    let stamp =
+        if response.get("source").and_then(Value::as_str) == Some(SavedSource::Image.as_wire()) {
+            solstone_core_import_sources::image::detected_photo_capture_moment(path, zone)
+                .map(|moment| moment.stamp)
+        } else {
+            solstone_core_import_sources::image::detected_creation_stamp(
+                path,
+                filename.or_else(|| path.file_name().and_then(|name| name.to_str())),
+                zone,
+            )
+        };
+    response["resolved_timestamp"] = stamp.map_or(Value::Null, |stamp| json!(stamp.as_str()));
     response
 }
 
@@ -1047,6 +1111,20 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             None,
         );
     }
+    if let Incoming::File {
+        original_filename,
+        mime_type,
+        ..
+    } = &incoming
+        && is_heic_upload(original_filename, mime_type.as_deref())
+    {
+        return failure(
+            ImportReasonCode::UnsupportedImageFormat,
+            HEIC_REFUSAL_MESSAGE,
+            HEIC_REFUSAL_MESSAGE,
+            None,
+        );
+    }
     let is_strava = match &incoming {
         Incoming::File {
             original_filename,
@@ -1131,20 +1209,36 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             ),
         );
     }
-    let original_for_timestamp = match &incoming {
+    let (original_for_timestamp, incoming_mime) = match &incoming {
         Incoming::File {
-            original_filename, ..
-        } => original_filename.as_str(),
-        Incoming::Paste { .. } => "paste.txt",
+            original_filename,
+            mime_type,
+            ..
+        } => (original_filename.as_str(), mime_type.as_deref()),
+        Incoming::Paste { .. } => ("paste.txt", Some("text/plain")),
     };
-    // A photo is dated by what it holds, and its name is only a label. A date in the name
-    // that disagreed would cancel both and put the photo on the day it was imported.
-    let is_photo = text_value(&data, "imported_via") == "mobile_photos";
-    let (semantic, method, no_match_reason) = timestamp_for_upload(
-        &source_path,
-        if is_photo { "" } else { original_for_timestamp },
-        &solstone_core_journal_config::owner_zone(&state.root),
-    );
+    let detected_source = source_for(original_for_timestamp, incoming_mime);
+    let zone = solstone_core_journal_config::owner_zone(&state.root);
+    let caption = clean_optional(data.get("caption"));
+    let captured_at = clean_optional(data.get("captured_at"));
+    // A photo is dated by what it holds (EXIF or client-reported capture time),
+    // never by its filename, regardless of which door brought it in.
+    let placed = if detected_source == SavedSource::Image.as_wire() {
+        photo_timestamp_for_upload(&source_path, captured_at.as_deref(), &zone)
+    } else {
+        let (semantic, method, no_match_reason) =
+            timestamp_for_upload(&source_path, original_for_timestamp, &zone);
+        UploadTimestamp {
+            semantic,
+            method,
+            no_match_reason,
+            utc_offset_seconds: None,
+            tz: None,
+        }
+    };
+    let semantic = placed.semantic;
+    let method = placed.method;
+    let no_match_reason = placed.no_match_reason;
     let import_id = match claim_import_directory(&state.root, &semantic) {
         Ok(import_id) => import_id,
         Err(error) => return metadata_failed(error),
@@ -1193,12 +1287,12 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         }
     };
     let mut metadata = staged_metadata(StagedMetadata {
-        zone: &solstone_core_journal_config::owner_zone(&state.root),
+        zone: &zone,
         timestamp: &semantic,
         original_filename: &original_filename,
         file_path: file_path.display().to_string(),
         source_hash,
-        source: source_for(&original_filename, mime_type.as_deref()),
+        source: detected_source,
         mime_type,
         client_item_id,
         data: &data,
@@ -1208,9 +1302,20 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     solstone_core_import::originals::record_staged_upload(&mut metadata, &file_path);
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
-    if is_photo {
-        // Starting reads the staged file, which carries the name, so the date is settled here.
-        metadata.insert("owner_timestamp".to_owned(), json!(semantic));
+    if method == "deterministic" {
+        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+    }
+    if let Some(caption) = caption {
+        metadata.insert("caption".to_owned(), json!(caption));
+    }
+    if let Some(captured_at) = captured_at {
+        metadata.insert("captured_at".to_owned(), json!(captured_at));
+    }
+    if let Some(offset) = placed.utc_offset_seconds {
+        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
+    }
+    if let Some(tz) = placed.tz {
+        metadata.insert("capture_tz".to_owned(), json!(tz));
     }
     metadata.insert("file_size".to_owned(), json!(file_size));
     // An Apple Health export dropped anywhere but its own card goes to that card:
@@ -1312,12 +1417,36 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_owned();
-    let (semantic, method, no_match_reason) =
-        timestamp_for_upload(local, &original_filename, &zone);
-    let method = if method == "upload_fallback" {
+    if is_heic_upload(&original_filename, None) {
+        return failure(
+            ImportReasonCode::UnsupportedImageFormat,
+            HEIC_REFUSAL_MESSAGE,
+            HEIC_REFUSAL_MESSAGE,
+            None,
+        );
+    }
+    let detected_source = source_for(&original_filename, None);
+    let caption = clean_optional(data.get("caption"));
+    let captured_at = clean_optional(data.get("captured_at"));
+    let placed = if detected_source == SavedSource::Image.as_wire() {
+        photo_timestamp_for_upload(local, captured_at.as_deref(), &zone)
+    } else {
+        let (semantic, method, no_match_reason) =
+            timestamp_for_upload(local, &original_filename, &zone);
+        UploadTimestamp {
+            semantic,
+            method,
+            no_match_reason,
+            utc_offset_seconds: None,
+            tz: None,
+        }
+    };
+    let semantic = placed.semantic;
+    let no_match_reason = placed.no_match_reason;
+    let method = if placed.method == "upload_fallback" {
         "path_fallback"
     } else {
-        method
+        placed.method
     };
     let import_id = match claim_import_directory(&state.root, &semantic) {
         Ok(import_id) => import_id,
@@ -1329,7 +1458,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         original_filename: &original_filename,
         file_path: local_path,
         source_hash,
-        source: source_for(&original_filename, None),
+        source: detected_source,
         mime_type: None,
         client_item_id,
         data: &data,
@@ -1339,6 +1468,21 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
     solstone_core_import::originals::record_new_import(&mut metadata);
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
+    if method == "deterministic" {
+        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+    }
+    if let Some(caption) = caption {
+        metadata.insert("caption".to_owned(), json!(caption));
+    }
+    if let Some(captured_at) = captured_at {
+        metadata.insert("captured_at".to_owned(), json!(captured_at));
+    }
+    if let Some(offset) = placed.utc_offset_seconds {
+        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
+    }
+    if let Some(tz) = placed.tz {
+        metadata.insert("capture_tz".to_owned(), json!(tz));
+    }
     metadata.insert(
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
@@ -4557,7 +4701,9 @@ mod tests {
         let id = photo["timestamp"].as_str().unwrap();
         let stored = read_import_metadata(root.path(), id).unwrap();
         assert_eq!(stored["source_timestamp"], "20260510_143000");
-        assert_eq!(stored["owner_timestamp"], "20260510_143000");
+        assert_eq!(stored["detected_timestamp"], "20260510_143000");
+        assert_eq!(stored["timestamp_detection_method"], "deterministic");
+        assert!(!stored.contains_key("owner_timestamp"));
         assert_eq!(stored["original_filename"], "20190304_120000.jpg");
         assert_eq!(stored["source"], "image");
         assert!(
@@ -4568,12 +4714,113 @@ mod tests {
                 .is_file()
         );
 
-        // Every other door still treats the disagreement as no date at all.
+        // Every door dates a photo from its EXIF, never from a conflicting filename.
         let shared = save("mobile_share", "shared", "2026:05:11 14:30:00").await;
         let id = shared["timestamp"].as_str().unwrap();
         let stored = read_import_metadata(root.path(), id).unwrap();
-        assert_eq!(stored["timestamp_detection_method"], "upload_fallback");
+        assert_eq!(stored["source_timestamp"], "20260511_143000");
+        assert_eq!(stored["detected_timestamp"], "20260511_143000");
+        assert_eq!(stored["timestamp_detection_method"], "deterministic");
         assert!(!stored.contains_key("owner_timestamp"));
+
+        let web = save("web_dashboard", "web", "2026:05:12 14:30:00").await;
+        let id = web["timestamp"].as_str().unwrap();
+        let stored = read_import_metadata(root.path(), id).unwrap();
+        assert_eq!(stored["source_timestamp"], "20260512_143000");
+        assert_eq!(stored["timestamp_detection_method"], "deterministic");
+    }
+
+    #[tokio::test]
+    async fn save_and_save_path_refuse_heic_and_heif_uploads() {
+        let root = TempDir::new().unwrap();
+        for (filename, content_type, item) in [
+            ("IMG_0001.HEIC", "image/heic", "heic-item"),
+            ("IMG_0002.heif", "application/octet-stream", "heif-item"),
+            ("mystery.bin", "image/heic", "heic-mime-item"),
+        ] {
+            let (boundary, upload) =
+                multipart_upload_bytes(item, filename, content_type, b"fake heic bytes");
+            let request = Request::post("/app/import/api/save")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(upload))
+                .unwrap();
+            let (status, body) = response_json(
+                crate::routes(root.path().to_path_buf())
+                    .oneshot(request)
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{filename}: {body}"
+            );
+            assert_eq!(body["reason_code"], "unsupported_image_format");
+        }
+
+        let heic_file = root.path().join("photo.heic");
+        fs::write(&heic_file, b"fake heic bytes").unwrap();
+        let request = Request::post("/app/import/api/save-path")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"client_item_id": "heic-path", "path": heic_file}).to_string(),
+            ))
+            .unwrap();
+        let (status, body) = response_json(
+            crate::routes(root.path().to_path_buf())
+                .oneshot(request)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["reason_code"], "unsupported_image_format");
+    }
+
+    #[tokio::test]
+    async fn save_persists_photo_caption_and_captured_at_with_offset() {
+        let root = TempDir::new().unwrap();
+        let (boundary, upload) = multipart_upload_bytes(
+            "captioned-photo",
+            "20261119_120000.jpg",
+            "image/jpeg",
+            b"\xff\xd8\xff\xd9",
+        );
+        let mut body = Vec::new();
+        write!(
+            &mut body,
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"imported_via\"\r\n\r\nmobile_share\r\n\
+             --{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\nsunset from the porch\r\n\
+             --{boundary}\r\nContent-Disposition: form-data; name=\"captured_at\"\r\n\r\n2026-11-12T08:30:00+09:00\r\n"
+        )
+        .unwrap();
+        body.extend_from_slice(&upload);
+        let request = Request::post("/app/import/api/save")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .unwrap();
+        let (status, saved) = response_json(
+            crate::routes(root.path().to_path_buf())
+                .oneshot(request)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{saved}");
+        let id = saved["timestamp"].as_str().unwrap();
+        let stored = read_import_metadata(root.path(), id).unwrap();
+        assert_eq!(stored["source_timestamp"], "20261112_083000");
+        assert_eq!(stored["timestamp_detection_method"], "deterministic");
+        assert_eq!(stored["capture_utc_offset_seconds"], 32400);
+        assert_eq!(stored["caption"], "sunset from the porch");
+        assert_eq!(stored["captured_at"], "2026-11-12T08:30:00+09:00");
     }
 
     fn strava_card_upload(client_item_id: &str, bytes: &[u8]) -> (String, Vec<u8>) {

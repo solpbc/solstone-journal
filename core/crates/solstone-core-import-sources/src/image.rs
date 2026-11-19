@@ -13,7 +13,7 @@ use base64::Engine;
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use jiff::civil::DateTime;
-use jiff::tz::TimeZone;
+use jiff::tz::{Offset, TimeZone};
 use jiff::{SignedDuration, ZonedDateTime};
 use solstone_core_depict::resize_for_vlm;
 use solstone_core_generate::{
@@ -41,6 +41,7 @@ use solstone_core_import::triage::{self, Kind as ContentKind, Verdict};
 
 const SCREENSHOT_TRANSCRIPT: &str = "screenshot_transcript.md";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
+const IMAGE_META_FILENAME: &str = "image_meta.json";
 const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim, including URLs only when they are visible in the image. Return plain text, without Markdown links or image markup. Never invent URLs or placeholder destinations.";
 const VISION_CONTEXT: &str = "import.image.vision";
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
@@ -57,6 +58,35 @@ pub struct ProgressUpdate {
     pub earliest_date: String,
     pub latest_date: String,
     pub entities_found: u64,
+}
+
+/// How an imported photo was placed in time.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PhotoTimeSource {
+    /// Dated from photo metadata (EXIF or phone share capture timestamp).
+    Capture,
+    /// No capture date was present, so import time was used as a fallback.
+    UploadFallback,
+    /// Explicitly chosen by the owner (or inherited from a parent note).
+    Owner,
+}
+
+impl PhotoTimeSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Capture => "capture",
+            Self::UploadFallback => "upload_fallback",
+            Self::Owner => "owner",
+        }
+    }
+}
+
+/// Optional provenance passed when preparing a standalone imported image.
+#[derive(Debug, Clone, Default)]
+pub struct ImageImportOptions {
+    pub caption: Option<String>,
+    pub client_captured_at: Option<String>,
+    pub original_filename: Option<String>,
 }
 
 /// Description status retained with an imported image.
@@ -214,57 +244,114 @@ pub fn detect(path: &Path) -> bool {
             .is_some_and(is_image_extension)
 }
 
+fn read_extra_exif(path: &Path) -> Option<Vec<u8>> {
+    let mut reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
+    if !matches!(
+        reader.format(),
+        Some(ImageFormat::Png | ImageFormat::WebP | ImageFormat::Tiff)
+    ) {
+        return None;
+    }
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(16 * 1024 * 1024);
+    reader.limits(limits);
+    reader.into_decoder().ok()?.exif_metadata().ok().flatten()
+}
+
 pub fn detected_creation_stamp(
     path: &Path,
     filename: Option<&str>,
     zone: &TimeZone,
 ) -> Option<solstone_core_import::Timestamp> {
-    let extra_exif = (|| {
-        let mut reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
-        if !matches!(
-            reader.format(),
-            Some(ImageFormat::Png | ImageFormat::WebP | ImageFormat::Tiff)
-        ) {
-            return None;
-        }
-        let mut limits = image::Limits::default();
-        limits.max_alloc = Some(16 * 1024 * 1024);
-        reader.limits(limits);
-        reader.into_decoder().ok()?.exif_metadata().ok().flatten()
-    })();
+    let extra_exif = read_extra_exif(path);
     solstone_core_import::detect_creation_with_exif(path, filename, zone, extra_exif.as_deref())
 }
 
-fn place_image_timestamp(
+/// Detect a photo's creation moment in its own capture timezone from embedded EXIF only.
+/// Filenames are never consulted.
+pub fn detected_photo_capture_moment(
+    path: &Path,
+    zone: &TimeZone,
+) -> Option<solstone_core_import::CaptureMoment> {
+    let extra_exif = read_extra_exif(path);
+    solstone_core_import::detect_photo_capture_moment(path, zone, extra_exif.as_deref())
+}
+
+struct PlacedImageMoment {
+    stamp: solstone_core_import::Timestamp,
+    utc_offset_seconds: Option<i32>,
+    tz: Option<String>,
+    time_source: PhotoTimeSource,
+}
+
+fn place_image_moment(
     path: &Path,
     zone: &TimeZone,
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
     extra_exif: Option<&[u8]>,
-) -> Result<solstone_core_import::Timestamp, ImageImportError> {
+    client_captured_at: Option<&str>,
+) -> Result<PlacedImageMoment, ImageImportError> {
     if let Some(owner) = owner_timestamp
         && let Ok(ts) = solstone_core_import::validate_timestamp(owner)
     {
-        return Ok(ts);
+        return Ok(PlacedImageMoment {
+            stamp: ts,
+            utc_offset_seconds: None,
+            tz: None,
+            time_source: PhotoTimeSource::Owner,
+        });
     }
-    let filename = path.file_name().and_then(|name| name.to_str());
-    if let Some(detected) =
-        solstone_core_import::detect_creation_with_exif(path, filename, zone, extra_exif)
+    if let Some(moment) = solstone_core_import::detect_photo_capture_moment(path, zone, extra_exif)
     {
-        return Ok(detected);
+        return Ok(PlacedImageMoment {
+            stamp: moment.stamp,
+            utc_offset_seconds: moment.utc_offset_seconds,
+            tz: moment.tz,
+            time_source: PhotoTimeSource::Capture,
+        });
+    }
+    if let Some(raw) = client_captured_at
+        && let Some(moment) = solstone_core_import::parse_client_captured_at(raw, zone)
+    {
+        return Ok(PlacedImageMoment {
+            stamp: moment.stamp,
+            utc_offset_seconds: moment.utc_offset_seconds,
+            tz: moment.tz,
+            time_source: PhotoTimeSource::Capture,
+        });
     }
     if let Some(fallback) = fallback_timestamp
         && let Ok(ts) = solstone_core_import::validate_timestamp(fallback)
     {
-        return Ok(ts);
+        return Ok(PlacedImageMoment {
+            stamp: ts,
+            utc_offset_seconds: None,
+            tz: None,
+            time_source: PhotoTimeSource::UploadFallback,
+        });
     }
     Err(ImageImportError::CouldNotDetectTimestamp {
         path: path.to_path_buf(),
     })
 }
 
+fn zoned_from_placed(
+    naive: DateTime,
+    utc_offset_seconds: Option<i32>,
+    zone: &TimeZone,
+) -> Option<ZonedDateTime> {
+    if let Some(seconds) = utc_offset_seconds
+        && let Ok(offset) = Offset::from_seconds(seconds)
+        && let Ok(instant) = offset.to_timestamp(naive)
+    {
+        return Some(instant.to_zoned_datetime(TimeZone::fixed(offset)));
+    }
+    solstone_core_time::from_local(zone, naive).earliest()
+}
+
 /// Preview one image source without writing any journal state, dated on the
-/// owner's day in `zone`.
+/// photo's capture day when known or the owner's day in `zone` otherwise.
 pub fn preview(
     path: &Path,
     zone: &TimeZone,
@@ -277,19 +364,20 @@ pub fn preview(
     let Some((format, _)) = format_details(format) else {
         return degenerate_preview();
     };
-    let Ok(decided_stamp) = place_image_timestamp(
+    let Ok(placed) = place_image_moment(
         path,
         zone,
         owner_timestamp,
         fallback_timestamp,
         exif.as_deref(),
+        None,
     ) else {
         return degenerate_preview();
     };
-    let Ok(naive) = DateTime::strptime("%Y%m%d_%H%M%S", decided_stamp.as_str()) else {
+    let Ok(naive) = DateTime::strptime("%Y%m%d_%H%M%S", placed.stamp.as_str()) else {
         return degenerate_preview();
     };
-    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+    let Some(timestamp) = zoned_from_placed(naive, placed.utc_offset_seconds, zone) else {
         return degenerate_preview();
     };
     ImportPreview {
@@ -318,23 +406,40 @@ pub fn preview_size(
             detail: format!("unsupported image format {format:?}"),
         });
     }
-    let decided_stamp = place_image_timestamp(
+    let client_captured_at = path
+        .parent()
+        .filter(|parent| parent.parent() == Some(journal.join("imports").as_path()))
+        .and_then(|dir| dir.file_name().and_then(|id| id.to_str()))
+        .and_then(|id| {
+            solstone_core_import::read_provenance(journal, id)
+                .ok()
+                .flatten()
+        })
+        .and_then(|meta| {
+            meta.get("captured_at")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        });
+    let placed = place_image_moment(
         path,
         zone,
         owner_timestamp,
         fallback_timestamp,
         exif.as_deref(),
+        client_captured_at.as_deref(),
     )?;
     let final_stamp =
-        solstone_core_import::source_timestamp_for_preview(journal, &decided_stamp, path)
-            .unwrap_or(decided_stamp);
+        solstone_core_import::source_timestamp_for_preview(journal, &placed.stamp, path)
+            .unwrap_or(placed.stamp);
     let naive = DateTime::strptime("%Y%m%d_%H%M%S", final_stamp.as_str()).map_err(|error| {
         ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
             detail: error.to_string(),
         }
     })?;
-    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+    let Some(timestamp) = zoned_from_placed(naive, placed.utc_offset_seconds, zone) else {
         return Err(ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
             detail: "invalid local timestamp in timezone".to_owned(),
@@ -379,6 +484,11 @@ pub struct PreparedImage {
     pub mime_type: &'static str,
     pub extension: String,
     pub title: String,
+    pub time_source: PhotoTimeSource,
+    pub utc_offset_seconds: Option<i32>,
+    pub tz: Option<String>,
+    pub caption: Option<String>,
+    pub original_filename: Option<String>,
     triage: Option<Box<ImageTriage>>,
 }
 
@@ -396,7 +506,15 @@ pub fn prepare_image(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<PreparedImage, ImageImportError> {
-    prepare(path, wire, zone, owner_timestamp, fallback_timestamp, false)
+    prepare(
+        path,
+        wire,
+        zone,
+        owner_timestamp,
+        fallback_timestamp,
+        false,
+        ImageImportOptions::default(),
+    )
 }
 
 /// Prepare a standalone image and determine its kind from the decoded source.
@@ -407,7 +525,36 @@ pub fn prepare_manual_image(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<PreparedImage, ImageImportError> {
-    prepare(path, wire, zone, owner_timestamp, fallback_timestamp, true)
+    prepare(
+        path,
+        wire,
+        zone,
+        owner_timestamp,
+        fallback_timestamp,
+        true,
+        ImageImportOptions::default(),
+    )
+}
+
+/// Prepare a standalone image with optional provenance from `import.json`
+/// (owner caption, client capture timestamp, and original filename).
+pub fn prepare_manual_image_with_options(
+    path: &Path,
+    wire: &dyn WireClient,
+    zone: &TimeZone,
+    owner_timestamp: Option<&str>,
+    fallback_timestamp: Option<&str>,
+    options: ImageImportOptions,
+) -> Result<PreparedImage, ImageImportError> {
+    prepare(
+        path,
+        wire,
+        zone,
+        owner_timestamp,
+        fallback_timestamp,
+        true,
+        options,
+    )
 }
 
 fn prepare(
@@ -417,6 +564,7 @@ fn prepare(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
     manual: bool,
+    options: ImageImportOptions,
 ) -> Result<PreparedImage, ImageImportError> {
     let (image, format, modified, orientation, exif, triage) = read_image(path, manual)?;
     let (format_name, mime_type) =
@@ -424,20 +572,21 @@ fn prepare(
             path: path.to_path_buf(),
             detail: format!("unsupported image format {format:?}"),
         })?;
-    let decided_stamp = place_image_timestamp(
+    let placed = place_image_moment(
         path,
         zone,
         owner_timestamp,
         fallback_timestamp,
         exif.as_deref(),
+        options.client_captured_at.as_deref(),
     )?;
-    let naive = DateTime::strptime("%Y%m%d_%H%M%S", decided_stamp.as_str()).map_err(|error| {
+    let naive = DateTime::strptime("%Y%m%d_%H%M%S", placed.stamp.as_str()).map_err(|error| {
         ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
             detail: error.to_string(),
         }
     })?;
-    let Some(timestamp) = solstone_core_time::from_local(zone, naive).earliest() else {
+    let Some(timestamp) = zoned_from_placed(naive, placed.utc_offset_seconds, zone) else {
         return Err(ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
             detail: "invalid local timestamp in timezone".to_owned(),
@@ -454,6 +603,19 @@ fn prepare(
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
+    let caption = options
+        .caption
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+    let original_filename = options
+        .original_filename
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            path.file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+                .filter(|value| !value.is_empty())
+        });
 
     let description = match vision_png(&image, orientation) {
         Ok(_) if !solstone_core_import::work_continues() => DescriptionOutcome::Unavailable {
@@ -487,6 +649,11 @@ fn prepare(
         mime_type,
         extension,
         title,
+        time_source: placed.time_source,
+        utc_offset_seconds: placed.utc_offset_seconds,
+        tz: placed.tz,
+        caption,
+        original_filename,
         triage,
     })
 }
@@ -873,6 +1040,7 @@ pub fn install_image_at(
         prepared.image.width(),
         prepared.image.height(),
         &transcript_date,
+        prepared.caption.as_deref(),
         &prepared.description,
     );
     let claims = solstone_core_segment::output_attempt::OutputClaims::acquire(
@@ -919,6 +1087,8 @@ pub fn install_image_at(
             path,
             detail: error.to_string(),
         })?;
+    } else {
+        write_image_meta(&claimed.directory, prepared)?;
     }
     write_text(
         &transcript_path,
@@ -948,6 +1118,45 @@ pub fn install_image_at(
     })
 }
 
+fn write_image_meta(directory: &Path, prepared: &PreparedImage) -> Result<(), ImageImportError> {
+    let mut meta = serde_json::Map::new();
+    meta.insert("schema".to_owned(), serde_json::json!(1));
+    meta.insert(
+        "time_source".to_owned(),
+        serde_json::json!(prepared.time_source.as_str()),
+    );
+    if let Some(offset) = prepared.utc_offset_seconds {
+        meta.insert("utc_offset_seconds".to_owned(), serde_json::json!(offset));
+    }
+    if let Some(tz) = prepared.tz.as_deref() {
+        meta.insert("tz".to_owned(), serde_json::json!(tz));
+    }
+    if let Some(caption) = prepared.caption.as_deref() {
+        meta.insert("caption".to_owned(), serde_json::json!(caption));
+    }
+    if let Some(filename) = prepared.original_filename.as_deref() {
+        meta.insert("original_filename".to_owned(), serde_json::json!(filename));
+    }
+    let path = directory.join(IMAGE_META_FILENAME);
+    let encoded = serde_json::to_vec(&serde_json::Value::Object(meta)).map_err(|error| {
+        ImageImportError::JournalIo {
+            path: path.clone(),
+            detail: error.to_string(),
+        }
+    })?;
+    atomic_replace(
+        &path,
+        &encoded,
+        AtomicWriteOptions {
+            mode: Some(PRIVATE_IMPORT_FILE_MODE),
+        },
+    )
+    .map_err(|error| ImageImportError::JournalIo {
+        path,
+        detail: error.to_string(),
+    })
+}
+
 /// Install original, transcript, and manifest for a prepared image.
 pub fn install_and_publish_image(
     prepared: &PreparedImage,
@@ -959,13 +1168,49 @@ pub fn install_and_publish_image(
     if !solstone_core_import::work_continues() {
         return Err(ImageImportError::Stopped);
     }
-    let effective_start = solstone_core_import::read_provenance(journal_root, import_id)
+    let provenance = solstone_core_import::read_provenance(journal_root, import_id)
         .ok()
-        .flatten()
-        .and_then(|m| solstone_core_import::stored_source_timestamp(&m, import_id).ok())
+        .flatten();
+    let effective_start = provenance
+        .as_ref()
+        .and_then(|m| solstone_core_import::stored_source_timestamp(m, import_id).ok())
         .and_then(|ts| DateTime::strptime("%Y%m%d_%H%M%S", ts.as_str()).ok())
         .unwrap_or_else(|| prepared.timestamp.datetime());
-    let result = install_image_at(prepared, journal_root, effective_start, publication, None)?;
+    let mut effective_prepared = prepared.clone();
+    if let Some(meta) = provenance.as_ref() {
+        if meta
+            .get("owner_timestamp")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            effective_prepared.time_source = PhotoTimeSource::Owner;
+            effective_prepared.utc_offset_seconds = None;
+            effective_prepared.tz = None;
+        }
+        if effective_prepared.caption.is_none() {
+            effective_prepared.caption = meta
+                .get("caption")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+        }
+        if effective_prepared.original_filename.is_none() {
+            effective_prepared.original_filename = meta
+                .get("original_filename")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+        }
+    }
+    let result = install_image_at(
+        &effective_prepared,
+        journal_root,
+        effective_start,
+        publication,
+        None,
+    )?;
     write_import_manifest(
         &prepared.path,
         journal_root,
@@ -1167,6 +1412,7 @@ fn render_image_markdown(
     width: u32,
     height: u32,
     date: &str,
+    caption: Option<&str>,
     description: &DescriptionOutcome,
 ) -> String {
     let mut lines = vec![
@@ -1180,6 +1426,13 @@ fn render_image_markdown(
         "---".to_owned(),
         String::new(),
     ];
+    if let Some(caption) = caption.map(str::trim).filter(|value| !value.is_empty()) {
+        lines.push("**Caption:**".to_owned());
+        lines.push(caption.to_owned());
+        lines.push(String::new());
+        lines.push("---".to_owned());
+        lines.push(String::new());
+    }
     lines.push(render_model_block(description));
     format!("{}\n", lines.join("\n").trim_end())
 }
@@ -1728,7 +1981,8 @@ mod tests {
                 reason: text.to_owned(),
             },
         ] {
-            let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &description);
+            let rendered =
+                render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", None, &description);
             assert_model_partition(&rendered, &description);
             let (_, model) = rendered.split_once("\n---\n\n").unwrap();
             let mut visible = String::new();
@@ -1750,12 +2004,14 @@ mod tests {
     fn transcript_has_a_structural_model_partition() {
         let description =
             DescriptionOutcome::Generated("A description.\n\nSecond line.".to_owned());
-        let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &description);
+        let rendered =
+            render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", None, &description);
         assert_model_partition(&rendered, &description);
         let unavailable = DescriptionOutcome::Unavailable {
             reason: "no engine".to_owned(),
         };
-        let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &unavailable);
+        let rendered =
+            render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", None, &unavailable);
         assert_model_partition(&rendered, &unavailable);
     }
 
@@ -3284,5 +3540,143 @@ mod tests {
         );
         assert!(!transcript.to_string_lossy().contains("secret description"));
         assert!(!String::from_utf8_lossy(&kept_transcript).contains("secret description"));
+    }
+
+    #[test]
+    fn photo_keeps_capture_zone_ignores_filename_and_writes_caption_and_meta() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        // Conflicting filename date (2019-03-04) + Tokyo capture time during US DST spring-forward gap
+        // (2026-03-08 02:30:00 +09:00, which does not exist in America/Denver).
+        let source = source_dir.path().join("20190304_120000.jpg");
+        let mut base = Vec::new();
+        JpegEncoder::new_with_quality(&mut base, 80)
+            .encode_image(&DynamicImage::ImageRgb8(ImageBuffer::from_pixel(
+                8,
+                8,
+                Rgb([40, 80, 120]),
+            )))
+            .unwrap();
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x8769u16.to_le_bytes());
+        tiff.extend_from_slice(&4u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&26u32.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        let dt = b"2026:03:08 02:30:00\0";
+        let off = b"+09:00\0";
+        let val_start = 26 + 2 + 2 * 12 + 4;
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        for (tag, len, ptr) in [
+            (0x9003u16, dt.len() as u32, val_start as u32),
+            (0x9011u16, off.len() as u32, (val_start + dt.len()) as u32),
+        ] {
+            tiff.extend_from_slice(&tag.to_le_bytes());
+            tiff.extend_from_slice(&2u16.to_le_bytes());
+            tiff.extend_from_slice(&len.to_le_bytes());
+            tiff.extend_from_slice(&ptr.to_le_bytes());
+        }
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        tiff.extend_from_slice(dt);
+        tiff.extend_from_slice(off);
+        let mut payload = b"Exif\0\0".to_vec();
+        payload.extend_from_slice(&tiff);
+        let len = u16::try_from(payload.len() + 2).unwrap();
+        let mut jpeg = base[..2].to_vec();
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        jpeg.extend_from_slice(&len.to_be_bytes());
+        jpeg.extend_from_slice(&payload);
+        jpeg.extend_from_slice(&base[2..]);
+        fs::write(&source, &jpeg).unwrap();
+
+        let denver = solstone_core_time::zone("America/Denver").unwrap();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let prepared = prepare_manual_image_with_options(
+            &source,
+            &wire,
+            &denver,
+            None,
+            Some("20261119_100000"),
+            ImageImportOptions {
+                caption: Some("late night shinjuku".to_owned()),
+                client_captured_at: None,
+                original_filename: Some("20190304_120000.jpg".to_owned()),
+            },
+        )
+        .unwrap();
+        assert_eq!(prepared.day, "20260308");
+        assert_eq!(prepared.segment, "023000_0");
+        assert_eq!(prepared.time_source, PhotoTimeSource::Capture);
+        assert_eq!(prepared.utc_offset_seconds, Some(32400));
+
+        let publication = TestPublication::new();
+        let result = install_and_publish_image(
+            &prepared,
+            journal.path(),
+            "import-tokyo",
+            &publication,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.created_segment.day, "20260308");
+        assert_eq!(result.created_segment.segment, "023000_0");
+        let seg_dir = journal
+            .path()
+            .join("chronicle/20260308/import.image/023000_0");
+        let meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(seg_dir.join("image_meta.json")).unwrap()).unwrap();
+        assert_eq!(meta["time_source"], "capture");
+        assert_eq!(meta["utc_offset_seconds"], 32400);
+        assert_eq!(meta["caption"], "late night shinjuku");
+        let transcript = fs::read_to_string(&result.files_created[0]).unwrap();
+        let cap_pos = transcript
+            .find("**Caption:**\nlate night shinjuku")
+            .unwrap();
+        let model_pos = transcript.find("> [image description").unwrap();
+        assert!(cap_pos < model_pos);
+    }
+
+    #[test]
+    fn metadata_free_photo_records_upload_fallback_in_image_meta() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        // Filename date must NOT date a photo.
+        let source = source_dir.path().join("20190304_120000.png");
+        fs::write(&source, png_bytes()).unwrap();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let prepared = prepare_manual_image(
+            &source,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            Some("20261119_101500"),
+        )
+        .unwrap();
+        assert_eq!(prepared.day, "20261119");
+        assert_eq!(prepared.segment, "101500_0");
+        assert_eq!(prepared.time_source, PhotoTimeSource::UploadFallback);
+        assert_eq!(prepared.utc_offset_seconds, None);
+
+        let publication = TestPublication::new();
+        install_and_publish_image(&prepared, journal.path(), "import-fb", &publication, None)
+            .unwrap();
+        let meta: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20261119/import.image/101500_0/image_meta.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(meta["time_source"], "upload_fallback");
+        assert!(meta.get("utc_offset_seconds").is_none());
     }
 }

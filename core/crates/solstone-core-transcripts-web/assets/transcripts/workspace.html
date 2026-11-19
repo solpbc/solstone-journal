@@ -298,6 +298,11 @@
   border: 1px solid var(--orange);
 }
 
+.tr-seg-image {
+  background: color-mix(in srgb, var(--ink-faint) 28%, var(--paper));
+  border: 1px solid var(--ink-faint);
+}
+
 .tr-body-events {
   position: absolute;
   /* Audio is x=72..112 and screen/import is x=120..160. Body starts after
@@ -1313,6 +1318,19 @@
   border: 1px solid var(--ink-faint);
 }
 
+.tr-zoom-pill-photo {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+
+.tr-zoom-pill-photo svg {
+  width: 13px;
+  height: 13px;
+}
+
 .tr-zoom-pill-both {
   background: linear-gradient(to right, color-mix(in srgb, var(--success) 75%, transparent), color-mix(in srgb, var(--success) 70%, transparent) 50%, color-mix(in srgb, var(--warn) 75%, transparent));
   border: 1px solid var(--success);
@@ -1533,6 +1551,27 @@
   line-height: 1.5;
   text-align: center;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tr-modal-photo-caption {
+  color: var(--ink-on-dark);
+}
+
+.tr-modal-photo-desc {
+  color: color-mix(in srgb, var(--ink-on-dark) 78%, transparent);
+  font-size: 13px;
+}
+
+.tr-modal-part-label {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--ink-on-dark) 62%, transparent);
 }
 
 /* deleting a stretch of time: the day-level act on the heading row, and the dialog's fields */
@@ -2076,7 +2115,10 @@
    and a size you can recognise: a phone's tall, a computer's wide. Its text
    starts level with the image's top, so this outranks the screen entry's
    centring below. */
-.tr-entry-screen.tr-entry-screenshot .tr-entry-content {
+.tr-entry-screen.tr-entry-screenshot .tr-entry-content,
+.tr-entry-image.tr-entry-photo .tr-entry-content {
+  display: flex;
+  gap: 14px;
   align-items: flex-start;
   flex-wrap: wrap;
 }
@@ -2111,10 +2153,50 @@
   color: var(--ink);
 }
 
-/* The text sits beside a tall screenshot and wraps below a wide one. */
-.tr-entry-screenshot .tr-entry-desc {
+/* The text sits beside a tall screenshot or photo and wraps below a wide one. */
+.tr-entry-screenshot .tr-entry-desc,
+.tr-entry-photo .tr-entry-desc {
   flex: 1 1 240px;
-  min-width: 240px;
+  min-width: min(100%, 240px);
+}
+
+.tr-photo-time-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.tr-photo-part-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+
+.tr-photo-caption {
+  margin: 4px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--hairline-2);
+}
+
+.tr-photo-caption-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.tr-photo-description {
+  margin-top: 6px;
+}
+
+.tr-photo-description .tr-image-text p:first-child {
+  margin-top: 0;
+}
+
+.tr-photo-description .tr-image-text p:last-child {
+  margin-bottom: 0;
 }
 
 .tr-entry-shot {

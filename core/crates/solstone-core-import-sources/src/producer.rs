@@ -290,51 +290,72 @@ pub fn run_native_producer(
         (|| {
             // Step 3: Source heavy processing OUTSIDE publication lock
             enum PreparedSource {
-                Image(image::PreparedImage),
+                Image(Box<image::PreparedImage>),
                 Document(document::PreparedDocumentImport),
             }
 
             let prepared_source = match request.source {
-                RegistrySource::Image => match image::prepare_manual_image(
-                    request.source_path,
-                    wire,
-                    &solstone_core_journal_config::owner_zone(request.journal_root),
-                    request.owner_timestamp,
-                    request.fallback_timestamp,
-                ) {
-                    Ok(prep) => PreparedSource::Image(prep),
-                    Err(err) => {
-                        let finished_at_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-                        let _ = record_unconfirmed_attempt(
-                            request.journal_root,
-                            request.import_id,
-                            generation,
-                            finished_at_ms,
-                            Some(IMPORT_FAILED_REASON.to_owned()),
-                        );
-                        return heartbeat.finish_then(|| {
-                            emit_importer_error(
-                                &emitter,
-                                &ImporterError {
-                                    import_id: request.import_id.to_owned(),
-                                    stage: "execution".to_owned(),
-                                    error: "import failed".to_owned(),
-                                    duration_ms,
-                                    partial_outputs: vec![],
-                                    generation: Some(generation),
-                                    attempt_id: Some(attempt_id.clone()),
-                                },
+                RegistrySource::Image => {
+                    let provenance = read_provenance(request.journal_root, request.import_id)
+                        .ok()
+                        .flatten();
+                    let str_field = |key: &str| {
+                        provenance
+                            .as_ref()
+                            .and_then(|meta| meta.get(key))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(ToOwned::to_owned)
+                    };
+                    let options = image::ImageImportOptions {
+                        caption: str_field("caption"),
+                        client_captured_at: str_field("captured_at"),
+                        original_filename: str_field("original_filename"),
+                    };
+                    match image::prepare_manual_image_with_options(
+                        request.source_path,
+                        wire,
+                        &solstone_core_journal_config::owner_zone(request.journal_root),
+                        request.owner_timestamp,
+                        request.fallback_timestamp,
+                        options,
+                    ) {
+                        Ok(prep) => PreparedSource::Image(Box::new(prep)),
+                        Err(err) => {
+                            let finished_at_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                                as u64;
+                            let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+                            let _ = record_unconfirmed_attempt(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_FAILED_REASON.to_owned()),
                             );
-                            Err(NativeProducerError::SourceFailed {
-                                detail: err.to_string(),
-                            })
-                        });
+                            return heartbeat.finish_then(|| {
+                                emit_importer_error(
+                                    &emitter,
+                                    &ImporterError {
+                                        import_id: request.import_id.to_owned(),
+                                        stage: "execution".to_owned(),
+                                        error: "import failed".to_owned(),
+                                        duration_ms,
+                                        partial_outputs: vec![],
+                                        generation: Some(generation),
+                                        attempt_id: Some(attempt_id.clone()),
+                                    },
+                                );
+                                Err(NativeProducerError::SourceFailed {
+                                    detail: err.to_string(),
+                                })
+                            });
+                        }
                     }
-                },
+                }
                 RegistrySource::Document => {
                     let import_dir = request.journal_root.join("imports").join(request.import_id);
                     let doc_req = DocumentImportRequest {

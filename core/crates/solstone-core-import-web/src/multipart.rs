@@ -6,7 +6,7 @@ use axum::extract::multipart::Field;
 pub(crate) const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
 pub(crate) const MAX_SAVE_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub(crate) const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
-pub(crate) const MAX_PARTS: usize = 12;
+pub(crate) const MAX_PARTS: usize = 16;
 pub(crate) const MAX_HEADERS: usize = 16;
 pub(crate) const MAX_FILENAME_BYTES: usize = 128;
 

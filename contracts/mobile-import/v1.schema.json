@@ -17,6 +17,7 @@
         "ingest_no_files",
         "multipart_part_too_large",
         "strava_download",
+        "unsupported_image_format",
         "invalid_operation_for_state",
         "import_not_found",
         "import_conflict",
@@ -39,6 +40,9 @@
           "const": 413
         },
         "strava_download": {
+          "const": 422
+        },
+        "unsupported_image_format": {
           "const": 422
         },
         "invalid_operation_for_state": {
@@ -112,7 +116,7 @@
         "client_item_id"
       ],
       "x-solstone-multipart-limits": {
-        "max_parts": 12,
+        "max_parts": 16,
         "max_headers_per_part": 16,
         "max_filename_bytes": 128,
         "max_field_bytes": 67108864,
@@ -145,6 +149,14 @@
           "type": "string"
         },
         "observer_handle": {
+          "type": "string"
+        },
+        "caption": {
+          "description": "Owner-written text shared alongside an image.",
+          "type": "string"
+        },
+        "captured_at": {
+          "description": "Client-observed photo capture timestamp (RFC 3339 with offset when known).",
           "type": "string"
         },
         "client": {

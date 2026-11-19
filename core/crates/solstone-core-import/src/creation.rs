@@ -18,54 +18,138 @@ use crate::timestamp::{Timestamp, validate_timestamp};
 /// QuickTime epoch offset: seconds between 1904-01-01 00:00:00 UTC and 1970-01-01 00:00:00 UTC.
 const QUICKTIME_EPOCH_OFFSET_SECS: i64 = 2_082_844_800;
 
-/// Detect the single consensus creation timestamp for a file, its filename, and container metadata.
-pub fn detect_creation(path: &Path, filename: Option<&str>, zone: &TimeZone) -> Option<Timestamp> {
-    detect_creation_with_exif(path, filename, zone, None)
+/// A photo's creation moment in the timezone where it was taken.
+///
+/// When the photo carries a UTC offset (EXIF `OffsetTimeOriginal` /
+/// `OffsetTimeDigitized`, or an explicit numeric offset on a client-supplied
+/// `captured_at`), `stamp` stays on that capture clock and `utc_offset_seconds`
+/// preserves the zone rather than folding it into the journal's home zone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptureMoment {
+    pub stamp: Timestamp,
+    pub utc_offset_seconds: Option<i32>,
+    pub tz: Option<String>,
 }
 
-/// Detect creation timestamp, including caller-supplied Exif metadata bytes (for PNG/WebP).
-pub fn detect_creation_with_exif(
+/// Detect a photo's creation moment from embedded EXIF metadata only.
+///
+/// A filename never dates a photo. When EXIF carries both `DateTimeOriginal`
+/// and `DateTimeDigitized` (for instance differing by a second after editing or
+/// burst save), `DateTimeOriginal` wins rather than cancelling both.
+pub fn detect_photo_capture_moment(
     path: &Path,
-    filename: Option<&str>,
     zone: &TimeZone,
     extra_exif: Option<&[u8]>,
-) -> Option<Timestamp> {
-    let mut candidates = Vec::new();
-
-    if let Some(name) = filename {
-        candidates.extend(parse_filename_candidates(name, zone));
+) -> Option<CaptureMoment> {
+    if let Some(exif) = extra_exif
+        && let Some(moment) = exif_photo_capture_moment(exif, zone)
+    {
+        return Some(moment);
     }
-
-    if let Some(exif) = extra_exif {
-        candidates.extend(exif_creation_candidates(exif, zone));
+    if path.is_file()
+        && let Some(jpeg_exif) = scan_jpeg_exif_bytes(path)
+        && let Some(moment) = exif_photo_capture_moment(&jpeg_exif, zone)
+    {
+        return Some(moment);
     }
-
-    if path.is_file() {
-        if let Some(jpeg_candidates) = scan_jpeg_creation_candidates(path, zone) {
-            candidates.extend(jpeg_candidates);
-        }
-        if let Some(isobmff_candidates) = scan_isobmff_creation_candidates(path, zone) {
-            candidates.extend(isobmff_candidates);
-        }
-    }
-
-    let timestamp = decide(candidates)?;
-    // A bare repeated wall clock is ambiguous. Offset-bearing evidence can
-    // disambiguate it without choosing an occurrence on the owner's behalf.
-    timestamp.source_instant()?;
-    Some(timestamp)
+    None
 }
 
-/// Parse creation candidates from raw Exif TIFF segment bytes.
-pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Timestamp> {
+/// Parse a photo's creation moment from raw EXIF TIFF bytes (with or without
+/// a leading `Exif\0\0` header), keeping the photo's own capture timezone when
+/// an offset tag is present.
+pub fn exif_photo_capture_moment(exif_bytes: &[u8], zone: &TimeZone) -> Option<CaptureMoment> {
+    let tiff = exif_bytes.strip_prefix(b"Exif\0\0").unwrap_or(exif_bytes);
+    let tags = scan_exif_date_tags(tiff)?;
+    if let Some(d_orig) = tags.date_original.as_deref() {
+        let off = tags.offset_original.as_deref().or_else(|| {
+            (tags.date_digitized.as_deref() == Some(d_orig))
+                .then_some(tags.offset_digitized.as_deref())
+                .flatten()
+        });
+        if let Some(moment) = parse_exif_capture_moment(d_orig, off, zone) {
+            return Some(moment);
+        }
+    }
+    if let Some(d_digit) = tags.date_digitized.as_deref()
+        && let Some(moment) =
+            parse_exif_capture_moment(d_digit, tags.offset_digitized.as_deref(), zone)
+    {
+        return Some(moment);
+    }
+    None
+}
+
+/// Parse a client-reported photo capture timestamp (such as RFC 3339
+/// `2026-11-12T21:14:00+09:00` or offsetless civil `2026-11-12T21:14:00`).
+///
+/// An explicit numeric offset (`+09:00`, `-07:00`, `+00:00`) keeps the capture
+/// wall clock and records `utc_offset_seconds`. `Z` or `-00:00` (unknown local
+/// offset per RFC 3339 §4.3) folds the instant into `zone` without asserting a
+/// separate capture zone.
+pub fn parse_client_captured_at(raw: &str, zone: &TimeZone) -> Option<CaptureMoment> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(parsed) = parse_rfc3339(trimmed) {
+        let raw_instant = parsed.timestamp();
+        let second = raw_instant.as_second() - i64::from(raw_instant.subsec_nanosecond() < 0);
+        let instant = jiff::Timestamp::new(second, 0).ok()?;
+        let suffix = trimmed.rsplit_once(['T', 't', ' ']).map(|(_, time)| time)?;
+        if suffix.ends_with('Z') || suffix.ends_with('z') || suffix.ends_with("-00:00") {
+            let stamp = utc_stamp(instant, zone)?;
+            return Some(CaptureMoment {
+                stamp,
+                utc_offset_seconds: None,
+                tz: None,
+            });
+        }
+        let offset_start = suffix.rfind(['+', '-'])?;
+        let offset = parse_offset_string(&suffix[offset_start..])?;
+        let civil = offset.to_datetime(instant);
+        if placeholder(civil) {
+            return None;
+        }
+        let stamp = validate_timestamp(&civil.strftime("%Y%m%d_%H%M%S").to_string())
+            .ok()?
+            .with_source_instant(instant);
+        return Some(CaptureMoment {
+            stamp,
+            utc_offset_seconds: Some(offset.seconds()),
+            tz: None,
+        });
+    }
+    let naive = DateTime::strptime("%Y-%m-%dT%H:%M:%S", trimmed)
+        .or_else(|_| DateTime::strptime("%Y:%m:%d %H:%M:%S", trimmed))
+        .ok()?;
+    if placeholder(naive) || leap_second(trimmed, naive) {
+        return None;
+    }
+    let stamp = wall_stamp(naive, zone)?;
+    Some(CaptureMoment {
+        stamp,
+        utc_offset_seconds: None,
+        tz: None,
+    })
+}
+
+struct ExifDateTags {
+    date_original: Option<String>,
+    date_digitized: Option<String>,
+    offset_original: Option<String>,
+    offset_digitized: Option<String>,
+}
+
+fn scan_exif_date_tags(exif_bytes: &[u8]) -> Option<ExifDateTags> {
     if exif_bytes.len() < 8 {
-        return Vec::new();
+        return None;
     }
 
     let is_little_endian = match &exif_bytes[0..4] {
         b"II*\0" => true,
         b"MM\0*" => false,
-        _ => return Vec::new(),
+        _ => return None,
     };
 
     let read_u16 = |bytes: &[u8], offset: usize| -> Option<u16> {
@@ -97,23 +181,17 @@ pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Times
         Some(trimmed.trim().to_owned())
     };
 
-    let ifd0_offset = match read_u32(exif_bytes, 4) {
-        Some(val) => val as usize,
-        None => return Vec::new(),
-    };
+    let ifd0_offset = read_u32(exif_bytes, 4)? as usize;
 
     let mut exif_ifd_offset = None;
-    let mut date_original = None;
-    let mut date_digitized = None;
-    let mut offset_original = None;
-    let mut offset_digitized = None;
+    let mut tags = ExifDateTags {
+        date_original: None,
+        date_digitized: None,
+        offset_original: None,
+        offset_digitized: None,
+    };
 
-    let scan_ifd = |offset: usize,
-                    exif_offset: &mut Option<usize>,
-                    d_orig: &mut Option<String>,
-                    d_digit: &mut Option<String>,
-                    off_orig: &mut Option<String>,
-                    off_digit: &mut Option<String>| {
+    let scan_ifd = |offset: usize, exif_offset: &mut Option<usize>, out: &mut ExifDateTags| {
         let count = match read_u16(exif_bytes, offset) {
             Some(c) => c as usize,
             None => return,
@@ -155,22 +233,22 @@ pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Times
                     }
                 }
                 0x9003 => {
-                    if d_orig.is_none() {
-                        *d_orig = str_val;
+                    if out.date_original.is_none() {
+                        out.date_original = str_val;
                     }
                 }
                 0x9004 => {
-                    if d_digit.is_none() {
-                        *d_digit = str_val;
+                    if out.date_digitized.is_none() {
+                        out.date_digitized = str_val;
                     }
                 }
                 0x9011 => {
-                    if off_orig.is_none() {
-                        *off_orig = str_val;
+                    if out.offset_original.is_none() {
+                        out.offset_original = str_val;
                     }
                 }
-                0x9012 if off_digit.is_none() => {
-                    *off_digit = str_val;
+                0x9012 if out.offset_digitized.is_none() => {
+                    out.offset_digitized = str_val;
                 }
                 _ => {}
             }
@@ -178,37 +256,67 @@ pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Times
         }
     };
 
-    scan_ifd(
-        ifd0_offset,
-        &mut exif_ifd_offset,
-        &mut date_original,
-        &mut date_digitized,
-        &mut offset_original,
-        &mut offset_digitized,
-    );
-
+    scan_ifd(ifd0_offset, &mut exif_ifd_offset, &mut tags);
     if let Some(sub_offset) = exif_ifd_offset {
-        scan_ifd(
-            sub_offset,
-            &mut None,
-            &mut date_original,
-            &mut date_digitized,
-            &mut offset_original,
-            &mut offset_digitized,
-        );
+        scan_ifd(sub_offset, &mut None, &mut tags);
     }
+    Some(tags)
+}
 
+/// Detect the single consensus creation timestamp for a file, its filename, and container metadata.
+pub fn detect_creation(path: &Path, filename: Option<&str>, zone: &TimeZone) -> Option<Timestamp> {
+    detect_creation_with_exif(path, filename, zone, None)
+}
+
+/// Detect creation timestamp, including caller-supplied Exif metadata bytes (for PNG/WebP).
+pub fn detect_creation_with_exif(
+    path: &Path,
+    filename: Option<&str>,
+    zone: &TimeZone,
+    extra_exif: Option<&[u8]>,
+) -> Option<Timestamp> {
     let mut candidates = Vec::new();
 
-    if let Some(d_orig) = date_original {
-        let off = offset_original.as_deref();
+    if let Some(name) = filename {
+        candidates.extend(parse_filename_candidates(name, zone));
+    }
+
+    if let Some(exif) = extra_exif {
+        candidates.extend(exif_creation_candidates(exif, zone));
+    }
+
+    if path.is_file() {
+        if let Some(jpeg_candidates) = scan_jpeg_creation_candidates(path, zone) {
+            candidates.extend(jpeg_candidates);
+        }
+        if let Some(isobmff_candidates) = scan_isobmff_creation_candidates(path, zone) {
+            candidates.extend(isobmff_candidates);
+        }
+    }
+
+    let timestamp = decide(candidates)?;
+    // A bare repeated wall clock is ambiguous. Offset-bearing evidence can
+    // disambiguate it without choosing an occurrence on the owner's behalf.
+    timestamp.source_instant()?;
+    Some(timestamp)
+}
+
+/// Parse creation candidates from raw Exif TIFF segment bytes.
+pub fn exif_creation_candidates(exif_bytes: &[u8], zone: &TimeZone) -> Vec<Timestamp> {
+    let Some(tags) = scan_exif_date_tags(exif_bytes) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+
+    if let Some(d_orig) = tags.date_original {
+        let off = tags.offset_original.as_deref();
         if let Some(ts) = parse_exif_date_string(&d_orig, off, zone) {
             candidates.push(ts);
         }
     }
 
-    if let Some(d_digit) = date_digitized {
-        let off = offset_digitized.as_deref();
+    if let Some(d_digit) = tags.date_digitized {
+        let off = tags.offset_digitized.as_deref();
         if let Some(ts) = parse_exif_date_string(&d_digit, off, zone) {
             candidates.push(ts);
         }
@@ -411,6 +519,36 @@ fn make_filename_stamp(
     wall_stamp(naive, zone)
 }
 
+fn parse_exif_capture_moment(
+    date_str: &str,
+    offset_str: Option<&str>,
+    zone: &TimeZone,
+) -> Option<CaptureMoment> {
+    let trimmed = date_str.trim();
+    let naive = DateTime::strptime("%Y:%m:%d %H:%M:%S", trimmed).ok()?;
+    if placeholder(naive) || leap_second(trimmed, naive) {
+        return None;
+    }
+    if let Some(off) = offset_str {
+        let offset = parse_offset_string(off)?;
+        let instant = offset.to_timestamp(naive).ok()?;
+        let stamp = validate_timestamp(&naive.strftime("%Y%m%d_%H%M%S").to_string())
+            .ok()?
+            .with_source_instant(instant);
+        return Some(CaptureMoment {
+            stamp,
+            utc_offset_seconds: Some(offset.seconds()),
+            tz: None,
+        });
+    }
+    let stamp = wall_stamp(naive, zone)?;
+    Some(CaptureMoment {
+        stamp,
+        utc_offset_seconds: None,
+        tz: None,
+    })
+}
+
 fn parse_exif_date_string(
     date_str: &str,
     offset_str: Option<&str>,
@@ -468,7 +606,7 @@ fn parse_offset_string(off: &str) -> Option<Offset> {
     Offset::from_seconds(total_secs).ok()
 }
 
-fn scan_jpeg_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Timestamp>> {
+fn scan_jpeg_exif_bytes(path: &Path) -> Option<Vec<u8>> {
     let mut file = File::open(path).ok()?;
     let mut header = [0u8; 2];
     file.read_exact(&mut header).ok()?;
@@ -476,12 +614,15 @@ fn scan_jpeg_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Tim
         return None;
     }
 
-    let mut marker_buf = [0u8; 2];
-    while file.read_exact(&mut marker_buf).ok().is_some() {
-        if marker_buf[0] != 0xFF {
+    let mut byte = [0u8; 1];
+    while file.read_exact(&mut byte).ok().is_some() {
+        if byte[0] != 0xFF {
             break;
         }
-        let marker = marker_buf[1];
+        while byte[0] == 0xFF {
+            file.read_exact(&mut byte).ok()?;
+        }
+        let marker = byte[0];
         if marker == 0xD8 || (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
             continue;
         }
@@ -501,13 +642,18 @@ fn scan_jpeg_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Tim
             let mut payload = vec![0u8; payload_len];
             file.read_exact(&mut payload).ok()?;
             if payload.starts_with(b"Exif\0\0") && payload.len() >= 6 {
-                return Some(exif_creation_candidates(&payload[6..], zone));
+                return Some(payload[6..].to_vec());
             }
         } else {
             file.seek(SeekFrom::Current(payload_len as i64)).ok()?;
         }
     }
     None
+}
+
+fn scan_jpeg_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Timestamp>> {
+    let exif = scan_jpeg_exif_bytes(path)?;
+    Some(exif_creation_candidates(&exif, zone))
 }
 
 fn scan_isobmff_creation_candidates(path: &Path, zone: &TimeZone) -> Option<Vec<Timestamp>> {
@@ -1584,6 +1730,89 @@ mod tests {
         ] {
             fs::write(&path, make_jpeg_app1(date, offset)).unwrap();
             assert_eq!(detect_creation(&path, None, &TimeZone::UTC), None);
+            assert_eq!(
+                detect_photo_capture_moment(&path, &TimeZone::UTC, None),
+                None
+            );
         }
+    }
+
+    #[test]
+    fn photo_capture_moment_keeps_capture_zone_day_and_clock() {
+        let temporary = tempfile::tempdir().unwrap();
+        // Taken 2026-11-12 08:30 in Tokyo (+09:00): still 2026-11-11 16:30 in Denver (-07:00).
+        // The photo must land on 2026-11-12 at 08:30 with offset +32400, not Denver's Nov 11.
+        let path = temporary.path().join("PXL_20261111_233000.jpg");
+        fs::write(&path, make_jpeg_app1("2026:11:12 08:30:00", Some("+09:00"))).unwrap();
+        let moment = detect_photo_capture_moment(&path, &denver(), None).expect("Tokyo photo");
+        assert_eq!(moment.stamp.as_str(), "20261112_083000");
+        assert_eq!(moment.utc_offset_seconds, Some(32400));
+        assert_eq!(moment.tz, None);
+    }
+
+    #[test]
+    fn photo_capture_moment_prefers_date_time_original_over_one_second_digitized_skew() {
+        // Build an Exif TIFF block where DateTimeOriginal is 2026:11:12 21:14:00 (+09:00)
+        // and DateTimeDigitized is 2026:11:12 21:14:01 (+09:00).
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x8769u16.to_le_bytes());
+        tiff.extend_from_slice(&4u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&26u32.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(tiff.len(), 26);
+
+        let val_start = 26 + 2 + 4 * 12 + 4; // 80
+        let s1 = b"2026:11:12 21:14:00\0";
+        let s2 = b"2026:11:12 21:14:01\0";
+        let off = b"+09:00\0";
+        let o1 = val_start as u32;
+        let o2 = o1 + s1.len() as u32;
+        let o3 = o2 + s2.len() as u32;
+        let o4 = o3 + off.len() as u32;
+
+        tiff.extend_from_slice(&4u16.to_le_bytes());
+        for (tag, len, ptr) in [
+            (0x9003u16, s1.len() as u32, o1),
+            (0x9004u16, s2.len() as u32, o2),
+            (0x9011u16, off.len() as u32, o3),
+            (0x9012u16, off.len() as u32, o4),
+        ] {
+            tiff.extend_from_slice(&tag.to_le_bytes());
+            tiff.extend_from_slice(&2u16.to_le_bytes());
+            tiff.extend_from_slice(&len.to_le_bytes());
+            tiff.extend_from_slice(&ptr.to_le_bytes());
+        }
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        tiff.extend_from_slice(s1);
+        tiff.extend_from_slice(s2);
+        tiff.extend_from_slice(off);
+        tiff.extend_from_slice(off);
+
+        let moment = exif_photo_capture_moment(&tiff, &denver()).expect("original wins");
+        assert_eq!(moment.stamp.as_str(), "20261112_211400");
+        assert_eq!(moment.utc_offset_seconds, Some(32400));
+    }
+
+    #[test]
+    fn client_captured_at_preserves_explicit_offset_and_folds_z() {
+        let tokyo = parse_client_captured_at("2026-11-12T08:30:00+09:00", &denver()).unwrap();
+        assert_eq!(tokyo.stamp.as_str(), "20261112_083000");
+        assert_eq!(tokyo.utc_offset_seconds, Some(32400));
+
+        let london = parse_client_captured_at("2026-11-12T08:30:00+00:00", &denver()).unwrap();
+        assert_eq!(london.stamp.as_str(), "20261112_083000");
+        assert_eq!(london.utc_offset_seconds, Some(0));
+
+        let utc_only = parse_client_captured_at("2026-11-12T08:30:00Z", &denver()).unwrap();
+        assert_eq!(utc_only.stamp.as_str(), "20261112_013000");
+        assert_eq!(utc_only.utc_offset_seconds, None);
+
+        let civil = parse_client_captured_at("2026-11-12T08:30:00", &denver()).unwrap();
+        assert_eq!(civil.stamp.as_str(), "20261112_083000");
+        assert_eq!(civil.utc_offset_seconds, None);
     }
 }

@@ -445,9 +445,34 @@
     });
     const SCREENSHOT_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5V5.5A1.5 1.5 0 0 1 5.5 4h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3"/><circle cx="12" cy="12" r="2.2"/></svg>';
 
+    // Shared / imported photo owner copy. Owner copy: voice-checked.
+    const PHOTO_COPY = Object.freeze({
+      label: 'photo',
+      viewerLabel: 'photo viewer',
+      captionLabel: 'your note',
+      descriptionLabel: 'generated description',
+      noProcessing: "thinking isn't set up yet, so this photo hasn't been described.",
+      noProcessingAction: 'set up thinking',
+      unavailable: "this photo couldn't be described. the photo stays in your journal.",
+      uploadFallback: 'no date in photo · placed at import time',
+    });
+    const PHOTO_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20.5 16l-4.5-4.5-6.5 6.5"/></svg>';
+
     // A screenshots stream, by what its label says.
     function isScreenshotsStream(stream) {
       return Boolean(stream) && window.JournalFormat.streamSays(stream).what === SCREENSHOT_COPY.J4;
+    }
+
+    // A photo moment: an imported image segment or an image-only zero-duration segment.
+    function isPhotoSegment(seg) {
+      if (!seg) return false;
+      if (seg.stream === 'import.image') return true;
+      const types = seg.types || [];
+      return types.includes('image') && !types.includes('audio') && !types.includes('screen') && seg.start === seg.end;
+    }
+
+    function isMomentSegment(seg) {
+      return Boolean(seg) && (isScreenshotsStream(seg.stream) || isPhotoSegment(seg));
     }
 
     // The device a screenshot came from, by the name the journal already
@@ -1504,8 +1529,8 @@
     // name it beside the range so the times read as what they are.
     function segmentRangeLabel(seg) {
       if (seg.locationRow) return seg.start;
-      // A screenshot is a moment, so its time alone.
-      const range = isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} - ${seg.end}`;
+      // A screenshot or photo is a moment, so its time alone.
+      const range = isMomentSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`;
       if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
       const note = window.JournalClock
         ? window.JournalClock.noteText(selectedSegmentZone.label)
@@ -1530,6 +1555,10 @@
         if (sizes.screen) {
           total += sizes.screen;
           breakdown.push('screen ' + formatSize(sizes.screen));
+        }
+        if (sizes.image) {
+          total += sizes.image;
+          breakdown.push('photo ' + formatSize(sizes.image));
         }
         if (total) {
           const title = breakdown.join(', ');
@@ -1596,16 +1625,25 @@
       });
     }
 
+    function imageOnlySegments(segments) {
+      return (segments || []).filter(seg => {
+        const types = seg.types || [];
+        return types.includes('image') && !types.includes('audio') && !types.includes('screen');
+      });
+    }
+
     function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed', think = null, segment = null) {
       const el = document.createElement('div');
       el.className = 'tr-seg ' + (
         type === 'screen' || type === 'desktop_activity'
           ? 'tr-seg-screen'
-          : type === 'markdown'
-            ? 'tr-seg-markdown'
-            : type === 'browser'
-              ? 'tr-seg-browser'
-              : 'tr-seg-audio'
+          : type === 'image'
+            ? 'tr-seg-image'
+            : type === 'markdown'
+              ? 'tr-seg-markdown'
+              : type === 'browser'
+                ? 'tr-seg-browser'
+                : 'tr-seg-audio'
       );
       if (state === 'pending') {
         el.classList.add('tr-seg-pending');
@@ -1617,7 +1655,8 @@
       el.dataset.startMinute = startMin;
       el.dataset.endMinute = endMin;
       el.style.top = y(startMin) + 'px';
-      el.style.height = Math.max(2, y(endMin) - y(startMin)) + 'px';
+      const minHeight = type === 'image' ? 5 : 2;
+      el.style.height = Math.max(minHeight, y(endMin) - y(startMin)) + 'px';
       el.classList.add(column === 1 ? 'tr-seg-col-1' : 'tr-seg-col-0');
       // Zero-padded HH:MM label
       const _h = Math.floor(startMin / 60);
@@ -1629,12 +1668,15 @@
       const sortedStreams = [...streams].sort();
       const humanizedStreams = sortedStreams.map(humanizeStreamName);
       const omitType = sortedStreams.length > 0 && sortedStreams.every(s => shouldOmitStreamType(s, type));
-      const typeDisplay = type === 'desktop_activity' ? 'desktop activity' : type;
+      const typeDisplay = type === 'desktop_activity' ? 'desktop activity' : type === 'image' ? PHOTO_COPY.label : type;
       const typePart = omitType ? '' : ', ' + typeDisplay;
       const labelPart = humanizedStreams.length ? ', ' + humanizedStreams.join(', ') : '';
       const rawSuffix = sortedStreams.length ? ' (' + sortedStreams.join(', ') + ')' : '';
       const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : (think === 'awaiting' ? ' · ' + AWAITING_THINKING_LABEL : '');
-      el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min' + typePart + labelPart + stateSuffix + ')' + rawSuffix;
+      const isZeroLengthMoment = startMin === endMin && type === 'image';
+      el.title = isZeroLengthMoment
+        ? hhmm(startMin) + ' (' + typeDisplay + labelPart + stateSuffix + ')' + rawSuffix
+        : hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min' + typePart + labelPart + stateSuffix + ')' + rawSuffix;
       const activate = () => {
         if (segment) {
           selectSegment(segment);
@@ -1776,6 +1818,11 @@
       return allSegments.filter(seg => {
         const segStart = parseTime(seg.start);
         const segEnd = parseTime(seg.end);
+        // Zero-duration moments (e.g. a shared photo at 14:30) still belong to
+        // a window starting at 14:30.
+        if (segStart === segEnd) {
+          return segStart >= range.start && segStart < range.end;
+        }
         return segEnd > range.start && segStart < range.end;
       });
     }
@@ -1790,7 +1837,7 @@
       filtered.forEach(seg => {
         const option = document.createElement('option');
         option.value = segmentChoiceId(seg);
-        option.textContent = `${isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} – ${seg.end}`} · ${humanizeStreamName(seg.stream)}`;
+        option.textContent = `${isMomentSegment(seg) ? seg.start : `${seg.start} – ${seg.end}`} · ${humanizeStreamName(seg.stream)}`;
         option.title = seg.stream;
         segmentPicker.appendChild(option);
       });
@@ -1862,11 +1909,15 @@
         } else if (seg.think === 'awaiting') {
           pill.classList.add('tr-zoom-pill-awaiting');
         }
+        const isMoment = isShotOnly || isPhotoOnly;
         if (isShotOnly) {
           pill.classList.add('tr-zoom-pill-shot');
           pill.innerHTML = SCREENSHOT_GLYPH;
+        } else if (isPhotoOnly) {
+          pill.classList.add('tr-zoom-pill-photo');
+          pill.innerHTML = PHOTO_GLYPH;
         }
-        const typeLabel = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
+        const typeLabel = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? PHOTO_COPY.label : isActivityOnly ? 'desktop activity' : 'screen';
 
         // In select mode the ring marks what is chosen, not what is open.
         if (segPick.on) {
@@ -1878,9 +1929,9 @@
         }
 
         pill.style.top = zoomY(visStart) + 'px';
-        pill.style.height = Math.max(isShotOnly ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
+        pill.style.height = Math.max(isMoment ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
         const duration = Math.round(visEnd - visStart);
-        const typeDesc = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
+        const typeDesc = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? PHOTO_COPY.label : isActivityOnly ? 'desktop activity' : 'screen';
         const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
         const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
         const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
@@ -1888,9 +1939,9 @@
         const omitType = shouldOmitStreamType(seg.stream, typeDesc);
         const typeTitlePart = omitType ? '' : ' · ' + typeDesc;
         const typeAriaPart = omitType ? '' : ', ' + typeLabel;
-        // A screenshot is a moment, not a stretch: its time alone, no length.
-        const titleSpan = isShotOnly ? seg.start : seg.start + ' – ' + seg.end + ' · ' + duration + ' min';
-        const ariaSpan = isShotOnly ? seg.start : seg.start + ' \u2013 ' + seg.end;
+        // A screenshot or photo is a moment, not a stretch: its time alone, no length.
+        const titleSpan = isMoment ? seg.start : seg.start + ' – ' + seg.end + ' · ' + duration + ' min';
+        const ariaSpan = isMoment ? seg.start : seg.start + ' \u2013 ' + seg.end;
         pill.title = titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
         pill.setAttribute('aria-label', 'segment ' + ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix);
         pill.dataset.key = seg.key;
@@ -3716,26 +3767,7 @@
           html += `<div class="tr-entry-text">${markdown}</div>`;
           html += '</div></div>';
         } else if (item.type === 'image') {
-          const timeStr = item.time || '';
-          const imageUrl = getImageUrlForChunk(item);
-          const frameIdx = findFrameIndex(item);
-          const description = item.markdown || '';
-          const markdown = window.AppServices.renderMarkdown(description) || '';
-          const altText = description || 'photo';
-
-          html += `<div class="tr-entry tr-entry-image" data-idx="${idx}" data-frame-idx="${frameIdx}" data-type="image" role="listitem">`;
-          html += `<div class="tr-entry-time">${timeStr}</div>`;
-          html += '<div class="tr-entry-content">';
-          html += '<span class="sr-only">photo: </span>';
-          if (imageUrl) {
-            html += `<img class="tr-entry-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`;
-          }
-          html += '<div class="tr-entry-desc">';
-          if (markdown) {
-            html += `<div class="tr-image-text">${markdown}</div>`;
-          }
-          html += '</div>';
-          html += '</div></div>';
+          html += renderPhotoEntry(item, idx);
         } else if (item.type === 'screen' && item.screenshot) {
           html += renderScreenshotEntry(item, idx);
         } else if (item.type === 'screen') {
@@ -4150,6 +4182,70 @@
     // in more than one tab.
     let shotLabelSeq = 0;
 
+    function renderPhotoEntry(chunk, idx) {
+      const photo = chunk.photo || null;
+      const timeStr = chunk.time || '';
+      const imageUrl = getImageUrlForChunk(chunk);
+      const frameIdx = findFrameIndex(chunk);
+      const isShot = Boolean(photo && photo.is_screenshot);
+      const label = isShot ? SCREENSHOT_COPY.J1 : PHOTO_COPY.label;
+      const caption = photo && typeof photo.caption === 'string' && photo.caption.trim()
+        ? photo.caption.trim()
+        : '';
+      const description = photo
+        ? (typeof photo.description === 'string' && photo.description.trim() ? photo.description.trim() : '')
+        : (chunk.markdown || '');
+      const altText = caption || description || label;
+      const size = photo && photo.width && photo.height
+        ? ` width="${Number(photo.width)}" height="${Number(photo.height)}"`
+        : '';
+
+      shotLabelSeq += 1;
+      const labelId = `tr-photo-label-${shotLabelSeq}`;
+      let html = `<div class="tr-entry tr-entry-image tr-entry-photo" data-idx="${idx}" data-frame-idx="${frameIdx}" data-type="image" role="listitem">`;
+      html += `<div class="tr-entry-time">${timeStr}</div>`;
+      html += '<div class="tr-entry-content">';
+      if (imageUrl) {
+        html += `<button type="button" class="tr-entry-shot-open" aria-labelledby="${labelId}">`
+          + `<img class="tr-entry-thumb tr-entry-shot" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}"${size} loading="lazy">`
+          + '</button>';
+      }
+      html += '<div class="tr-entry-desc">';
+      html += `<div class="tr-shot-label" id="${labelId}"${imageUrl ? ' aria-hidden="true"' : ''}>${escapeHtml(label)}</div>`;
+      if (photo && photo.time_source === 'upload_fallback') {
+        html += `<p class="tr-photo-time-note" data-time-source="upload_fallback">${escapeHtml(PHOTO_COPY.uploadFallback)}</p>`;
+      }
+      if (caption) {
+        const captionHtml = escapeHtml(caption).replace(/\n/g, '<br>');
+        html += '<div class="tr-photo-caption" data-photo-part="caption">'
+          + `<div class="tr-photo-part-label">${escapeHtml(PHOTO_COPY.captionLabel)}</div>`
+          + `<p class="tr-photo-caption-text">${captionHtml}</p>`
+          + '</div>';
+      }
+      if (photo) {
+        if (photo.description_state === 'described' && description) {
+          const descHtml = window.AppServices.renderMarkdown(description) || '';
+          html += '<div class="tr-photo-description" data-photo-part="description">'
+            + `<div class="tr-photo-part-label">${escapeHtml(PHOTO_COPY.descriptionLabel)}</div>`
+            + `<div class="tr-image-text">${descHtml}</div>`
+            + '</div>';
+        } else if (photo.description_state === 'no_processing') {
+          html += `<div class="tr-shot-final" data-photo-state="no_processing"><p>${escapeHtml(PHOTO_COPY.noProcessing)}</p>`
+            + `<p class="tr-shot-action"><a href="/app/thinking/">${escapeHtml(PHOTO_COPY.noProcessingAction)}</a></p></div>`;
+        } else if (photo.description_state === 'unavailable') {
+          html += `<div class="tr-shot-final" data-photo-state="unavailable"><p>${escapeHtml(PHOTO_COPY.unavailable)}</p></div>`;
+        }
+      } else if (description) {
+        const markdown = window.AppServices.renderMarkdown(description) || '';
+        if (markdown) {
+          html += `<div class="tr-image-text">${markdown}</div>`;
+        }
+      }
+      html += '</div>';
+      html += '</div></div>';
+      return html;
+    }
+
     function renderScreenshotEntry(chunk, idx) {
       const shot = chunk.screenshot || {};
       const timeStr = chunk.time || '';
@@ -4495,18 +4591,28 @@
         const frame = frames[index];
         const f = frame.chunk;
         const shot = f.screenshot;
+        const photo = f.type === 'image' ? (f.photo || null) : null;
+        modal.setAttribute('aria-label', f.type === 'image' ? PHOTO_COPY.viewerLabel : 'screenshot viewer');
         const monitor = shot ? '' : (f.source_ref?.monitor || '');
         const monitorPos = getMonitorPosition(monitor);
         const analysis = f.source_ref?.analysis || {};
         const category = shot ? '' : (analysis.primary || '');
         const searchableShot = !shot || shot.text === 'searchable';
-        const description = f.type === 'image' ? (f.markdown || '') : (searchableShot ? (analysis.visual_description || '') : '');
+        const photoCaption = photo && typeof photo.caption === 'string' && photo.caption.trim() ? photo.caption.trim() : '';
+        const description = f.type === 'image'
+          ? (photo ? (photo.description || '') : (f.markdown || ''))
+          : (searchableShot ? (analysis.visual_description || '') : '');
         const imageUrl = frame.image;
-        const altText = description || (shot ? SCREENSHOT_COPY.J5 : f.type === 'image' ? 'photo' : 'screen image');
+        const altText = photoCaption || description || (shot ? SCREENSHOT_COPY.J5 : f.type === 'image' ? PHOTO_COPY.label : 'screen image');
         const device = shot ? screenshotDevice(frame.seg && frame.seg.stream) : '';
-        const shotLabel = shot ? (device ? `${SCREENSHOT_COPY.J1} · ${device}` : SCREENSHOT_COPY.J1) : '';
+        const shotLabel = shot
+          ? (device ? `${SCREENSHOT_COPY.J1} · ${device}` : SCREENSHOT_COPY.J1)
+          : (f.type === 'image' ? (photo && photo.is_screenshot ? SCREENSHOT_COPY.J1 : PHOTO_COPY.label) : '');
         const hasPrev = index > 0 || hasNeighbour(-1);
         const hasNext = index < frames.length - 1 || hasNeighbour(1);
+        const modalFooter = (photoCaption || description)
+          ? `<div class="tr-modal-description">${photoCaption ? `<div class="tr-modal-photo-caption"><span class="tr-modal-part-label">${escapeHtml(PHOTO_COPY.captionLabel)}</span> <span class="tr-modal-part-text">${escapeHtml(photoCaption)}</span></div>` : ''}${description ? `<div class="tr-modal-photo-desc">${photo ? `<span class="tr-modal-part-label">${escapeHtml(PHOTO_COPY.descriptionLabel)}</span> ` : ''}<span class="tr-modal-part-text">${escapeHtml(description)}</span></div>` : ''}</div>`
+          : '';
 
         modal.innerHTML = `
           <div class="tr-modal-nav${hasPrev ? '' : ' disabled'}" data-dir="prev" title="previous frame (left arrow)" role="button" tabindex="${hasPrev ? '0' : '-1'}">
@@ -4525,7 +4631,7 @@
                 ? `<img id="trModalImage" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`
                 : `<canvas id="trModalCanvas" class="loading" role="img" aria-label="${escapeHtml(altText)}"></canvas>`}
             </div>
-            ${description ? `<div class="tr-modal-description">${escapeHtml(description)}</div>` : ''}
+            ${modalFooter}
           </div>
           <div class="tr-modal-nav${hasNext ? '' : ' disabled'}" data-dir="next" title="next frame (right arrow)" role="button" tabindex="${hasNext ? '0' : '-1'}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
@@ -4750,6 +4856,9 @@
         });
         desktopActivityOnlySegments(data.segments).forEach(seg => {
           addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+        });
+        imageOnlySegments(data.segments).forEach(seg => {
+          addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
         });
         fetchDayBodyWindow()
           .then(payload => {
@@ -6235,6 +6344,9 @@
           });
           desktopActivityOnlySegments(allSegments).forEach(seg => {
             addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+          });
+          imageOnlySegments(allSegments).forEach(seg => {
+            addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
           });
           renderBodyEvents(dayBodyWindow);
         })

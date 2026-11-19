@@ -62,6 +62,9 @@ pub use talent_projections::{
 /// Private import provenance. This file is not a content input.
 pub const IMPORT_KIND_FILENAME: &str = "import_kind.json";
 
+/// Imported image metadata (capture zone, time source, owner caption). Not a content input.
+pub const IMAGE_META_FILENAME: &str = "image_meta.json";
+
 /// Optional tmux capture metadata, retained on disk but not yet used by talents.
 pub const TMUX_PANE_CAPTURE_FIELDS: [&str; 5] = [
     "cursor_x",
@@ -1219,6 +1222,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
     },
     FilePattern {
         pattern: "*/import.*/*/import_kind.json",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::NotContent,
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/import.image/*/image_meta.json",
         root: PatternRoot::DayRooted,
         format: FileFormat::NotContent,
         classification: ContentResolution::Unrecognized,

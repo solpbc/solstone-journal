@@ -4020,3 +4020,123 @@ test('segment picker: one segment read per pick, and none from the late blur or 
   await flush();
   assert.strictEqual(env.requested.length, afterPick, `nothing more is read (${env.requested.slice(reads).join(' ')})`);
 });
+
+test('imported photo: renders picture, separates owner caption from description, and opens lightbox', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      {
+        key: '113000_0',
+        stream: 'import.image',
+        start: '11:30',
+        end: '11:30',
+        types: ['image'],
+        data_state: { image: 'analyzed' },
+      },
+    ],
+  );
+  assert.ok(env.doc.querySelector('#trSegments .tr-seg-image'), 'day rail carries the photo indicator');
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pills.length, 1, 'zoom rail shows the 0-duration photo segment at exact range start');
+  assert.ok(pills[0].classList.contains('tr-zoom-pill-photo'), 'zoom pill marks the photo segment');
+
+  pills[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { image: 'analyzed' },
+    image_files: { 'original.jpg': '/app/transcripts/api/media/20200115/import.image/113000_0/original.jpg' },
+    media_sizes: { image: 12345 },
+    chunks: [
+      {
+        type: 'image',
+        time: '11:30:00',
+        markdown: 'A sunlit harbor with red boats.',
+        source_ref: { raw: 'original.jpg' },
+        photo: {
+          width: 1200,
+          height: 1600,
+          caption: 'Morning walk before the ferry',
+          description: 'A sunlit harbor with red boats.',
+          description_state: 'described',
+          time_source: 'capture',
+          original_filename: 'IMG_0412.jpg',
+          is_screenshot: false,
+        },
+      },
+    ],
+  });
+
+  const entry = env.doc.querySelector('#trPanel .tr-entry-photo');
+  assert.ok(entry, 'photo entry renders inside the transcript panel');
+  const openBtn = entry.querySelector('button.tr-entry-shot-open');
+  assert.ok(openBtn, 'photo is wrapped in a keyboard-activatable button');
+  const img = openBtn.querySelector('img.tr-entry-shot');
+  assert.ok(img, 'photo renders an img element');
+  assert.strictEqual(img.getAttribute('src'), '/app/transcripts/api/media/20200115/import.image/113000_0/original.jpg');
+  assert.strictEqual(img.getAttribute('width'), '1200');
+  assert.strictEqual(img.getAttribute('height'), '1600');
+
+  const captionPart = entry.querySelector('[data-photo-part="caption"]');
+  const descPart = entry.querySelector('[data-photo-part="description"]');
+  assert.ok(captionPart && descPart, 'caption and generated description are distinct blocks');
+  assert.ok(captionPart.textContent.includes('Morning walk before the ferry'));
+  assert.ok(!captionPart.textContent.includes('sunlit harbor'));
+  assert.ok(descPart.textContent.includes('sunlit harbor'));
+  assert.strictEqual(entry.querySelector('[data-time-source="upload_fallback"]'), null);
+
+  openBtn.dispatchEvent({ type: 'click', bubbles: true });
+  const modalImg = env.doc.querySelector('#trModalImage');
+  assert.ok(modalImg, 'clicking the photo opens the lightbox');
+  assert.strictEqual(modalImg.getAttribute('src'), '/app/transcripts/api/media/20200115/import.image/113000_0/original.jpg');
+  assert.ok(env.doc.querySelector('.tr-modal-photo-caption')?.textContent.includes('Morning walk before the ferry'));
+  assert.ok(env.doc.querySelector('.tr-modal-photo-desc')?.textContent.includes('sunlit harbor'));
+});
+
+test('imported photo: marks upload-time fallback and missing thinking while still showing the picture', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      {
+        key: '114500_0',
+        stream: 'import.image',
+        start: '11:45',
+        end: '11:45',
+        types: ['image'],
+        data_state: { image: 'analyzed' },
+      },
+    ],
+  );
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { image: 'analyzed' },
+    image_files: { 'original.png': '/app/transcripts/api/media/20200115/import.image/114500_0/original.png' },
+    chunks: [
+      {
+        type: 'image',
+        time: '11:45:00',
+        markdown: '',
+        source_ref: { raw: 'original.png' },
+        photo: {
+          width: 640,
+          height: 480,
+          caption: null,
+          description: null,
+          description_state: 'no_processing',
+          time_source: 'upload_fallback',
+          original_filename: 'clip.png',
+          is_screenshot: false,
+        },
+      },
+    ],
+  });
+
+  const entry = env.doc.querySelector('#trPanel .tr-entry-photo');
+  assert.ok(entry?.querySelector('img.tr-entry-shot'), 'picture renders even without description');
+  assert.ok(entry.querySelector('[data-time-source="upload_fallback"]'), 'upload-time fallback is indicated');
+  const noProc = entry.querySelector('[data-photo-state="no_processing"]');
+  assert.ok(noProc, 'missing thinking state is rendered');
+  assert.ok(noProc.querySelector('a[href="/app/thinking/"]'), 'links to thinking setup');
+});

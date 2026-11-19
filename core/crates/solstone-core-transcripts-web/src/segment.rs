@@ -31,7 +31,9 @@ use solstone_core_time::Precision;
 use solstone_core_transcripts::POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE;
 
 use crate::day::valid_day;
-use crate::segment_media::{SegmentMedia, discover, markdown_files, markdown_only};
+use crate::segment_media::{
+    SegmentMedia, discover, is_imported_image_original, markdown_files, markdown_only,
+};
 use crate::segment_speakers::{embedding_ids, load, statement_ordinals};
 use crate::{AppState, legacy_error_response};
 
@@ -416,10 +418,21 @@ fn prepare_segment(
             }
         }
     }
+    let imported_image_handled = imported_image_entry(&mut chunks, &mut media, &context, &files);
     if markdown_only {
         let time = wall_time(key, 0.0);
         let timestamp = day_timestamp(&zone, day, &time, 0);
         for path in markdown_files(&dir) {
+            if imported_image_handled
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        matches!(name, "image_transcript.md" | "screenshot_transcript.md")
+                    })
+            {
+                continue;
+            }
             match fs::read_to_string(&path) {
                 Ok(markdown) if !markdown.trim().is_empty() => {
                     let markdown = format_file(
@@ -489,6 +502,9 @@ fn prepare_segment(
     }
     if unclaimed_images.state != DataState::Absent {
         data_state.insert("image".into(), unclaimed_images.state.as_str().into());
+    }
+    if imported_image_handled {
+        data_state.insert("image".into(), DataState::Analyzed.as_str().into());
     }
     if markdown_added {
         data_state.insert("markdown".into(), DataState::Analyzed.as_str().into());
@@ -625,6 +641,227 @@ fn granola_context(dir: &Path) -> Option<Value> {
             .filter(|title| !title.trim().is_empty()),
         "web_url": web_url,
     }))
+}
+
+/// An imported photo (`import.image`) carries its original image file,
+/// optional `image_meta.json` provenance (capture time source, zone, owner
+/// caption), and optional `image_transcript.md` / `screenshot_transcript.md`
+/// model description. Emit one structured `image` chunk so the dashboard renders
+/// the actual picture with clear owner-vs-model provenance instead of dumping
+/// raw markdown metadata.
+fn imported_image_entry(
+    chunks: &mut Vec<Value>,
+    media: &mut SegmentMedia,
+    context: &SegmentContext<'_>,
+    files: &[std::path::PathBuf],
+) -> bool {
+    if context.stream != "import.image" {
+        return false;
+    }
+    let Some(raw) = files.iter().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_imported_image_original)
+    }) else {
+        return false;
+    };
+    let Some(raw_name) = raw.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !media.register_imported_image(
+        context.day,
+        context.stream,
+        context.key,
+        context.dir,
+        raw_name,
+    ) {
+        return false;
+    }
+    let dimensions = oriented_image_dimensions(raw);
+    let is_screenshot = raw_name.starts_with("original.screenshot.");
+    let meta = read_image_meta(context.root, context.dir);
+
+    let transcript_path = [
+        context.dir.join("image_transcript.md"),
+        context.dir.join("screenshot_transcript.md"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file());
+    let parsed_transcript = transcript_path
+        .as_deref()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .map(|text| parse_imported_image_transcript(&text, context.root));
+
+    let caption = meta
+        .as_ref()
+        .and_then(|value| non_empty_str(value.get("caption")))
+        .or_else(|| {
+            parsed_transcript
+                .as_ref()
+                .and_then(|parsed| parsed.caption.clone())
+        });
+    let time_source = meta
+        .as_ref()
+        .and_then(|value| non_empty_str(value.get("time_source")));
+    let original_filename = meta
+        .as_ref()
+        .and_then(|value| non_empty_str(value.get("original_filename")));
+    let (description, description_state) = match parsed_transcript {
+        Some(parsed) => (parsed.description, parsed.description_state),
+        None => (
+            None,
+            if processing_set_up(context.root) {
+                "unavailable"
+            } else {
+                "no_processing"
+            },
+        ),
+    };
+    let legacy_markdown = match (&caption, &description) {
+        (Some(cap), Some(desc)) => format!("{cap}\n\n{desc}"),
+        (Some(cap), None) => cap.clone(),
+        (None, Some(desc)) => desc.clone(),
+        (None, None) => String::new(),
+    };
+    let time = wall_time(context.key, 0.0);
+    chunks.push(json!({
+        "type": "image",
+        "time": time,
+        "timestamp": day_timestamp(&context.zone, context.day, &time, 0),
+        "markdown": legacy_markdown,
+        "source_ref": {
+            "raw": raw_name,
+            "media_kind": "image",
+        },
+        "photo": {
+            "width": dimensions.map(|(width, _)| width),
+            "height": dimensions.map(|(_, height)| height),
+            "caption": caption,
+            "description": description,
+            "description_state": description_state,
+            "time_source": time_source,
+            "original_filename": original_filename,
+            "is_screenshot": is_screenshot,
+        },
+    }));
+    true
+}
+
+fn oriented_image_dimensions(path: &Path) -> Option<(u32, u32)> {
+    use image::ImageDecoder;
+    use image::metadata::Orientation;
+
+    let reader = image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?;
+    let mut decoder = reader.into_decoder().ok()?;
+    let (width, height) = decoder.dimensions();
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    match orientation {
+        Orientation::Rotate90
+        | Orientation::Rotate270
+        | Orientation::Rotate90FlipH
+        | Orientation::Rotate270FlipH => Some((height, width)),
+        _ => Some((width, height)),
+    }
+}
+
+fn read_image_meta(journal_root: &Path, dir: &Path) -> Option<Value> {
+    const MAX_IMAGE_META_BYTES: usize = 64 * 1024;
+    let absolute_root = std::path::absolute(journal_root).ok()?;
+    let root = solstone_core_journal_io::JournalRoot::open(&absolute_root).ok()?;
+    let relative = dir
+        .strip_prefix(journal_root)
+        .ok()?
+        .join(solstone_core_format::content::IMAGE_META_FILENAME);
+    let observed = solstone_core_journal_io::read_relative_file_bounded(
+        &root,
+        &relative,
+        MAX_IMAGE_META_BYTES,
+    )
+    .ok()??;
+    serde_json::from_slice(&observed.bytes).ok()
+}
+
+fn non_empty_str(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+struct ParsedImageTranscript {
+    caption: Option<String>,
+    description: Option<String>,
+    description_state: &'static str,
+}
+
+fn parse_imported_image_transcript(text: &str, journal_root: &Path) -> ParsedImageTranscript {
+    let mut caption_lines = Vec::new();
+    let mut in_caption = false;
+    let mut model_lines = Vec::new();
+    let mut in_model = false;
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        if line.trim() == "**Caption:**" {
+            in_caption = true;
+            in_model = false;
+            continue;
+        }
+        if line.starts_with('>') {
+            in_caption = false;
+            let stripped = line
+                .strip_prefix("> ")
+                .or_else(|| line.strip_prefix('>'))
+                .unwrap_or("");
+            if !in_model && stripped.trim().starts_with("[image description") {
+                in_model = true;
+                continue;
+            }
+            if in_model {
+                model_lines.push(stripped);
+            }
+            continue;
+        }
+        if in_caption {
+            if line.trim() == "---" {
+                in_caption = false;
+            } else {
+                caption_lines.push(line);
+            }
+        }
+    }
+
+    let caption = {
+        let joined = caption_lines.join("\n").trim().to_owned();
+        (!joined.is_empty()).then_some(joined)
+    };
+    let model_text = model_lines.join("\n").trim().to_owned();
+    let is_unavailable = model_text.is_empty()
+        || model_text.starts_with("unavailable —")
+        || model_text.starts_with("unavailable -")
+        || model_text == "unavailable";
+    let (description, description_state) = if is_unavailable {
+        (
+            None,
+            if processing_set_up(journal_root) {
+                "unavailable"
+            } else {
+                "no_processing"
+            },
+        )
+    } else {
+        (Some(model_text), "described")
+    };
+
+    ParsedImageTranscript {
+        caption,
+        description,
+        description_state,
+    }
 }
 
 /// A screenshot is one entry at its second: the image at its own shape, its
@@ -3523,5 +3760,139 @@ mod tests {
             .unwrap();
             assert_eq!(before_shape(page(root)), (unlabelled_before(), false));
         }
+    }
+
+    #[test]
+    fn imported_photo_segment_exposes_image_url_caption_description_and_capture_zone() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"timezone":"America/Denver","providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .unwrap();
+        let seg_dir = root.join("chronicle/20261112/import.image/083000_0");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+
+        let mut jpeg = Vec::new();
+        let pixels = image::ImageBuffer::from_pixel(16u32, 8u32, image::Rgb([100u8, 120, 140]));
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85)
+            .encode_image(&image::DynamicImage::ImageRgb8(pixels))
+            .unwrap();
+        // Inject an APP1 EXIF Orientation=6 (90° CW) so upright dimensions swap to 8×16.
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x0112u16.to_le_bytes());
+        tiff.extend_from_slice(&3u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&[6, 0, 0, 0]);
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        let mut app1 = b"Exif\0\0".to_vec();
+        app1.extend_from_slice(&tiff);
+        let len = u16::try_from(app1.len() + 2).unwrap();
+        let mut rotated = jpeg[..2].to_vec();
+        rotated.extend_from_slice(&[0xFF, 0xE1]);
+        rotated.extend_from_slice(&len.to_be_bytes());
+        rotated.extend_from_slice(&app1);
+        rotated.extend_from_slice(&jpeg[2..]);
+        std::fs::write(seg_dir.join("original.jpg"), &rotated).unwrap();
+
+        std::fs::write(
+            seg_dir.join("image_meta.json"),
+            r#"{"schema":1,"time_source":"capture","utc_offset_seconds":32400,"caption":"morning ramen","original_filename":"IMG_4821.jpg"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("image_transcript.md"),
+            "# IMG_4821\n\n**Type:** Image\n**Format:** JPEG\n**Dimensions:** 16×8\n**Date:** 2026-11-12\n\n---\n\n**Caption:**\nmorning ramen\n\n---\n\n> [image description — model-derived]\n> A steaming bowl of ramen on a wooden counter.\n",
+        )
+        .unwrap();
+
+        let prepared_day =
+            crate::day::prepare_day(root, "20261112", jiff::Timestamp::now()).unwrap();
+        let day_seg = prepared_day
+            .segments
+            .iter()
+            .find(|s| s.stream == "import.image" && s.key == "083000_0")
+            .expect("import.image segment listed on day");
+        assert_eq!(day_seg.types, vec!["image"]);
+        assert_eq!(
+            day_seg.data_state.get("image").map(String::as_str),
+            Some("analyzed")
+        );
+
+        let value = super::prepare_segment(
+            root,
+            "20261112",
+            "import.image",
+            "083000_0",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        assert_eq!(
+            value["image_files"]["original.jpg"],
+            "/app/transcripts/api/serve_file/20261112/import.image/083000_0/original.jpg"
+        );
+        assert!(value["media_sizes"]["image"].as_u64().unwrap() > 0);
+        assert_eq!(value["data_state"]["image"], "analyzed");
+        assert_eq!(value["capture_zone"]["label"], "UTC+9");
+        assert_eq!(value["capture_zone"]["differs"], true);
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0]["type"], "image");
+        assert_eq!(chunks[0]["source_ref"]["raw"], "original.jpg");
+        assert_eq!(chunks[0]["photo"]["width"], 8);
+        assert_eq!(chunks[0]["photo"]["height"], 16);
+        assert_eq!(chunks[0]["photo"]["caption"], "morning ramen");
+        assert_eq!(
+            chunks[0]["photo"]["description"],
+            "A steaming bowl of ramen on a wooden counter."
+        );
+        assert_eq!(chunks[0]["photo"]["description_state"], "described");
+        assert_eq!(chunks[0]["photo"]["time_source"], "capture");
+    }
+
+    #[test]
+    fn imported_photo_without_thinking_or_capture_date_reports_fallback_and_no_processing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let seg_dir = root.join("chronicle/20261119/import.image/120000_0");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image::ImageBuffer::from_pixel(
+            6,
+            4,
+            image::Rgb([20, 30, 40]),
+        ))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+        std::fs::write(seg_dir.join("original.png"), png.into_inner()).unwrap();
+        std::fs::write(
+            seg_dir.join("image_meta.json"),
+            r#"{"schema":1,"time_source":"upload_fallback"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("image_transcript.md"),
+            "# scan\n\n---\n\n> [image description — model-derived]\n> unavailable — No active provider configured\n",
+        )
+        .unwrap();
+
+        let value = super::prepare_segment(
+            root,
+            "20261119",
+            "import.image",
+            "120000_0",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0]["photo"]["description_state"], "no_processing");
+        assert!(chunks[0]["photo"]["description"].is_null());
+        assert_eq!(chunks[0]["photo"]["time_source"], "upload_fallback");
     }
 }

@@ -45,6 +45,10 @@
     uploaded_at: 'uploaded at',
     detected_time: 'detected time',
     import_time: 'import time',
+    date_source: 'date source',
+    date_source_photo: 'from photo',
+    date_source_fallback: 'import time (no date in photo)',
+    date_source_owner: 'chosen by you',
     facets: 'facets',
     setting: 'setting',
     status: 'status',
@@ -461,6 +465,15 @@
     return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${untimed}${links}</section>`;
   }
 
+  function photoDateSourceLabel(importJson) {
+    if (String(importJson?.source || '').toLowerCase() !== 'image') return null;
+    if (hasValue(importJson.owner_timestamp)) return strings.date_source_owner;
+    const method = importJson.timestamp_detection_method;
+    if (method === 'deterministic') return strings.date_source_photo;
+    if (method === 'upload_fallback' || method === 'path_fallback') return strings.date_source_fallback;
+    return null;
+  }
+
   function uploadFacts(importJson) {
     return sectionHtml(strings.upload_facts, [
       kvRow(strings.original_file, importJson.original_filename),
@@ -469,6 +482,7 @@
       kvRow(strings.uploaded_at, formatDateTime(importJson.upload_datetime), { wall: true }),
       kvRow(strings.detected_time, formatTimestamp(importJson.detected_timestamp)),
       kvRow(strings.import_time, formatTimestamp(importJson.user_timestamp)),
+      kvRow(strings.date_source, photoDateSourceLabel(importJson)),
       kvRow(strings.setting, importJson.setting)
     ]);
   }

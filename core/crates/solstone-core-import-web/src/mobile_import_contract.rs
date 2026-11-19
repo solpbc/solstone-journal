@@ -26,6 +26,7 @@ pub enum ImportReasonCode {
     IngestNoFiles,
     MultipartPartTooLarge,
     StravaDownload,
+    UnsupportedImageFormat,
     InvalidOperationForState,
     ImportNotFound,
     ImportConflict,
@@ -41,6 +42,7 @@ impl ImportReasonCode {
             Self::IngestNoFiles,
             Self::MultipartPartTooLarge,
             Self::StravaDownload,
+            Self::UnsupportedImageFormat,
             Self::InvalidOperationForState,
             Self::ImportNotFound,
             Self::ImportConflict,
@@ -56,6 +58,7 @@ impl ImportReasonCode {
             Self::IngestNoFiles => "ingest_no_files",
             Self::MultipartPartTooLarge => "multipart_part_too_large",
             Self::StravaDownload => "strava_download",
+            Self::UnsupportedImageFormat => "unsupported_image_format",
             Self::InvalidOperationForState => "invalid_operation_for_state",
             Self::ImportNotFound => "import_not_found",
             Self::ImportConflict => "import_conflict",
@@ -73,7 +76,7 @@ impl ImportReasonCode {
             Self::ImportNotFound => StatusCode::NOT_FOUND,
             Self::ImportConflict | Self::ImportPreviewRequired => StatusCode::CONFLICT,
             Self::MultipartPartTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::StravaDownload => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::StravaDownload | Self::UnsupportedImageFormat => StatusCode::UNPROCESSABLE_ENTITY,
             Self::ImportMetadataFailed => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ImportQueueUnreachable => StatusCode::SERVICE_UNAVAILABLE,
         }
@@ -226,6 +229,8 @@ pub fn schema_json() -> Value {
                     "source_hint": {"description": "strava is the only door a Strava download is taken through.", "type": "string"},
                     "setting": {"type": "string"},
                     "observer_handle": {"type": "string"},
+                    "caption": {"description": "Owner-written text shared alongside an image.", "type": "string"},
+                    "captured_at": {"description": "Client-observed photo capture timestamp (RFC 3339 with offset when known).", "type": "string"},
                     "client": {"description": "Kept when it is a JSON object, otherwise stored as {}.", "type": "string"}
                 }
             },

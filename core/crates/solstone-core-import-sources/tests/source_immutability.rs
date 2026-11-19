@@ -130,22 +130,78 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
     assert!(!report.violated());
 }
 
+fn png_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for &byte in bytes {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+fn save_png_with_exif(path: &Path, capture: &jiff::ZonedDateTime) {
+    let mut base = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(
+        4,
+        4,
+        Rgb([255, 0, 0]),
+    ))
+    .write_to(&mut base, image::ImageFormat::Png)
+    .unwrap();
+    let png = base.into_inner();
+    let dt = format!("{}\0", capture.strftime("%Y:%m:%d %H:%M:%S"));
+    let mut tiff = Vec::new();
+    tiff.extend_from_slice(b"II*\0");
+    tiff.extend_from_slice(&8u32.to_le_bytes());
+    tiff.extend_from_slice(&1u16.to_le_bytes());
+    tiff.extend_from_slice(&0x8769u16.to_le_bytes());
+    tiff.extend_from_slice(&4u16.to_le_bytes());
+    tiff.extend_from_slice(&1u32.to_le_bytes());
+    tiff.extend_from_slice(&26u32.to_le_bytes());
+    tiff.extend_from_slice(&0u32.to_le_bytes());
+    let val_start = 26 + 2 + 12 + 4;
+    tiff.extend_from_slice(&1u16.to_le_bytes());
+    tiff.extend_from_slice(&0x9003u16.to_le_bytes());
+    tiff.extend_from_slice(&2u16.to_le_bytes());
+    tiff.extend_from_slice(&(dt.len() as u32).to_le_bytes());
+    tiff.extend_from_slice(&(val_start as u32).to_le_bytes());
+    tiff.extend_from_slice(&0u32.to_le_bytes());
+    tiff.extend_from_slice(dt.as_bytes());
+
+    let mut chunk = Vec::with_capacity(12 + tiff.len());
+    chunk.extend_from_slice(&(tiff.len() as u32).to_be_bytes());
+    chunk.extend_from_slice(b"eXIf");
+    chunk.extend_from_slice(&tiff);
+    chunk.extend_from_slice(&png_crc32(&chunk[4..]).to_be_bytes());
+
+    // Insert right after IHDR (8-byte PNG signature + 25-byte IHDR chunk = 33).
+    let mut out = Vec::with_capacity(png.len() + chunk.len());
+    out.extend_from_slice(&png[..33]);
+    out.extend_from_slice(&chunk);
+    out.extend_from_slice(&png[33..]);
+    fs::write(path, out).unwrap();
+}
+
 #[test]
 fn image_import_preserves_source_and_records_its_segment_contract() {
     let tree = TempTree::new();
     let source_root = tree.path().join("source");
     let journal = tree.path().join("journal");
     fs::create_dir(&source_root).unwrap();
-    let source = source_root.join(format!(
-        "picture_{}.PNG",
-        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
-    ));
-    ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
-        .save(&source)
-        .unwrap();
-    fs::set_permissions(&source, fs::Permissions::from_mode(0o640)).unwrap();
     let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
     let source_time = local_time(source_mtime);
+    let source = source_root.join(format!(
+        "picture_{}.PNG",
+        source_time.strftime("%Y%m%d_%H%M%S")
+    ));
+    save_png_with_exif(&source, &source_time);
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o640)).unwrap();
     let day = source_time.strftime("%Y%m%d").to_string();
     let segment_key = format!("{}_0", source_time.strftime("%H%M%S"));
     fs::File::open(&source)
@@ -238,14 +294,13 @@ fn unavailable_description_doors_preserve_the_installed_original() {
         ("wire-failure", &FailingWire as &dyn WireClient),
     ] {
         let tree = TempTree::new();
+        let source_time = local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600));
         let source = tree.path().join(format!(
             "picture_{}.png",
-            local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
+            source_time.strftime("%Y%m%d_%H%M%S")
         ));
         let journal = tree.path().join("journal");
-        ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
-            .save(&source)
-            .unwrap();
+        save_png_with_exif(&source, &source_time);
 
         let result = import_image(
             &source,
@@ -284,20 +339,19 @@ fn unavailable_description_doors_preserve_the_installed_original() {
 #[test]
 fn image_original_is_dirtied_before_a_later_transcript_failure() {
     let tree = TempTree::new();
+    let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
+    let source_time = local_time(source_mtime);
     let source = tree.path().join(format!(
         "picture_{}.png",
-        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
+        source_time.strftime("%Y%m%d_%H%M%S")
     ));
     let journal = tree.path().join("journal");
-    ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
-        .save(&source)
-        .unwrap();
-    let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
+    save_png_with_exif(&source, &source_time);
     fs::File::open(&source)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
         .unwrap();
-    let day = local_time(source_mtime).strftime("%Y%m%d").to_string();
+    let day = source_time.strftime("%Y%m%d").to_string();
     let publication = ImagePublication::sabotage_transcript();
 
     let error = import_image(
@@ -334,20 +388,19 @@ fn image_original_is_dirtied_before_a_later_transcript_failure() {
 #[test]
 fn image_install_marker_failure_is_typed_and_retains_original() {
     let tree = TempTree::new();
+    let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
+    let source_time = local_time(source_mtime);
     let source = tree.path().join(format!(
         "picture_{}.png",
-        local_time(UNIX_EPOCH + Duration::from_secs(1_768_977_600)).strftime("%Y%m%d_%H%M%S")
+        source_time.strftime("%Y%m%d_%H%M%S")
     ));
     let journal = tree.path().join("journal");
-    ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
-        .save(&source)
-        .unwrap();
-    let source_mtime = UNIX_EPOCH + Duration::from_secs(1_768_977_600);
+    save_png_with_exif(&source, &source_time);
     fs::File::open(&source)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
         .unwrap();
-    let day = local_time(source_mtime).strftime("%Y%m%d").to_string();
+    let day = source_time.strftime("%Y%m%d").to_string();
     let publication = ImagePublication::failing_marker();
 
     let error = import_image(

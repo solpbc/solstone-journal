@@ -56,6 +56,26 @@ impl SegmentMedia {
         self.image_files
             .insert(raw.into(), url(day, stream, key, raw));
     }
+    pub(crate) fn register_imported_image(
+        &mut self,
+        day: &str,
+        stream: &str,
+        key: &str,
+        dir: &Path,
+        raw: &str,
+    ) -> bool {
+        let path = dir.join(raw);
+        if !path.is_file() {
+            return false;
+        }
+        self.has_raw_present.insert("image".into(), true);
+        self.has_raw_reference.insert("image".into(), true);
+        self.has_raw_file.insert("image".into(), true);
+        self.image_files
+            .insert(raw.into(), url(day, stream, key, raw));
+        self.count("image", &path);
+        true
+    }
     pub(crate) fn register_audio(
         &mut self,
         day: &str,
@@ -141,6 +161,12 @@ impl SegmentMedia {
                 path.metadata().map(|metadata| metadata.len()).unwrap_or(0);
         }
     }
+}
+
+pub(crate) fn is_imported_image_original(name: &str) -> bool {
+    name.starts_with("original.")
+        && !name.ends_with(".lock")
+        && name.rsplit('.').next().and_then(media_kind) == Some(MediaKind::Image)
 }
 
 pub(crate) fn markdown_only(dir: &Path, stream: &str) -> bool {

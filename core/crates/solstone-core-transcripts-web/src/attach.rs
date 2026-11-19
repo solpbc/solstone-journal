@@ -66,7 +66,14 @@ pub(crate) fn normalize_markdown_only_segments(
                 || name.ends_with("screen.jsonl")
                 || name.ends_with("_transcript.jsonl")
         });
-        if markdown && !jsonl {
+        let has_imported_image = segment.stream == "import.image"
+            && names
+                .iter()
+                .any(|name| crate::segment_media::is_imported_image_original(name));
+        if has_imported_image && !jsonl {
+            segment.types = vec!["image".to_owned()];
+            segment.data_state = BTreeMap::from([("image".to_owned(), "analyzed".to_owned())]);
+        } else if markdown && !jsonl {
             segment.types = vec!["markdown".to_owned()];
             segment.data_state = BTreeMap::from([("markdown".to_owned(), "analyzed".to_owned())]);
         }

@@ -723,5 +723,10 @@
     "path": "20260107/import.text/120000_300/import_kind.json",
     "pattern": "*/import.*/*/import_kind.json",
     "condition": "Path"
+  },
+  {
+    "path": "20260107/import.image/120000_0/image_meta.json",
+    "pattern": "*/import.image/*/image_meta.json",
+    "condition": "Path"
   }
 ]
