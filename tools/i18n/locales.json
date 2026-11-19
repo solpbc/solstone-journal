@@ -189,6 +189,10 @@
     {
       "namespace": "site",
       "owner": "website"
+    },
+    {
+      "namespace": "journal",
+      "owner": "journal"
     }
   ],
   "bundles": [
@@ -315,6 +319,13 @@
       "id": "website",
       "locales": [
         "en-US"
+      ]
+    },
+    {
+      "id": "journal-window",
+      "locales": [
+        "en-US",
+        "en-XA"
       ]
     }
   ]
