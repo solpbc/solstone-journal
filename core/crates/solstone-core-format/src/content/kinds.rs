@@ -57,7 +57,7 @@ pub const KINDS: &[KindSpec] = &[
     },
     // An option of entities: the picture the journal shows for one. It reads
     // only with entities. ⚠ A grant that holds entities and predates this row
-    // keeps profile pics (founder 2026-11-19): only `NO_PROFILE_PICS`, written
+    // keeps profile pics: only `NO_PROFILE_PICS`, written
     // where the owner chooses, takes them away. See `profile_pics_admitted`.
     KindSpec {
         kind: Kind::ProfilePics,
