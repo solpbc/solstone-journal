@@ -599,7 +599,9 @@ pub fn current(slot: &SharedOperationSlot) -> Option<Operation> {
 pub fn busy_response() -> Response {
     response::error(
         StatusCode::BAD_REQUEST,
-        "that action isn't available in the current state.",
+        response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+        ),
         "backup_busy",
         "",
     )

@@ -340,7 +340,7 @@ fn execute(
                 done.guidance = settled
                     .remote()
                     .storage_retention()
-                    .and_then(solstone_core_offload::teardown::storage_retention_sentence)
+                    .and_then(solstone_core_offload::teardown::storage_retention_message_id)
                     .map(str::to_owned);
                 done
             }

@@ -5,48 +5,48 @@
 // history, not a coverage, freshness or destination-integrity assessment.
 (function () {
   const BACKUP_ERROR_REASONS = {
-    "incomplete": "some of your journal couldn't be read, so the copy that was stored is incomplete.",
-    "repo_missing": "your backup destination couldn't be found.",
-    "locked": "the backup lock was already held.",
-    "auth_failed": "the backup key couldn't open the destination.",
-    "timeout": "it ran out of time.",
-    "_missing": "the reason wasn't recorded.",
-    "restic_unavailable": "encrypted backup can't run on this computer.",
-    "rclone_unavailable": "encrypted backup can't reach storage from this computer.",
-    "backup_unavailable": "this computer can't set up or restore encrypted backup.",
-    "failed": "the backup tool stopped with an error.",
-    "unknown": "the backup tool stopped for a reason it didn't give.",
-    "broker_unreachable": "encrypted backup couldn't be reached.",
-    "broker_error": "encrypted backup didn't return usable settings.",
-    "hosted_entitlement_inactive": "encrypted backup isn't turned on in the services portal.",
-    "binding_invalid": "this computer's link to encrypted backup was refused.",
-    "binding_superseded": "another copy of your journal took over encrypted backup.",
-    "repository_unsupported": "the repository in your backup settings doesn't start with s3: or b2: to match its backend, so backup stopped. change the destination to a repository that starts with s3: or b2:."
+    "incomplete": window.JournalI18n.render('journal.window.backup.status.window.explanation.some.of.your.journal.couldn.t'),
+    "repo_missing": window.JournalI18n.render('journal.window.backup.status.window.explanation.your.backup.destination.couldn.t.be'),
+    "locked": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.backup.lock.was.already.held'),
+    "auth_failed": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.backup.key.couldn.t.open'),
+    "timeout": window.JournalI18n.render('journal.window.backup.status.window.explanation.it.ran.out.of.time'),
+    "_missing": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.reason.wasn.t.recorded'),
+    "restic_unavailable": window.JournalI18n.render('journal.window.backup.status.window.explanation.encrypted.backup.can.t.run.on'),
+    "rclone_unavailable": window.JournalI18n.render('journal.window.backup.status.window.explanation.encrypted.backup.can.t.reach.storage'),
+    "backup_unavailable": window.JournalI18n.render('journal.window.backup.status.window.explanation.this.computer.can.t.set.up'),
+    "failed": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.backup.tool.stopped.with.an'),
+    "unknown": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.backup.tool.stopped.for.a'),
+    "broker_unreachable": window.JournalI18n.render('journal.window.backup.status.window.explanation.encrypted.backup.couldn.t.be.reached'),
+    "broker_error": window.JournalI18n.render('journal.window.backup.status.window.explanation.encrypted.backup.didn.t.return.usable'),
+    "hosted_entitlement_inactive": window.JournalI18n.render('journal.window.backup.status.window.explanation.encrypted.backup.isn.t.turned.on'),
+    "binding_invalid": window.JournalI18n.render('journal.window.backup.status.window.explanation.this.computer.s.link.to.encrypted'),
+    "binding_superseded": window.JournalI18n.render('journal.window.backup.status.window.explanation.another.copy.of.your.journal.took'),
+    "repository_unsupported": window.JournalI18n.render('journal.window.backup.status.window.explanation.the.repository.in.your.backup.settings')
 };
   const VERIFICATION_SUBSET = {
-    one: "checked all of your backup this week.",
-    part: "checked 1 of {total} parts of your backup.",
+    one: window.JournalI18n.render('journal.window.backup.status.window.explanation.checked.all.of.your.backup.this'),
+    part: window.JournalI18n.render('journal.window.backup.status.verification.part'),
   };
-  const unavailable = "backup status is unavailable right now.";
+  const unavailable = window.JournalI18n.render('journal.window.backup.status.window.explanation.backup.status.is.unavailable.right.now');
   const incomplete = BACKUP_ERROR_REASONS.incomplete;
-  const qualification = "these are recorded results. they don't confirm what's at your current destination or whether it has been verified.";
+  const qualification = window.JournalI18n.render('journal.window.backup.status.window.explanation.these.are.recorded.results.they.don');
   const operationKinds = {
-    enable: 'backup setup', enable_hosted: 'backup setup', rotate: 'recovery key change',
-    teardown: 'turning backup off', restore: 'restore', restore_hosted: 'restore',
-    restore_recovery: 'restore',
-    offload: 'copy preparation', offload_restore: 'restore', offload_approve: 'archive approval',
+    enable: window.JournalI18n.render('journal.window.backup.status.kind.enable'), enable_hosted: window.JournalI18n.render('journal.window.backup.status.kind.enable.hosted'), rotate: window.JournalI18n.render('journal.window.backup.status.kind.rotate'),
+    teardown: window.JournalI18n.render('journal.window.backup.status.kind.teardown'), restore: window.JournalI18n.render('journal.window.backup.status.kind.restore'), restore_hosted: window.JournalI18n.render('journal.window.backup.status.kind.restore.hosted'),
+    restore_recovery: window.JournalI18n.render('journal.window.backup.status.kind.restore.recovery'),
+    offload: window.JournalI18n.render('journal.window.backup.status.kind.offload'), offload_restore: window.JournalI18n.render('journal.window.backup.status.kind.offload.restore'), offload_approve: window.JournalI18n.render('journal.window.backup.status.kind.offload.approve'),
   };
   const operationPhases = {
-    setting_up: 'in progress', restoring: 'in progress', rotating: 'in progress',
-    tearing_down: 'in progress', cancelling: 'cancelling', cleanup_pending: 'waiting for cleanup',
-    done: 'completed', error: "couldn't finish", degraded: 'completed with problems',
-    refused: "couldn't start", needs_subscription: 'waiting to finish in the services portal',
+    setting_up: window.JournalI18n.render('journal.window.backup.status.phase.setting.up'), restoring: window.JournalI18n.render('journal.window.backup.status.phase.restoring'), rotating: window.JournalI18n.render('journal.window.backup.status.phase.rotating'),
+    tearing_down: window.JournalI18n.render('journal.window.backup.status.phase.tearing.down'), cancelling: window.JournalI18n.render('journal.window.backup.status.phase.cancelling'), cleanup_pending: window.JournalI18n.render('journal.window.backup.status.phase.cleanup.pending'),
+    done: window.JournalI18n.render('journal.window.backup.status.phase.done'), error: window.JournalI18n.render('journal.window.backup.status.phase.error'), degraded: window.JournalI18n.render('journal.window.backup.status.phase.degraded'),
+    refused: window.JournalI18n.render('journal.window.backup.status.phase.refused'), needs_subscription: window.JournalI18n.render('journal.window.backup.status.window.explanation.waiting.to.finish.in.the.services'),
   };
   const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const optionalRecord = value => value === null || value === undefined || record(value);
   const date = time => typeof time === 'number' && Number.isFinite(time) && time > 0
     && Number.isFinite(new Date(time * 1000).getTime())
-    ? new Date(time * 1000).toLocaleString() : null;
+    ? new Date(time * 1000).toLocaleString(window.JournalI18n.formatLocale) : null;
 
   // 'checked_subset' is restic's --read-data-subset selector, shaped 'n/m':
   // the run read one of m equal parts of the pack data, and n only says which
@@ -62,16 +62,16 @@
   }
 
   function resultText(result, verification = false) {
-    if (!record(result)) return "isn't known";
+    if (!record(result)) return window.JournalI18n.render('journal.window.backup.status.outcome.unknown');
     const outcomes = verification
-      ? { ok: 'completed', error: 'failed', skipped: "couldn't run" }
-      : { ok: 'completed', error: 'failed', never: 'no completed attempt recorded',
+      ? { ok: window.JournalI18n.render('journal.window.backup.status.outcome.completed'), error: window.JournalI18n.render('journal.window.backup.status.outcome.failed'), skipped: window.JournalI18n.render('journal.window.backup.status.outcome.couldnt.run') }
+      : { ok: window.JournalI18n.render('journal.window.backup.status.outcome.completed'), error: window.JournalI18n.render('journal.window.backup.status.outcome.failed'), never: window.JournalI18n.render('journal.window.backup.status.window.explanation.no.completed.attempt.recorded'),
         // Another copy of the journal took over encrypted backup, so this one turned its own off.
-        cleared_superseded: "couldn't run" };
+        cleared_superseded: window.JournalI18n.render('journal.window.backup.status.outcome.couldnt.run') };
     const outcome = Object.hasOwn(outcomes, result.status) ? outcomes[result.status] : null;
-    if (!outcome) return "isn't known";
+    if (!outcome) return window.JournalI18n.render('journal.window.backup.status.outcome.unknown');
     const when = date(result.time);
-    let text = when ? `${outcome}, ${when}` : `${outcome}, date isn't known`;
+    let text = when ? window.JournalI18n.render('journal.window.backup.status.operation.status.value1.value2', [['value1', String(outcome)], ['value2', String(when)]]) : window.JournalI18n.render('journal.window.backup.status.window.explanation.value1.date.isn.t.known', [['value1', String(outcome)]]);
     if (!verification && result.status === 'error') {
       text += `. ${Object.hasOwn(BACKUP_ERROR_REASONS, result.error_reason)
         ? BACKUP_ERROR_REASONS[result.error_reason] : BACKUP_ERROR_REASONS._missing}`;
@@ -104,34 +104,34 @@
     // A pause is the owner's choice: neutral, and never read as failing or stale.
     const paused = snapshot.enabled && Number.isInteger(snapshot.paused_at);
     if (!snapshot.enabled && attempt?.status === 'cleared_superseded') {
-      text = `backup is off. ${BACKUP_ERROR_REASONS.binding_superseded}`;
+      text = window.JournalI18n.render('journal.window.backup.status.status.text.backup.is.off.value1', [['value1', String(BACKUP_ERROR_REASONS.binding_superseded)]]);
       tone = 'attention';
-    } else if (!snapshot.enabled) text = 'backup is off.';
+    } else if (!snapshot.enabled) text = window.JournalI18n.render('journal.window.backup.status.backup.off');
     else if (paused) {
-      text = date(snapshot.paused_at) ? `you paused backup on ${date(snapshot.paused_at)}.`
-        : "you paused backup. the date isn't known.";
+      text = date(snapshot.paused_at) ? window.JournalI18n.render('journal.window.backup.status.window.explanation.you.paused.backup.on.value1', [['value1', String(date(snapshot.paused_at))]])
+        : window.JournalI18n.render('journal.window.backup.status.window.explanation.you.paused.backup.the.date.isn');
     }
     else if (attempt?.status === 'error') {
-      text = 'the latest recorded backup attempt failed.';
+      text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.latest.recorded.backup.attempt.failed');
       tone = 'attention';
     } else if (attempt?.status === 'ok' && attempt.error_reason === 'incomplete') {
-      text = 'the latest recorded backup copy is incomplete.';
+      text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.latest.recorded.backup.copy.is');
       tone = 'attention';
     } else if (verification?.status === 'error') {
-      text = 'the last recorded backup spot-check failed.';
+      text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.last.recorded.backup.spot.check');
       tone = 'attention';
     } else if (attempt?.status === 'ok' && date(attempt.time)) {
-      text = `the latest backup attempt completed, ${date(attempt.time)}.`;
+      text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.latest.backup.attempt.completed.value1', [['value1', String(date(attempt.time))]]);
     } else {
-      text = "backup is on. the latest attempt isn't known.";
+      text = window.JournalI18n.render('journal.window.backup.status.window.explanation.backup.is.on.the.latest.attempt');
       tone = 'unavailable';
     }
     // An operation is activity, never proof that the next copy succeeded. A
     // prior failed/incomplete result stays visible even while work is active.
     if (operation && operation.phase !== 'done') {
       const cancelled = operation.phase === 'error' && operation.reason_code === 'cancelled';
-      const activity = `${operationKinds[operation.kind]}: ${cancelled ? 'cancelled' : operationPhases[operation.phase]}.`;
-      text = `${activity} ${text}`;
+      const activity = window.JournalI18n.render('journal.window.backup.status.operation.status.value1.value2.variant3', [['value1', String(operationKinds[operation.kind])], ['value2', String(cancelled ? window.JournalI18n.render('journal.window.backup.status.phase.cancelled') : operationPhases[operation.phase])]]);
+      text = window.JournalI18n.render('journal.window.backup.status.operation.status.value1.value2.variant2', [['value1', String(activity)], ['value2', String(text)]]);
       if (operation.phase === 'cleanup_pending'
           || (!cancelled && ['error', 'degraded', 'refused'].includes(operation.phase))) tone = 'attention';
     }
@@ -167,15 +167,15 @@
       ? attempt.last_success : attempt?.status === 'ok' ? attempt : null;
     const operation = snapshot.operation;
     const facts = [
-      ['backup', !snapshot.enabled ? 'off' : Number.isInteger(snapshot.paused_at)
-        ? (date(snapshot.paused_at) ? `paused by you, ${date(snapshot.paused_at)}` : "paused by you, date isn't known")
-        : 'on'],
-      ['operation', operation
+      [window.JournalI18n.render('journal.window.backup.status.fact.name'), !snapshot.enabled ? window.JournalI18n.render('journal.window.backup.status.fact.off') : Number.isInteger(snapshot.paused_at)
+        ? (date(snapshot.paused_at) ? window.JournalI18n.render('journal.window.backup.status.status.text.paused.by.you.value1', [['value1', String(date(snapshot.paused_at))]]) : window.JournalI18n.render('journal.window.backup.status.window.explanation.paused.by.you.date.isn.t'))
+        : window.JournalI18n.render('journal.window.backup.status.fact.on')],
+      [window.JournalI18n.render('journal.window.backup.status.fact.operation'), operation
         ? `${operationKinds[operation.kind]}: ${operation.phase === 'error' && operation.reason_code === 'cancelled'
-          ? 'cancelled' : operationPhases[operation.phase]}` : 'none reported'],
-      ['latest attempt', resultText(attempt)],
-      ['last successful copy', success?.status === 'ok' && date(success.time) ? resultText(success) : "isn't known"],
-      ['last spot-check', resultText(snapshot.last_verification, true)],
+          ? window.JournalI18n.render('journal.window.backup.status.phase.cancelled') : operationPhases[operation.phase]}` : window.JournalI18n.render('journal.window.backup.status.fact.none.reported')],
+      [window.JournalI18n.render('journal.window.backup.status.fact.latest.attempt'), resultText(attempt)],
+      [window.JournalI18n.render('journal.window.backup.status.fact.last.success'), success?.status === 'ok' && date(success.time) ? resultText(success) : window.JournalI18n.render('journal.window.backup.status.outcome.unknown')],
+      [window.JournalI18n.render('journal.window.backup.status.fact.last.check'), resultText(snapshot.last_verification, true)],
     ];
     const list = document.createElement('dl');
     for (const [label, value] of facts) {
@@ -193,15 +193,15 @@
     note.textContent = qualification;
     element.appendChild(note);
     const reasons = [
-      ['latest attempt', attempt?.error_reason, attempt?.detail],
-      ['last successful copy', success?.error_reason, success?.detail],
-      ['last spot-check', snapshot.last_verification?.reason, snapshot.last_verification?.detail],
-      ['operation', operation?.reason_code, operation?.detail],
+      [window.JournalI18n.render('journal.window.backup.status.fact.latest.attempt'), attempt?.error_reason, attempt?.detail],
+      [window.JournalI18n.render('journal.window.backup.status.fact.last.success'), success?.error_reason, success?.detail],
+      [window.JournalI18n.render('journal.window.backup.status.fact.last.check'), snapshot.last_verification?.reason, snapshot.last_verification?.detail],
+      [window.JournalI18n.render('journal.window.backup.status.fact.operation'), operation?.reason_code, operation?.detail],
     ].filter(([, reason, detail]) => typeof reason === 'string' || typeof detail === 'string');
     if (reasons.length) {
       const details = document.createElement('details');
       const summary = document.createElement('summary');
-      summary.textContent = 'technical details';
+      summary.textContent = window.JournalI18n.render('journal.window.backup.status.visible.text.technical.details');
       details.appendChild(summary);
       for (const [label, reason, detail] of reasons) {
         const line = document.createElement('p');

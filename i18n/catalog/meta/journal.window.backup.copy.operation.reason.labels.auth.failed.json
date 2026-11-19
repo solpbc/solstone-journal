@@ -1,0 +1,16 @@
+{
+  "description": "Backup auth failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup auth failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0feade6b9fdf93fc499fb72b8fb50afde20cddcc02392e4e9350ac2ae5887690",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

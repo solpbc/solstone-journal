@@ -1,0 +1,23 @@
+{
+  "description": "Backup repository hint in the journal's backup view.",
+  "context": "Journal window, backup view. Backup repository hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42bdb24b28de422a446e47d7fa78107007836fc6bc5e7a87f60ec3a4f1c80d45",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "s3:s3.amazonaws.com/your-bucket"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup no change in the journal's backup view.",
+  "context": "Journal window, backup view. Backup no change.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f8a856b2026bb16a689b80caf124a688383029a636df2f304516db6ccf6d48d",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

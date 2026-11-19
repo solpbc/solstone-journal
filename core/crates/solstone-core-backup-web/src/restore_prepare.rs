@@ -67,7 +67,7 @@ pub(crate) fn prepare(
     if guard.is_some() {
         return Err(refusal(
             "restore_prepare_unavailable",
-            "A hosted restore handoff is already being prepared.",
+            "journal.window.backup.response.hosted.restore.handoff.refusal.detail.a.hosted.restore.handoff.is.already",
         ));
     }
     if operations.lock().map(|g| g.closed).unwrap_or(true) {
@@ -79,7 +79,7 @@ pub(crate) fn prepare(
     let capability = operation::mint_capability().map_err(|_| {
         response::error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "the restore from encrypted backup couldn't be prepared.",
+            response::Wording::Catalog("journal.window.backup.response.backup.refusal.the.restore.from.encrypted.backup.couldn"),
             "failed",
             "",
         )
@@ -121,7 +121,7 @@ where
     {
         return Err(refusal(
             "restore_prepare_generation_changed",
-            "The hosted restore handoff is no longer current.",
+            "journal.window.backup.response.hosted.restore.handoff.refusal.detail.the.hosted.restore.handoff.is.no",
         ));
     }
 
@@ -285,7 +285,7 @@ fn require_live_generation(
     } else {
         Err(refusal(
             "restore_prepare_generation_changed",
-            "The hosted restore handoff is no longer current.",
+            "journal.window.backup.response.hosted.restore.handoff.refusal.detail.the.hosted.restore.handoff.is.no",
         ))
     }
 }
@@ -293,30 +293,32 @@ fn require_live_generation(
 fn invalid_capability_response() -> Response {
     refusal(
         "restore_prepare_invalid_capability",
-        "That hosted restore handoff capability is not valid.",
+        "journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.capability.is",
     )
 }
 
 fn expired_response() -> Response {
     refusal(
         "restore_prepare_expired",
-        "That hosted restore handoff capability has expired.",
+        "journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.capability.has",
     )
 }
 
 fn wrong_stage_response() -> Response {
     refusal(
         "restore_prepare_wrong_stage",
-        "That hosted restore handoff is not ready for this step.",
+        "journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.is.not",
     )
 }
 
-fn refusal(reason_code: &str, detail: &str) -> Response {
+fn refusal(reason_code: &str, detail_id: &'static str) -> Response {
     response::error(
         StatusCode::CONFLICT,
-        "the restore from encrypted backup didn't finish.",
+        response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.the.restore.from.encrypted.backup.didn",
+        ),
         reason_code,
-        detail,
+        response::Wording::Catalog(detail_id),
     )
 }
 

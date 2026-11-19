@@ -1,0 +1,16 @@
+{
+  "description": "Backup eligible in the journal's backup view.",
+  "context": "Journal window, backup view. Backup eligible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f9ec9c22a3883f8391bcaccbd63887ece842313ec62bb5df04187021282e0ff",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

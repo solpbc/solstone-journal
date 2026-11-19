@@ -1,0 +1,16 @@
+{
+  "description": "Backup unknown in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "951d822a98228cc569e309619e22fd1e04ebf5e11660d4c266eeffd7e60913e7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

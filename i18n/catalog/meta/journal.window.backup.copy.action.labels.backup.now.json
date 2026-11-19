@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup now in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup now.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca2fe1d581d883a93956690ef0b2e1dcd7e2f6d4da5660a1fa08038554732da1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

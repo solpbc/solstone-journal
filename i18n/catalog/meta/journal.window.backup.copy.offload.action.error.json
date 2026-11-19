@@ -1,0 +1,16 @@
+{
+  "description": "Backup action error in the journal's backup view.",
+  "context": "Journal window, backup view. Backup action error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1508db2a1d609a0bb89fb4c0a06cd34fe314002848ded663c16dedd05945d92a",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

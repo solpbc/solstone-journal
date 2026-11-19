@@ -63,25 +63,32 @@ pub fn record_backup_off(
 
 /// The plain sentence an owner gets after their own storage was emptied, when
 /// that storage may still keep what was deleted.
-pub fn storage_retention_sentence(
+pub fn storage_retention_message_id(
     retention: solstone_core_backup_runtime::teardown::owned::StorageRetention,
 ) -> Option<&'static str> {
     use solstone_core_backup_runtime::teardown::owned::{StorageKeeps, StorageRetention};
     match retention {
         StorageRetention::Removes => None,
         StorageRetention::Keeps(StorageKeeps::Versions) => Some(
-            "your storage keeps earlier versions of deleted files, so copies of this backup stay in your bucket until you delete those versions or your provider's own rules remove them.",
+            "!journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of",
         ),
         StorageRetention::Keeps(StorageKeeps::ObjectLock | StorageKeeps::FileLock) => Some(
-            "your bucket can lock files against deletion, so copies of this backup stay there until any lock ends and you delete those versions or your provider's own rules remove them.",
+            "!journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against",
         ),
         StorageRetention::Keeps(StorageKeeps::HiddenFiles) => Some(
-            "your B2 bucket only hides deleted files unless a lifecycle rule for the whole bucket removes them, so copies of this backup stay there until you add one or delete them yourself.",
+            "!journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted",
         ),
         StorageRetention::Unknown => Some(
-            "your journal couldn't check whether your storage keeps deleted files, so check your bucket's versioning, lifecycle and lock settings to make sure this backup is gone.",
+            "!journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether",
         ),
     }
+}
+
+pub fn storage_retention_sentence(
+    retention: solstone_core_backup_runtime::teardown::owned::StorageRetention,
+) -> Option<String> {
+    storage_retention_message_id(retention)
+        .map(|id| solstone_core_window_catalog::text(solstone_core_window_catalog::ENGLISH, id))
 }
 
 /// Read both owning sources afresh inside `TeardownAdmission::check`.

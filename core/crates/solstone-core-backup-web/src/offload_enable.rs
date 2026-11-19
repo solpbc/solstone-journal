@@ -5,11 +5,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use axum::{
-    Json,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
+use axum::{http::StatusCode, response::Response};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::read_journal_config_in_directory;
 use solstone_core_journal_config_write::{
@@ -95,16 +91,15 @@ fn publication(outcome: &BoundConfigOutcome) -> Value {
 }
 
 fn partial(reason: &str, publication: Value, verification: Value) -> Response {
-    (
+    response::payload(
         StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({
-            "error":"media offload change couldn't finish; reload before trying again.",
-            "reason_code":reason,
-            "configuration_publication":publication,
-            "verification_request":verification,
-        })),
+        json!({
+            "error": "journal.window.backup.response.offload.change.partial",
+            "reason_code": reason,
+            "configuration_publication": publication,
+            "verification_request": verification,
+        }),
     )
-        .into_response()
 }
 
 pub(crate) fn admit(
@@ -170,14 +165,18 @@ fn enable(
         return crate::invalid_operation_response();
     }
     let Ok(snapshot) = EnableSnapshot::read(Arc::clone(&root)) else {
-        return response::invalid_config("");
+        return response::invalid_config("".into());
     };
     if snapshot.backup.get("enabled") != Some(&Value::Bool(true)) {
         return response::error(
             StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "backup is disabled",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.backup.is.disabled",
+            ),
         );
     }
     // Turning offload on starts a verification and offload runs; a paused
@@ -188,7 +187,9 @@ fn enable(
     if snapshot.backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return response::error(
             StatusCode::BAD_REQUEST,
-            "backup can't be turned on until you confirm your recovery key.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on",
+            ),
             "backup_not_confirmed",
             "",
         );
@@ -196,22 +197,30 @@ fn enable(
     if !matches!(keys::keys(&snapshot.backup), Ok(Some(_))) {
         return response::error(
             StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "backup keys are missing",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.backup.keys.are.missing",
+            ),
         );
     }
     if let Err(reason) = crate::offload_support::check(&deps, &root) {
         return response::error(
             StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             reason,
-            "media offload is not available on this device",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.media.offload.is.not.available.on",
+            ),
         );
     }
     let outcome = match snapshot.commit(&measurement::snapshot(&deps.cache), &checkpoint) {
         Ok(outcome) => outcome,
-        Err(_) => return response::invalid_config(""),
+        Err(_) => return response::invalid_config("".into()),
     };
     let published = publication(&outcome);
     // End the configuration write reservation before the queue can dispatch
@@ -303,7 +312,7 @@ fn update_preferences(
         },
     ) {
         Ok(updated) if updated.value.is_ok() => updated,
-        _ => return response::invalid_config(""),
+        _ => return response::invalid_config("".into()),
     };
     let published = publication(&updated.outcome);
     drop(guard);

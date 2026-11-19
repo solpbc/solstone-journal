@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's backup.status view.",
+  "context": "Journal window, backup.status view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97f07b6e74daffe86eb2e44f2449857878d84db12d85c1c13741055183efdc84",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

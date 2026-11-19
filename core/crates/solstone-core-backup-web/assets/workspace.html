@@ -7,8 +7,8 @@
   </header>
 
   <div class="backup-general-status">
-    <p data-backup-summary role="status">checking backup status…</p>
-    <a class="backup-link" href="/app/health/#backup">backup details in health →</a>
+    <p data-backup-summary role="status">{{journal.window.backup.visible.text.checking.backup.status}}</p>
+    <a class="backup-link" href="/app/health/#backup">{{journal.window.backup.link.label.backup.details.in.health}}</a>
   </div>
 
   <div class="backup-operation" data-operation-banner hidden>
@@ -37,7 +37,7 @@
     <button type="button" data-action="finish-cleanup" data-copy="action_labels.finish_cleanup" hidden></button>
   </div>
 
-  <p data-backup-loading role="status">loading backup settings…</p>
+  <p data-backup-loading role="status">{{journal.window.backup.visible.text.loading.backup.settings}}</p>
   <div class="backup-panels">
     <article class="backup-panel" data-backup-panel="intro" hidden>
       <div class="backup-panel-main">
@@ -321,7 +321,7 @@
               <span data-copy="offload.labels.known"></span>:
               <span data-offload-backup-only-known-bytes></span>
             </p>
-            <p class="muted">older files moved off this computer. your full backup also includes files still here.</p>
+            <p class="muted">{{journal.window.backup.visible.text.older.files.moved.off.this.computer}}</p>
           </section>
           <section>
             <h3 data-copy="offload.labels.proposed"></h3>

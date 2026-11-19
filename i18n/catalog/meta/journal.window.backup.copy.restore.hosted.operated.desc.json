@@ -1,0 +1,23 @@
+{
+  "description": "Backup operated desc in the journal's backup view.",
+  "context": "Journal window, backup view. Backup operated desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea4056e4f44c9d584d19ac595195d5d4026336d7ae8ff0d4972b6b9d266ad43f",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

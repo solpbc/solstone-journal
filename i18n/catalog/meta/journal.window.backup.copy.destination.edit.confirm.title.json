@@ -1,0 +1,16 @@
+{
+  "description": "Backup confirm title in the journal's backup view.",
+  "context": "Journal window, backup view. Backup confirm title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ed48efc358849bfc0239cf860eb6a35b40527010a989b9e697fd4184f188d73",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

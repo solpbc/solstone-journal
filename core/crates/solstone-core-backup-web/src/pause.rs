@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::{AdmitWrite, BackupWebDeps, admit_write, config, internal_error, response};
 
-pub(crate) const PAUSED_MESSAGE: &str = "backup is paused. resume it first.";
+pub(crate) const PAUSED_MESSAGE: &str = "journal.window.backup.response.pause.message";
 
 /// Whether the owner paused backup, from an already merged backup section.
 pub(crate) fn paused(backup: &serde_json::Map<String, Value>) -> bool {
@@ -22,9 +22,11 @@ pub(crate) fn paused(backup: &serde_json::Map<String, Value>) -> bool {
 pub(crate) fn paused_response() -> axum::response::Response {
     response::error(
         StatusCode::CONFLICT,
-        PAUSED_MESSAGE,
+        response::Wording::Catalog(PAUSED_MESSAGE),
         "backup_paused",
-        "backup is paused",
+        response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.detail.backup.is.paused",
+        ),
     )
 }
 
@@ -47,9 +49,13 @@ async fn change(deps: BackupWebDeps, pause: bool) -> axum::response::Response {
     if backup.get("enabled") != Some(&Value::Bool(true)) {
         return response::error(
             StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "backup is off",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.backup.is.off",
+            ),
         );
     }
     let paused_at = pause.then(|| deps.clock.now_unix());

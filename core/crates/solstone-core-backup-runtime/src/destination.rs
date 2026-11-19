@@ -15,8 +15,14 @@ pub struct DestinationStatus {
     pub reachable: bool,
     pub repo_exists: bool,
     pub reason_code: &'static str,
-    pub message: &'static str,
+    pub message_id: &'static str,
 }
+impl DestinationStatus {
+    pub fn message(&self) -> String {
+        solstone_core_window_catalog::text(solstone_core_window_catalog::ENGLISH, self.message_id)
+    }
+}
+
 pub fn validate_destination<'invocation>(
     runner: &dyn ToolRunner,
     destination: &Destination,
@@ -56,7 +62,7 @@ pub fn validate_destination<'invocation>(
             reachable: true,
             repo_exists: true,
             reason_code: "repo_exists",
-            message: "backup repository is reachable",
+            message_id: "journal.window.backup.response.destination.result.message.backup.repository.is.reachable",
         },
         // restic reports a B2 bucket that doesn't exist as no repository too,
         // and `init` would then create a bucket named after a typo. Only a
@@ -68,32 +74,32 @@ pub fn validate_destination<'invocation>(
                 reachable: true,
                 repo_exists: false,
                 reason_code: "bucket_not_found",
-                message: "these credentials can't open a bucket by that name",
+                message_id: "journal.window.backup.response.destination.result.message.these.credentials.can.t.open.a",
             }
         }
         10 => DestinationStatus {
             reachable: true,
             repo_exists: false,
             reason_code: "repo_missing",
-            message: "backup destination is reachable and needs setup",
+            message_id: "journal.window.backup.response.destination.result.message.backup.destination.is.reachable.and.needs",
         },
         12 => DestinationStatus {
             reachable: true,
             repo_exists: true,
             reason_code: "auth_failed",
-            message: "repository password was rejected",
+            message_id: "journal.window.backup.response.destination.result.message.repository.password.was.rejected",
         },
         11 => DestinationStatus {
             reachable: true,
             repo_exists: true,
             reason_code: "locked",
-            message: "repository is locked; try again shortly",
+            message_id: "journal.window.backup.response.destination.result.message.repository.is.locked.try.again.shortly",
         },
         124 => DestinationStatus {
             reachable: false,
             repo_exists: false,
             reason_code: "timeout",
-            message: "could not reach the backup destination",
+            message_id: "journal.window.backup.response.destination.result.message.could.not.reach.the.backup.destination",
         },
         _ => {
             let _ = reason_for_returncode(result.returncode);
@@ -115,7 +121,7 @@ fn open_failure_status(stderr: &str) -> DestinationStatus {
             reachable: true,
             repo_exists: false,
             reason_code: "auth_failed",
-            message: "the destination rejected the credentials",
+            message_id: "journal.window.backup.response.destination.result.message.the.destination.rejected.the.credentials",
         };
     }
     if stderr.contains("b2_list_buckets: 401") {
@@ -123,14 +129,14 @@ fn open_failure_status(stderr: &str) -> DestinationStatus {
             reachable: true,
             repo_exists: false,
             reason_code: "bucket_not_found",
-            message: "these credentials can't open a bucket by that name",
+            message_id: "journal.window.backup.response.destination.result.message.these.credentials.can.t.open.a",
         };
     }
     DestinationStatus {
         reachable: false,
         repo_exists: false,
         reason_code: "unreachable",
-        message: "could not reach the backup destination",
+        message_id: "journal.window.backup.response.destination.result.message.could.not.reach.the.backup.destination",
     }
 }
 

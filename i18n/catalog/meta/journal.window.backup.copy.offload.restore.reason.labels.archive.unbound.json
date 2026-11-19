@@ -1,0 +1,16 @@
+{
+  "description": "Backup archive unbound in the journal's backup view.",
+  "context": "Journal window, backup view. Backup archive unbound.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "304b985b61c1d4125235212d704a7a0f656ad31f4ee128c5f9dd64f65f9f26ce",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup verification missing in the journal's backup view.",
+  "context": "Journal window, backup view. Backup verification missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fefa89a13bd019ce31ed103eeb53d86d88ed8dc37d3ddc739e81e888297c599",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

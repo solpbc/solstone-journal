@@ -1,0 +1,16 @@
+{
+  "description": "Backup restore conflict in the journal's backup view.",
+  "context": "Journal window, backup view. Backup restore conflict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d649c8c45e5de2d86de387142d3874550bb42e75817b8fb4b350bdfb726ef84",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

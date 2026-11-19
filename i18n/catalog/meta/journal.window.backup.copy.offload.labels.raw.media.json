@@ -1,0 +1,16 @@
+{
+  "description": "Backup raw media in the journal's backup view.",
+  "context": "Journal window, backup view. Backup raw media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a213f988e5c550404a219fe85547b4f5d4c1a142dadefb3dc930096c4e4db87",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

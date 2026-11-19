@@ -1,0 +1,16 @@
+{
+  "description": "Backup expectation in the journal's backup view.",
+  "context": "Journal window, backup view. Backup expectation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f58a28e08008a084e213e1d7badf9acc796cb9cb5fd34a27c79c8a2ba603e9d",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

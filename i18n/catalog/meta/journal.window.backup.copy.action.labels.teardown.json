@@ -1,0 +1,16 @@
+{
+  "description": "Backup teardown in the journal's backup view.",
+  "context": "Journal window, backup view. Backup teardown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03c62c4f6946390b31fc99d7e52cbbd7f38761ddfbfca28d6ad3ef389ae26b6c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

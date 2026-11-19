@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup history note in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup history note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f536d9c435290c68e609e89ac89d19a3965a9b279a5401693e652618b5cac41",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

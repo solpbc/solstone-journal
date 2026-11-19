@@ -1,0 +1,16 @@
+{
+  "description": "Backup caption in the journal's backup view.",
+  "context": "Journal window, backup view. Backup caption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "652daa14e21949f7661bcce4a71b5842afb59e0c131beb8f1ada934c1b3820f9",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

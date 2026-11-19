@@ -1,0 +1,23 @@
+{
+  "description": "Backup restore expectation in the journal's backup view.",
+  "context": "Journal window, backup view. Backup restore expectation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3c3320b8c9db69f46a0f6042536392c0d0704ceffb4ee30a4d938be49fdaa3b",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{size}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup hourly in the journal's backup view.",
+  "context": "Journal window, backup view. Backup hourly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dce9fe0113c6ec2adb5297ce175a7929c8b0ae3cfff1516fb2067ad95a337157",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

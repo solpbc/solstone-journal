@@ -1,0 +1,16 @@
+{
+  "description": "Backup floor gb in the journal's backup view.",
+  "context": "Journal window, backup view. Backup floor gb.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9e8ab6a2a2eea1d4b5541c9f0b7aa1c8eaccddc2b62718495a6226dfe33a75a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

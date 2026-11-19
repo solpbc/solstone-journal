@@ -1,0 +1,16 @@
+{
+  "description": "Backup archive failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup archive failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0708e0cc9865bff256236ad58299829101a226561c471a2b0a4d18fe8dd21039",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

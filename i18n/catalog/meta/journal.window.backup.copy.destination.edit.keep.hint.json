@@ -1,0 +1,16 @@
+{
+  "description": "Backup keep hint in the journal's backup view.",
+  "context": "Journal window, backup view. Backup keep hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ec1de04a7feb6a9dbe0afdd0a320f82e824f548754e0f1c83218c6808336930",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

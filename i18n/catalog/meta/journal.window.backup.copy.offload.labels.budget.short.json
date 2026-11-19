@@ -1,0 +1,16 @@
+{
+  "description": "Backup budget short in the journal's backup view.",
+  "context": "Journal window, backup view. Backup budget short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55a495ade07d01498a3c92a045563bff657931f11651763cbc06e10cb7acf8d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

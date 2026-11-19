@@ -1,0 +1,28 @@
+{
+  "description": "Backup refusal details in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Backup refusal details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6caa45643689671ada587b99d2ad57113f566f5823f1f64946acbf41f0111208",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

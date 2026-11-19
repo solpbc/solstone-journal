@@ -1,0 +1,16 @@
+{
+  "description": "Backup paused note in the journal's backup view.",
+  "context": "Journal window, backup view. Backup paused note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b5a10aaaa07edb92909fe606dfb9320e6afdcb0313e75472a272e8f9d70c22b",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

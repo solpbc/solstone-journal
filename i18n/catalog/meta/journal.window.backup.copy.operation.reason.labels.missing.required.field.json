@@ -1,0 +1,16 @@
+{
+  "description": "Backup missing required field in the journal's backup view.",
+  "context": "Journal window, backup view. Backup missing required field.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2c07a31e957ae218b8ad1944883c6fac0aff0adcd78d7862aa84fed4b0dc8dc",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

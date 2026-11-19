@@ -1,0 +1,16 @@
+{
+  "description": "Backup repo missing in the journal's backup view.",
+  "context": "Journal window, backup view. Backup repo missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbcb383d3209c4e6e81dc6ac1b5b63cde92a62e0654f47ec919410a463e8c38c",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

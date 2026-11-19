@@ -1,0 +1,16 @@
+{
+  "description": "Backup backend in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backend.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c1b9a1a5d97c9b50d3863c39ca4a84143f24fbd3aa387c1fd0e6d6a9ef4d908",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

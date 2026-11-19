@@ -1,0 +1,23 @@
+{
+  "description": "Backup hosted backup expired in the journal's backup view.",
+  "context": "Journal window, backup view. Backup hosted backup expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5bbc5933052be01e516056bfd395848836715810b12b1bd0ce37201f6192bcf",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's backup view.",
+  "context": "Journal window, backup view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "902b14cff59ec9c05202af544096cc79155a9ef9424e720f6075eae97db3f661",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

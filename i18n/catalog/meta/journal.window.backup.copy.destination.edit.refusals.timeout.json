@@ -1,0 +1,16 @@
+{
+  "description": "Backup timeout in the journal's backup view.",
+  "context": "Journal window, backup view. Backup timeout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf6b7c338459abdf75b71bc2e93441ee31785d921d8721363c165e921c1e7da3",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

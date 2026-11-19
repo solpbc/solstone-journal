@@ -1,0 +1,16 @@
+{
+  "description": "Backup invalid operation for state in the journal's backup view.",
+  "context": "Journal window, backup view. Backup invalid operation for state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c5ff384bb97cadb00f6d357bacb37f9c05b0568f542075c99b318be38dec9ba",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

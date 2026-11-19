@@ -12,7 +12,6 @@ const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/sta
 const JS: &[u8] = include_bytes!("../assets/backup.js");
 const STATUS_JS: &[u8] = include_bytes!("../assets/backup-status.js");
 const CSS: &[u8] = include_bytes!("../assets/backup.css");
-const NOT_FOUND: &str = "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n";
 
 fn bytes(status: StatusCode, bytes: &'static [u8], content_type: &'static str) -> Response {
     Response::builder()
@@ -28,11 +27,7 @@ pub async fn workspace() -> Response {
     bytes(StatusCode::OK, WORKSPACE, "text/html; charset=utf-8")
 }
 pub async fn background() -> Response {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(NOT_FOUND))
-        .expect("backup background response")
+    solstone_core_convey_http::window_catalog::not_found_response()
 }
 pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>) -> Response {
     match name.as_str() {

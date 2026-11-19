@@ -1,0 +1,16 @@
+{
+  "description": "Backup invalid request value in the journal's backup view.",
+  "context": "Journal window, backup view. Backup invalid request value.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae38ffccee0c8d3812e8a4c49d735cba7f7a0e9e47add93a12fda8f94a5d60c8",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

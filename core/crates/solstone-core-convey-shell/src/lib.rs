@@ -1956,14 +1956,7 @@ pub(crate) fn asset_response_with_status(path: &str, status: StatusCode) -> Resp
         .expect("embedded asset response builds")
 }
 
-pub(crate) fn not_found_response() -> Response {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .extension(window_catalog::MissingPage)
-        .body(Body::from(window_catalog::english_not_found()))
-        .expect("not found response builds")
-}
+pub(crate) use solstone_core_convey_http::window_catalog::not_found_response;
 
 // The front door serves the shell itself: one redirect hop less on every open
 // of the root, phones included. The page moves its address to the home view

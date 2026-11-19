@@ -1,0 +1,16 @@
+{
+  "description": "Backup rotating in the journal's backup view.",
+  "context": "Journal window, backup view. Backup rotating.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3db7dd2017d38e1c9b115190fb865aa386bc3f2fce6e5c56b16dad1b578b7d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

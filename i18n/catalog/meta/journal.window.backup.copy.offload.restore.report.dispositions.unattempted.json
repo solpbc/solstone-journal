@@ -1,0 +1,16 @@
+{
+  "description": "Backup unattempted in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unattempted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de1956dea2bd1de1730e38f0f2282838c557371cc43c95eff28fd771d510f7e1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Backup erasure status in the journal's backup view.",
+  "context": "Journal window, backup view. Backup erasure status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75c8b3abbac9b8c7047a7897577f703f769b70a3a8ab15366e728888a685114d",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

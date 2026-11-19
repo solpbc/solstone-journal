@@ -1,0 +1,16 @@
+{
+  "description": "Backup empty days in the journal's backup view.",
+  "context": "Journal window, backup view. Backup empty days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e40fb0b07ce300353d56eb12ef4f0d3f39a6ae4d12a5ef7054fbae216a068999",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

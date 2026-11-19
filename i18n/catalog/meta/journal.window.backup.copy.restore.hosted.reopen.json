@@ -1,0 +1,16 @@
+{
+  "description": "Backup reopen in the journal's backup view.",
+  "context": "Journal window, backup view. Backup reopen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46dcd8784ef807980ebec21c43c7daecce2523370de717c140cfd24c60136902",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

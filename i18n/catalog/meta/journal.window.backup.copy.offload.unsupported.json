@@ -1,0 +1,16 @@
+{
+  "description": "Backup unsupported in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbefab9f4ef94529f2c77749a0e347f8a58c216b81d65a18f52f9e727ddd20a5",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

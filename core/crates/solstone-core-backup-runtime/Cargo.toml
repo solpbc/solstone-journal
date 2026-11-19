@@ -25,6 +25,7 @@ test-support = []
 ios-linked-bridge = ["solstone-core-backup/ios-linked-bridge"]
 
 [dependencies]
+solstone-core-window-catalog.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 jiff.workspace = true

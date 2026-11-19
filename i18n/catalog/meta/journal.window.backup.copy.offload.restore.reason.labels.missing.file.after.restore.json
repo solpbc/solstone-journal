@@ -1,0 +1,16 @@
+{
+  "description": "Backup missing file after restore in the journal's backup view.",
+  "context": "Journal window, backup view. Backup missing file after restore.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab3f374f189ab24e70f090ab9d1f5629f2b31e8f87f1953d265092fdd56394f5",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

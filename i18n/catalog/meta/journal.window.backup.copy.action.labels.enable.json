@@ -1,0 +1,16 @@
+{
+  "description": "Backup enable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup enable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9970143e463a3ff8f543cb112d47d59ac0deca4187e12ce671e01c6b777d6ef9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

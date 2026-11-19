@@ -1,0 +1,16 @@
+{
+  "description": "Backup prompt in the journal's backup view.",
+  "context": "Journal window, backup view. Backup prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7ff2567d723345bff65de2bcad70c7c1fbc480a7303ce03bacc15f09f26c1d8",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

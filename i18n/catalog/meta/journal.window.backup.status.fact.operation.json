@@ -1,0 +1,16 @@
+{
+  "description": "Status label in the journal's backup.status view.",
+  "context": "Journal window, backup.status view. Status label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c0bbbde4e6ae176c8079de392d970391c44534efa751ff2492b252503197878",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup legacy read failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup legacy read failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dc4371a8a8356e65367306651c1b4b70ed81ae8f9ea7b2b2c17e6b31260403e",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

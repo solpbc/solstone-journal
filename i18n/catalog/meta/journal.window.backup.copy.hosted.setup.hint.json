@@ -1,0 +1,33 @@
+{
+  "description": "Backup setup hint in the journal's backup view.",
+  "context": "Journal window, backup view. Backup setup hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9c513ba61c80a6d8556fbd855ffa250c7e0cb5c4c1d337c7156e493178b2e02",
+  "max_length": 282,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    },
+    {
+      "name": "slot2",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    },
+    {
+      "name": "slot3",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

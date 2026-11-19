@@ -1,0 +1,16 @@
+{
+  "description": "Backup teardown restore first action in the journal's backup view.",
+  "context": "Journal window, backup view. Backup teardown restore first action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a83d15f92a09f183e488f903dca85ba63294eebdc2b1039c7c2816f6e51ccb35",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

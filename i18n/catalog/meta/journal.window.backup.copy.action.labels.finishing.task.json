@@ -1,0 +1,16 @@
+{
+  "description": "Backup finishing task in the journal's backup view.",
+  "context": "Journal window, backup view. Backup finishing task.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "569da42262e14641c29468b3fa478d3ff775d482a62a42d6bd8b767c61188724",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

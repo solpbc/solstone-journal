@@ -1,0 +1,16 @@
+{
+  "description": "Backup hosted note in the journal's backup view.",
+  "context": "Journal window, backup view. Backup hosted note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e14e780309d56533548e354f2197517a00a44578b0ff517abedbbf937d23edc",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

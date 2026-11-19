@@ -1,0 +1,16 @@
+{
+  "description": "Backup floor short in the journal's backup view.",
+  "context": "Journal window, backup view. Backup floor short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cd3ac5a60e555bd9eb10b3753c3f294482c9e4ea0554fca0ef989b96a96d080",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

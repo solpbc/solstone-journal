@@ -1,0 +1,16 @@
+{
+  "description": "Backup nothing to restore in the journal's backup view.",
+  "context": "Journal window, backup view. Backup nothing to restore.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1cd5d2f1ac633e7929ce463716f0ea5b6052ef30318cdacd2f74b39f6bdfe97",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

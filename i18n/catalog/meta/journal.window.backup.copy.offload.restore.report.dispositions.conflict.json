@@ -1,0 +1,16 @@
+{
+  "description": "Backup conflict in the journal's backup view.",
+  "context": "Journal window, backup view. Backup conflict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29a0de2f4e8aed471389413de6e68ec5843e7a72f947d3e74b9de577e1b56bdf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

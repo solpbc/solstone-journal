@@ -1,0 +1,16 @@
+{
+  "description": "Backup skipped in the journal's backup view.",
+  "context": "Journal window, backup view. Backup skipped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2194b045d9e7c56f4dc07cf217c0d8390aafafcc871debac3a3173adf7a36522",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

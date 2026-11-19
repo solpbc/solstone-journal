@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's backup view.",
+  "context": "Journal window, backup view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a77537325346289eb77c662f752592a5ac2c5196d35f193a4e0d6898bd753c5b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup files in the journal's backup view.",
+  "context": "Journal window, backup view. Backup files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cdafabd45d54348ffe61ddcca830c4b8e9b830a8970afe9e3ece7152b4609187",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

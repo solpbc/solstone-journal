@@ -1,0 +1,16 @@
+{
+  "description": "Backup location detail summary in the journal's backup view.",
+  "context": "Journal window, backup view. Backup location detail summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd3dfb5622c62ab847f297ecd1ef3dfc268376a2dc3ff12918bb8373de0b2244",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

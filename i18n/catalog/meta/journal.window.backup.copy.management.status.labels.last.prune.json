@@ -1,0 +1,16 @@
+{
+  "description": "Backup last prune in the journal's backup view.",
+  "context": "Journal window, backup view. Backup last prune.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7434a62bea83404d11e51794111c87d53752720c48916886aa6f4f9b3708b7e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

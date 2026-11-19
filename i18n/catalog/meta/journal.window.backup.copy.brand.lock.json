@@ -1,0 +1,16 @@
+{
+  "description": "Backup brand lock in the journal's backup view.",
+  "context": "Journal window, backup view. Backup brand lock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bf0c70d1505e1f0f130b95842c3cab7b27d1db88f3fbb1d29a641728b4a1b0c",
+  "max_length": 73,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup confirm action in the journal's backup view.",
+  "context": "Journal window, backup view. Backup confirm action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b180018f8a62aca27bbcc7e2dc3128ac47b3b37b9b0c92296eb16608218d213",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

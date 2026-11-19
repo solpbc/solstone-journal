@@ -1,0 +1,16 @@
+{
+  "description": "Backup confirm days unavailable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup confirm days unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59cfe1a56d8fc740e8a18b249bde0ba8fc61b0c78f577392bb326e91e455396e",
+  "max_length": 108,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

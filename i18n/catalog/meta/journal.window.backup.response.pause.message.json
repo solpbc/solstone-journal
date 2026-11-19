@@ -1,0 +1,16 @@
+{
+  "description": "Backup paused response in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Backup paused response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "580c7cdd6011b815d37f99c538e686b7be535027e50be134408e82b6e1917e57",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

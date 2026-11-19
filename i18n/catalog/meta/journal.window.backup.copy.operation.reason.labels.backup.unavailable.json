@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup unavailable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f895b409e2a579d00513036f164442cc10f6259ce6bb553b0f8c1a3f3769654",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

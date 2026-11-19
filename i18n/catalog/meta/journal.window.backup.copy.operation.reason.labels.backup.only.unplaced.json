@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup only unplaced in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup only unplaced.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94b48641bc7fc48568ca44cd8ec3053d82ec721ab03aa9e5e65ad3ebc2c84c84",
+  "max_length": 275,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

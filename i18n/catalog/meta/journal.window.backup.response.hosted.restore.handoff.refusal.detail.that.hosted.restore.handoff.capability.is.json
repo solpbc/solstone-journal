@@ -1,0 +1,16 @@
+{
+  "description": "Hosted restore handoff refusal detail in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Hosted restore handoff refusal detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38e48255257ab0658d610b162e774809fcd23f6d998acea825872bbdd6800d1c",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

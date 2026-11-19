@@ -1,0 +1,16 @@
+{
+  "description": "Backup legacy review held in the journal's backup view.",
+  "context": "Journal window, backup view. Backup legacy review held.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73a846028714f9067ffa5e7bc0f04536d455650cefaf43dcab0e6cbcb9e4c80c",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

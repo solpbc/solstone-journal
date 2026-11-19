@@ -1,0 +1,16 @@
+{
+  "description": "Backup projected in the journal's backup view.",
+  "context": "Journal window, backup view. Backup projected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6ca59cce6845258552d90014613edf508b3f4f9c16f94ee485d694ab51a1636",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup verification integrity failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup verification integrity failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "729ca5a596a358e3f007aa4295b763af6f282f0d8e263b9551c608e5f8cce24f",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

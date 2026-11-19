@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup only label in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup only label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "031a3909d592e530c2777a1286151518f443a2a82433bde8fc58a58ee5db10a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

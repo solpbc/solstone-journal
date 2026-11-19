@@ -1,0 +1,23 @@
+{
+  "description": "Backup suggested in the journal's backup view.",
+  "context": "Journal window, backup view. Backup suggested.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6069f3aa6bccfccbb7d78460f9af8f05b1f9ab64e9dedf6267d495f84ca4564",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{value}"
+    }
+  ]
+}

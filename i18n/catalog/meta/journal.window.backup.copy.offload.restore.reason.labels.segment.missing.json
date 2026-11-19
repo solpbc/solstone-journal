@@ -1,0 +1,16 @@
+{
+  "description": "Backup segment missing in the journal's backup view.",
+  "context": "Journal window, backup view. Backup segment missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "008803f402516076eb5e95c99a31d9164f2382589b19d60b4885c35532930950",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

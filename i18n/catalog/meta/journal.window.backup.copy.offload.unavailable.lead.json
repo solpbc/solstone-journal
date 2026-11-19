@@ -1,0 +1,16 @@
+{
+  "description": "Backup unavailable lead in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unavailable lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c779dcaf0f6d7933ed83e2660b2631a6c35e08a579bbd71ba4a73527947d3105",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

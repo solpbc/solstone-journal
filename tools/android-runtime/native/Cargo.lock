@@ -5298,6 +5298,7 @@ dependencies = [
  "solstone-core-spp-attest",
  "solstone-core-system",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -6651,6 +6652,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-time",
  "solstone-core-trash",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]

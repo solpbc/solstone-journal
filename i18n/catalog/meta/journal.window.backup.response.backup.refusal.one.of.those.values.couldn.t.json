@@ -1,0 +1,16 @@
+{
+  "description": "Backup refusal in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Backup refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54d9692e234ba3c076efcf4ea808f618385a5cf6ad31d0ca30618581677ad05e",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

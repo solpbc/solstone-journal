@@ -3,7 +3,14 @@
 
 //! Use the journal-window locale resolved for the current request.
 
-use axum::Extension;
+use std::sync::OnceLock;
+
+use axum::{
+    Extension,
+    body::Body,
+    http::{StatusCode, header},
+    response::Response,
+};
 
 use crate::coalesce::ResponseLocale;
 
@@ -13,4 +20,31 @@ pub use solstone_core_window_catalog::{
 
 pub fn response_locale(locale: Option<Extension<ResponseLocale>>) -> &'static str {
     locale.map_or(ENGLISH, |Extension(locale)| locale.0)
+}
+
+pub fn not_found(locale: &str) -> String {
+    let language = language_tag(locale);
+    let title = html(locale, "journal.window.not.found.title");
+    let heading = html(locale, "journal.window.not.found.heading");
+    let detail = html(locale, "journal.window.not.found.detail");
+    format!(
+        "<!doctype html>\n<html lang={language}>\n<title>{title}</title>\n<h1>{heading}</h1>\n<p>{detail}</p>\n"
+    )
+}
+
+fn english_not_found() -> &'static str {
+    static HTML: OnceLock<String> = OnceLock::new();
+    HTML.get_or_init(|| not_found(ENGLISH))
+}
+
+#[derive(Clone)]
+pub struct MissingPage;
+
+pub fn not_found_response() -> Response {
+    Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .extension(MissingPage)
+        .body(Body::from(english_not_found()))
+        .expect("not found response builds")
 }

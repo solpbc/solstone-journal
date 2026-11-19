@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's backup view.",
+  "context": "Journal window, backup view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fd32e2134fece786c3a12983dbeb56fdc40a605b9362114c69098c657beeca3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

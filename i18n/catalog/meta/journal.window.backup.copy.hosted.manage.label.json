@@ -1,0 +1,16 @@
+{
+  "description": "Backup manage label in the journal's backup view.",
+  "context": "Journal window, backup view. Backup manage label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4dfdf1cea0591cf41374cf6df3ec2480743a8e6f5e845570289cf887c55743d6",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

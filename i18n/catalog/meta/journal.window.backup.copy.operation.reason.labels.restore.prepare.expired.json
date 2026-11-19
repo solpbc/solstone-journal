@@ -1,0 +1,16 @@
+{
+  "description": "Backup restore prepare expired in the journal's backup view.",
+  "context": "Journal window, backup view. Backup restore prepare expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2cd3045c3127ce743fd8b13777913a3fb6c3623f893379b4520c432029c29f16",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

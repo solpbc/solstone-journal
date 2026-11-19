@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup only held in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup only held.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29bdcac26c040e3810ed02afe984ad62370caddd40cee16d3d60bacca691fa4e",
+  "max_length": 158,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

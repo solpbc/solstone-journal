@@ -1,0 +1,16 @@
+{
+  "description": "Backup days in the journal's backup view.",
+  "context": "Journal window, backup view. Backup days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17155f4d7c7aed6d1aab79677bf43e7e9e14af3271d009183cf387448168b0d3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

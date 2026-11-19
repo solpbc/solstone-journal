@@ -1391,6 +1391,900 @@ journal.window.agents.window.state.text.unknown.ending = unknown ending
 
 journal.window.agents.window.state.text.your.server = your server
 
+journal.window.backup.copy.action.labels.backup.now = back up now
+
+journal.window.backup.copy.action.labels.cancel = cancel
+
+journal.window.backup.copy.action.labels.change.destination = change destination
+
+journal.window.backup.copy.action.labels.check.cleanup = check again
+
+journal.window.backup.copy.action.labels.cleanup.blocked = couldn't confirm that a journal task has stopped. this task must stop before backup actions can continue.
+
+journal.window.backup.copy.action.labels.cleanup.checking = checking backup availability
+
+journal.window.backup.copy.action.labels.cleanup.contended = try checking again in a moment.
+
+journal.window.backup.copy.action.labels.cleanup.waiting = backup actions are waiting
+
+journal.window.backup.copy.action.labels.enable = turn on backup
+
+journal.window.backup.copy.action.labels.finish.cleanup = finish stopping backup
+
+journal.window.backup.copy.action.labels.finish.task = finish stopping task
+
+journal.window.backup.copy.action.labels.finishing.cleanup = stopping backup…
+
+journal.window.backup.copy.action.labels.finishing.task = stopping task…
+
+journal.window.backup.copy.action.labels.pause = pause backup
+
+journal.window.backup.copy.action.labels.restore = restore
+
+journal.window.backup.copy.action.labels.resume = resume backup
+
+journal.window.backup.copy.action.labels.rotate.key = regenerate recovery key
+
+journal.window.backup.copy.action.labels.save.destination = save destination
+
+journal.window.backup.copy.action.labels.save.retention = save retention
+
+journal.window.backup.copy.action.labels.start = get started
+
+journal.window.backup.copy.action.labels.teardown = turn off & delete backup
+
+journal.window.backup.copy.action.labels.try.again = try again
+
+journal.window.backup.copy.action.labels.understand = i understand
+
+journal.window.backup.copy.action.labels.view.key = view recovery key
+
+journal.window.backup.copy.brand.lock = your journal is always private, only yours.
+
+journal.window.backup.copy.confirm.escape = see key again
+
+journal.window.backup.copy.confirm.prompt = enter the recovery key you just recorded.
+
+journal.window.backup.copy.destination.edit.checking = checking the destination…
+
+journal.window.backup.copy.destination.edit.confirm.action = use the new destination
+
+journal.window.backup.copy.destination.edit.confirm.day = 1 day of your journal ({ $slot1 }) exists only in that backup.
+
+journal.window.backup.copy.destination.edit.confirm.days = { $slot1 } days of your journal ({ $slot2 }) exist only in that backup.
+
+journal.window.backup.copy.destination.edit.confirm.days.unavailable = can't check right now how many days of your journal exist only in that backup.
+
+journal.window.backup.copy.destination.edit.confirm.lead = your existing backup stays where it is, untouched. once you switch, your journal won't back up to it or restore from it.
+
+journal.window.backup.copy.destination.edit.confirm.title = back up somewhere new?
+
+journal.window.backup.copy.destination.edit.keep.hint = leave both empty to keep the credentials you use now.
+
+journal.window.backup.copy.destination.edit.lead = change the repository, the credentials or both. your recovery key stays the same.
+
+journal.window.backup.copy.destination.edit.no.change = that's already your destination.
+
+journal.window.backup.copy.destination.edit.partial.credentials = enter both, or leave both empty to keep the credentials you use now.
+
+journal.window.backup.copy.destination.edit.refusals.auth.failed = the destination rejected the credentials, so nothing was saved. check them and try again.
+
+journal.window.backup.copy.destination.edit.refusals.bucket.not.found = these credentials can't open a bucket by that name, so nothing was saved. check the bucket name in the repository.
+
+journal.window.backup.copy.destination.edit.refusals.destination.unchanged = that's already your destination.
+
+journal.window.backup.copy.destination.edit.refusals.locked = the backup there is busy, so nothing was saved. try again shortly.
+
+journal.window.backup.copy.destination.edit.refusals.repository.key.refused = there's already a backup there that your recovery key can't open, so nothing was saved. choose another destination.
+
+journal.window.backup.copy.destination.edit.refusals.timeout = the destination didn't answer in time, so nothing was saved. check the repository and credentials, then try again.
+
+journal.window.backup.copy.destination.edit.refusals.unreachable = the destination couldn't be opened, so nothing was saved. check the repository and credentials, then try again.
+
+journal.window.backup.copy.destination.edit.saved.credentials = saved. the new credentials open your backup.
+
+journal.window.backup.copy.destination.edit.saved.existing = saved. there's already a backup there that your journal can open, so it uses that one.
+
+journal.window.backup.copy.destination.edit.saved.new = saved. there was no backup there yet, so your journal set up a new one.
+
+journal.window.backup.copy.destination.field.labels.access.key.id = access key id
+
+journal.window.backup.copy.destination.field.labels.b2.application.key = application key
+
+journal.window.backup.copy.destination.field.labels.b2.key.id = key id
+
+journal.window.backup.copy.destination.field.labels.backend = backend
+
+journal.window.backup.copy.destination.field.labels.repository = repository
+
+journal.window.backup.copy.destination.field.labels.secret.access.key = secret access key
+
+journal.window.backup.copy.destination.modes.byo.desc = your bucket, your credentials. the default.
+
+journal.window.backup.copy.destination.modes.byo.note = { $slot1 } is never in the path.
+
+journal.window.backup.copy.destination.modes.byo.title = your own
+
+journal.window.backup.copy.destination.modes.hosted.cta = set up backup →
+
+journal.window.backup.copy.destination.modes.hosted.desc = { $slot1 } runs the off-device part for you.
+
+journal.window.backup.copy.destination.modes.hosted.note = { $slot1 } only ever holds an encrypted copy that was encrypted on your device before it leaves.
+
+journal.window.backup.copy.destination.modes.hosted.title = operated by { $slot1 }
+
+journal.window.backup.copy.destination.object.lock.summary = bucket setup notes
+
+journal.window.backup.copy.destination.object.lock.warning = don't enable Compliance-mode Object Lock on the bucket. it conflicts with backup pruning and lock cleanup. if you need immutability, use Governance mode.
+
+journal.window.backup.copy.destination.reason.labels.auth.failed = the destination rejected the key or credentials. check the recovery key and destination details.
+
+journal.window.backup.copy.destination.reason.labels.bucket.not.found = these credentials can't open a bucket by that name. check that the repository uses the bucket's name, not your storage key's name. if the bucket doesn't exist yet, make it with your storage provider first.
+
+journal.window.backup.copy.destination.reason.labels.locked = the destination is busy. try again shortly.
+
+journal.window.backup.copy.destination.reason.labels.repo.exists = destination is reachable and already set up.
+
+journal.window.backup.copy.destination.reason.labels.repo.missing = destination is reachable and needs setup.
+
+journal.window.backup.copy.destination.reason.labels.timeout = the destination took too long to respond. try again shortly.
+
+journal.window.backup.copy.destination.reason.labels.unreachable = the destination couldn't be reached. check the backup location and try again.
+
+journal.window.backup.copy.destination.repository.hint = the restic repository for your bucket, e.g. { $slot1 }
+
+journal.window.backup.copy.educate.stakes = restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. if you lose your recovery key, no one can restore your backup. not even { $slot1 }.
+
+journal.window.backup.copy.error.intro = start with the recovery key. if it still fails, check the destination details.
+
+journal.window.backup.copy.hosted.location.detail.summary = exact storage location
+
+journal.window.backup.copy.hosted.location.label = storage { $slot1 } operates
+
+journal.window.backup.copy.hosted.manage.label = manage your backup in the services portal →
+
+journal.window.backup.copy.hosted.setup.hint = this sets up encrypted backup, operated by { $slot1 }. finish turning it on in the services portal that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage { $slot2 } operates, and { $slot3 } can never read it.
+
+journal.window.backup.copy.intro.bullets.item1 = encrypted on your device before it leaves
+
+journal.window.backup.copy.intro.bullets.item2 = optional, always
+
+journal.window.backup.copy.intro.bullets.item3 = delete anytime
+
+journal.window.backup.copy.intro.optional = your journal lives on your device; backup is optional.
+
+journal.window.backup.copy.intro.steps = you'll save a recovery key, then choose where your encrypted backup lives. restoring takes that key and one more thing: your storage details, or a sign-in to the services portal if { $slot1 } runs your storage.
+
+journal.window.backup.copy.intro.subtitle = make an encrypted copy of your journal somewhere safe. only you can read it.
+
+journal.window.backup.copy.intro.title = encrypted backup
+
+journal.window.backup.copy.key.clipboard.caveat = copying puts your recovery key on the clipboard. clear it after you save it.
+
+journal.window.backup.copy.key.continue = continue
+
+journal.window.backup.copy.key.copy.failed = couldn't copy your recovery key. save it to a file or write it down before continuing.
+
+journal.window.backup.copy.key.copy.label = copy
+
+journal.window.backup.copy.key.pm.caution = only store your recovery key in a password manager you trust. { $slot1 } doesn't recommend a specific one.
+
+journal.window.backup.copy.key.save.failed = couldn't save your recovery key. copy it or write it down before continuing.
+
+journal.window.backup.copy.key.save.key = save recovery key
+
+journal.window.backup.copy.key.theft.honesty = anyone with your recovery key can read everything in your backup. store it like a master password.
+
+journal.window.backup.copy.management.destructive.action = turn off & delete backup
+
+journal.window.backup.copy.management.destructive.caption = this deletes your whole backup. no new backups will be created.
+
+journal.window.backup.copy.management.location.meta = your own storage · { $slot1 }
+
+journal.window.backup.copy.management.pause.caption = stops backups, spot-checks, cleanup and media offload until you resume. your backup, keys and history stay as they are.
+
+journal.window.backup.copy.management.pause.title = pause backup
+
+journal.window.backup.copy.management.paused.body = no backups run until you resume. your backup stays as it was, and restoring still works.
+
+journal.window.backup.copy.management.paused.hosted.note = pausing doesn't turn off encrypted backup in the services portal.
+
+journal.window.backup.copy.management.paused.title = backup is paused
+
+journal.window.backup.copy.management.retention.hint = how many recent copies to keep at each interval.
+
+journal.window.backup.copy.management.retention.labels.daily = daily
+
+journal.window.backup.copy.management.retention.labels.hourly = hourly
+
+journal.window.backup.copy.management.retention.labels.monthly = monthly
+
+journal.window.backup.copy.management.retention.labels.weekly = weekly
+
+journal.window.backup.copy.management.rotate.key.caption = this replaces your recovery key. the old key stops working, so every copy of it you saved becomes useless. write the new one down before you leave this page.
+
+journal.window.backup.copy.management.rotate.key.summary = replace your recovery key
+
+journal.window.backup.copy.management.status.labels.ago = { $slot1 } ago
+
+journal.window.backup.copy.management.status.labels.backup.attempt.unknown = the latest backup attempt isn't known.
+
+journal.window.backup.copy.management.status.labels.backup.history.note = this is a past result. it doesn't confirm what's stored at your current backup destination or whether it has been verified.
+
+journal.window.backup.copy.management.status.labels.backup.history.unknown = the last successful backup isn't known.
+
+journal.window.backup.copy.management.status.labels.destination = where your backup lives
+
+journal.window.backup.copy.management.status.labels.disabled = off
+
+journal.window.backup.copy.management.status.labels.enabled = on
+
+journal.window.backup.copy.management.status.labels.last.backup = latest backup attempt
+
+journal.window.backup.copy.management.status.labels.last.prune = last cleanup
+
+journal.window.backup.copy.management.status.labels.last.successful.backup = last successful backup
+
+journal.window.backup.copy.management.status.labels.last.verification = last verification
+
+journal.window.backup.copy.management.status.labels.not.available = not yet available
+
+journal.window.backup.copy.management.status.labels.not.yet = not yet
+
+journal.window.backup.copy.management.status.labels.retention = retention
+
+journal.window.backup.copy.management.status.labels.setup = set up your recovery key
+
+journal.window.backup.copy.management.teardown.confirm.prompt = type delete to confirm
+
+journal.window.backup.copy.management.teardown.gate.lead = { $slot1 } days of your journal ({ $slot2 }) exist only in this backup. deleting the backup deletes them everywhere, forever.
+
+journal.window.backup.copy.management.teardown.gate.unavailable.lead = can't verify what exists only in this backup right now. deleting the backup may destroy days of your journal that exist nowhere else.
+
+journal.window.backup.copy.management.teardown.gate.zero.lead = nothing exists only in this backup right now. every day is still on your device.
+
+journal.window.backup.copy.management.teardown.restore.first.action = restore everything first
+
+journal.window.backup.copy.offload.action.error = media offload couldn't finish. check backup setup, then try again.
+
+journal.window.backup.copy.offload.actions.check.preparation = check preparation
+
+journal.window.backup.copy.offload.actions.disable = turn off media offload
+
+journal.window.backup.copy.offload.actions.enable = turn on media offload
+
+journal.window.backup.copy.offload.actions.prepare = prepare copies
+
+journal.window.backup.copy.offload.actions.restore.day = restore this day
+
+journal.window.backup.copy.offload.actions.review.originals = review originals
+
+journal.window.backup.copy.offload.actions.save = save limits
+
+journal.window.backup.copy.offload.backup.only.label = kept only in backup
+
+journal.window.backup.copy.offload.disable.note = this stops. days already in your backup stay there, protected and restorable.
+
+journal.window.backup.copy.offload.enable.hint = choose how much older media can leave this computer after backup verification.
+
+journal.window.backup.copy.offload.invalid.limits = enter a positive number for each limit, then save again.
+
+journal.window.backup.copy.offload.labels.budget.gb = original media budget
+
+journal.window.backup.copy.offload.labels.budget.short = budget
+
+journal.window.backup.copy.offload.labels.days = offloaded days
+
+journal.window.backup.copy.offload.labels.device.free = free space
+
+journal.window.backup.copy.offload.labels.device.total = total space
+
+journal.window.backup.copy.offload.labels.eligible = ready to leave this computer
+
+journal.window.backup.copy.offload.labels.floor.gb = free-space floor
+
+journal.window.backup.copy.offload.labels.floor.short = floor
+
+journal.window.backup.copy.offload.labels.known = counted so far
+
+journal.window.backup.copy.offload.labels.last.completed = last completed
+
+journal.window.backup.copy.offload.labels.last.offload = last offload
+
+journal.window.backup.copy.offload.labels.last.restore = last restore
+
+journal.window.backup.copy.offload.labels.last.verify = last verification
+
+journal.window.backup.copy.offload.labels.projected = on this computer after removal
+
+journal.window.backup.copy.offload.labels.proposed = proposed to leave this computer
+
+journal.window.backup.copy.offload.labels.raw.media = on this computer
+
+journal.window.backup.copy.offload.labels.suggested = suggested: { $slot1 }
+
+journal.window.backup.copy.offload.labels.under.one.mib = under 1 { $slot1 }
+
+journal.window.backup.copy.offload.messages.degraded = some of the record of what's in your backup couldn't be read. these days may hold more than shown.
+
+journal.window.backup.copy.offload.messages.empty.days = no offloaded media yet.
+
+journal.window.backup.copy.offload.messages.incomplete = some media totals aren't available.
+
+journal.window.backup.copy.offload.messages.saved = saved
+
+journal.window.backup.copy.offload.messages.show.all.days = show all { $slot1 } days
+
+journal.window.backup.copy.offload.not.ready = turn on encrypted backup and confirm your recovery key before using media offload.
+
+journal.window.backup.copy.offload.paused.enable.note = resume backup to turn on media offload.
+
+journal.window.backup.copy.offload.paused.note = media offload is paused with backup. no media leaves this computer until you resume.
+
+journal.window.backup.copy.offload.preparation.checking = checking preparation…
+
+journal.window.backup.copy.offload.preparation.failed = preparation needs attention. see the latest offload result.
+
+journal.window.backup.copy.offload.preparation.finished = see the latest offload result and proposed originals.
+
+journal.window.backup.copy.offload.preparation.pending = a final result isn't available. check again.
+
+journal.window.backup.copy.offload.preparation.unavailable = can't confirm preparation right now. check again before starting another.
+
+journal.window.backup.copy.offload.prepare.hint = prepare encrypted copies for review. choose which originals to remove on the originals page.
+
+journal.window.backup.copy.offload.reason.unavailable = the reason isn't available here.
+
+journal.window.backup.copy.offload.restore.expectation = restoring { $slot1 } from your backup. a large restore can take a while.
+
+journal.window.backup.copy.offload.restore.reason.labels.archive.unbound = the backup record doesn't identify the archive needed to restore these files.
+
+journal.window.backup.copy.offload.restore.reason.labels.auth.failed = encrypted backup rejected the recovery key or credentials.
+
+journal.window.backup.copy.offload.restore.reason.labels.backup.not.ready = encrypted backup is not ready to restore media.
+
+journal.window.backup.copy.offload.restore.reason.labels.failed = media restore could not finish.
+
+journal.window.backup.copy.offload.restore.reason.labels.insufficient.free.space = this computer needs more free space before restoring media.
+
+journal.window.backup.copy.offload.restore.reason.labels.ledger.degraded = some of the record of what's in your backup couldn't be read, so a restore can't be trusted to be complete. try again after the next backup runs.
+
+journal.window.backup.copy.offload.restore.reason.labels.legacy.read.failed = the backup copy of media offloaded by an earlier version of your journal couldn't be read, so it wasn't restored.
+
+journal.window.backup.copy.offload.restore.reason.labels.legacy.review.held = media offloaded by an earlier version of your journal couldn't be checked against your backup, so it wasn't restored.
+
+journal.window.backup.copy.offload.restore.reason.labels.legacy.verification.failed = the backup copy of media offloaded by an earlier version of your journal didn't match its record, so it wasn't restored.
+
+journal.window.backup.copy.offload.restore.reason.labels.locked = media restore is waiting for backup maintenance to finish.
+
+journal.window.backup.copy.offload.restore.reason.labels.missing.file.after.restore = media restore finished, but a file was still missing.
+
+journal.window.backup.copy.offload.restore.reason.labels.nothing.to.restore = nothing to restore for that day.
+
+journal.window.backup.copy.offload.restore.reason.labels.repo.missing = encrypted backup could not find the repository.
+
+journal.window.backup.copy.offload.restore.reason.labels.restore.conflict = a different file is already where some of this media belongs, so the file already there was kept and the backup copy wasn't restored.
+
+journal.window.backup.copy.offload.restore.reason.labels.restore.held = restoring offloaded files is temporarily unavailable.
+
+journal.window.backup.copy.offload.restore.reason.labels.restore.not.published = some media couldn't be put back in your journal this time and nothing was put in its place, so try again later.
+
+journal.window.backup.copy.offload.restore.reason.labels.segment.missing = that day is no longer available locally.
+
+journal.window.backup.copy.offload.restore.reason.labels.timeout = media restore took too long. try again later.
+
+journal.window.backup.copy.offload.restore.reason.labels.verification.failed = restored media did not match the backup checksum.
+
+journal.window.backup.copy.offload.restore.report.dispositions.already.present = already on this computer
+
+journal.window.backup.copy.offload.restore.report.dispositions.conflict = existing file kept
+
+journal.window.backup.copy.offload.restore.report.dispositions.published = restored
+
+journal.window.backup.copy.offload.restore.report.dispositions.unattempted = not attempted
+
+journal.window.backup.copy.offload.restore.report.dispositions.unverified = result not confirmed
+
+journal.window.backup.copy.offload.restore.report.effects = files restored: { $slot1 } · added to this computer: { $slot2 }
+
+journal.window.backup.copy.offload.restore.report.files = file results
+
+journal.window.backup.copy.offload.restore.report.held = still needs attention
+
+journal.window.backup.copy.offload.result.labels.error = failed
+
+journal.window.backup.copy.offload.result.labels.ok = completed
+
+journal.window.backup.copy.offload.result.labels.partial = partly completed
+
+journal.window.backup.copy.offload.result.labels.skipped = didn't run
+
+journal.window.backup.copy.offload.result.labels.stalled = couldn't finish
+
+journal.window.backup.copy.offload.result.labels.unknown = result unavailable
+
+journal.window.backup.copy.offload.stakes = after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them. not even { $slot1 }.
+
+journal.window.backup.copy.offload.stall.reason.labels.archive.failed = media offload could not add older media to encrypted backup.
+
+journal.window.backup.copy.offload.stall.reason.labels.backup.failing = encrypted backup needs a healthy recent copy before media offload can run.
+
+journal.window.backup.copy.offload.stall.reason.labels.backup.not.ready = encrypted backup needs to finish setup before media offload can run.
+
+journal.window.backup.copy.offload.stall.reason.labels.confirm.failed = media offload could not verify the backed-up media.
+
+journal.window.backup.copy.offload.stall.reason.labels.confirm.tool.failed = media offload could not run the verification tool.
+
+journal.window.backup.copy.offload.stall.reason.labels.locked = media offload is waiting for backup maintenance to finish.
+
+journal.window.backup.copy.offload.stall.reason.labels.unexpected.error = media offload stopped unexpectedly. try again after backup maintenance runs.
+
+journal.window.backup.copy.offload.stall.reason.labels.verification.failed = backup verification failed. media offload will wait for a healthy verification.
+
+journal.window.backup.copy.offload.stall.reason.labels.verification.missing = backup verification needs to run before media offload can start.
+
+journal.window.backup.copy.offload.stall.reason.labels.verification.overdue = backup verification is overdue. media offload will wait for a fresh verification.
+
+journal.window.backup.copy.offload.stalled.lead = offload couldn't finish.
+
+journal.window.backup.copy.offload.title = media offload
+
+journal.window.backup.copy.offload.unavailable.lead = can't read offload status right now.
+
+journal.window.backup.copy.offload.unsupported = media offload isn't available on this device.
+
+journal.window.backup.copy.offload.verification.integrity.failed = the backup copy failed its integrity check and may be damaged.
+
+journal.window.backup.copy.operation.reason.labels.auth.failed = that recovery key didn't unlock the backup. check the key first, then the destination details.
+
+journal.window.backup.copy.operation.reason.labels.backup.busy = another backup task is already running. try again in a moment.
+
+journal.window.backup.copy.operation.reason.labels.backup.not.confirmed = confirm your recovery key before turning on backup.
+
+journal.window.backup.copy.operation.reason.labels.backup.only.held = your backup holds the only copy of some of your media, so no backup changes were made. restore everything first, then try again.
+
+journal.window.backup.copy.operation.reason.labels.backup.only.unplaced = your backup holds the only copy of some older media that can't be matched to a recording on this computer, so it can't be restored and no backup changes were made. if your journal was moved or copied, bring back its missing days, then try again.
+
+journal.window.backup.copy.operation.reason.labels.backup.operation.failed = that backup action couldn't be finished. check the recovery key and destination, then try again.
+
+journal.window.backup.copy.operation.reason.labels.backup.paused = backup is paused. resume it, then try again.
+
+journal.window.backup.copy.operation.reason.labels.backup.unavailable = the backup service couldn't be reached. start it, then try again.
+
+journal.window.backup.copy.operation.reason.labels.body.rebuild.failed = your journal was restored, but your body history couldn't be rebuilt from it. the restore wasn't finalized.
+
+journal.window.backup.copy.operation.reason.labels.broker.error = encrypted backup didn't return usable settings. try again shortly.
+
+journal.window.backup.copy.operation.reason.labels.broker.unreachable = encrypted backup couldn't be reached. check your connection, then try again.
+
+journal.window.backup.copy.operation.reason.labels.cleanup.pending = couldn't confirm that the backup task has stopped. other backup actions are waiting.
+
+journal.window.backup.copy.operation.reason.labels.destination.unsupported = your backup's settings are incomplete, so your journal can't reach it, and no backup changes were made.
+
+journal.window.backup.copy.operation.reason.labels.expired = the approval took too long. try again.
+
+journal.window.backup.copy.operation.reason.labels.failed = the backup action couldn't be finished. check the recovery key and destination, then try again.
+
+journal.window.backup.copy.operation.reason.labels.hosted.entitlement.inactive = turn on encrypted backup in the services portal, then try again.
+
+journal.window.backup.copy.operation.reason.labels.incomplete = the backup action didn't finish. you can try again.
+
+journal.window.backup.copy.operation.reason.labels.integrity.failed = your journal was restored to this computer, but the backup copy failed its integrity check and may be damaged.
+
+journal.window.backup.copy.operation.reason.labels.integrity.unverified = your journal was restored to this computer, but the integrity check couldn't run (the backup was busy or timed out), so the backup copy is unverified.
+
+journal.window.backup.copy.operation.reason.labels.invalid.config.value = use non-negative whole numbers, then save again.
+
+journal.window.backup.copy.operation.reason.labels.invalid.key = that recovery key didn't unlock the backup. re-enter the key from your saved copy.
+
+journal.window.backup.copy.operation.reason.labels.invalid.operation.for.state = finish the current backup setup step, then try again.
+
+journal.window.backup.copy.operation.reason.labels.invalid.request.value = check the destination details and try again.
+
+journal.window.backup.copy.operation.reason.labels.locked = the destination is busy. try again shortly.
+
+journal.window.backup.copy.operation.reason.labels.malformed = the response couldn't be read. update your journal, then try again.
+
+journal.window.backup.copy.operation.reason.labels.missing.required.field = fill in the required fields, then try again.
+
+journal.window.backup.copy.operation.reason.labels.network.error = the services portal couldn't be reached. check your connection, then try again.
+
+journal.window.backup.copy.operation.reason.labels.offload.record.unavailable = the record of what media offload moved into your backup is missing or can't be read, so no backup changes were made. if your journal was moved or copied, bring back its health folder, then try again.
+
+journal.window.backup.copy.operation.reason.labels.recovery.key.mismatch = that didn't match your recovery key. re-enter the key from your saved copy.
+
+journal.window.backup.copy.operation.reason.labels.repo.missing = no backup repository was found at that destination.
+
+journal.window.backup.copy.operation.reason.labels.repository.unsupported = the repository has to start with { $slot1 } or { $slot2 }, matching the backend you chose (for example { $slot3 } or { $slot4 }).
+
+journal.window.backup.copy.operation.reason.labels.restore.prepare.expired = the approval took too long. try again.
+
+journal.window.backup.copy.operation.reason.labels.storage.unreached = turning off and deleting your backup stopped before anything was deleted, so it's safe to try again.
+
+journal.window.backup.copy.operation.reason.labels.teardown.tool.unavailable = the backup program that comes with your journal is missing, so no backup changes were made.
+
+journal.window.backup.copy.operation.reason.labels.timeout = the destination took too long to respond. try again shortly.
+
+journal.window.backup.copy.phase.labels.cleanup.pending = backup needs attention
+
+journal.window.backup.copy.phase.labels.degraded = restored, but not verified
+
+journal.window.backup.copy.phase.labels.done = done
+
+journal.window.backup.copy.phase.labels.empty = not set up yet
+
+journal.window.backup.copy.phase.labels.error = couldn't finish
+
+journal.window.backup.copy.phase.labels.loading = loading…
+
+journal.window.backup.copy.phase.labels.refused = restore wasn't available
+
+journal.window.backup.copy.phase.labels.restoring = restoring your journal…
+
+journal.window.backup.copy.phase.labels.rotating = making a new recovery key…
+
+journal.window.backup.copy.phase.labels.setting.up = setting up your backup…
+
+journal.window.backup.copy.phase.labels.tearing.down = turning off…
+
+journal.window.backup.copy.restore.expectation = a large restore can take a while. you can leave this page open while it runs.
+
+journal.window.backup.copy.restore.hosted.byo.desc = storage you bring yourself, reached with credentials you provide.
+
+journal.window.backup.copy.restore.hosted.choose.lane = where is the encrypted copy you're restoring from?
+
+journal.window.backup.copy.restore.hosted.errors.auth.failed = that recovery key didn't unlock the backup. check the key, then try signing in again.
+
+journal.window.backup.copy.restore.hosted.errors.cancelled = restore cancelled. you can try again.
+
+journal.window.backup.copy.restore.hosted.key.label = your recovery key
+
+journal.window.backup.copy.restore.hosted.key.reassurance = this journal uses your key and never sends it to { $slot1 }.
+
+journal.window.backup.copy.restore.hosted.key.required = enter your recovery key before continuing.
+
+journal.window.backup.copy.restore.hosted.lane.intro = enter your recovery key, then sign in to the services portal and confirm the restore.
+
+journal.window.backup.copy.restore.hosted.lane.title = restore from { $slot1 }
+
+journal.window.backup.copy.restore.hosted.operated.desc = storage { $slot1 } runs, reached through the services portal.
+
+journal.window.backup.copy.restore.hosted.popup.preflight.failed = the sign-in window didn't open. try again, and check whether your browser blocked it.
+
+journal.window.backup.copy.restore.hosted.primary = sign in to restore →
+
+journal.window.backup.copy.restore.hosted.reopen = open sign-in again
+
+journal.window.backup.copy.restore.hosted.state.b = waiting for you to approve the restore in the services portal…
+
+journal.window.backup.copy.restore.hosted.state.b.refused.hosted.backup.expired = { $slot1 } deleted that copy once 30 days had passed since encrypted backup stopped.
+
+journal.window.backup.copy.restore.hosted.state.b.refused.no.hosted.backup = { $slot1 } isn't holding an encrypted copy for the sign-in you used.
+
+journal.window.backup.copy.restore.hosted.status.retryable = something went wrong. you can try again.
+
+journal.window.backup.copy.service.name = encrypted backup
+
+journal.window.backup.copy.status.last.backup.failed = backup attempt failed { $slot1 } ago
+
+journal.window.backup.copy.status.last.backup.never.run = no completed backup recorded on this computer
+
+journal.window.backup.copy.status.last.verification.failed = spot-check failed { $slot1 } ago
+
+journal.window.backup.copy.status.last.verification.ok = { $slot1 } ago
+
+journal.window.backup.copy.status.last.verification.skipped = spot-check couldn't run { $slot1 } ago
+
+journal.window.backup.erasure.paused.many = { $slot1 } erased things wait to be removed from your backups until you resume.
+
+journal.window.backup.erasure.running.many = removing { $slot1 } erased things from your backups…
+
+journal.window.backup.erasure.running.one = removing 1 erased thing from your backups…
+
+journal.window.backup.link.label.backup.details.in.health = backup details in health →
+
+journal.window.backup.response.backup.refusal.a.backup.can.t.start.because = a backup can't start because your journal's background service isn't running. start it, then try again.
+
+journal.window.backup.response.backup.refusal.a.backup.couldn.t.be.set = a backup couldn't be set up there. nothing was saved.
+
+journal.window.backup.response.backup.refusal.a.required.field.is.missing = a required field is missing.
+
+journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on = backup can't be turned on until you confirm your recovery key.
+
+journal.window.backup.response.backup.refusal.detail.backup.is.disabled = backup is disabled
+
+journal.window.backup.response.backup.refusal.detail.backup.is.off = backup is off
+
+journal.window.backup.response.backup.refusal.detail.backup.is.paused = backup is paused
+
+journal.window.backup.response.backup.refusal.detail.backup.keys.are.missing = backup keys are missing
+
+journal.window.backup.response.backup.refusal.detail.configure.a.destination.first = configure a destination first
+
+journal.window.backup.response.backup.refusal.detail.hosted.backup.has.no.destination.to = hosted backup has no destination to change
+
+journal.window.backup.response.backup.refusal.detail.invalid.region = invalid region
+
+journal.window.backup.response.backup.refusal.detail.media.offload.is.not.available.on = media offload is not available on this device
+
+journal.window.backup.response.backup.refusal.detail.no.recovery.key.yet = no recovery key yet
+
+journal.window.backup.response.backup.refusal.detail.nothing.was.saved = nothing was saved
+
+journal.window.backup.response.backup.refusal.detail.own.storage.backup.isn.t.on = own-storage backup isn't on
+
+journal.window.backup.response.backup.refusal.detail.repository.must.start.with.the.backend = repository must start with the backend name
+
+journal.window.backup.response.backup.refusal.detail.unsupported.backend = unsupported backend
+
+journal.window.backup.response.backup.refusal.detail.use.the.hosted.restore.prepare.flow = use the hosted restore prepare flow
+
+journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t = one of those values couldn't be used.
+
+journal.window.backup.response.backup.refusal.restore.couldn.t.start = restore couldn't start.
+
+journal.window.backup.response.backup.refusal.that.action.isn.t.available.in = that action isn't available in the current state.
+
+journal.window.backup.response.backup.refusal.that.day.couldn.t.be.used = that day couldn't be used.
+
+journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery = that didn't match your recovery key.
+
+journal.window.backup.response.backup.refusal.that.request.didn.t.finish = that request didn't finish.
+
+journal.window.backup.response.backup.refusal.that.s.a.different.repository.confirm = that's a different repository. confirm the change to use it.
+
+journal.window.backup.response.backup.refusal.that.s.already.your.destination = that's already your destination.
+
+journal.window.backup.response.backup.refusal.that.setting.couldn.t.be.saved = that setting couldn't be saved because one value was invalid.
+
+journal.window.backup.response.backup.refusal.the.restore.from.encrypted.backup.couldn = the restore from encrypted backup couldn't be prepared.
+
+journal.window.backup.response.backup.refusal.the.restore.from.encrypted.backup.didn = the restore from encrypted backup didn't finish.
+
+journal.window.backup.response.backup.refusal.this.journal.already.has.a.hosted = This journal already has a hosted backup binding.
+
+journal.window.backup.response.backup.refusal.this.journal.must.start.its.hosted = This journal must start its hosted restore handoff first.
+
+journal.window.backup.response.destination.result.message.a.backup.there.doesn.t.open = a backup there doesn't open with this journal's key
+
+journal.window.backup.response.destination.result.message.backup.destination.is.reachable.and.needs = backup destination is reachable and needs setup
+
+journal.window.backup.response.destination.result.message.backup.repository.is.reachable = backup repository is reachable
+
+journal.window.backup.response.destination.result.message.could.not.reach.the.backup.destination = could not reach the backup destination
+
+journal.window.backup.response.destination.result.message.repository.is.locked.try.again.shortly = repository is locked; try again shortly
+
+journal.window.backup.response.destination.result.message.repository.password.was.rejected = repository password was rejected
+
+journal.window.backup.response.destination.result.message.the.destination.rejected.the.credentials = the destination rejected the credentials
+
+journal.window.backup.response.destination.result.message.these.credentials.can.t.open.a = these credentials can't open a bucket by that name
+
+journal.window.backup.response.detail.missing.field = missing{ $slot1 }{ $name }
+
+journal.window.backup.response.detail.missing.request.body = missing request body
+
+journal.window.backup.response.hosted.restore.handoff.refusal.detail.a.hosted.restore.handoff.is.already = A hosted restore handoff is already being prepared.
+
+journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.capability.has = That hosted restore handoff capability has expired.
+
+journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.capability.is = That hosted restore handoff capability is not valid.
+
+journal.window.backup.response.hosted.restore.handoff.refusal.detail.that.hosted.restore.handoff.is.not = That hosted restore handoff is not ready for this step.
+
+journal.window.backup.response.hosted.restore.handoff.refusal.detail.the.hosted.restore.handoff.is.no = The hosted restore handoff is no longer current.
+
+journal.window.backup.response.offload.change.partial = media offload change couldn't finish; reload before trying again.
+
+journal.window.backup.response.pause.message = backup is paused. resume it first.
+
+journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted = your B2 bucket only hides deleted files unless a lifecycle rule for the whole bucket removes them, so copies of this backup stay there until you add one or delete them yourself.
+
+journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against = your bucket can lock files against deletion, so copies of this backup stay there until any lock ends and you delete those versions or your provider's own rules remove them.
+
+journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether = your journal couldn't check whether your storage keeps deleted files, so check your bucket's versioning, lifecycle and lock settings to make sure this backup is gone.
+
+journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of = your storage keeps earlier versions of deleted files, so copies of this backup stay in your bucket until you delete those versions or your provider's own rules remove them.
+
+journal.window.backup.response.tool.manifest.invalid = part of your journal's install is damaged; reinstall your journal.
+
+journal.window.backup.response.tool.manifest.missing = part of your journal's install is missing; reinstall your journal.
+
+journal.window.backup.response.tool.member.unreadable = part of your journal's install couldn't be read; if it keeps happening, reinstall your journal.
+
+journal.window.backup.response.tool.package.mismatch = your journal's install doesn't match; if you just updated, restart your journal, otherwise reinstall it.
+
+journal.window.backup.response.tool.restart.update = restart your journal to finish the update.
+
+journal.window.backup.response.tool.screen.ocr.unavailable = screen OCR is unavailable on this target.
+
+journal.window.backup.response.tool.unsafe.path = part of your journal's install isn't what it should be; reinstall your journal.
+
+journal.window.backup.response.tool.unsupported.location = this copy of the journal isn't running from an installed package, so its files can't be checked.
+
+journal.window.backup.response.tool.wrong.product = what's installed here isn't the journal; reinstall your journal.
+
+journal.window.backup.response.tool.wrong.target = your journal was built for a different kind of computer; reinstall the version for this one.
+
+journal.window.backup.status.backup.off = backup is off.
+
+journal.window.backup.status.fact.last.check = last spot-check
+
+journal.window.backup.status.fact.last.success = last successful copy
+
+journal.window.backup.status.fact.latest.attempt = latest attempt
+
+journal.window.backup.status.fact.name = backup
+
+journal.window.backup.status.fact.none.reported = none reported
+
+journal.window.backup.status.fact.off = off
+
+journal.window.backup.status.fact.on = on
+
+journal.window.backup.status.fact.operation = operation
+
+journal.window.backup.status.kind.enable = backup setup
+
+journal.window.backup.status.kind.enable.hosted = backup setup
+
+journal.window.backup.status.kind.offload = copy preparation
+
+journal.window.backup.status.kind.offload.approve = archive approval
+
+journal.window.backup.status.kind.offload.restore = restore
+
+journal.window.backup.status.kind.restore = restore
+
+journal.window.backup.status.kind.restore.hosted = restore
+
+journal.window.backup.status.kind.restore.recovery = restore
+
+journal.window.backup.status.kind.rotate = recovery key change
+
+journal.window.backup.status.kind.teardown = turning backup off
+
+journal.window.backup.status.operation.status.value1.value2 = { $value1 },{ $slot1 }{ $value2 }
+
+journal.window.backup.status.operation.status.value1.value2.variant2 = { $value1 }{ $slot1 }{ $value2 }
+
+journal.window.backup.status.operation.status.value1.value2.variant3 = { $value1 }:{ $slot1 }{ $value2 }.
+
+journal.window.backup.status.outcome.completed = completed
+
+journal.window.backup.status.outcome.couldnt.run = couldn't run
+
+journal.window.backup.status.outcome.failed = failed
+
+journal.window.backup.status.outcome.unknown = isn't known
+
+journal.window.backup.status.phase.cancelled = cancelled
+
+journal.window.backup.status.phase.cancelling = cancelling
+
+journal.window.backup.status.phase.cleanup.pending = waiting for cleanup
+
+journal.window.backup.status.phase.degraded = completed with problems
+
+journal.window.backup.status.phase.done = completed
+
+journal.window.backup.status.phase.error = couldn't finish
+
+journal.window.backup.status.phase.refused = couldn't start
+
+journal.window.backup.status.phase.restoring = in progress
+
+journal.window.backup.status.phase.rotating = in progress
+
+journal.window.backup.status.phase.setting.up = in progress
+
+journal.window.backup.status.phase.tearing.down = in progress
+
+journal.window.backup.status.status.text.backup.is.off.value1 = backup is off.{ $slot1 }{ $value1 }
+
+journal.window.backup.status.status.text.paused.by.you.value1 = paused by you,{ $slot1 }{ $value1 }
+
+journal.window.backup.status.text.data.byo.location.status = [data-byo-location-status]
+
+journal.window.backup.status.text.data.confirm.error = [data-confirm-error]
+
+journal.window.backup.status.text.data.destination.status = [data-destination-status]
+
+journal.window.backup.status.text.data.offload.config.status = [data-offload-config-status]
+
+journal.window.backup.status.text.data.offload.restore.status = [data-offload-restore-status]
+
+journal.window.backup.status.text.data.operation.error = [data-operation-error]
+
+journal.window.backup.status.text.data.recovery.error = [data-recovery-error]
+
+journal.window.backup.status.text.data.restore.status = [data-restore-status]
+
+journal.window.backup.status.text.data.retention.status = [data-retention-status]
+
+journal.window.backup.status.text.data.switch.days = [data-switch-days]
+
+journal.window.backup.status.text.data.teardown.status = [data-teardown-status]
+
+journal.window.backup.status.verification.part = checked 1 of { $slot1 } parts of your backup.
+
+journal.window.backup.status.visible.text.technical.details = technical details
+
+journal.window.backup.status.window.explanation.another.copy.of.your.journal.took = another copy of your journal took over encrypted backup.
+
+journal.window.backup.status.window.explanation.backup.is.on.the.latest.attempt = backup is on. the latest attempt isn't known.
+
+journal.window.backup.status.window.explanation.backup.status.is.unavailable.right.now = backup status is unavailable right now.
+
+journal.window.backup.status.window.explanation.checked.all.of.your.backup.this = checked all of your backup this week.
+
+journal.window.backup.status.window.explanation.encrypted.backup.can.t.reach.storage = encrypted backup can't reach storage from this computer.
+
+journal.window.backup.status.window.explanation.encrypted.backup.can.t.run.on = encrypted backup can't run on this computer.
+
+journal.window.backup.status.window.explanation.encrypted.backup.couldn.t.be.reached = encrypted backup couldn't be reached.
+
+journal.window.backup.status.window.explanation.encrypted.backup.didn.t.return.usable = encrypted backup didn't return usable settings.
+
+journal.window.backup.status.window.explanation.encrypted.backup.isn.t.turned.on = encrypted backup isn't turned on in the services portal.
+
+journal.window.backup.status.window.explanation.it.ran.out.of.time = it ran out of time.
+
+journal.window.backup.status.window.explanation.no.completed.attempt.recorded = no completed attempt recorded
+
+journal.window.backup.status.window.explanation.paused.by.you.date.isn.t = paused by you, date isn't known
+
+journal.window.backup.status.window.explanation.some.of.your.journal.couldn.t = some of your journal couldn't be read, so the copy that was stored is incomplete.
+
+journal.window.backup.status.window.explanation.the.backup.key.couldn.t.open = the backup key couldn't open the destination.
+
+journal.window.backup.status.window.explanation.the.backup.lock.was.already.held = the backup lock was already held.
+
+journal.window.backup.status.window.explanation.the.backup.tool.stopped.for.a = the backup tool stopped for a reason it didn't give.
+
+journal.window.backup.status.window.explanation.the.backup.tool.stopped.with.an = the backup tool stopped with an error.
+
+journal.window.backup.status.window.explanation.the.last.recorded.backup.spot.check = the last recorded backup spot-check failed.
+
+journal.window.backup.status.window.explanation.the.latest.backup.attempt.completed.value1 = the latest backup attempt completed,{ $slot1 }{ $value1 }.
+
+journal.window.backup.status.window.explanation.the.latest.recorded.backup.attempt.failed = the latest recorded backup attempt failed.
+
+journal.window.backup.status.window.explanation.the.latest.recorded.backup.copy.is = the latest recorded backup copy is incomplete.
+
+journal.window.backup.status.window.explanation.the.reason.wasn.t.recorded = the reason wasn't recorded.
+
+journal.window.backup.status.window.explanation.the.repository.in.your.backup.settings = the repository in your backup settings doesn't start with { $slot1 } or { $slot2 } to match its backend, so backup stopped. change the destination to a repository that starts with { $slot3 } or { $slot4 }
+
+journal.window.backup.status.window.explanation.these.are.recorded.results.they.don = these are recorded results. they don't confirm what's at your current destination or whether it has been verified.
+
+journal.window.backup.status.window.explanation.this.computer.can.t.set.up = this computer can't set up or restore encrypted backup.
+
+journal.window.backup.status.window.explanation.this.computer.s.link.to.encrypted = this computer's link to encrypted backup was refused.
+
+journal.window.backup.status.window.explanation.value1.date.isn.t.known = { $value1 }, date isn't known
+
+journal.window.backup.status.window.explanation.waiting.to.finish.in.the.services = waiting to finish in the services portal
+
+journal.window.backup.status.window.explanation.you.paused.backup.on.value1 = you paused backup on{ $slot1 }{ $value1 }.
+
+journal.window.backup.status.window.explanation.you.paused.backup.the.date.isn = you paused backup. the date isn't known.
+
+journal.window.backup.status.window.explanation.your.backup.destination.couldn.t.be = your backup destination couldn't be found.
+
+journal.window.backup.visible.text.checking.backup.status = checking backup status…
+
+journal.window.backup.visible.text.couldn.t.load.backup.settings.reload = couldn't load backup settings. reload this page to try again.
+
+journal.window.backup.visible.text.loading.backup.settings = loading backup settings…
+
+journal.window.backup.visible.text.older.files.moved.off.this.computer = older files moved off this computer. your full backup also includes files still here.
+
+journal.window.backup.window.explanation.a.backup.waits.until.this.finishes = a backup waits until this finishes. you can leave this page.
+
+journal.window.backup.window.explanation.erased.thing.waits.to.be.removed = 1 erased thing waits to be removed from your backups until you resume.
+
 journal.window.body.accessible.name.body.views = body views
 
 journal.window.body.accessible.name.close = close

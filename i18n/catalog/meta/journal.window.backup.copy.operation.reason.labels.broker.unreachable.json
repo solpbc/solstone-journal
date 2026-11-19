@@ -1,0 +1,16 @@
+{
+  "description": "Backup broker unreachable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup broker unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80d0db59f6408f8628ea0fd352c4e24cde982a9197368c52350c285f8cf99a03",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

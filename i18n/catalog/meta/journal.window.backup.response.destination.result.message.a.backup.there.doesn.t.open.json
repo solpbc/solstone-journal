@@ -1,0 +1,16 @@
+{
+  "description": "Destination result message in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Destination result message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1354714637b1473a87cb9da5cb3db754c83bf21e060640e958ea75c65991debe",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

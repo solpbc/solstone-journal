@@ -1,0 +1,16 @@
+{
+  "description": "Backup restore not published in the journal's backup view.",
+  "context": "Journal window, backup view. Backup restore not published.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bceb87d401ebec692001183229d071199faef933a79239760adcb7dd4732a4bf",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

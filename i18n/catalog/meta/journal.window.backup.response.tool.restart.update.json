@@ -1,0 +1,16 @@
+{
+  "description": "Installed tool guidance in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Installed tool guidance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "772bb7baf5eeea774884c8e57c6469e5e2b369001238c10370a40e6129e129f6",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

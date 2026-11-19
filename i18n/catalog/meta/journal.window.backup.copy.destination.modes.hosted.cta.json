@@ -1,0 +1,16 @@
+{
+  "description": "Backup cta in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e464fe70b9da28a1e34021dea3e5f93d695b0101e835a97bb460072b64fadf48",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

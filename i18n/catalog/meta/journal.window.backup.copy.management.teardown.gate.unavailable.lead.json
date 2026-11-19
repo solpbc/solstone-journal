@@ -1,0 +1,16 @@
+{
+  "description": "Backup teardown gate unavailable lead in the journal's backup view.",
+  "context": "Journal window, backup view. Backup teardown gate unavailable lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7fc3b9642b178a3dc5348a7d28a513421b654f133fb4dfb8225872bbfbc8232",
+  "max_length": 163,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

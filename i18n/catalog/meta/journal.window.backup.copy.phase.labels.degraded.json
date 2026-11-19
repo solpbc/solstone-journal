@@ -1,0 +1,16 @@
+{
+  "description": "Backup degraded in the journal's backup view.",
+  "context": "Journal window, backup view. Backup degraded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57ec0edbf72a629d7d4f6bb791f4b5864e9ad8afa0d902f1eb144f97e3e4c179",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

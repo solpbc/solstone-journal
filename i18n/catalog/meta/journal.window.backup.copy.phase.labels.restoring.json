@@ -1,0 +1,16 @@
+{
+  "description": "Backup restoring in the journal's backup view.",
+  "context": "Journal window, backup view. Backup restoring.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f334d43f08edda4004f377d272d1b3533d295d67607334a35140527a43c533a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -4,11 +4,7 @@
 use std::panic::{self, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
-use axum::{
-    Json,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
+use axum::{http::StatusCode, response::Response};
 use serde_json::json;
 use solstone_core_system::process::{
     HelperAdmissionStatus, observe_bounded_helper_admission, retry_bounded_helper_admission_until,
@@ -169,11 +165,10 @@ fn retry_owned(deps: &BackupWebDeps, deadline: Instant) -> Response {
     } else {
         StatusCode::ACCEPTED
     };
-    (
+    crate::response::payload(
         code,
-        Json(json!({"operation": current, "cleanup_admission": state})),
+        json!({"operation": current, "cleanup_admission": state}),
     )
-        .into_response()
 }
 
 // The native driver runs this with full-tests, which its operation helpers need.

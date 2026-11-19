@@ -125,7 +125,7 @@ pub fn edit_destination<'invocation>(
                 reachable: true,
                 repo_exists: true,
                 reason_code: "repository_key_refused",
-                message: "a backup there doesn't open with this journal's key",
+                message_id: "journal.window.backup.response.destination.result.message.a.backup.there.doesn.t.open",
             }));
         }
         _ => return Err(DestinationEditRefusal::Unusable(status)),

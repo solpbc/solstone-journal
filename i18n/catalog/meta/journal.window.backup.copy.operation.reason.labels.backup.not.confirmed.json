@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup not confirmed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup not confirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "626ef55446f918bbccaaf6f3caea9fd561762a7bf82bc8be615c7a7dad86f8f7",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

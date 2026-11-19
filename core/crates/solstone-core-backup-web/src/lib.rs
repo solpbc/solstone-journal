@@ -81,7 +81,9 @@ use restore_prepare::SharedRestorePrepare;
 pub fn invalid_operation_response() -> axum::response::Response {
     response::error(
         axum::http::StatusCode::BAD_REQUEST,
-        "that action isn't available in the current state.",
+        response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+        ),
         "invalid_operation_for_state",
         "",
     )
@@ -418,7 +420,7 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let router = router.layer(axum::middleware::from_fn(move |request, next| {
         cleanup::admit_mutation(cleanup_operations.clone(), request, next)
     }));
-    router
+    router.layer(axum::middleware::from_fn(response::localize))
 }
 
 fn status_response(deps: &BackupWebDeps) -> axum::response::Response {
@@ -584,7 +586,9 @@ async fn generate_keys(deps: BackupWebDeps) -> axum::response::Response {
 fn internal_error() -> axum::response::Response {
     response::error(
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "that request didn't finish.",
+        response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.that.request.didn.t.finish",
+        ),
         "internal_error",
         "",
     )
@@ -600,9 +604,13 @@ async fn reveal_key(deps: BackupWebDeps) -> axum::response::Response {
         },
         Ok(None) => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "no recovery key yet",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.no.recovery.key.yet",
+            ),
         ),
         Err(_) => internal_error(),
     }
@@ -626,9 +634,13 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
         Ok(None) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "that action isn't available in the current state.",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+                ),
                 "invalid_operation_for_state",
-                "no recovery key yet",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.detail.no.recovery.key.yet",
+                ),
             );
         }
         Err(_) => return internal_error(),
@@ -638,7 +650,9 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
         Err(_) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "that didn't match your recovery key.",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery",
+                ),
                 "recovery_key_mismatch",
                 "",
             );
@@ -647,7 +661,9 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
     if parsed_entered != recovery {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that didn't match your recovery key.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery",
+            ),
             "recovery_key_mismatch",
             "",
         );
@@ -672,7 +688,9 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
     if mismatch {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that didn't match your recovery key.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery",
+            ),
             "recovery_key_mismatch",
             "",
         );
@@ -757,7 +775,9 @@ async fn backup_now(deps: BackupWebDeps) -> axum::response::Response {
     if !callosum::request(&deps.journal_root, "backup:run") {
         return response::error(
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "a backup can't start because your journal's background service isn't running. start it, then try again.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.a.backup.can.t.start.because",
+            ),
             "backup_unavailable",
             "",
         );
@@ -774,15 +794,21 @@ fn enable_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "configure a destination first",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.configure.a.destination.first",
+            ),
         ));
     }
     if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "backup can't be turned on until you confirm your recovery key.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on",
+            ),
             "backup_not_confirmed",
             "",
         ));
@@ -790,9 +816,13 @@ fn enable_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if !matches!(keys::keys(&backup), Ok(Some(_))) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "no recovery key yet",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.no.recovery.key.yet",
+            ),
         ));
     }
     Ok(())
@@ -803,7 +833,9 @@ fn hosted_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "backup can't be turned on until you confirm your recovery key.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on",
+            ),
             "backup_not_confirmed",
             "",
         ));
@@ -811,9 +843,13 @@ fn hosted_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if !matches!(keys::keys(&backup), Ok(Some(_))) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "no recovery key yet",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.no.recovery.key.yet",
+            ),
         ));
     }
     Ok(())
@@ -1089,9 +1125,13 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
     if !solstone_core_backup::repository_names_backend(&destination) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "one of those values couldn't be used.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t",
+            ),
             "repository_unsupported",
-            "repository must start with the backend name",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.repository.must.start.with.the.backend",
+            ),
         );
     }
     if set_destination(&deps.journal_root, &destination).is_err() {
@@ -1132,7 +1172,7 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
             status.reachable,
             status.repo_exists,
             status.reason_code,
-            status.message,
+            status.message_id,
             None,
             None,
         ),
@@ -1151,9 +1191,13 @@ fn edit_backup_destination(
     if backup.get("mode").and_then(Value::as_str) != Some("byo") {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "hosted backup has no destination to change",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.hosted.backup.has.no.destination.to",
+            ),
         );
     }
     if let Some(current) = solstone_core_backup::destination_from_config(backup)
@@ -1180,9 +1224,13 @@ fn edit_backup_destination(
     if !solstone_core_backup::repository_names_backend(&destination) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "one of those values couldn't be used.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t",
+            ),
             "repository_unsupported",
-            "repository must start with the backend name",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.repository.must.start.with.the.backend",
+            ),
         );
     }
     let tools = match resolve_tools(deps) {
@@ -1212,7 +1260,7 @@ fn edit_backup_destination(
                     "reachable": status.reachable,
                     "repo_exists": status.repo_exists,
                     "reason_code": status.reason_code,
-                    "message": status.message,
+                    "message": status.message_id,
                     "change": change.as_str(),
                 });
                 response::success(value)
@@ -1221,33 +1269,49 @@ fn edit_backup_destination(
         },
         Err(DestinationEditRefusal::NeedsConfirmation) => response::error(
             axum::http::StatusCode::CONFLICT,
-            "that's a different repository. confirm the change to use it.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.s.a.different.repository.confirm",
+            ),
             "confirm_new_repository",
             "",
         ),
         Err(DestinationEditRefusal::Unusable(status)) => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            status.message,
+            response::Wording::Catalog(status.message_id),
             status.reason_code,
-            "nothing was saved",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.nothing.was.saved",
+            ),
         ),
         Err(DestinationEditRefusal::SetupFailed(reason)) => response::error(
             axum::http::StatusCode::BAD_GATEWAY,
-            "a backup couldn't be set up there. nothing was saved.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.a.backup.couldn.t.be.set",
+            ),
             reason,
-            "nothing was saved",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.nothing.was.saved",
+            ),
         ),
         Err(DestinationEditRefusal::Unchanged) => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that's already your destination.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.s.already.your.destination",
+            ),
             "destination_unchanged",
-            "nothing was saved",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.nothing.was.saved",
+            ),
         ),
         Err(DestinationEditRefusal::NotEditable) => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "invalid_operation_for_state",
-            "own-storage backup isn't on",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.own.storage.backup.isn.t.on",
+            ),
         ),
         Err(DestinationEditRefusal::Config(_)) => internal_error(),
     }
@@ -1339,7 +1403,9 @@ fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Resp
     if solstone_core_backup_runtime::restore_sweep::setup_finished(&deps.journal_root) {
         return Some(response::error(
             axum::http::StatusCode::CONFLICT,
-            "restore couldn't start.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.restore.couldn.t.start",
+            ),
             solstone_core_backup_runtime::restore::RESTORE_REASON_JOURNAL_ALREADY_SET_UP,
             "",
         ));
@@ -1348,7 +1414,9 @@ fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Resp
         |reason| {
             response::error(
                 axum::http::StatusCode::CONFLICT,
-                "restore couldn't start.",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.restore.couldn.t.start",
+                ),
                 reason,
                 "",
             )
@@ -1701,9 +1769,13 @@ async fn restore_hosted_route(deps: BackupWebDeps, body: Bytes) -> axum::respons
     let Some(binding) = load_hosted_binding(&deps.journal_root) else {
         return response::error(
             axum::http::StatusCode::CONFLICT,
-            "This journal must start its hosted restore handoff first.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.this.journal.must.start.its.hosted",
+            ),
             "restore_hosted_prepare_required",
-            "use the hosted restore prepare flow",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.detail.use.the.hosted.restore.prepare.flow",
+            ),
         );
     };
     let payload = match validation::object(&body, response::missing) {
@@ -1737,7 +1809,9 @@ async fn restore_hosted_prepare_route(deps: BackupWebDeps) -> axum::response::Re
     if load_hosted_binding(&deps.journal_root).is_some() {
         return response::error(
             axum::http::StatusCode::CONFLICT,
-            "This journal already has a hosted backup binding.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.this.journal.already.has.a.hosted",
+            ),
             "restore_hosted_prepare_unbound_only",
             "",
         );
@@ -1906,7 +1980,9 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
         let _ = deps;
         response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+            ),
             "restore_held",
             "",
         )
@@ -1952,7 +2028,9 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
             Err(operation::HandoffError::Expired) => {
                 return response::error(
                     axum::http::StatusCode::BAD_REQUEST,
-                    "that action isn't available in the current state.",
+                    response::Wording::Catalog(
+                        "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+                    ),
                     "expired",
                     "",
                 );
@@ -1960,7 +2038,9 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
             Err(operation::HandoffError::Invalid) => {
                 return response::error(
                     axum::http::StatusCode::BAD_REQUEST,
-                    "that action isn't available in the current state.",
+                    response::Wording::Catalog(
+                        "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+                    ),
                     "invalid_operation_for_state",
                     "",
                 );
@@ -1990,7 +2070,9 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         Err(operation::HandoffError::Expired) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "that action isn't available in the current state.",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+                ),
                 "expired",
                 "",
             );
@@ -1998,7 +2080,9 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         Err(operation::HandoffError::Invalid) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "that action isn't available in the current state.",
+                response::Wording::Catalog(
+                    "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+                ),
                 "invalid_operation_for_state",
                 "",
             );
@@ -2067,10 +2151,14 @@ fn validate_needs_subscription(
 
 fn handoff_field_response(error: validation::HandoffFieldError) -> axum::response::Response {
     match error {
-        validation::HandoffFieldError::Missing(key) => response::missing(&format!("missing {key}")),
+        validation::HandoffFieldError::Missing(key) => {
+            response::missing(response::Wording::MissingField(key.to_owned()))
+        }
         validation::HandoffFieldError::InvalidValue => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "one of those values couldn't be used.",
+            response::Wording::Catalog(
+                "journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t",
+            ),
             "invalid_request_value",
             "",
         ),

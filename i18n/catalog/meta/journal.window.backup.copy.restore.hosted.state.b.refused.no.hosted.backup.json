@@ -1,0 +1,23 @@
+{
+  "description": "Backup no hosted backup in the journal's backup view.",
+  "context": "Journal window, backup view. Backup no hosted backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "097e9beee793402396a3b293e0e35b10ede04b0f28ec4df1c6951352f95f127c",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

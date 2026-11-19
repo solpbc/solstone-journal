@@ -7,13 +7,10 @@ use axum::http::HeaderMap;
 use serde_json::Value;
 
 pub(crate) use solstone_core_convey_http::window_catalog::{
-    ENGLISH, escape_html, html, language_tag, response_locale, text,
+    ENGLISH, MissingPage, escape_html, html, language_tag, not_found, response_locale, text,
 };
 
 const LOCALE_HEADER: &str = "x-solstone-locale";
-
-#[derive(Clone)]
-pub(crate) struct MissingPage;
 
 /// Operations outlive their initiating request. Keep the reference in the
 /// registry and fill the response for the client reading the operation.
@@ -56,19 +53,4 @@ pub(crate) fn request_locale(headers: &HeaderMap) -> &'static str {
         return ENGLISH;
     }
     crate::assets::localized_shell(value).map_or(ENGLISH, |(locale, _)| locale)
-}
-
-pub(crate) fn not_found(locale: &str) -> String {
-    let language = language_tag(locale);
-    let title = html(locale, "journal.window.not.found.title");
-    let heading = html(locale, "journal.window.not.found.heading");
-    let detail = html(locale, "journal.window.not.found.detail");
-    format!(
-        "<!doctype html>\n<html lang={language}>\n<title>{title}</title>\n<h1>{heading}</h1>\n<p>{detail}</p>\n"
-    )
-}
-
-pub(crate) fn english_not_found() -> &'static str {
-    static HTML: OnceLock<String> = OnceLock::new();
-    HTML.get_or_init(|| not_found(ENGLISH))
 }

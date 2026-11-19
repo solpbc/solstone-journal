@@ -1,0 +1,16 @@
+{
+  "description": "Backup repository in the journal's backup view.",
+  "context": "Journal window, backup view. Backup repository.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a15404dc575ab7ec981bf21defef8cddb0b3c36530c404135eb336cabeee39dc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup optional in the journal's backup view.",
+  "context": "Journal window, backup view. Backup optional.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4963adcd94d0e7273bf18ceb20f1c628a625ce9380f98d3e3af0bb5bd16bed2f",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

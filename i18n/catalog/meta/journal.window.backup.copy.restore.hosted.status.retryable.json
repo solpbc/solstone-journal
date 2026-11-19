@@ -1,0 +1,16 @@
+{
+  "description": "Backup status retryable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup status retryable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc8d5e3a902ae58b76ff06c8569f7139302fcdec2fa23fc3a2175430108f0f4a",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

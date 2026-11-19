@@ -1,0 +1,16 @@
+{
+  "description": "Backup body rebuild failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup body rebuild failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc16a9d0beb34c113b657eb061cc0965733b477738a006c957ae216d043759ff",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

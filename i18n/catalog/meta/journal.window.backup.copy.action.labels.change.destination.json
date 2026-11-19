@@ -1,0 +1,16 @@
+{
+  "description": "Backup change destination in the journal's backup view.",
+  "context": "Journal window, backup view. Backup change destination.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff9ba2109bddded01dd3b204573a65de52523a4623f398ed75d4afd6cf77546d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

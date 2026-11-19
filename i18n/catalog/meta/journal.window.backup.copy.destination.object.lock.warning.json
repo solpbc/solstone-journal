@@ -1,0 +1,16 @@
+{
+  "description": "Backup object lock warning in the journal's backup view.",
+  "context": "Journal window, backup view. Backup object lock warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "145de647a884ffbfb3e7a9833c4da0cdd71b831b19306e2d37b632ff13e125ef",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

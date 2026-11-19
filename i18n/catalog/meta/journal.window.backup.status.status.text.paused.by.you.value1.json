@@ -1,0 +1,28 @@
+{
+  "description": "Status text in the journal's backup.status view.",
+  "context": "Journal window, backup.status view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "762ca29b692daba1d02c958232d4d1bbc7c9c11329f90e44cdeec86dc3cbaff5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

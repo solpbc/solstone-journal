@@ -1,0 +1,16 @@
+{
+  "description": "Backup retention hint in the journal's backup view.",
+  "context": "Journal window, backup view. Backup retention hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f88ccc678fed598453d829de64b6507b1237343eebd78efa96dd560e3e47053",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup error intro in the journal's backup view.",
+  "context": "Journal window, backup view. Backup error intro.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86fb5ee1f87cfc5bcc7632120be241e03cea94d181f7852525f2631b3af603c1",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

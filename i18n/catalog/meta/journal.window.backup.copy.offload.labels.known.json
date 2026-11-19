@@ -1,0 +1,16 @@
+{
+  "description": "Backup known in the journal's backup view.",
+  "context": "Journal window, backup view. Backup known.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af49f6fb821d64ff14c77c8d928b2607e70845b99ab052bcaa9ef5ba294a779c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup cleanup checking in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cleanup checking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1750085a7b1d8041fff69d495374b99d1a1553aabb3547d54173e8839b911e1e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup integrity failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup integrity failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98c45ca4d8ff48f518a015a5022d9b384d1240150513c97c7b69b3e5687b012e",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup last backup in the journal's backup view.",
+  "context": "Journal window, backup view. Backup last backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5163be472a921d5ff81074758009d0602bbe75793707fc697837569d6829774d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

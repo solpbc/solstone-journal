@@ -1,0 +1,16 @@
+{
+  "description": "Backup repo exists in the journal's backup view.",
+  "context": "Journal window, backup view. Backup repo exists.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b9383cdcc1177fbb4e07fea841163d9b9d185525a490143bb2002a310be1c5c",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

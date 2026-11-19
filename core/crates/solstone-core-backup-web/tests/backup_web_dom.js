@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog, journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -527,6 +528,7 @@ function createHarness(options = {}) {
   window.window = window;
   window.top = window;
   const context = vm.createContext({ window, document, console, fetch, URL, File, navigator, location, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
+  loadWindowCatalog(context);
   const shellAssets = path.resolve(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static');
   const hostJs = fs.readFileSync(path.join(shellAssets, 'journal-web-host.js'), 'utf8');
   const navJs = fs.readFileSync(path.join(shellAssets, 'external-navigation.js'), 'utf8');
@@ -686,7 +688,7 @@ testCase('offload byte units are binary, matching settings’ unit family (g3-10
   assert.ok(source.includes('const BYTES_PER_MB = 1048576;'), 'BYTES_PER_MB must be 2^20, not a decimal megabyte');
   assert.ok(source.includes('"gb_suffix": "GiB"'), 'the raw-media suffix must read GiB, matching settings');
   assert.ok(source.includes('"mb_suffix": "MiB"'), 'the sub-GiB suffix must read MiB');
-  assert.ok(source.includes('"under_1mb": "under 1 MiB"'), 'the under-threshold copy must match the MiB suffix');
+  assert.strictEqual(journalContext({}).JournalI18n.render('journal.window.backup.copy.offload.labels.under.one.mib'), 'under 1 MiB', 'the under-threshold copy must match the MiB suffix');
   assert.ok(!source.includes('"gb_suffix": "GB"'), 'no leftover decimal GB suffix');
   assert.ok(!source.includes('"mb_suffix": "MB"'), 'no leftover decimal MB suffix');
 });

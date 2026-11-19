@@ -1,0 +1,16 @@
+{
+  "description": "Backup ledger degraded in the journal's backup view.",
+  "context": "Journal window, backup view. Backup ledger degraded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fba9dbc71e6c649d3f6f50b7c4797619aeb9e2bfa84631ad6ba3d058b3b8e418",
+  "max_length": 175,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

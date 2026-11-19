@@ -1,0 +1,23 @@
+{
+  "description": "Backup stakes in the journal's backup view.",
+  "context": "Journal window, backup view. Backup stakes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "567d399b42875ca33d6ea75a80845bf5322f72d5103d41c71d62ded56be117ba",
+  "max_length": 226,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

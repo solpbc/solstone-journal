@@ -1,0 +1,16 @@
+{
+  "description": "Backup cancelled in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cancelled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ee781eaae7b404cd5607f1a48cbf63c458b920287b7885db3645cb4ffe99eda",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

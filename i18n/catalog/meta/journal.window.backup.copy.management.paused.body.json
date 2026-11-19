@@ -1,0 +1,16 @@
+{
+  "description": "Backup body in the journal's backup view.",
+  "context": "Journal window, backup view. Backup body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "162c0b0be554c078f522bf3e5859ef324713b2ce2edd908caf7a1e76c8d8473a",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

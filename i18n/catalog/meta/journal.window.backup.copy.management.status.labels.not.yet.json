@@ -1,0 +1,16 @@
+{
+  "description": "Backup not yet in the journal's backup view.",
+  "context": "Journal window, backup view. Backup not yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e23cd835d56da49f05f716a7c100f56943c461f343b469927185d28e935753c1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

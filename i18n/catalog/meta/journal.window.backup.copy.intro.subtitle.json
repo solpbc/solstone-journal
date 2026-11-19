@@ -1,0 +1,16 @@
+{
+  "description": "Backup subtitle in the journal's backup view.",
+  "context": "Journal window, backup view. Backup subtitle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3600e8d61a76778c79e3fdfc221e9944049e41845ebb61fda34f9d23628d9b11",
+  "max_length": 106,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

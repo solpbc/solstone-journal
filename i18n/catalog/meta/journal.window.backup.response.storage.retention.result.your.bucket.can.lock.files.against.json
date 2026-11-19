@@ -1,0 +1,16 @@
+{
+  "description": "Storage retention result in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Storage retention result.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75f9eb014663aecbd6545ac6449a73f6fa139a93e994ad6886503946c5f3c652",
+  "max_length": 202,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

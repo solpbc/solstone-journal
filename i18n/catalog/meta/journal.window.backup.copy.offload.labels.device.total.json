@@ -1,0 +1,16 @@
+{
+  "description": "Backup device total in the journal's backup view.",
+  "context": "Journal window, backup view. Backup device total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e593ff85ce8779496139e3f893dabd70240c246368eab767580f5d36af395aef",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

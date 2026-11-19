@@ -1,0 +1,16 @@
+{
+  "description": "Backup device free in the journal's backup view.",
+  "context": "Journal window, backup view. Backup device free.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dd479bb468b220b6bc44772b0e0646c1cc176e270c686642f3a8afff64a13a22",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

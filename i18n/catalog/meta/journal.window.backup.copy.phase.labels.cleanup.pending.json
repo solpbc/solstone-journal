@@ -1,0 +1,16 @@
+{
+  "description": "Backup cleanup pending in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cleanup pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c01a8dbc2cd4cff29c86783f8768ce2420290712e13c09293870882f1d59847b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

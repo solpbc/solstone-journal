@@ -1,0 +1,16 @@
+{
+  "description": "Backup last offload in the journal's backup view.",
+  "context": "Journal window, backup view. Backup last offload.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3cfb8a28457f880ce99277d0aaef17e94ea8b14f506f609cc099655733c1204",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

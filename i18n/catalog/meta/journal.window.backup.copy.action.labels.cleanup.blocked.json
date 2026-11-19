@@ -1,0 +1,16 @@
+{
+  "description": "Backup cleanup blocked in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cleanup blocked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5766ab0cda8ce9e59ab834f4a51a1d322772401447496d86463ef596baaf59eb",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

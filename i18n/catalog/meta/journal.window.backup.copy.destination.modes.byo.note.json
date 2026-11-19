@@ -1,0 +1,23 @@
+{
+  "description": "Backup note in the journal's backup view.",
+  "context": "Journal window, backup view. Backup note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e87ca9336979201d1fa6cfd5173447d668362492daf8fd66a13d50338e1a1747",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

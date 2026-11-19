@@ -1,0 +1,16 @@
+{
+  "description": "Backup popup preflight failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup popup preflight failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19c3b4188a9e5ebbe82f7afd9c6eeaa6f04ec22d8a5147cc814ab432fff5e8e4",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

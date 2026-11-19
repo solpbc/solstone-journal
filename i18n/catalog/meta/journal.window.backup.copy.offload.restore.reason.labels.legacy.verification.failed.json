@@ -1,0 +1,16 @@
+{
+  "description": "Backup legacy verification failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup legacy verification failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a99c4d00db50788536ad360b40cb8765a91d2ae0bd15e6c960857edaea6186d5",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

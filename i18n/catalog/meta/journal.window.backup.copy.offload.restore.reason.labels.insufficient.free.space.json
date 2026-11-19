@@ -1,0 +1,16 @@
+{
+  "description": "Backup insufficient free space in the journal's backup view.",
+  "context": "Journal window, backup view. Backup insufficient free space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06f33f024694f5905df5860c17e23220315eb254665576640ccac6e6c51aedb1",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

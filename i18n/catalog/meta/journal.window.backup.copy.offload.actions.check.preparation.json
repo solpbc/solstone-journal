@@ -1,0 +1,16 @@
+{
+  "description": "Backup check preparation in the journal's backup view.",
+  "context": "Journal window, backup view. Backup check preparation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91dfaaa94779cda11a5b9085d2b5bd00888d5ca6993a05bf81867a6616235489",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

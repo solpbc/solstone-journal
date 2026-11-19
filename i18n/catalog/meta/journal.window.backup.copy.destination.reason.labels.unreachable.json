@@ -1,0 +1,16 @@
+{
+  "description": "Backup unreachable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98d9c4f6e0527ea09d8580506bd99d8f3fb10e162d6bf033bbec500916a248dd",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

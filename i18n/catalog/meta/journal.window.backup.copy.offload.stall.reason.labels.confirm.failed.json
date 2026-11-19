@@ -1,0 +1,16 @@
+{
+  "description": "Backup confirm failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup confirm failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b88306879cc39301f915601c3c65d0ba0b4af9314a33f53c9da9cbd471be5b9a",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

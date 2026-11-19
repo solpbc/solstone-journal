@@ -1,0 +1,16 @@
+{
+  "description": "Backup unverified in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unverified.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0bf894e71fc93633c26851cd6644c11adfbbf5613cb09159b27ab28ac4d9455",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

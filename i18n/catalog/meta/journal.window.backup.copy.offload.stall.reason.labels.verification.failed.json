@@ -1,0 +1,16 @@
+{
+  "description": "Backup verification failed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup verification failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a187bf61361c222c445fb900f3e8d20b95d114d3c7465b8d01eb40b18a17893",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

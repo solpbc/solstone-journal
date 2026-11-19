@@ -1,0 +1,23 @@
+{
+  "description": "Backup lane title in the journal's backup view.",
+  "context": "Journal window, backup view. Backup lane title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e779ee40d4a1573b554143d59fa89e992b9f2d8fb7b121337ad921c7f180c53",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

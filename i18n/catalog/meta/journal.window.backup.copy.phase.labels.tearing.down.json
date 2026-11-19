@@ -1,0 +1,16 @@
+{
+  "description": "Backup tearing down in the journal's backup view.",
+  "context": "Journal window, backup view. Backup tearing down.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c268822f6a5d53bdf002646474b9381e55d99b3e85145b4ea38439fdd9852c8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

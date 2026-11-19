@@ -1,0 +1,16 @@
+{
+  "description": "Backup unexpected error in the journal's backup view.",
+  "context": "Journal window, backup view. Backup unexpected error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c249162b10d74204746a277c331acec72be70729c3090263e0efcfaee7b14b2c",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -922,7 +922,7 @@ fn destination_set_with(
         "reachable": status.reachable,
         "repo_exists": status.repo_exists,
         "reason_code": status.reason_code,
-        "message": status.message,
+        "message": status.message(),
     })));
     if matches!(
         status.reason_code,
@@ -968,7 +968,7 @@ fn destination_edit(
             "reachable": status.reachable,
             "repo_exists": status.repo_exists,
             "reason_code": status.reason_code,
-            "message": status.message,
+            "message": status.message(),
         }))),
         Err(DestinationEditRefusal::NeedsConfirmation) => {
             runtime_error(new_repository_warning(journal, config))

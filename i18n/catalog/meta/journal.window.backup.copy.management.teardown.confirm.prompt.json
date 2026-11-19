@@ -1,0 +1,16 @@
+{
+  "description": "Backup teardown confirm prompt in the journal's backup view.",
+  "context": "Journal window, backup view. Backup teardown confirm prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99bfd4bbbe9e22eb20e881c510b51450e77df9132a2c24bcb24bbe37fd5bff70",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

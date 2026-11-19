@@ -1,0 +1,16 @@
+{
+  "description": "Backup object lock summary in the journal's backup view.",
+  "context": "Journal window, backup view. Backup object lock summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b97c6fab0010a1c32df5a1137b32a6a1cacd405dfaad77775bb33f20dfb84e58",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

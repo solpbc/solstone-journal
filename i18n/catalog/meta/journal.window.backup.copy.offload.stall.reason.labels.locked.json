@@ -1,0 +1,16 @@
+{
+  "description": "Backup locked in the journal's backup view.",
+  "context": "Journal window, backup view. Backup locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5265cfcab8bb7b6b471ff197e64acb5515e7100a87f106d4ea62c6eeed896849",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

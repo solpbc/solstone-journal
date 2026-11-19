@@ -1,0 +1,23 @@
+{
+  "description": "Backup steps in the journal's backup view.",
+  "context": "Journal window, backup view. Backup steps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10cfae7075309824d0d68cab9aaeb4145d211b4ae1613a60efc8daf8e105deca",
+  "max_length": 237,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

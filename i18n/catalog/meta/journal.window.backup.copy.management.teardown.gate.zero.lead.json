@@ -1,0 +1,16 @@
+{
+  "description": "Backup teardown gate zero lead in the journal's backup view.",
+  "context": "Journal window, backup view. Backup teardown gate zero lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21a80ea6274f388a37e70804664a48bf6da69b9ea144daa48fe272bbd0817940",
+  "max_length": 110,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

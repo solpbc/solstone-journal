@@ -1,0 +1,16 @@
+{
+  "description": "Backup stalled lead in the journal's backup view.",
+  "context": "Journal window, backup view. Backup stalled lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a6be7c243793ed28c0b02789c8e94dc5b5b8bcb961ecf14ebc67bf217d637aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

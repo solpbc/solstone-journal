@@ -1,0 +1,16 @@
+{
+  "description": "Backup disable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup disable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a04b7bfab6fa2bf902405a0944c7f0cfc66ee6f6ea8d3ee51c1f0165abab8be",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

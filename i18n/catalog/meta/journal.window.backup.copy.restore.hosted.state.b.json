@@ -1,0 +1,16 @@
+{
+  "description": "Backup state b in the journal's backup view.",
+  "context": "Journal window, backup view. Backup state b.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fa9818f528c08ef3579f11070cc578ba10a8e3f8291748a9e354a7070ba8bc2",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

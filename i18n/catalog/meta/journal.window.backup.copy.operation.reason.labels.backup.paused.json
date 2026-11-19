@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup paused in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3eb867de6de3f80f4c9d5e5d87ea1b9f2e56e1f54d82aa997d044fa7afbf11df",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

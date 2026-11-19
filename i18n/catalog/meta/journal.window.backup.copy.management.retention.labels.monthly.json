@@ -1,0 +1,16 @@
+{
+  "description": "Backup monthly in the journal's backup view.",
+  "context": "Journal window, backup view. Backup monthly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fe9b4f7c120e6391d58b50e2ff28d260db74dd4f7a117acb74ba0d4e8a5b1ca",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

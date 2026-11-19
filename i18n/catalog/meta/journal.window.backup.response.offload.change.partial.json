@@ -1,0 +1,16 @@
+{
+  "description": "Partial media offload refusal in the journal's backup.response view.",
+  "context": "Journal window, backup.response view. Partial media offload refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88744845cdde4bc34586695b63fef20ce0f7e69a35f99fa48b3843e818be2aea",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

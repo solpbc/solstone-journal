@@ -1,0 +1,16 @@
+{
+  "description": "Backup destructive caption in the journal's backup view.",
+  "context": "Journal window, backup view. Backup destructive caption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67c59134b7dab72f50c53803807f69d29883a8df6ae471a2920e41c92fe9712d",
+  "max_length": 93,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup integrity unverified in the journal's backup view.",
+  "context": "Journal window, backup view. Backup integrity unverified.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d015195c3a2655129ca5ce7234cb322d282799897f49d56fe849b97ad76b7e71",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

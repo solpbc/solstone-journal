@@ -1,0 +1,16 @@
+{
+  "description": "Backup never run in the journal's backup view.",
+  "context": "Journal window, backup view. Backup never run.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d4bd50a5af3eb0a37cb53835ec519f59ac7d63b4a502cb011bb3fff3dd86966d",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup verification overdue in the journal's backup view.",
+  "context": "Journal window, backup view. Backup verification overdue.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "701bbdcbc39b8e7911243b08de77ef48ecd4aad2cea3d4ef1877784978f9e13c",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

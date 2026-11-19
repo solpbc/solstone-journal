@@ -1,0 +1,16 @@
+{
+  "description": "Backup bucket not found in the journal's backup view.",
+  "context": "Journal window, backup view. Backup bucket not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0296b708c606d54ad0075940595cbc3b4ab461d07ae6311ca1882fb09669768",
+  "max_length": 235,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

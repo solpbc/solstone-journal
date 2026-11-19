@@ -1,0 +1,16 @@
+{
+  "description": "Backup hosted entitlement inactive in the journal's backup view.",
+  "context": "Journal window, backup view. Backup hosted entitlement inactive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "791c8cb49aea5e4d29ee59a48e38a5000f8e469fcd30019cdc2a5c0025651a94",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

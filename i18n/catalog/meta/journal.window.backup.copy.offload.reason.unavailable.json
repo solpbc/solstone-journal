@@ -1,0 +1,16 @@
+{
+  "description": "Backup reason unavailable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup reason unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e217f0915e895504367b02860bf34dda57d2e4d98bc212432ecb24fa6e12c91",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

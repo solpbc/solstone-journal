@@ -1,0 +1,16 @@
+{
+  "description": "Backup invalid config value in the journal's backup view.",
+  "context": "Journal window, backup view. Backup invalid config value.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33f7d0d33dbab911bc772dccfdb9fbb6d23937ecb238a6cda967f0cef7365072",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

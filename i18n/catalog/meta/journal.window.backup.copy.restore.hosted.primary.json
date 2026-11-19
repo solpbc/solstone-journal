@@ -1,0 +1,16 @@
+{
+  "description": "Backup primary in the journal's backup view.",
+  "context": "Journal window, backup view. Backup primary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "837f4a18e04d29bff187f4d5b16b8c606a962f7979cda3a4e4798775751dd3e2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

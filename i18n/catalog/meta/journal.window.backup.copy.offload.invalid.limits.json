@@ -1,0 +1,16 @@
+{
+  "description": "Backup invalid limits in the journal's backup view.",
+  "context": "Journal window, backup view. Backup invalid limits.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8609511b245529fe68dd3e7f920af8c91089a9c7ef9e20595e36efde6646a19f",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

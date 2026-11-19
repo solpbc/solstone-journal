@@ -1,0 +1,16 @@
+{
+  "description": "Backup destination unsupported in the journal's backup view.",
+  "context": "Journal window, backup view. Backup destination unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "927efd6cb2b1fa766de8df24540aa618897c3d2b11e52597f12acc8bed2ca31e",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

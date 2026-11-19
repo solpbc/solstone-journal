@@ -1,0 +1,16 @@
+{
+  "description": "Backup broker error in the journal's backup view.",
+  "context": "Journal window, backup view. Backup broker error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65be0ef5cf6952f1e4b3fd4d2e65da566bb65b9d30ca88ee03e9c9d680eca9d2",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

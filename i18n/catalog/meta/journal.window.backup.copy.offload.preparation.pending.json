@@ -1,0 +1,16 @@
+{
+  "description": "Backup pending in the journal's backup view.",
+  "context": "Journal window, backup view. Backup pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cabd33d6a1c7aaa8478d5d09117e9ffd64d66fafb8d99cca8c2983eef6b2a22",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

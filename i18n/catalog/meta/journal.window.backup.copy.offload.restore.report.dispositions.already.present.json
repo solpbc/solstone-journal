@@ -1,0 +1,16 @@
+{
+  "description": "Backup already present in the journal's backup view.",
+  "context": "Journal window, backup view. Backup already present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6960b7523068fd00de25322abd2b06128eef89609edd24177097e7df73f5e14",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backup retention in the journal's backup view.",
+  "context": "Journal window, backup view. Backup retention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31a642ff72d4ce9a971e6c8512fb29f412ed22afc9a39b978c02c0c063e0974b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

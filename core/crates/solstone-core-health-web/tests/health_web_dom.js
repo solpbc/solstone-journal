@@ -1287,6 +1287,7 @@ function createBackupEnvironment() {
   section.append(summary, facts);
   doc.body.appendChild(section);
   Object.assign(context, { AbortController, setTimeout, clearTimeout, logHealthError() {} });
+  loadWindowCatalog(context);
   vm.runInContext(fs.readFileSync(path.resolve(crateDir, '..', 'solstone-core-backup-web', 'assets', 'backup-status.js'), 'utf8'), context);
   vm.runInContext(sourceBlock(loadHealthSource(), 'const backupSection =', 'function clearHealthStateError('), context);
   const read = async payload => {

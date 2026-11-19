@@ -1,0 +1,16 @@
+{
+  "description": "Backup malformed in the journal's backup view.",
+  "context": "Journal window, backup view. Backup malformed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0c70f3e86d7d45409f9665d20f8301661732072f8366c386920dc2dd8a7935d",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

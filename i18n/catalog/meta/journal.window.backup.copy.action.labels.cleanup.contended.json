@@ -1,0 +1,16 @@
+{
+  "description": "Backup cleanup contended in the journal's backup view.",
+  "context": "Journal window, backup view. Backup cleanup contended.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f6a5224f77ee3b63fd85e9362032ebe8b0a9071736c31a8598b4377629f0f71",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

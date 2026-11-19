@@ -5,382 +5,382 @@
   const reportBackupReady = window.createViewReady('backup');
 
   const BACKUP_COPY = {
-    "service_name": "encrypted backup",
-    "brand_lock": "your journal is always private, only yours.",
+    "service_name": window.JournalI18n.render('journal.window.backup.copy.service.name'),
+    "brand_lock": window.JournalI18n.renderEnglish('journal.window.backup.copy.brand.lock'),
     "intro": {
-      "title": "encrypted backup",
-      "subtitle": "make an encrypted copy of your journal somewhere safe. only you can read it.",
+      "title": window.JournalI18n.render('journal.window.backup.copy.intro.title'),
+      "subtitle": window.JournalI18n.renderEnglish('journal.window.backup.copy.intro.subtitle'),
       "bullets": [
-        "encrypted on your device before it leaves",
-        "optional, always",
-        "delete anytime"
+        window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item1'),
+        window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item2'),
+        window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item3')
       ],
-      "optional": "your journal lives on your device; backup is optional.",
-      "steps": "you'll save a recovery key, then choose where your encrypted backup lives. restoring takes that key and one more thing: your storage details, or a sign-in to the services portal if sol pbc runs your storage."
+      "optional": window.JournalI18n.render('journal.window.backup.copy.intro.optional'),
+      "steps": window.JournalI18n.renderEnglish('journal.window.backup.copy.intro.steps')
     },
     "educate": {
-      "stakes": "restoring takes two things: your recovery key, and either your storage details or a sign-in to the services portal. if you lose your recovery key, no one can restore your backup. not even sol pbc."
+      "stakes": window.JournalI18n.renderEnglish('journal.window.backup.copy.educate.stakes')
     },
     "key": {
-      "theft_honesty": "anyone with your recovery key can read everything in your backup. store it like a master password.",
-      "pm_caution": "only store your recovery key in a password manager you trust. sol pbc doesn't recommend a specific one.",
-      "save_key": "save recovery key",
-      "save_failed": "couldn't save your recovery key. copy it or write it down before continuing.",
-      "copy_failed": "couldn't copy your recovery key. save it to a file or write it down before continuing.",
-      "copy_label": "copy",
-      "continue": "continue",
-      "clipboard_caveat": "copying puts your recovery key on the clipboard. clear it after you save it."
+      "theft_honesty": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.theft.honesty'),
+      "pm_caution": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.pm.caution'),
+      "save_key": window.JournalI18n.render('journal.window.backup.copy.key.save.key'),
+      "save_failed": window.JournalI18n.render('journal.window.backup.copy.key.save.failed'),
+      "copy_failed": window.JournalI18n.render('journal.window.backup.copy.key.copy.failed'),
+      "copy_label": window.JournalI18n.render('journal.window.backup.copy.key.copy.label'),
+      "continue": window.JournalI18n.render('journal.window.backup.copy.key.continue'),
+      "clipboard_caveat": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.clipboard.caveat')
     },
     "confirm": {
-      "prompt": "enter the recovery key you just recorded.",
-      "escape": "see key again"
+      "prompt": window.JournalI18n.render('journal.window.backup.copy.confirm.prompt'),
+      "escape": window.JournalI18n.render('journal.window.backup.copy.confirm.escape')
     },
     "destination": {
-      "repository_hint": "the restic repository for your bucket, e.g. s3:s3.amazonaws.com/your-bucket",
-      "object_lock_warning": "don't enable Compliance-mode Object Lock on the bucket. it conflicts with backup pruning and lock cleanup. if you need immutability, use Governance mode.",
-      "object_lock_summary": "bucket setup notes",
+      "repository_hint": window.JournalI18n.render('journal.window.backup.copy.destination.repository.hint'),
+      "object_lock_warning": window.JournalI18n.render('journal.window.backup.copy.destination.object.lock.warning'),
+      "object_lock_summary": window.JournalI18n.render('journal.window.backup.copy.destination.object.lock.summary'),
       "field_labels": {
-        "repository": "repository",
-        "backend": "backend",
+        "repository": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.repository'),
+        "backend": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.backend'),
         "s3": "S3",
         "b2": "B2",
-        "access_key_id": "access key id",
-        "secret_access_key": "secret access key",
-        "b2_key_id": "key id",
-        "b2_application_key": "application key"
+        "access_key_id": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.access.key.id'),
+        "secret_access_key": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.secret.access.key'),
+        "b2_key_id": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.b2.key.id'),
+        "b2_application_key": window.JournalI18n.render('journal.window.backup.copy.destination.field.labels.b2.application.key')
       },
       "reason_labels": {
-        "repo_exists": "destination is reachable and already set up.",
-        "repo_missing": "destination is reachable and needs setup.",
-        "auth_failed": "the destination rejected the key or credentials. check the recovery key and destination details.",
-        "locked": "the destination is busy. try again shortly.",
-        "timeout": "the destination took too long to respond. try again shortly.",
-        "unreachable": "the destination couldn't be reached. check the backup location and try again.",
-        "bucket_not_found": "these credentials can't open a bucket by that name. check that the repository uses the bucket's name, not your storage key's name. if the bucket doesn't exist yet, make it with your storage provider first."
+        "repo_exists": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.repo.exists'),
+        "repo_missing": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.repo.missing'),
+        "auth_failed": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.auth.failed'),
+        "locked": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.locked'),
+        "timeout": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.timeout'),
+        "unreachable": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.unreachable'),
+        "bucket_not_found": window.JournalI18n.render('journal.window.backup.copy.destination.reason.labels.bucket.not.found')
       },
       "edit": {
-        "lead": "change the repository, the credentials or both. your recovery key stays the same.",
-        "keep_hint": "leave both empty to keep the credentials you use now.",
-        "partial_credentials": "enter both, or leave both empty to keep the credentials you use now.",
-        "checking": "checking the destination…",
-        "no_change": "that's already your destination.",
-        "saved_credentials": "saved. the new credentials open your backup.",
-        "saved_existing": "saved. there's already a backup there that your journal can open, so it uses that one.",
-        "saved_new": "saved. there was no backup there yet, so your journal set up a new one.",
-        "confirm_title": "back up somewhere new?",
-        "confirm_lead": "your existing backup stays where it is, untouched. once you switch, your journal won't back up to it or restore from it.",
-        "confirm_days": "{days} days of your journal ({size}) exist only in that backup.",
-        "confirm_day": "1 day of your journal ({size}) exists only in that backup.",
-        "confirm_days_unavailable": "can't check right now how many days of your journal exist only in that backup.",
-        "confirm_action": "use the new destination",
+        "lead": window.JournalI18n.render('journal.window.backup.copy.destination.edit.lead'),
+        "keep_hint": window.JournalI18n.render('journal.window.backup.copy.destination.edit.keep.hint'),
+        "partial_credentials": window.JournalI18n.render('journal.window.backup.copy.destination.edit.partial.credentials'),
+        "checking": window.JournalI18n.render('journal.window.backup.copy.destination.edit.checking'),
+        "no_change": window.JournalI18n.render('journal.window.backup.copy.destination.edit.no.change'),
+        "saved_credentials": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.credentials'),
+        "saved_existing": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.existing'),
+        "saved_new": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.new'),
+        "confirm_title": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.title'),
+        "confirm_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.lead'),
+        "confirm_days": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.days'),
+        "confirm_day": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.day'),
+        "confirm_days_unavailable": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.days.unavailable'),
+        "confirm_action": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.action'),
         "refusals": {
-          "auth_failed": "the destination rejected the credentials, so nothing was saved. check them and try again.",
-          "bucket_not_found": "these credentials can't open a bucket by that name, so nothing was saved. check the bucket name in the repository.",
-          "repository_key_refused": "there's already a backup there that your recovery key can't open, so nothing was saved. choose another destination.",
-          "unreachable": "the destination couldn't be opened, so nothing was saved. check the repository and credentials, then try again.",
-          "timeout": "the destination didn't answer in time, so nothing was saved. check the repository and credentials, then try again.",
-          "locked": "the backup there is busy, so nothing was saved. try again shortly.",
-          "destination_unchanged": "that's already your destination."
+          "auth_failed": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.auth.failed'),
+          "bucket_not_found": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.bucket.not.found'),
+          "repository_key_refused": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.repository.key.refused'),
+          "unreachable": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.unreachable'),
+          "timeout": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.timeout'),
+          "locked": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.locked'),
+          "destination_unchanged": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.destination.unchanged')
         }
       },
       "modes": {
         "byo": {
-          "title": "your own",
-          "desc": "your bucket, your credentials. the default.",
-          "note": "sol pbc is never in the path."
+          "title": window.JournalI18n.render('journal.window.backup.copy.destination.modes.byo.title'),
+          "desc": window.JournalI18n.render('journal.window.backup.copy.destination.modes.byo.desc'),
+          "note": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.modes.byo.note')
         },
         "hosted": {
-          "title": "operated by sol pbc",
-          "desc": "sol pbc runs the off-device part for you.",
-          "note": "sol pbc only ever holds an encrypted copy that was encrypted on your device before it leaves.",
-          "cta": "set up backup →"
+          "title": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.title'),
+          "desc": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.desc'),
+          "note": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.modes.hosted.note'),
+          "cta": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.cta')
         }
       }
     },
     "hosted": {
-      "setup_hint": "this sets up encrypted backup, operated by sol pbc. finish turning it on in the services portal that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
-      "location_label": "storage sol pbc operates",
-      "location_detail_summary": "exact storage location",
-      "manage_label": "manage your backup in the services portal →",
+      "setup_hint": window.JournalI18n.renderEnglish('journal.window.backup.copy.hosted.setup.hint'),
+      "location_label": window.JournalI18n.render('journal.window.backup.copy.hosted.location.label'),
+      "location_detail_summary": window.JournalI18n.render('journal.window.backup.copy.hosted.location.detail.summary'),
+      "manage_label": window.JournalI18n.render('journal.window.backup.copy.hosted.manage.label'),
       "manage_url": "https://services.solstone.app/services/backup"
     },
     "management": {
-      "destructive_action": "turn off & delete backup",
-      "destructive_caption": "this deletes your whole backup. no new backups will be created.",
-      "teardown_gate_lead": "{days} days of your journal ({size}) exist only in this backup. deleting the backup deletes them everywhere, forever.",
-      "teardown_gate_unavailable_lead": "can't verify what exists only in this backup right now. deleting the backup may destroy days of your journal that exist nowhere else.",
-      "teardown_gate_zero_lead": "nothing exists only in this backup right now. every day is still on your device.",
+      "destructive_action": window.JournalI18n.render('journal.window.backup.copy.management.destructive.action'),
+      "destructive_caption": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.destructive.caption'),
+      "teardown_gate_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.lead'),
+      "teardown_gate_unavailable_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.unavailable.lead'),
+      "teardown_gate_zero_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.zero.lead'),
       "teardown_confirm_phrase": "delete",
-      "teardown_confirm_prompt": "type delete to confirm",
-      "teardown_restore_first_action": "restore everything first",
-      "rotate_key_summary": "replace your recovery key",
-      "rotate_key_caption": "this replaces your recovery key. the old key stops working, so every copy of it you saved becomes useless. write the new one down before you leave this page.",
-      "retention_hint": "how many recent copies to keep at each interval.",
-      "location_meta": "your own storage · {backend}",
+      "teardown_confirm_prompt": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.confirm.prompt'),
+      "teardown_restore_first_action": window.JournalI18n.render('journal.window.backup.copy.management.teardown.restore.first.action'),
+      "rotate_key_summary": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.summary'),
+      "rotate_key_caption": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.caption'),
+      "retention_hint": window.JournalI18n.render('journal.window.backup.copy.management.retention.hint'),
+      "location_meta": window.JournalI18n.render('journal.window.backup.copy.management.location.meta'),
       "pause": {
-        "title": "pause backup",
-        "caption": "stops backups, spot-checks, cleanup and media offload until you resume. your backup, keys and history stay as they are."
+        "title": window.JournalI18n.render('journal.window.backup.copy.management.pause.title'),
+        "caption": window.JournalI18n.render('journal.window.backup.copy.management.pause.caption')
       },
       "paused": {
-        "title": "backup is paused",
-        "body": "no backups run until you resume. your backup stays as it was, and restoring still works.",
-        "hosted_note": "pausing doesn't turn off encrypted backup in the services portal."
+        "title": window.JournalI18n.render('journal.window.backup.copy.management.paused.title'),
+        "body": window.JournalI18n.render('journal.window.backup.copy.management.paused.body'),
+        "hosted_note": window.JournalI18n.render('journal.window.backup.copy.management.paused.hosted.note')
       },
       "status_labels": {
-        "last_backup": "latest backup attempt",
-        "last_successful_backup": "last successful backup",
-        "backup_attempt_unknown": "the latest backup attempt isn't known.",
-        "backup_history_unknown": "the last successful backup isn't known.",
-        "backup_history_note": "this is a past result. it doesn't confirm what's stored at your current backup destination or whether it has been verified.",
-        "last_prune": "last cleanup",
-        "last_verification": "last verification",
-        "not_available": "not yet available",
-        "not_yet": "not yet",
-        "ago": "{duration} ago",
-        "enabled": "on",
-        "disabled": "off",
-        "destination": "where your backup lives",
-        "retention": "retention",
-        "setup": "set up your recovery key"
+        "last_backup": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.last.backup'),
+        "last_successful_backup": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.last.successful.backup'),
+        "backup_attempt_unknown": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.backup.attempt.unknown'),
+        "backup_history_unknown": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.backup.history.unknown'),
+        "backup_history_note": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.backup.history.note'),
+        "last_prune": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.last.prune'),
+        "last_verification": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.last.verification'),
+        "not_available": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.not.available'),
+        "not_yet": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.not.yet'),
+        "ago": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.ago'),
+        "enabled": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.enabled'),
+        "disabled": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.disabled'),
+        "destination": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.destination'),
+        "retention": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.retention'),
+        "setup": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.setup')
       },
       "retention_labels": {
-        "hourly": "hourly",
-        "daily": "daily",
-        "weekly": "weekly",
-        "monthly": "monthly"
+        "hourly": window.JournalI18n.render('journal.window.backup.copy.management.retention.labels.hourly'),
+        "daily": window.JournalI18n.render('journal.window.backup.copy.management.retention.labels.daily'),
+        "weekly": window.JournalI18n.render('journal.window.backup.copy.management.retention.labels.weekly'),
+        "monthly": window.JournalI18n.render('journal.window.backup.copy.management.retention.labels.monthly')
       }
     },
     "restore": {
-      "expectation": "a large restore can take a while. you can leave this page open while it runs.",
+      "expectation": window.JournalI18n.render('journal.window.backup.copy.restore.expectation'),
       "hosted": {
-        "choose_lane": "where is the encrypted copy you're restoring from?",
-        "byo_desc": "storage you bring yourself, reached with credentials you provide.",
-        "operated_desc": "storage sol pbc runs, reached through the services portal.",
-        "lane_title": "restore from sol pbc",
-        "lane_intro": "enter your recovery key, then sign in to the services portal and confirm the restore.",
-        "key_label": "your recovery key",
-        "key_reassurance": "this journal uses your key and never sends it to sol pbc.",
-        "primary": "sign in to restore →",
-        "reopen": "open sign-in again",
-        "state_b": "waiting for you to approve the restore in the services portal…",
+        "choose_lane": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.choose.lane'),
+        "byo_desc": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.byo.desc'),
+        "operated_desc": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.operated.desc'),
+        "lane_title": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.lane.title'),
+        "lane_intro": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.lane.intro'),
+        "key_label": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.key.label'),
+        "key_reassurance": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.key.reassurance'),
+        "primary": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.primary'),
+        "reopen": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.reopen'),
+        "state_b": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.state.b'),
         "state_b_refused": {
-          "no_hosted_backup": "sol pbc isn't holding an encrypted copy for the sign-in you used.",
-          "hosted_backup_expired": "sol pbc deleted that copy once 30 days had passed since encrypted backup stopped."
+          "no_hosted_backup": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.state.b.refused.no.hosted.backup'),
+          "hosted_backup_expired": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.state.b.refused.hosted.backup.expired')
         },
-        "status_retryable": "something went wrong. you can try again.",
+        "status_retryable": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.status.retryable'),
         "errors": {
-          "auth_failed": "that recovery key didn't unlock the backup. check the key, then try signing in again.",
-          "cancelled": "restore cancelled. you can try again."
+          "auth_failed": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.errors.auth.failed'),
+          "cancelled": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.errors.cancelled')
         },
-        "popup_preflight_failed": "the sign-in window didn't open. try again, and check whether your browser blocked it.",
-        "key_required": "enter your recovery key before continuing."
+        "popup_preflight_failed": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.popup.preflight.failed'),
+        "key_required": window.JournalI18n.render('journal.window.backup.copy.restore.hosted.key.required')
       }
     },
     "status": {
       "last_backup": {
-        "never_run": "no completed backup recorded on this computer",
-        "failed": "backup attempt failed {duration} ago"
+        "never_run": window.JournalI18n.render('journal.window.backup.copy.status.last.backup.never.run'),
+        "failed": window.JournalI18n.render('journal.window.backup.copy.status.last.backup.failed')
       },
       "last_verification": {
-        "ok": "{duration} ago",
-        "failed": "spot-check failed {duration} ago",
-        "skipped": "spot-check couldn't run {duration} ago"
+        "ok": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.ok'),
+        "failed": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.failed'),
+        "skipped": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.skipped')
       }
     },
     "offload": {
-      "title": "media offload",
-      "unsupported": "media offload isn't available on this device.",
-      "stakes": "after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them. not even sol pbc.",
-      "stalled_lead": "offload couldn't finish.",
-      "backup_only_label": "kept only in backup",
-      "restore_expectation": "restoring {size} from your backup. a large restore can take a while.",
+      "title": window.JournalI18n.render('journal.window.backup.copy.offload.title'),
+      "unsupported": window.JournalI18n.render('journal.window.backup.copy.offload.unsupported'),
+      "stakes": window.JournalI18n.renderEnglish('journal.window.backup.copy.offload.stakes'),
+      "stalled_lead": window.JournalI18n.render('journal.window.backup.copy.offload.stalled.lead'),
+      "backup_only_label": window.JournalI18n.render('journal.window.backup.copy.offload.backup.only.label'),
+      "restore_expectation": window.JournalI18n.render('journal.window.backup.copy.offload.restore.expectation'),
       "restore_report": {
-        "effects": "files restored: {files} · added to this computer: {size}",
-        "files": "file results",
-        "held": "still needs attention",
+        "effects": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.effects'),
+        "files": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.files'),
+        "held": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.held'),
         "dispositions": {
-          "published": "restored",
-          "already_present": "already on this computer",
-          "conflict": "existing file kept",
-          "unverified": "result not confirmed",
-          "unattempted": "not attempted"
+          "published": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.dispositions.published'),
+          "already_present": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.dispositions.already.present'),
+          "conflict": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.dispositions.conflict'),
+          "unverified": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.dispositions.unverified'),
+          "unattempted": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.dispositions.unattempted')
         }
       },
-      "disable_note": "this stops. days already in your backup stay there, protected and restorable.",
-      "paused_note": "media offload is paused with backup. no media leaves this computer until you resume.",
-      "paused_enable_note": "resume backup to turn on media offload.",
-      "unavailable_lead": "can't read offload status right now.",
-      "action_error": "media offload couldn't finish. check backup setup, then try again.",
-      "invalid_limits": "enter a positive number for each limit, then save again.",
-      "enable_hint": "choose how much older media can leave this computer after backup verification.",
-      "not_ready": "turn on encrypted backup and confirm your recovery key before using media offload.",
+      "disable_note": window.JournalI18n.render('journal.window.backup.copy.offload.disable.note'),
+      "paused_note": window.JournalI18n.render('journal.window.backup.copy.offload.paused.note'),
+      "paused_enable_note": window.JournalI18n.render('journal.window.backup.copy.offload.paused.enable.note'),
+      "unavailable_lead": window.JournalI18n.render('journal.window.backup.copy.offload.unavailable.lead'),
+      "action_error": window.JournalI18n.render('journal.window.backup.copy.offload.action.error'),
+      "invalid_limits": window.JournalI18n.render('journal.window.backup.copy.offload.invalid.limits'),
+      "enable_hint": window.JournalI18n.render('journal.window.backup.copy.offload.enable.hint'),
+      "not_ready": window.JournalI18n.render('journal.window.backup.copy.offload.not.ready'),
       "labels": {
-        "budget_gb": "original media budget",
-        "floor_gb": "free-space floor",
-        "budget_short": "budget",
-        "floor_short": "floor",
-        "suggested": "suggested: {value}",
-        "raw_media": "on this computer",
-        "proposed": "proposed to leave this computer",
-        "eligible": "ready to leave this computer",
-        "projected": "on this computer after removal",
-        "known": "counted so far",
-        "device_free": "free space",
-        "device_total": "total space",
-        "last_offload": "last offload",
-        "last_verify": "last verification",
-        "last_restore": "last restore",
-        "last_completed": "last completed",
-        "days": "offloaded days",
+        "budget_gb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.budget.gb'),
+        "floor_gb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.floor.gb'),
+        "budget_short": window.JournalI18n.render('journal.window.backup.copy.offload.labels.budget.short'),
+        "floor_short": window.JournalI18n.render('journal.window.backup.copy.offload.labels.floor.short'),
+        "suggested": window.JournalI18n.render('journal.window.backup.copy.offload.labels.suggested'),
+        "raw_media": window.JournalI18n.render('journal.window.backup.copy.offload.labels.raw.media'),
+        "proposed": window.JournalI18n.render('journal.window.backup.copy.offload.labels.proposed'),
+        "eligible": window.JournalI18n.render('journal.window.backup.copy.offload.labels.eligible'),
+        "projected": window.JournalI18n.render('journal.window.backup.copy.offload.labels.projected'),
+        "known": window.JournalI18n.render('journal.window.backup.copy.offload.labels.known'),
+        "device_free": window.JournalI18n.render('journal.window.backup.copy.offload.labels.device.free'),
+        "device_total": window.JournalI18n.render('journal.window.backup.copy.offload.labels.device.total'),
+        "last_offload": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.offload'),
+        "last_verify": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.verify'),
+        "last_restore": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.restore'),
+        "last_completed": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.completed'),
+        "days": window.JournalI18n.render('journal.window.backup.copy.offload.labels.days'),
         "mb_suffix": "MiB",
-        "under_1mb": "under 1 MiB",
+        "under_1mb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.under.one.mib'),
         "gb_suffix": "GiB"
       },
       "result_labels": {
-        "ok": "completed",
-        "skipped": "didn't run",
-        "stalled": "couldn't finish",
-        "partial": "partly completed",
-        "error": "failed",
-        "unknown": "result unavailable"
+        "ok": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.ok'),
+        "skipped": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.skipped'),
+        "stalled": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.stalled'),
+        "partial": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.partial'),
+        "error": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.error'),
+        "unknown": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.unknown')
       },
-      "reason_unavailable": "the reason isn't available here.",
-      "verification_integrity_failed": "the backup copy failed its integrity check and may be damaged.",
+      "reason_unavailable": window.JournalI18n.render('journal.window.backup.copy.offload.reason.unavailable'),
+      "verification_integrity_failed": window.JournalI18n.render('journal.window.backup.copy.offload.verification.integrity.failed'),
       "actions": {
-        "prepare": "prepare copies",
-        "check_preparation": "check preparation",
-        "review_originals": "review originals",
-        "enable": "turn on media offload",
-        "save": "save limits",
-        "disable": "turn off media offload",
-        "restore_day": "restore this day"
+        "prepare": window.JournalI18n.render('journal.window.backup.copy.offload.actions.prepare'),
+        "check_preparation": window.JournalI18n.render('journal.window.backup.copy.offload.actions.check.preparation'),
+        "review_originals": window.JournalI18n.render('journal.window.backup.copy.offload.actions.review.originals'),
+        "enable": window.JournalI18n.render('journal.window.backup.copy.offload.actions.enable'),
+        "save": window.JournalI18n.render('journal.window.backup.copy.offload.actions.save'),
+        "disable": window.JournalI18n.render('journal.window.backup.copy.offload.actions.disable'),
+        "restore_day": window.JournalI18n.render('journal.window.backup.copy.offload.actions.restore.day')
       },
       "messages": {
-        "saved": "saved",
-        "empty_days": "no offloaded media yet.",
-        "show_all_days": "show all {count} days",
-        "incomplete": "some media totals aren't available.",
-        "degraded": "some of the record of what's in your backup couldn't be read. these days may hold more than shown."
+        "saved": window.JournalI18n.render('journal.window.backup.copy.offload.messages.saved'),
+        "empty_days": window.JournalI18n.render('journal.window.backup.copy.offload.messages.empty.days'),
+        "show_all_days": window.JournalI18n.render('journal.window.backup.copy.offload.messages.show.all.days'),
+        "incomplete": window.JournalI18n.render('journal.window.backup.copy.offload.messages.incomplete'),
+        "degraded": window.JournalI18n.render('journal.window.backup.copy.offload.messages.degraded')
       },
-      "prepare_hint": "prepare encrypted copies for review. choose which originals to remove on the originals page.",
+      "prepare_hint": window.JournalI18n.render('journal.window.backup.copy.offload.prepare.hint'),
       "preparation": {
-        "checking": "checking preparation…",
-        "pending": "a final result isn't available. check again.",
-        "finished": "see the latest offload result and proposed originals.",
-        "failed": "preparation needs attention. see the latest offload result.",
-        "unavailable": "can't confirm preparation right now. check again before starting another."
+        "checking": window.JournalI18n.render('journal.window.backup.copy.offload.preparation.checking'),
+        "pending": window.JournalI18n.render('journal.window.backup.copy.offload.preparation.pending'),
+        "finished": window.JournalI18n.render('journal.window.backup.copy.offload.preparation.finished'),
+        "failed": window.JournalI18n.render('journal.window.backup.copy.offload.preparation.failed'),
+        "unavailable": window.JournalI18n.render('journal.window.backup.copy.offload.preparation.unavailable')
       },
       "stall_reason_labels": {
-        "backup_not_ready": "encrypted backup needs to finish setup before media offload can run.",
-        "backup_failing": "encrypted backup needs a healthy recent copy before media offload can run.",
-        "verification_missing": "backup verification needs to run before media offload can start.",
-        "verification_overdue": "backup verification is overdue. media offload will wait for a fresh verification.",
-        "verification_failed": "backup verification failed. media offload will wait for a healthy verification.",
-        "locked": "media offload is waiting for backup maintenance to finish.",
-        "archive_failed": "media offload could not add older media to encrypted backup.",
-        "confirm_failed": "media offload could not verify the backed-up media.",
-        "confirm_tool_failed": "media offload could not run the verification tool.",
-        "unexpected_error": "media offload stopped unexpectedly. try again after backup maintenance runs."
+        "backup_not_ready": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.backup.not.ready'),
+        "backup_failing": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.backup.failing'),
+        "verification_missing": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.verification.missing'),
+        "verification_overdue": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.verification.overdue'),
+        "verification_failed": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.verification.failed'),
+        "locked": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.locked'),
+        "archive_failed": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.archive.failed'),
+        "confirm_failed": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.confirm.failed'),
+        "confirm_tool_failed": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.confirm.tool.failed'),
+        "unexpected_error": window.JournalI18n.render('journal.window.backup.copy.offload.stall.reason.labels.unexpected.error')
       },
       "restore_reason_labels": {
-        "archive_unbound": "the backup record doesn't identify the archive needed to restore these files.",
-        "auth_failed": "encrypted backup rejected the recovery key or credentials.",
-        "backup_not_ready": "encrypted backup is not ready to restore media.",
-        "failed": "media restore could not finish.",
-        "insufficient_free_space": "this computer needs more free space before restoring media.",
-        "ledger_degraded": "some of the record of what's in your backup couldn't be read, so a restore can't be trusted to be complete. try again after the next backup runs.",
-        "legacy_read_failed": "the backup copy of media offloaded by an earlier version of your journal couldn't be read, so it wasn't restored.",
-        "legacy_review_held": "media offloaded by an earlier version of your journal couldn't be checked against your backup, so it wasn't restored.",
-        "legacy_verification_failed": "the backup copy of media offloaded by an earlier version of your journal didn't match its record, so it wasn't restored.",
-        "locked": "media restore is waiting for backup maintenance to finish.",
-        "missing_file_after_restore": "media restore finished, but a file was still missing.",
-        "nothing_to_restore": "nothing to restore for that day.",
-        "repo_missing": "encrypted backup could not find the repository.",
-        "restore_conflict": "a different file is already where some of this media belongs, so the file already there was kept and the backup copy wasn't restored.",
-        "restore_held": "restoring offloaded files is temporarily unavailable.",
-        "restore_not_published": "some media couldn't be put back in your journal this time and nothing was put in its place, so try again later.",
-        "segment_missing": "that day is no longer available locally.",
-        "timeout": "media restore took too long. try again later.",
-        "verification_failed": "restored media did not match the backup checksum."
+        "archive_unbound": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.archive.unbound'),
+        "auth_failed": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.auth.failed'),
+        "backup_not_ready": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.backup.not.ready'),
+        "failed": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.failed'),
+        "insufficient_free_space": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.insufficient.free.space'),
+        "ledger_degraded": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.ledger.degraded'),
+        "legacy_read_failed": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.legacy.read.failed'),
+        "legacy_review_held": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.legacy.review.held'),
+        "legacy_verification_failed": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.legacy.verification.failed'),
+        "locked": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.locked'),
+        "missing_file_after_restore": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.missing.file.after.restore'),
+        "nothing_to_restore": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.nothing.to.restore'),
+        "repo_missing": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.repo.missing'),
+        "restore_conflict": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.restore.conflict'),
+        "restore_held": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.restore.held'),
+        "restore_not_published": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.restore.not.published'),
+        "segment_missing": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.segment.missing'),
+        "timeout": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.timeout'),
+        "verification_failed": window.JournalI18n.render('journal.window.backup.copy.offload.restore.reason.labels.verification.failed')
       }
     },
     "phase_labels": {
-      "cleanup_pending": "backup needs attention",
-      "setting_up": "setting up your backup…",
-      "restoring": "restoring your journal…",
-      "rotating": "making a new recovery key…",
-      "tearing_down": "turning off…",
-      "done": "done",
-      "degraded": "restored, but not verified",
-      "refused": "restore wasn't available",
-      "error": "couldn't finish",
-      "loading": "loading…",
-      "empty": "not set up yet"
+      "cleanup_pending": window.JournalI18n.render('journal.window.backup.copy.phase.labels.cleanup.pending'),
+      "setting_up": window.JournalI18n.render('journal.window.backup.copy.phase.labels.setting.up'),
+      "restoring": window.JournalI18n.render('journal.window.backup.copy.phase.labels.restoring'),
+      "rotating": window.JournalI18n.render('journal.window.backup.copy.phase.labels.rotating'),
+      "tearing_down": window.JournalI18n.render('journal.window.backup.copy.phase.labels.tearing.down'),
+      "done": window.JournalI18n.render('journal.window.backup.copy.phase.labels.done'),
+      "degraded": window.JournalI18n.render('journal.window.backup.copy.phase.labels.degraded'),
+      "refused": window.JournalI18n.render('journal.window.backup.copy.phase.labels.refused'),
+      "error": window.JournalI18n.render('journal.window.backup.copy.phase.labels.error'),
+      "loading": window.JournalI18n.render('journal.window.backup.copy.phase.labels.loading'),
+      "empty": window.JournalI18n.render('journal.window.backup.copy.phase.labels.empty')
     },
     "operation_reason_labels": {
-      "backup_paused": "backup is paused. resume it, then try again.",
-      "cleanup_pending": "couldn't confirm that the backup task has stopped. other backup actions are waiting.",
-      "backup_busy": "another backup task is already running. try again in a moment.",
-      "backup_not_confirmed": "confirm your recovery key before turning on backup.",
-      "backup_operation_failed": "that backup action couldn't be finished. check the recovery key and destination, then try again.",
-      "backup_unavailable": "the backup service couldn't be reached. start it, then try again.",
-      "invalid_key": "that recovery key didn't unlock the backup. re-enter the key from your saved copy.",
-      "invalid_config_value": "use non-negative whole numbers, then save again.",
-      "invalid_operation_for_state": "finish the current backup setup step, then try again.",
-      "invalid_request_value": "check the destination details and try again.",
-      "repository_unsupported": "the repository has to start with s3: or b2:, matching the backend you chose (for example s3:s3.amazonaws.com/your-bucket or b2:your-bucket:journal).",
-      "repo_missing": "no backup repository was found at that destination.",
-      "auth_failed": "that recovery key didn't unlock the backup. check the key first, then the destination details.",
-      "locked": "the destination is busy. try again shortly.",
-      "timeout": "the destination took too long to respond. try again shortly.",
-      "failed": "the backup action couldn't be finished. check the recovery key and destination, then try again.",
-      "incomplete": "the backup action didn't finish. you can try again.",
-      "body_rebuild_failed": "your journal was restored, but your body history couldn't be rebuilt from it. the restore wasn't finalized.",
-      "integrity_failed": "your journal was restored to this computer, but the backup copy failed its integrity check and may be damaged.",
-      "integrity_unverified": "your journal was restored to this computer, but the integrity check couldn't run (the backup was busy or timed out), so the backup copy is unverified.",
-      "missing_required_field": "fill in the required fields, then try again.",
-      "recovery_key_mismatch": "that didn't match your recovery key. re-enter the key from your saved copy.",
-      "expired": "the approval took too long. try again.",
-      "restore_prepare_expired": "the approval took too long. try again.",
-      "malformed": "the response couldn't be read. update your journal, then try again.",
-      "network_error": "the services portal couldn't be reached. check your connection, then try again.",
-      "broker_unreachable": "encrypted backup couldn't be reached. check your connection, then try again.",
-      "broker_error": "encrypted backup didn't return usable settings. try again shortly.",
-      "hosted_entitlement_inactive": "turn on encrypted backup in the services portal, then try again.",
-      "backup_only_held": "your backup holds the only copy of some of your media, so no backup changes were made. restore everything first, then try again.",
-      "destination_unsupported": "your backup's settings are incomplete, so your journal can't reach it, and no backup changes were made.",
-      "teardown_tool_unavailable": "the backup program that comes with your journal is missing, so no backup changes were made.",
-      "storage_unreached": "turning off and deleting your backup stopped before anything was deleted, so it's safe to try again.",
-      "backup_only_unplaced": "your backup holds the only copy of some older media that can't be matched to a recording on this computer, so it can't be restored and no backup changes were made. if your journal was moved or copied, bring back its missing days, then try again.",
-      "offload_record_unavailable": "the record of what media offload moved into your backup is missing or can't be read, so no backup changes were made. if your journal was moved or copied, bring back its health folder, then try again."
+      "backup_paused": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.paused'),
+      "cleanup_pending": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.cleanup.pending'),
+      "backup_busy": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.busy'),
+      "backup_not_confirmed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.not.confirmed'),
+      "backup_operation_failed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.operation.failed'),
+      "backup_unavailable": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.unavailable'),
+      "invalid_key": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.invalid.key'),
+      "invalid_config_value": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.invalid.config.value'),
+      "invalid_operation_for_state": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.invalid.operation.for.state'),
+      "invalid_request_value": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.invalid.request.value'),
+      "repository_unsupported": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.repository.unsupported'),
+      "repo_missing": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.repo.missing'),
+      "auth_failed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.auth.failed'),
+      "locked": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.locked'),
+      "timeout": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.timeout'),
+      "failed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.failed'),
+      "incomplete": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.incomplete'),
+      "body_rebuild_failed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.body.rebuild.failed'),
+      "integrity_failed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.integrity.failed'),
+      "integrity_unverified": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.integrity.unverified'),
+      "missing_required_field": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.missing.required.field'),
+      "recovery_key_mismatch": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.recovery.key.mismatch'),
+      "expired": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.expired'),
+      "restore_prepare_expired": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.restore.prepare.expired'),
+      "malformed": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.malformed'),
+      "network_error": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.network.error'),
+      "broker_unreachable": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.broker.unreachable'),
+      "broker_error": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.broker.error'),
+      "hosted_entitlement_inactive": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.hosted.entitlement.inactive'),
+      "backup_only_held": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.only.held'),
+      "destination_unsupported": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.destination.unsupported'),
+      "teardown_tool_unavailable": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.teardown.tool.unavailable'),
+      "storage_unreached": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.storage.unreached'),
+      "backup_only_unplaced": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.backup.only.unplaced'),
+      "offload_record_unavailable": window.JournalI18n.render('journal.window.backup.copy.operation.reason.labels.offload.record.unavailable')
     },
     "action_labels": {
-      "finish_cleanup": "finish stopping backup",
-      "finishing_cleanup": "stopping backup…",
-      "cleanup_waiting": "backup actions are waiting",
-      "cleanup_blocked": "couldn't confirm that a journal task has stopped. this task must stop before backup actions can continue.",
-      "finish_task": "finish stopping task",
-      "finishing_task": "stopping task…",
-      "cleanup_checking": "checking backup availability",
-      "cleanup_contended": "try checking again in a moment.",
-      "check_cleanup": "check again",
-      "start": "get started",
-      "understand": "i understand",
-      "save_destination": "save destination",
-      "change_destination": "change destination",
-      "pause": "pause backup",
-      "resume": "resume backup",
-      "enable": "turn on backup",
-      "backup_now": "back up now",
-      "view_key": "view recovery key",
-      "rotate_key": "regenerate recovery key",
-      "teardown": "turn off & delete backup",
-      "save_retention": "save retention",
-      "restore": "restore",
-      "try_again": "try again",
-      "cancel": "cancel"
+      "finish_cleanup": window.JournalI18n.render('journal.window.backup.copy.action.labels.finish.cleanup'),
+      "finishing_cleanup": window.JournalI18n.render('journal.window.backup.copy.action.labels.finishing.cleanup'),
+      "cleanup_waiting": window.JournalI18n.render('journal.window.backup.copy.action.labels.cleanup.waiting'),
+      "cleanup_blocked": window.JournalI18n.render('journal.window.backup.copy.action.labels.cleanup.blocked'),
+      "finish_task": window.JournalI18n.render('journal.window.backup.copy.action.labels.finish.task'),
+      "finishing_task": window.JournalI18n.render('journal.window.backup.copy.action.labels.finishing.task'),
+      "cleanup_checking": window.JournalI18n.render('journal.window.backup.copy.action.labels.cleanup.checking'),
+      "cleanup_contended": window.JournalI18n.render('journal.window.backup.copy.action.labels.cleanup.contended'),
+      "check_cleanup": window.JournalI18n.render('journal.window.backup.copy.action.labels.check.cleanup'),
+      "start": window.JournalI18n.render('journal.window.backup.copy.action.labels.start'),
+      "understand": window.JournalI18n.renderEnglish('journal.window.backup.copy.action.labels.understand'),
+      "save_destination": window.JournalI18n.render('journal.window.backup.copy.action.labels.save.destination'),
+      "change_destination": window.JournalI18n.render('journal.window.backup.copy.action.labels.change.destination'),
+      "pause": window.JournalI18n.render('journal.window.backup.copy.action.labels.pause'),
+      "resume": window.JournalI18n.render('journal.window.backup.copy.action.labels.resume'),
+      "enable": window.JournalI18n.render('journal.window.backup.copy.action.labels.enable'),
+      "backup_now": window.JournalI18n.render('journal.window.backup.copy.action.labels.backup.now'),
+      "view_key": window.JournalI18n.render('journal.window.backup.copy.action.labels.view.key'),
+      "rotate_key": window.JournalI18n.render('journal.window.backup.copy.action.labels.rotate.key'),
+      "teardown": window.JournalI18n.render('journal.window.backup.copy.action.labels.teardown'),
+      "save_retention": window.JournalI18n.render('journal.window.backup.copy.action.labels.save.retention'),
+      "restore": window.JournalI18n.render('journal.window.backup.copy.action.labels.restore'),
+      "try_again": window.JournalI18n.render('journal.window.backup.copy.action.labels.try.again'),
+      "cancel": window.JournalI18n.render('journal.window.backup.copy.action.labels.cancel')
     },
-    "error_intro": "start with the recovery key. if it still fails, check the destination details."
+    "error_intro": window.JournalI18n.render('journal.window.backup.copy.error.intro')
   };
   const STATUS_SELECTION_TABLE = {
     "null|null": { "backup": { "copy_key": "status.last_backup.never_run", "duration_source": null }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
@@ -1141,11 +1141,11 @@
   // backup's lock, so the page says a backup waits; while backup is paused,
   // the paused panel says what waits. Read from the trash's own answer.
   const BACKUP_ERASE_COPY = {
-    runningOne: 'removing 1 erased thing from your backups…',
-    running: 'removing {n} erased things from your backups…',
-    note: 'a backup waits until this finishes. you can leave this page.',
-    pausedOne: '1 erased thing waits to be removed from your backups until you resume.',
-    pausedMany: '{n} erased things wait to be removed from your backups until you resume.',
+    runningOne: window.JournalI18n.render('journal.window.backup.erasure.running.one'),
+    running: window.JournalI18n.render('journal.window.backup.erasure.running.many'),
+    note: window.JournalI18n.render('journal.window.backup.window.explanation.a.backup.waits.until.this.finishes'),
+    pausedOne: window.JournalI18n.render('journal.window.backup.window.explanation.erased.thing.waits.to.be.removed'),
+    pausedMany: window.JournalI18n.render('journal.window.backup.erasure.paused.many'),
   };
   let backupErase = null;
   let backupEraseReading = false;
@@ -1203,7 +1203,7 @@
       if (window.JournalClock?.formatInstant) {
         return window.JournalClock.formatInstant(value * 1000);
       }
-      return new Date(value * 1000).toLocaleString();
+      return new Date(value * 1000).toLocaleString(window.JournalI18n.formatLocale);
     } catch (_err) {
       return statusLabels.not_yet || '';
     }
@@ -1344,7 +1344,7 @@
     const divisor = isGb ? BYTES_PER_GB : BYTES_PER_MB;
     const value = bytes / divisor;
     const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
-    return `${rounded.toLocaleString()}${suffix ? ' ' + suffix : ''}`;
+    return `${rounded.toLocaleString(window.JournalI18n.formatLocale)}${suffix ? ' ' + suffix : ''}`;
   }
 
   function gbToBytes(value) {
@@ -1503,7 +1503,7 @@
       return;
     }
     stakes.textContent = (managementCopy.teardown_gate_lead || '')
-      .replace('{days}', totals.days.toLocaleString())
+      .replace('{days}', totals.days.toLocaleString(window.JournalI18n.formatLocale))
       .replace('{size}', totals.size);
     if (restoreFirst) setButtonDisabled(restoreFirst, false);
   }
@@ -1526,7 +1526,7 @@
     if (gate) gate.hidden = true;
     setElementHidden('[data-action="teardown-open"]', false);
     disarmTeardownConfirm();
-    showMessage('[data-teardown-status]', '');
+    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.teardown.status'), '');
   }
 
   // These metadata totals explain the confirmation. The server owns teardown
@@ -1648,7 +1648,7 @@
       button.setAttribute('data-action', 'offload-show-all-days');
       button.textContent = (offloadMessages.show_all_days || '').replace(
         '{count}',
-        filtered.length.toLocaleString(),
+        filtered.length.toLocaleString(window.JournalI18n.formatLocale),
       );
       target.append(button);
     }
@@ -1875,7 +1875,7 @@
     const labels = offloadCopy.restore_report || {};
     const validCount = (count) => Number.isSafeInteger(count) && count >= 0;
     const files = validCount(value.files_restored)
-      ? value.files_restored.toLocaleString() : statusLabels.not_available || '';
+      ? value.files_restored.toLocaleString(window.JournalI18n.formatLocale) : statusLabels.not_available || '';
     const size = formatBytes(validCount(value.bytes_restored) ? value.bytes_restored : null);
     return (labels.effects || '').replace('{files}', files).replace('{size}', size);
   }
@@ -2372,7 +2372,7 @@
         } else if (payload.operation && payload.operation.kind === 'teardown') {
           resetTeardownGate();
         } else if (payload.operation && payload.operation.kind === 'offload_restore') {
-          showMessage('[data-offload-restore-status]', '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), '');
           try {
             await refreshOffloadStatus();
           } catch (err) {
@@ -2478,7 +2478,7 @@
     syncBackendFields('');
     setDestinationEditMode(true);
     destinationMessage('', null);
-    showMessage('[data-byo-location-status]', '');
+    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.byo.location.status'), '');
     showPanel('destination');
   }
 
@@ -2486,7 +2486,7 @@
     setDestinationEditMode(false);
     destinationMessage('', null);
     showPanel('management');
-    showMessage('[data-byo-location-status]', savedMessage || '');
+    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.byo.location.status'), savedMessage || '');
   }
 
   function editRefusal(err) {
@@ -2515,10 +2515,10 @@
     else if (kept && totals.days === 1) line = (editCopy.confirm_day || '').replace('{size}', totals.size);
     else if (kept) {
       line = (editCopy.confirm_days || '')
-        .replace('{days}', totals.days.toLocaleString())
+        .replace('{days}', totals.days.toLocaleString(window.JournalI18n.formatLocale))
         .replace('{size}', totals.size);
     }
-    showMessage('[data-switch-days]', line);
+    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.switch.days'), line);
     setElementHidden('[data-action="switch-restore-first"]', !kept);
     destinationMessage('', null);
     setElementHidden('[data-destination-actions]', true);
@@ -2615,11 +2615,11 @@
           showPanel('display');
         }
         if (action === 'copy-key') {
-          showMessage('[data-recovery-error]', '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), '');
           await copyRecoveryKey();
         }
         if (action === 'save-key') {
-          showMessage('[data-recovery-error]', '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), '');
           await saveRecoveryKey();
         }
         if (action === 'enable-backup') {
@@ -2653,7 +2653,7 @@
         if (action === 'switch-restore-first') {
           closeDestinationEdit('');
           const totalBytes = offloadState.payload?.backup_only?.total_bytes;
-          showMessage('[data-offload-restore-status]', offloadRestoreExpectation(totalBytes));
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), offloadRestoreExpectation(totalBytes));
           await startOperation('/app/backup/offload/restore', { all: true });
         }
         if (action === 'teardown-restore-first') {
@@ -2661,7 +2661,7 @@
             offloadState.payload &&
             offloadState.payload.backup_only &&
             offloadState.payload.backup_only.total_bytes;
-          showMessage('[data-offload-restore-status]', offloadRestoreExpectation(totalBytes));
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), offloadRestoreExpectation(totalBytes));
           await startOperation('/app/backup/offload/restore', { all: true });
           resetTeardownGate();
         }
@@ -2675,7 +2675,7 @@
         if (action === 'offload-enable') {
           const limits = offloadLimitState();
           if (limits.exactlyOnePositive) {
-            showMessage('[data-offload-config-status]', offloadCopy.invalid_limits || '');
+            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadCopy.invalid_limits || '');
             return;
           }
           if (limits.bothPositive) {
@@ -2684,17 +2684,17 @@
             }
           }
           if (applyOffloadPayload(await postJson('/app/backup/offload/enable'))) {
-            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
+            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
           }
         }
         if (action === 'offload-save') {
           if (applyOffloadPayload(await postJson('/app/backup/offload/config', offloadConfigBody()))) {
-            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
+            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
           }
         }
         if (action === 'offload-disable') {
           if (applyOffloadPayload(await postJson('/app/backup/offload/disable'))) {
-            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
+            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
           }
         }
         if (action === 'offload-restore-day') {
@@ -2704,7 +2704,7 @@
             Array.isArray(offloadState.payload.days) &&
             offloadState.payload.days.find((candidate) => candidate && candidate.day === day);
           showMessage(
-            '[data-offload-restore-status]',
+            window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'),
             offloadRestoreExpectation(entry && entry.backup_only_bytes),
           );
           await startOperation('/app/backup/offload/restore', { day });
@@ -2715,16 +2715,16 @@
         }
       } catch (err) {
         if (['offload-restore-day', 'teardown-restore-first', 'switch-restore-first'].includes(action)) {
-          showMessage('[data-offload-restore-status]', '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), '');
         }
         if (['copy-key', 'save-key'].includes(action)) {
-          showError('[data-recovery-error]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), err);
         } else if (action && action.startsWith('teardown-')) {
-          showError('[data-teardown-status]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.teardown.status'), err);
         } else if (action && action.startsWith('offload-')) {
-          showMessage('[data-offload-config-status]', offloadActionError(err));
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadActionError(err));
         } else {
-          showError('[data-operation-error]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.operation.error'), err);
         }
       }
     });
@@ -2740,7 +2740,7 @@
           const entered = root.querySelector('[data-confirm-input]').value || '';
           const payload = await postJson('/app/backup/confirm', { recovery_key: entered });
           applyPayload(payload);
-          showMessage('[data-confirm-error]', '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.confirm.error'), '');
           if (state.destination && state.destination.credentials_set) {
             await startOperation('/app/backup/enable');
             showPanel('management');
@@ -2748,7 +2748,7 @@
             showPanel('destination');
           }
         } catch (err) {
-          showError('[data-confirm-error]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.confirm.error'), err);
         }
       });
     }
@@ -2765,7 +2765,7 @@
         try {
           await saveDestination(destinationForm, '[data-destination-status]');
         } catch (err) {
-          showError('[data-destination-status]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.destination.status'), err);
         }
       });
     }
@@ -2782,9 +2782,9 @@
         try {
           const payload = await postJson('/app/backup/retention', body);
           applyPayload(payload);
-          showMessage('[data-retention-status]', phaseLabels.done || '');
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.retention.status'), phaseLabels.done || '');
         } catch (err) {
-          showError('[data-retention-status]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.retention.status'), err);
         }
       });
     }
@@ -2798,9 +2798,9 @@
         body.recovery_key = restoreForm.elements.recovery_key.value || '';
         try {
           await startOperation('/app/backup/restore', body);
-          showMessage('[data-restore-status]', labelForPhase('restoring'));
+          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.restore.status'), labelForPhase('restoring'));
         } catch (err) {
-          showError('[data-restore-status]', err);
+          showError(window.JournalI18n.render('journal.window.backup.status.text.data.restore.status'), err);
         }
       });
     }
@@ -2928,7 +2928,7 @@
       }
       if (workspaceCurrent()) {
         const loading = root.querySelector('[data-backup-loading]');
-        loading.textContent = "couldn't load backup settings. reload this page to try again.";
+        loading.textContent = window.JournalI18n.render('journal.window.backup.visible.text.couldn.t.load.backup.settings.reload');
         reportBackupReady('error');
       }
       return;

@@ -1,0 +1,16 @@
+{
+  "description": "Backup partial in the journal's backup view.",
+  "context": "Journal window, backup view. Backup partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d5356b2cd02ca7ee7c12848dc99b2ba5ef094ad0c9ca4d4048f4d69f8c2e500",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

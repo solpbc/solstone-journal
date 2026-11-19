@@ -1,0 +1,16 @@
+{
+  "description": "Backup resume in the journal's backup view.",
+  "context": "Journal window, backup view. Backup resume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0db6651ad44e4d4ce2db3d19658267b3aaf3013277795be430fa0b178efce4c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

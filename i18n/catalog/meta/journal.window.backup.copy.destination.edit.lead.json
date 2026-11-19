@@ -1,0 +1,16 @@
+{
+  "description": "Backup lead in the journal's backup view.",
+  "context": "Journal window, backup view. Backup lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8c34771ea386600adcbcea2419f83f040ae125fe821b79311b158fddd1ccc04",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

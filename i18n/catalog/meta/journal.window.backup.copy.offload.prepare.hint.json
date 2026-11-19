@@ -1,0 +1,16 @@
+{
+  "description": "Backup prepare hint in the journal's backup view.",
+  "context": "Journal window, backup view. Backup prepare hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6cc0384ed6b256a89551f808b96ce5f9bd1ca53e86777de17b3f00e974ae66fb",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

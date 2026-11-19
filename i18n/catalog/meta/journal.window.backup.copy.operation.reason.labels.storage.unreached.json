@@ -1,0 +1,16 @@
+{
+  "description": "Backup storage unreached in the journal's backup view.",
+  "context": "Journal window, backup view. Backup storage unreached.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9c9d258c4825dc7a5eac9a723b030816c4464dd53b7156d053c2010d109f679",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

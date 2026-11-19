@@ -265,7 +265,9 @@ impl Custody {
 fn refuse(reason: &str) -> axum::response::Response {
     crate::response::error(
         axum::http::StatusCode::BAD_REQUEST,
-        "that action isn't available in the current state.",
+        crate::response::Wording::Catalog(
+            "journal.window.backup.response.backup.refusal.that.action.isn.t.available.in",
+        ),
         reason,
         "",
     )

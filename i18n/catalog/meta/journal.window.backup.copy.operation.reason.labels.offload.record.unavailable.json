@@ -1,0 +1,16 @@
+{
+  "description": "Backup offload record unavailable in the journal's backup view.",
+  "context": "Journal window, backup view. Backup offload record unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7905752c1ddea7885290aa205082938bd6f9c9120195568bbcc6338a7cef8de",
+  "max_length": 229,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

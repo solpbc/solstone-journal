@@ -1,0 +1,16 @@
+{
+  "description": "Backup network error in the journal's backup view.",
+  "context": "Journal window, backup view. Backup network error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1094facc3a54781c4509f482ec2df9342eaba759253cf0237ac36779478c2d2",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

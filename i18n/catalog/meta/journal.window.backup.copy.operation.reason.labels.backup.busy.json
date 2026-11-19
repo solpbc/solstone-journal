@@ -1,0 +1,16 @@
+{
+  "description": "Backup backup busy in the journal's backup view.",
+  "context": "Journal window, backup view. Backup backup busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7bbaadaa82797be2e7751c8f24060ae42641f16be40a67463e29197290ae9836",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

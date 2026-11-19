@@ -1,0 +1,16 @@
+{
+  "description": "Backup choose lane in the journal's backup view.",
+  "context": "Journal window, backup view. Backup choose lane.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "990a16d8b66403a773503d6a93ee498a759c8a013431a0ef133be7ce4a98a49f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

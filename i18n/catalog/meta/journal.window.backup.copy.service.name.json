@@ -1,0 +1,16 @@
+{
+  "description": "Backup service name in the journal's backup view.",
+  "context": "Journal window, backup view. Backup service name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8064efee01366c2db60ca7b10027748ced4d807df6146296bc53ee7441e6e24d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

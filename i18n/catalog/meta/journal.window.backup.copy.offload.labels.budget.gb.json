@@ -1,0 +1,16 @@
+{
+  "description": "Backup budget gb in the journal's backup view.",
+  "context": "Journal window, backup view. Backup budget gb.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebac37bac860cb1fab44699031d1907176c151b3229bbef4cdb7020e9676af7e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

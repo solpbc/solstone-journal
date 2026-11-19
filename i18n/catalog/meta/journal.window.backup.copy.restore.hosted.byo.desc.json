@@ -1,0 +1,16 @@
+{
+  "description": "Backup byo desc in the journal's backup view.",
+  "context": "Journal window, backup view. Backup byo desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "335751bb9ff33b15d52056465c31aaed0eaac7b230127691d4f094b73f205aa9",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

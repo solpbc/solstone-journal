@@ -1,0 +1,16 @@
+{
+  "description": "Backup incomplete in the journal's backup view.",
+  "context": "Journal window, backup view. Backup incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f835701893f81dedd19cacd40f71ba992aa769435f1c6a0402611ef7291da1e3",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
