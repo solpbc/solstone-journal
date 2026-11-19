@@ -66,6 +66,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page, adding your own activity to a facet that has only the activities it starts with now keeps them, where before it dropped all but meetings, email and messaging. editing the description or instructions of an activity a facet starts with, or removing one, now saves too (meetings, email and messaging still can't be removed). before, those changes were refused with "update failed" or "remove failed".
 - when an agent you limited to some facets asks for an activity's sources and it may read none of them, your journal now tells it that it may not read them, and that asking again won't change that. before, it said a file couldn't be read and to try again later, so the agent would ask again for something it could never get. thanks @dvanduzer for the report (#415).
 
+## [2.0.84] - 2026-11-19
+
+on windows, 2.0.84 is the first update since 2.0.82, so it also brings everything listed under 2.0.83.
+
+### Fixed
+
+- on windows, an update could leave your journal unable to start on its own the next time you signed in or restarted your computer. it kept running until then. updates no longer do this, starting with the update to this version.
+
 ## [2.0.83] - 2026-11-18
 
 ### Added
