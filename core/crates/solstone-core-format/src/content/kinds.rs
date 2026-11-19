@@ -123,7 +123,7 @@ pub const KINDS: &[KindSpec] = &[
         permission: Some(AdmittedCategory::Photos),
         query_alias: Some("Photos"),
         label: "photos",
-        description: "text descriptions of photos and screenshots you import as images.",
+        description: "text descriptions of photos you import as images.",
         checked_by_default: false,
     },
     KindSpec {
