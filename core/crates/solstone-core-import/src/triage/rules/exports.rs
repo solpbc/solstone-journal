@@ -10,6 +10,7 @@ pub(super) struct Header {
     pub rows: usize,
     pub summary_words: usize,
     transcript: bool,
+    transcription_model: bool,
     facts: usize,
 }
 
@@ -56,7 +57,19 @@ pub(super) fn meeting_header(lines: &[&str]) -> Header {
     let mut summary = false;
     let mut participants = false;
     let mut exporter_summary = false;
-    for (index, line) in nonblank(lines).take(HEADER_LIMIT).enumerate() {
+    let mut in_disclaimer = false;
+    let mut saw_blank = false;
+    let mut index = 0usize;
+    for raw in lines {
+        let line = raw.trim();
+        if line.is_empty() {
+            saw_blank = true;
+            in_disclaimer = false;
+            continue;
+        }
+        if index >= HEADER_LIMIT {
+            break;
+        }
         let line = line.strip_prefix("> ").unwrap_or(line);
         let line = line.strip_prefix("- ").unwrap_or(line);
         let heading = markdown_title(line);
@@ -78,6 +91,7 @@ pub(super) fn meeting_header(lines: &[&str]) -> Header {
         if is_transcript {
             header.transcript = true;
             summary = false;
+            in_disclaimer = false;
         } else if header.transcript {
             if !meeting_notice(line) {
                 break;
@@ -88,6 +102,7 @@ pub(super) fn meeting_header(lines: &[&str]) -> Header {
         ) && exporter_summary
         {
             summary = true;
+            in_disclaimer = false;
         } else if summary {
             if !recording_link(line) {
                 header.summary_words += line.split_whitespace().count();
@@ -118,28 +133,45 @@ pub(super) fn meeting_header(lines: &[&str]) -> Header {
             || recording_link(line)
         {
             header.facts += 1;
+            if key == "transcription model" {
+                header.transcription_model = true;
+            }
             participants = matches!(
                 key.as_str(),
                 "attendees" | "participants" | "meeting participants" | "speakers"
             );
+            in_disclaimer = false;
         } else if matches!(
             section.as_str(),
             "attendees" | "participants" | "meeting participants" | "speakers"
         ) {
             header.facts += 1;
             participants = true;
+            in_disclaimer = false;
         } else if participants
             && line.split(',').count() >= 2
             && line.split(',').all(|part| speaker_label(part).is_some())
         {
             participants = false;
+            in_disclaimer = false;
+        } else if header.facts > 0 && machine_transcript_disclaimer(line) {
+            in_disclaimer = true;
+        } else if in_disclaimer
+            && !saw_blank
+            && line.split_whitespace().count() <= 12
+            && !line.contains(':')
+        {
+            in_disclaimer = false;
         } else if index == 0 && (heading.is_some() || short_title(line))
             || line.len() >= 3 && line.bytes().all(|b| b == b'-' || b == b'=')
         {
             // A single free-form title is allowed. Other rows need a known structure.
+            in_disclaimer = false;
         } else {
             break;
         }
+        saw_blank = false;
+        index += 1;
         header.rows += 1;
     }
     if summary || header.rows == HEADER_LIMIT || header.facts == 0 && !header.transcript {
@@ -160,6 +192,13 @@ fn meeting_notice(line: &str) -> bool {
     let body = line.split_once(' ').map_or(line, |(_, body)| body);
     body.starts_with("editable transcript was computer generated and might contain errors.")
         || line.starts_with("View in Fireflies: https://app.fireflies.ai/")
+        || machine_transcript_disclaimer(line)
+}
+
+fn machine_transcript_disclaimer(line: &str) -> bool {
+    let lower = line.trim_matches('*').to_ascii_lowercase();
+    lower.starts_with("machine-generated transcript.")
+        || lower.starts_with("automatically generated transcript.")
 }
 
 pub(super) fn interview_title(line: &str) -> bool {
@@ -172,9 +211,9 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
     static TURN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(concat!(
             r"^(?:[-*] )?(?:\*\*)?(?:",
-            r"(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s*|\d{1,3}:\d{2}(?::\d{2})?\s+(?:[-–—]\s+)?)?",
+            r"(?P<prefix_clock>\[\d{1,2}:\d{2}(?::\d{2})?\]\s*|\d{1,3}:\d{2}(?::\d{2})?\s+(?:[-–—]\s+)?)?",
             r"(?P<first>[^*:：]{1,60}?)(?:\*\*)?",
-            r"(?:\s+\*?\(\s*\d{1,3}:\d{2}(?::\d{2})?\s*\)\*?)?[:：](?:\*\*)?(?:\s+|$)",
+            r"(?P<paren_clock>\s+\*?\(\s*\d{1,3}:\d{2}(?::\d{2})?\s*\)\*?)?[:：](?:\*\*)?(?:\s+|$)",
             r"|(?P<stacked>[^*:：]{1,60}?)(?:\*\*)?\s+[-–—]\s+\d{1,3}:\d{2}(?::\d{2})?$",
             r"|(?:\d{1,3}:\d{2}(?::\d{2})?\s+[-–—]\s+)(?P<clock_first>[^*:：]{1,60}?)(?:\*\*)?$",
             r")(?P<body>.*)$"
@@ -194,6 +233,7 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
         .map(str::to_lowercase);
     let mut speakers = HashSet::new();
     let mut turns = 0;
+    let mut timed_turns = 0;
     let mut words = 0;
     let mut first_bodies = HashSet::new();
     let mut unmatched = 0;
@@ -227,9 +267,13 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
                 .or_else(|| matched.name("clock_first"))?;
             let speaker = speaker_label(label.as_str())?;
             let body = matched.name("body").map_or("", |body| body.as_str());
-            Some((speaker, body))
+            let timed = matched.name("prefix_clock").is_some()
+                || matched.name("paren_clock").is_some()
+                || matched.name("stacked").is_some()
+                || matched.name("clock_first").is_some();
+            Some((speaker, body, timed))
         });
-        if let Some((speaker, body)) = found {
+        if let Some((speaker, body, timed)) = found {
             if !has_body {
                 return None;
             }
@@ -241,6 +285,7 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
             last_speaker = Some(speaker.clone());
             speakers.insert(speaker);
             turns += 1;
+            timed_turns += usize::from(timed);
             has_body = !body.is_empty();
             stacked = !has_body;
             words += body.split_whitespace().count();
@@ -260,10 +305,14 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
         }
     }
 
+    let single_speaker_transcription = header.transcription_model
+        && speakers.len() == 1
+        && timed_turns >= 3
+        && timed_turns == turns;
     let is_export = turns >= 3
         && opening_speaker.is_none()
         && has_body
-        && speakers.len() >= 2
+        && (speakers.len() >= 2 || single_speaker_transcription)
         && !speakers.iter().all(|speaker| {
             reserved_label(speaker)
                 || matches!(
@@ -273,7 +322,10 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
         })
         && first_bodies.len() >= 3
         && unmatched <= turns / 3
-        && (header.transcript || fathom || changes >= 2 && speakers.len() < turns);
+        && (header.transcript
+            || fathom
+            || single_speaker_transcription
+            || changes >= 2 && speakers.len() < turns);
     is_export.then_some(if words > header.summary_words + action_words {
         Transcripts
     } else {
@@ -540,4 +592,268 @@ fn is_signal_annotation(line: &str) -> bool {
     let quote = line.starts_with("> ");
     let attachment = line.starts_with("![") && line.contains("](") && line.ends_with(')');
     reaction || quote || attachment
+}
+
+fn parse_clock_seconds(text: &str) -> Option<u64> {
+    let parse_part = |part: &str, min_len: usize, max_len: usize| -> Option<u64> {
+        ((min_len..=max_len).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| part.parse::<u64>().ok())
+            .flatten()
+    };
+    let mut parts = text.split(':');
+    let first = parse_part(parts.next()?, 1, 3)?;
+    let second = parse_part(parts.next()?, 2, 2)?;
+    match (parts.next(), parts.next()) {
+        (None, None) if second < 60 => first.checked_mul(60)?.checked_add(second),
+        (Some(third), None) => {
+            let third = parse_part(third, 2, 2)?;
+            (second < 60 && third < 60)
+                .then(|| {
+                    first
+                        .checked_mul(3600)?
+                        .checked_add(second.checked_mul(60)?)?
+                        .checked_add(third)
+                })
+                .flatten()
+        }
+        _ => None,
+    }
+}
+
+fn bold_speaker_line(line: &str) -> Option<&str> {
+    let inner = line.strip_prefix("**")?.strip_suffix("**")?.trim();
+    if inner.is_empty() || inner.contains(['*', ':', '：']) {
+        return None;
+    }
+    speaker_label(inner)
+}
+
+fn italic_clock_line(line: &str) -> Option<u64> {
+    let inner = line.strip_prefix('*')?.strip_suffix('*')?.trim();
+    if inner.starts_with('*') || inner.ends_with('*') {
+        return None;
+    }
+    parse_clock_seconds(inner)
+}
+
+pub(super) fn macwhisper_stacked(lines: &[&str]) -> bool {
+    let header = meeting_header(lines);
+    let rows: Vec<_> = nonblank(lines).skip(header.rows).collect();
+    if rows.len() < 6 {
+        return false;
+    }
+    let mut idx = 0usize;
+    if header.rows == 0 && (markdown_title(rows[0]).is_some() || short_title(rows[0])) {
+        let plain = markdown_title(rows[0]).is_none();
+        idx = 1;
+        if plain
+            && rows.get(idx).is_some_and(|line| {
+                line.len() >= 3
+                    && (line.bytes().all(|b| b == b'=') || line.bytes().all(|b| b == b'-'))
+            })
+        {
+            idx += 1;
+        }
+    }
+
+    let mut speakers = Vec::new();
+    let mut clocks = Vec::new();
+    let mut utterances = HashSet::new();
+    let mut pending_speaker = None;
+    let mut continuations = 0usize;
+    let mut turn_words = 0usize;
+    let mut has_body = true;
+    while idx < rows.len() {
+        if let Some(speaker) = bold_speaker_line(rows[idx])
+            && let Some(clock) = rows.get(idx + 1).and_then(|next| italic_clock_line(next))
+        {
+            if !has_body {
+                return false;
+            }
+            speakers.push(speaker.to_lowercase());
+            pending_speaker = Some(speaker);
+            clocks.push(clock);
+            has_body = false;
+            idx += 2;
+        } else if speakers.is_empty() {
+            return false;
+        } else {
+            let line = rows[idx];
+            if markdown_title(line).is_some() {
+                return false;
+            }
+            if let Some(speaker) = pending_speaker.take()
+                && utterances.len() < 5
+            {
+                utterances.insert((speaker, line));
+            }
+            has_body = true;
+            continuations += 1;
+            turn_words += line.split_whitespace().count();
+            idx += 1;
+        }
+    }
+    let turns = speakers.len();
+    if turns < 2
+        || !has_body
+        || continuations > turns * 4
+        || (header.summary_words != 0 && turn_words <= header.summary_words)
+        || !clocks.windows(2).all(|pair| pair[1] >= pair[0])
+    {
+        return false;
+    }
+    let distinct: HashSet<_> = speakers.iter().collect();
+    if distinct.iter().all(|speaker| reserved_label(speaker))
+        || repeats_in_order(&speakers, distinct.len())
+        || utterances.len() < turns.min(5)
+    {
+        return false;
+    }
+    let changes = speakers
+        .windows(2)
+        .filter(|pair| pair[0] != pair[1])
+        .count();
+    if turns >= 3 {
+        distinct.len() >= 2 && distinct.len() < turns && changes >= 2
+    } else {
+        // Two-turn exports (e.g., short clips) need an explicit 00:00 audio origin
+        // and advancing clock so two-item schedules (09:00 / 10:30) stay notes.
+        distinct.len() == 2 && clocks[0] == 0 && clocks[1] > 0
+    }
+}
+
+fn transcript_heading(line: &str) -> bool {
+    let title = if let Some(heading) = markdown_title(line) {
+        heading
+    } else if short_title(line) {
+        line
+    } else {
+        return false;
+    };
+    let words: Vec<String> = title
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_ascii_lowercase())
+        .collect();
+    if !words.iter().any(|w| w == "transcript") {
+        return false;
+    }
+    if words.iter().any(|w| {
+        matches!(
+            w.as_str(),
+            "note"
+                | "notes"
+                | "summary"
+                | "summaries"
+                | "chapter"
+                | "chapters"
+                | "outline"
+                | "timestamp"
+                | "timestamps"
+                | "edit"
+                | "edits"
+                | "review"
+                | "highlights"
+                | "takeaways"
+                | "index"
+                | "todo"
+                | "todos"
+                | "agenda"
+                | "minutes"
+                | "guide"
+                | "about"
+                | "my"
+                | "our"
+        )
+    }) {
+        return false;
+    }
+    // Accept titles where "transcript" labels the document (e.g., "… — Transcript",
+    // "… — Transcript (2026-11-12)", "Episode 4 Transcript", "Transcript: …").
+    let pos = words.iter().position(|w| w == "transcript").unwrap();
+    let tail = &words[pos + 1..];
+    pos == 0 || tail.is_empty() || tail.iter().all(|w| w.bytes().all(|b| b.is_ascii_digit()))
+}
+
+pub(super) fn timed_transcript_narration(lines: &[&str]) -> bool {
+    static FULL_CLOCK: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\[([0-9]{2}):([0-5][0-9]):([0-5][0-9])\]").unwrap());
+    static LABELLED_START: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^\[[0-9]{2}:[0-5][0-9]:[0-5][0-9]\]\s+[^:：]{1,60}[:：]\s+\S").unwrap()
+    });
+    let rows: Vec<_> = nonblank(lines).collect();
+    let Some((&first, rest)) = rows.split_first() else {
+        return false;
+    };
+    if !transcript_heading(first) {
+        return false;
+    }
+    let mut body_start = None;
+    for (offset, &line) in rest.iter().take(8).enumerate() {
+        if FULL_CLOCK.find(line).is_some_and(|m| m.start() == 0) {
+            body_start = Some(offset);
+            break;
+        }
+        let allowed_meta = line.starts_with("http://")
+            || line.starts_with("https://")
+            || (line.len() >= 3 && line.bytes().all(|b| b == b'-' || b == b'='))
+            || line.split_once(':').is_some_and(|(k, _)| {
+                matches!(
+                    k.trim().trim_matches('*').to_ascii_lowercase().as_str(),
+                    "date"
+                        | "source"
+                        | "url"
+                        | "listen"
+                        | "duration"
+                        | "episode"
+                        | "title"
+                        | "show"
+                        | "published"
+                )
+            });
+        if !allowed_meta {
+            return false;
+        }
+    }
+    let Some(start) = body_start else {
+        return false;
+    };
+    let body = &rest[start..];
+    if body
+        .first()
+        .is_some_and(|line| LABELLED_START.is_match(line))
+    {
+        return false;
+    }
+
+    let mut clocks = Vec::new();
+    let mut inline_clocks = 0usize;
+    let mut total_words = 0usize;
+    for &line in body {
+        if markdown_title(line).is_some()
+            || ["- ", "* ", "+ "].iter().any(|p| line.starts_with(p))
+            || line
+                .split_once(". ")
+                .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return false;
+        }
+        for caps in FULL_CLOCK.captures_iter(line) {
+            let full = caps.get(0).unwrap();
+            if !line[..full.start()].trim().is_empty() {
+                inline_clocks += 1;
+            }
+            let h = caps[1].parse::<u64>().unwrap();
+            let m = caps[2].parse::<u64>().unwrap();
+            let s = caps[3].parse::<u64>().unwrap();
+            clocks.push(h * 3600 + m * 60 + s);
+        }
+        let cleaned = FULL_CLOCK.replace_all(line, " ");
+        total_words += cleaned.split_whitespace().count();
+    }
+    clocks.len() >= 3
+        && clocks.windows(2).all(|pair| pair[1] > pair[0])
+        && total_words >= 60
+        && total_words >= clocks.len() * 18
+        && (inline_clocks >= 1 || total_words >= clocks.len() * 25)
 }

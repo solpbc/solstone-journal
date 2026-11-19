@@ -51,6 +51,7 @@ enum Matcher {
 enum Shape {
     Bare,
     Timed,
+    TimedRecurring,
     Block,
     ExportBlock,
     ExportTimed,
@@ -252,6 +253,15 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             true
         ),
         rule!(
+            44,
+            "timed_transcript_narration",
+            Turns,
+            Transcripts,
+            "Explicitly titled transcript with monotonic [HH:MM:SS] narration clocks",
+            |e| exports::timed_transcript_narration(e.lines),
+            true
+        ),
+        rule!(
             45,
             "meeting_summary_note",
             Turns,
@@ -273,6 +283,29 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 .get_or_init(|| exports::meeting_kind(e.lines))
                 == Some(Transcripts),
             true
+        ),
+        rule!(
+            47,
+            "macwhisper_stacked",
+            Turns,
+            Transcripts,
+            "MacWhisper Markdown stacked bold speaker, italic clock and body blocks",
+            |e| exports::macwhisper_stacked(e.lines),
+            true
+        ),
+        rule!(
+            48,
+            "dated_bold_speaker",
+            "MacWhisper Markdown dated bullet and bold speaker turns",
+            TimedRecurring,
+            r"^[-*]\s+[0-9]{4}-[0-9]{2}-[0-9]{2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
+        ),
+        rule!(
+            49,
+            "clock_speaker",
+            "Unbracketed HH:MM:SS clock and capitalized speaker turns",
+            TimedRecurring,
+            r"^[0-9]{1,2}:[0-5][0-9]:[0-5][0-9] +(?P<speaker>(?:\*\*)?[\p{Lu}\p{Extended_Pictographic}](?:[^:：]{0,58}[^:：\s])?)[:：](?:\*\*)?\s+(?P<body>\S.*)$"
         ),
         rule!(
             50,
@@ -348,9 +381,10 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule!(
             59,
             "bracketed_speaker",
-            "Generic bracketed clock and speaker",
+            "Generic bracketed clock or HH:MM:SS range and speaker",
             Timed,
-            r"^(?:\*\*)?\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\]\s*(?P<speaker>[^:：]{1,60})[:：](?:\*\*)?\s+(?P<body>\S.*)$"
+            r"^(?:\*\*)?\[(?:[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?\s*[-–—]\s*[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?|[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?)\]\s*(?P<speaker>[^:：]{1,60})[:：](?:\*\*)?\s+(?P<body>\S.*)$",
+            true
         ),
         rule!(
             60,
@@ -364,7 +398,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "stacked_speaker_time",
             "Generic speaker/time block, including Otter and text rendered from documents",
             Block,
-            r"^(?:\*\*)?(?P<speaker>[^*:]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?\d{1,2}:\d{2}(?::\d{2})?\)?:?$"
+            r"^(?:\*\*)?(?P<speaker>[^*:]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?\d{1,2}:\d{2}(?::\d{2})?\)?:?$",
+            true
         ),
         rule!(
             62,
@@ -400,7 +435,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "bold_speaker",
             "Generic Markdown bold speaker labels",
             Bare,
-            r"^(?:[-*] (?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} )?)?\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
+            r"^(?:[-*] )?\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
         ),
         rule!(
             67,
@@ -762,8 +797,11 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     let mut continuations = 0;
     let mut in_turn = false;
     let mut block_has_body = true;
-    let generic = matches!(shape, Bare | Timed | Block);
-    let header = if matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) {
+    let generic = matches!(shape, Bare | Timed | TimedRecurring | Block);
+    let header = if matches!(
+        shape,
+        Bare | Timed | TimedRecurring | Block | RoleLine | RoleBlock
+    ) {
         exports::meeting_header(lines)
     } else {
         exports::Header::default()
@@ -781,7 +819,13 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         let speaker = captured
             .as_ref()
             .and_then(|c| c.name("speaker"))
-            .and_then(|m| speaker_label(m.as_str()));
+            .and_then(|m| speaker_label(m.as_str()))
+            .filter(|label| {
+                !(shape == TimedRecurring
+                    && label
+                        .split_once(' ')
+                        .is_some_and(|(first, _)| first.eq_ignore_ascii_case("from")))
+            });
         let evidence = (shape == Offset && captured.is_some()) || speaker.is_some();
         if evidence {
             if matches!(shape, Block | ExportBlock | RoleBlock) && !block_has_body {
@@ -822,8 +866,10 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 continue;
             }
             let existing_heading = matches!(shape, Block | RoleBlock) && line.starts_with("# ");
-            let short_heading =
-                matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) && short_title(line);
+            let short_heading = matches!(
+                shape,
+                Bare | Timed | TimedRecurring | Block | RoleLine | RoleBlock
+            ) && short_title(line);
             if !has_title && (existing_heading || short_heading) {
                 has_title = true;
                 allow_underline = short_heading && markdown_title(line).is_none();
@@ -833,7 +879,9 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
             // exchange following a prose preamble to a transcript.
             return false;
         } else if !is_export_notice(line) {
-            if matches!(shape, Bare | Timed | Block | RoleLine) && markdown_title(line).is_some() {
+            if matches!(shape, Bare | Timed | TimedRecurring | Block | RoleLine)
+                && markdown_title(line).is_some()
+            {
                 return false;
             }
             unmatched += 1;
@@ -897,6 +945,13 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 && continuations <= matched * 4
         }
         Timed => matched >= 3 && distinct.len() >= 2 && interleaves && unmatched <= matched,
+        TimedRecurring => {
+            matched >= 3
+                && distinct.len() >= 2
+                && distinct.len() < matched
+                && interleaves
+                && unmatched <= matched
+        }
         RoleBlock => {
             distinct.len() >= 2
                 && matched >= 2
@@ -943,8 +998,83 @@ fn short_title(line: &str) -> bool {
                 "i" | "we" | "this" | "these" | "here"
             )
     }) && words.count() < 10
-        && !line.contains(':')
+        && colon_title_ok(line)
         && !line.ends_with(['.', '!', '?'])
+}
+
+fn colon_title_ok(line: &str) -> bool {
+    let Some((prefix, suffix)) = line.split_once(':') else {
+        return true;
+    };
+    if !suffix.starts_with(' ') || suffix.contains(':') || suffix.trim().is_empty() {
+        return false;
+    }
+    let prefix = prefix.trim();
+    let mut words = prefix.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let count = 1 + words.count();
+    let lower_first = first.to_ascii_lowercase();
+    let lower_prefix = prefix.to_ascii_lowercase();
+    (count >= 2
+        || matches!(
+            lower_first.as_str(),
+            "interview" | "episode" | "podcast" | "recording" | "transcript" | "call" | "session"
+        ))
+        && !matches!(
+            lower_first.as_str(),
+            "note"
+                | "notes"
+                | "my"
+                | "our"
+                | "reminder"
+                | "memo"
+                | "summary"
+                | "action"
+                | "actions"
+                | "todo"
+                | "context"
+                | "background"
+                | "excerpt"
+                | "quote"
+                | "clip"
+                | "draft"
+                | "pasted"
+                | "copied"
+                | "saved"
+                | "regarding"
+                | "re"
+                | "fwd"
+                | "warning"
+                | "tip"
+                | "update"
+                | "agenda"
+                | "attendees"
+                | "participants"
+                | "decisions"
+                | "status"
+                | "owner"
+                | "date"
+                | "from"
+                | "to"
+                | "cc"
+                | "sent"
+                | "subject"
+        )
+        && !prefix.split_whitespace().any(|word| {
+            matches!(
+                word.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "note" | "notes" | "summary" | "pasted" | "excerpt"
+            )
+        })
+        && !reserved_label(&lower_prefix)
+        && !matches!(
+            lower_prefix.as_str(),
+            "action items" | "key takeaways" | "follow up" | "follow-up" | "next steps"
+        )
 }
 
 fn reserved_label(label: &str) -> bool {

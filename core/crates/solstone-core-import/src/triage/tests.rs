@@ -1247,6 +1247,10 @@ fn near_misses_for_transcript_expansions_stay_notes() {
             "# Transcription: Harbor Episode 4\n\nSource: https://example.invalid/ep4\nTranscription model: whisper-small\n\nMachine-generated transcript. Review speaker labels before quoting.\n\nMy own notes on this talk: the second section has the permit dates we need.\n\n**[00:00] Nora:** Welcome back to the harbor log.\n**[00:08] Nora:** Today we inspect the north quay.\n**[00:16] Nora:** The stone wall held through winter.\n".to_string(),
         ),
         (
+            "whisper-owner-notes-plain.md",
+            "# Transcription: Harbor Episode 4\n\nSource: https://example.invalid/ep4\nTranscription model: whisper-small\n\nMachine-generated transcript. Review speaker labels before quoting.\n\nI copied this excerpt because the second section has the permit dates we need.\n\n**[00:00] Nora:** Welcome back to the harbor log.\n**[00:08] Nora:** Today we inspect the north quay.\n**[00:16] Nora:** The stone wall held through winter.\n".to_string(),
+        ),
+        (
             "single-speaker-no-model.md",
             "# Harbor Episode 4\n\nSource: https://example.invalid/ep4\nDate: 2026-06-01\n\n**[00:00] Nora:** Welcome back to the harbor log.\n**[00:08] Nora:** Today we inspect the north quay.\n**[00:16] Nora:** The stone wall held through winter.\n".to_string(),
         ),
@@ -1359,6 +1363,117 @@ fn chat_and_subtitle_edge_layouts_classify_as_transcripts() {
         ("signal-reactions.md", signal_with_reactions, "signal_dated"),
         ("weechat-unicode.log", weechat_unicode, "dated_tab_nick"),
         ("irc-setext.log", irc_setext, "irc_angle_nick"),
+    ] {
+        expected(name, text, Kind::Transcripts, &[rule]);
+    }
+}
+
+#[test]
+fn meeting_whisper_and_timed_narration_layouts_classify_as_transcripts() {
+    let otter_colon_title = concat!(
+        "Orchard Radio, episode 9: The cider press\n\n",
+        "Sonia Cho  0:03\n",
+        "Welcome back to the barn. Today we are looking at the oak cider press.\n\n",
+        "Devon Cruz  0:12\n",
+        "It was assembled in 1928 and only two screw threads needed re-cutting last autumn.\n\n",
+        "Sonia Cho  0:25\n",
+        "Did the millwright replace the ash frame?\n\n",
+        "Devon Cruz  0:31\n",
+        "No, only the brass washers under the hopper tray before harvest started.\n",
+    );
+    let whisperx_range = concat!(
+        "[00:00:00 - 00:00:06] Speaker 1: Morning everyone, let us check the greenhouse vents.\n",
+        "[00:00:06 - 00:00:13] Speaker 2: The north latch sticks slightly when humidity rises.\n",
+        "[00:00:13 - 00:00:19] Speaker 1: Let us swap it with the spare hinge today.\n",
+    );
+    let dated_bold = concat!(
+        "- 2026-08-05 01:00:05 **Speaker 1**: Let us get started with the workshop sync.\n",
+        "- 2026-08-05 01:00:18 **Speaker 2**: The kiln thermocouple logs came back clean.\n",
+        "- 2026-08-05 01:00:34 **Speaker 1**: Great, did the firing curve hold?\n",
+        "- 2026-08-05 01:00:49 **Speaker 2**: Steady all week with no drops.\n",
+    );
+    let macwhisper_two_turn = concat!(
+        "# Monday studio sync\n\n",
+        "**Sonia**\n",
+        "*00:00*\n",
+        "Let us keep the glaze room open until seven.\n\n",
+        "**Devon**\n",
+        "*00:04*\n",
+        "Seven works for me, I can lock the studio after.\n",
+    );
+    let macwhisper_three_turn = concat!(
+        "# Studio sync\n\n",
+        "**Sonia**\n",
+        "*01:12*\n",
+        "Did the stoneware clay arrive?\n\n",
+        "**Devon**\n",
+        "*01:28*\n",
+        "Two pallets are sitting by the loading door.\n\n",
+        "**Sonia**\n",
+        "*01:45*\n",
+        "I will wheel them into the damp room.\n",
+    );
+    let bare_clock_turns = concat!(
+        "Meeting: Greenhouse Roof Kickoff - 2026-10-05 10:00 AM\n\n",
+        "00:00:01 Speaker 1 (Sonia): Good morning everyone, thanks for joining.\n",
+        "00:00:15 Speaker 2 (Devon): Morning Sonia, glad to get started.\n",
+        "00:00:24 Speaker 1 (Sonia): Let us walk through the timber schedule first.\n",
+    );
+    let single_speaker_whisper = concat!(
+        "# Transcription: Orchard Episode 19\n\n",
+        "Source: https://example.invalid/ep19\n",
+        "Media title: Orchard Episode 19 - Testing the frost alarm\n",
+        "Upload date: 20260501\n",
+        "Transcription model: mlx-whisper/whisper-small\n",
+        "Generated at: 2026-06-01T12:00:00Z\n\n",
+        "Machine-generated transcript. Review speaker labels and wording before\n",
+        "using this as quote-grade source material.\n\n",
+        "**[00:00] Sonia Cho:** Welcome back to the orchard engineering log.\n\n",
+        "**[00:08] Sonia Cho:** Today we test the copper thermometer along the lower slope.\n\n",
+        "**[00:17] Sonia Cho:** The relay tripped cleanly as soon as the breeze dropped below zero.\n",
+    );
+    let timed_narration_inline = concat!(
+        "# The Cedar Greenhouse Reopens — Transcript (2026-11-12)\n\n",
+        "https://example.invalid/e/12 · Listen: https://example.invalid/listen\n\n",
+        "---\n\n",
+        "[00:00:00] The cedar greenhouse on Ridge Road opened its glass roof after three winters under canvas tarps, and volunteers replaced every rusted latch.\n\n",
+        "Last autumn the park trust hired a carpenter to rebuild the transom frames and seal the panes that cracked during an ice storm.\n\n",
+        "The timber frame spans forty feet and the [00:01:00] municipal water line still waits on a pressure valve inspection that the clerk forgot to renew in time for spring.\n\n",
+        "Meanwhile the head botanist [00:02:00] carries watering cans from the west rainwater cistern whenever dry afternoon winds sweep across the fern beds.\n",
+    );
+    let timed_narration_paragraphs = concat!(
+        "# Ridge Road Dispatch — Transcript\n\n",
+        "[00:00:00] The cedar greenhouse on Ridge Road opened its glass roof after three winters under canvas tarps, and volunteers spent all morning cleaning the overhead vents.\n\n",
+        "[00:01:00] The municipal water line still waits on a pressure valve inspection that the county clerk forgot to renew before spring, and the office warned that review takes six weeks.\n\n",
+        "[00:02:00] Meanwhile the head botanist carries watering cans from the west rainwater cistern whenever dry afternoon winds sweep across the raised fern beds.\n",
+    );
+
+    for (name, text, rule) in [
+        ("otter-colon.txt", otter_colon_title, "stacked_speaker_time"),
+        ("whisperx.txt", whisperx_range, "bracketed_speaker"),
+        ("dated-bold.md", dated_bold, "dated_bold_speaker"),
+        ("standup-two.md", macwhisper_two_turn, "macwhisper_stacked"),
+        (
+            "standup-three.md",
+            macwhisper_three_turn,
+            "macwhisper_stacked",
+        ),
+        ("bare-clock.txt", bare_clock_turns, "clock_speaker"),
+        (
+            "whisper-solo.md",
+            single_speaker_whisper,
+            "meeting_export_turns",
+        ),
+        (
+            "timed-inline.md",
+            timed_narration_inline,
+            "timed_transcript_narration",
+        ),
+        (
+            "timed-blocks.md",
+            timed_narration_paragraphs,
+            "timed_transcript_narration",
+        ),
     ] {
         expected(name, text, Kind::Transcripts, &[rule]);
     }
