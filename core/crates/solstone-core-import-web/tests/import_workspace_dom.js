@@ -4854,6 +4854,55 @@ function runAlreadyImportedCopyNamesOnlyALiveImport() {
   cases += 1;
 }
 
+function runPhotoFallbackNoticeRendersOnLeadsCard() {
+  const ImportDetail = loadImportDetailModule();
+  const base = {
+    status: 'success',
+    import_json: {
+      source: 'image',
+      original_filename: 'clip.png',
+      file_size: 4096,
+      mime_type: 'image/png',
+      upload_datetime: '2026-11-19T13:30:00',
+      detected_timestamp: '20261119_133000',
+      user_timestamp: '20261119_133000',
+      timestamp_detection_method: 'upload_fallback',
+    },
+    imported_json: {
+      source_display: 'Images',
+      target_day: '20261119',
+      entries_written: 1,
+      total_files_created: 2,
+    },
+    finished_at: '2026-11-19T13:30:01',
+    duration_ms: 1000,
+  };
+  const fallbackHtml = ImportDetail.renderDetail(base);
+  assert.ok(
+    fallbackHtml.includes('data-photo-date-source="upload_fallback"'),
+    'upload-fallback photo surfaces its fallback notice on the overview leads card'
+  );
+
+  const captureHtml = ImportDetail.renderDetail({
+    ...base,
+    import_json: { ...base.import_json, timestamp_detection_method: 'deterministic' },
+  });
+  assert.ok(
+    !captureHtml.includes('data-photo-date-source="upload_fallback"'),
+    'deterministic capture-dated photo does not render the upload-fallback notice'
+  );
+
+  const ownerHtml = ImportDetail.renderDetail({
+    ...base,
+    import_json: { ...base.import_json, owner_timestamp: '20261112_083000' },
+  });
+  assert.ok(
+    !ownerHtml.includes('data-photo-date-source="upload_fallback"'),
+    'owner-dated photo does not render the upload-fallback notice'
+  );
+  cases += 1;
+}
+
 Promise.resolve()
   .then(runArchivePreviewUsesMemberMetrics)
   .then(runArchiveCountsKeepSavedAndProcessedDistinct)
@@ -4943,6 +4992,7 @@ Promise.resolve()
   .then(runImportSetRefusalsStaySelected)
   .then(runAlreadyImportedCopyNamesOnlyALiveImport)
   .then(runAppleImportEndsInItsOwnWords)
+  .then(runPhotoFallbackNoticeRendersOnLeadsCard)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);

@@ -2317,6 +2317,16 @@
       };
 
       const dataState = data.data_state || {};
+      const isStandalonePhoto = isPhotoSegment(selectedSegment)
+        && !dataState.audio
+        && !dataState.screen
+        && !dataState.browser
+        && (data.signals?.events || []).length === 0
+        && Object.keys(data.md_files || {}).length === 0;
+      if (isStandalonePhoto) {
+        tabsContainer.classList.remove('visible');
+        return;
+      }
       addTab('transcript', 'transcript');
       // A Granola meeting brings words, not sound: there is no audio to show.
       if (dataState.audio && !data.granola) {
@@ -2368,7 +2378,9 @@
         pane.setAttribute('role', 'tabpanel');
         pane.setAttribute('tabindex', '0');
         pane.id = 'tr-tabpanel-' + tabId;
-        pane.setAttribute('aria-labelledby', 'tr-tab-' + tabId);
+        if (tabsContainer.querySelector(`#tr-tab-${tabId}`)) {
+          pane.setAttribute('aria-labelledby', 'tr-tab-' + tabId);
+        }
         panel.appendChild(pane);
         tabPanes[tabId] = pane;
 
@@ -4831,6 +4843,21 @@
         }
         if (range.end > timelineEnd) {
           range = { start: timelineEnd - DEFAULT_LEN, end: timelineEnd };
+        }
+        const daySegs = data.segments || [];
+        if (day !== todayStr && daySegs.length > 0) {
+          const hasInRange = daySegs.some(seg => {
+            const s = parseTime(seg.start);
+            const e = parseTime(seg.end);
+            return s === e ? (s >= range.start && s < range.end) : (e > range.start && s < range.end);
+          });
+          if (!hasInRange) {
+            const firstMin = parseTime(daySegs[0].start);
+            let start = snap(firstMin - DEFAULT_LEN / 2);
+            if (start < timelineStart) start = timelineStart;
+            if (start + DEFAULT_LEN > timelineEnd) start = Math.max(timelineStart, timelineEnd - DEFAULT_LEN);
+            range = { start, end: start + DEFAULT_LEN };
+          }
         }
 
         // Build the grid and render timeline

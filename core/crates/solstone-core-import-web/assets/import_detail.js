@@ -49,6 +49,7 @@
     date_source_photo: 'from photo',
     date_source_fallback: 'import time (no date in photo)',
     date_source_owner: 'chosen by you',
+    photo_fallback_notice: 'no date in photo · placed at import time',
     facets: 'facets',
     setting: 'setting',
     status: 'status',
@@ -461,8 +462,12 @@
     const untimed = data?.untimed_transcript === true
       ? `<p class="import-leads-notice">${escapeHtml(strings.untimed_notice)} <a href="${escapeHtml(UNTIMED_TRANSCRIPT_SUPPORT_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(strings.untimed_ask)}</a>.</p>`
       : '';
+    const importJson = asObject(data?.import_json) || {};
+    const photoFallback = photoDateSourceLabel(importJson) === strings.date_source_fallback
+      ? `<p class="import-leads-notice" data-photo-date-source="upload_fallback">${escapeHtml(strings.photo_fallback_notice)}</p>`
+      : '';
 
-    return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${untimed}${links}</section>`;
+    return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${untimed}${photoFallback}${links}</section>`;
   }
 
   function photoDateSourceLabel(importJson) {

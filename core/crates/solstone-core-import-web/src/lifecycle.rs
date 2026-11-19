@@ -617,16 +617,23 @@ fn recorded_source_timestamp(metadata: &ImportMetadata) -> Value {
 /// An explicit choice is independent of the collision-safe staging directory.
 pub(crate) fn owner_timestamp_choice(data: &Value, metadata: &ImportMetadata) -> Option<String> {
     let timestamp = data.get("timestamp")?.as_str()?;
-    let source = recorded_source_timestamp(metadata);
-    (data
+    if data
         .get("timestamp_override")
         .and_then(Value::as_bool)
         .unwrap_or(false)
-        || source
-            .as_str()
-            .filter(|source| !source.is_empty())
-            .is_some_and(|source| source != timestamp))
-    .then(|| timestamp.to_owned())
+    {
+        return Some(timestamp.to_owned());
+    }
+    let directory_id = recorded_directory_id(metadata);
+    if directory_id.as_str() == Some(timestamp) {
+        return None;
+    }
+    let source = recorded_source_timestamp(metadata);
+    source
+        .as_str()
+        .filter(|source| !source.is_empty())
+        .is_some_and(|source| source != timestamp)
+        .then(|| timestamp.to_owned())
 }
 
 fn resolved_summary(
@@ -2995,6 +3002,19 @@ mod tests {
         let cmd = super::command("photo.jpg", &choice, &chosen, false);
         assert_eq!(cmd[4], "20261012_000000");
         assert!(!cmd.iter().any(|arg| arg == "--auto"));
+    }
+
+    #[test]
+    fn echoing_a_collision_bumped_staging_id_is_not_an_owner_override() {
+        let metadata = json!({
+            "import_id": "20261112_083001",
+            "user_timestamp": "20261112_083001",
+            "source_timestamp": "20261112_083000",
+            "timestamp_detection_method": "deterministic",
+        });
+        let metadata = metadata.as_object().unwrap();
+        let data = json!({"timestamp": "20261112_083001"});
+        assert_eq!(super::owner_timestamp_choice(&data, metadata), None);
     }
 
     #[test]

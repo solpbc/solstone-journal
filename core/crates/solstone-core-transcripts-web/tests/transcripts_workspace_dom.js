@@ -4069,6 +4069,7 @@ test('imported photo: renders picture, separates owner caption from description,
 
   const entry = env.doc.querySelector('#trPanel .tr-entry-photo');
   assert.ok(entry, 'photo entry renders inside the transcript panel');
+  assert.ok(!env.doc.getElementById('trTabs').classList.contains('visible'), 'standalone photo hides redundant photos tab');
   const openBtn = entry.querySelector('button.tr-entry-shot-open');
   assert.ok(openBtn, 'photo is wrapped in a keyboard-activatable button');
   const img = openBtn.querySelector('img.tr-entry-shot');
@@ -4139,4 +4140,25 @@ test('imported photo: marks upload-time fallback and missing thinking while stil
   const noProc = entry.querySelector('[data-photo-state="no_processing"]');
   assert.ok(noProc, 'missing thinking state is rendered');
   assert.ok(noProc.querySelector('a[href="/app/thinking/"]'), 'links to thinking setup');
+});
+
+test('imported photo: past day with only a morning photo recenters range onto the photo', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      {
+        key: '083000_0',
+        stream: 'import.image',
+        start: '08:30',
+        end: '08:30',
+        types: ['image'],
+        data_state: { image: 'analyzed' },
+      },
+    ],
+  );
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pills.length, 1, 'sparse past day recenters onto its morning photo pill');
+  assert.ok(pills[0].classList.contains('tr-zoom-pill-photo'));
 });
