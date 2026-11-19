@@ -4,10 +4,11 @@
 //! Join-the-next-run request coalescing middleware.
 //!
 //! - GET requests share a run only when path, raw query (`None` distinct from empty,
-//!   order-sensitive), `AccessBasis`, and the full value sequences of `If-None-Match`,
-//!   `If-Modified-Since`, and `Range` match. No `AccessBasis` means the request runs
-//!   alone and is never stored under a missing-extension key. HEAD and every non-GET
-//!   run alone, including two HEADs with each other. `Accept-Encoding` is not a key.
+//!   order-sensitive), `AccessBasis`, resolved response locale, and the full value
+//!   sequences of `If-None-Match`, `If-Modified-Since`, and `Range` match. No
+//!   `AccessBasis` means the request runs alone and is never stored under a
+//!   missing-extension key. HEAD and every non-GET run alone, including two HEADs
+//!   with each other. `Accept-Encoding` is not a key.
 //! - Join the next run only. A request that arrives while a run is in flight does not
 //!   take that run's result. The pending set is taken under the mutex before the next
 //!   handler runs, so an arrival racing the start cannot slip into the run that just
@@ -111,6 +112,10 @@ impl<S> Layer<S> for CoalesceLayer {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CoalesceScope(pub std::path::PathBuf);
 
+/// The packaged locale selected for presentation in this request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ResponseLocale(pub &'static str);
+
 #[derive(Clone)]
 pub struct CoalesceService<S> {
     inner: S,
@@ -122,6 +127,7 @@ struct CoalesceKey {
     path: String,
     query: Option<String>,
     basis: AccessBasis,
+    locale: Option<ResponseLocale>,
     if_none_match: Vec<Vec<u8>>,
     if_modified_since: Vec<Vec<u8>>,
     range: Vec<Vec<u8>>,
@@ -133,6 +139,7 @@ impl Hash for CoalesceKey {
         self.path.hash(state);
         self.query.hash(state);
         hash_basis(&self.basis, state);
+        self.locale.hash(state);
         self.if_none_match.hash(state);
         self.if_modified_since.hash(state);
         self.range.hash(state);
@@ -412,6 +419,7 @@ where
             path,
             query,
             basis,
+            locale: request.extensions().get::<ResponseLocale>().copied(),
             if_none_match,
             if_modified_since,
             range,
@@ -1594,6 +1602,63 @@ mod tests {
         assert_eq!(
             head2.headers()[SERVER_TIMING],
             "coalesced;desc=\"immediate\""
+        );
+    }
+
+    #[tokio::test]
+    async fn coalescing_keeps_resolved_locales_in_distinct_cohorts() {
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(Notify::new());
+        let app = axum::Router::new().route(
+            "/test/locale",
+            get({
+                let release = release.clone();
+                move |axum::Extension(ResponseLocale(locale))| {
+                    let entered_tx = entered_tx.clone();
+                    let release = release.clone();
+                    async move {
+                        if locale == "en-US" {
+                            let waiting = release.notified();
+                            entered_tx.send(()).unwrap();
+                            waiting.await;
+                        }
+                        locale
+                    }
+                }
+            })
+            .layer(layer()),
+        );
+        let (registered_tx, mut registered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let request = |locale| {
+            let registered_tx = registered_tx.clone();
+            Request::get("/test/locale")
+                .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
+                .extension(AccessBasis::Localhost)
+                .extension(ResponseLocale(locale))
+                .extension(JoinNotice::new(move |event| {
+                    if let JoinEvent::Registered(disposition) = event {
+                        registered_tx.send(disposition).unwrap();
+                    }
+                }))
+                .body(Body::empty())
+                .unwrap()
+        };
+        let english = tokio::spawn(app.clone().oneshot(request("en-US")));
+        assert_eq!(registered_rx.recv().await, Some(Disposition::Immediate));
+        entered_rx.recv().await.unwrap();
+        let pseudo = tokio::spawn(app.oneshot(request("en-XA")));
+        let disposition = registered_rx.recv().await;
+        release.notify_one();
+        assert_eq!(disposition, Some(Disposition::Immediate));
+        let english = english.await.unwrap().unwrap();
+        let pseudo = pseudo.await.unwrap().unwrap();
+        assert_eq!(
+            to_bytes(english.into_body(), usize::MAX).await.unwrap(),
+            "en-US"
+        );
+        assert_eq!(
+            to_bytes(pseudo.into_body(), usize::MAX).await.unwrap(),
+            "en-XA"
         );
     }
 
