@@ -312,7 +312,10 @@ fn text_publication_keeps_inference_outside_segment_and_refuses_deleted_or_repla
         }
     }
     for mutation in ["unchanged", "deleted", "replaced"] {
-        let (_temporary, source, day) = setup("notes.txt", "synthetic transcript");
+        let (_temporary, source, day) = setup(
+            "talk.vtt",
+            "WEBVTT\n\n00:01.000 --> 00:02.000\nThe curtain moves.\n",
+        );
         let segment = day.join("import.text/120000_300");
         let outcome = run(
             &source,
@@ -490,54 +493,80 @@ fn a_granola_transcript_with_clock_times_lands_at_those_times_with_no_model() {
 }
 
 #[test]
-fn an_untimed_transcript_is_one_segment_at_its_start_with_no_time_invented() {
-    let untimed = "Weekly sync notes\n\nAna: Morning, everyone.\nBen: Morning.\n\n[00:12] a time in a layout this does not read\n## 00:00:05\nnobody speaks under this heading\n";
-    let (_temporary, source, day) = setup("notes.txt", untimed);
+fn an_unmarked_note_is_kept_complete_at_the_import_start() {
+    let source_text = "# Workshop notes\n\nSet the scale to zero.\n\nNext: check the battery.\n";
+    let (_temporary, source, day) = setup("notes.txt", source_text);
     let wire = RecordingWire::always(meddling);
     let work = run_work(&source, &day, "09:15:30", &wire);
-    assert!(work.untimed);
-    let created = work.created;
-    assert_eq!(created.len(), 1);
-    assert_eq!(created[0].day, "20260311");
-    assert_eq!(created[0].segment, "091530_300", "no duration is estimated");
-    let written = rows(&created[0].path);
-    let lines: Vec<&str> = untimed.lines().filter(|line| !line.is_empty()).collect();
-    assert_eq!(written.len(), lines.len() + 1);
-    for (row, line) in written[1..].iter().zip(lines) {
-        assert_eq!(row["start"], "00:00:00");
-        assert_eq!(row["text"], line);
-        assert_eq!(row["source"], "import");
-        assert!(row["source_ms"].is_i64());
-    }
-    assert_eq!(written[0]["topics"], "roadmap, imports");
-    assert_eq!(
-        written[0]["untimed"], true,
-        "the header says no entry's time was read from the file"
-    );
+    assert!(!work.untimed);
+    assert_eq!(work.created.len(), 1);
+    let item = &work.created[0];
+    assert_eq!(item.day, "20260311");
+    assert_eq!(item.segment, "091530_300");
+    assert_eq!(item.path.file_name().unwrap(), "note_transcript.md");
+    assert_eq!(fs::read_to_string(&item.path).unwrap(), source_text);
     assert_eq!(wire.requests.borrow().len(), 1);
+    let verdict: Value =
+        serde_json::from_slice(&fs::read(item.path.with_file_name("import_kind.json")).unwrap())
+            .unwrap();
+    assert_eq!(verdict["kind"], "notes");
+    assert_eq!(verdict["reasons"], json!(["note_default"]));
+    assert_eq!(verdict["ruleset_version"], 1);
+    assert_eq!(verdict["topics"], "roadmap, imports");
 }
 
 #[test]
-fn an_unrecognized_transcript_stays_untimed_with_no_model_at_all() {
-    let (_temporary, source, day) = setup("t.txt", "one\ntwo\nthree");
+fn a_recognized_subtitle_is_kept_whole_with_no_times_invented() {
+    let text = "WEBVTT\n\n00:01.000 --> 00:03.000\nA bell rings.\n";
+    let (_temporary, source, day) = setup("caption.vtt", text);
     let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].segment, "120000_300");
-    assert_eq!(rows(&created[0].path)[0]["untimed"], true);
-    let texts: Vec<_> = rows(&created[0].path)[1..]
-        .iter()
-        .map(|row| (row["start"].clone(), row["text"].clone()))
-        .collect();
+    let saved = rows(&created[0].path);
+    assert_eq!(saved[0]["untimed"], true);
     assert_eq!(
-        texts,
-        [
-            (json!("00:00:00"), json!("one")),
-            (json!("00:00:00"), json!("two")),
-            (json!("00:00:00"), json!("three"))
-        ]
+        saved[1..]
+            .iter()
+            .map(|row| row["text"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        text.lines()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
     );
+    assert!(saved[1..].iter().all(|row| row.get("speaker").is_none()));
 }
 
+#[test]
+fn a_large_untimed_transcript_reads_to_the_end_through_pagination() {
+    use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
+    use solstone_core_transcripts::read_segment_transcript_page;
+    let text = format!(
+        "WEBVTT\n\n00:01.000 --> 00:02.000\n{}LASTCUE\n",
+        "long cue ".repeat(9_000)
+    );
+    let (_temporary, source, day) = setup("caption.vtt", &text);
+    let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
+    let journal = day.parent().unwrap().parent().unwrap();
+    let segments = iter_segments(journal, PathOrDay::Day(&created[0].day)).unwrap();
+    let segment = segments
+        .iter()
+        .find(|segment| segment.path() == created[0].path.parent().unwrap())
+        .unwrap();
+    let mut cursor = None;
+    let mut found = false;
+    loop {
+        let page = read_segment_transcript_page(segment, cursor.as_ref(), None, None).unwrap();
+        found |= page
+            .entries
+            .iter()
+            .any(|entry| entry.text.contains("LASTCUE"));
+        cursor = page.next;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert!(found);
+}
 #[test]
 fn an_empty_transcript_writes_nothing() {
     let (_temporary, source, day) = setup("t.txt", "\n  \n");
@@ -552,7 +581,7 @@ fn an_empty_transcript_writes_nothing() {
 
 #[test]
 fn header_keeps_caller_and_model_setting_slots_distinct() {
-    let (_temporary, source, day) = setup("t.txt", "hello");
+    let (_temporary, source, day) = setup("t.txt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello.\n");
     let wire = RecordingWire::new(vec![context("planning", "office")]);
     let outcome = process_transcript_with_wire(
         &source,
@@ -581,7 +610,7 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
 
 #[test]
 fn raw_back_reference_is_destination_independent() {
-    let (temporary, source, day) = setup("t.txt", "one\ntwo\nthree");
+    let (temporary, source, day) = setup("t.txt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello.\n");
     let other_day = temporary.path().join("elsewhere/day");
     let journal = day.parent().unwrap().parent().unwrap().to_path_buf();
     for (day_dir, stream, import_id, root) in [
@@ -638,7 +667,7 @@ fn unsupported_extension_is_rejected() {
 
 #[test]
 fn marker_failure_is_typed_and_retains_the_written_segment() {
-    let (_temporary, source, day) = setup("t.txt", "one");
+    let (_temporary, source, day) = setup("t.txt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello.\n");
     let marker = day.join("health/stream.updated");
     fs::create_dir_all(&marker).unwrap();
     let outcome = run(&source, &day, "12:00:00", &RecordingWire::always(no_engine));
@@ -673,7 +702,7 @@ fn collisions_choose_and_report_a_different_segment_key() {
 
 #[test]
 fn a_transcript_lands_at_a_key_the_owner_removed_and_steps_past_a_removal_in_progress() {
-    let (_temporary, source, day) = setup("t.txt", "one");
+    let (_temporary, source, day) = setup("t.txt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello.\n");
     let removed = day.join("import.text/120000_300");
     fs::create_dir_all(&removed).unwrap();
     fs::write(removed.join("tombstone.json"), b"{}").unwrap();
@@ -682,7 +711,7 @@ fn a_transcript_lands_at_a_key_the_owner_removed_and_steps_past_a_removal_in_pro
     assert!(!removed.join("tombstone.json").exists());
     assert!(removed.join("conversation_transcript.jsonl").is_file());
 
-    let (_temporary, source, day) = setup("t.txt", "one");
+    let (_temporary, source, day) = setup("t.txt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello.\n");
     let staged = day.join("import.text/.removing_120000_300");
     fs::create_dir_all(&staged).unwrap();
     let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(no_engine));
@@ -1240,13 +1269,8 @@ fn out_of_day_clocks_do_not_become_a_midnight_crossing() {
         let (_temporary, source, day) = setup("invalid-clock.txt", &text);
         let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(no_engine));
         assert_eq!(created.len(), 1);
-        let saved = rows(&created[0].path);
-        assert_eq!(saved[0]["untimed"], true);
-        assert!(saved.iter().any(|row| {
-            row["text"]
-                .as_str()
-                .is_some_and(|value| value.contains(clock))
-        }));
+        assert_eq!(created[0].path.file_name().unwrap(), "note_transcript.md");
+        assert_eq!(fs::read_to_string(&created[0].path).unwrap(), text);
     }
 }
 

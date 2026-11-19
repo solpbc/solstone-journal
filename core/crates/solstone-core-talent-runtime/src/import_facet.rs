@@ -5,6 +5,7 @@
 //! only for that facet. The importer refuses a facet that is not enabled, so what
 //! a transcript header names here was the owner's explicit choice.
 
+use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
@@ -18,10 +19,19 @@ const FACET_LIMIT: &str = "/properties/facets/maxItems";
 /// The facet this segment's transcripts name, where all of them agree on one that is
 /// still declared. A facet deleted or renamed since the import names nothing, so the
 /// segment routes like any other instead of failing every reprocess.
-pub(crate) fn chosen(sources: &[Option<EntrySource>], journal: &Path) -> Option<String> {
+pub(crate) fn chosen(
+    sources: &[Option<EntrySource>],
+    journal: &Path,
+    composed: &Map<String, Value>,
+) -> Option<String> {
     let mut named = sources.iter().flatten().filter_map(header_facet);
-    let facet = named.next()?;
-    if named.any(|other| other != facet) {
+    let markdown_facet = markdown_import_facet(journal, composed);
+    let facet = named.next().or(markdown_facet.as_deref())?;
+    if named.any(|other| other != facet)
+        || markdown_facet
+            .as_deref()
+            .is_some_and(|other| other != facet)
+    {
         return None;
     }
     let inventory = observe_declared_facet_inventory(journal).ok()?;
@@ -31,6 +41,29 @@ pub(crate) fn chosen(sources: &[Option<EntrySource>], journal: &Path) -> Option<
         .chain(&inventory.muted)
         .any(|declared| declared == facet)
         .then(|| facet.to_owned())
+}
+
+/// The text importer stores a note or document's chosen facet beside its Markdown,
+/// so the owner can file either under a facet without altering their text.
+fn markdown_import_facet(journal: &Path, composed: &Map<String, Value>) -> Option<String> {
+    let day = composed.get("day")?.as_str()?;
+    let key = composed.get("segment")?.as_str()?;
+    let stream = composed.get("stream")?.as_str()?;
+    if stream != "import.text" {
+        return None;
+    }
+    let directory = solstone_core_segment::SegmentDir::resolve(journal, day, key, stream).ok()?;
+    let path = directory
+        .path()
+        .join(solstone_core_format::content::IMPORT_KIND_FILENAME);
+    let record: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    if !matches!(record["kind"].as_str(), Some("notes" | "documents")) {
+        return None;
+    }
+    record["facet"]
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 /// Text imports write `imported.facet`; an audio import's event metadata reaches the

@@ -59,6 +59,9 @@ pub use talent_projections::{
     ConsumedOriginal, TalentTextProjection, iter_talent_text_projections, talent_projection_map,
 };
 
+/// Private import provenance. This file is not a content input.
+pub const IMPORT_KIND_FILENAME: &str = "import_kind.json";
+
 /// Optional tmux capture metadata, retained on disk but not yet used by talents.
 pub const TMUX_PANE_CAPTURE_FIELDS: [&str; 5] = [
     "cursor_x",
@@ -350,6 +353,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         segment: None,
     },
     FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/screenshot_transcript.md",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        kind: KindAssignment::Settled(Kind::Screen),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/image_transcript.md",
         root: PatternRoot::DayRooted,
         format: FileFormat::Content(Family::Markdown),
@@ -618,6 +636,36 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         kind: KindAssignment::Settled(Kind::Notes),
         unit: ContentUnit::Record,
         offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        segment: None,
+    },
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.text/*/document_transcript.md",
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        kind: KindAssignment::Settled(Kind::Documents),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        segment: None,
+    },
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.text/*/note_transcript.md",
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        kind: KindAssignment::Settled(Kind::Notes),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
         condition: FileCondition::Path,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Admitted {
@@ -1120,6 +1168,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         segment: Some(SegmentRule::new(OfferedTo::DASHBOARD)),
     },
     FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/original.screenshot.*",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Original,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::Settled(Kind::Screen),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/original.*",
         root: PatternRoot::DayRooted,
         format: FileFormat::Original,
@@ -1150,6 +1210,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         classification: ContentResolution::Unrecognized,
         disposition: IndexDisposition::Excluded,
         kind: KindAssignment::Settled(Kind::Documents),
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/import.*/*/import_kind.json",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::NotContent,
         unit: ContentUnit::Record,
         offered_to: OfferedTo::NONE,
         condition: FileCondition::Path,

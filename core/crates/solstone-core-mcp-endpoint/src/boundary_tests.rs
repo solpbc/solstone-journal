@@ -195,6 +195,27 @@ fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
             true,
             true,
         ),
+        (
+            "20260308/import.text/140000_300/note_transcript.md",
+            "manualnoteneedle",
+            "notes",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.text/150000_300/document_transcript.md",
+            "manualdocumentneedle",
+            "documents",
+            true,
+            true,
+        ),
+        (
+            "20260308/import.image/160000_300/screenshot_transcript.md",
+            "manualscreenshotneedle",
+            "screen_text",
+            true,
+            true,
+        ),
         ("20260308/location.md", "placeneedle", "places", false, true),
         (
             "20260914/default/090000_300/talents/screen.md",
@@ -334,7 +355,8 @@ fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
             assert_eq!(
                 (segment_read, search_read, fetch_read),
                 (
-                    direct && words.contains(&word),
+                    // Screen-only connections retain the existing search/fetch tool list.
+                    direct && words.contains(&word) && grant != "screen-only",
                     indexed && words.contains(&word),
                     indexed && words.contains(&word)
                 ),

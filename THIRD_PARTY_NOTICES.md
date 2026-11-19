@@ -33,6 +33,16 @@ Source:
 
 License notice: BSD 3-Clause License (BSD-3-Clause).
 
+## import format recognition
+
+Import format recognition uses [file-format](https://github.com/mmalecot/file-format)
+(MIT or Apache-2.0) and [kamadak-exif](https://github.com/kamadak/exif-rs)
+(BSD-2-Clause). The WhatsApp text matchers follow the export conventions
+documented by [whatsapp-chat-parser](https://github.com/Pustur/whatsapp-chat-parser)
+(MIT). The AOSP screenshot naming convention comes from SystemUI's
+[ImageExporter](https://github.com/aosp-mirror/platform_frameworks_base/blob/main/packages/SystemUI/src/com/android/systemui/screenshot/ImageExporter.java)
+(Apache-2.0). The import tests use newly written synthetic files.
+
 ## bundled model weights
 
 | Bundled file | Upstream model | Source artifact | License | SHA-256 |
