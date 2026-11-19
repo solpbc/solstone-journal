@@ -285,7 +285,8 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
             "what_happened",
             target.clone(),
             json!({
-                "type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 600}},
+                "type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 600,
+                    "description": "what happened, told to the owner as the journal tells it: you for the owner, and everyone else by name, yourself included. never write I or me for yourself: the journal reads I as the owner."}},
                 "required": ["text"], "additionalProperties": false
             }),
         ),
