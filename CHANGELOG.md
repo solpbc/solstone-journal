@@ -8,33 +8,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- thinking has a new thoughts per hour tab. it shows how many thoughts your journal finishes in a typical hour of thinking over the last 24 hours, 7 days or 30 days, how much of it was catching up on older days, and how much didn't finish. setup shows that number for the last 24 hours and links to it.
-- for demos, add `#today=2025-10-22T15:30` to your journal's home page address, using your journal's time zone. the today summary, weekly reflection, and connections use that time, and yesterday shows the previous day's saved summary.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- new audio, PDF, chat, and Evernote imports keep what your journal reads from them. the import screen and Plaud setup now offer a **keep originals** choice. photos you import directly are kept once.
-
-- your journal now sorts the text files you import into notes, documents, and transcripts. agents need screen text access to read the descriptions of images your journal recognizes as screenshots.
-- home can open sooner on a slow connection the first time it loads, because its files now arrive smaller.
-- on home, the time in each facet now shows hours and minutes, like 3h 46m, and "measured for 3 of 5 activities" appears only when some activities have no time measured.
-
 ### Fixed
 
-- security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build ran a linux kernel with a flaw in how it handles some incoming connection requests (CVE-2026-98432): anyone who could reach one of its machines could in principle have run their own code there and reached what it was processing. the published exploit relies on a network feature the service doesn't use. the previous build also let a request from any journal using confidential processing make the machine open a file on itself or fetch from its own internal services, by asking it to load an image or audio from a web link or file path instead of the request carrying it (CVE-2026-15974). the service keeps no record that could show whether either flaw was used. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another. if you use confidential processing, install this update.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- a Strava or Apple Health export you upload is no longer included in your backups, even before its import starts.
-- photos of people could be missing in large journals after overnight processing. your journal now checks fewer activities to recover those photos.
-- the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
-- a facet's color now updates when you choose a swatch and press "apply color".
-- when a summary on home was saved without a record of what it covers, the line under it now reads "what this summary covers wasn't saved with it."
-- on the map, a link that wraps onto a second line no longer runs into the line below it.
-- in thinking's runs tab, the dates under the day picker now say what they are: days thinking hasn't caught up with yet. they're also colored like thinking's other links, in light and dark mode.
-- when your thinking provider refuses a request because it can't be used right now, your journal stops asking it about the rest of a day's backlog. your journal tries again every few minutes and picks the rest of the day back up once the provider answers.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -65,7 +46,35 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
-- on the settings page, changing the priority of an activity a facet starts with, such as meeting or email, now saves. before, it was refused with "update failed" and went back to normal. on an iphone, when a priority change can't be saved, its menu no longer opens again by itself.
+- on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+
+## [2.0.85] - 2026-11-19
+
+### Added
+
+- thinking has a new thoughts per hour tab. it shows how many thoughts your journal finishes in a typical hour of thinking over the last 24 hours, 7 days or 30 days, how much of it was catching up on older days, and how much didn't finish. setup shows that number for the last 24 hours and links to it.
+
+### Changed
+
+- notes, documents, calendar, places and photos are now their own choices in what a connected agent may see. before, transcripts access let an agent read all of these. a new connection starts with them off, and an agent you connected before this update can't read them until you turn them on under what it may see on the agents page. to read the description of an image your journal recognizes as a screenshot, an agent needs screen text instead of photos.
+- your journal keeps what it reads from new audio, PDF, chat, and Evernote imports, and no longer keeps its own copy of the file you imported. to keep that copy, turn on **keep originals** on the import screen or under Plaud on the settings page. your journal still keeps one copy of each photo you import directly.
+- your journal now sorts the text files you import into notes, documents, and transcripts.
+- home can open sooner on a slow connection the first time it loads, because its files now arrive smaller.
+- on home, the time in each facet now shows hours and minutes, like 3h 46m, and "measured for 3 of 5 activities" appears only when some activities have no time measured.
+- the `#today=2025-10-22T15:30` demo time on your journal's home page now also applies to the weekly reflection and connections.
+
+### Fixed
+
+- security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build ran a linux kernel with a flaw in how it handles some incoming connection requests (CVE-2026-98432): anyone who could reach one of its machines could in principle have run their own code there and reached what it was processing. the published exploit relies on a network feature the service doesn't use. the previous build also let a request from any journal using confidential processing make the machine open a file on itself or fetch from its own internal services, by asking it to load an image or audio from a web link or file path instead of the request carrying it (CVE-2026-15974). the service keeps no record that could show whether either flaw was used. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another. if you use confidential processing, install this update.
+- a Strava or Apple Health export you upload is no longer included in your backups, even before its import starts.
+- photos of people could be missing in large journals after overnight processing. your journal now checks only the activities with faces in them when it recovers those photos.
+- the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
+- a facet's color now updates when you choose a swatch and press "apply color".
+- when a summary on home was saved without a record of what it covers, the line under it now reads "what this summary covers wasn't saved with it."
+- on the map, a link that wraps onto a second line no longer runs into the line below it.
+- in thinking's runs tab, the dates under the day picker now say what they are: days thinking hasn't caught up with yet. they're also colored like thinking's other links, in light and dark mode.
+- when your thinking provider refuses a request because it can't be used right now, your journal stops asking it about the rest of a day's backlog. it tries that day again later, waiting longer each time the provider still refuses, and picks the rest of the day back up once the provider answers.
+- on the settings page, changing the priority of an activity a facet starts with, such as meetings or email, now saves. before, it was refused with "update failed" and the priority went back to "normal".
 - on the settings page, adding your own activity to a facet that has only the activities it starts with now keeps them, where before it dropped all but meetings, email and messaging. editing the description or instructions of an activity a facet starts with, or removing one, now saves too (meetings, email and messaging still can't be removed). before, those changes were refused with "update failed" or "remove failed".
 - when an agent you limited to some facets asks for an activity's sources and it may read none of them, your journal now tells it that it may not read them, and that asking again won't change that. before, it said a file couldn't be read and to try again later, so the agent would ask again for something it could never get. thanks @dvanduzer for the report (#415).
 
