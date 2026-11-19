@@ -83,12 +83,12 @@ fn spawned_ci_commands_drop_package_metadata_and_keep_build_configuration() {
 
 #[test]
 fn make_ci_never_executes_forbidden_interpreters() {
+    // The last six invocations are the two standalone crates' routine gates.
     assert_gate_never_executes_forbidden_interpreters(
         "ci",
         &[
-            "run", "metadata", "fmt", "run", "run", "clippy", "clippy", "clippy", "test", "test",
-            // Standalone lockfiles with routine gates run in their own lanes.
-            "fmt", "clippy", "test", "fmt", "clippy", "test",
+            "run", "metadata", "run", "fmt", "run", "run", "clippy", "clippy", "clippy", "test",
+            "test", "fmt", "clippy", "test", "fmt", "clippy", "test",
         ],
     );
 }

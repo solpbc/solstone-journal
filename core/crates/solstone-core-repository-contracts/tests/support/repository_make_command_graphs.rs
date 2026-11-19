@@ -60,7 +60,31 @@ fn write_forbidden_shim(path: &Path) {
 }
 
 fn write_recording_cargo_shim(path: &Path) {
-    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\nif [ -n \"${SOLSTONE_CI_CARGO_ENV_LOG:-}\" ]; then\n    printf '%s|%s|%s\\n' \"${CARGO_INCREMENTAL-unset}\" \"${CARGO_PROFILE_DEV_DEBUG-unset}\" \"${CARGO_TARGET_DIR-unset}\" >> \"$SOLSTONE_CI_CARGO_ENV_LOG\"\nfi\ncase \"$*\" in\n  *'--bin solstone-core-depict'*)\n    printf '%s\\n' '{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 1\n    ;;\n  *'--bin solstone-core-speakers-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-speaker-analyze-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\n  *'--bin solstone-core-vad-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\nesac\n";
+    let script = r#"#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$SOLSTONE_CI_CARGO_LOG"
+if [ -n "${SOLSTONE_CI_CARGO_ENV_LOG:-}" ]; then
+    printf '%s|%s|%s\n' "${CARGO_INCREMENTAL-unset}" "${CARGO_PROFILE_DEV_DEBUG-unset}" "${CARGO_TARGET_DIR-unset}" >> "$SOLSTONE_CI_CARGO_ENV_LOG"
+fi
+case "$*" in
+  run\ *'--manifest-path tools/i18n/Cargo.toml '*)
+    while [ "$1" != --out ]; do shift; done
+    mkdir -p "$2"
+    ;;
+  *'--bin solstone-core-depict'*)
+    printf '%s\n' '{"schema":"solstone-depict-error-v1","reason":"malformed-request"}' >&2
+    exit 1
+    ;;
+  *'--bin solstone-core-speakers-analyze'*)
+    printf '%s\n' '{"schema":"solstone-speaker-analyze-error-v1","reason":"malformed-request"}' >&2
+    exit 64
+    ;;
+  *'--bin solstone-core-vad-analyze'*)
+    printf '%s\n' '{"schema":"solstone-vad-error-v1","reason":"malformed-request"}' >&2
+    exit 64
+    ;;
+esac
+"#;
     fs::write(path, script).expect("write recording Cargo shim");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("make recording Cargo shim executable");
@@ -223,6 +247,7 @@ fn write_host_makefile(root: &Path, system: &str, arch: &str) {
     fs::create_dir_all(root.join("core")).expect("create fixture core directory");
     fs::write(root.join("core/Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write fixture Cargo manifest");
+    fs::create_dir_all(root.join("i18n/generated/window")).expect("create window catalog fixture");
     // The format check walks crate directories; give it one so the traversal
     // reaches Cargo instead of matching nothing.
     let fixture_crate = root.join("core/crates/fixture");

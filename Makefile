@@ -317,6 +317,7 @@ UV_OPTIONAL_GOALS := \
 	preflight install \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-standalone-lockfiles check-rust-screen-ocr-helper check-rust-i18n-catalog \
+	journal-window-catalog check-journal-window-catalog \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-journal-mcp-endpoint check-rust-embedded-speech \
 	check-rust-android check-rust-android-prepared \
