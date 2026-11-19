@@ -35,6 +35,11 @@ use tempfile::NamedTempFile;
 /// ends in an undecodable-source failure.
 const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 const IMPORT_STREAM: &str = "import.image";
+use sha2::{Digest, Sha256};
+use solstone_core_import::SourceHash;
+use solstone_core_import::triage::{self, Kind as ContentKind, Verdict};
+
+const SCREENSHOT_TRANSCRIPT: &str = "screenshot_transcript.md";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
 const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim, including URLs only when they are visible in the image. Return plain text, without Markdown links or image markup. Never invent URLs or placeholder destinations.";
 const VISION_CONTEXT: &str = "import.image.vision";
@@ -266,7 +271,7 @@ pub fn preview(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> ImportPreview {
-    let Ok((image, format, _, _, exif)) = read_image(path) else {
+    let Ok((image, format, _, _, exif, _)) = read_image(path, false) else {
         return degenerate_preview();
     };
     let Some((format, _)) = format_details(format) else {
@@ -306,7 +311,7 @@ pub fn preview_size(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<solstone_core_import::size::ImportSize, ImageImportError> {
-    let (_, format, _, _, exif) = read_image(path)?;
+    let (_, format, _, _, exif, _) = read_image(path, false)?;
     if format_details(format).is_none() {
         return Err(ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
@@ -339,7 +344,15 @@ pub fn preview_size(
         .extension()
         .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
         .unwrap_or_default();
-    let planned = allocate_image_segment(journal, timestamp.datetime(), path, &extension, false)?;
+    let planned = allocate_image_segment(
+        journal,
+        timestamp.datetime(),
+        path,
+        &extension,
+        false,
+        true,
+        None,
+    )?;
     Ok(solstone_core_import::size::ImportSize {
         recordings: [solstone_core_import::size::Recording {
             day: planned.day,
@@ -366,6 +379,13 @@ pub struct PreparedImage {
     pub mime_type: &'static str,
     pub extension: String,
     pub title: String,
+    triage: Option<Box<ImageTriage>>,
+}
+
+#[derive(Debug, Clone)]
+struct ImageTriage {
+    verdict: Verdict,
+    source_hash: SourceHash,
 }
 
 /// Decode and generate AI description for an image in memory without touching chronicle.
@@ -376,7 +396,29 @@ pub fn prepare_image(
     owner_timestamp: Option<&str>,
     fallback_timestamp: Option<&str>,
 ) -> Result<PreparedImage, ImageImportError> {
-    let (image, format, modified, orientation, exif) = read_image(path)?;
+    prepare(path, wire, zone, owner_timestamp, fallback_timestamp, false)
+}
+
+/// Prepare a standalone image and determine its kind from the decoded source.
+pub fn prepare_manual_image(
+    path: &Path,
+    wire: &dyn WireClient,
+    zone: &TimeZone,
+    owner_timestamp: Option<&str>,
+    fallback_timestamp: Option<&str>,
+) -> Result<PreparedImage, ImageImportError> {
+    prepare(path, wire, zone, owner_timestamp, fallback_timestamp, true)
+}
+
+fn prepare(
+    path: &Path,
+    wire: &dyn WireClient,
+    zone: &TimeZone,
+    owner_timestamp: Option<&str>,
+    fallback_timestamp: Option<&str>,
+    manual: bool,
+) -> Result<PreparedImage, ImageImportError> {
+    let (image, format, modified, orientation, exif, triage) = read_image(path, manual)?;
     let (format_name, mime_type) =
         format_details(format).ok_or_else(|| ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
@@ -445,6 +487,7 @@ pub fn prepare_image(
         mime_type,
         extension,
         title,
+        triage,
     })
 }
 
@@ -453,6 +496,7 @@ struct ClaimedImageSegment {
     segment: String,
     directory: PathBuf,
     binding: solstone_core_journal_io::JournalRoot,
+    existing_original: Option<PathBuf>,
 }
 
 fn claim_image_segment(
@@ -460,8 +504,17 @@ fn claim_image_segment(
     start: DateTime,
     source: &Path,
     extension: &str,
+    snapshot: Option<&ImageTriage>,
 ) -> Result<ClaimedImageSegment, ImageImportError> {
-    let planned = allocate_image_segment(journal_root, start, source, extension, true)?;
+    let planned = allocate_image_segment(
+        journal_root,
+        start,
+        source,
+        extension,
+        true,
+        snapshot.is_some(),
+        snapshot.map(|source| &source.source_hash),
+    )?;
     Ok(ClaimedImageSegment {
         day: planned.day,
         segment: planned.segment,
@@ -469,6 +522,7 @@ fn claim_image_segment(
         binding: planned
             .binding
             .expect("publication acquired a segment binding"),
+        existing_original: planned.existing_original,
     })
 }
 
@@ -477,6 +531,7 @@ struct ImageAllocation {
     segment: String,
     directory: PathBuf,
     binding: Option<solstone_core_journal_io::JournalRoot>,
+    existing_original: Option<PathBuf>,
 }
 
 fn allocate_image_segment(
@@ -485,6 +540,8 @@ fn allocate_image_segment(
     source: &Path,
     extension: &str,
     publish: bool,
+    manual: bool,
+    snapshot_hash: Option<&SourceHash>,
 ) -> Result<ImageAllocation, ImageImportError> {
     let source_meta = fs::symlink_metadata(source).map_err(|error| ImageImportError::Install {
         path: source.to_path_buf(),
@@ -512,7 +569,8 @@ fn allocate_image_segment(
     }
 
     let expected_original_name = format!("original{extension}");
-    let mut cached_source_hash = None;
+    let screenshot_original_name = format!("original.screenshot{extension}");
+    let mut cached_source_hash = snapshot_hash.cloned();
 
     for attempt in 0..IMAGE_SEGMENT_PROBE_LIMIT {
         let candidate_time = start
@@ -604,6 +662,7 @@ fn allocate_image_segment(
                 Err(error) => Err(error),
             }
         };
+        let mut existing_original = None;
         match create {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -655,7 +714,10 @@ fn allocate_image_segment(
                     continue;
                 }
                 let original_entry = &original_entries[0];
-                if original_entry.file_name() != expected_original_name.as_str() {
+                let original_name = original_entry.file_name();
+                if original_name != expected_original_name.as_str()
+                    && !(manual && original_name == screenshot_original_name.as_str())
+                {
                     continue;
                 }
                 let occupant_path = original_entry.path();
@@ -687,6 +749,7 @@ fn allocate_image_segment(
                 if occupant_hash.as_str() != source_hash.as_str() {
                     continue;
                 }
+                existing_original = Some(occupant_path);
             }
             Err(error) => {
                 return Err(ImageImportError::JournalIo {
@@ -702,6 +765,7 @@ fn allocate_image_segment(
                 segment,
                 directory: candidate_path,
                 binding: None,
+                existing_original,
             });
         }
         let resolved =
@@ -721,6 +785,7 @@ fn allocate_image_segment(
             day,
             segment,
             directory: resolved.path().to_path_buf(),
+            existing_original,
             binding: Some(
                 solstone_core_journal_io::JournalRoot::open(resolved.path()).map_err(|error| {
                     ImageImportError::JournalIo {
@@ -754,12 +819,36 @@ pub fn install_image_at(
     if !solstone_core_import::work_continues() {
         return Err(ImageImportError::Stopped);
     }
-    let claimed = claim_image_segment(journal_root, start, &prepared.path, &prepared.extension)?;
-
-    if attachment.is_none() {
-        let original_path = claimed
+    let snapshot = prepared.triage.as_deref();
+    let claimed = claim_image_segment(
+        journal_root,
+        start,
+        &prepared.path,
+        &prepared.extension,
+        snapshot,
+    )?;
+    let original_prefix =
+        if snapshot.is_some_and(|snapshot| snapshot.verdict.kind == ContentKind::Screen) {
+            "original.screenshot"
+        } else {
+            "original"
+        };
+    // Reusing a segment with the same original keeps its existing kind, even
+    // if the source has since been renamed or the classifier has changed.
+    let original_path = claimed.existing_original.clone().unwrap_or_else(|| {
+        claimed
             .directory
-            .join(format!("original{}", prepared.extension));
+            .join(format!("{original_prefix}{}", prepared.extension))
+    });
+    let screenshot = original_path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with("original.screenshot."));
+    let transcript_path = claimed.directory.join(if screenshot {
+        SCREENSHOT_TRANSCRIPT
+    } else {
+        TRANSCRIPT_FILENAME
+    });
+    if attachment.is_none() {
         install_source(
             &prepared.path,
             &original_path,
@@ -768,10 +857,10 @@ pub fn install_image_at(
             journal_root,
             &claimed.day,
             publication,
+            snapshot,
+            claimed.existing_original.is_none(),
         )?;
     }
-
-    let transcript_path = claimed.directory.join(TRANSCRIPT_FILENAME);
     let transcript_date = format!(
         "{}-{}-{}",
         &claimed.day[0..4],
@@ -883,6 +972,7 @@ pub fn install_and_publish_image(
         import_id,
         &result.days_affected,
         &result.files_created,
+        prepared.triage.as_ref().map(|data| &data.source_hash),
     )?;
     if let Some(callback) = progress.as_mut() {
         let day = result.days_affected.first().cloned().unwrap_or_default();
@@ -907,7 +997,7 @@ pub fn import_image(
     wire: &dyn WireClient,
 ) -> Result<ImageImportResult, ImageImportError> {
     let zone = solstone_core_journal_config::owner_zone(journal_root);
-    let prepared = prepare_image(path, wire, &zone, None, None)?;
+    let prepared = prepare_manual_image(path, wire, &zone, None, None)?;
     install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
 }
 
@@ -917,9 +1007,10 @@ type DecodedImage = (
     SystemTime,
     Orientation,
     Option<Vec<u8>>,
+    Option<Box<ImageTriage>>,
 );
 
-fn read_image(path: &Path) -> Result<DecodedImage, ImageImportError> {
+fn read_image(path: &Path, manual: bool) -> Result<DecodedImage, ImageImportError> {
     let metadata = fs::metadata(path).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => ImageImportError::MissingSource {
             path: path.to_path_buf(),
@@ -960,7 +1051,19 @@ fn read_image(path: &Path) -> Result<DecodedImage, ImageImportError> {
     // An unreadable orientation tag leaves the pixels as stored rather than failing the import.
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let image = DynamicImage::from_decoder(decoder).map_err(undecodable)?;
-    Ok((image, format, modified, orientation, exif))
+    let triage = manual.then(|| {
+        Box::new(ImageTriage {
+            verdict: triage::classify(
+                &bytes,
+                &path.file_name().unwrap_or_default().to_string_lossy(),
+                path.parent().unwrap_or(Path::new("")),
+                None,
+                None,
+            ),
+            source_hash: SourceHash::new(format!("{:x}", Sha256::digest(&bytes))),
+        })
+    });
+    Ok((image, format, modified, orientation, exif, triage))
 }
 
 /// The copy of an imported image that goes to the vision model: decoded pixels only, turned
@@ -1102,6 +1205,7 @@ fn render_model_block(description: &DescriptionOutcome) -> String {
     lines.join("\n")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn install_source(
     source: &Path,
     destination: &Path,
@@ -1110,6 +1214,8 @@ fn install_source(
     journal_root: &Path,
     day: &str,
     publication: &dyn PublicationOperations,
+    snapshot: Option<&ImageTriage>,
+    write_kind: bool,
 ) -> Result<(), ImageImportError> {
     let parent = destination
         .parent()
@@ -1144,14 +1250,18 @@ fn install_source(
             path: destination.to_path_buf(),
             detail: error.to_string(),
         })?;
-    let temporary_path =
-        temporary
-            .into_temp_path()
-            .keep()
-            .map_err(|error| ImageImportError::Install {
-                path: destination.to_path_buf(),
-                detail: error.error.to_string(),
-            })?;
+    if let Some(snapshot) = snapshot {
+        let copied = hash_source(temporary.path()).map_err(|error| ImageImportError::Install {
+            path: destination.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+        if copied != snapshot.source_hash {
+            return Err(ImageImportError::Install {
+                path: source.to_path_buf(),
+                detail: "the file no longer matches the copy your journal prepared, so choose the file again".to_owned(),
+            });
+        }
+    }
     let _commit = claims
         .commit(parent)
         .map_err(|error| ImageImportError::Install {
@@ -1164,6 +1274,23 @@ fn install_source(
             path: destination.to_path_buf(),
             detail: error.to_string(),
         })?;
+    if write_kind && let Some(snapshot) = snapshot {
+        let path = parent.join(triage::METADATA_FILENAME);
+        triage::write_metadata(&path, &snapshot.verdict).map_err(|error| {
+            ImageImportError::Install {
+                path,
+                detail: error.to_string(),
+            }
+        })?;
+    }
+    let temporary_path =
+        temporary
+            .into_temp_path()
+            .keep()
+            .map_err(|error| ImageImportError::Install {
+                path: destination.to_path_buf(),
+                detail: error.error.to_string(),
+            })?;
     install_file(
         &temporary_path,
         destination,
@@ -1197,10 +1324,14 @@ fn write_import_manifest(
     import_id: &str,
     days_affected: &[String],
     files_created: &[PathBuf],
+    snapshot_hash: Option<&SourceHash>,
 ) -> Result<(), ImageImportError> {
-    let source_hash = hash_source(source).map_err(|error| ImageImportError::Manifest {
-        detail: error.to_string(),
-    })?;
+    let source_hash = match snapshot_hash {
+        Some(hash) => hash.clone(),
+        None => hash_source(source).map_err(|error| ImageImportError::Manifest {
+            detail: error.to_string(),
+        })?,
+    };
     let files_created = files_created
         .iter()
         .map(|path| path.display().to_string())
@@ -1269,7 +1400,7 @@ mod tests {
             .to_zoned_datetime(zone.clone())
             .strftime("%Y%m%d_%H%M%S")
             .to_string();
-        let prepared = super::prepare_image(path, wire, &zone, Some(&selected), None)?;
+        let prepared = super::prepare_manual_image(path, wire, &zone, Some(&selected), None)?;
         super::install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
     }
 
@@ -1727,6 +1858,7 @@ mod tests {
                 jiff::civil::date(2026, 1, 2).at(12, 0, 0, 0),
                 &source,
                 ".png",
+                None,
             )
             .unwrap();
             match mutation {
@@ -1746,6 +1878,8 @@ mod tests {
                 root.path(),
                 &claimed.day,
                 &TestPublication::new(),
+                None,
+                false,
             );
             if mutation == "unchanged" {
                 result.unwrap();
@@ -1839,6 +1973,121 @@ mod tests {
             .unwrap()
             .set_times(file_time)
             .unwrap();
+    }
+
+    #[test]
+    fn a_changed_image_during_vision_does_not_store_mismatched_bytes_or_kind() {
+        struct ChangingWire<'a>(&'a Path);
+        impl WireClient for ChangingWire<'_> {
+            fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                fs::write(self.0, b"source changed while the model was running").unwrap();
+                Ok(generated("red dialog"))
+            }
+        }
+        let journal = tempfile::tempdir().unwrap();
+        let sources = tempfile::tempdir().unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
+        let path = sources.path().join("Screenshot_20260615-120000.png");
+        write_test_png(&path, [20, 30, 40], &time);
+        let publication = TestPublication::new();
+        let error = import_image(
+            &path,
+            journal.path(),
+            "changed",
+            None,
+            &publication,
+            &ChangingWire(&path),
+        )
+        .unwrap_err();
+        assert!(matches!(error, ImageImportError::Install { .. }));
+        let segment = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        assert!(!segment.join("original.screenshot.png").exists());
+        assert!(!segment.join(SCREENSHOT_TRANSCRIPT).exists());
+        assert!(!segment.join(triage::METADATA_FILENAME).exists());
+        assert!(
+            !journal
+                .path()
+                .join("imports/changed/manifest.json")
+                .exists()
+        );
+        assert!(publication.touched_days.borrow().is_empty());
+    }
+
+    #[test]
+    fn screenshot_reimport_under_another_name_keeps_one_screen_description() {
+        use solstone_core_format::content::{
+            AdmittedCategory, OfferedTo, file_spec,
+            kinds::{indexed_permission, segment_file_permission},
+        };
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = local_time(jiff::civil::date(2026, 6, 15).at(12, 0, 0, 0));
+        let source = source_dir.path().join("Screenshot_20260615-120000.png");
+        write_test_png(&source, [10, 80, 90], &time);
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let publication = TestPublication::new();
+        let first =
+            import_image(&source, journal.path(), "first", None, &publication, &wire).unwrap();
+        let description = &first.files_created[0];
+        let original = description.with_file_name("original.screenshot.png");
+        let metadata = description.with_file_name(triage::METADATA_FILENAME);
+        assert_eq!(fs::read(&original).unwrap(), fs::read(&source).unwrap());
+        let decision = fs::read(&metadata).unwrap();
+        let decision_json: Value = serde_json::from_slice(&decision).unwrap();
+        assert_eq!(decision_json["kind"], "screen_text");
+        assert_eq!(
+            decision_json["reasons"],
+            serde_json::json!(["aosp_screenshot_name"])
+        );
+        assert_eq!(decision_json["ruleset_version"], 1);
+        assert!(description.ends_with("screenshot_transcript.md"));
+        let description_rel = format!(
+            "{}/import.image/{}/screenshot_transcript.md",
+            first.created_segment.day, first.created_segment.segment
+        );
+        assert_eq!(
+            indexed_permission(
+                Some(journal.path()),
+                &description_rel,
+                AdmittedCategory::Transcripts
+            ),
+            AdmittedCategory::ScreenText
+        );
+        assert_eq!(
+            segment_file_permission(&description_rel),
+            AdmittedCategory::ScreenText
+        );
+        let original_rel =
+            description_rel.replace("screenshot_transcript.md", "original.screenshot.png");
+        assert_eq!(
+            file_spec(&original_rel).unwrap().offered_to,
+            OfferedTo::NONE
+        );
+        let metadata_rel = description_rel.replace("screenshot_transcript.md", "import_kind.json");
+        assert_eq!(
+            file_spec(&metadata_rel).unwrap().offered_to,
+            OfferedTo::NONE
+        );
+
+        let renamed = source_dir.path().join("unmarked.png");
+        fs::rename(&source, &renamed).unwrap();
+        let second = import_image(
+            &renamed,
+            journal.path(),
+            "second",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(second.files_created, first.files_created);
+        assert_eq!(fs::read(&metadata).unwrap(), decision);
+        assert!(!description.with_file_name("image_transcript.md").exists());
+        assert!(!description.with_file_name("original.png").exists());
     }
 
     #[test]

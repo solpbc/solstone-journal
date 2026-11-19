@@ -295,7 +295,7 @@ pub fn run_native_producer(
             }
 
             let prepared_source = match request.source {
-                RegistrySource::Image => match image::prepare_image(
+                RegistrySource::Image => match image::prepare_manual_image(
                     request.source_path,
                     wire,
                     &solstone_core_journal_config::owner_zone(request.journal_root),
@@ -1223,6 +1223,62 @@ mod tests {
         let original = outcome.files_created[0].with_file_name("original.png");
         assert_eq!(solstone_core_import::hash_source(&original).unwrap(), sha);
         assert!(outcome.files_created[0].is_file());
+    }
+
+    #[test]
+    fn direct_screenshot_keeps_one_copy_after_its_segment_is_published() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path().canonicalize().unwrap();
+        let id = "20260408_140000";
+        let directory = root.join("imports").join(id);
+        fs::create_dir_all(&directory).unwrap();
+        let name = "Screenshot_20260408-140000.png";
+        let upload = directory.join(name);
+        fs::write(&upload, TINY_PNG).unwrap();
+        let hash = solstone_core_import::hash_source(&upload).unwrap();
+        let mut metadata = serde_json::json!({
+            "import_id": id,
+            "source_timestamp": id,
+            "source_hash": hash.as_str(),
+            "file_path": upload,
+            "original_filename": name,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::originals::record_staged_upload(&mut metadata, &upload);
+        solstone_core_import::write_import_metadata(&root, id, &metadata).unwrap();
+
+        let outcome = run_native_producer(
+            NativeProducerRequest {
+                journal_root: &root,
+                source_path: &upload,
+                import_id: id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                owner_timestamp: Some(id),
+                fallback_timestamp: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .unwrap();
+        assert!(!upload.exists());
+        let [description] = outcome.files_created.as_slice() else {
+            panic!("expected one published description");
+        };
+        assert!(description.ends_with("screenshot_transcript.md"));
+        assert!(description.is_file());
+        let original = description.with_file_name("original.screenshot.png");
+        assert_eq!(solstone_core_import::hash_source(&original).unwrap(), hash);
+        assert!(!description.with_file_name("original.png").exists());
     }
 
     #[test]
