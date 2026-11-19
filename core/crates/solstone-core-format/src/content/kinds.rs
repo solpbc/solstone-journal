@@ -20,6 +20,7 @@ pub enum Kind {
     Video,
     Facets,
     Entities,
+    ProfilePics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +53,19 @@ pub const KINDS: &[KindSpec] = &[
         query_alias: Some("Entities"),
         label: "entities",
         description: "people, places and projects in your journal, and what it has noted about them.",
+        checked_by_default: true,
+    },
+    // An option of entities: the picture the journal shows for one. It reads
+    // only with entities. ⚠ A grant that holds entities and predates this row
+    // keeps profile pics (founder 2026-11-19): only `NO_PROFILE_PICS`, written
+    // where the owner chooses, takes them away. See `profile_pics_admitted`.
+    KindSpec {
+        kind: Kind::ProfilePics,
+        stored_word: "profile_pics",
+        permission: Some(AdmittedCategory::ProfilePics),
+        query_alias: None,
+        label: "profile pics",
+        description: "the picture your journal shows for a person. needs entities.",
         checked_by_default: true,
     },
     KindSpec {
@@ -123,7 +137,7 @@ pub const KINDS: &[KindSpec] = &[
         permission: Some(AdmittedCategory::Photos),
         query_alias: Some("Photos"),
         label: "photos",
-        description: "text descriptions of photos you import as images.",
+        description: "photos you import, both the pictures and what your journal described in them.",
         checked_by_default: false,
     },
     KindSpec {
@@ -137,6 +151,31 @@ pub const KINDS: &[KindSpec] = &[
     },
 ];
 
+/// The stored word an owner's choice writes when entities is allowed and
+/// profile pics are not. ⛔ Not a kind and not a permission: it only takes
+/// profile pics away from an entities grant.
+pub const NO_PROFILE_PICS: &str = "no_profile_pics";
+
+/// Record the owner's profile pics choice in the words they chose. Call it
+/// only where the owner chooses (the consent page, the agents app, the CLI),
+/// never on a rewrite of a stored grant, so a grant that predates the choice
+/// keeps what it was approved with.
+pub fn record_profile_pics_choice(words: &mut Vec<String>) {
+    words.retain(|word| word != NO_PROFILE_PICS);
+    let entities = words.iter().any(|word| word == "entities");
+    let pics = words.iter().any(|word| word == "profile_pics");
+    if entities && !pics {
+        words.push(NO_PROFILE_PICS.to_owned());
+    }
+}
+
+/// Whether stored grant words admit profile pics: chosen, or held with
+/// entities by a grant the choice never reached.
+pub fn profile_pics_admitted(words: &[String]) -> bool {
+    let has = |wanted: &str| words.iter().any(|word| word == wanted);
+    has("profile_pics") || (has("entities") && !has(NO_PROFILE_PICS))
+}
+
 pub fn permission_kinds() -> impl Iterator<Item = &'static KindSpec> {
     KINDS.iter().filter(|spec| spec.permission.is_some())
 }
@@ -149,6 +188,13 @@ pub fn default_permission_words() -> impl Iterator<Item = &'static str> {
 
 pub fn permission_words() -> impl Iterator<Item = &'static str> {
     permission_kinds().map(|spec| spec.stored_word)
+}
+
+impl KindSpec {
+    /// The kind this one is an option of, shown under it where an owner chooses.
+    pub fn option_of(&self) -> Option<&'static str> {
+        matches!(self.kind, Kind::ProfilePics).then_some("entities")
+    }
 }
 
 impl AdmittedCategory {
@@ -303,6 +349,11 @@ mod tests {
             );
             if let Some(permission) = spec.permission {
                 assert_eq!(permission.as_str(), spec.stored_word);
+                // An option is no material of its own, so search names none.
+                if spec.option_of().is_some() {
+                    assert_eq!(spec.query_alias, None);
+                    continue;
+                }
                 assert_eq!(
                     AdmittedCategory::from_query_token(spec.query_alias.unwrap()),
                     Some(permission)
@@ -321,6 +372,7 @@ mod tests {
             [
                 (Kind::Transcripts, Some("transcripts")),
                 (Kind::Entities, Some("entities")),
+                (Kind::ProfilePics, Some("profile_pics")),
                 (Kind::Facets, Some("facets")),
                 (Kind::Screen, Some("screen_text")),
                 (Kind::Body, Some("body")),
@@ -334,11 +386,46 @@ mod tests {
         );
         assert_eq!(
             default_permission_words().collect::<Vec<_>>(),
-            ["transcripts", "entities", "facets", "screen_text", "body"]
+            [
+                "transcripts",
+                "entities",
+                "profile_pics",
+                "facets",
+                "screen_text",
+                "body"
+            ]
         );
         for word in ["video", "Video", "BODY", "Screen", "screen", "unknown"] {
             assert_eq!(AdmittedCategory::from_stored_word(word), None);
             assert_eq!(AdmittedCategory::from_query_token(word), None);
         }
+    }
+
+    #[test]
+    fn profile_pics_ride_entities_and_only_the_owners_no_takes_them_away() {
+        let words = |list: &[&str]| list.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        // A grant from before the choice keeps them.
+        assert!(profile_pics_admitted(&words(&["entities"])));
+        assert!(!profile_pics_admitted(&words(&[
+            "entities",
+            NO_PROFILE_PICS
+        ])));
+        assert!(profile_pics_admitted(&words(&["entities", "profile_pics"])));
+        assert!(!profile_pics_admitted(&words(&["transcripts"])));
+
+        let mut chosen = words(&["entities"]);
+        record_profile_pics_choice(&mut chosen);
+        assert_eq!(chosen, words(&["entities", NO_PROFILE_PICS]));
+        let mut chosen = words(&["entities", "profile_pics", NO_PROFILE_PICS]);
+        record_profile_pics_choice(&mut chosen);
+        assert_eq!(chosen, words(&["entities", "profile_pics"]));
+        let mut chosen = words(&["transcripts", NO_PROFILE_PICS]);
+        record_profile_pics_choice(&mut chosen);
+        assert_eq!(chosen, words(&["transcripts"]));
+        // New connections start with them ticked, under entities.
+        assert!(default_permission_words().any(|word| word == "profile_pics"));
+        let spec = AdmittedCategory::ProfilePics.kind_spec();
+        assert_eq!(spec.option_of(), Some("entities"));
+        assert_eq!(AdmittedCategory::from_stored_word(NO_PROFILE_PICS), None);
     }
 }

@@ -2755,7 +2755,7 @@ button:focus:not(:focus-visible) {
         <small>about this many for each screen, in each 5 minute recording. more frames means more detail and more tokens.</small>
       </div>
 
-      <!-- Photos of people, from faces in meetings: on by default, desktop journals only. -->
+      <!-- Profile pics, from faces in meetings: on by default, desktop journals only. -->
       <div class="settings-field" id="facesField" hidden>
         <small id="facesStatus"></small>
         <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
@@ -2763,17 +2763,17 @@ button:focus:not(:focus-visible) {
             <input type="checkbox" id="facesEnabled" disabled aria-describedby="facesDescription">
             <span class="slider"></span>
           </label>
-          <label for="facesEnabled" class="toggle-label" style="cursor: pointer;">suggest photos of people</label>
+          <label for="facesEnabled" class="toggle-label" style="cursor: pointer;">suggest profile pics from your meetings</label>
         </div>
-        <p class="settings-field-note" id="facesDescription">your journal looks for faces in your meeting recordings and suggests a photo for the people in them. you choose the photo, or none.</p>
+        <p class="settings-field-note" id="facesDescription">your journal looks for faces in your meeting recordings and suggests a profile pic for the people in them. you choose the picture, or none.</p>
         <details class="faces-more" id="facesMore">
           <summary>how this works</summary>
           <ul class="faces-more-list">
             <li>it runs on this computer, on frames from your meeting recordings.</li>
-            <li>the face details it uses to tell people apart stay in your journal. they're never sent to the agents you connect; only a photo is.</li>
+            <li>the face details it uses to tell people apart stay in your journal. they're never sent to the agents you connect; only a profile pic is.</li>
             <li>your past meeting recordings are read a little at a time, in the background, while they're still in your journal.</li>
-            <li>agents you connect to your journal can receive a person's photo, including a suggested one, marked as suggested. a connected agent that may see only some facets gets a photo only when it came from a meeting in one of them.</li>
-            <li>it matches a face to a person only when the face sits beside their name or alone in their video tile. a photo is theirs only once you choose it.</li>
+            <li>agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting in one of them.</li>
+            <li>it matches a face to a person only when the face sits beside their name or alone in their video tile. a picture is theirs only once you choose it.</li>
             <li>turning this off stops new reading.</li>
           </ul>
         </details>
@@ -3118,7 +3118,7 @@ button:focus:not(:focus-visible) {
     <div class="color-modal-content" style="max-width: 480px;">
       <h3 id="facesClearHeading">erase all face data?</h3>
       <div id="facesClearBody">
-        <p>this erases every face your journal found in your meeting recordings, the photos you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.</p>
+        <p>this erases every face your journal found in your meeting recordings, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.</p>
         <p>your people, their names and your recordings stay. a backup made before now may still hold face data.</p>
       </div>
       <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
@@ -6214,7 +6214,7 @@ async function clearFaceData() {
     if (code === 'faces_busy') {
       facesSetting.result = { text: 'your journal is using face data right now, so nothing was erased. try again in a minute.', retry: clearFaceData };
     } else if (code === 'faces_enabled') {
-      facesSetting.result = { text: 'photo suggestions are on, so nothing was erased. turn them off first.' };
+      facesSetting.result = { text: 'profile pic suggestions are on, so nothing was erased. turn them off first.' };
       facesSetting.stored = true;
     } else {
       facesSetting.result = { text: "face data couldn't be erased.", retry: clearFaceData };

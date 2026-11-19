@@ -2339,8 +2339,18 @@ fn fetch(
             if subjects[0].more_segments {
                 value["more_segments"] = Value::Bool(true);
             }
+            // A photo's description arrives with the photo itself: the photos
+            // kind that admitted the description admits its picture.
+            let mut picture = None;
+            if crate::photo_picture::is_photo_description(&entry.path) {
+                let (state, kept) = crate::photo_picture::photo_picture(journal_root, &entry.path);
+                value["picture"] = state;
+                picture = kept.map(|kept| kept.jpeg);
+            }
             let target = format!("{}#{}", entry.path, entry.idx);
-            Ok(Prepared::new(value, 1, vec![target]).served_as_is(served_as_is))
+            let mut prepared = Prepared::new(value, 1, vec![target]).served_as_is(served_as_is);
+            prepared.image = picture;
+            Ok(prepared)
         }
         ReferenceTarget::Activity(act_ref) => {
             fetch_activity(journal_root, principal, snapshot, &act_ref.into())
@@ -2778,8 +2788,9 @@ fn list_entities(
             "name": entity_name(&item.identity),
             "facet": facet_id,
             "reference": reference,
-            "has_photo": solstone_core_entities::photos::has_photo_in_facet(journal_root, &item.entity_dir, &facet_dir)
-                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
+            "has_photo": snapshot.categories.contains(&AdmittedCategory::ProfilePics)
+                && solstone_core_entities::photos::has_photo_in_facet(journal_root, &item.entity_dir, &facet_dir)
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
         });
         crate::journal_links::attach(
             journal_root,
@@ -2926,9 +2937,11 @@ pub(crate) fn read_entity(
         value["notes_truncated"] = json!(true);
     }
     let mut image = None;
-    // The owner's switch, read the one way every face reader reads it.
-    if solstone_core_entities::photos::enabled(journal_root)
-        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
+    // The connection's profile pics option, then the owner's switch, read the
+    // one way every face reader reads it.
+    if snapshot.categories.contains(&AdmittedCategory::ProfilePics)
+        && solstone_core_entities::photos::enabled(journal_root)
+            .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
     {
         let photo =
             solstone_core_entities::photos::photo(journal_root, entity_id, Some(&facet_dir))

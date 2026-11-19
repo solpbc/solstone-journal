@@ -288,11 +288,17 @@
       const label = connection.door === 'byo' ? 'your domain' : connection.door === 'lan' ? 'your network' : connection.door === 'local' ? 'this device' : connection.door === 'relay' || !hasDoor() ? 'solstone.me' : '';
       return label ? `<span class="chip">${label}</span>` : '';
     }
+    // A grant that holds entities and predates the profile pics choice keeps them; only no_profile_pics takes them away.
+    function grantedWords(read) {
+      const words = read.categories.filter(word => word !== 'no_profile_pics');
+      if (words.includes('entities') && !words.includes('profile_pics') && !read.categories.includes('no_profile_pics')) words.push('profile_pics');
+      return words;
+    }
     function permissionLine(permission) {
       const read = permission?.read;
       if (!read) return 'nothing until you choose';
       const labels = Object.fromEntries(state.permission_kinds.map(kind => [kind.word, kind.label]));
-      const categories = read.categories.map(word => labels[word] || word).join(', ');
+      const categories = grantedWords(read).map(word => labels[word] || word).join(', ');
       return read.scope.kind === 'whole_journal' ? `${categories} across your whole journal` : `${categories} in ${read.scope.ids.length} chosen facet${read.scope.ids.length === 1 ? '' : 's'}`;
     }
     function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see until you pause or disconnect it. if it goes 30 days without using your journal, it pauses until you resume it.' : 'a key you created. anyone holding it can read what it may see until you pause or revoke it.'; }
@@ -838,9 +844,9 @@
     function picker(connection) {
       const read = connection?.permission?.read;
       const kinds = state.permission_kinds;
-      const cats = read?.categories || kinds.filter(kind => kind.checked_by_default).map(kind => kind.word);
-      const choices = kinds.map(({word, label, description}) =>
-        `<label class="check"><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`
+      const cats = read ? grantedWords(read) : kinds.filter(kind => kind.checked_by_default).map(kind => kind.word);
+      const choices = kinds.map(({word, label, description, option_of}) =>
+        `<label class="check"${option_of ? ' style="padding-left:26px"' : ''}><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`
       ).join('');
       return `<div class="field"><label for="scope">which part of your journal</label><select id="scope"><option value="whole_journal"${read?.scope?.kind !== 'facets' ? ' selected' : ''}>your whole journal</option><option value="facets"${read?.scope?.kind === 'facets' ? ' selected' : ''}>only facets you choose</option></select><span class="meta" id="scope-gloss">your whole journal includes everything now and anything added later, including facets you create later. chosen facets grow with their contents; facets you create later are not included.</span></div><div class="checks kind-checks" role="group" aria-label="what kinds of material">${choices}</div><div class="field" id="facet-field"><span class="meta">facets</span><div class="checks">${state.facets.map(facet => `<label class="check"><input type="checkbox" name="facet" value="${esc(facet.name)}"${read?.scope?.ids?.includes(facet.id) ? ' checked' : ''}><span style="color:${esc(facet.color || 'var(--orange)')}">●</span> ${esc(facet.title)}</label>`).join('')}</div></div>`;
     }

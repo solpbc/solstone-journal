@@ -516,6 +516,7 @@ const ENTRY = {
 const permissionKinds = [
   ['transcripts', 'transcripts', true],
   ['entities', 'entities', true],
+  ['profile_pics', 'profile pics', true, 'entities'],
   ['facets', 'summaries', true],
   ['screen_text', 'screen text', true],
   ['body', 'body', true],
@@ -524,8 +525,8 @@ const permissionKinds = [
   ['calendar', 'calendar', false],
   ['places', 'places', false],
   ['photos', 'photos', false],
-].map(([word, label, checked_by_default]) => ({
-  word, label, checked_by_default, description: `description of ${label}`,
+].map(([word, label, checked_by_default, option_of = null]) => ({
+  word, label, checked_by_default, description: `description of ${label}`, option_of,
 }));
 
 function agentsState(overrides = {}) {

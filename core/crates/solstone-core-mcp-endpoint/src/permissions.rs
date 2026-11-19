@@ -264,11 +264,18 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
         };
     };
 
-    let categories = read
+    let mut categories: BTreeSet<AdmittedCategory> = read
         .categories
         .iter()
         .filter_map(|category| AdmittedCategory::from_stored_word(category))
         .collect();
+    // Profile pics are read with entities, and a grant from before the choice keeps them.
+    categories.remove(&AdmittedCategory::ProfilePics);
+    if categories.contains(&AdmittedCategory::Entities)
+        && solstone_core_format::content::kinds::profile_pics_admitted(&read.categories)
+    {
+        categories.insert(AdmittedCategory::ProfilePics);
+    }
     let scope = match &read.scope {
         ReadScope::WholeJournal => ConnectionScope::WholeJournal,
         ReadScope::Facets { ids } => ConnectionScope::ChosenFacets {
@@ -603,12 +610,51 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn an_entities_grant_from_before_the_choice_keeps_profile_pics() {
+        let temp = TempDir::new().unwrap();
+        let store = PermissionStore::open(temp.path());
+        for (words, pics) in [
+            (vec!["entities"], true),
+            (vec!["entities", "no_profile_pics"], false),
+            (vec!["entities", "profile_pics"], true),
+            (vec!["transcripts", "profile_pics"], false),
+        ] {
+            store
+                .set_permission(
+                    "bearer:token1",
+                    ReadPermission {
+                        categories: words.iter().map(|w| (*w).to_owned()).collect(),
+                        scope: ReadScope::WholeJournal,
+                    },
+                )
+                .unwrap();
+            let PermissionDecision::Snapshot(snapshot) =
+                evaluate_connection_read(temp.path(), "bearer:token1")
+            else {
+                panic!("an enforceable grant");
+            };
+            assert_eq!(
+                snapshot.categories.contains(&AdmittedCategory::ProfilePics),
+                pics,
+                "{words:?}"
+            );
+        }
+    }
+
+    #[test]
     fn default_whole_journal_read_has_expected_shape() {
         let read = ReadPermission::default_whole_journal();
         assert_eq!(read.scope, ReadScope::WholeJournal);
         assert_eq!(
             read.categories,
-            vec!["transcripts", "entities", "facets", "screen_text", "body"]
+            vec![
+                "transcripts",
+                "entities",
+                "profile_pics",
+                "facets",
+                "screen_text",
+                "body"
+            ]
         );
     }
 
@@ -802,6 +848,7 @@ mod tests {
                 categories: [
                     AdmittedCategory::Transcripts,
                     AdmittedCategory::Entities,
+                    AdmittedCategory::ProfilePics,
                     AdmittedCategory::Facets,
                     AdmittedCategory::ScreenText,
                     AdmittedCategory::Body,

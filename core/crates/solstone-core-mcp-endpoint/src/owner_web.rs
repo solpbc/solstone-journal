@@ -895,6 +895,7 @@ pub(crate) fn state_value_with_iface(
                 "label": kind.label,
                 "description": kind.description,
                 "checked_by_default": kind.checked_by_default,
+                "option_of": kind.option_of(),
             }))
             .collect::<Vec<_>>(),
         "pairing": pairing.map(pairing_json),
@@ -2873,13 +2874,10 @@ async fn set_permission(
         }
     };
     let key = format!("{kind}:{id}");
-    match PermissionStore::open(&journal).set_permission(
-        &key,
-        ReadPermission {
-            categories: body.categories,
-            scope,
-        },
-    ) {
+    let mut categories = body.categories;
+    solstone_core_format::content::kinds::record_profile_pics_choice(&mut categories);
+    match PermissionStore::open(&journal).set_permission(&key, ReadPermission { categories, scope })
+    {
         Ok(permission) => Json(json!({"permission": permission})).into_response(),
         Err(error) => refusal(
             "permission_write_failed",

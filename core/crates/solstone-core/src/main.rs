@@ -5424,6 +5424,8 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     return ExitCode::from(EXIT_DATAERR);
                 }
             };
+            let mut categories = categories;
+            solstone_core_format::content::kinds::record_profile_pics_choice(&mut categories);
             let perm = solstone_core::ReadPermission {
                 categories,
                 scope: if ids.is_empty() {

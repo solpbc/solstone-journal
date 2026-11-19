@@ -235,6 +235,8 @@ pub enum AdmittedCategory {
     Calendar,
     Places,
     Photos,
+    /// The picture shown for an entity. An option of entities, never content.
+    ProfilePics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

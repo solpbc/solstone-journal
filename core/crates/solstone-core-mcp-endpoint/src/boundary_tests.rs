@@ -16370,6 +16370,36 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
             .iter()
             .any(|row| row["has_photo"] == true)
     );
+    // The owner took profile pics away from this connection: entities still read, the picture does not.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".into(), "no_profile_pics".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let output = get();
+    assert!(output.value.get("photo").is_none());
+    assert!(output.image.is_none());
+    assert!(
+        dispatch_output(&journal, "list_entities", json!({})).value["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["has_photo"] == false)
+    );
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".into(), "profile_pics".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    assert!(get().image.is_some());
     // The same entity linked from another granted facet must not expose alpha's photo.
     fs::create_dir_all(root.join("facets/beta/entities/primary")).unwrap();
     fs::write(
@@ -16635,4 +16665,87 @@ fn journal_links_attach_to_entity_rows_without_changing_tool_references() {
             Place::Person { id: "bob".into() }
         );
     }
+}
+
+#[test]
+fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
+    let journal = fixture();
+    let root = journal.path();
+    let photo = root.join("chronicle/20260308/import.image/130000_300");
+    let gone = root.join("chronicle/20260308/import.image/140000_300");
+    let shot = root.join("chronicle/20260308/import.image/160000_300");
+    for (folder, file, token) in [
+        (&photo, "image_transcript.md", "barnphotoneedle"),
+        (&gone, "image_transcript.md", "gonephotoneedle"),
+        (&shot, "screenshot_transcript.md", "shotneedle"),
+    ] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join(file), format!("{token}\n")).unwrap();
+    }
+    let pixels = |width, height| {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            width,
+            height,
+            image::Rgb([200, 120, 0]),
+        ))
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+        bytes
+    };
+    fs::write(photo.join("original.png"), pixels(3000, 1500)).unwrap();
+    fs::write(shot.join("original.screenshot.png"), pixels(64, 64)).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    let grant = |words: &[&str]| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+    };
+    let fetched = |token: &str| {
+        let results = probe(&journal, "search", json!({"query": token})).unwrap();
+        let reference = results["results"][0]["reference"].clone();
+        assert!(reference.is_string(), "{token} is found: {results}");
+        dispatch_output(&journal, "fetch", json!({"reference": reference}))
+    };
+
+    grant(&["photos", "screen_text"]);
+    let output = fetched("barnphotoneedle");
+    assert_eq!(output.value["picture"]["state"], "attached");
+    assert_eq!(output.value["picture"]["width"], 1024);
+    assert_eq!(output.value["picture"]["height"], 512);
+    let picture = image::load_from_memory(output.image.as_ref().unwrap()).unwrap();
+    assert_eq!((picture.width(), picture.height()), (1024, 512));
+    let rendered =
+        crate::jsonrpc::image_tool_result(output.value.clone(), None, output.image.as_deref());
+    assert_eq!(rendered["content"][1]["type"], "image");
+    assert_eq!(rendered["content"][1]["mimeType"], "image/jpeg");
+
+    // A photo whose picture is no longer kept still reads, and says so.
+    let output = fetched("gonephotoneedle");
+    assert_eq!(output.value["picture"]["state"], "not_kept");
+    assert!(output.image.is_none());
+
+    // A screenshot is screen: its description reads, its picture never rides here.
+    let output = fetched("shotneedle");
+    assert!(output.value.get("picture").is_none());
+    assert!(output.image.is_none());
+
+    // Without photos, neither the description nor the picture is found.
+    grant(&["screen_text"]);
+    assert!(
+        probe(&journal, "search", json!({"query": "barnphotoneedle"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }

@@ -70,6 +70,7 @@ mod owner_state;
 mod owner_web;
 mod permissions;
 mod permits;
+mod photo_picture;
 mod possible_names;
 #[cfg(all(test, feature = "full-tests"))]
 mod possible_names_tests;

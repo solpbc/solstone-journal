@@ -1107,7 +1107,7 @@ async function test(name, body) {
       // It keeps following while open: what the agent may see is re-read from the stored grant.
       journal.connections = journal.connections.map(item => item.key === 'oauth:new' ? {...item, permission: {read: {categories: ['entities'], scope: {kind: 'facets', ids: ['f1']}}}} : item);
       await tick();
-      has(view, 'entities in 1 chosen facet');
+      has(view, 'entities, profile pics in 1 chosen facet');
       const reads = () => calls.filter(call => call.url === '/app/agents/api/state').length;
       const readsBefore = reads();
       await click({closeModal: ''});
