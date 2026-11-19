@@ -1,0 +1,16 @@
+{
+  "description": "Owner-visible table entry in the journal's facets.activities view.",
+  "context": "Journal window, facets.activities view. Owner-visible table entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3760abb4b481d67f24ae3a2cf5d608faacd4327ae698e587c535d22906804f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

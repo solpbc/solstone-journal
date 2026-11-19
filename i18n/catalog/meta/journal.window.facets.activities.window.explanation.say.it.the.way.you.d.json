@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's facets.activities view.",
+  "context": "Journal window, facets.activities view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ddbdce74dd8b82434f401f42727a62e6e25699b02358e9d71779845e58d97dea",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

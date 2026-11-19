@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f09920479953a0d6e2e23828a80df1901c96c16e2a91429a3a6881349ad8bcf",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

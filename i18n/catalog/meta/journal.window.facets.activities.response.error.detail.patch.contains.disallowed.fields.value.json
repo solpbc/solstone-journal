@@ -1,0 +1,28 @@
+{
+  "description": "Error detail in the journal's facets.activities.response view.",
+  "context": "Journal window, facets.activities.response view. Error detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dee27fb9716f55b66495270d0e1ec0604cb0e421c22a756edb94b7205675397",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -104,11 +104,11 @@ fn valid_segment(segment: &str) -> bool {
         && length.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn refused(reason_code: &str, detail: impl Into<String>, status: StatusCode) -> Response {
+fn refused(reason_code: &str, detail: http::Detail, status: StatusCode) -> Response {
     http::error(
         reason_code,
-        "who said those lines couldn't be saved.",
-        detail.into(),
+        "journal.window.facets.activities.response.error.message.who.said.those.lines.couldn.t",
+        detail,
         status,
     )
 }
@@ -123,14 +123,16 @@ pub(super) fn store_refused(error: &OwnerLineLabelError) -> Response {
         OwnerLineLabelError::Write(_) => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
     };
-    refused(error.reason_code(), error.to_string(), status)
+    refused(error.reason_code(), error.to_string().into(), status)
 }
 
 fn owner_only() -> Response {
     http::error(
         "activity_owner_only",
-        "only you can say who said these lines.",
-        "saying who said a line needs the owner".to_owned(),
+        "journal.window.facets.activities.response.error.message.only.you.can.say.who.said",
+        http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.saying.who.said.a.line.needs",
+        ),
         StatusCode::FORBIDDEN,
     )
 }
@@ -204,7 +206,9 @@ pub(super) fn set_lines_checked(
         _ => {
             return refused(
                 "owner_line_invalid",
-                "lines must be a list of lines",
+                http::Detail::catalog(
+                    "journal.window.facets.activities.response.error.detail.lines.must.be.a.list.of",
+                ),
                 StatusCode::BAD_REQUEST,
             );
         }
@@ -216,7 +220,9 @@ pub(super) fn set_lines_checked(
     else {
         return refused(
             "owner_line_invalid",
-            "each line names its stream, segment, source and sentence_id",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.each.line.names.its.stream.segment",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -224,7 +230,9 @@ pub(super) fn set_lines_checked(
     let Some(speaker) = body.get("speaker").and_then(LineSpeaker::from_tagged) else {
         return refused(
             "owner_line_speaker_invalid",
-            "speaker is {\"kind\":\"owner\"}, {\"kind\":\"person\",\"id\":...} or {\"kind\":\"unknown\"}",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.speaker.is.kind.owner.kind.person",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -243,9 +251,9 @@ pub(super) fn set_lines_checked(
     }) {
         return refused(
             "owner_line_outside_activity",
-            format!(
-                "{}/{} isn't a segment of this activity",
-                line.stream, line.segment
+            http::Detail::with_value(
+                "journal.window.facets.activities.response.error.detail.value.isn.t.a.segment.of",
+                format!("{}/{}", line.stream, line.segment),
             ),
             StatusCode::BAD_REQUEST,
         );
@@ -418,7 +426,10 @@ pub(super) fn remove_lines_edit(
                 Err(detail) => {
                     return Some(refused(
                         "owner_line_edit_unreadable",
-                        format!("the answer this edit replaced can't be read: {detail}"),
+                        http::Detail::with_value(
+                            "journal.window.facets.activities.response.error.detail.the.answer.this.edit.replaced.can",
+                            detail.to_string(),
+                        ),
                         StatusCode::CONFLICT,
                     ));
                 }

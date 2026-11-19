@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Bytes,
     extract::{Query, State},
     http::StatusCode,
@@ -15,6 +15,10 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, strings, text},
+};
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeError, EntityMergeOptions, EntityReviewCandidateError,
     EntityStoreError, EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate,
@@ -32,8 +36,8 @@ use crate::{assets, http};
 
 mod copy;
 
-const ENTITY_BUSY: &str = "entity merge candidates are busy; try again";
-const SPEAKER_BUSY: &str = "speaker suggestions are busy; try again";
+const ENTITY_BUSY: &str = "journal.window.facets.curation.response.entity.busy.detail";
+const SPEAKER_BUSY: &str = "journal.window.facets.curation.response.speaker.busy.detail";
 
 pub fn routes(root: PathBuf) -> Router {
     Router::new()
@@ -98,11 +102,16 @@ struct StateQuery {
     offset: Option<usize>,
 }
 
-async fn state(State(root): State<PathBuf>, Query(query): Query<StateQuery>) -> Response {
+async fn state(
+    State(root): State<PathBuf>,
+    Query(query): Query<StateQuery>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = response_locale(locale);
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    let value = load_state(&root).and_then(|value| match (&query.group, query.limit) {
+    let value = load_state(&root, locale).and_then(|value| match (&query.group, query.limit) {
         (None, None) => Ok(value),
         (None, Some(limit)) => Ok(first_pages(value, Some(limit))),
         (Some(group), limit) => group_page(value, group, query.offset.unwrap_or(0), limit),
@@ -111,14 +120,14 @@ async fn state(State(root): State<PathBuf>, Query(query): Query<StateQuery>) -> 
         Ok(value) => Json(value).into_response(),
         Err(error) if error.starts_with(UNKNOWN_GROUP) => http::error(
             "unknown_group",
-            "that list isn't one curation pages through.",
-            error,
+            "journal.window.facets.curation.response.error.message.that.list.isn.t.one.curation",
+            error.into(),
             StatusCode::BAD_REQUEST,
         ),
         Err(error) => http::error(
             "entity_operation_failed",
-            "that entity operation couldn't be completed.",
-            error,
+            "journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be",
+            error.into(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -128,15 +137,15 @@ async fn summary(State(root): State<PathBuf>) -> Response {
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    match load_state(&root) {
+    match load_state(&root, solstone_core_convey_http::window_catalog::ENGLISH) {
         Ok(value) => {
             let to_review = suggestions_to_review(&value);
             Json(json!({ "to_review": to_review })).into_response()
         }
         Err(error) => http::error(
             "entity_operation_failed",
-            "that entity operation couldn't be completed.",
-            error,
+            "journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be",
+            error.into(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -278,7 +287,7 @@ fn is_row_suppressed(row: &Value) -> bool {
         .is_some_and(|s| !s.is_null())
 }
 
-fn load_state(root: &Path) -> Result<Value, String> {
+fn load_state(root: &Path, locale: &str) -> Result<Value, String> {
     let facet_items = solstone_core_facets::load_candidates(root)
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -417,7 +426,7 @@ fn load_state(root: &Path) -> Result<Value, String> {
         "speaker_items": sorted(speaker_items),
         "speaker_candidate_pair_items": sorted(pair_items),
         "facet_titles": facet_titles(root),
-        "copy": copy::payload(),
+        "copy": copy::payload(locale),
     }))
 }
 
@@ -758,7 +767,12 @@ fn pair_key(a: &str, b: &str) -> String {
     }
 }
 
-async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn entity_preview(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
     let (facet, source, target) = match entity_fields(&body) {
         Ok(fields) => fields,
@@ -770,7 +784,10 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             return result_error(
                 "entity_merge",
                 entity_key(&facet, &source, &target),
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             );
         }
         Err(error) => return internal(error),
@@ -779,9 +796,10 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
         return result_error(
             "entity_merge",
             entity_key(&facet, &source, &target),
-            &format!(
-                "cannot preview candidate with status {}",
-                string(&candidate, "status")
+            &strings(
+                locale,
+                "journal.window.facets.curation.response.candidate.preview.status",
+                [("status", &string(&candidate, "status"))],
             ),
         );
     }
@@ -796,21 +814,31 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
     }
 }
 
-async fn entity_accept(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn entity_accept(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    entity_transition(&root, body, true)
+    entity_transition(&root, body, true, locale)
 }
-async fn entity_dismiss(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn entity_dismiss(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    entity_transition(&root, body, false)
+    entity_transition(&root, body, false, locale)
 }
 
-fn entity_transition(root: &Path, body: Value, accept: bool) -> Response {
+fn entity_transition(root: &Path, body: Value, accept: bool, locale: &str) -> Response {
     let (facet, source, target) = match entity_fields(&body) {
         Ok(fields) => fields,
         Err(response) => return *response,
     };
-    match entity_transition_value(root, &facet, &source, &target, accept) {
+    match entity_transition_value(root, &facet, &source, &target, accept, locale) {
         Ok(value) => result_response(value),
         Err(TransitionFailure::Busy) => busy(ENTITY_BUSY),
         Err(TransitionFailure::Internal(error)) => internal(error),
@@ -823,6 +851,7 @@ fn entity_transition_value(
     source: &str,
     target: &str,
     accept: bool,
+    locale: &str,
 ) -> Result<Value, TransitionFailure> {
     let key = entity_key(facet, source, target);
     let candidate = match entity_candidate(root, facet, source, target) {
@@ -831,7 +860,10 @@ fn entity_transition_value(
             return Ok(result_error_value(
                 "entity_merge",
                 key,
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             ));
         }
         Err(error) => return Err(TransitionFailure::Internal(error)),
@@ -852,9 +884,14 @@ fn entity_transition_value(
         return Ok(result_error_value(
             "entity_merge",
             key,
-            &format!(
-                "cannot {} candidate with status {status}",
-                if accept { "accept" } else { "dismiss" }
+            &strings(
+                locale,
+                if accept {
+                    "journal.window.facets.curation.response.candidate.accept.status"
+                } else {
+                    "journal.window.facets.curation.response.candidate.dismiss.status"
+                },
+                [("status", &status)],
             ),
         ));
     }
@@ -867,7 +904,10 @@ fn entity_transition_value(
                 Ok(None) => Ok(result_error_value(
                     "entity_merge",
                     key,
-                    "candidate not found",
+                    &text(
+                        locale,
+                        "journal.window.facets.curation.response.candidate.absent",
+                    ),
                 )),
                 Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
                 Err(error) => Err(TransitionFailure::Internal(error.to_string())),
@@ -892,7 +932,10 @@ fn entity_transition_value(
             Ok(None) => Ok(result_error_value(
                 "entity_merge",
                 key,
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             )),
             Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
             Err(error) => Err(TransitionFailure::Internal(error.to_string())),
@@ -905,23 +948,36 @@ fn entity_transition_value(
         Ok(None) => Ok(result_error_value(
             "entity_merge",
             key,
-            "candidate not found",
+            &text(
+                locale,
+                "journal.window.facets.curation.response.candidate.absent",
+            ),
         )),
         Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
         Err(error) => Err(TransitionFailure::Internal(error.to_string())),
     }
 }
 
-async fn entity_accept_batch(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn entity_accept_batch(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    entity_batch(&root, body, true)
+    entity_batch(&root, body, true, locale)
 }
-async fn entity_dismiss_batch(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn entity_dismiss_batch(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    entity_batch(&root, body, false)
+    entity_batch(&root, body, false, locale)
 }
 
-fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
+fn entity_batch(root: &Path, body: Value, accept: bool, locale: &str) -> Response {
     let Some(items) = body
         .get("items")
         .and_then(Value::as_array)
@@ -938,14 +994,14 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
         let source = string(row, "source_slug");
         let target = string(row, "target_slug");
         let result = if facet.is_empty() || source.is_empty() || target.is_empty() {
-            json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":"candidate is missing facet, source_slug, or target_slug"})
+            json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":text(locale, "journal.window.facets.curation.response.batch.candidate.identity.missing")})
         } else {
-            match entity_transition_value(root, &facet, &source, &target, accept) {
+            match entity_transition_value(root, &facet, &source, &target, accept, locale) {
                 Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
                 // Batch paths retain per-item reporting instead of exposing a
                 // route-level timeout.
                 Err(TransitionFailure::Busy) => {
-                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":ENTITY_BUSY})
+                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":text(locale, ENTITY_BUSY)})
                 }
                 Err(TransitionFailure::Internal(error)) => {
                     json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":error})
@@ -960,7 +1016,12 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
     Json(json!({"results":results, if accept {"accepted"} else {"dismissed"}:ok, "failed":items.len()-ok})).into_response()
 }
 
-async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn speaker_preview(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
     let (_, source, target) = match speaker_fields(&body) {
         Ok(value) => value,
@@ -972,7 +1033,10 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             return result_error(
                 "speaker_name_variant",
                 speaker_key(&source, &target),
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             );
         }
         Err(error) => return internal(error),
@@ -981,9 +1045,10 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
         return result_error(
             "speaker_name_variant",
             speaker_key(&source, &target),
-            &format!(
-                "cannot preview candidate with status {}",
-                string(&candidate, "status")
+            &strings(
+                locale,
+                "journal.window.facets.curation.response.candidate.preview.status",
+                [("status", &string(&candidate, "status"))],
             ),
         );
     }
@@ -995,20 +1060,30 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
         "activity_records": preview.activity_records,"other_changes_not_previewed":true}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
 }
 
-async fn speaker_accept(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn speaker_accept(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    speaker_transition(&root, body, true)
+    speaker_transition(&root, body, true, locale)
 }
-async fn speaker_dismiss(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn speaker_dismiss(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    speaker_transition(&root, body, false)
+    speaker_transition(&root, body, false, locale)
 }
-fn speaker_transition(root: &Path, body: Value, accept: bool) -> Response {
+fn speaker_transition(root: &Path, body: Value, accept: bool, locale: &str) -> Response {
     let (_, source, target) = match speaker_fields(&body) {
         Ok(value) => value,
         Err(response) => return *response,
     };
-    match speaker_transition_value(root, &source, &target, accept) {
+    match speaker_transition_value(root, &source, &target, accept, locale) {
         Ok(value) => result_response(value),
         Err(TransitionFailure::Busy) => busy(SPEAKER_BUSY),
         Err(TransitionFailure::Internal(error)) => internal(error),
@@ -1067,6 +1142,7 @@ fn speaker_transition_value(
     source: &str,
     target: &str,
     accept: bool,
+    locale: &str,
 ) -> Result<Value, TransitionFailure> {
     let key = speaker_key(source, target);
     let candidate = match find_speaker(root, source, target) {
@@ -1075,7 +1151,10 @@ fn speaker_transition_value(
             return Ok(result_error_value(
                 "speaker_name_variant",
                 key,
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             ));
         }
         Err(error) => return Err(TransitionFailure::Internal(error)),
@@ -1096,9 +1175,14 @@ fn speaker_transition_value(
         return Ok(result_error_value(
             "speaker_name_variant",
             key,
-            &format!(
-                "cannot {} candidate with status {status}",
-                if accept { "accept" } else { "dismiss" }
+            &strings(
+                locale,
+                if accept {
+                    "journal.window.facets.curation.response.candidate.accept.status"
+                } else {
+                    "journal.window.facets.curation.response.candidate.dismiss.status"
+                },
+                [("status", &status)],
             ),
         ));
     }
@@ -1117,8 +1201,10 @@ fn speaker_transition_value(
                 return Ok(result_error_value(
                     "speaker_name_variant",
                     key,
-                    &format!(
-                        "\"{name}\" is already merged into \"{kept}\", without keeping its name. add \"{name}\" to the alternative names of \"{kept}\" on the entities page, then accept again."
+                    &strings(
+                        locale,
+                        "journal.window.facets.curation.response.candidate.kept.name.missing",
+                        [("name", &name), ("kept", &kept)],
                     ),
                 ));
             }
@@ -1131,7 +1217,10 @@ fn speaker_transition_value(
                     Ok(None) => Ok(result_error_value(
                         "speaker_name_variant",
                         key,
-                        "candidate not found",
+                        &text(
+                            locale,
+                            "journal.window.facets.curation.response.candidate.absent",
+                        ),
                     )),
                     Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
                     Err(error) => Err(TransitionFailure::Internal(error.to_string())),
@@ -1165,7 +1254,10 @@ fn speaker_transition_value(
             Ok(None) => Ok(result_error_value(
                 "speaker_name_variant",
                 key,
-                "candidate not found",
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
             )),
             Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
             Err(error) => Err(TransitionFailure::Internal(error.to_string())),
@@ -1178,22 +1270,35 @@ fn speaker_transition_value(
         Ok(None) => Ok(result_error_value(
             "speaker_name_variant",
             key,
-            "candidate not found",
+            &text(
+                locale,
+                "journal.window.facets.curation.response.candidate.absent",
+            ),
         )),
         Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
         Err(error) => Err(TransitionFailure::Internal(error.to_string())),
     }
 }
 
-async fn pair_accept(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn pair_accept(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    pair_transition(&root, body, true)
+    pair_transition(&root, body, true, locale)
 }
-async fn pair_dismiss(State(root): State<PathBuf>, body: Bytes) -> Response {
+async fn pair_dismiss(
+    State(root): State<PathBuf>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let body = curation_body(&body);
-    pair_transition(&root, body, false)
+    pair_transition(&root, body, false, locale)
 }
-fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
+fn pair_transition(root: &Path, body: Value, accept: bool, locale: &str) -> Response {
     // This merges candidate anchors only; it never selects or writes an active speaker identity.
     let (_, a, b) = match pair_fields(&body) {
         Ok(value) => value,
@@ -1207,7 +1312,16 @@ fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
                 .find(|row| row.get("key").and_then(Value::as_str) == Some(key.as_str()))
         }) {
         Ok(Some(value)) => value,
-        Ok(None) => return result_error("speaker_candidate_pair", key, "candidate not found"),
+        Ok(None) => {
+            return result_error(
+                "speaker_candidate_pair",
+                key,
+                &text(
+                    locale,
+                    "journal.window.facets.curation.response.candidate.absent",
+                ),
+            );
+        }
         Err(error) => return internal(error),
     };
     let status = string(&candidate, "status");
@@ -1221,34 +1335,41 @@ fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
         return result_error(
             "speaker_candidate_pair",
             key,
-            &format!(
-                "cannot {} candidate with status {status}",
-                if accept { "accept" } else { "dismiss" }
+            &strings(
+                locale,
+                if accept {
+                    "journal.window.facets.curation.response.candidate.accept.status"
+                } else {
+                    "journal.window.facets.curation.response.candidate.dismiss.status"
+                },
+                [("status", &status)],
             ),
         );
     }
     if accept {
-        let merged = match CandidateTracker::new(root).merge_candidate_pair(&a, &b) {
-            Ok(value) => value,
-            Err(error) if error.to_string().contains("timed out") => return busy(SPEAKER_BUSY),
-            Err(error) => return internal(error.to_string()),
-        };
+        let merged =
+            match CandidateTracker::new(root).merge_candidate_pair_localized(&a, &b, locale) {
+                Ok(value) => value,
+                Err(error) if error.to_string().contains("timed out") => return busy(SPEAKER_BUSY),
+                Err(error) => return internal(error.to_string()),
+            };
         if merged["status"] != "merged" {
             return result_error(
                 "speaker_candidate_pair",
                 key,
-                merged["error"]
-                    .as_str()
-                    .unwrap_or("candidate pair is already merged"),
+                merged["error"].as_str().unwrap_or(&text(
+                    locale,
+                    "journal.window.facets.curation.response.pair.already.merged",
+                )),
             );
         }
         match pair_store::accept_candidate(root, &a, &b) {
             Ok(Some(row)) => Json(json!({"status":"accepted","kind":"speaker_candidate_pair","key":key,"merge":merged,"candidate":row})).into_response(),
-            Ok(None) => result_error("speaker_candidate_pair", key, "candidate not found"),
+            Ok(None) => result_error("speaker_candidate_pair", key, &text(locale, "journal.window.facets.curation.response.candidate.absent")),
             Err(error) => internal(error.to_string()),
         }
     } else {
-        match pair_store::dismiss_candidate(root,&a,&b){Ok(Some(row))=>Json(json!({"status":"dismissed","kind":"speaker_candidate_pair","key":key,"candidate":row})).into_response(),Ok(None)=>result_error("speaker_candidate_pair",key,"candidate not found"),Err(error)=>internal(error.to_string())}
+        match pair_store::dismiss_candidate(root,&a,&b){Ok(Some(row))=>Json(json!({"status":"dismissed","kind":"speaker_candidate_pair","key":key,"candidate":row})).into_response(),Ok(None)=>result_error("speaker_candidate_pair",key,&text(locale, "journal.window.facets.curation.response.candidate.absent")),Err(error)=>internal(error.to_string())}
     }
 }
 
@@ -1268,7 +1389,9 @@ fn speaker_fields(body: &Value) -> FieldResult<(String, String, String)> {
     let source = required(body, "source_id")?;
     let target = required(body, "target_id")?;
     if key != speaker_key(&source, &target) {
-        return Err(Box::new(invalid("key does not match source_id/target_id")));
+        return Err(Box::new(invalid(http::Detail::catalog(
+            "journal.window.facets.curation.response.error.detail.key.does.not.match.source.id",
+        ))));
     }
     Ok((key, source, target))
 }
@@ -1277,7 +1400,9 @@ fn pair_fields(body: &Value) -> FieldResult<(String, String, String)> {
     let a = required(body, "anchor_a")?;
     let b = required(body, "anchor_b")?;
     if key != pair_key(&a, &b) {
-        return Err(Box::new(invalid("key does not match anchor_a/anchor_b")));
+        return Err(Box::new(invalid(http::Detail::catalog(
+            "journal.window.facets.curation.response.error.detail.key.does.not.match.anchor.a",
+        ))));
     }
     Ok((key, a, b))
 }
@@ -1449,32 +1574,35 @@ fn batch_item_result(
 fn missing(field: &str) -> Response {
     http::error(
         "missing_required_field",
-        "a required field is missing.",
-        format!("Missing {field}"),
+        "journal.window.facets.curation.response.error.message.a.required.field.is.missing",
+        http::Detail::with_value(
+            "journal.window.facets.curation.response.error.detail.missing.value",
+            field.to_string(),
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid(detail: &str) -> Response {
+fn invalid(detail: http::Detail) -> Response {
     http::error(
         "invalid_request_value",
-        "one of those values couldn't be used.",
-        detail.to_owned(),
+        "journal.window.facets.curation.response.error.message.one.of.those.values.couldn.t",
+        detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn busy(detail: &str) -> Response {
+fn busy(detail_id: &'static str) -> Response {
     http::error(
         "entity_busy",
-        "The entity operation is busy.",
-        detail.to_owned(),
+        "journal.window.facets.curation.response.error.message.the.entity.operation.is.busy",
+        http::Detail::catalog(detail_id),
         StatusCode::SERVICE_UNAVAILABLE,
     )
 }
 fn internal(detail: String) -> Response {
     http::error(
         "entity_operation_failed",
-        "that entity operation couldn't be completed.",
-        detail,
+        "journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be",
+        detail.into(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -1490,8 +1618,8 @@ fn corrupt_config(root: &Path) -> Option<Response> {
         .map(|_| {
             http::error(
                 "corrupt_config",
-                "your settings couldn't be read.",
-                format!("your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
+                "journal.window.facets.curation.response.error.message.your.settings.couldn.t.be.read",
+                http::Detail::with_value("journal.window.facets.curation.response.error.detail.your.settings.file.at.value.couldn", path.display().to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })
@@ -1690,7 +1818,11 @@ mod tests {
     #[test]
     fn a_dismissed_ambiguity_leaves_the_curation_list() {
         let root = crate::test_support::phase_root("populated");
-        let before = load_state(root.path()).expect("state");
+        let before = load_state(
+            root.path(),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .expect("state");
         let ambiguity_id = before["ambiguity_items"][0]["key"]
             .as_str()
             .expect("one seeded ambiguity")
@@ -1708,7 +1840,11 @@ mod tests {
             .expect("dismiss")
             .expect("row exists");
 
-        let after = load_state(root.path()).expect("state");
+        let after = load_state(
+            root.path(),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .expect("state");
         assert!(
             after["ambiguity_items"]
                 .as_array()
@@ -2138,7 +2274,11 @@ mod tests {
         };
         solstone_core_entity::record_ambiguity_observation(root.path(), &obs).expect("record");
 
-        let state = load_state(root.path()).expect("load_state");
+        let state = load_state(
+            root.path(),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .expect("load_state");
         let amb_items = state["ambiguity_items"]
             .as_array()
             .expect("ambiguity_items");
@@ -2169,7 +2309,11 @@ mod tests {
         )
         .expect("write echo identity");
 
-        let state = load_state(root.path()).expect("load_state");
+        let state = load_state(
+            root.path(),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .expect("load_state");
         let items = state["entity_items"].as_array().expect("entity_items");
         assert_eq!(items.len(), 6);
 

@@ -1,0 +1,16 @@
+{
+  "description": "Suggestion display text in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Suggestion display text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17bb1b0aa53eb1061e88540745b6167ec63fed267cb7f4edf8703a6712f49f54",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

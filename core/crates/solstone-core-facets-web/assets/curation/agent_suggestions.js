@@ -10,103 +10,103 @@
 
   // --- owner-facing strings ---
   const S = {
-    group: 'from your agents',
-    earlier: 'earlier from your agents',
-    onlyFrom: 'only from {agent}.',
-    noneFrom: 'nothing from {agent} is waiting.',
-    showAll: 'show every agent',
-    loadFailed: "couldn't load what your agents suggested.",
-    retry: 'try again',
+    group: window.JournalI18n.render('journal.window.facets.curation.suggestions.group'),
+    earlier: window.JournalI18n.render('journal.window.facets.curation.window.explanation.earlier.from.your.agents'),
+    onlyFrom: window.JournalI18n.render('journal.window.facets.curation.suggestions.only.from'),
+    noneFrom: window.JournalI18n.render('journal.window.facets.curation.suggestions.none.from'),
+    showAll: window.JournalI18n.render('journal.window.facets.curation.suggestions.show.all'),
+    loadFailed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.couldn.t.load.what.your.agents'),
+    retry: window.JournalI18n.render('journal.window.facets.curation.suggestions.retry'),
     kind: {
-      who_said_it: 'who said it',
-      what_happened: 'what actually happened',
-      recording: 'this was a recording or video playing',
-      name: 'a name',
-      same_person: 'the same person'
+      who_said_it: window.JournalI18n.render('journal.window.facets.curation.suggestions.kind.who.said.it'),
+      what_happened: window.JournalI18n.render('journal.window.facets.curation.suggestions.kind.what.happened'),
+      recording: window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.was.a.recording.or.video'),
+      name: window.JournalI18n.render('journal.window.facets.curation.suggestions.kind.name'),
+      same_person: window.JournalI18n.render('journal.window.facets.curation.suggestions.kind.same.person')
     },
-    now: 'your journal says',
-    nowPeople: 'your journal has',
-    personIn: 'in {facets}',
-    notesOne: '1 note',
-    notesMany: '{n} notes',
-    samePersonChange: 'merge them into one person',
-    keepName: 'name to use',
-    suggested: 'suggested',
-    why: 'why',
-    then: 'if you accept',
+    now: window.JournalI18n.render('journal.window.facets.curation.suggestions.now'),
+    nowPeople: window.JournalI18n.render('journal.window.facets.curation.suggestions.now.people'),
+    personIn: window.JournalI18n.render('journal.window.facets.curation.suggestions.person.in'),
+    notesOne: window.JournalI18n.render('journal.window.facets.curation.suggestions.notes.one'),
+    notesMany: window.JournalI18n.render('journal.window.facets.curation.suggestions.notes.many'),
+    samePersonChange: window.JournalI18n.render('journal.window.facets.curation.window.explanation.merge.them.into.one.person'),
+    keepName: window.JournalI18n.render('journal.window.facets.curation.suggestions.keep.name'),
+    suggested: window.JournalI18n.render('journal.window.facets.curation.suggestions.suggested'),
+    why: window.JournalI18n.render('journal.window.facets.curation.suggestions.why'),
+    then: window.JournalI18n.render('journal.window.facets.curation.suggestions.then'),
     basis: {
-      owner_said: '{agent} says you told it',
-      my_own_work: '{agent} says it knows this firsthand',
-      journal_shows: '{agent} says it noticed this in your journal',
-      outside_source: '{agent} says it found this outside your journal'
+      owner_said: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.owner.said'),
+      my_own_work: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.my.own.work'),
+      journal_shows: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.journal.shows'),
+      outside_source: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.outside.source')
     },
-    accountAsWritten: 'your account, as {agent} wrote it',
-    linesOne: 'this line was said by {speaker}',
-    linesMany: 'these {n} lines were said by {speaker}',
-    speakerOwner: 'you',
-    speakerSomeoneElse: "someone you don't know",
-    recordingChange: 'this was a recording or video playing',
-    rename: '{from} → {to}',
-    alsoKnownAs: '{from}, also known as {to}',
-    thenActivity: 'your journal thinks about this activity again, and about {days}.',
-    thenActivities: 'your journal thinks about these {n} activities again, and about {days}.',
-    thenAccount: 'your journal thinks about this activity again with your account, and about {days}.',
-    thenRecording: 'your journal will think this through again as something you watched or listened to, with no one else taking part.',
-    thenRename: 'your journal calls this person {to} from now on. {from} stays in the version history, where you can restore it.',
-    thenAlsoKnownAs: 'your journal also calls this person {to}. the earlier version stays in the version history, where you can restore it.',
-    thenSamePerson: "your journal keeps one person called {kept}, also called {other}, and moves everything attached to {other} onto them. a merge can't be undone.",
-    accept: 'accept',
-    edit: 'edit',
-    dismiss: 'dismiss',
-    cancel: 'cancel',
-    undo: 'undo',
-    ok: 'ok',
-    openActivity: 'open the activity',
-    openLines: 'open the lines',
-    openNamed: 'open {name}',
-    editAccountLabel: 'your account of it',
-    editAccountHint: 'what you accept is kept as your own account.',
-    editNameLabel: 'name',
-    updating: 'updating…',
-    accepted: "accepted {agent}'s suggestion. your journal will think about this again.",
-    acceptedNotAsked: "accepted {agent}'s suggestion and saved it, but your journal couldn't confirm that it will think about it again.",
-    acceptedPartial: "accepted {agent}'s suggestion for this activity. some other activities couldn't be updated.",
-    acceptedRename: "accepted {agent}'s suggestion. {from} is now {to}.",
-    acceptedAlsoKnownAs: "accepted {agent}'s suggestion. {from} is also called {to} now.",
-    acceptedSamePerson: "accepted {agent}'s suggestion. {other} and {kept} are one person now, called {kept}.",
-    undone: 'undone. your journal will think about it again without that change.',
-    acceptedPlain: "accepted {agent}'s suggestion.",
-    undonePlain: 'undone.',
-    earlierAgent: 'an earlier agent',
-    undoneNotAsked: "undone, but your journal couldn't confirm that it will think about it again.",
-    undoneRename: 'undone. {to} is {from} again.',
-    undoneAlsoKnownAs: 'undone. {to} is no longer another name for {from}.',
-    undoRefused: "couldn't undo that, because you've changed it since. your change stays.",
-    dismissed: 'dismissed. if {agent} suggests this again, {agent} is told you already said no.',
-    stale: "this changed after {agent} suggested it, so there's nothing to accept. here's how it stands now:",
-    staleChip: 'already changed',
+    accountAsWritten: window.JournalI18n.render('journal.window.facets.curation.suggestions.account.as.written'),
+    linesOne: window.JournalI18n.render('journal.window.facets.curation.suggestions.lines.one'),
+    linesMany: window.JournalI18n.render('journal.window.facets.curation.suggestions.lines.many'),
+    speakerOwner: window.JournalI18n.render('journal.window.facets.curation.suggestions.speaker.owner'),
+    speakerSomeoneElse: window.JournalI18n.render('journal.window.facets.curation.window.explanation.someone.you.don.t.know'),
+    recordingChange: window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.was.a.recording.or.video'),
+    rename: window.JournalI18n.render('journal.window.facets.curation.suggestions.rename'),
+    alsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.also.known.as'),
+    thenActivity: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.activity'),
+    thenActivities: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.activities'),
+    thenAccount: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.account'),
+    thenRecording: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.journal.will.think.this.through'),
+    thenRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.rename'),
+    thenAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.also.known.as'),
+    thenSamePerson: window.JournalI18n.renderEnglish('journal.window.facets.curation.suggestions.then.same.person'),
+    accept: window.JournalI18n.render('journal.window.facets.curation.suggestions.accept'),
+    edit: window.JournalI18n.render('journal.window.facets.curation.suggestions.edit'),
+    dismiss: window.JournalI18n.render('journal.window.facets.curation.suggestions.dismiss'),
+    cancel: window.JournalI18n.render('journal.window.facets.curation.suggestions.cancel'),
+    undo: window.JournalI18n.render('journal.window.facets.curation.suggestions.undo'),
+    ok: window.JournalI18n.render('journal.window.facets.curation.suggestions.ok'),
+    openActivity: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.activity'),
+    openLines: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.lines'),
+    openNamed: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.named'),
+    editAccountLabel: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.account.of.it'),
+    editAccountHint: window.JournalI18n.renderEnglish('journal.window.facets.curation.window.explanation.what.you.accept.is.kept.as'),
+    editNameLabel: window.JournalI18n.render('journal.window.facets.curation.suggestions.edit.name.label'),
+    updating: window.JournalI18n.render('journal.window.facets.curation.suggestions.updating'),
+    accepted: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted'),
+    acceptedNotAsked: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.not.asked'),
+    acceptedPartial: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.partial'),
+    acceptedRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.rename'),
+    acceptedAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.also.known.as'),
+    acceptedSamePerson: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.same.person'),
+    undone: window.JournalI18n.render('journal.window.facets.curation.window.explanation.undone.your.journal.will.think.about'),
+    acceptedPlain: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.plain'),
+    undonePlain: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.plain'),
+    earlierAgent: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.agent'),
+    undoneNotAsked: window.JournalI18n.render('journal.window.facets.curation.window.explanation.undone.but.your.journal.couldn.t'),
+    undoneRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.rename'),
+    undoneAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.also.known.as'),
+    undoRefused: window.JournalI18n.render('journal.window.facets.curation.window.explanation.couldn.t.undo.that.because.you'),
+    dismissed: window.JournalI18n.render('journal.window.facets.curation.suggestions.dismissed'),
+    stale: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale'),
+    staleChip: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.chip'),
     staleSamePerson: {
-      journal_candidate: 'your journal is already asking whether {a} and {b} are the same person. you can answer it in possible duplicates.',
-      owner_answered: "you already kept {a} and {b} separate, so there's nothing to accept.",
-      journal_question: "your journal has its own question about {a} and {b}, so there's nothing to accept here.",
-      changed: "{a} or {b} changed after {agent} suggested this, so there's nothing to accept.",
-      busy: "this can't be accepted right now."
+      journal_candidate: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.journal.candidate'),
+      owner_answered: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.owner.answered'),
+      journal_question: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.journal.question'),
+      changed: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.changed'),
+      busy: window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.can.t.be.accepted.right')
     },
-    openDuplicates: 'open possible duplicates',
-    earlierInDuplicates: 'in possible duplicates',
-    earlierKeptSeparate: 'you kept them separate',
-    earlierNotAccepted: 'not accepted',
-    acceptFailed: "couldn't accept that, so nothing changed. try again in a moment.",
-    actionFailed: "that didn't go through. try again.",
-    acceptUnconfirmed: "your journal didn't answer, so this may already be accepted. trying again won't accept it twice.",
-    actionUnconfirmed: "your journal didn't answer, so this may already be done. trying again won't do it twice.",
-    showMore: 'show more',
-    earlierAccepted: 'you accepted it',
-    earlierPartial: 'saved for some activities',
-    earlierDismissed: 'you dismissed it',
-    earlierUndone: 'you accepted it, then undid it',
-    earlierStale: 'already changed',
-    open: 'open'
+    openDuplicates: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.duplicates'),
+    earlierInDuplicates: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.in.duplicates'),
+    earlierKeptSeparate: window.JournalI18n.render('journal.window.facets.curation.window.explanation.you.kept.them.separate'),
+    earlierNotAccepted: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.not.accepted'),
+    acceptFailed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.couldn.t.accept.that.so.nothing'),
+    actionFailed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.that.didn.t.go.through.try'),
+    acceptUnconfirmed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.journal.didn.t.answer.so.variant2'),
+    actionUnconfirmed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.journal.didn.t.answer.so'),
+    showMore: window.JournalI18n.render('journal.window.facets.curation.suggestions.show.more'),
+    earlierAccepted: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.accepted'),
+    earlierPartial: window.JournalI18n.render('journal.window.facets.curation.window.explanation.saved.for.some.activities'),
+    earlierDismissed: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.dismissed'),
+    earlierUndone: window.JournalI18n.render('journal.window.facets.curation.window.explanation.you.accepted.it.then.undid.it'),
+    earlierStale: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.stale'),
+    open: window.JournalI18n.render('journal.window.facets.curation.suggestions.open')
   };
   const SEP = ' · ';
   // --- end owner-facing strings ---
@@ -177,8 +177,8 @@
   function dayList(days) {
     const names = (Array.isArray(days) ? days : []).filter(Boolean).map(dayInSentence);
     if (names.length <= 1) return names.join('');
-    if (names.length === 2) return `${names[0]} and ${names[1]}`;
-    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    if (names.length === 2) return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names[0])], ['value2', String(names[1])]]);
+    return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names.slice(0, -1).join(', '))], ['value2', String(names[names.length - 1])]]);
   }
 
   function clock(value) {
@@ -228,8 +228,8 @@
 
   function namesList(names) {
     if (names.length <= 1) return names.join('');
-    if (names.length === 2) return `${names[0]} and ${names[1]}`;
-    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    if (names.length === 2) return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names[0])], ['value2', String(names[1])]]);
+    return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names.slice(0, -1).join(', '))], ['value2', String(names[names.length - 1])]]);
   }
 
   function people(card) {
@@ -489,7 +489,8 @@
   }
 
   function earlierRowHtml(card) {
-    const pairStale = card.kind === 'same_person' && card.status === 'stale'
+    const isStalePair = card.kind === 'same_person' && card.status === 'stale';
+    const pairStale = isStalePair
       ? {journal_candidate: S.earlierInDuplicates, owner_answered: S.earlierKeptSeparate,
         journal_question: S.earlierNotAccepted, busy: S.earlierNotAccepted}[card.stale_reason]
       : '';
@@ -507,7 +508,7 @@
       ? `<button class="curation-button" type="button" data-action="agent-undo">${escapeHtml(S.undo)}</button>` : '';
     const actions = card.status === 'accepted'
       ? `<div class="sg-earlier-actions" ${attrs(card)}>${undo}${openHtml(card)}</div>`
-      : (pairStale === S.earlierInDuplicates
+      : (isStalePair && card.stale_reason === 'journal_candidate'
         ? `<a href="${escapeHtml(DUPLICATES_URL)}">${escapeHtml(S.open)}</a>`
         : (openUrl(card) ? `<a href="${escapeHtml(openUrl(card))}">${escapeHtml(S.open)}</a>` : ''));
     return `<li><span class="what"><b>${escapeHtml(S.kind[card.kind] || '')}</b>${subject ? escapeHtml(SEP + subject) : ''}</span><span class="meta">${escapeHtml(meta)}</span>${actions}</li>`;

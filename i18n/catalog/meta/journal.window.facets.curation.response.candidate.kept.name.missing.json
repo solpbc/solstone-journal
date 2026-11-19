@@ -1,0 +1,25 @@
+{
+  "description": "Suggestion operation result in the journal's facets.curation.response view.",
+  "context": "Journal window, facets.curation.response view. Suggestion operation result.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kept",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "31c3807b4ae3889cdc199a815fd5888283e5c5b4237cae0c5ca7fd45dc937fb1",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

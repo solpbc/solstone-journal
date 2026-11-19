@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3c7159b294d593b771b59464f56daff3fcf4a628de817a86c9974bf2e678689",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

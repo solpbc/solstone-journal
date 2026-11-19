@@ -1,131 +1,243 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Browser copy mirrored from the Python curation application.
+//! Keep the curation response keys stable while rendering catalog copy.
 
 use serde_json::{Map, Value};
+use solstone_core_convey_http::window_catalog::text;
 
-pub fn payload() -> Value {
+pub fn payload(locale: &str) -> Value {
     Value::Object(
         COPY.iter()
-            .map(|(name, value)| ((*name).to_owned(), Value::String((*value).to_owned())))
+            .map(|(name, value)| ((*name).to_owned(), Value::String(text(locale, value))))
             .collect::<Map<_, _>>(),
     )
 }
 
 const COPY: [(&str, &str); 55] = [
-    ("CUR_HEADING", "suggestions"),
+    (
+        "CUR_HEADING",
+        "journal.window.facets.curation.response.copy.heading",
+    ),
     (
         "CUR_PREVIEW_NOTES_SOURCE",
-        "notes under the name being merged",
+        "journal.window.facets.curation.response.copy.preview.notes.source",
     ),
-    ("CUR_PREVIEW_LABELS", "speaker labels changed"),
-    ("CUR_PREVIEW_ACTIVITIES", "activity records changed"),
+    (
+        "CUR_PREVIEW_LABELS",
+        "journal.window.facets.curation.response.copy.preview.labels",
+    ),
+    (
+        "CUR_PREVIEW_ACTIVITIES",
+        "journal.window.facets.curation.response.copy.preview.activities",
+    ),
     (
         "CUR_FACET_BODY",
-        "journal activity doesn't fit your facets well. create the \"{name}\" facet?",
+        "journal.window.facets.curation.response.copy.facet.body",
     ),
-    ("CUR_FACET_CREATE_ACTION", "create facet"),
-    ("CUR_FACET_DISMISS_ACTION", "not now"),
+    (
+        "CUR_FACET_CREATE_ACTION",
+        "journal.window.facets.curation.response.copy.facet.create.action",
+    ),
+    (
+        "CUR_FACET_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.facet.dismiss.action",
+    ),
     (
         "CUR_ENTITY_BODY",
-        "\"{a}\" and \"{b}\" look like the same entity. merge them?",
+        "journal.window.facets.curation.response.copy.entity.body",
     ),
-    ("CUR_ENTITY_MERGE_ACTION", "merge"),
-    ("CUR_ENTITY_DISMISS_ACTION", "keep separate"),
-    ("CUR_ENTITY_FACETS_LABEL", "(in {facets})"),
+    (
+        "CUR_ENTITY_MERGE_ACTION",
+        "journal.window.facets.curation.response.copy.entity.merge.action",
+    ),
+    (
+        "CUR_ENTITY_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.entity.dismiss.action",
+    ),
+    (
+        "CUR_ENTITY_FACETS_LABEL",
+        "journal.window.facets.curation.response.copy.entity.facets.label",
+    ),
     (
         // G2-40: the lede a large duplicate-entity group opens on, framed as
         // what merging the visible batch gets the owner rather than the
         // full count owed.
         "CUR_ENTITY_GROUP_LEDE",
-        "these {count} pairs look alike. merging them keeps your names straight.",
+        "journal.window.facets.curation.response.copy.entity.group.lede",
     ),
-    ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
+    (
+        "CUR_ENTITY_SHOW_REST_ACTION",
+        "journal.window.facets.curation.response.copy.entity.show.rest.action",
+    ),
     (
         "CUR_ENTITY_PROGRESS_LABEL",
-        "{reviewed} reviewed · {left} left",
+        "journal.window.facets.curation.response.copy.entity.progress.label",
     ),
-    ("CUR_ENTITY_DONE_FOR_NOW_ACTION", "done for now"),
+    (
+        "CUR_ENTITY_DONE_FOR_NOW_ACTION",
+        "journal.window.facets.curation.response.copy.entity.done.for.now.action",
+    ),
     (
         "CUR_SPEAKER_BODY",
-        "\"{source}\" and \"{target}\" may be the same speaker. merge them?",
+        "journal.window.facets.curation.response.copy.speaker.body",
     ),
-    ("CUR_SPEAKER_MERGE_ACTION", "review merge"),
-    ("CUR_SPEAKER_DISMISS_ACTION", "keep separate"),
+    (
+        "CUR_SPEAKER_MERGE_ACTION",
+        "journal.window.facets.curation.response.copy.speaker.merge.action",
+    ),
+    (
+        "CUR_SPEAKER_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.speaker.dismiss.action",
+    ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_BODY",
-        "two voices in your journal sound alike. merge them?",
+        "!journal.window.facets.curation.response.copy.speaker.candidate.pair.body",
     ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION",
-        "merge candidates",
+        "!journal.window.facets.curation.response.copy.speaker.candidate.pair.merge.action",
     ),
-    ("CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION", "keep separate"),
-    ("CUR_SPEAKER_CANDIDATE_PAIR_SIMILARITY_LABEL", "cosine"),
-    ("CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL", "intervals"),
-    ("CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL", "candidate A"),
-    ("CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL", "candidate B"),
+    (
+        "CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.dismiss.action",
+    ),
+    (
+        "CUR_SPEAKER_CANDIDATE_PAIR_SIMILARITY_LABEL",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.similarity.label",
+    ),
+    (
+        "CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.intervals.label",
+    ),
+    (
+        "CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.source.label",
+    ),
+    (
+        "CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.target.label",
+    ),
     (
         "CUR_EMPTY_STATE",
-        "nothing to review. no new structure to suggest yet.",
+        "journal.window.facets.curation.response.copy.empty.state",
     ),
     (
         "CUR_ENTITY_PREVIEW_LEAD",
-        "before merging, here's what will change. a merge can't be undone.",
+        "!journal.window.facets.curation.response.copy.entity.preview.lead",
     ),
-    ("CUR_ENTITY_CONFIRM_ACTION", "confirm merge"),
-    ("CUR_ENTITY_CANCEL_ACTION", "cancel"),
-    ("CUR_ENTITY_SELECT_ALL_ACTION", "select all"),
-    ("CUR_ENTITY_BATCH_MERGE_ACTION", "merge selected"),
-    ("CUR_ENTITY_BATCH_DISMISS_ACTION", "keep selected separate"),
+    (
+        "CUR_ENTITY_CONFIRM_ACTION",
+        "!journal.window.facets.curation.response.copy.entity.confirm.action",
+    ),
+    (
+        "CUR_ENTITY_CANCEL_ACTION",
+        "journal.window.facets.curation.response.copy.entity.cancel.action",
+    ),
+    (
+        "CUR_ENTITY_SELECT_ALL_ACTION",
+        "journal.window.facets.curation.response.copy.entity.select.all.action",
+    ),
+    (
+        "CUR_ENTITY_BATCH_MERGE_ACTION",
+        "journal.window.facets.curation.response.copy.entity.batch.merge.action",
+    ),
+    (
+        "CUR_ENTITY_BATCH_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.entity.batch.dismiss.action",
+    ),
     (
         "CUR_ENTITY_BATCH_MERGE_LEAD",
-        "these pairs will be merged. merges can't be undone:",
+        "!journal.window.facets.curation.response.copy.entity.batch.merge.lead",
     ),
     (
         "CUR_ENTITY_BATCH_DISMISS_LEAD",
-        "these pairs will be kept separate:",
+        "journal.window.facets.curation.response.copy.entity.batch.dismiss.lead",
     ),
-    ("CUR_ENTITY_BATCH_CONFIRM_MERGE_ACTION", "merge all"),
+    (
+        "CUR_ENTITY_BATCH_CONFIRM_MERGE_ACTION",
+        "!journal.window.facets.curation.response.copy.entity.batch.confirm.merge.action",
+    ),
     (
         "CUR_ENTITY_BATCH_CONFIRM_DISMISS_ACTION",
-        "keep all separate",
+        "journal.window.facets.curation.response.copy.entity.batch.confirm.dismiss.action",
     ),
-    ("CUR_ENTITY_BATCH_MERGE_SUMMARY", "merged {ok} of {total}."),
+    (
+        "CUR_ENTITY_BATCH_MERGE_SUMMARY",
+        "journal.window.facets.curation.response.copy.entity.batch.merge.summary",
+    ),
     (
         "CUR_ENTITY_BATCH_DISMISS_SUMMARY",
-        "kept {ok} of {total} separate.",
+        "journal.window.facets.curation.response.copy.entity.batch.dismiss.summary",
     ),
     (
         "CUR_ENTITY_BATCH_FAILED_NOTE",
-        "{failed} still need attention below.",
+        "journal.window.facets.curation.response.copy.entity.batch.failed.note",
     ),
-    ("CUR_AMBIGUITY_BODY", "which entry matches \"{query}\"?"),
-    ("CUR_AMBIGUITY_ORIGIN_LABEL", "noticed in"),
-    ("CUR_AMBIGUITY_CHOOSE_ACTION", "choose {name}"),
+    (
+        "CUR_AMBIGUITY_BODY",
+        "journal.window.facets.curation.response.copy.ambiguity.body",
+    ),
+    (
+        "CUR_AMBIGUITY_ORIGIN_LABEL",
+        "journal.window.facets.curation.response.copy.ambiguity.origin.label",
+    ),
+    (
+        "CUR_AMBIGUITY_CHOOSE_ACTION",
+        "journal.window.facets.curation.response.copy.ambiguity.choose.action",
+    ),
     // G2-B05: the durable "none of these". The three sibling groups all
     // have a way to say no; this one had only the candidate buttons.
-    ("CUR_AMBIGUITY_DISMISS_ACTION", "none of these"),
-    ("CUR_ACTION_FAILED", "that didn't go through. try again."),
-    ("CUR_REPAIR_REQUIRED", "{detail} {remediation}"),
+    (
+        "CUR_AMBIGUITY_DISMISS_ACTION",
+        "journal.window.facets.curation.response.copy.ambiguity.dismiss.action",
+    ),
+    (
+        "CUR_ACTION_FAILED",
+        "journal.window.facets.curation.response.copy.action.failed",
+    ),
+    (
+        "CUR_REPAIR_REQUIRED",
+        "journal.window.facets.curation.response.copy.repair.required",
+    ),
     (
         "CUR_ENTITY_PREVIEW_EMPTY",
-        "no journal changes are needed for this merge.",
+        "journal.window.facets.curation.response.copy.entity.preview.empty",
     ),
     (
         "CUR_ENTITY_PREVIEW_ERRORS",
-        "some segment updates may need attention.",
+        "journal.window.facets.curation.response.copy.entity.preview.errors",
     ),
-    ("CUR_PREVIEW_AKAS_LABEL", "aliases added"),
-    ("CUR_PREVIEW_EMAILS_LABEL", "emails added"),
-    ("CUR_PREVIEW_FACETS_LABEL", "facet links"),
-    ("CUR_PREVIEW_OBSERVATIONS_LABEL", "notes moved"),
-    ("CUR_PREVIEW_SEGMENTS_LABEL", "speaker labels updated"),
-    ("CUR_PREVIEW_VOICEPRINTS_LABEL", "voice samples moved"),
+    (
+        "CUR_PREVIEW_AKAS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.akas.label",
+    ),
+    (
+        "CUR_PREVIEW_EMAILS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.emails.label",
+    ),
+    (
+        "CUR_PREVIEW_FACETS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.facets.label",
+    ),
+    (
+        "CUR_PREVIEW_OBSERVATIONS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.observations.label",
+    ),
+    (
+        "CUR_PREVIEW_SEGMENTS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.segments.label",
+    ),
+    (
+        "CUR_PREVIEW_VOICEPRINTS_LABEL",
+        "journal.window.facets.curation.response.copy.preview.voiceprints.label",
+    ),
     (
         "CUR_PREVIEW_PARTIAL",
-        "the merge also joins facet links and photos.",
+        "!journal.window.facets.curation.response.copy.preview.partial",
     ),
-    ("CUR_REVIEW_RESTORE_ACTION", "restore to review"),
+    (
+        "CUR_REVIEW_RESTORE_ACTION",
+        "journal.window.facets.curation.response.copy.review.restore.action",
+    ),
 ];

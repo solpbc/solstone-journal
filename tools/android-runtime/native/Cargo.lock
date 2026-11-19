@@ -7058,6 +7058,7 @@ dependencies = [
  "solstone-core-time",
  "solstone-core-transcripts",
  "solstone-core-trash",
+ "solstone-core-window-catalog",
  "thiserror 2.0.20",
  "zip",
 ]

@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "840c35946519415094e7536d855ebd6460b09fabd9b33c9cf4bcab97086c64fa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

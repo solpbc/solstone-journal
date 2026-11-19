@@ -642,13 +642,30 @@ impl CandidateTracker {
         anchor_a: &str,
         anchor_b: &str,
     ) -> Result<Value, CandidateTrackerError> {
+        self.merge_candidate_pair_localized(
+            anchor_a,
+            anchor_b,
+            solstone_core_window_catalog::ENGLISH,
+        )
+    }
+
+    pub fn merge_candidate_pair_localized(
+        &mut self,
+        anchor_a: &str,
+        anchor_b: &str,
+        locale: &str,
+    ) -> Result<Value, CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
         self.load_strict()?;
         let Some(left_id) = self.candidate_id_for_anchor(anchor_a) else {
-            return Ok(json!({"status":"error","error":"candidate anchor not found"}));
+            return Ok(
+                json!({"status":"error","error":solstone_core_window_catalog::text(locale, "journal.window.facets.curation.response.pair.anchor.absent")}),
+            );
         };
         let Some(right_id) = self.candidate_id_for_anchor(anchor_b) else {
-            return Ok(json!({"status":"error","error":"candidate anchor not found"}));
+            return Ok(
+                json!({"status":"error","error":solstone_core_window_catalog::text(locale, "journal.window.facets.curation.response.pair.anchor.absent")}),
+            );
         };
         if left_id == right_id {
             return Ok(json!({"status":"already_merged","survivor_id":left_id}));
@@ -662,7 +679,9 @@ impl CandidateTracker {
             .get(&right_id)
             .expect("anchor candidate exists");
         if left.status == "rejected" || right.status == "rejected" {
-            return Ok(json!({"status":"error","error":"cannot merge rejected candidate"}));
+            return Ok(
+                json!({"status":"error","error":solstone_core_window_catalog::text(locale, "journal.window.facets.curation.response.pair.rejected")}),
+            );
         }
         let confirmed = [left, right]
             .into_iter()
@@ -671,13 +690,15 @@ impl CandidateTracker {
             })
             .collect::<Vec<_>>();
         if confirmed.len() > 1 {
-            return Ok(json!({"status":"error","error":"cannot merge two confirmed candidates"}));
+            return Ok(
+                json!({"status":"error","error":solstone_core_window_catalog::text(locale, "journal.window.facets.curation.response.pair.already.confirmed")}),
+            );
         }
         let score = dot(&left.centroid, &right.centroid);
         if score < CONSOLIDATE_SUGGEST_MIN {
             return Ok(json!({
                 "status":"error",
-                "error":"candidate pair is below review threshold",
+                "error":solstone_core_window_catalog::text(locale, "journal.window.facets.curation.response.pair.below.threshold"),
                 "score":score,
             }));
         }

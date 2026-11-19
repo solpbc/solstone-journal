@@ -1,0 +1,16 @@
+{
+  "description": "Curation response copy in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Curation response copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d99afd81929eb27a5af7df17d4a6939f0acd27bf08d982439f173ce882f7195",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

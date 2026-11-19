@@ -1,0 +1,16 @@
+{
+  "description": "Error message in the journal's facets.activities.response view.",
+  "context": "Journal window, facets.activities.response view. Error message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a895e5667f97c3f7983f8ba5b40bc392c264ed8a9baab3ffd92884b47e8e259f",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

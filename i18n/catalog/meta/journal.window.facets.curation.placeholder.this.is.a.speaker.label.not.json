@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22358a004ff1753bb97c750405ef571cc1255d79ae03cb211e12bfbda230b158",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

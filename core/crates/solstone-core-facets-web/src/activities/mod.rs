@@ -115,8 +115,10 @@ async fn activities_day_shell(RoutePath(day): RoutePath<String>) -> Response {
 fn invalid_day_not_found() -> Response {
     http::error(
         "invalid_day",
-        "that day couldn't be used.",
-        "Day not found".to_owned(),
+        "journal.window.facets.activities.response.error.message.that.day.couldn.t.be.used",
+        http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.day.not.found",
+        ),
         StatusCode::NOT_FOUND,
     )
 }
@@ -181,10 +183,14 @@ async fn create(
         .filter(|source| !source.is_empty())
         .unwrap_or_else(|| "user".to_owned());
     if title.is_empty() {
-        return invalid("title must not be empty");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.title.must.not.be.empty",
+        ));
     }
     if source != "user" {
-        return invalid("source must be 'user'");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.source.must.be.user",
+        ));
     }
     // The journal holds what has happened: an activity can't be on a day that
     // has begun nowhere yet. Anywhere, so no time zone refuses a real today.
@@ -194,7 +200,9 @@ async fn create(
             .date(),
     );
     if day > today_anywhere {
-        return invalid("day must not be after today");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.day.must.not.be.after.today",
+        ));
     }
     let activity = string(&body, "activity").trim().to_owned();
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
@@ -204,7 +212,9 @@ async fn create(
         Err(error) => return internal(error.to_string()),
     }
     if facet.is_empty() {
-        return invalid("facet must not be empty");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.facet.must.not.be.empty",
+        ));
     }
     let (anchor, segments) = match body.get("since_segment") {
         Some(value) if !value.is_null() => (
@@ -315,8 +325,10 @@ async fn activities_stats(
     if !crate::segments::is_month(&month) {
         return http::error(
             "invalid_month",
-            "that month couldn't be used.",
-            "Invalid month format, expected YYYYMM".to_owned(),
+            "journal.window.facets.activities.response.error.message.that.month.couldn.t.be.used",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.invalid.month.format.expected.yyyymm",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -399,8 +411,10 @@ fn think_again_over(
 fn edit_refused(refusal: solstone_core_facets::EditRefusal) -> Response {
     http::error(
         refusal.reason_code(),
-        "that edit couldn't be removed.",
-        solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal).to_string(),
+        "journal.window.facets.activities.response.error.message.that.edit.couldn.t.be.removed",
+        solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal)
+            .to_string()
+            .into(),
         if refusal == solstone_core_facets::EditRefusal::OutOfRange {
             StatusCode::NOT_FOUND
         } else {
@@ -431,8 +445,10 @@ async fn remove_edit(
     if headers.get(ACTOR_HEADER).and_then(|v| v.to_str().ok()) != Some(ACTOR_OWNER) {
         return http::error(
             "activity_owner_only",
-            "only you can remove a correction.",
-            "removing an edit needs the owner".to_owned(),
+            "journal.window.facets.activities.response.error.message.only.you.can.remove.a.correction",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.removing.an.edit.needs.the.owner",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -448,7 +464,9 @@ async fn remove_edit(
         body.get("timestamp").and_then(Value::as_str),
         body.get("actor").and_then(Value::as_str),
     ) else {
-        return invalid("position, timestamp and actor name the edit to remove");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.position.timestamp.and.actor.name.the",
+        ));
     };
     let removed_at = utc_z(clock.now().timestamp(), Precision::Secs);
     if let Some(response) = lines::remove_lines_edit(
@@ -585,10 +603,14 @@ async fn mutate_update(
     }
     let body = object_body(&body);
     let Some(patch) = body.get("patch").and_then(Value::as_object) else {
-        return invalid("patch must be a non-empty object");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.patch.must.be.a.non.empty",
+        ));
     };
     if patch.is_empty() {
-        return invalid("patch must not be empty");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.patch.must.not.be.empty",
+        ));
     }
     let disallowed = patch
         .keys()
@@ -601,16 +623,18 @@ async fn mutate_update(
         .cloned()
         .collect::<Vec<_>>();
     if !disallowed.is_empty() {
-        return invalid(&format!(
-            "patch contains disallowed fields: {}",
-            disallowed.join(", ")
+        return invalid(http::Detail::with_value(
+            "journal.window.facets.activities.response.error.detail.patch.contains.disallowed.fields.value",
+            disallowed.join(", "),
         ));
     }
     if patch
         .get("playback")
         .is_some_and(|value| !value.is_boolean())
     {
-        return invalid("playback must be true or false");
+        return invalid(http::Detail::catalog(
+            "journal.window.facets.activities.response.error.detail.playback.must.be.true.or.false",
+        ));
     }
     let note = activity_value_or_empty(body.get("note"));
     let timestamp = utc_z(clock.now().timestamp(), Precision::Secs);
@@ -741,8 +765,10 @@ async fn separate(
     if headers.get(ACTOR_HEADER).and_then(|v| v.to_str().ok()) != Some(ACTOR_OWNER) {
         return http::error(
             "activity_owner_only",
-            "only you can separate a group.",
-            "separating a group needs the owner".to_owned(),
+            "journal.window.facets.activities.response.error.message.only.you.can.separate.a.group",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.separating.a.group.needs.the.owner",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -769,8 +795,10 @@ async fn separate(
     if others.is_empty() {
         return http::error(
             "activity_not_grouped",
-            "this isn't grouped with anything.",
-            "only a record in a group of two or more can be separated".to_owned(),
+            "journal.window.facets.activities.response.error.message.this.isn.t.grouped.with.anything",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.only.a.record.in.a.group",
+            ),
             StatusCode::CONFLICT,
         );
     }
@@ -980,35 +1008,35 @@ fn string_values(record: &Map<String, Value>, key: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
-fn invalid(detail: &str) -> Response {
+fn invalid(detail: http::Detail) -> Response {
     http::error(
         "activity_invalid",
-        "that activity setting couldn't be used.",
-        detail.to_owned(),
+        "journal.window.facets.activities.response.error.message.that.activity.setting.couldn.t.be",
+        detail,
         StatusCode::BAD_REQUEST,
     )
 }
 fn not_found(detail: String) -> Response {
     http::error(
         "activity_not_found",
-        "that activity isn't in the facet.",
-        detail,
+        "journal.window.facets.activities.response.error.message.that.activity.isn.t.in.the",
+        detail.into(),
         StatusCode::NOT_FOUND,
     )
 }
 fn already_exists(detail: String) -> Response {
     http::error(
         "activity_already_exists",
-        "that activity couldn't be created because it already exists.",
-        detail,
+        "journal.window.facets.activities.response.error.message.that.activity.couldn.t.be.created",
+        detail.into(),
         StatusCode::CONFLICT,
     )
 }
 pub(crate) fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
-        "that request didn't finish.",
-        detail,
+        "journal.window.facets.activities.response.error.message.that.request.didn.t.finish",
+        detail.into(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -1016,8 +1044,8 @@ fn store_error(error: solstone_core_facets::ActivityRecordStoreError) -> Respons
     if let solstone_core_facets::ActivityRecordStoreError::BodyRecordMoving { detail } = &error {
         return http::error(
             "activity_moving",
-            "this record is being moved. you can edit it once that finishes.",
-            detail.clone(),
+            "journal.window.facets.activities.response.error.message.this.record.is.being.moved.you",
+            detail.clone().into(),
             StatusCode::CONFLICT,
         );
     }
@@ -1029,9 +1057,10 @@ fn store_error(error: solstone_core_facets::ActivityRecordStoreError) -> Respons
     ) {
         http::error(
             "activities_busy",
-            "activities couldn't be updated right now because they were busy. try again in a moment.",
-            "activities couldn't be updated right now because they were busy. try again in a moment."
-                .to_owned(),
+            "journal.window.facets.activities.response.error.message.activities.couldn.t.be.updated.right",
+            http::Detail::catalog(
+                "journal.window.facets.activities.response.error.detail.activities.couldn.t.be.updated.right",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         )
     } else {

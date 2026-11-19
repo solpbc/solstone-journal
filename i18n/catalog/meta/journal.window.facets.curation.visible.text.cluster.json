@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e05f6b063500d292391358d8b732b0c7409631882ba69b3ce2f5eb365b5c26c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

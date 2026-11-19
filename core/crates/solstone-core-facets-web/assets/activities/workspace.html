@@ -908,7 +908,7 @@
     <div class="act-top-bar">
       <div class="act-scope-wrap">
         <button type="button" class="act-scope-btn" aria-haspopup="listbox" aria-expanded="false" data-scope-btn>
-          <span class="act-scope-label" data-scope-label data-copy-key="scope-all">showing all facets</span>
+          <span class="act-scope-label" data-scope-label data-copy-key="scope-all">{{journal.window.facets.activities.copy.scope.all}}</span>
           <span class="act-scope-chev">▾</span>
         </button>
         <ul class="act-scope-listbox" role="listbox" tabindex="-1" hidden data-scope-listbox></ul>
@@ -923,20 +923,20 @@
     <div class="act-main">
       <div class="act-empty" hidden data-empty-area></div>
       <div class="act-untimed" hidden data-untimed-area>
-        <h2 class="act-untimed-heading" data-copy-key="untimed-heading">without a time</h2>
+        <h2 class="act-untimed-heading" data-copy-key="untimed-heading">{{journal.window.facets.activities.copy.untimed.heading}}</h2>
         <div class="act-untimed-list" data-untimed-list></div>
       </div>
       <div class="act-timeline-wrap" data-timeline-wrap>
         <div class="act-time-axis" data-time-axis></div>
         <div class="act-columns" data-columns-area>
           <div class="act-grid-lines" data-grid-lines></div>
-          <div class="act-now-line" hidden data-now-line data-copy-key="now"><span class="act-now-badge" data-copy-key="now">now</span></div>
+          <div class="act-now-line" hidden data-now-line data-copy-key="now"><span class="act-now-badge" data-copy-key="now">{{journal.window.facets.activities.copy.now}}</span></div>
           <div class="act-blocks" data-blocks-container></div>
         </div>
       </div>
       <div class="act-footer" hidden data-footer-area>
         <span class="act-footer-count" data-copy-key="hidden-footer"></span>
-        <button type="button" class="act-btn" data-copy-key="show-hidden" data-toggle-hidden>show hidden</button>
+        <button type="button" class="act-btn" data-copy-key="show-hidden" data-toggle-hidden>{{journal.window.facets.activities.copy.show.hidden}}</button>
       </div>
     </div>
     <aside class="act-panel" data-panel-area tabindex="-1"></aside>
@@ -1010,145 +1010,145 @@
 
   // --- owner-facing strings ---
   const STRINGS = {
-    'loading': 'loading activities…',
-    'load-error': "couldn't load activities",
-    'empty-pick': "pick an activity to see what it's based on.",
-    'today-note': 'activities appear here a little while after they end, and can still grow as more comes in.',
-    'untimed-heading': 'without a time',
-    'hidden-footer': '{n} hidden on this day',
-    'showing-hidden': 'showing {n} hidden',
-    'show-hidden': 'show hidden',
-    'stop-showing-hidden': 'stop showing hidden',
-    'scope-all': 'showing all facets',
-    'scope-facet': 'showing {facet}',
-    'hidden-outline': 'hidden',
-    'unhide': 'unhide',
-    'hidden-status': "hidden. it's still in your journal.",
-    'label-title': 'title',
-    'label-description': 'description',
-    'label-details': 'your account of it',
-    'account-hint': "say it the way you'd tell a friend: who did what, what was decided, what's still open.",
-    'save': 'save',
-    'cancel': 'cancel',
-    'save-failure': "couldn't save. your changes are still here, so you can try again.",
-    'action-edit': 'edit',
-    'action-hide': 'hide',
-    'action-unhide': 'unhide',
-    'sheet-close': 'close',
-    'reason-owner': 'you hid this',
-    'reason-day': "you hid this day's body data",
-    'action-unhide-day': 'unhide the day on the body page',
-    'heading-accounts': 'what recorded it',
-    'state-removed_by_you': 'removed by you',
-    'state-removed': 'removed',
-    'state-part_removed': 'part of it removed',
-    'state-unreadable': "can't be read right now",
-    'state-not_found': 'no longer in your journal',
-    'action-separate': 'separate',
-    'separate-confirm': "it won't join this group again. nothing is deleted.",
-    'action-separate-yes': 'separate it',
-    'reason-command': 'hidden with the solstone command',
-    'reason-cancelled': 'seen as cancelled or declined',
-    'reason-other': 'hidden',
-    'cue-edited': 'edited by you',
-    'source-mixed': 'more than one source',
-    'source-unknown': 'source unknown',
-    'evidence-heading': "what it's based on",
-    'evidence-open': 'open in transcripts ›',
-    'evidence-open-narrow': 'open ›',
-    'evidence-show-all': 'show all {n} segments',
-    'heading-summary': 'summary',
-    'heading-description': 'description',
-    'heading-details': 'your account of it',
-    'heading-history': 'history',
-    'history-found': 'found in segments from {stream}',
-    'history-found-mixed': 'found in segments from more than one source',
-    'history-found-unknown': 'found in segments from an unknown source',
-    'history-grew': 'grew as more of it came in',
-    'history-you-changed': 'you changed {fields}',
-    'history-you-hid': 'you hid it',
-    'history-you-unhid': 'you unhid it',
-    'history-cli-changed': 'changed with the solstone command',
-    'history-cli-hid': 'hidden with the solstone command',
-    'history-cli-unhid': 'unhidden with the solstone command',
-    'history-cli-added': 'added with the solstone command',
-    'empty-past-heading': 'no activities on this day',
-    'empty-past-body': "the journal adds activities as it works through what you've shared.",
-    'empty-facet-heading': 'nothing in {facet} on this day',
-    'empty-facet-body': 'other facets have activities on this day.',
-    'empty-facet-show-all': 'show all facets',
-    'empty-today-heading': 'nothing yet today',
-    'empty-today-body': 'as the day goes on, activities from what you share show up here.',
-    'scope-all-option': 'all facets',
-    'source-unknown-phrase': 'an unknown source',
-    'segments-one': '1 segment from {source}, {range}',
-    'segments-many': '{n} segments from {source}, {range}',
-    'segment-minutes': '{n} min',
-    'calendar-then': 'on your calendar then: {title}',
-    'calendar-then-untitled': 'on your calendar then',
-    'place-then': '{device} was {words} then',
-    'people-one': 'with {a}',
-    'people-two': 'with {a} and {b}',
-    'people-many-one': 'with {a}, {b} and 1 other',
-    'people-many': 'with {a}, {b} and {n} others',
-    'fields-title': 'the title',
-    'fields-description': 'the description',
-    'fields-details': 'your account of it',
-    'fields-title-description': 'the title and description',
-    'fields-title-details': 'the title and your account of it',
-    'fields-description-details': 'the description and your account of it',
-    'fields-all': 'the title, the description and your account of it',
-    'now': 'now',
-    'action-correct': "that's not right",
-    'correct-title': "that's not right",
-    'correct-who': 'who said it',
-    'correct-who-hint': 'a line shows the wrong person',
-    'correct-what': 'what actually happened',
-    'correct-what-hint': 'tell your journal in your own words',
-    'correct-playback': 'this was a recording or video playing',
-    'back': 'back',
-    'lines-loading': 'finding the spoken lines…',
-    'lines-yours': 'lines your journal credits to you',
-    'lines-others': 'other spoken lines',
-    'lines-count-one': '1 line',
-    'lines-count': '{n} lines',
-    'lines-question': 'who said the lines you ticked?',
-    'lines-question-one': 'who said the line you ticked?',
-    'lines-question-n': 'who said the {n} lines you ticked?',
-    'line-play-at': 'play the line at {time}',
-    'lines-only': 'these lines only',
-    'lines-only-body': "your answer is for the lines you tick, not their voices. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
-    'lines-only-link': 'speakers',
-    'speaker-me': 'me',
-    'speaker-person': 'a person',
-    'speaker-unknown': "someone i don't know",
-    'person-search': 'find a person',
-    'people-loading': 'loading the people in your journal…',
-    'people-load-failed': "couldn't load the people in your journal.",
-    'person-none': 'no one in your journal matches that.',
-    'playback-confirm-body': 'your journal will think this through again as something you watched or listened to, with no one else taking part.',
-    'playback-confirm': 'yes, it was playing',
-    'refusal-line-source': "these lines can't take an answer about who said them. you can tell your journal what happened instead.",
-    'refusal-line-changed': 'these lines have changed since they were shown. go back and open them again.',
-    'refusal-line-person': "that person can't be chosen. pick someone else, or someone you don't know.",
-    'refusal-line-owner': "your journal doesn't know which person is you yet, so it can't mark lines as yours.",
-    'refusal-line-unreadable': "your earlier answers about who spoke here can't be read, so this one wasn't saved.",
-    'refusal-line-outside': "some of those lines aren't part of this activity.",
-    'refusal-line-empty': 'tick the lines you want to fix first.',
-    'refusal-line-other': "couldn't save that. try again in a moment.",
-    'updating': 'updating…',
-    'corrected-by-you': 'corrected by you',
-    'history-you-told': 'you told your journal what happened',
-    'history-you-playback': 'you said this was a recording or video playing',
-    'history-you-lines-one': 'you fixed who said 1 line',
-    'history-you-lines-many': 'you fixed who said {n} lines',
-    'history-remove': 'remove',
-    'history-remove-label': 'remove: {line}',
-    'history-removed': 'removed',
-    'history-suggested-by': 'suggested by {agent}',
-    'remove-stale': "that changed since it was shown. here's how it stands now.",
-    'remove-failure': "couldn't remove that. try again in a moment.",
-    'home-today-link': "all of today's activities →"
+    'loading': window.JournalI18n.render('journal.window.facets.activities.copy.loading'),
+    'load-error': window.JournalI18n.render('journal.window.facets.activities.copy.load.error'),
+    'empty-pick': window.JournalI18n.render('journal.window.facets.activities.window.explanation.pick.an.activity.to.see.what'),
+    'today-note': window.JournalI18n.render('journal.window.facets.activities.window.explanation.activities.appear.here.a.little.while'),
+    'untimed-heading': window.JournalI18n.render('journal.window.facets.activities.copy.untimed.heading'),
+    'hidden-footer': window.JournalI18n.render('journal.window.facets.activities.copy.hidden.footer'),
+    'showing-hidden': window.JournalI18n.render('journal.window.facets.activities.copy.showing.hidden'),
+    'show-hidden': window.JournalI18n.render('journal.window.facets.activities.copy.show.hidden'),
+    'stop-showing-hidden': window.JournalI18n.render('journal.window.facets.activities.copy.stop.showing.hidden'),
+    'scope-all': window.JournalI18n.render('journal.window.facets.activities.copy.scope.all'),
+    'scope-facet': window.JournalI18n.render('journal.window.facets.activities.copy.scope.facet'),
+    'hidden-outline': window.JournalI18n.render('journal.window.facets.activities.copy.hidden.outline'),
+    'unhide': window.JournalI18n.render('journal.window.facets.activities.copy.unhide'),
+    'hidden-status': window.JournalI18n.render('journal.window.facets.activities.window.explanation.hidden.it.s.still.in.your'),
+    'label-title': window.JournalI18n.render('journal.window.facets.activities.copy.label.title'),
+    'label-description': window.JournalI18n.render('journal.window.facets.activities.copy.label.description'),
+    'label-details': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.account.of.it'),
+    'account-hint': window.JournalI18n.render('journal.window.facets.activities.window.explanation.say.it.the.way.you.d'),
+    'save': window.JournalI18n.render('journal.window.facets.activities.copy.save'),
+    'cancel': window.JournalI18n.render('journal.window.facets.activities.copy.cancel'),
+    'save-failure': window.JournalI18n.render('journal.window.facets.activities.window.explanation.couldn.t.save.your.changes.are'),
+    'action-edit': window.JournalI18n.render('journal.window.facets.activities.copy.action.edit'),
+    'action-hide': window.JournalI18n.render('journal.window.facets.activities.copy.action.hide'),
+    'action-unhide': window.JournalI18n.render('journal.window.facets.activities.copy.action.unhide'),
+    'sheet-close': window.JournalI18n.render('journal.window.facets.activities.copy.sheet.close'),
+    'reason-owner': window.JournalI18n.render('journal.window.facets.activities.copy.reason.owner'),
+    'reason-day': window.JournalI18n.render('journal.window.facets.activities.window.explanation.you.hid.this.day.s.body'),
+    'action-unhide-day': window.JournalI18n.render('journal.window.facets.activities.window.explanation.unhide.the.day.on.the.body'),
+    'heading-accounts': window.JournalI18n.render('journal.window.facets.activities.copy.heading.accounts'),
+    'state-removed_by_you': window.JournalI18n.render('journal.window.facets.activities.copy.state.removed.by.you'),
+    'state-removed': window.JournalI18n.render('journal.window.facets.activities.copy.state.removed'),
+    'state-part_removed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.part.of.it.removed'),
+    'state-unreadable': window.JournalI18n.render('journal.window.facets.activities.window.explanation.can.t.be.read.right.now'),
+    'state-not_found': window.JournalI18n.render('journal.window.facets.activities.window.explanation.no.longer.in.your.journal'),
+    'action-separate': window.JournalI18n.render('journal.window.facets.activities.copy.action.separate'),
+    'separate-confirm': window.JournalI18n.render('journal.window.facets.activities.window.explanation.it.won.t.join.this.group'),
+    'action-separate-yes': window.JournalI18n.render('journal.window.facets.activities.copy.action.separate.yes'),
+    'reason-command': window.JournalI18n.render('journal.window.facets.activities.window.explanation.hidden.with.the.solstone.command'),
+    'reason-cancelled': window.JournalI18n.render('journal.window.facets.activities.window.explanation.seen.as.cancelled.or.declined'),
+    'reason-other': window.JournalI18n.render('journal.window.facets.activities.copy.reason.other'),
+    'cue-edited': window.JournalI18n.render('journal.window.facets.activities.copy.cue.edited'),
+    'source-mixed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.more.than.one.source'),
+    'source-unknown': window.JournalI18n.render('journal.window.facets.activities.copy.source.unknown'),
+    'evidence-heading': window.JournalI18n.render('journal.window.facets.activities.window.explanation.what.it.s.based.on'),
+    'evidence-open': window.JournalI18n.render('journal.window.facets.activities.copy.evidence.open'),
+    'evidence-open-narrow': window.JournalI18n.render('journal.window.facets.activities.copy.evidence.open.narrow'),
+    'evidence-show-all': window.JournalI18n.render('journal.window.facets.activities.copy.evidence.show.all'),
+    'heading-summary': window.JournalI18n.render('journal.window.facets.activities.copy.heading.summary'),
+    'heading-description': window.JournalI18n.render('journal.window.facets.activities.copy.heading.description'),
+    'heading-details': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.account.of.it'),
+    'heading-history': window.JournalI18n.render('journal.window.facets.activities.copy.heading.history'),
+    'history-found': window.JournalI18n.render('journal.window.facets.activities.copy.history.found'),
+    'history-found-mixed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.found.in.segments.from.more.than'),
+    'history-found-unknown': window.JournalI18n.render('journal.window.facets.activities.window.explanation.found.in.segments.from.an.unknown'),
+    'history-grew': window.JournalI18n.render('journal.window.facets.activities.window.explanation.grew.as.more.of.it.came'),
+    'history-you-changed': window.JournalI18n.render('journal.window.facets.activities.copy.history.you.changed'),
+    'history-you-hid': window.JournalI18n.render('journal.window.facets.activities.copy.history.you.hid'),
+    'history-you-unhid': window.JournalI18n.render('journal.window.facets.activities.copy.history.you.unhid'),
+    'history-cli-changed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.changed.with.the.solstone.command'),
+    'history-cli-hid': window.JournalI18n.render('journal.window.facets.activities.window.explanation.hidden.with.the.solstone.command'),
+    'history-cli-unhid': window.JournalI18n.render('journal.window.facets.activities.window.explanation.unhidden.with.the.solstone.command'),
+    'history-cli-added': window.JournalI18n.render('journal.window.facets.activities.window.explanation.added.with.the.solstone.command'),
+    'empty-past-heading': window.JournalI18n.render('journal.window.facets.activities.window.explanation.no.activities.on.this.day'),
+    'empty-past-body': window.JournalI18n.render('journal.window.facets.activities.window.explanation.the.journal.adds.activities.as.it'),
+    'empty-facet-heading': window.JournalI18n.render('journal.window.facets.activities.copy.empty.facet.heading'),
+    'empty-facet-body': window.JournalI18n.render('journal.window.facets.activities.window.explanation.other.facets.have.activities.on.this'),
+    'empty-facet-show-all': window.JournalI18n.render('journal.window.facets.activities.copy.empty.facet.show.all'),
+    'empty-today-heading': window.JournalI18n.render('journal.window.facets.activities.copy.empty.today.heading'),
+    'empty-today-body': window.JournalI18n.render('journal.window.facets.activities.window.explanation.as.the.day.goes.on.activities'),
+    'scope-all-option': window.JournalI18n.render('journal.window.facets.activities.copy.scope.all.option'),
+    'source-unknown-phrase': window.JournalI18n.render('journal.window.facets.activities.copy.source.unknown.phrase'),
+    'segments-one': window.JournalI18n.render('journal.window.facets.activities.copy.segments.one'),
+    'segments-many': window.JournalI18n.render('journal.window.facets.activities.copy.segments.many'),
+    'segment-minutes': window.JournalI18n.render('journal.window.facets.activities.copy.segment.minutes'),
+    'calendar-then': window.JournalI18n.render('journal.window.facets.activities.copy.calendar.then'),
+    'calendar-then-untitled': window.JournalI18n.render('journal.window.facets.activities.window.explanation.on.your.calendar.then'),
+    'place-then': window.JournalI18n.render('journal.window.facets.activities.copy.place.then'),
+    'people-one': window.JournalI18n.render('journal.window.facets.activities.copy.people.one'),
+    'people-two': window.JournalI18n.render('journal.window.facets.activities.copy.people.two'),
+    'people-many-one': window.JournalI18n.render('journal.window.facets.activities.copy.people.many.one'),
+    'people-many': window.JournalI18n.render('journal.window.facets.activities.copy.people.many'),
+    'fields-title': window.JournalI18n.render('journal.window.facets.activities.copy.fields.title'),
+    'fields-description': window.JournalI18n.render('journal.window.facets.activities.copy.fields.description'),
+    'fields-details': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.account.of.it'),
+    'fields-title-description': window.JournalI18n.render('journal.window.facets.activities.window.explanation.the.title.and.description'),
+    'fields-title-details': window.JournalI18n.render('journal.window.facets.activities.window.explanation.the.title.and.your.account.of'),
+    'fields-description-details': window.JournalI18n.render('journal.window.facets.activities.window.explanation.the.description.and.your.account.of'),
+    'fields-all': window.JournalI18n.render('journal.window.facets.activities.window.explanation.the.title.the.description.and.your'),
+    'now': window.JournalI18n.render('journal.window.facets.activities.copy.now'),
+    'action-correct': window.JournalI18n.render('journal.window.facets.activities.copy.action.correct'),
+    'correct-title': window.JournalI18n.render('journal.window.facets.activities.copy.correct.title'),
+    'correct-who': window.JournalI18n.render('journal.window.facets.activities.copy.correct.who'),
+    'correct-who-hint': window.JournalI18n.render('journal.window.facets.activities.window.explanation.a.line.shows.the.wrong.person'),
+    'correct-what': window.JournalI18n.render('journal.window.facets.activities.copy.correct.what'),
+    'correct-what-hint': window.JournalI18n.render('journal.window.facets.activities.window.explanation.tell.your.journal.in.your.own'),
+    'correct-playback': window.JournalI18n.render('journal.window.facets.activities.window.explanation.this.was.a.recording.or.video'),
+    'back': window.JournalI18n.render('journal.window.facets.activities.copy.back'),
+    'lines-loading': window.JournalI18n.render('journal.window.facets.activities.copy.lines.loading'),
+    'lines-yours': window.JournalI18n.render('journal.window.facets.activities.window.explanation.lines.your.journal.credits.to.you'),
+    'lines-others': window.JournalI18n.render('journal.window.facets.activities.copy.lines.others'),
+    'lines-count-one': window.JournalI18n.render('journal.window.facets.activities.copy.lines.count.one'),
+    'lines-count': window.JournalI18n.render('journal.window.facets.activities.copy.lines.count'),
+    'lines-question': window.JournalI18n.render('journal.window.facets.activities.window.explanation.who.said.the.lines.you.ticked'),
+    'lines-question-one': window.JournalI18n.render('journal.window.facets.activities.window.explanation.who.said.the.line.you.ticked'),
+    'lines-question-n': window.JournalI18n.render('journal.window.facets.activities.copy.lines.question.n'),
+    'line-play-at': window.JournalI18n.render('journal.window.facets.activities.copy.line.play.at'),
+    'lines-only': window.JournalI18n.render('journal.window.facets.activities.copy.lines.only'),
+    'lines-only-body': window.JournalI18n.render('journal.window.facets.activities.copy.lines.only.body'),
+    'lines-only-link': window.JournalI18n.render('journal.window.facets.activities.copy.lines.only.link'),
+    'speaker-me': window.JournalI18n.render('journal.window.facets.activities.copy.speaker.me'),
+    'speaker-person': window.JournalI18n.render('journal.window.facets.activities.copy.speaker.person'),
+    'speaker-unknown': window.JournalI18n.render('journal.window.facets.activities.window.explanation.someone.i.don.t.know'),
+    'person-search': window.JournalI18n.render('journal.window.facets.activities.copy.person.search'),
+    'people-loading': window.JournalI18n.render('journal.window.facets.activities.copy.people.loading'),
+    'people-load-failed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.couldn.t.load.the.people.in'),
+    'person-none': window.JournalI18n.render('journal.window.facets.activities.window.explanation.no.one.in.your.journal.matches'),
+    'playback-confirm-body': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.journal.will.think.this.through'),
+    'playback-confirm': window.JournalI18n.render('journal.window.facets.activities.window.explanation.yes.it.was.playing'),
+    'refusal-line-source': window.JournalI18n.render('journal.window.facets.activities.window.explanation.these.lines.can.t.take.an'),
+    'refusal-line-changed': window.JournalI18n.render('journal.window.facets.activities.window.explanation.these.lines.have.changed.since.they'),
+    'refusal-line-person': window.JournalI18n.render('journal.window.facets.activities.window.explanation.that.person.can.t.be.chosen'),
+    'refusal-line-owner': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.journal.doesn.t.know.which'),
+    'refusal-line-unreadable': window.JournalI18n.render('journal.window.facets.activities.window.explanation.your.earlier.answers.about.who.spoke'),
+    'refusal-line-outside': window.JournalI18n.render('journal.window.facets.activities.window.explanation.some.of.those.lines.aren.t'),
+    'refusal-line-empty': window.JournalI18n.render('journal.window.facets.activities.window.explanation.tick.the.lines.you.want.to'),
+    'refusal-line-other': window.JournalI18n.render('journal.window.facets.activities.window.explanation.couldn.t.save.that.try.again'),
+    'updating': window.JournalI18n.render('journal.window.facets.activities.copy.updating'),
+    'corrected-by-you': window.JournalI18n.render('journal.window.facets.activities.copy.corrected.by.you'),
+    'history-you-told': window.JournalI18n.render('journal.window.facets.activities.window.explanation.you.told.your.journal.what.happened'),
+    'history-you-playback': window.JournalI18n.render('journal.window.facets.activities.window.explanation.you.said.this.was.a.recording'),
+    'history-you-lines-one': window.JournalI18n.render('journal.window.facets.activities.window.explanation.you.fixed.who.said.line'),
+    'history-you-lines-many': window.JournalI18n.render('journal.window.facets.activities.copy.history.you.lines.many'),
+    'history-remove': window.JournalI18n.render('journal.window.facets.activities.copy.history.remove'),
+    'history-remove-label': window.JournalI18n.render('journal.window.facets.activities.copy.history.remove.label'),
+    'history-removed': window.JournalI18n.render('journal.window.facets.activities.copy.history.removed'),
+    'history-suggested-by': window.JournalI18n.render('journal.window.facets.activities.copy.history.suggested.by'),
+    'remove-stale': window.JournalI18n.render('journal.window.facets.activities.window.explanation.that.changed.since.it.was.shown'),
+    'remove-failure': window.JournalI18n.render('journal.window.facets.activities.window.explanation.couldn.t.remove.that.try.again'),
+    'home-today-link': window.JournalI18n.render('journal.window.facets.activities.copy.home.today.link')
   };
   // --- end owner-facing strings ---
 
@@ -1160,20 +1160,20 @@
   // How often the panel reads the day again while an activity is updating.
   const UPDATING_POLL_MS = 5000;
   const LINE_REFUSALS = {
-    owner_line_source_unsupported: 'refusal-line-source',
-    owner_line_not_found: 'refusal-line-changed',
-    owner_line_person_unavailable: 'refusal-line-person',
-    owner_line_owner_not_admitted: 'refusal-line-owner',
-    owner_line_answers_unreadable: 'refusal-line-unreadable',
-    owner_line_outside_activity: 'refusal-line-outside',
-    owner_line_empty: 'refusal-line-empty'
+    owner_line_source_unsupported: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.source.unsupported'),
+    owner_line_not_found: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.not.found'),
+    owner_line_person_unavailable: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.person.unavailable'),
+    owner_line_owner_not_admitted: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.owner.not.admitted'),
+    owner_line_answers_unreadable: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.answers.unreadable'),
+    owner_line_outside_activity: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.outside.activity'),
+    owner_line_empty: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.empty')
   };
   // A remove refused because the history moved on; the view is read again.
   const REMOVE_STALE = new Set(['activity_edit_not_found', 'activity_edit_mismatch', 'activity_edit_already_removed']);
 
   const esc = (s) => (window.AppServices?.escapeHtml ? window.AppServices.escapeHtml(s) : String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
-  const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const MONTHS_SHORT = [window.JournalI18n.render('journal.window.facets.activities.months.short.jan'), window.JournalI18n.render('journal.window.facets.activities.months.short.feb'), window.JournalI18n.render('journal.window.facets.activities.months.short.mar'), window.JournalI18n.render('journal.window.facets.activities.months.short.apr'), window.JournalI18n.render('journal.window.facets.activities.months.short.may'), window.JournalI18n.render('journal.window.facets.activities.months.short.jun'), window.JournalI18n.render('journal.window.facets.activities.months.short.jul'), window.JournalI18n.render('journal.window.facets.activities.months.short.aug'), window.JournalI18n.render('journal.window.facets.activities.months.short.sep'), window.JournalI18n.render('journal.window.facets.activities.months.short.oct'), window.JournalI18n.render('journal.window.facets.activities.months.short.nov'), window.JournalI18n.render('journal.window.facets.activities.months.short.dec')];
 
   const state = {
     day: null,
@@ -1425,7 +1425,7 @@
     }
 
     if (listboxEl) {
-      let opts = `<li class="act-scope-option" role="option" aria-selected="${state.facet === null}" data-facet="" tabindex="-1"><span data-copy-key="scope-all-option">${STRINGS['scope-all-option']}</span><span class="act-scope-count">${nonMutedTotal}</span></li>`;
+      let opts = `<li class="act-scope-option" role="option" aria-selected="${state.facet === null}" data-facet="" tabindex="-1"><span data-copy-key="scope-all-option">${esc(STRINGS['scope-all-option'])}</span><span class="act-scope-count">${nonMutedTotal}</span></li>`;
       facets.filter(f => !f.muted).forEach(f => {
         const dot = f.color ? `<span class="act-scope-dot" style="background-color: ${esc(f.color)}"></span>` : '';
         opts += `<li class="act-scope-option" role="option" aria-selected="${state.facet === f.name}" data-facet="${esc(f.name)}" tabindex="-1"><span>${dot} ${esc(f.title || f.name)}</span><span class="act-scope-count">${f.count || 0}</span></li>`;
@@ -1489,7 +1489,7 @@
           const otherHasCounts = facets.some(f => !f.muted && f.name !== state.facet && f.count > 0);
           if (otherHasCounts) {
             const chosen = facets.find(f => f.name === state.facet);
-            emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-facet-heading">${esc(fmt('empty-facet-heading', { facet: chosen ? (chosen.title || chosen.name) : state.facet }))}</h2><p class="act-empty-body" data-copy-key="empty-facet-body">${STRINGS['empty-facet-body']}</p><button type="button" class="act-empty-btn" data-copy-key="empty-facet-show-all">${STRINGS['empty-facet-show-all']}</button>`;
+            emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-facet-heading">${esc(fmt('empty-facet-heading', { facet: chosen ? (chosen.title || chosen.name) : state.facet }))}</h2><p class="act-empty-body" data-copy-key="empty-facet-body">${esc(STRINGS['empty-facet-body'])}</p><button type="button" class="act-empty-btn" data-copy-key="empty-facet-show-all">${esc(STRINGS['empty-facet-show-all'])}</button>`;
             emptyArea.querySelector('[data-copy-key="empty-facet-show-all"]')?.addEventListener('click', () => {
               selectFacet(null);
             });
@@ -1665,7 +1665,7 @@
 
       if (item._outline) {
         const undoIcon = window.ConveyIcons ? window.ConveyIcons.svg('undo-2') : '';
-        bhtml += `<div class="act-block-outline" data-copy-key="hidden-outline" style="top: ${top}px; height: ${height}px; left: ${leftPct}%; width: ${widthPct}%;"><span>${STRINGS['hidden-outline']}</span><button type="button" class="act-unhide-btn" data-copy-key="unhide" data-outline-unhide="${esc(item.id)}" data-facet="${esc(item.facet)}">${undoIcon} ${STRINGS['unhide']}</button></div>`;
+        bhtml += `<div class="act-block-outline" data-copy-key="hidden-outline" style="top: ${top}px; height: ${height}px; left: ${leftPct}%; width: ${widthPct}%;"><span>${esc(STRINGS['hidden-outline'])}</span><button type="button" class="act-unhide-btn" data-copy-key="unhide" data-outline-unhide="${esc(item.id)}" data-facet="${esc(item.facet)}">${undoIcon} ${esc(STRINGS['unhide'])}</button></div>`;
         return;
       }
 
@@ -1706,9 +1706,9 @@
 
   function renderGenericEmpty(emptyArea, ctx) {
     if (ctx === 'today') {
-      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-today-heading">${STRINGS['empty-today-heading']}</h2><p class="act-empty-body" data-copy-key="empty-today-body">${STRINGS['empty-today-body']}</p>`;
+      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-today-heading">${esc(STRINGS['empty-today-heading'])}</h2><p class="act-empty-body" data-copy-key="empty-today-body">${esc(STRINGS['empty-today-body'])}</p>`;
     } else {
-      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-past-heading">${STRINGS['empty-past-heading']}</h2><p class="act-empty-body" data-copy-key="empty-past-body">${STRINGS['empty-past-body']}</p>`;
+      emptyArea.innerHTML = `<h2 class="act-empty-heading" data-copy-key="empty-past-heading">${esc(STRINGS['empty-past-heading'])}</h2><p class="act-empty-body" data-copy-key="empty-past-body">${esc(STRINGS['empty-past-body'])}</p>`;
     }
   }
 
@@ -1774,7 +1774,7 @@
         if (!items.length) {
           panelArea.innerHTML = '';
         } else {
-          panelArea.innerHTML = `<div class="act-panel-empty" data-copy-key="empty-pick">${STRINGS['empty-pick']}</div>`;
+          panelArea.innerHTML = `<div class="act-panel-empty" data-copy-key="empty-pick">${esc(STRINGS['empty-pick'])}</div>`;
         }
       }
       return;
@@ -1801,7 +1801,7 @@
 
     let phtml = '';
     if (mobile) {
-      phtml += `<div class="act-panel-grab"></div><button type="button" class="act-btn" data-copy-key="sheet-close" data-close-sheet style="align-self: flex-end;">${STRINGS['sheet-close']}</button>`;
+      phtml += `<div class="act-panel-grab"></div><button type="button" class="act-btn" data-copy-key="sheet-close" data-close-sheet style="align-self: flex-end;">${esc(STRINGS['sheet-close'])}</button>`;
     }
 
     // Title
@@ -1812,7 +1812,7 @@
     const facetObj = (state.view.facets || []).find(f => f.name === item.facet);
     const facetTitle = facetObj ? (facetObj.title || facetObj.name) : item.facet;
     const dot = !state.facet && facetObj && facetObj.color ? `<span class="act-block-dot" style="background-color: ${esc(facetObj.color)}"></span>` : '';
-    const editedCue = item.edited_by_owner ? `<span class="act-cue" data-copy-key="cue-edited">${STRINGS['cue-edited']}</span>` : '';
+    const editedCue = item.edited_by_owner ? `<span class="act-cue" data-copy-key="cue-edited">${esc(STRINGS['cue-edited'])}</span>` : '';
     let metaSource = '';
     if (item.mixed) {
       metaSource = STRINGS['source-mixed'];
@@ -1827,7 +1827,7 @@
     // Hidden status & reason line
     if (item.hidden) {
       if (justHidden) {
-        phtml += `<div class="act-panel-status" role="status" data-copy-key="hidden-status">${STRINGS['hidden-status']}</div>`;
+        phtml += `<div class="act-panel-status" role="status" data-copy-key="hidden-status">${esc(STRINGS['hidden-status'])}</div>`;
       }
       for (const reasonKey of hiddenReasons(item)) {
         phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
@@ -1856,9 +1856,9 @@
     // marked as corrected.
     if (item.updating) {
       const previous = item.summary != null ? `<p class="act-panel-text act-panel-previous" data-previous-summary>${esc(item.summary)}</p>` : '';
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text act-panel-updating" role="status" data-copy-key="updating">${esc(STRINGS['updating'])}</p>${previous}</div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${esc(STRINGS['heading-summary'])}</h3><p class="act-panel-text act-panel-updating" role="status" data-copy-key="updating">${esc(STRINGS['updating'])}</p>${previous}</div>`;
     } else if (item.summary != null) {
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text">${esc(item.summary)}</p></div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${esc(STRINGS['heading-summary'])}</h3><p class="act-panel-text">${esc(item.summary)}</p></div>`;
     }
     if (item.people?.length) {
       phtml += `<div class="act-panel-people" data-copy-key="people">${esc(formatPeople(item.people))}</div>`;
@@ -1869,12 +1869,12 @@
 
     // Description
     if (item.description && item.description !== item.title) {
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-description">${STRINGS['heading-description']}</h3><p class="act-panel-text">${esc(item.description)}</p></div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-description">${esc(STRINGS['heading-description'])}</h3><p class="act-panel-text">${esc(item.description)}</p></div>`;
     }
 
     // Details
     if (item.details) {
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-details">${STRINGS['heading-details']}</h3><p class="act-panel-text">${esc(item.details)}</p></div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-details">${esc(STRINGS['heading-details'])}</h3><p class="act-panel-text">${esc(item.details)}</p></div>`;
     }
 
     // Evidence
@@ -1913,7 +1913,7 @@
       const timePart = item.end ? `${item.start}–${item.end}` : (item.start || '');
       const countLine = fmt(count === 1 ? 'segments-one' : 'segments-many', { n: count, source: srcWords, range: timePart });
 
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="evidence-heading">${STRINGS['evidence-heading']}</h3><div class="act-panel-text" data-copy-key="evidence-count">${esc(countLine)}</div><ul class="act-panel-evidence-list">${eitems}</ul>${showAllBtn}</div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="evidence-heading">${esc(STRINGS['evidence-heading'])}</h3><div class="act-panel-text" data-copy-key="evidence-count">${esc(countLine)}</div><ul class="act-panel-evidence-list">${eitems}</ul>${showAllBtn}</div>`;
     }
 
     // History
@@ -1993,7 +1993,7 @@
       return (a.index || 0) - (b.index || 0);
     });
 
-    phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-history">${STRINGS['heading-history']}</h3><ul class="act-panel-history-list">${historyEntries.map(e => e.html).join('')}</ul></div>`;
+    phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-history">${esc(STRINGS['heading-history'])}</h3><ul class="act-panel-history-list">${historyEntries.map(e => e.html).join('')}</ul></div>`;
 
     // A body item's accounts: what recorded it, each one's state, and the
     // owner's separate for a group.
@@ -2016,21 +2016,21 @@
         }
         ahtml += `<li class="act-panel-history-item" data-account="${i}"><span>${who}</span>${stateHtml}${sep}</li>`;
       });
-      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-accounts">${STRINGS['heading-accounts']}</h3><ul class="act-panel-history-list">${ahtml}</ul></div>`;
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-accounts">${esc(STRINGS['heading-accounts'])}</h3><ul class="act-panel-history-list">${ahtml}</ul></div>`;
     }
 
     // Actions
     phtml += `<div class="act-panel-actions">`;
     if (!item.hidden) {
       phtml += `<button type="button" class="act-btn" data-copy-key="action-correct" data-action-correct>${esc(STRINGS['action-correct'])}</button>`;
-      phtml += `<button type="button" class="act-btn" data-copy-key="action-edit" data-action-edit>${STRINGS['action-edit']}</button>`;
-      phtml += `<button type="button" class="act-btn" data-copy-key="action-hide" data-action-hide>${STRINGS['action-hide']}</button>`;
+      phtml += `<button type="button" class="act-btn" data-copy-key="action-edit" data-action-edit>${esc(STRINGS['action-edit'])}</button>`;
+      phtml += `<button type="button" class="act-btn" data-copy-key="action-hide" data-action-hide>${esc(STRINGS['action-hide'])}</button>`;
     } else if (item.hidden_day) {
       // Unhiding the activity alone would leave it hidden by its day, so the
       // one action is the day's own unhide, on the body page.
       phtml += `<a class="act-btn" data-copy-key="action-unhide-day" data-unhide-day href="/app/body/${encodeURIComponent(item.day || '')}">${esc(STRINGS['action-unhide-day'])}</a>`;
     } else if (item.hidden_self || item.hidden_reason === 'owner' || item.hidden_reason === 'command') {
-      phtml += `<button type="button" class="act-btn" data-copy-key="action-unhide" data-action-unhide>${STRINGS['action-unhide']}</button>`;
+      phtml += `<button type="button" class="act-btn" data-copy-key="action-unhide" data-action-unhide>${esc(STRINGS['action-unhide'])}</button>`;
     }
     phtml += `<span class="control-save-error" role="alert" data-control-save-error hidden></span>`;
     phtml += `</div>`;
@@ -2105,7 +2105,7 @@
   }
 
   function renderEditForm(panelArea, item) {
-    let fhtml = `<form class="act-form" data-edit-form><div class="act-form-field"><label class="act-form-label" for="act-edit-title" data-copy-key="label-title">${STRINGS['label-title']}</label><input type="text" class="act-form-input" id="act-edit-title" name="title" value="${esc(item.title || '')}" required /></div><div class="act-form-field"><label class="act-form-label" for="act-edit-description" data-copy-key="label-description">${STRINGS['label-description']}</label><textarea class="act-form-textarea" id="act-edit-description" name="description">${esc(item.description || '')}</textarea></div><div class="act-form-field"><label class="act-form-label" for="act-edit-details" data-copy-key="label-details">${STRINGS['label-details']}</label><textarea class="act-form-textarea" id="act-edit-details" name="details" placeholder="${esc(STRINGS['account-hint'])}">${esc(item.details || '')}</textarea></div><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${STRINGS['save-failure']}</span><button type="button" class="act-btn" data-copy-key="cancel" data-form-cancel>${STRINGS['cancel']}</button><button type="submit" class="act-btn act-btn--primary" data-copy-key="save">${STRINGS['save']}</button></div></form>`;
+    let fhtml = `<form class="act-form" data-edit-form><div class="act-form-field"><label class="act-form-label" for="act-edit-title" data-copy-key="label-title">${esc(STRINGS['label-title'])}</label><input type="text" class="act-form-input" id="act-edit-title" name="title" value="${esc(item.title || '')}" required /></div><div class="act-form-field"><label class="act-form-label" for="act-edit-description" data-copy-key="label-description">${esc(STRINGS['label-description'])}</label><textarea class="act-form-textarea" id="act-edit-description" name="description">${esc(item.description || '')}</textarea></div><div class="act-form-field"><label class="act-form-label" for="act-edit-details" data-copy-key="label-details">${esc(STRINGS['label-details'])}</label><textarea class="act-form-textarea" id="act-edit-details" name="details" placeholder="${esc(STRINGS['account-hint'])}">${esc(item.details || '')}</textarea></div><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${esc(STRINGS['save-failure'])}</span><button type="button" class="act-btn" data-copy-key="cancel" data-form-cancel>${esc(STRINGS['cancel'])}</button><button type="submit" class="act-btn act-btn--primary" data-copy-key="save">${esc(STRINGS['save'])}</button></div></form>`;
     panelArea.innerHTML = fhtml;
 
     const form = panelArea.querySelector('[data-edit-form]');

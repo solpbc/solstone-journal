@@ -18,8 +18,6 @@ use solstone_core_time::day_key;
 
 use crate::{Clock, http};
 
-const IMPORTS_BUSY: &str = "imports are busy; try again";
-
 pub fn routes(root: PathBuf, clock: Clock) -> Router {
     Router::new()
         .route("/app/awareness/api/state", get(state))
@@ -46,8 +44,8 @@ async fn state(State((root, _)): State<(PathBuf, Clock)>, RawQuery(query): RawQu
                 .unwrap_or_else(|| {
                     http::error(
                         "awareness_section_not_found",
-                        "that part of your journal couldn't be found.",
-                        format!("no awareness section named '{section}'"),
+                        "journal.window.facets.awareness.response.error.message.that.part.of.your.journal.couldn",
+                        http::Detail::with_value("journal.window.facets.awareness.response.error.detail.no.awareness.section.named.value", section.to_string()),
                         StatusCode::NOT_FOUND,
                     )
                 }),
@@ -116,11 +114,11 @@ async fn update_imports(State((root, clock)): State<(PathBuf, Clock)>, body: Byt
     .collect::<Vec<_>>();
     if active.len() != 1 {
         let detail = if active.is_empty() {
-            "provide exactly one of record/declined/nudge".to_owned()
+            http::Detail::catalog("journal.window.facets.awareness.response.one.import.answer")
         } else {
-            format!(
-                "provide exactly one of record/declined/nudge; got {}",
-                active.join(", ")
+            http::Detail::with_value(
+                "journal.window.facets.awareness.response.too.many.import.answers",
+                active.join(", "),
             )
         };
         return invalid(detail);
@@ -171,8 +169,10 @@ async fn create_log(State((root, clock)): State<(PathBuf, Clock)>, body: Bytes) 
     else {
         return http::error(
             "missing_required_field",
-            "a required field is missing.",
-            "kind is required".to_owned(),
+            "journal.window.facets.awareness.response.error.message.a.required.field.is.missing",
+            http::Detail::catalog(
+                "journal.window.facets.awareness.response.error.detail.kind.is.required",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -221,8 +221,10 @@ fn awareness_body(bytes: &[u8]) -> AwarenessBodyResult {
     if bytes.is_empty() {
         return Err(Box::new(http::error(
             "missing_request_body",
-            "that request had no data in it.",
-            "no request body".to_owned(),
+            "journal.window.facets.awareness.response.error.message.that.request.had.no.data.in",
+            http::Detail::catalog(
+                "journal.window.facets.awareness.response.error.detail.no.request.body",
+            ),
             StatusCode::BAD_REQUEST,
         )));
     }
@@ -232,17 +234,17 @@ fn awareness_body(bytes: &[u8]) -> AwarenessBodyResult {
         .ok_or_else(|| {
             Box::new(http::error(
                 "invalid_json_request",
-                "that JSON request couldn't be read.",
-                "request body must be a JSON object".to_owned(),
+                "journal.window.facets.awareness.response.error.message.that.json.request.couldn.t.be",
+                http::Detail::catalog("journal.window.facets.awareness.response.error.detail.request.body.must.be.a.json"),
                 StatusCode::BAD_REQUEST,
             ))
         })
 }
 
-fn invalid(detail: String) -> Response {
+fn invalid(detail: http::Detail) -> Response {
     http::error(
         "invalid_request_value",
-        "one of those values couldn't be used.",
+        "journal.window.facets.awareness.response.error.message.one.of.those.values.couldn.t",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -250,16 +252,16 @@ fn invalid(detail: String) -> Response {
 fn busy() -> Response {
     http::error(
         "awareness_busy",
-        "The awareness operation is busy.",
-        IMPORTS_BUSY.to_owned(),
+        "journal.window.facets.awareness.response.error.message.the.awareness.operation.is.busy",
+        http::Detail::catalog("journal.window.facets.awareness.response.imports.busy.detail"),
         StatusCode::SERVICE_UNAVAILABLE,
     )
 }
 fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
-        "that request didn't finish.",
-        detail,
+        "journal.window.facets.awareness.response.error.message.that.request.didn.t.finish",
+        detail.into(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -282,8 +284,8 @@ fn session_response(root: &std::path::Path) -> Option<Response> {
         .map(|_| {
             http::error(
                 "corrupt_config",
-                "your settings couldn't be read.",
-                format!("your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
+                "journal.window.facets.awareness.response.error.message.your.settings.couldn.t.be.read",
+                http::Detail::with_value("journal.window.facets.awareness.response.error.detail.your.settings.file.at.value.couldn", path.display().to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })

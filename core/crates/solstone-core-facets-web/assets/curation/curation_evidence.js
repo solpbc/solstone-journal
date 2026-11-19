@@ -5,11 +5,11 @@
   'use strict';
 
   // --- owner-facing strings ---
-  const DRAWER_LABEL = 'evidence';
-  const PIECE_SINGULAR = 'piece';
-  const PIECE_PLURAL = 'pieces';
-  const COUNT_SHOWING = 'showing';
-  const COUNT_OF = 'of';
+  const DRAWER_LABEL = window.JournalI18n.render('journal.window.facets.curation.evidence.drawer.title');
+  const PIECE_SINGULAR = window.JournalI18n.render('journal.window.facets.curation.evidence.piece.one');
+  const PIECE_PLURAL = window.JournalI18n.render('journal.window.facets.curation.evidence.piece.many');
+  const COUNT_SHOWING = window.JournalI18n.render('journal.window.facets.curation.evidence.part.showing');
+  const COUNT_OF = window.JournalI18n.render('journal.window.facets.curation.evidence.part.of');
   const META_SEPARATOR = ' · ';
   // --- end owner-facing strings ---
 

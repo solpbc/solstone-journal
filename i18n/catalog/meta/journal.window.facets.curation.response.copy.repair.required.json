@@ -1,0 +1,28 @@
+{
+  "description": "Curation response copy in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Curation response copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b58b72edcc6f0d35dffbaefd09be350b24742e48cda01f19b3ad0e1d9d713410",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{detail}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{remediation}"
+    }
+  ]
+}

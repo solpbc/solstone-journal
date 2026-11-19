@@ -1,0 +1,23 @@
+{
+  "description": "Error detail in the journal's facets.awareness.response view.",
+  "context": "Journal window, facets.awareness.response view. Error detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1930dea3f9c66520e34d1edefdcf9313abfa45c1f4c369ce1849d0fee536f344",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "record/declined/nudge"
+    }
+  ]
+}

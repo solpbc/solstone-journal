@@ -33,6 +33,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     activities::routes(journal_root.clone(), clock.clone())
         .merge(curation::routes(journal_root.clone()))
         .merge(awareness::routes(journal_root, clock))
+        .layer(axum::middleware::from_fn(http::localize))
 }
 
 #[cfg(test)]

@@ -1,0 +1,16 @@
+{
+  "description": "Text in the journal's facets.curation view.",
+  "context": "Journal window, facets.curation view. Text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41f78b7611834dae79e9703eb7925bca7a10ad51a8436eb58827d2a2afa82061",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

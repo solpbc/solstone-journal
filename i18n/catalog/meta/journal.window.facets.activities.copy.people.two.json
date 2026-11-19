@@ -1,0 +1,28 @@
+{
+  "description": "Owner-visible table entry in the journal's facets.activities view.",
+  "context": "Journal window, facets.activities view. Owner-visible table entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46173d55c288b68766ab3c79f034b6c2fc97d73e5821fefa7166c27dfef8f9fa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{a}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{b}"
+    }
+  ]
+}

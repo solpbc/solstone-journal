@@ -445,8 +445,8 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 
 ### Journal window strings
 
-Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`
-and `solstone-core-backup-web`.
+Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
+`solstone-core-backup-web` and `solstone-core-facets-web`.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
 For localized copy, use `JournalI18n.render` for JavaScript text and
 `JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages
@@ -454,8 +454,9 @@ in source English with `{{!journal.window.…}}`, `JournalI18n.renderEnglish`
 or `JournalI18n.renderEnglishHtml`.
 
 Give new messages stable IDs and sidecars in `i18n/catalog/meta/`. Register them with
-`i18n-catalog history i18n/catalog`. Follow the [catalog compiler
-guide](tools/i18n/README.md) to refresh source revisions. Run
+`cargo run --locked --manifest-path tools/i18n/Cargo.toml -- history i18n/catalog`.
+Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
+revisions. Run
 `make journal-window-catalog` and commit the generated resources.
 
 ## 9. File headers, naming, dependencies
