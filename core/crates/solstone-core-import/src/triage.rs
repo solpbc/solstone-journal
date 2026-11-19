@@ -19,7 +19,7 @@ mod image;
 mod rules;
 use rules::{Evidence, RULES, Rule, Stage};
 
-pub const RULESET_VERSION: u32 = 4;
+pub const RULESET_VERSION: u32 = 5;
 pub use solstone_core_format::content::IMPORT_KIND_FILENAME as METADATA_FILENAME;
 
 /// Rule provenance is static for the version written with each verdict.
@@ -256,18 +256,6 @@ fn scoring_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
-static AOSP_NAME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^Screenshot_([0-9]{8})-([0-9]{6})(?:-display-[0-9]+)?[.]png$").unwrap()
-});
-
-fn aosp_name(name: &str) -> bool {
-    let Some(matched) = AOSP_NAME.captures(name) else {
-        return false;
-    };
-    jiff::civil::Date::strptime("%Y%m%d", &matched[1]).is_ok()
-        && jiff::civil::Time::strptime("%H%M%S", &matched[2]).is_ok()
-}
-
 fn speaker_label(label: &str) -> Option<&str> {
     let label = label.trim().trim_matches('*').trim();
     let label = match label.rsplit_once(" (") {
@@ -280,7 +268,9 @@ fn speaker_label(label: &str) -> Option<&str> {
                 "noun"
                     | "verb"
                     | "adjective"
+                    | "adj"
                     | "adverb"
+                    | "adv"
                     | "pronoun"
                     | "preposition"
                     | "conjunction"

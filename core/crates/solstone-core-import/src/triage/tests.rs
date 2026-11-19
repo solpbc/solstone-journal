@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 4);
+    assert_eq!(found.ruleset_version, 5);
     let shuffled = RULES
         .iter()
         .rev()
@@ -485,7 +485,13 @@ fn camera_exif_takes_precedence_over_the_screenshot_name() {
     png.extend(b"eXIf");
     png.extend(tiff);
     png.extend([0u8; 4]);
-    add_png_chunk(&mut png, b"tEXt", b"Software\0gnome-screenshot");
+    expected(
+        "Capture 2025-04-07 123123.png",
+        &png,
+        Kind::Photos,
+        &["camera_exif"],
+    );
+    add_png_chunk(&mut png, b"tEXt", b"Software\0Greenshot");
     expected(
         "Screenshot_20250407-123123.png",
         png,
@@ -960,6 +966,14 @@ Lena Ortiz (she/her): can you call them today?
 Hugo Bell (Bell Works): yes, right after lunch.
 ";
     expected("g.txt", glossary, Kind::Notes, &["note_default"]);
+    for annotation in ["adj", "adv"] {
+        let abbreviated = format!(
+            "Fast ({annotation}): quick\nLate ({annotation}): after the expected time\n\
+             Fast ({annotation}): at speed\nLate ({annotation}): behind time\n\
+             Fast ({annotation}): with little delay\nLate ({annotation}): well into the night\n"
+        );
+        expected("g.txt", abbreviated, Kind::Notes, &["note_default"]);
+    }
     expected("turns.txt", meeting, Kind::Transcripts, &["bare_speaker"]);
 }
 
@@ -1110,6 +1124,149 @@ fn add_png_chunk(png: &mut Vec<u8>, kind: &[u8; 4], value: &[u8]) {
 }
 
 #[test]
+fn exact_dated_screenshot_names_classify_untagged_images() {
+    let png = b"\x89PNG\r\n\x1a\n";
+    let jpeg = b"\xff\xd8\xff\xe0\0\x10JFIF\0\x01\x01\0\0\x01\0\x01\0\0\xff\xd9";
+    for (name, rule) in [
+        (
+            "screenshot_20240129_183515.png",
+            "android_spectacle_screenshot_name",
+        ),
+        (
+            "Screenshot_2024-02-29_at_4.48.30 PM.png",
+            "macos_screenshot_name",
+        ),
+        (
+            "bildschirmfoto_2025-01-03_um_13.37.08.png",
+            "macos_screenshot_name",
+        ),
+        (
+            "Capture d’écran 2024-03-29 à 15.06.33.png",
+            "macos_screenshot_name",
+        ),
+        (
+            "снимок_экрана_2025-03-15_в_13.50.20.png",
+            "macos_screenshot_name",
+        ),
+        ("截屏2025-05-08_21.43.39.png", "macos_screenshot_name"),
+        (
+            "任意の名前 2026-01-04 093845.png",
+            "snipping_tool_screenshot_name",
+        ),
+        (
+            "any_name_2026-01-04_093845_(2).png",
+            "snipping_tool_screenshot_name",
+        ),
+        (
+            "Screenshot 2026-01-04 09.38.45.png",
+            "chromeos_screenshot_name",
+        ),
+        ("20240808_15h07m03s_grim.png", "grim_screenshot_name"),
+        ("2025-06-28-022453_hyprshot.png", "hyprshot_screenshot_name"),
+        (
+            "2019-10-25-224521_1366x768_scrot.png",
+            "scrot_screenshot_name",
+        ),
+        (
+            "CleanShot_2024-06-18_at_11.15.21@2x.png",
+            "cleanshot_screenshot_name",
+        ),
+        (
+            "2025-01-28_09_23_18-Microsoft_PowerToys_Greenshot.png",
+            "greenshot_screenshot_name",
+        ),
+        (
+            "screencapture-example-org-docs-2025-08-31-22_24_35.png",
+            "gofullpage_screenshot_name",
+        ),
+    ] {
+        expected(name, png, Kind::Screen, &[rule]);
+    }
+    for (name, rule) in [
+        ("Screenshot_20240208-150745.jpg", "android_screenshot_name"),
+        (
+            "Screenshot_20261119_081744_TalkBack.jpg",
+            "android_app_screenshot_name",
+        ),
+        (
+            "Screenshot_2026-11-04-16-08-40-356_com.android.chrome.jpg",
+            "xiaomi_screenshot_name",
+        ),
+    ] {
+        expected(name, jpeg, Kind::Screen, &[rule]);
+    }
+    for name in [
+        "IMG_1234.PNG",
+        "Screenshot (32).png",
+        "Captura de pantalla (31).png",
+        "Screenshot from 2026-11-19 07-18-37.png",
+        "Screenshot desktop.png",
+        "QQ截图20220430022000.png",
+        "1597750732012 CamScanner 08-18-2020 13.27.53 1.png",
+        "2026-01-04 093845.png",
+        "＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿.png",
+        "Capture 2026-02-29 093845.png",
+        "Capture 2026-01-04 246045.png",
+        "Capture 2026-01-04 093860.png",
+        "Screenshot 2026-01-04 at 00.38.45 PM.png",
+        "Screenshot 2026-01-04 at 19.38.45 PM.png",
+        "Capture d’écran 2026-01-04 um 09.38.45.png",
+    ] {
+        expected(name, png, Kind::Photos, &["image_default"]);
+    }
+    expected(
+        "Capture 2026-01-04 093845.png",
+        jpeg,
+        Kind::Photos,
+        &["image_default"],
+    );
+    expected(
+        "Photo from 2026-11-19 08-00-00.1.jpeg",
+        jpeg,
+        Kind::Photos,
+        &["image_default"],
+    );
+}
+
+#[test]
+fn screenshot_png_software_and_coordinates_are_exact() {
+    let png = |chunks: &[(&[u8; 4], &[u8])]| {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        for &(kind, data) in chunks {
+            add_png_chunk(&mut bytes, kind, data);
+        }
+        bytes
+    };
+    for image in [
+        png(&[(b"tEXt", b"Software\0Greenshot")]),
+        png(&[(b"iTXt", b"Software\0\0\0\0\0Greenshot")]),
+    ] {
+        expected(
+            "neutral.png",
+            image,
+            Kind::Screen,
+            &["greenshot_screenshot_software"],
+        );
+    }
+    let x = (b"tEXt", b"logicalX\x0012".as_slice());
+    let y = (b"tEXt", b"logicalY\x00-4".as_slice());
+    expected(
+        "neutral.png",
+        png(&[x, y]),
+        Kind::Screen,
+        &["spectacle_screenshot_coordinates"],
+    );
+    for image in [
+        png(&[x]),
+        png(&[y]),
+        png(&[(b"tEXt", b"Software\0Greenshot copy")]),
+        png(&[(b"tEXt", b"Comment\0Greenshot")]),
+    ] {
+        expected("neutral.png", image, Kind::Photos, &["image_default"]);
+    }
+}
+
+#[test]
 fn screenshot_metadata_is_field_specific() {
     let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:e="http://ns.adobe.com/exif/1.0/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:RDF><rdf:Description><e:UserComment><rdf:Alt><rdf:li xml:lang="x-default">Screenshot</rdf:li></rdf:Alt></e:UserComment></rdf:Description></rdf:RDF></x:xmpmeta>"#;
     let png = |kind, data: &[u8]| {
@@ -1133,6 +1290,26 @@ fn screenshot_metadata_is_field_specific() {
         Kind::Photos,
         &["image_default"],
     );
+
+    let inline = r#"<r:Description xmlns:r="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://ns.adobe.com/exif/1.0/" ex:UserComment="Screenshot"/>"#;
+    expected(
+        "neutral.png",
+        xmp_png(inline),
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+    for other in [
+        inline.replace("ex:UserComment", "UserComment"),
+        inline.replace("Screenshot", "Screenshot copy"),
+        inline.replace("http://ns.adobe.com/exif/1.0/", "urn:unrelated"),
+    ] {
+        expected(
+            "neutral.png",
+            xmp_png(&other),
+            Kind::Photos,
+            &["image_default"],
+        );
+    }
 
     let jpeg_segment = [b"http://ns.adobe.com/xap/1.0/\0".as_slice(), xmp.as_bytes()].concat();
     let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
@@ -1218,6 +1395,24 @@ fn screenshot_metadata_is_field_specific() {
         png(b"eXIf", &tiff),
         Kind::Screen,
         &["screenshot_user_comment"],
+    );
+
+    // ImageDescription in IFD0, independent of the UserComment field.
+    let description =
+        b"II*\0\x08\0\0\0\x01\0\x0e\x01\x02\0\x0b\0\0\0\x1a\0\0\0\0\0\0\0Screenshot\0";
+    expected(
+        "neutral.png",
+        png(b"eXIf", description),
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+    let mut changed = *description;
+    *changed.last_mut().unwrap() = b'!';
+    expected(
+        "neutral.png",
+        png(b"eXIf", &changed),
+        Kind::Photos,
+        &["image_default"],
     );
 
     let clean_android = png(b"tEXt", b"Software\0Android QQ7A.8");

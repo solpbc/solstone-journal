@@ -18,6 +18,8 @@ pub(super) struct ImageMetadata {
     pub screenshot_comment: bool,
     pub android_software: bool,
     pub gnome_software: bool,
+    pub greenshot_software: bool,
+    pub spectacle_coordinates: bool,
 }
 
 impl ImageMetadata {
@@ -48,16 +50,20 @@ impl ImageMetadata {
                     if value.strip_prefix(b"ASCII\0\0\0")
                         .is_some_and(|text| trim_nul(text) == b"Screenshot")
             ) || exif_text(exif.as_ref(), Tag::UserComment)
+                .chain(exif_text(exif.as_ref(), Tag::ImageDescription))
                 .any(|value| value == b"Screenshot"),
             android_software: !has_make
                 && exif_text(exif.as_ref(), Tag::Software).any(android_build),
             gnome_software: false,
+            greenshot_software: false,
+            spectacle_coordinates: false,
         };
         if camera {
             return metadata;
         }
 
         if let Some(mut data) = bytes.strip_prefix(PNG_MAGIC) {
+            let (mut logical_x, mut logical_y) = (false, false);
             while let Some((kind, content, rest)) = png_chunk(data) {
                 if kind == b"IEND" {
                     break;
@@ -66,16 +72,20 @@ impl ImageMetadata {
                     match key {
                         b"Software" => {
                             metadata.gnome_software |= value == b"gnome-screenshot";
+                            metadata.greenshot_software |= value == b"Greenshot";
                             metadata.android_software |= !has_make && android_build(value);
                         }
                         b"XML:com.adobe.xmp" => {
                             metadata.screenshot_comment |= xmp_screenshot(value);
                         }
+                        b"logicalX" => logical_x = true,
+                        b"logicalY" => logical_y = true,
                         _ => {}
                     }
                 }
                 data = rest;
             }
+            metadata.spectacle_coordinates = logical_x && logical_y;
         } else if let Some(xmp) = jpeg_xmp(bytes).or_else(|| webp_xmp(bytes)) {
             metadata.screenshot_comment |= xmp_screenshot(xmp);
         }
@@ -194,7 +204,21 @@ fn xmp_screenshot(bytes: &[u8]) -> bool {
             Ok((ResolveResult::Bound(ns), Event::Start(tag)))
                 if ns.as_ref() == XMP_EXIF && tag.local_name().as_ref() == b"UserComment" =>
             {
-                return xmp_user_comment(&mut xml);
+                if xmp_user_comment(&mut xml) {
+                    return true;
+                }
+            }
+            Ok((ResolveResult::Bound(ns), Event::Start(tag) | Event::Empty(tag)))
+                if ns.as_ref() == RDF && tag.local_name().as_ref() == b"Description" =>
+            {
+                if tag.attributes().flatten().any(|attribute| {
+                    let (namespace, name) = xml.resolver().resolve_attribute(attribute.key);
+                    matches!(namespace, ResolveResult::Bound(ns) if ns.as_ref() == XMP_EXIF)
+                        && name.as_ref() == b"UserComment"
+                        && attribute.value.as_ref() == b"Screenshot"
+                }) {
+                    return true;
+                }
             }
             Ok((_, Event::Eof)) | Err(_) => return false,
             _ => {}

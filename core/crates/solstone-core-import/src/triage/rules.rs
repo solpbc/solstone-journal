@@ -4,6 +4,8 @@
 use super::*;
 
 mod exports;
+mod screenshot_names;
+use screenshot_names::{aosp_png_name, dated_name};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Stage {
@@ -463,14 +465,15 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Image,
             Photos,
             "Exif Make, Model and exposure fields",
-            |e| e.image.as_ref().is_some_and(|metadata| metadata.camera)
+            |e| e.image.as_ref().is_some_and(|metadata| metadata.camera),
+            true
         ),
         rule!(
             81,
             "screenshot_user_comment",
             Image,
             Screen,
-            "Exact Exif or XMP UserComment written by Apple screenshots",
+            "Exact Exif UserComment, Exif ImageDescription or XMP UserComment written by Apple screenshots",
             |e| e
                 .image
                 .as_ref()
@@ -502,12 +505,36 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             true
         ),
         rule!(
+            84,
+            "greenshot_screenshot_software",
+            Image,
+            Screen,
+            "Exact Greenshot Software text in a PNG",
+            |e| e
+                .image
+                .as_ref()
+                .is_some_and(|metadata| metadata.greenshot_software),
+            true
+        ),
+        rule!(
+            85,
+            "spectacle_screenshot_coordinates",
+            Image,
+            Screen,
+            "KDE Spectacle PNG text keys logicalX and logicalY",
+            |e| e
+                .image
+                .as_ref()
+                .is_some_and(|metadata| metadata.spectacle_coordinates),
+            true
+        ),
+        rule!(
             90,
             "aosp_screenshot_name",
             Name,
             Screen,
-            "AOSP SystemUI ImageExporter.java file naming convention",
-            |e| e.format == FileFormat::PortableNetworkGraphics && aosp_name(e.name),
+            "AOSP SystemUI ImageExporter.java PNG date and time name",
+            aosp_png_name,
             true
         ),
         rule!(
@@ -515,21 +542,195 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "aosp_screenshot_folder",
             Name,
             Screen,
-            "AOSP SystemUI ImageExporter.java Pictures/Screenshots relative path (supporting evidence only)",
-            |e| e.format == FileFormat::PortableNetworkGraphics
-                && aosp_name(e.name)
-                && e.folder.ends_with("Pictures/Screenshots")
+            "AOSP Pictures/Screenshots relative path (supporting evidence only)",
+            |e| aosp_png_name(e) && e.folder.ends_with("Pictures/Screenshots")
+        ),
+        rule!(
+            92,
+            "android_spectacle_screenshot_name",
+            Name,
+            Screen,
+            "Android and KDE Spectacle compact PNG date and time name separated by an underscore",
+            dated_name!(
+                png,
+                r"[Ss]creenshot[ _](?<date>[0-9]{8})[ _](?<time>[0-9]{6})",
+                "%Y%m%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            93,
+            "android_screenshot_name",
+            Name,
+            Screen,
+            "Android JPEG compact date and time name",
+            dated_name!(
+                jpeg,
+                r"[Ss]creenshot[ _](?<date>[0-9]{8})-(?<time>[0-9]{6})",
+                "%Y%m%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            94,
+            "android_app_screenshot_name",
+            Name,
+            Screen,
+            "Android JPEG compact date and time with the foreground app name",
+            dated_name!(
+                jpeg,
+                r"[Ss]creenshot[ _](?<date>[0-9]{8})[ _](?<time>[0-9]{6})[ _][^/\r\n]+",
+                "%Y%m%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            95,
+            "xiaomi_screenshot_name",
+            Name,
+            Screen,
+            "Xiaomi JPEG timestamp with milliseconds and a package name",
+            dated_name!(
+                jpeg,
+                r"[Ss]creenshot[ _](?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<time>[0-9]{2}-[0-9]{2}-[0-9]{2})-[0-9]{3}[ _][a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+",
+                "%Y-%m-%d",
+                "%H-%M-%S"
+            ),
+            true
+        ),
+        rule!(
+            96,
+            "macos_screenshot_name",
+            Name,
+            Screen,
+            "macOS PNG timestamp names in English, German, French, Russian and Simplified Chinese",
+            screenshot_names::macos_name,
+            true
+        ),
+        rule!(
+            97,
+            "snipping_tool_screenshot_name",
+            Name,
+            Screen,
+            "Windows Snipping Tool dated PNG name with optional numeric copy suffix",
+            dated_name!(
+                png,
+                r"(?<prefix>.+)[ _](?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ _](?<time>[0-9]{6})(?:[ _]\([0-9]+\))?",
+                "%Y-%m-%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            98,
+            "chromeos_screenshot_name",
+            Name,
+            Screen,
+            "ChromeOS PNG date and dot-separated time name",
+            dated_name!(
+                png,
+                r"[Ss]creenshot[ _](?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ _](?<time>[0-9]{2}\.[0-9]{2}\.[0-9]{2})",
+                "%Y-%m-%d",
+                "%H.%M.%S"
+            ),
+            true
+        ),
+        rule!(
+            99,
+            "grim_screenshot_name",
+            Name,
+            Screen,
+            "grim PNG date and time with the grim suffix",
+            dated_name!(
+                png,
+                r"(?<date>[0-9]{8})[ _](?<time>[0-9]{2}h[0-9]{2}m[0-9]{2})s[ _]grim",
+                "%Y%m%d",
+                "%Hh%Mm%S"
+            ),
+            true
         ),
         rule!(
             100,
+            "hyprshot_screenshot_name",
+            Name,
+            Screen,
+            "hyprshot PNG date and time with the hyprshot suffix",
+            dated_name!(
+                png,
+                r"(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<time>[0-9]{6})[ _]hyprshot",
+                "%Y-%m-%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            101,
+            "scrot_screenshot_name",
+            Name,
+            Screen,
+            "scrot PNG date, time and dimensions with the scrot suffix",
+            dated_name!(
+                png,
+                r"(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<time>[0-9]{6})[ _][0-9]+x[0-9]+[ _]scrot",
+                "%Y-%m-%d",
+                "%H%M%S"
+            ),
+            true
+        ),
+        rule!(
+            102,
+            "cleanshot_screenshot_name",
+            Name,
+            Screen,
+            "CleanShot PNG date and time for a 2x capture",
+            dated_name!(
+                png,
+                r"[Cc]leanShot[ _](?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ _]at[ _](?<time>[0-9]{2}\.[0-9]{2}\.[0-9]{2})@2x",
+                "%Y-%m-%d",
+                "%H.%M.%S"
+            )
+        ),
+        rule!(
+            103,
+            "greenshot_screenshot_name",
+            Name,
+            Screen,
+            "Greenshot PNG date and time with the observed Microsoft PowerToys ending",
+            dated_name!(
+                png,
+                r"(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ _](?<time>[0-9]{2}[ _][0-9]{2}[ _][0-9]{2})-Microsoft[ _]PowerToys[ _]Greenshot",
+                "%Y-%m-%d",
+                "%H %M %S"
+            )
+        ),
+        rule!(
+            104,
+            "gofullpage_screenshot_name",
+            Name,
+            Screen,
+            "GoFullPage PNG site, date and time name",
+            dated_name!(
+                png,
+                r"[Ss]creencapture-[A-Za-z0-9._-]+-(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<time>[0-9]{2}[ _][0-9]{2}[ _][0-9]{2})",
+                "%Y-%m-%d",
+                "%H %M %S"
+            ),
+            true
+        ),
+        rule!(
+            110,
             "image_default",
             Fallback,
             Photos,
             "Manual image import default",
-            |e| e.format.kind() == FormatKind::Image
+            |e| e.format.kind() == FormatKind::Image,
+            true
         ),
         rule!(
-            101,
+            111,
             "note_default",
             Fallback,
             Notes,
