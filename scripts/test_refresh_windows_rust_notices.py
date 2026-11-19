@@ -1686,5 +1686,133 @@ class NoticeClosureCheckTest(unittest.TestCase):
         check.assert_called_once()
 
 
+class VendoredPathDependencyTree(unittest.TestCase):
+    """A reviewed change under core/vendor/<name>/ is carried by name: the archive tree becomes the checkout's."""
+
+    LICENCE = b"shim licence\n"
+    IDENTITY = "shim@1.0.0 (path+core/vendor/shim)"
+
+    def tree(self, **changes):
+        files = {"Cargo.toml": b'[package]\nname="shim"\nversion="1.0.0"\n', "LICENSE": self.LICENCE,
+                 "ORIGIN.toml": b"origin = 1\n", "src/lib.rs": b"fn old() {}\n", "src/gone.rs": b"gone\n"}
+        files.update(changes)
+        files = {k: v for k, v in files.items() if v is not None}
+        if files.get("ORIGIN.toml") == b"origin = 1\n":  # the tree records its own digest, as core/vendor/velopack does
+            files["ORIGIN.toml"] = f'patched_tree_sha256 = "{refresh.vendored_tree_sha256(files)}"\n'.encode()
+        return files
+
+    def fixture(self, root, checkout):
+        lock = (b'version=4\n[[package]]\nname="app"\nversion="1.0.0"\n[[package]]\nname="outside"\nversion="1.0.0"\n'
+                b'source="' + SOURCE.encode() + b'"\nchecksum="' + b"b" * 64 + b'"\n')
+        outside = {**package("outside", source=SOURCE), "checksum": "b" * 64}
+        meta = {"packages": [{**package("app"), "id": "app", "source": None}, {**outside, "id": "outside"}],
+                "resolve": {"nodes": [{"id": "app", "features": [], "deps": []},
+                                      {"id": "outside", "features": [], "deps": []}]}}
+        distribution = root / "core/distribution"
+        distribution.mkdir(parents=True)
+        (root / "core/Cargo.toml").write_text("[workspace]\nmembers=[]\n")
+        (distribution / "shipped-core-features.txt").write_text("")
+        (distribution / "inventory.toml").write_text('[[entry]]\nkind="bin"\npackage="app"\ntargets=["windows-x86_64"]\n')
+        (root / refresh.LOCK_RELATIVE_PATH).write_bytes(lock)
+        for name, content in checkout.items():
+            path = root / "core/vendor/shim" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        digest = refresh.sha256_bytes(self.LICENCE)
+        notices, spans = refresh.render_notices({digest: self.LICENCE})
+        (root / refresh.NOTICES_RELATIVE_PATH).write_bytes(notices)
+        prior_tree = self.tree()
+        members = {"Cargo.lock": lock, refresh.GRAPH_MEMBER_NAME: json.dumps({"graph": refresh.normalize_graph(meta)}).encode(),
+                   "vendor/outside-1.0.0/Cargo.toml": b'[package]\nname="outside"\nversion="1.0.0"\n',
+                   "vendor/outside-1.0.0/.cargo-checksum.json": json.dumps({"package": "b" * 64, "files": {
+                       "Cargo.toml": refresh.sha256_bytes(b'[package]\nname="outside"\nversion="1.0.0"\n')}}).encode(),
+                   **{f"path-dependencies/shim/{k}": v for k, v in prior_tree.items()}}
+        archive = root / "prior.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, content in members.items():
+                info = tarfile.TarInfo(name)
+                info.size, info.mode = len(content), 0o644
+                tar.addfile(info, io.BytesIO(content))
+        tree = refresh.vendored_tree_sha256(prior_tree)
+        index = {"packages": [{**outside, "identity": f"outside@1.0.0 ({SOURCE})", "windows_notice_population": False,
+                               "notice_references": []}],
+                 "path_dependencies": [{"identity": self.IDENTITY, "name": "shim", "version": "1.0.0",
+                                        "source": "path+core/vendor/shim", "source_tree_member": "path-dependencies/shim/",
+                                        "patched_tree_sha256": tree, "windows_notice_population": True,
+                                        "notice_references": [{"bytes": len(self.LICENCE), "sha256": digest, "source": {
+                                            "kind": "shipped-license", "member": "LICENSE",
+                                            "path": "core/distribution/licenses/shim/LICENSE"}}]}],
+                 "path_dependency_trees": {self.IDENTITY: tree},
+                 "notices_sha256": refresh.sha256_bytes(notices), "notice_texts": spans,
+                 "cargo_lock_sha256": refresh.sha256_bytes(lock),
+                 "population": {"source_sha256": refresh.external_population_sha256([outside]), "source_package_count": 1,
+                                "windows_notice_package_count": 0},
+                 "dependency_source_companion": {"filename": archive.name, "bytes": archive.stat().st_size,
+                                                 "sha256": refresh.sha256_file(archive)}}
+        (root / refresh.INDEX_RELATIVE_PATH).write_text(json.dumps(index))
+        return archive, meta, tree
+
+    def run_refresh(self, root, archive, meta, **kwargs):
+        with patch.object(refresh, "query_cargo_metadata", return_value=meta), \
+             patch.object(refresh, "run_cargo_vendor", side_effect=AssertionError("no vendor run")):
+            return refresh.refresh(root, archive, None, root / "out", **kwargs)
+
+    def members(self, archive):
+        with tarfile.open(archive) as tar:
+            return {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
+
+    def test_named_tree_move_makes_the_archive_tree_the_checkouts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkout = self.tree(**{"src/lib.rs": b"fn new() {}\n", "src/added.rs": b"added\n", "src/gone.rs": None})
+            archive, meta, old_tree = self.fixture(root, checkout)
+            prior = self.members(archive)
+            result = self.run_refresh(root, archive, meta, path_tree_admissions=frozenset({("shim", "1.0.0")}))
+            new_tree = refresh.vendored_tree_sha256(checkout)
+            name = result["new_index"]["dependency_source_companion"]["filename"]
+            self.assertTrue(name.endswith(f"-{new_tree[:12]}.tar.gz"), name)
+            got = self.members(root / "out" / name)
+            self.assertEqual({k[len("path-dependencies/shim/"):]: v for k, v in got.items()
+                              if k.startswith("path-dependencies/shim/")}, checkout)
+            kept = lambda m: {k: v for k, v in m.items()
+                              if not k.startswith("path-dependencies/") and k != refresh.GRAPH_MEMBER_NAME}
+            self.assertEqual(kept(got), kept(prior))
+            row = result["new_index"]["path_dependencies"][0]
+            self.assertEqual(row["patched_tree_sha256"], new_tree)
+            self.assertEqual(result["new_index"]["path_dependency_trees"], {self.IDENTITY: new_tree})
+            self.assertIsNone(result["new_notices"])
+            moved = result["report"]["path_dependency_tree_moves"]
+            self.assertEqual([(m["from_tree_sha256"], m["to_tree_sha256"], m["substituted_members"], m["added_members"],
+                               m["removed_members"]) for m in moved],
+                             [(old_tree, new_tree, ["ORIGIN.toml", "src/lib.rs"], ["src/added.rs"], ["src/gone.rs"])])
+
+    def test_unchanged_tree_is_a_no_op_and_keeps_the_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, meta, tree = self.fixture(root, self.tree())
+            result = self.run_refresh(root, archive, meta)
+            self.assertNotIn(tree[:12], result["new_index"]["dependency_source_companion"]["filename"])
+            self.assertEqual(result["report"]["path_dependency_tree_moves"], [])
+
+    def test_refusals(self):
+        moved = {"src/lib.rs": b"fn new() {}\n"}
+        for name, checkout, admitted, message in (
+            ("unnamed move", self.tree(**moved), frozenset(), "--admit-path-dependency-tree shim@1.0.0"),
+            ("named but unchanged", self.tree(), frozenset({("shim", "1.0.0")}), "unchanged"),
+            ("unknown name", self.tree(), frozenset({("other", "1.0.0")}), "no vendored path dependency"),
+            ("licence change", self.tree(LICENSE=b"other licence\n", **moved), frozenset({("shim", "1.0.0")}), "licence member"),
+            ("stray file", {**self.tree(**moved), "src/stray.rs": b"not reviewed\n"}, frozenset({("shim", "1.0.0")}),
+             "not the one its ORIGIN.toml"),
+            ("renamed manifest", self.tree(**{"Cargo.toml": b'[package]\nname="shim"\nversion="2.0.0"\n'}),
+             frozenset({("shim", "1.0.0")}), "no longer names"),
+        ):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, meta, _ = self.fixture(root, checkout)
+                with self.assertRaisesRegex(refresh.RefreshError, message):
+                    self.run_refresh(root, archive, meta, path_tree_admissions=admitted)
+                self.assertFalse((root / "out").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -160,6 +160,18 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
     crate growing source; anything else is not a pin move this script will
     attest.
 
+A **vendored path-dependency tree change** (the worked case is a fix under
+`core/vendor/velopack/`) is carried only when named with
+`--admit-path-dependency-tree NAME@VERSION`. The archive's
+`path-dependencies/<name>/` members become the checkout's tree file for file,
+the index row's `patched_tree_sha256` and its `path_dependency_trees` entry move
+to the new tree digest, and the companion's name gains that digest's first 12
+characters. Its licence members must stay byte-identical, its manifest must
+keep its name and version, and its own `ORIGIN.toml` must record the new
+digest as `patched_tree_sha256`; nothing else in the archive, the index or NOTICES
+moves for it. An unnamed tree change refuses, and so does a named tree that
+did not change.
+
 On success it writes the new archive plus a small report to `--out`, and
 rewrites `core/distribution/windows-rust-sources.json` in place (and
 `core/distribution/windows-rust-NOTICES.txt`, when a named addition brings new
@@ -179,6 +191,7 @@ Usage:
         [--admit-closure-departure NAME@VERSION ...] \\
         [--admit-notice-text-removal SHA256 ...] \\
         [--admit-removed-notice-source NAME@VERSION:MEMBER ...] \\
+        [--admit-path-dependency-tree NAME@VERSION ...] \\
         [--out /path/to/output/dir]
 """
 
@@ -2090,6 +2103,132 @@ def parse_admissions(values: list[str]) -> frozenset[tuple[str, str]]:
     return frozenset(admitted)
 
 
+def vendored_tree_files(directory: Path) -> dict[str, bytes]:
+    """Every regular file under a vendored path dependency, by relative POSIX path."""
+    if not directory.is_dir():
+        raise RefreshError(f"vendored path dependency tree {directory} is missing")
+    files: dict[str, bytes] = {}
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink() or not (path.is_dir() or path.is_file()):
+            raise RefreshError(f"vendored path dependency member is not a regular file: {path}")
+        if path.is_file():
+            files[path.relative_to(directory).as_posix()] = path.read_bytes()
+    return files
+
+
+def vendored_tree_sha256(files: dict[str, bytes]) -> str:
+    """The patched-tree digest the distribution notices and the producer bind (ORIGIN.toml excluded)."""
+    hasher = hashlib.sha256()
+    for relative in sorted(files):
+        if relative == "ORIGIN.toml":
+            continue
+        data = files[relative]
+        hasher.update(relative.encode())
+        hasher.update(b"\x00")
+        hasher.update(len(data).to_bytes(8, "little"))
+        hasher.update(data)
+    return hasher.hexdigest()
+
+
+def path_dependency_tree_moves(
+    repo: Path, index: dict[str, Any], admitted: frozenset[tuple[str, str]]
+) -> list[tuple[dict[str, Any], str, dict[str, bytes]]]:
+    """(row, new tree digest, checkout files) for each vendored path dependency whose tree moved.
+
+    A move is carried only by name, and a named tree must actually have moved."""
+    moves = []
+    seen = set()
+    for row in index.get("path_dependencies", []):
+        if "patched_tree_sha256" not in row:
+            continue
+        key = (row["name"], row["version"])
+        seen.add(key)
+        source = row["source"]
+        if not source.startswith("path+") or not row["source_tree_member"].endswith("/"):
+            raise RefreshError(f"path dependency {row['identity']} has no vendored tree to compare")
+        relative = Path(source[len("path+"):])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RefreshError(f"unsafe path dependency source: {source}")
+        files = vendored_tree_files(repo / relative)
+        digest = vendored_tree_sha256(files)
+        if digest == row["patched_tree_sha256"]:
+            if key in admitted:
+                raise RefreshError(
+                    f"{row['name']}@{row['version']} is named as a moved tree, but its tree is unchanged"
+                )
+            continue
+        if key not in admitted:
+            raise RefreshError(
+                f"the vendored tree {relative} moved ({row['patched_tree_sha256'][:12]} -> {digest[:12]}); "
+                f"review it, then name it with --admit-path-dependency-tree {row['name']}@{row['version']}"
+            )
+        manifest = tomllib.loads(files.get("Cargo.toml", b"").decode())
+        if (manifest.get("package") or {}).get("name") != row["name"] or (
+            manifest.get("package") or {}
+        ).get("version") != row["version"]:
+            raise RefreshError(
+                f"the vendored {relative}/Cargo.toml no longer names {row['name']} {row['version']}"
+            )
+        # The tree records the digest it was reviewed at (the producer checks the same); a stray or
+        # unreviewed file in the checkout fails here instead of being packaged.
+        recorded = tomllib.loads(files.get("ORIGIN.toml", b"").decode()).get("patched_tree_sha256")
+        if recorded != digest:
+            raise RefreshError(
+                f"{relative}/ORIGIN.toml records patched_tree_sha256 {str(recorded)[:12]}, but the checkout's "
+                f"tree is {digest[:12]}: the tree is not the one its ORIGIN.toml was written for"
+            )
+        moves.append((row, digest, files))
+    unknown = admitted - seen
+    if unknown:
+        raise RefreshError(f"no vendored path dependency is named {sorted(unknown)}")
+    return moves
+
+
+def path_dependency_tree_substitutions(
+    prior_archive_path: Path, moves: list[tuple[dict[str, Any], str, dict[str, bytes]]]
+) -> tuple[dict[str, bytes], set[str], list[dict[str, Any]]]:
+    """Archive substitutions and member removals that make each moved tree the checkout's, and a report row each."""
+    substitutions: dict[str, bytes] = {}
+    removed: set[str] = set()
+    report = []
+    with tarfile.open(prior_archive_path, "r:gz") as tar:
+        prior = {m.name: m for m in tar.getmembers()}
+        for row, digest, files in moves:
+            prefix = row["source_tree_member"]
+            old = {
+                name[len(prefix):]: tar.extractfile(member).read()
+                for name, member in prior.items()
+                if name.startswith(prefix) and member.isfile()
+            }
+            if not old:
+                raise RefreshError(f"the prior archive carries no {prefix} tree")
+            if vendored_tree_sha256(old) != row["patched_tree_sha256"]:
+                raise RefreshError(
+                    f"the prior archive's {prefix} tree is not the committed index's "
+                    f"{row['patched_tree_sha256'][:12]}"
+                )
+            for reference in row["notice_references"]:
+                member = reference["source"].get("member")
+                if not member or member not in old or old.get(member) != files.get(member):
+                    raise RefreshError(
+                        f"the moved {prefix} tree changes its licence member {member}; "
+                        "that needs a licence review and regenerated notices, not a tree move"
+                    )
+            changed = sorted(r for r in files if old.get(r) != files[r])
+            gone = sorted(set(old) - set(files))
+            substitutions.update({prefix + r: files[r] for r in changed})
+            removed.update(prefix + r for r in gone)
+            report.append({
+                "identity": row["identity"],
+                "from_tree_sha256": row["patched_tree_sha256"],
+                "to_tree_sha256": digest,
+                "substituted_members": [r for r in changed if r in old],
+                "added_members": [r for r in changed if r not in old],
+                "removed_members": gone,
+            })
+    return substitutions, removed, report
+
+
 def refresh(
     repo: Path,
     prior_archive_path: Path,
@@ -2103,8 +2242,10 @@ def refresh(
     text_removals: frozenset[str] = frozenset(),
     notice_source_removals: frozenset[tuple[str, str, str]] = frozenset(),
     departures: frozenset[tuple[str, str]] = frozenset(),
+    path_tree_admissions: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
+    tree_moves = path_dependency_tree_moves(repo, old, path_tree_admissions)
 
     notices = (repo / NOTICES_RELATIVE_PATH).read_bytes()
     if sha256_bytes(notices) != old["notices_sha256"]:
@@ -2134,6 +2275,11 @@ def refresh(
             "the prior archive's own Cargo.lock does not match the committed "
             "index's cargo_lock_sha256"
         )
+
+    # Proven against the verified prior archive before anything is written.
+    tree_substitutions, tree_removed, tree_report = path_dependency_tree_substitutions(
+        prior_archive_path, tree_moves
+    )
 
     old_lock = tomllib.loads(prior_lock_bytes.decode())
     new_lock = tomllib.loads(lock_bytes.decode())
@@ -2376,7 +2522,8 @@ def refresh(
             raise RefreshError("registry upgrade must regenerate byte-identical NOTICES")
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    new_archive_path = out_dir / f"windows-rust-dependencies-{lock_hash[:16]}.tar.gz"
+    tree_suffix = "".join(f"-{digest[:12]}" for _, digest, _ in tree_moves)
+    new_archive_path = out_dir / f"windows-rust-dependencies-{lock_hash[:16]}{tree_suffix}.tar.gz"
     if new_archive_path.exists():
         raise RefreshError(f"refusing to overwrite existing {new_archive_path}")
 
@@ -2429,6 +2576,11 @@ def refresh(
             raise RefreshError(f"added members collide with substitutions: {collisions}")
         substitutions |= added_members
 
+    collisions = sorted(set(tree_substitutions) & set(substitutions))
+    if collisions:
+        raise RefreshError(f"path dependency tree members collide with substitutions: {collisions}")
+    substitutions |= tree_substitutions
+
     promoted_rows, promoted_texts = promote_notice_rows(prior_archive_path, promotion_rows, standard_apache)
     added_texts |= promoted_texts
 
@@ -2453,7 +2605,7 @@ def refresh(
 
     def dropped(name: str) -> bool:
         # tarfile strips a directory member's trailing slash.
-        return bool(dropped_prefixes) and (
+        return name in tree_removed or bool(dropped_prefixes) and (
             name.startswith(dropped_prefixes) or f"{name}/" in dropped_prefixes
         )
     prior_members: dict[str, dict[str, Any]] = {}
@@ -2534,6 +2686,8 @@ def refresh(
         for name in prior_members
         if dropped(name)
     }
+    if tree_removed - set(prior_members):
+        raise RefreshError(f"tree removals name members the prior archive does not carry: {sorted(tree_removed - set(prior_members))}")
     absent = sorted(
         prefix for prefix in dropped_prefixes
         if prefix + ".cargo-checksum.json" not in prior_members
@@ -2625,6 +2779,16 @@ def refresh(
 
     new_index = copy.deepcopy(old)
     advance_git_index_rows(new_index, moved_git)
+    for row, digest, _ in tree_moves:
+        for index_row in new_index["path_dependencies"]:
+            if index_row["identity"] == row["identity"]:
+                index_row["patched_tree_sha256"] = digest
+        trees = new_index.get("path_dependency_trees", {})
+        if trees.get(row["identity"]) != row["patched_tree_sha256"]:
+            raise RefreshError(
+                f"path_dependency_trees does not bind {row['identity']} to its row's tree"
+            )
+        trees[row["identity"]] = digest
     if upgraded_rows:
         replaced = set(upgrade_forward)
         new_index["packages"] = sorted(
@@ -2756,7 +2920,8 @@ def refresh(
             for row in removed_external
         ],
         "departed_packages_left_in_lock": sorted(departed),
-        "removed_vendor_members": len(expected_dropped),
+        "removed_vendor_members": len(expected_dropped - tree_removed),
+        "path_dependency_tree_moves": tree_report,
         "added_notice_texts": sorted(set(added_texts) - set(committed_texts)),
         "removed_notice_texts": sorted(text_removals),
         "windows_notice_package_count": len(selected),
@@ -2874,6 +3039,13 @@ def main(argv: list[str] | None = None) -> int:
         "--admit-removed-notice-source", action="append", default=[], metavar="NAME@VERSION:MEMBER",
         help="reviewed indexed source removed by a registry upgrade; name the new version and each absent member",
     )
+    parser.add_argument(
+        "--admit-path-dependency-tree", action="append", default=[], metavar="NAME@VERSION",
+        help=(
+            "a vendored path dependency (core/vendor/<name>) whose tree changed and was reviewed; "
+            "its archive tree becomes the checkout's and its tree digest moves. Licence members may not change."
+        ),
+    )
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -2906,6 +3078,7 @@ def main(argv: list[str] | None = None) -> int:
             parse_text_removals(args.admit_notice_text_removal),
             parse_notice_source_removals(args.admit_removed_notice_source),
             parse_admissions(args.admit_closure_departure),
+            parse_admissions(args.admit_path_dependency_tree),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)
