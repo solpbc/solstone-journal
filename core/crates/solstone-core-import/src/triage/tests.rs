@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 1);
+    assert_eq!(found.ruleset_version, 2);
     let shuffled = RULES
         .iter()
         .rev()
@@ -508,4 +508,336 @@ fn utf16_and_legacy_subrip_are_decoded() {
         .map(|c| if c == b'W' { 0x93 } else { c })
         .collect::<Vec<_>>();
     expected("captions.srt", legacy, Kind::Transcripts, &["subrip_cues"]);
+}
+
+fn expect_review_file(name: &str, text: &str, kind: Kind, reason: &str) {
+    let found = classify(text.as_bytes(), name, Path::new("inbox"), None, None);
+    assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
+    assert_eq!(found.reasons, [reason], "{name}");
+}
+
+#[test]
+fn weekday_habit_log() {
+    expect_review_file(
+        "habits.txt",
+        "Mon: ran 3 km, slept fine
+Tue: ran 3 km, slept fine
+Wed: ran 3 km, slept fine
+Thu: ran 3 km, slept fine
+Fri: ran 3 km, slept fine
+Sat: ran 3 km, slept fine
+Sun: ran 3 km, slept fine
+Mon: ran 4 km, slept fine
+Tue: ran 4 km, slept fine
+Wed: ran 4 km, slept fine
+Thu: ran 4 km, slept fine
+Fri: ran 4 km, slept fine
+Sat: ran 4 km, slept fine
+Sun: ran 4 km, slept fine
+Mon: ran 5 km, slept fine
+Tue: ran 5 km, slept fine
+Wed: ran 5 km, slept fine
+Thu: ran 5 km, slept fine
+Fri: ran 5 km, slept fine
+Sat: ran 5 km, slept fine
+Sun: ran 5 km, slept fine
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn meal_diary() {
+    expect_review_file(
+        "food.md",
+        "Breakfast: oats and coffee
+Lunch: soup with bread
+Dinner: rice and beans
+Breakfast: oats and coffee
+Lunch: soup with bread
+Dinner: rice and beans
+Breakfast: oats and coffee
+Lunch: soup with bread
+Dinner: rice and beans
+Breakfast: oats and coffee
+Lunch: soup with bread
+Dinner: rice and beans
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn repeated_settings() {
+    expect_review_file(
+        "settings.txt",
+        "host: alpha
+port: 8080
+mode: fast
+host: beta
+port: 8081
+mode: slow
+host: gamma
+port: 8082
+mode: slow
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn round_robin_action_list() {
+    expect_review_file(
+        "actions.txt",
+        "Dana: book the room
+Priya: send the draft
+Omar: check the budget
+Dana: confirm catering
+Priya: update the wiki
+Omar: call the venue
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn poem_with_refrain() {
+    expect_review_file(
+        "poem.txt",
+        "Tide: come in
+Moon: pull hard
+Tide: go out
+Moon: let go
+Tide: come in
+Moon: pull hard
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn timed_run_log() {
+    expect_review_file(
+        "run.log",
+        "09:00 - start: warm up done
+09:10 - lap: first lap done
+09:20 - lap: second lap done
+09:30 - lap: third lap done
+09:40 - stop: cool down now
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn interview_with_title() {
+    expect_review_file(
+        "interview.txt",
+        "Interview with Priya
+
+Dana: question 0 here?
+Priya: answer 0 follows.
+Dana: question 1 here?
+Priya: answer 1 follows.
+Dana: question 2 here?
+Priya: answer 2 follows.
+Dana: question 3 here?
+Priya: answer 3 follows.
+Dana: question 4 here?
+Priya: answer 4 follows.
+",
+        Kind::Transcripts,
+        "bare_speaker",
+    );
+}
+
+#[test]
+fn plan_with_act_in_a_sentence() {
+    expect_review_file(
+        "plan.md",
+        "Act 2 of the plan starts in March.
+
+TODO
+book venue
+
+IDEAS
+ask Omar
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn paint_note_with_scene_like_lines() {
+    expect_review_file(
+        "paint.txt",
+        "INT. walls need two coats
+EXT. trim is fine
+
+BUDGET
+about 400
+
+NOTES
+ask for samples
+",
+        Kind::Notes,
+        "note_default",
+    );
+}
+
+#[test]
+fn bold_weekday_habit_log() {
+    let text = "**Mon:** walked two miles\n**Wed:** rode to work\n**Fri:** swam before lunch\n**Mon:** took the bus\n**Wed:** walked home\n**Fri:** rode to the park\n";
+    expect_review_file("habit.md", text, Kind::Notes, "note_default");
+}
+
+#[test]
+fn bracketed_weekday_habit_log() {
+    let text = "[06:20] Mon: walked two miles\n[06:40] Wed: rode to work\n[07:15] Fri: swam before lunch\n[07:45] Mon: took the bus\n[08:20] Wed: walked home\n[08:50] Fri: rode to the park\n";
+    expect_review_file("habit.log", text, Kind::Notes, "note_default");
+}
+
+#[test]
+fn script_character_names_may_also_be_field_labels() {
+    expect_review_file(
+        "play.txt",
+        "INT. RESTAURANT - AFTERNOON\n\nMAY\n(quietly)\nHow much time do we have?\n\nCOOK\nThe bread is almost ready.\n",
+        Kind::Documents,
+        "script_scenes",
+    );
+}
+
+#[test]
+fn a_role_export_can_keep_its_full_markdown_title() {
+    expect_review_file(
+        "conversation.md",
+        "# A conversation about preparing the school garden for the first week of winter\n\n#### You:\nDo we still have burlap?\n\n#### ChatGPT:\nA tarp would work too.\n",
+        Kind::Transcripts,
+        "role_headers",
+    );
+}
+
+#[test]
+fn generic_turn_and_script_boundary_samples() {
+    let bare = "Ari: Shall we use brass?\nBo: It might tarnish.\nAri: Could we seal it?\nBo: I can bring sealant.\nAri: I'll bring a brush.\nBo: See you there.\n";
+    let cases: &[(&str, &str, Kind, &str)] = &[
+        (
+            "dated-chat.log",
+            "2026-04-17\n\n[08:10] Ari: Should I move it?\n[08:12] Bo: Leave it there.\n[08:13] Ari: I'll leave a sign.\n",
+            Kind::Transcripts,
+            "bracketed_speaker",
+        ),
+        (
+            "full-clock-habits.log",
+            "[06:20:00] Mon: walked to work\n[07:05:00] Tue: took the bus\n[07:40:00] Wed: rode to work\n[08:10:00] Mon: walked home\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "full-clock-dialogue.log",
+            "[06:20:00] May: Is the kiln hot?\n[06:22:00] Ari: It needs ten minutes.\n[06:24:00] May: I'll wait outside.\n",
+            Kind::Transcripts,
+            "existing_timed_layout",
+        ),
+        (
+            "calendar.md",
+            "January: found the trail\nFebruary: took the long route\nMarch: closed for repairs\nJanuary: walked the ridge\nFebruary: explored the bend\nMarch: went to the park\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "alternating-metadata.txt",
+            "Host: alpha\nPort: 8000\nHost: beta\nPort: 8001\nHost: gamma\nPort: 8002\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "timed-refrain.log",
+            "08:00 - Oak: stay\n08:01 - Reed: bend\n08:02 - Oak: stay\n08:03 - Reed: bend\n08:04 - Oak: stay\n08:05 - Reed: bend\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "parenthesized-rounds.txt",
+            "Ari (0:01): open the shed\nBo (0:02): move a stool\nCy (0:03): find a key\nAri (0:04): dry the shelf\nBo (0:05): paint the door\nCy (0:06): sweep the floor\nAri (0:07): oil the hinge\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "three-person-chat.txt",
+            "Ari: Is the ladder ready?\nBo: It is outside.\nCy: I can bring it in.\nAri: I'll open the door.\nBo: Please bring a mat.\nCy: It's wet out there.\nBo: Take the old mat.\nAri: Here it is.\n",
+            Kind::Transcripts,
+            "bare_speaker",
+        ),
+        (
+            "stacked-tasks.txt",
+            "Ari 0:01\nOpen the shed\n\nBo 0:02\nMove a stool\n\nCy 0:03\nFind a key\n\nAri 0:04\nDry the shelf\n\nBo 0:05\nPaint the door\n\nCy 0:06\nSweep the floor\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "stacked-empty-body.txt",
+            "Ari 0:01\n\nBo 0:02\nI have the keys.\n\nAri 0:03\nHere is the door.\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "play.txt",
+            "Act II: The workshop\n\nARI.\nThe door needs oil.\n\nBO.\nI'll find a brush.\n",
+            Kind::Documents,
+            "script_scenes",
+        ),
+        (
+            "budget.txt",
+            "ACT II\n\nBUDGET\nPut aside thirty dollars.\n\nNOTES\nAsk for swatches.\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "one-script-cue.txt",
+            "ACT II\n\nINT. CLOCK SHOP - NIGHT\nA pendant swings in the window.\n\nARI\nTime to close.\n",
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "whatsapp-field-names.txt",
+            "[1/8/26, 08:04] May: Has the bell rung?\n[1/8/26, 08:05] June: Not yet.\n[1/8/26, 08:06] May: We'll wait.\n",
+            Kind::Transcripts,
+            "whatsapp_bracketed",
+        ),
+    ];
+    for &(name, text, kind, reason) in cases {
+        expect_review_file(name, text, kind, reason);
+    }
+    for (name, text, kind, reason) in [
+        (
+            "titled-chat.txt",
+            format!("Brass workshop\n\n{bare}"),
+            Kind::Transcripts,
+            "bare_speaker",
+        ),
+        (
+            "chat-in-notebook.md",
+            format!(
+                "# Brass workshop\n\n{bare}\n## Takeaways\nI am keeping the earlier exchange here alongside my notes about the tools.\n"
+            ),
+            Kind::Notes,
+            "note_default",
+        ),
+        (
+            "chat-with-short-prose-intro.txt",
+            format!("I pasted the chat below\n\n{bare}"),
+            Kind::Notes,
+            "note_default",
+        ),
+    ] {
+        expect_review_file(name, &text, kind, reason);
+    }
 }

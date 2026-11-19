@@ -219,6 +219,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Transcripts,
             "Journal import: relative headings and two inline timed layouts",
             |e| crate::text::has_existing_timed_layout(e.text, e.lines)
+                && !only_reserved_inline_labels(e.lines)
         ),
         rule!(
             50,
@@ -274,28 +275,28 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "irc_angle_nick",
             "Generic IRC timestamp and angle-bracket nick; irssi default clock",
             Timed,
-            r"^[0-9]{2}:[0-9]{2}(?::[0-9]{2})?\s+<[ @+%~&]?(?P<speaker>[^>]{1,40})>\s+\S"
+            r"^[0-9]{2}:[0-9]{2}(?::[0-9]{2})?\s+<[ @+%~&]?(?P<speaker>[^>]{1,40})>\s+(?P<body>\S.*)$"
         ),
         rule!(
             58,
             "dated_tab_nick",
             "Generic dated tab-separated nick and body; WeeChat default clock",
             Timed,
-            r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z?\t(?P<speaker>[^\t]+)\t\S"
+            r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z?\t(?P<speaker>[^\t]+)\t(?P<body>\S.*)$"
         ),
         rule!(
             59,
             "bracketed_speaker",
             "Generic bracketed clock and speaker",
             Timed,
-            r"^\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\]\s*(?P<speaker>[^:：]{1,60})[:：]\s+\S"
+            r"^\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\]\s*(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
         ),
         rule!(
             60,
             "clock_dash_speaker",
             "Generic clock–speaker log",
             Timed,
-            r"^[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\s+[-–—]\s+(?P<speaker>[^:：]{1,60})[:：]\s+\S"
+            r"^[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\s+[-–—]\s+(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
         ),
         rule!(
             61,
@@ -316,7 +317,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "speaker_parenthesized_clock",
             "Generic speaker label with parenthesized clock",
             Timed,
-            r"^(?P<speaker>[^():]{1,60}?)\s+\(\d{1,2}:\d{2}(?::\d{2})?\):(?:\s|$)"
+            r"^(?P<speaker>[^():]{1,60}?)\s+\(\d{1,2}:\d{2}(?::\d{2})?\):(?:\s+(?P<body>\S.*)|\s*)$"
         ),
         rule!(
             64,
@@ -337,14 +338,14 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "bold_speaker",
             "Generic Markdown bold speaker labels",
             Bare,
-            r"^\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+\S"
+            r"^\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
         ),
         rule!(
             67,
             "bare_speaker",
             "Generic recurring Name: text labels",
             Bare,
-            r"^(?P<speaker>[^:：]{1,60})[:：]\s+\S"
+            r"^(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
         ),
         rule!(
             68,
@@ -451,7 +452,12 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     let mut continuations = 0;
     let mut in_turn = false;
     let mut block_has_body = true;
-    let mut preamble = 0;
+    let generic = matches!(shape, Bare | Timed | Block);
+    let mut has_title = false;
+    // Only the first five distinct pairs matter. Clocks and Markdown
+    // wrappers are already outside the captured body.
+    let mut utterances = HashSet::new();
+    let mut pending_body = None;
     for line in nonblank(lines) {
         let captured = regex.captures(line);
         let speaker = captured
@@ -468,20 +474,40 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 speakers.push(speaker.to_lowercase());
             }
             in_turn = true;
-            block_has_body = shape != RoleBlock;
+            block_has_body = !matches!(shape, Block | RoleBlock);
+            if generic
+                && utterances.len() < 5
+                && let Some(speaker) = speaker
+            {
+                if let Some(body) = captured.as_ref().and_then(|c| c.name("body")) {
+                    utterances.insert((speaker, body.as_str()));
+                    pending_body = None;
+                } else {
+                    pending_body = Some(speaker);
+                }
+            }
         } else if !in_turn {
             if is_export_notice(line) {
                 continue;
             }
-            if matches!(shape, RoleBlock | Block) && preamble == 0 && line.starts_with("# ") {
-                preamble += 1;
+            let existing_heading = matches!(shape, Block | RoleBlock) && line.starts_with("# ");
+            let short_heading =
+                matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) && short_title(line);
+            if !has_title && (existing_heading || short_heading) {
+                has_title = true;
                 continue;
             }
             // Generic and exporter-specific turn rules do not promote a pasted
             // exchange following a prose preamble to a transcript.
             return false;
         } else if !is_export_notice(line) {
+            if matches!(shape, Bare | Timed | Block | RoleLine) && markdown_title(line).is_some() {
+                return false;
+            }
             unmatched += 1;
+            if let Some(speaker) = pending_body.take() {
+                utterances.insert((speaker, line));
+            }
             if matches!(shape, Block | ExportBlock | RoleBlock) && !line.starts_with('#') {
                 block_has_body = true;
                 continuations += 1;
@@ -489,6 +515,13 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         }
     }
     let distinct: HashSet<_> = speakers.iter().collect();
+    if generic
+        && (distinct.iter().all(|speaker| reserved_label(speaker))
+            || repeats_in_order(&speakers, distinct.len())
+            || utterances.len() < matched.min(5))
+    {
+        return false;
+    }
     let changes = speakers
         .windows(2)
         .filter(|pair| pair[0] != pair[1])
@@ -498,7 +531,13 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         Offset => matched >= 3 && unmatched <= matched / 4,
         ExportBlock => distinct.len() >= 2 && matched >= 2 && continuations <= matched * 4,
         ExportTimed => distinct.len() >= 2 && matched >= 2 && unmatched <= matched,
-        Block => distinct.len() >= 2 && matched >= 3 && interleaves && continuations <= matched * 4,
+        Block => {
+            distinct.len() >= 2
+                && matched >= 3
+                && interleaves
+                && block_has_body
+                && continuations <= matched * 4
+        }
         Timed => {
             matched >= 3
                 && ((distinct.len() >= 2 && interleaves) || matched >= 5 && distinct.len() == 1)
@@ -528,6 +567,119 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 && unmatched <= matched / 3
         }
     }
+}
+
+fn markdown_title(line: &str) -> Option<&str> {
+    let (marker, title) = line.split_once(' ')?;
+    ((1..=6).contains(&marker.len()) && marker.bytes().all(|c| c == b'#')).then_some(title.trim())
+}
+
+fn short_title(line: &str) -> bool {
+    if let Some(title) = markdown_title(line) {
+        return (1..=10).contains(&title.split_whitespace().count());
+    }
+    if jiff::civil::Date::strptime("%Y-%m-%d", line).is_ok() {
+        return true;
+    }
+    let mut words = line.split_whitespace();
+    words.next().is_some_and(|first| {
+        first.starts_with(char::is_uppercase)
+            && !matches!(
+                first.to_ascii_lowercase().as_str(),
+                "i" | "we" | "this" | "these" | "here"
+            )
+    }) && words.count() < 10
+        && !line.contains(':')
+        && !line.ends_with(['.', '!', '?'])
+}
+
+fn reserved_label(label: &str) -> bool {
+    matches!(
+        label.trim_end_matches('.').to_ascii_lowercase().as_str(),
+        "mon"
+            | "tue"
+            | "tues"
+            | "wed"
+            | "thu"
+            | "thur"
+            | "thurs"
+            | "fri"
+            | "sat"
+            | "sun"
+            | "monday"
+            | "tuesday"
+            | "wednesday"
+            | "thursday"
+            | "friday"
+            | "saturday"
+            | "sunday"
+            | "jan"
+            | "feb"
+            | "mar"
+            | "apr"
+            | "jun"
+            | "jul"
+            | "aug"
+            | "sep"
+            | "sept"
+            | "oct"
+            | "nov"
+            | "dec"
+            | "january"
+            | "february"
+            | "march"
+            | "april"
+            | "may"
+            | "june"
+            | "july"
+            | "august"
+            | "september"
+            | "october"
+            | "november"
+            | "december"
+            | "breakfast"
+            | "lunch"
+            | "dinner"
+            | "supper"
+            | "snack"
+            | "brunch"
+            | "host"
+            | "port"
+            | "mode"
+            | "start"
+            | "lap"
+            | "stop"
+            | "end"
+    )
+}
+
+fn repeats_in_order(speakers: &[String], distinct: usize) -> bool {
+    distinct >= 3
+        && speakers.len() / 2 >= distinct
+        && speakers[distinct..] == speakers[..speakers.len() - distinct]
+}
+
+// The legacy parser's full clocks register at the signature stage. A log
+// consisting entirely of calendar or field labels has no speaker evidence.
+fn only_reserved_inline_labels(lines: &[&str]) -> bool {
+    static INLINE_LABEL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^(?:\[[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]\]\s*([^:]+):|([^():]+?)\s*\([0-9]{1,3}:[0-5][0-9]:[0-5][0-9]\))").unwrap()
+    });
+    let mut rows = nonblank(lines).peekable();
+    if rows.peek().is_some_and(|line| short_title(line)) {
+        rows.next();
+    }
+    let has_reserved_label = |line| {
+        INLINE_LABEL.captures(line).is_some_and(|captures| {
+            captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .is_some_and(|label| reserved_label(label.as_str().trim()))
+        })
+    };
+    rows.next().is_some_and(has_reserved_label)
+        && rows.next().is_some_and(has_reserved_label)
+        && rows.all(has_reserved_label)
 }
 
 fn is_export_notice(line: &str) -> bool {
@@ -735,22 +887,55 @@ fn email(lines: &[&str]) -> bool {
 }
 
 fn script(lines: &[&str]) -> bool {
-    static SCENE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:\.?\s*(?:INT\.?/EXT\.?|I/E\.?|INT\.|EXT\.|EST\.)\s+\S|(?:ACT|SCENE)\s+(?:[IVXLCDM]+|[0-9]+|ONE|TWO|THREE)\b)").unwrap()
+    static ACT_OR_SCENE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?i)^(?:ACT|SCENE)\s+(?:[IVXLCDM]+|[0-9]+|ONE|TWO|THREE)(?:\.|\s*[:–—-]\s*\S.*)?$",
+        )
+        .unwrap()
     });
-    let scene = nonblank(lines).any(|line| SCENE.is_match(line));
-    scene
-        && nonblank(lines)
-            .filter(|line| {
-                let cue = line.trim_end_matches(['.', '^']);
-                (2..=32).contains(&cue.len())
-                    && cue
-                        .chars()
-                        .all(|c| c.is_ascii_uppercase() || " .'-".contains(c))
+    static SLUG_LINE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^\.?(?:INT\.?/EXT\.?|I/E\.?|INT\.|EXT\.|EST\.)\s+(\S.*)$").unwrap()
+    });
+    let scene_heading = |line: &str| {
+        ACT_OR_SCENE.is_match(line)
+            || SLUG_LINE.captures(line).is_some_and(|capture| {
+                let setting = &capture[1];
+                setting.contains(" - ") || !setting.chars().any(char::is_lowercase)
             })
-            .take(2)
-            .count()
-            == 2
+    };
+    let character_cue = |line: &str| {
+        let cue = line.trim_end_matches(['.', '^']);
+        (2..=40).contains(&cue.chars().count())
+            && !matches!(cue, "TODO" | "NOTES" | "IDEAS" | "BUDGET" | "SUMMARY")
+            && cue.chars().any(char::is_uppercase)
+            && cue
+                .chars()
+                .all(|c| c.is_uppercase() || c.is_ascii_digit() || " ._'-’".contains(c))
+    };
+    let Some(start) = lines.iter().position(|line| scene_heading(line.trim())) else {
+        return false;
+    };
+    let scene = &lines[start..];
+    scene
+        .windows(3)
+        .enumerate()
+        .filter(|(index, lines)| {
+            let (before, cue, next) = (lines[0].trim(), lines[1].trim(), lines[2].trim());
+            let dialogue = if next.starts_with('(') && next.ends_with(')') {
+                scene.get(index + 3).map_or("", |line| line.trim())
+            } else {
+                next
+            };
+            (before.is_empty() || scene_heading(before))
+                && character_cue(cue)
+                && !scene_heading(cue)
+                && !dialogue.is_empty()
+                && !character_cue(dialogue)
+                && !scene_heading(dialogue)
+        })
+        .take(2)
+        .count()
+        == 2
 }
 
 fn chapter_count(lines: &[&str]) -> usize {
