@@ -35,6 +35,7 @@ solstone-core-entity.workspace = true
 jiff.workspace = true
 log.workspace = true
 regex.workspace = true
+quick-xml = "0.41.0"
 file-format.workspace = true
 kamadak-exif.workspace = true
 rusqlite.workspace = true

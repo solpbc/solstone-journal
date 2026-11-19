@@ -3,6 +3,8 @@
 
 use super::*;
 
+mod exports;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Stage {
     Container,
@@ -18,9 +20,10 @@ pub(super) struct Evidence<'a> {
     pub format: FileFormat,
     pub lines: &'a [&'a str],
     pub text: &'a str,
-    pub bytes: &'a [u8],
     pub name: &'a str,
     pub folder: &'a Path,
+    pub image: Option<image::ImageMetadata>,
+    pub meeting_kind: std::cell::OnceCell<Option<Kind>>,
 }
 
 pub(super) struct Rule {
@@ -76,27 +79,29 @@ impl Rule {
 }
 
 // Each literal is an independent recognition rule. Source identifies the
-// convention it recognizes. All checks are qualified by synthetic files only.
+// convention it recognizes. Verification requires a winning real-file verdict.
 macro_rules! rule {
-    ($priority:literal, $id:literal, $stage:ident, $kind:ident, $source:literal, $check:expr) => {
+    (@verified) => { false };
+    (@verified $verified:literal) => { $verified };
+    ($priority:literal, $id:literal, $stage:ident, $kind:ident, $source:literal, $check:expr $(, $verified:literal)?) => {
         Rule {
             id: $id,
             stage: $stage,
             kind: $kind,
             priority: $priority,
             source: $source,
-            verified_on_real_file: false,
+            verified_on_real_file: rule!(@verified $($verified)?),
             matcher: Matcher::Check($check),
         }
     };
-    ($priority:literal, $id:literal, $source:literal, $shape:ident, $pattern:literal) => {
+    ($priority:literal, $id:literal, $source:literal, $shape:ident, $pattern:literal $(, $verified:literal)?) => {
         Rule {
             id: $id,
             stage: Turns,
             kind: Transcripts,
             priority: $priority,
             source: $source,
-            verified_on_real_file: false,
+            verified_on_real_file: rule!(@verified $($verified)?),
             matcher: Matcher::Lines {
                 pattern: $pattern,
                 regex: OnceLock::new(),
@@ -130,7 +135,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Documents,
             "Fountain syntax: scene headings and character cues; ACT/SCENE for plays",
-            |e| script(e.lines)
+            |e| script(e.lines),
+            true
         ),
         rule!(
             30,
@@ -138,7 +144,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "W3C WebVTT: file header and cue blocks; Zoom, Teams, Whisper",
-            |e| subtitle(e.lines, true)
+            |e| subtitle(e.lines, true),
+            true
         ),
         rule!(
             31,
@@ -146,7 +153,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "SubRip: numbered timing and payload blocks",
-            |e| subtitle(e.lines, false)
+            |e| subtitle(e.lines, false),
+            true
         ),
         rule!(
             32,
@@ -154,7 +162,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "openai/whisper utils.py: TSV column header and offsets",
-            |e| whisper_tsv(e.lines)
+            |e| whisper_tsv(e.lines),
+            true
         ),
         rule!(
             33,
@@ -162,7 +171,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "openai/whisper utils.py: JSON output fields",
-            |e| whisper_json(e.text)
+            |e| whisper_json(e.text),
+            true
         ),
         rule!(
             34,
@@ -222,32 +232,78 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 && !only_reserved_inline_labels(e.lines)
         ),
         rule!(
+            42,
+            "otter_export",
+            Turns,
+            Transcripts,
+            "Otter transcript footer and stacked offset/body blocks",
+            |e| exports::otter(e.lines),
+            true
+        ),
+        rule!(
+            43,
+            "rev_numbered_speaker_clock",
+            Turns,
+            Transcripts,
+            "Rev numbered speaker and parenthesized clock blocks",
+            |e| exports::rev(e.lines),
+            true
+        ),
+        rule!(
+            45,
+            "meeting_summary_note",
+            Turns,
+            Notes,
+            "A meeting export whose notes and action items outweigh its turns",
+            |e| *e
+                .meeting_kind
+                .get_or_init(|| exports::meeting_kind(e.lines))
+                == Some(Notes)
+        ),
+        rule!(
+            46,
+            "meeting_export_turns",
+            Turns,
+            Transcripts,
+            "Meeting export metadata and bracketed, inline or stacked speaker turns",
+            |e| *e
+                .meeting_kind
+                .get_or_init(|| exports::meeting_kind(e.lines))
+                == Some(Transcripts),
+            true
+        ),
+        rule!(
             50,
             "zoom_chat",
             "zoomchattr: saved chat line and block exports",
             ExportBlock,
-            r"^[0-9]{2}:[0-9]{2}:[0-9]{2} From (?P<speaker>[^:]{1,100}?)(?:\s+to\s+[^:]{1,100}?)?\s*[:：](?:\s|$)"
+            r"^[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+From (?P<speaker>[^:]{1,100}?)(?:\s+to\s+[^:]{1,100}?)?\s*[:：](?:\s|$)"
         ),
         rule!(
             51,
             "whatsapp_bracketed",
-            "WhatsApp iOS export: date/time bracket then sender; whatsapp-chat-parser",
-            ExportTimed,
-            r"^\[(?:[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4}|[0-9]{4}[/.][0-9]{1,2}[/.][0-9]{1,2}),?\s+[0-9]{1,2}[:.][0-9]{2}(?:[:.][0-9]{2})?(?:\s+[aApP]\.?\s?[mM]\.?)?\]\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)"
+            Turns,
+            Transcripts,
+            "WhatsApp iOS export timestamps, system notices and senders",
+            |e| exports::whatsapp(e.lines, true),
+            true
         ),
         rule!(
             52,
             "whatsapp_dash",
-            "WhatsApp Android export: date/time and dash then sender; whatsapp-chat-parser",
-            ExportTimed,
-            r"^[0-9]{1,4}[-/.][0-9]{1,2}[-/.][0-9]{1,4},?\s+[0-9]{1,2}[:.][0-9]{2}(?:[:.][0-9]{2})?(?:\s+[aApP]\.?\s?[mM]\.?)?\s+-\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)"
+            Turns,
+            Transcripts,
+            "WhatsApp Android export timestamps, system notices and senders",
+            |e| exports::whatsapp(e.lines, false),
+            true
         ),
         rule!(
             53,
             "signal_dated",
             "signal-export models: bracketed ISO date and time",
             ExportTimed,
-            r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2},? [0-9]{2}:[0-9]{2}(?::[0-9]{2})?\]\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)"
+            r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2},? [0-9]{2}:[0-9]{2}(?::[0-9]{2})?\]\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)",
+            true
         ),
         rule!(
             54,
@@ -261,14 +317,16 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "slack_text",
             "slackdump text export: > sender [id] @ date and nested reply prefixes",
             ExportBlock,
-            r"^(?:\|\s*)*>\s+(?P<speaker>[^\[\r\n]{1,60}?)\s+\[[A-Z0-9]+\]\s+@\s+[0-9]{2}/[0-9]{2}/[0-9]{4}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+(?:Z|[+-][0-9]{4}):$"
+            r"^(?:\|\s*)*>\s+(?P<speaker>[^\[\r\n]{1,60}?)\s+\[[A-Z0-9]+\]\s+@\s+[0-9]{2}/[0-9]{2}/[0-9]{4}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+(?:Z|[+-][0-9]{4}):$",
+            true
         ),
         rule!(
             56,
             "bracketed_offsets",
             "whisper.cpp CLI: timestamp range per line",
             Offset,
-            r"^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\]\s+\S"
+            r"^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\]\s+\S",
+            true
         ),
         rule!(
             57,
@@ -282,14 +340,14 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "dated_tab_nick",
             "Generic dated tab-separated nick and body; WeeChat default clock",
             Timed,
-            r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z?\t(?P<speaker>[^\t]+)\t(?P<body>\S.*)$"
+            r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z?\t[ @+%~&]?(?P<speaker>[^\t]+)\t(?P<body>\S.*)$"
         ),
         rule!(
             59,
             "bracketed_speaker",
             "Generic bracketed clock and speaker",
             Timed,
-            r"^\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\]\s*(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
+            r"^(?:\*\*)?\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\]\s*(?P<speaker>[^:：]{1,60})[:：](?:\*\*)?\s+(?P<body>\S.*)$"
         ),
         rule!(
             60,
@@ -303,7 +361,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "stacked_speaker_time",
             "Generic speaker/time block, including Otter and text rendered from documents",
             Block,
-            r"^(?:\*\*)?(?P<speaker>[^*():]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?\d{1,2}:\d{2}(?::\d{2})?\)?:?$"
+            r"^(?:\*\*)?(?P<speaker>[^*:]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?\d{1,2}:\d{2}(?::\d{2})?\)?:?$"
         ),
         rule!(
             62,
@@ -317,14 +375,15 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "speaker_parenthesized_clock",
             "Generic speaker label with parenthesized clock",
             Timed,
-            r"^(?P<speaker>[^():]{1,60}?)\s+\(\d{1,2}:\d{2}(?::\d{2})?\):(?:\s+(?P<body>\S.*)|\s*)$"
+            r"^(?P<speaker>[^:]{1,60}?)\s+\*?\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)\*?:(?:\s+(?P<body>\S.*)|\s*)$"
         ),
         rule!(
             64,
             "role_headers",
             "pionxzh/chatgpt-exporter Markdown and plain text; generic role headers",
             RoleBlock,
-            r"(?i)^(?:#{1,6}\s+)?(?:\*\*)?(?P<speaker>you|user|human|me|them|assistant|ai|chatgpt|gpt|claude|gemini|copilot|bot|system|prompt|response|speaker [0-9]+)(?: said)?[:：]?(?:\*\*[:：]?)?\s*$"
+            r"(?i)^(?:#{1,6}\s+)?(?:\*\*)?(?P<speaker>you|user|human|me|them|assistant|ai|chatgpt|gpt|claude|gemini|copilot|bot|system|prompt|response|speaker [0-9]+)(?: said)?[:：]?(?:\*\*[:：]?)?\s*$",
+            true
         ),
         rule!(
             65,
@@ -338,14 +397,15 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "bold_speaker",
             "Generic Markdown bold speaker labels",
             Bare,
-            r"^\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
+            r"^(?:[-*] (?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} )?)?\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
         ),
         rule!(
             67,
             "bare_speaker",
             "Generic recurring Name: text labels",
             Bare,
-            r"^(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
+            r"^(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$",
+            true
         ),
         rule!(
             68,
@@ -353,7 +413,17 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Turns,
             Transcripts,
             "imessage-exporter text template: date, sender line, body",
-            |e| imessage(e.lines)
+            |e| imessage(e.lines),
+            true
+        ),
+        rule!(
+            69,
+            "ai_chat_markdown_export",
+            Turns,
+            Transcripts,
+            "Claude timestamped, ChatGPT role-heading, Gemini and AI Chat Exporter Markdown conventions",
+            |e| exports::ai_markdown(e.lines, e.text),
+            true
         ),
         rule!(
             70,
@@ -393,7 +463,43 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Image,
             Photos,
             "Exif Make, Model and exposure fields",
-            |e| e.format.kind() == FormatKind::Image && camera_metadata(e.bytes)
+            |e| e.image.as_ref().is_some_and(|metadata| metadata.camera)
+        ),
+        rule!(
+            81,
+            "screenshot_user_comment",
+            Image,
+            Screen,
+            "Exact Exif or XMP UserComment written by Apple screenshots",
+            |e| e
+                .image
+                .as_ref()
+                .is_some_and(|metadata| metadata.screenshot_comment),
+            true
+        ),
+        rule!(
+            82,
+            "android_screenshot_software",
+            Image,
+            Screen,
+            "Android screenshot Software build identifier without camera Make",
+            |e| e
+                .image
+                .as_ref()
+                .is_some_and(|metadata| metadata.android_software),
+            true
+        ),
+        rule!(
+            83,
+            "gnome_screenshot_software",
+            Image,
+            Screen,
+            "GNOME screenshot PNG Software text",
+            |e| e
+                .image
+                .as_ref()
+                .is_some_and(|metadata| metadata.gnome_software),
+            true
         ),
         rule!(
             90,
@@ -401,7 +507,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Name,
             Screen,
             "AOSP SystemUI ImageExporter.java file naming convention",
-            |e| e.format == FileFormat::PortableNetworkGraphics && aosp_name(e.name)
+            |e| e.format == FileFormat::PortableNetworkGraphics && aosp_name(e.name),
+            true
         ),
         rule!(
             91,
@@ -427,7 +534,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Fallback,
             Notes,
             "Generic text import default",
-            |e| e.format.kind() != FormatKind::Image
+            |e| e.format.kind() != FormatKind::Image,
+            true
         ),
     ]
 });
@@ -453,23 +561,35 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     let mut in_turn = false;
     let mut block_has_body = true;
     let generic = matches!(shape, Bare | Timed | Block);
-    let mut has_title = false;
+    let header = if matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) {
+        exports::meeting_header(lines)
+    } else {
+        exports::Header::default()
+    };
+    let mut has_title = header.rows > 0;
+    let mut turn_words = 0;
+    let interview = nonblank(lines).next().is_some_and(exports::interview_title);
     // Only the first five distinct pairs matter. Clocks and Markdown
     // wrappers are already outside the captured body.
     let mut utterances = HashSet::new();
     let mut pending_body = None;
-    for line in nonblank(lines) {
+    for line in nonblank(lines).skip(header.rows) {
         let captured = regex.captures(line);
         let speaker = captured
             .as_ref()
             .and_then(|c| c.name("speaker"))
-            .map(|m| m.as_str().trim());
-        let evidence = (shape == Offset && captured.is_some()) || speaker.is_some_and(name_label);
+            .and_then(|m| speaker_label(m.as_str()));
+        let evidence = (shape == Offset && captured.is_some()) || speaker.is_some();
         if evidence {
             if matches!(shape, Block | ExportBlock | RoleBlock) && !block_has_body {
                 return false;
             }
             matched += 1;
+            if header.summary_words != 0
+                && let Some(body) = captured.as_ref().and_then(|c| c.name("body"))
+            {
+                turn_words += body.as_str().split_whitespace().count();
+            }
             if let Some(speaker) = speaker {
                 speakers.push(speaker.to_lowercase());
             }
@@ -505,6 +625,9 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 return false;
             }
             unmatched += 1;
+            if header.summary_words != 0 && matches!(shape, Block | RoleBlock) {
+                turn_words += line.split_whitespace().count();
+            }
             if let Some(speaker) = pending_body.take() {
                 utterances.insert((speaker, line));
             }
@@ -515,6 +638,18 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         }
     }
     let distinct: HashSet<_> = speakers.iter().collect();
+    if (header.summary_words != 0 && turn_words <= header.summary_words)
+        || (matches!(shape, Bare | RoleLine)
+            && !interview
+            && distinct.iter().all(|speaker| {
+                matches!(
+                    speaker.as_str(),
+                    "front" | "back" | "q" | "a" | "question" | "answer"
+                )
+            }))
+    {
+        return false;
+    }
     if generic
         && (distinct.iter().all(|speaker| reserved_label(speaker))
             || repeats_in_order(&speakers, distinct.len())
@@ -538,11 +673,7 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 && block_has_body
                 && continuations <= matched * 4
         }
-        Timed => {
-            matched >= 3
-                && ((distinct.len() >= 2 && interleaves) || matched >= 5 && distinct.len() == 1)
-                && unmatched <= matched
-        }
+        Timed => matched >= 3 && distinct.len() >= 2 && interleaves && unmatched <= matched,
         RoleBlock => {
             distinct.len() >= 2
                 && matched >= 2
@@ -684,7 +815,11 @@ fn only_reserved_inline_labels(lines: &[&str]) -> bool {
 
 fn is_export_notice(line: &str) -> bool {
     let irc_event = line.split_once(' ').is_some_and(|(clock, body)| {
-        clock.len() == 5 && clock.as_bytes()[2] == b':' && body.trim_start().starts_with("-!- ")
+        clock.len() == 5
+            && clock.as_bytes()[2] == b':'
+            && ["-!- ", "* "]
+                .iter()
+                .any(|prefix| body.trim_start().starts_with(prefix))
     });
     let tab_event = line.split_once('\t').is_some_and(|(stamp, body)| {
         stamp.len() >= 19
@@ -693,12 +828,16 @@ fn is_export_notice(line: &str) -> bool {
                 .split_once('\t')
                 .is_some_and(|(nick, _)| matches!(nick.trim(), "-->" | "<--" | "--" | "*"))
     });
-    irc_event || tab_event || line.starts_with("--- Log opened ") || line.starts_with("--- Log closed ")
+    irc_event
+        || tab_event
+        || line.starts_with("--- Log opened ")
+        || line.starts_with("--- Log closed ")
         || line.starts_with("--- Day changed ")
-        || line.ends_with("Messages and calls are end-to-end encrypted.")
-        || line.ends_with("Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.")
         || line.starts_with("Transcribed by https://otter.ai")
-        || line.starts_with("|") && line.trim_matches(|c: char| c == '|' || c.is_whitespace()).is_empty()
+        || line.starts_with("|")
+            && line
+                .trim_matches(|c: char| c == '|' || c.is_whitespace())
+                .is_empty()
 }
 
 pub(super) fn subtitle(lines: &[&str], vtt: bool) -> bool {

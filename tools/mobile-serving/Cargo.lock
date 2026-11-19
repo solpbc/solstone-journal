@@ -5930,6 +5930,7 @@ dependencies = [
  "jiff 1.0.0",
  "kamadak-exif",
  "log",
+ "quick-xml",
  "regex",
  "rusqlite",
  "serde",

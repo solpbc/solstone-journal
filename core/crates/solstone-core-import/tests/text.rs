@@ -511,7 +511,7 @@ fn an_unmarked_note_is_kept_complete_at_the_import_start() {
             .unwrap();
     assert_eq!(verdict["kind"], "notes");
     assert_eq!(verdict["reasons"], json!(["note_default"]));
-    assert_eq!(verdict["ruleset_version"], 2);
+    assert_eq!(verdict["ruleset_version"], 3);
     assert_eq!(verdict["topics"], "roadmap, imports");
 }
 

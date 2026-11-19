@@ -5282,6 +5282,7 @@ dependencies = [
  "kamadak-exif",
  "log",
  "nix 0.30.1",
+ "quick-xml",
  "regex",
  "rusqlite",
  "serde",

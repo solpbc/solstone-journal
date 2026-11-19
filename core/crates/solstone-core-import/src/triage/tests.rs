@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 2);
+    assert_eq!(found.ruleset_version, 3);
     let shuffled = RULES
         .iter()
         .rev()
@@ -41,7 +41,6 @@ fn each_rule_has_unique_id_and_priority() {
         assert!(priorities.insert(rule.priority));
         assert!(ids.insert(rule.id));
         assert!(!rule.source.is_empty());
-        assert!(!rule.verified_on_real_file);
     }
 }
 
@@ -196,7 +195,7 @@ fn timed_and_untimed_export_families() {
         ),
         (
             "qa.txt",
-            "Q: Have you met?\nA: At the station.\nQ: When was that?\n",
+            "Interview with Sol\n\nQ: Have you met?\nA: At the station.\nQ: When was that?\n",
             "role_labels",
         ),
         (
