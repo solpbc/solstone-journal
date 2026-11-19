@@ -13,6 +13,41 @@ pub(super) struct Header {
     facts: usize,
 }
 
+impl Header {
+    pub(super) fn opening_paragraph_speaker<'a>(&self, lines: &[&'a str]) -> Option<&'a str> {
+        if self.rows == 0 || self.transcript {
+            return None;
+        }
+
+        fn inline_speaker(line: &str) -> Option<&str> {
+            let (label, body) = line.split_once([':', '：'])?;
+            let body = body.strip_prefix("**").unwrap_or(body);
+            if body.starts_with(char::is_whitespace) {
+                speaker_label(label)
+            } else {
+                None
+            }
+        }
+
+        let mut lines = lines.iter().map(|line| line.trim());
+        for _ in 0..self.rows {
+            lines.find(|line| !line.is_empty())?;
+        }
+        let speaker = inline_speaker(lines.find(|line| !line.is_empty())?)?;
+        // A paragraph before the dialogue can start with a colon label. Its
+        // label needs a later turn to substantiate it as a speaker.
+        if lines
+            .by_ref()
+            .take_while(|line| !line.is_empty())
+            .any(|line| inline_speaker(line).is_some())
+            || !lines.any(|line| !line.is_empty())
+        {
+            return None;
+        }
+        Some(speaker)
+    }
+}
+
 pub(super) fn meeting_header(lines: &[&str]) -> Header {
     static DATE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^(?:[A-Z][a-z]{2,8} [0-9]{1,2}, [0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[ T][0-9:]+Z?)?)$").unwrap()
@@ -154,6 +189,9 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
         return None;
     }
 
+    let mut opening_speaker = header
+        .opening_paragraph_speaker(lines)
+        .map(str::to_lowercase);
     let mut speakers = HashSet::new();
     let mut turns = 0;
     let mut words = 0;
@@ -196,6 +234,9 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
                 return None;
             }
             let speaker = speaker.to_lowercase();
+            if turns > 0 && opening_speaker.as_ref() == Some(&speaker) {
+                opening_speaker = None;
+            }
             changes += usize::from(last_speaker.as_ref().is_some_and(|last| last != &speaker));
             last_speaker = Some(speaker.clone());
             speakers.insert(speaker);
@@ -220,6 +261,7 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
     }
 
     let is_export = turns >= 3
+        && opening_speaker.is_none()
         && has_body
         && speakers.len() >= 2
         && !speakers.iter().all(|speaker| {

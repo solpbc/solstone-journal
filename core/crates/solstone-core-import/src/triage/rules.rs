@@ -638,6 +638,17 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         }
     }
     let distinct: HashSet<_> = speakers.iter().collect();
+    if matches!(shape, Bare | RoleLine)
+        && let Some(speaker) = header
+            .opening_paragraph_speaker(lines)
+            .map(str::to_lowercase)
+        && !speakers
+            .iter()
+            .skip(1)
+            .any(|candidate| candidate == &speaker)
+    {
+        return false;
+    }
     if (header.summary_words != 0 && turn_words <= header.summary_words)
         || (matches!(shape, Bare | RoleLine)
             && !interview

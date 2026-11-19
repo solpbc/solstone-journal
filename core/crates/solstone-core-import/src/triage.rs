@@ -19,7 +19,7 @@ mod image;
 mod rules;
 use rules::{Evidence, RULES, Rule, Stage};
 
-pub const RULESET_VERSION: u32 = 3;
+pub const RULESET_VERSION: u32 = 4;
 pub use solstone_core_format::content::IMPORT_KIND_FILENAME as METADATA_FILENAME;
 
 /// Rule provenance is static for the version written with each verdict.
@@ -270,10 +270,30 @@ fn aosp_name(name: &str) -> bool {
 
 fn speaker_label(label: &str) -> Option<&str> {
     let label = label.trim().trim_matches('*').trim();
-    let label = label
-        .rsplit_once(" (")
-        .filter(|(_, annotation)| annotation.ends_with(')'))
-        .map_or(label, |(name, _)| name);
+    let label = match label.rsplit_once(" (") {
+        Some((name, annotation)) if annotation.ends_with(')') => {
+            let annotation = annotation.trim_end_matches(')').trim();
+            // Dictionary headings use grammatical labels in the same position
+            // as the pronouns or affiliation in a speaker's display name.
+            if matches!(
+                annotation.to_ascii_lowercase().as_str(),
+                "noun"
+                    | "verb"
+                    | "adjective"
+                    | "adverb"
+                    | "pronoun"
+                    | "preposition"
+                    | "conjunction"
+                    | "interjection"
+                    | "determiner"
+                    | "article"
+            ) {
+                return None;
+            }
+            name
+        }
+        _ => label,
+    };
     static EMOJI: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\x{fe0f}\x{200d}\x{1f3fb}-\x{1f3ff}])*$").unwrap()
     });

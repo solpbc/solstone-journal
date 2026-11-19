@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 3);
+    assert_eq!(found.ruleset_version, 4);
     let shuffled = RULES
         .iter()
         .rev()
@@ -886,6 +886,81 @@ fn export_headers_and_dominant_turns_keep_the_transcript() {
         Kind::Transcripts,
         &["meeting_export_turns", "bare_speaker"],
     );
+}
+
+#[test]
+fn a_meeting_header_does_not_turn_a_note_with_pasted_chat_into_a_transcript() {
+    const NOTE: &str = "# Parts sync
+
+Date: 2025-03-04
+Attendees: Lena, Hugo
+
+My own notes first: the supplier has been late three times this quarter and I think we should look for another one before summer.
+
+Lena: did the parts arrive?
+Hugo: two boxes came, one is missing.
+Lena: which one is it?
+Hugo: the bearings, I checked the slip.
+Lena: can you call them today?
+Hugo: yes, right after lunch.
+";
+    const PARAGRAPH: &str = "My own notes first: the supplier has been late three times this quarter and I think we should look for another one before summer.\n\n";
+
+    expected("n.md", NOTE, Kind::Notes, &["note_default"]);
+    expected(
+        "n.md",
+        NOTE.replace("My own notes first: ", ""),
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "n.md",
+        NOTE.replace("My own notes first:", "Note to self:"),
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "n.md",
+        NOTE.replace(
+            "late three times this quarter and I think",
+            "late three times this quarter.\nI think",
+        )
+        .replace("My own notes first:", "Supplier concerns:"),
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "n.md",
+        NOTE.replace(PARAGRAPH, ""),
+        Kind::Transcripts,
+        &["meeting_export_turns", "bare_speaker"],
+    );
+    expected(
+        "n.md",
+        NOTE.replace(PARAGRAPH, "Lena: I asked for the delivery times.\n\n"),
+        Kind::Transcripts,
+        &["meeting_export_turns", "bare_speaker"],
+    );
+}
+
+#[test]
+fn grammatical_annotations_do_not_count_as_speaker_names() {
+    let glossary = "Kiln (noun): an oven for clay
+Slip (noun): liquid clay for joining
+Kiln (verb): to fire in an oven
+Slip (verb): to coat with liquid clay
+Glaze (noun): a glass coat
+Glaze (verb): to apply that coat
+";
+    let meeting = "Lena Ortiz (she/her): did the parts arrive?
+Hugo Bell (Bell Works): two boxes came, one is missing.
+Lena Ortiz (she/her): which one is it?
+Hugo Bell (Bell Works): the bearings, I checked the slip.
+Lena Ortiz (she/her): can you call them today?
+Hugo Bell (Bell Works): yes, right after lunch.
+";
+    expected("g.txt", glossary, Kind::Notes, &["note_default"]);
+    expected("turns.txt", meeting, Kind::Transcripts, &["bare_speaker"]);
 }
 
 #[test]
