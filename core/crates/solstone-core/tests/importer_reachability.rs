@@ -735,7 +735,7 @@ fn journal_archive_import_queues_a_scan_without_a_supervisor() {
 }
 
 #[test]
-fn document_import_writes_the_source_and_transcript() {
+fn document_import_writes_the_transcript_and_keeps_no_original_by_default() {
     let journal = TempDir::new().expect("journal");
     let inputs = Inputs::create(&journal);
     let output = run_in_column(
@@ -754,17 +754,18 @@ fn document_import_writes_the_source_and_transcript() {
         String::from_utf8_lossy(&output.stderr)
     );
     let chronicle = journal.path().join("chronicle");
-    let original = find_named_file(&chronicle, "original.pdf").expect("installed PDF original");
     let transcript = find_named_file(&chronicle, "document_transcript.md")
         .expect("installed document transcript");
-    let segment = original.parent().expect("original segment");
-    assert_eq!(transcript.parent(), Some(segment));
+    let segment = transcript.parent().expect("transcript segment");
     assert_eq!(
         segment.parent().and_then(Path::file_name),
         Some("import.document".as_ref())
     );
-    assert!(original.starts_with(&chronicle));
     assert!(transcript.starts_with(&chronicle));
+    assert!(
+        find_named_file(&chronicle, "original.pdf").is_none(),
+        "a new import keeps what was read from it, not the original"
+    );
 }
 
 /// Each saving source's own export shape, carrying a word no other input uses.
