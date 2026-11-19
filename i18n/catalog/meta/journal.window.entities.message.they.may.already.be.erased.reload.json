@@ -1,0 +1,16 @@
+{
+  "description": "Message in the journal's entities view.",
+  "context": "Journal window, entities view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c38799dae16242591462fcd102b1dc7668be6c5917ae52c0f5c42d25406c0bdb",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

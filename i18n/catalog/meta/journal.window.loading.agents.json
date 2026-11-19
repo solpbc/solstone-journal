@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the agents journal route loads on first paint.",
+  "context": "Status shown while the agents journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "fe4a2e7865b200de259a009db0414ed1eac6fbfc708e63de64062189c95f7c34",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

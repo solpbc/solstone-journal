@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for transcripts in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for transcripts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de0e27bdebbd00d27e2eb6585e8e0ed3d9db732ea21d91145f5c13fdb6b261f3",
+  "max_length": 105,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's speakers view.",
+  "context": "Journal window, speakers view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "351022b7821ebb6ca821bd082cbf22ae0974b9bdfded362decd0bf2f19d673b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

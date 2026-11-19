@@ -1,0 +1,16 @@
+{
+  "description": "Body display count interval one in the journal's body view.",
+  "context": "Journal window, body view. Body display count interval one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8dbefb214a87466ad05dacbf66406d6d2e021cae98bc1ea68136c23d97c5b70a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

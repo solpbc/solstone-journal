@@ -3,6 +3,8 @@
 
 const assert = require('assert');
 const path = require('path');
+const { journalContext } = require('./journal_catalog_dom.js');
+globalThis.JournalI18n = journalContext({}).JournalI18n;
 const sources = require(path.join(__dirname, '../assets/sources/sources.js'));
 
 const NOW = Date.parse('2026-03-04T08:00:00Z');

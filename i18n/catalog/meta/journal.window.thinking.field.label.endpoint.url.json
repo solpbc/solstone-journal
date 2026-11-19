@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's thinking view.",
+  "context": "Journal window, thinking view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9092af2b516df88d1932788ada52bb031fa2bfd7633952d0c88d6a1a6970dd5a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

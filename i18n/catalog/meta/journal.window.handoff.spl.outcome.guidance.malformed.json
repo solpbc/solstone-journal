@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance malformed in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance malformed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fae1032ebc19e5a2be033c783a0654bd3379c0f6cd805ced1a460414f910969f",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

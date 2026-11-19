@@ -1,0 +1,16 @@
+{
+  "description": "Singular day content unit in the journal's view.speakers view.",
+  "context": "Journal window, view.speakers view. Singular day content unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2245d29567a2f30143ed2ef9990e2ee2effdedfc2881f8a74ed2cd53731848df",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

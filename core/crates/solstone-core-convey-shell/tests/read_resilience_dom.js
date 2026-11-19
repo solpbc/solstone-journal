@@ -9,6 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, runWithJournalCatalog } = require('./journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -340,7 +341,7 @@ function makePage({ scripts = ['api.js'] } = {}) {
     setInterval: clock.setInterval, clearInterval: clock.clearInterval,
     fetch: server.fetch,
   });
-  vm.createContext(context);
+  journalContext(context);
   const document = makeDocument(context);
   context.document = document;
   window.document = document;
@@ -875,6 +876,7 @@ function runHead({ pathname, search = '', hash = '', table }) {
   const context = {
     window,
     document: {
+      documentElement: { lang: 'en' },
       createElement: () => ({}),
       head: { appendChild: (link) => links.push(link) },
     },
@@ -885,7 +887,7 @@ function runHead({ pathname, search = '', hash = '', table }) {
     Date,
     Object,
   };
-  vm.runInNewContext(script, context);
+  runWithJournalCatalog(script, context);
   return { asked, links, window };
 }
 

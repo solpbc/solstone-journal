@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_IDENTITY_NONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_IDENTITY_NONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "47652a878722494618ca986f490a6db741ae7041c2727fe56a2d4b18278098cc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

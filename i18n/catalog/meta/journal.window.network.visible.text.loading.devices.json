@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's network view.",
+  "context": "Journal window, network view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e02222b8df1733967b8de1e5c5c87b0e015c6ce7cb824e3989458d95de05e372",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

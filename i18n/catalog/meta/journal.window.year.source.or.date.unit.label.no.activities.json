@@ -1,0 +1,16 @@
+{
+  "description": "Source or date unit label in the journal's year view.",
+  "context": "Journal window, year view. Source or date unit label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6477596293747625c5f62eb5c49a82a45e41693581e2da8067c51da4a86ad9f9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

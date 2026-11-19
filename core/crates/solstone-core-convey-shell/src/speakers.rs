@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::sync::Arc;
-use std::sync::OnceLock;
 
 use axum::Extension;
 use axum::Json;
@@ -12,18 +11,12 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_journal_config::owner_zone;
 
 use crate::JournalRoot;
 use crate::asset_response;
 use crate::assets;
-
-fn speaker_copy() -> &'static Value {
-    static COPY: OnceLock<Value> = OnceLock::new();
-    COPY.get_or_init(|| {
-        serde_json::from_str(assets::speaker_copy_json()).expect("generated speaker copy parses")
-    })
-}
 
 pub async fn shell() -> Response {
     asset_response("/static/shell.html")
@@ -56,15 +49,21 @@ pub async fn who_is_this() -> Response {
 /// State does no journal work, so its speaker filter name is always null. The
 /// segments response, which already reads the journal's entities, names the
 /// filtered speaker instead.
-pub async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn state(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let copy = assets::copy_tables(crate::window_catalog::response_locale(locale));
+    let speaker_copy: Value =
+        serde_json::from_str(copy.speakers).expect("generated speaker copy parses");
     let zone = owner_zone(&journal.0);
     let today = solstone_core_time::day_key(Timestamp::now().to_zoned_datetime(zone).date());
     Json(json!({
         "today": today,
         "owner_min_statements": 30,
         "owner_status_routing_tokens": {"candidate": "candidate", "confirmed": "confirmed", "identity_needed": crate::speakers_owner::OWNER_IDENTITY_NEEDED_STATUS},
-        "not_in_new_voices_copy": assets::not_in_new_voices_copy(),
-        "speaker_copy": speaker_copy(),
+        "not_in_new_voices_copy": copy.not_in_new_voices,
+        "speaker_copy": speaker_copy,
         "speaker_filter_name": Value::Null,
     }))
     .into_response()

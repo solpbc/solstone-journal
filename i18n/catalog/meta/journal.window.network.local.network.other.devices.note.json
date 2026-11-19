@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network other devices note.",
+  "context": "Network view copy, local network other devices note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 246,
+  "source_revision": "79afa11ba894775e9495dbf7a56c0091a34e5407e3aad163ef6092690651981b",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -6,15 +6,18 @@
 //! These read directory listings, import summaries and bundle manifests, never
 //! a window's contents, so they stay fast on a journal of any size.
 
+use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 
@@ -30,23 +33,23 @@ fn source_words(source: &str) -> &str {
     solstone_core_format::content::body_records::source_words(source)
 }
 
-fn source_item(source: &str, days: &[&String]) -> Value {
+fn source_item(source: &str, days: &[&String], locale: &str) -> Value {
     let first = days.first().map(|day| day.as_str());
     let last = days.last().map(|day| day.as_str());
     json!({
         "source": source,
         "name": source_words(source),
         "first_day": first,
-        "first_label": first.and_then(short_day_year),
+        "first_label": first.and_then(|day| short_day_year(day, locale)),
         "last_day": last,
-        "last_label": last.and_then(short_day_year),
+        "last_label": last.and_then(|day| short_day_year(day, locale)),
         "days": days.len(),
-        "days_label": count_noun(days.len() as u64, "day", "days"),
+        "days_label": count_noun(days.len() as u64, "journal.window.body.count.day.one", "journal.window.body.count.day.other", locale),
     })
 }
 
 /// Each source held, with its first and last day and how many days hold it.
-fn source_items(days: &DaySources) -> Vec<Value> {
+fn source_items(days: &DaySources, locale: &str) -> Vec<Value> {
     body_streams()
         .iter()
         .filter_map(|(_, source)| {
@@ -55,7 +58,7 @@ fn source_items(days: &DaySources) -> Vec<Value> {
                 .filter(|(_, sources)| sources.contains(source))
                 .map(|(day, _)| day)
                 .collect::<Vec<_>>();
-            (!held.is_empty()).then(|| source_item(source, &held))
+            (!held.is_empty()).then(|| source_item(source, &held, locale))
         })
         .collect()
 }
@@ -72,13 +75,15 @@ fn grid_cell(
     sources: Option<&BTreeSet<&'static str>>,
     earlier: Option<bool>,
     hidden: bool,
+    locale: &str,
 ) -> Value {
+    let date = short_day_year(day, locale).unwrap_or_default();
     if hidden {
         return json!({
             "day": day,
             "count": 0,
             "intensity": 0.0,
-            "title": format!("{} · you hid this day", short_day_year(day).unwrap_or_default()),
+            "title": strings(locale, "journal.window.body.grid.hidden", [("date", &date)]),
             "earlier": false,
             "hidden": true,
         });
@@ -90,18 +95,22 @@ fn grid_cell(
                 .iter()
                 .map(|source| source_words(source))
                 .collect::<Vec<_>>()
-                .join(" and ");
-            format!("{} · {names}", short_day_year(day).unwrap_or_default())
+                .join(&text(locale, "journal.window.body.grid.source.join"));
+            strings(
+                locale,
+                "journal.window.body.grid.sources",
+                [("date", &date), ("sources", &names)],
+            )
         }
-        None if earlier == Some(true) => format!(
-            "{} · held in an earlier import",
-            short_day_year(day).unwrap_or_default()
+        None if earlier == Some(true) => {
+            strings(locale, "journal.window.body.grid.held", [("date", &date)])
+        }
+        None if earlier.is_some() => strings(
+            locale,
+            "journal.window.body.grid.held.month",
+            [("date", &date)],
         ),
-        None if earlier.is_some() => format!(
-            "{} · in a month an earlier import holds",
-            short_day_year(day).unwrap_or_default()
-        ),
-        None => format!("{} · nothing here", short_day_year(day).unwrap_or_default()),
+        None => strings(locale, "journal.window.body.grid.empty", [("date", &date)]),
     };
     json!({
         "day": day,
@@ -115,7 +124,7 @@ fn grid_cell(
 
 /// The grid runs over every day holding body data, the hidden ones too: a
 /// hidden day's cell is how the owner reaches its unhide.
-fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
+fn day_grid(root: &Path, days: &BodyDays, locale: &str) -> Vec<Value> {
     let held = || days.shown.keys().chain(&days.hidden);
     let (Some(first), Some(last)) = (
         held().min().and_then(|day| parse_day(day)),
@@ -145,6 +154,7 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
                     days.shown.get(&key),
                     earlier.get(&key).copied(),
                     days.hidden.contains(&key),
+                    locale,
                 ));
                 if week.len() == 7 {
                     weeks.push(std::mem::take(&mut week));
@@ -154,12 +164,12 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
                 week.resize(7, Value::Null);
                 weeks.push(week);
             }
-            json!({"year": year, "weeks": weeks, "month_labels": month_labels(&weeks)})
+            json!({"year": year, "weeks": weeks, "month_labels": month_labels(&weeks, locale)})
         })
         .collect()
 }
 
-fn month_labels(weeks: &[Vec<Value>]) -> Vec<Value> {
+fn month_labels(weeks: &[Vec<Value>], locale: &str) -> Vec<Value> {
     let mut previous = None;
     weeks
         .iter()
@@ -171,7 +181,7 @@ fn month_labels(weeks: &[Vec<Value>]) -> Vec<Value> {
             let month = &day[4..6];
             (previous != Some(month)).then(|| {
                 previous = Some(month);
-                json!({"index": index, "label": month_abbr(month.parse().expect("month"))})
+                json!({"index": index, "label": month_abbr(month.parse().expect("month"), locale)})
             })
         })
         .collect()
@@ -179,40 +189,44 @@ fn month_labels(weeks: &[Vec<Value>]) -> Vec<Value> {
 
 /// The overview. A hidden day is left out of every count, the coverage and the
 /// sources, and its cell says it's hidden.
-pub(crate) fn build_status(root: &Path) -> Result<Value, String> {
+pub(crate) fn build_status(root: &Path, locale: &str) -> Result<Value, String> {
     let hidden = read_hidden_days(root);
     let days = body_days(root, &hidden)?;
     Ok(json!({
         "coverage": coverage(&days.shown),
         "days": days.shown.len(),
-        "sources": source_items(&days.shown),
-        "day_grid": day_grid(root, &days),
-        "imports": crate::audit::imports_section(root),
+        "sources": source_items(&days.shown, locale),
+        "day_grid": day_grid(root, &days, locale),
+        "imports": crate::audit::imports_section(root, locale),
         "hidden_unreadable": hidden == HiddenDays::Unreadable,
     }))
 }
 
-pub(crate) async fn status_route(State(root): State<Arc<PathBuf>>) -> Response {
-    match build_status(&root) {
+pub(crate) async fn status_route(
+    State(root): State<Arc<PathBuf>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = response_locale(locale);
+    match build_status(&root, locale) {
         Ok(payload) => Json(payload).into_response(),
-        Err(error) => unreadable_response(error),
+        Err(error) => unreadable_response(locale, error),
     }
 }
 
-pub(crate) fn invalid_day_response() -> Response {
+pub(crate) fn invalid_day_response(locale: &str) -> Response {
     error_envelope(
         "invalid_day",
-        "that day couldn't be used.",
-        "Invalid day",
+        text(locale, "journal.window.body.error.day.invalid"),
+        text(locale, "journal.window.body.error.day.detail"),
         StatusCode::BAD_REQUEST,
     )
     .into_response()
 }
 
-fn invalid_limit_response(detail: &str) -> Response {
+fn invalid_limit_response(locale: &str, detail: String) -> Response {
     error_envelope(
         "invalid_request_value",
-        "one of those values couldn't be used.",
+        text(locale, "journal.window.body.error.invalid.request"),
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -224,6 +238,7 @@ fn recent_days(
     days: &DaySources,
     before: &str,
     limit: usize,
+    locale: &str,
 ) -> Result<Value, String> {
     let mut chosen = days
         .iter()
@@ -244,7 +259,7 @@ fn recent_days(
                 .collect::<Vec<_>>();
             json!({
                 "day": day,
-                "label": short_day(&day),
+                "label": short_day(&day, locale),
                 "sources": names,
                 "windows": windows,
             })
@@ -256,27 +271,39 @@ fn recent_days(
 pub(crate) async fn recent_route(
     State(root): State<Arc<PathBuf>>,
     RawQuery(raw_query): RawQuery,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let params = decoded_query_params(raw_query.as_deref().unwrap_or_default());
     let before = params.get("before").map_or("", String::as_str);
     if parse_day(before).is_none() {
-        return invalid_day_response();
+        return invalid_day_response(locale);
     }
     let limit = match params.get("limit") {
         None => RECENT_DAY_LIMIT,
         Some(raw) => match raw.parse::<i64>() {
-            Ok(limit) if limit < 1 => return invalid_limit_response("limit must be at least 1"),
+            Ok(limit) if limit < 1 => {
+                return invalid_limit_response(
+                    locale,
+                    text(locale, "journal.window.body.error.limit.minimum"),
+                );
+            }
             Ok(limit) => (limit as usize).min(RECENT_BATCH_LIMIT_CAP),
-            Err(_) => return invalid_limit_response("limit must be an integer"),
+            Err(_) => {
+                return invalid_limit_response(
+                    locale,
+                    text(locale, "journal.window.body.error.limit.integer"),
+                );
+            }
         },
     };
     let days = match body_days(&root, &read_hidden_days(&root)) {
         Ok(days) => days.shown,
-        Err(error) => return unreadable_response(error),
+        Err(error) => return unreadable_response(locale, error),
     };
-    match recent_days(&root, &days, before, limit) {
+    match recent_days(&root, &days, before, limit, locale) {
         Ok(payload) => Json(payload).into_response(),
-        Err(error) => unreadable_response(error),
+        Err(error) => unreadable_response(locale, error),
     }
 }
 

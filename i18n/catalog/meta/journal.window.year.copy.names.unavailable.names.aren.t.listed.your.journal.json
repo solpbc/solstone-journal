@@ -1,0 +1,16 @@
+{
+  "description": "Copy names unavailable in the journal's year view.",
+  "context": "Journal window, year view. Copy names unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8f1e3d4c081121615871de51bfdd6b6d9e8b4f9b414a1b023575f4a872a50b5",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

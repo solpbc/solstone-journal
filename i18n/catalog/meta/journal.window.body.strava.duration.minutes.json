@@ -1,0 +1,28 @@
+{
+  "description": "Body display strava duration minutes in the journal's body view.",
+  "context": "Journal window, body view. Body display strava duration minutes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dc8dc95b45bb3983dc8e00297819ed5ccefb5e73c11bb9a961cb56698052fcd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

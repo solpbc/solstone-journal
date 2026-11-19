@@ -1,0 +1,16 @@
+{
+  "description": "Thinking response copy in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking response copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c0f5d5121d5a9ae1fec665a859e15369a34c882873b968a3ffe410e2e7a60e1",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

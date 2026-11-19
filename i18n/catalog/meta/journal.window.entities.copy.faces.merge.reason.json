@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_MERGE_REASON in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_MERGE_REASON.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d64ac6da301e79823f7f4890992b2ad0f8f883dabc715d987a30c01bb7ca4316",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

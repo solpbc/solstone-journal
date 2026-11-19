@@ -1,0 +1,16 @@
+{
+  "description": "Owner undo confirm title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner undo confirm title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f5d7d7b6c5a9fb8f49d5b8ed409217e8ae93e1c7b3c66702067fb3396db95ee",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

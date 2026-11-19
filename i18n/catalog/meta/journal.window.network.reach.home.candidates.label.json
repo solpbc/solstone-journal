@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach home candidates label.",
+  "context": "Network view copy, reach home candidates label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 68,
+  "source_revision": "cc4640829f3190cfcacd9ca12254f2342de1d27ebfb5fe48f5a95b21221cbcd0",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

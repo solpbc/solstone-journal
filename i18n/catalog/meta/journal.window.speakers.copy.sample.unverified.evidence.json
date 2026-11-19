@@ -1,0 +1,16 @@
+{
+  "description": "Sample unverified evidence in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Sample unverified evidence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b10f57e79ffb08fc636b7843d65fb9579691260859900a093e8c15124380b5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, spl offline.",
+  "context": "Network view copy, spl offline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 268,
+  "source_revision": "a5cbaf5169f782edb14225dd85a8c8f4bd1296951d0a6ecbf349ba685bf141c5",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

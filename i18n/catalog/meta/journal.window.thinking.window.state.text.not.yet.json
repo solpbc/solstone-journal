@@ -1,0 +1,16 @@
+{
+  "description": "Window state text in the journal's thinking view.",
+  "context": "Journal window, thinking view. Window state text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e23cd835d56da49f05f716a7c100f56943c461f343b469927185d28e935753c1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

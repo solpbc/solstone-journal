@@ -1,0 +1,16 @@
+{
+  "description": "Status needs setup in the journal's agents view.",
+  "context": "Journal window, agents view. Status needs setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "029b366e15f9d4c3684c1236192e880a38ec00048e6bee58b10f4c339f88f03d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

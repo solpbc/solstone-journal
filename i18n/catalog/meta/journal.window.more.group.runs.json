@@ -1,0 +1,16 @@
+{
+  "description": "Group runs in the journal's more view.",
+  "context": "Journal window, more view. Group runs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4b81f0e0cc059218de49775888f2bcdb4d7a0630e65e1b1d27649eea4367b6b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

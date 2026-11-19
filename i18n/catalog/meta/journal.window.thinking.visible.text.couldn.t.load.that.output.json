@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's thinking view.",
+  "context": "Journal window, thinking view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd187aab7f2bbc62506ab5d50451c9ce023b2790d2197965a5a30246c691c34c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

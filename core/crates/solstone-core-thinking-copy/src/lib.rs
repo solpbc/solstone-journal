@@ -1,71 +1,90 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Owner-facing Thinking copy, represented without a JSON dependency.
+//! The Thinking view and setup share journal-window messages.
 
 use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
+use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, resolve_table, text};
 
 pub use solstone_core_assets::Platform;
 
-#[derive(Clone, Copy, Serialize)]
-pub struct Lane {
+#[derive(Clone, Serialize)]
+pub struct Lane<T = String> {
     pub id: &'static str,
-    pub label: &'static str,
-    pub sub: &'static str,
-    pub description: &'static str,
+    pub label: T,
+    pub sub: T,
+    pub description: T,
 }
 
-#[derive(Clone, Copy, Serialize)]
-pub struct ConfidentialLaneDetail {
-    pub heading: &'static str,
-    pub sub: &'static str,
-    pub mechanism: &'static str,
-    pub egress: &'static str,
-    pub claims: &'static str,
-    pub attestation: &'static str,
-    pub early_access: &'static str,
+#[derive(Clone, Serialize)]
+pub struct ConfidentialLaneDetail<T = String> {
+    pub heading: T,
+    pub sub: T,
+    pub mechanism: T,
+    pub egress: T,
+    pub claims: T,
+    pub attestation: T,
+    pub early_access: T,
 }
 
-pub const LANES: [Lane; 3] = [
+const LANE_IDS: [Lane<&str>; 3] = [
     Lane {
         id: "local",
-        label: "local",
-        sub: "on your journal's computer",
-        description: "model requests stay on your journal's computer.",
+        label: "journal.window.thinking.lane.label.local",
+        sub: "journal.window.thinking.lane.sub.on.your.journal.s.computer",
+        description: "!journal.window.thinking.lane.description.model.requests.stay.on.your.journal",
     },
     Lane {
         id: "confidential",
-        label: "confidential processing",
-        sub: "operated by sol pbc",
-        description: "sol pbc runs the model on confidential GPUs.",
+        label: "journal.window.thinking.lane.label.confidential.processing",
+        sub: "journal.window.thinking.lane.sub.operated.by.sol.pbc",
+        description: "!journal.window.thinking.lane.description.sol.pbc.runs.the.model.on",
     },
     Lane {
         id: "byo",
-        label: "your own model",
-        sub: "your key, or your own endpoint",
-        description: "your journal sends model requests to the provider or endpoint you choose. provider keys stay in your journal.",
+        label: "journal.window.thinking.lane.label.your.own.model",
+        sub: "journal.window.thinking.lane.sub.your.key.or.your.own.endpoint",
+        description: "!journal.window.thinking.lane.description.your.journal.sends.model.requests.to",
     },
 ];
 
-/// Availability message when the current device has no admitted hardware check.
-pub const CONFIDENTIAL_NOT_ON_PLATFORM: &str =
-    "confidential processing isn't available yet where your journal lives.";
-
-pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
-    heading: "confidential processing",
-    sub: "operated by sol pbc",
-    mechanism: "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
-    egress: "when it's on, the thinking leaves your device. your journal itself never leaves.",
-    claims: "no content is retained · no human reviews it · nothing is used to train",
-    attestation: "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
-    early_access: "the services portal shows how to get it.",
+const CONFIDENTIAL_DETAIL_IDS: ConfidentialLaneDetail<&str> = ConfidentialLaneDetail {
+    heading: "journal.window.thinking.lane.heading.confidential.processing",
+    sub: "journal.window.thinking.lane.sub.operated.by.sol.pbc",
+    mechanism: "!journal.window.thinking.lane.mechanism.sol.pbc.runs.the.model.itself",
+    egress: "!journal.window.thinking.lane.egress.when.it.s.on.the.thinking",
+    claims: "!journal.window.thinking.lane.claims.no.content.is.retained.no.human",
+    attestation: "!journal.window.thinking.lane.attestation.your.journal.must.verify.the.service",
+    early_access: "journal.window.thinking.lane.early.access.the.services.portal.shows.how.to",
 };
 
+pub fn lanes(locale: &str) -> [Lane; 3] {
+    LANE_IDS.map(|lane| Lane {
+        id: lane.id,
+        label: text(locale, lane.label),
+        sub: text(locale, lane.sub),
+        description: text(locale, lane.description),
+    })
+}
+
+pub fn confidential_lane_detail(locale: &str) -> ConfidentialLaneDetail {
+    let detail = CONFIDENTIAL_DETAIL_IDS;
+    ConfidentialLaneDetail {
+        heading: text(locale, detail.heading),
+        sub: text(locale, detail.sub),
+        mechanism: text(locale, detail.mechanism),
+        egress: text(locale, detail.egress),
+        claims: text(locale, detail.claims),
+        attestation: text(locale, detail.attestation),
+        early_access: text(locale, detail.early_access),
+    }
+}
+
 #[derive(Clone, Copy)]
-pub enum CopyValue {
+enum CopyValue {
     String(&'static str),
-    Array(&'static [CopyValue]),
     Object(&'static [(&'static str, CopyValue)]),
     Lanes,
     ConfidentialLaneDetail,
@@ -78,7 +97,6 @@ impl Serialize for CopyValue {
     {
         match self {
             Self::String(value) => serializer.serialize_str(value),
-            Self::Array(values) => values.serialize(serializer),
             Self::Object(entries) => {
                 let mut map = serializer.serialize_map(Some(entries.len()))?;
                 for (key, value) in *entries {
@@ -86,14 +104,17 @@ impl Serialize for CopyValue {
                 }
                 map.end()
             }
-            Self::Lanes => LANES.serialize(serializer),
-            Self::ConfidentialLaneDetail => CONFIDENTIAL_LANE_DETAIL.serialize(serializer),
+            Self::Lanes => LANE_IDS.serialize(serializer),
+            Self::ConfidentialLaneDetail => CONFIDENTIAL_DETAIL_IDS.serialize(serializer),
         }
     }
 }
 
-pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
-    ("heading", CopyValue::String("thinking")),
+const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
+    (
+        "heading",
+        CopyValue::String("journal.window.thinking.copy.thinking"),
+    ),
     // Shown only while the journal lists no paired device. The link goes to
     // the network page's devices section, the one place a device is added.
     (
@@ -101,20 +122,33 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
         CopyValue::Object(&[
             (
                 "text",
-                CopyValue::String(
-                    "thinking works on what goes into your journal, and no device is paired to add to it yet.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.thinking.works.on.what.goes.into"),
             ),
-            ("link", CopyValue::String("pair a device")),
+            (
+                "link",
+                CopyValue::String("journal.window.thinking.copy.pair.a.device"),
+            ),
         ]),
     ),
     (
         "active_lane_labels",
         CopyValue::Object(&[
-            ("none", CopyValue::String("not thinking yet")),
-            ("local", CopyValue::String("local")),
-            ("confidential", CopyValue::String("confidential processing")),
-            ("byo", CopyValue::String("your own model")),
+            (
+                "none",
+                CopyValue::String("journal.window.thinking.copy.not.thinking.yet"),
+            ),
+            (
+                "local",
+                CopyValue::String("journal.window.thinking.copy.local"),
+            ),
+            (
+                "confidential",
+                CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+            ),
+            (
+                "byo",
+                CopyValue::String("journal.window.thinking.copy.your.own.model"),
+            ),
         ]),
     ),
     ("lanes", CopyValue::Lanes),
@@ -125,84 +159,149 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ("google", CopyValue::String("Gemini")),
             ("openai", CopyValue::String("GPT")),
             ("chatgpt", CopyValue::String("ChatGPT")),
-            ("local", CopyValue::String("Local")),
+            (
+                "local",
+                CopyValue::String("journal.window.thinking.copy.local.variant2"),
+            ),
             // X-03: a run on the confidential lane carries "spp" as its
             // provider. With no label for it the runs view rendered the raw
             // slug; the name here matches the lane label above.
-            ("spp", CopyValue::String("confidential processing")),
+            (
+                "spp",
+                CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+            ),
         ]),
     ),
     (
         "key_labels",
         CopyValue::Object(&[
-            ("ANTHROPIC_API_KEY", CopyValue::String("Claude key")),
-            ("GOOGLE_API_KEY", CopyValue::String("Gemini key")),
-            ("OPENAI_API_KEY", CopyValue::String("GPT key")),
+            (
+                "ANTHROPIC_API_KEY",
+                CopyValue::String("journal.window.thinking.copy.claude.key"),
+            ),
+            (
+                "GOOGLE_API_KEY",
+                CopyValue::String("journal.window.thinking.copy.gemini.key"),
+            ),
+            (
+                "OPENAI_API_KEY",
+                CopyValue::String("journal.window.thinking.copy.gpt.key"),
+            ),
         ]),
     ),
     (
         "state_labels",
         CopyValue::Object(&[
-            ("active", CopyValue::String("active")),
-            ("available", CopyValue::String("available")),
-            ("unavailable", CopyValue::String("not ready")),
-            ("loading", CopyValue::String("loading...")),
-            ("saved", CopyValue::String("saved")),
-            ("validating", CopyValue::String("validating...")),
-            ("failed", CopyValue::String("couldn't finish")),
+            (
+                "active",
+                CopyValue::String("journal.window.thinking.copy.active"),
+            ),
+            (
+                "available",
+                CopyValue::String("journal.window.thinking.copy.available"),
+            ),
+            (
+                "unavailable",
+                CopyValue::String("journal.window.thinking.copy.not.ready"),
+            ),
+            (
+                "loading",
+                CopyValue::String("journal.window.thinking.copy.loading"),
+            ),
+            (
+                "saved",
+                CopyValue::String("journal.window.thinking.copy.saved"),
+            ),
+            (
+                "validating",
+                CopyValue::String("journal.window.thinking.copy.validating"),
+            ),
+            (
+                "failed",
+                CopyValue::String("journal.window.thinking.copy.couldn.t.finish"),
+            ),
         ]),
     ),
     (
         "action_labels",
         CopyValue::Object(&[
-            ("switch", CopyValue::String("Use This Lane")),
-            ("save_key", CopyValue::String("Save Key")),
-            ("clear_key", CopyValue::String("Clear Key")),
-            ("install", CopyValue::String("Install")),
-            ("refresh", CopyValue::String("Refresh")),
-            ("check", CopyValue::String("Check")),
+            (
+                "switch",
+                CopyValue::String("journal.window.thinking.copy.use.this.lane"),
+            ),
+            (
+                "save_key",
+                CopyValue::String("journal.window.thinking.copy.save.key"),
+            ),
+            (
+                "clear_key",
+                CopyValue::String("journal.window.thinking.copy.clear.key"),
+            ),
+            (
+                "install",
+                CopyValue::String("journal.window.thinking.copy.install"),
+            ),
+            (
+                "refresh",
+                CopyValue::String("journal.window.thinking.copy.refresh"),
+            ),
+            (
+                "check",
+                CopyValue::String("journal.window.thinking.copy.check"),
+            ),
         ]),
     ),
     (
         "confidential",
         CopyValue::Object(&[
             ("lane_detail", CopyValue::ConfidentialLaneDetail),
-            ("more_label", CopyValue::String("how it works")),
+            (
+                "more_label",
+                CopyValue::String("journal.window.thinking.copy.how.it.works"),
+            ),
             (
                 "setup",
                 CopyValue::Object(&[(
                     "trust_beats",
                     CopyValue::Object(&[
-                        ("heading", CopyValue::String("confidential processing")),
-                        ("sub", CopyValue::String("operated by sol pbc")),
+                        (
+                            "heading",
+                            CopyValue::String(
+                                "journal.window.thinking.copy.confidential.processing",
+                            ),
+                        ),
+                        (
+                            "sub",
+                            CopyValue::String("journal.window.thinking.copy.operated.by.sol.pbc"),
+                        ),
                         (
                             "egress_audio_on",
                             CopyValue::String(
-                                "what leaves your device: the text and images a model needs to work through, and your audio for transcription. your journal itself never leaves.",
+                                "!journal.window.thinking.copy.what.leaves.your.device.the.text",
                             ),
                         ),
                         (
                             "egress_audio_off",
                             CopyValue::String(
-                                "what leaves your device: the text and images a model needs to work through. your audio stays on your device; speech becomes text there.",
+                                "!journal.window.thinking.copy.what.leaves.your.device.the.text.variant2",
                             ),
                         ),
                         (
                             "claims",
                             CopyValue::String(
-                                "no content is retained · no human reviews it · nothing is used to train",
+                                "!journal.window.thinking.copy.no.content.is.retained.no.human",
                             ),
                         ),
                         (
                             "attestation",
                             CopyValue::String(
-                                "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
+                                "!journal.window.thinking.copy.your.journal.must.verify.the.service",
                             ),
                         ),
                         (
                             "substrate",
                             CopyValue::String(
-                                "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
+                                "!journal.window.thinking.copy.sol.pbc.runs.the.model.itself",
                             ),
                         ),
                     ]),
@@ -213,30 +312,30 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 CopyValue::Object(&[
                     (
                         "label",
-                        CopyValue::String("transcribe audio on the service"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.transcribe.audio.on.the.service",
+                        ),
                     ),
                     (
                         "on",
                         CopyValue::String(
-                            "your audio is transcribed on the service: sent over the verified channel, processed, and not kept. on while confidential processing is in use.",
+                            "journal.window.thinking.copy.your.audio.is.transcribed.on.the",
                         ),
                     ),
                     (
                         "off",
                         CopyValue::String(
-                            "speech becomes text on your device. your audio doesn't leave.",
+                            "journal.window.thinking.copy.speech.becomes.text.on.your.device",
                         ),
                     ),
                     (
                         "note",
-                        CopyValue::String(
-                            "turn it off any time. it takes effect on the next thing you say.",
-                        ),
+                        CopyValue::String("journal.window.thinking.copy.turn.it.off.any.time.it"),
                     ),
                     (
                         "deferral",
                         CopyValue::String(
-                            "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.",
+                            "!journal.window.thinking.copy.transcription.is.waiting.nothing.is.sent",
                         ),
                     ),
                 ]),
@@ -247,32 +346,41 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ("off", CopyValue::String("")),
                     (
                         "inactive",
-                        CopyValue::String("confidential processing is available."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.confidential.processing.is.available",
+                        ),
                     ),
-                    ("verifying", CopyValue::String("checking the hardware…")),
+                    (
+                        "verifying",
+                        CopyValue::String("journal.window.thinking.copy.checking.the.hardware"),
+                    ),
                     (
                         "verified",
-                        CopyValue::String("confidential processing is ready · reachable {checked}"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.confidential.processing.is.ready.reachable.checked",
+                        ),
                     ),
                     (
                         "failed",
-                        CopyValue::String("couldn't verify the service. nothing is being sent."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.couldn.t.verify.the.service.nothing",
+                        ),
                     ),
                     (
                         "stale",
                         CopyValue::String(
-                            "your journal needs to re-check the service before sending.",
+                            "journal.window.thinking.copy.your.journal.needs.to.re.check",
                         ),
                     ),
                     (
                         "unreachable",
                         CopyValue::String(
-                            "can't reach confidential processing right now. nothing is being sent.",
+                            "journal.window.thinking.copy.can.t.reach.confidential.processing.right",
                         ),
                     ),
                     (
                         "not_on_platform",
-                        CopyValue::String(CONFIDENTIAL_NOT_ON_PLATFORM),
+                        CopyValue::String("journal.window.thinking.error.confidential.platform"),
                     ),
                 ]),
             ),
@@ -281,34 +389,38 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 CopyValue::Object(&[
                     (
                         "starting",
-                        CopyValue::String("opening your browser to confirm…"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.opening.your.browser.to.confirm",
+                        ),
                     ),
                     (
                         "waiting",
-                        CopyValue::String("finish turning it on in your browser"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.finish.turning.it.on.in.your",
+                        ),
                     ),
                     (
                         "early_access",
                         CopyValue::String(
-                            "your sign-in doesn't have confidential processing. the services portal shows how to get it.",
+                            "!journal.window.thinking.copy.your.sign.in.doesn.t.have",
                         ),
                     ),
                     (
                         "subscribing",
                         CopyValue::String(
-                            "confidential processing isn't on yet. finish turning it on in the services portal, and your journal completes it by itself while it's still waiting.",
+                            "!journal.window.thinking.copy.confidential.processing.isn.t.on.yet",
                         ),
                     ),
                     (
                         "journal_limit",
                         CopyValue::String(
-                            "your sign-in's confidential processing already covers another journal, and it covers only one. to use it here, release the other journal in the services portal, then turn it on here again.",
+                            "!journal.window.thinking.copy.your.sign.in.s.confidential.processing",
                         ),
                     ),
                     (
                         "repair_needed",
                         CopyValue::String(
-                            "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
+                            "journal.window.thinking.copy.turning.it.on.didn.t.finish",
                         ),
                     ),
                 ]),
@@ -318,39 +430,56 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 CopyValue::Object(&[
                     (
                         "off",
-                        CopyValue::String("turn on confidential processing →"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.turn.on.confidential.processing",
+                        ),
                     ),
-                    ("enabled", CopyValue::String("turn off")),
-                    ("recheck", CopyValue::String("check again")),
+                    (
+                        "enabled",
+                        CopyValue::String("journal.window.thinking.copy.turn.off"),
+                    ),
+                    (
+                        "recheck",
+                        CopyValue::String("journal.window.thinking.copy.check.again"),
+                    ),
                 ]),
             ),
             (
                 "access_ended",
                 CopyValue::String(
-                    "confidential processing isn't active for your sign-in anymore, so your journal isn't sending your thinking to it. the services portal shows how to get it back, and your journal picks it up again by itself.",
+                    "!journal.window.thinking.copy.confidential.processing.isn.t.active.for",
                 ),
             ),
             (
                 "credential_unknown",
                 CopyValue::String(
-                    "the services portal no longer recognizes this journal for confidential processing. turn it off, then on again.",
+                    "journal.window.thinking.copy.the.services.portal.no.longer.recognizes",
                 ),
             ),
-            ("portal_link", CopyValue::String("open the services portal")),
+            (
+                "portal_link",
+                CopyValue::String("!journal.window.thinking.copy.open.the.services.portal"),
+            ),
         ]),
     ),
     (
         "glance",
         CopyValue::Object(&[
-            ("lane_label", CopyValue::String("processing with")),
+            (
+                "lane_label",
+                CopyValue::String("journal.window.thinking.copy.processing.with"),
+            ),
             (
                 "local",
                 CopyValue::Object(&[
-                    ("value", CopyValue::String("a model on your device")),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.a.model.on.your.device"),
+                    ),
                     (
                         "detail",
                         CopyValue::String(
-                            "runs right on your journal's computer. nothing leaves it to be processed",
+                            "journal.window.thinking.copy.runs.right.on.your.journal.s",
                         ),
                     ),
                 ]),
@@ -358,11 +487,14 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "byo_key",
                 CopyValue::Object(&[
-                    ("value", CopyValue::String("your own key · {provider}")),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.your.own.key.provider"),
+                    ),
                     (
                         "detail",
                         CopyValue::String(
-                            "using {model}. a key you added, stays in your journal, never shared",
+                            "journal.window.thinking.copy.using.model.a.key.you.added",
                         ),
                     ),
                 ]),
@@ -370,11 +502,14 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "byo_endpoint",
                 CopyValue::Object(&[
-                    ("value", CopyValue::String("your own endpoint")),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.your.own.endpoint"),
+                    ),
                     (
                         "detail",
                         CopyValue::String(
-                            "processing runs at the endpoint you set. your server, your rules",
+                            "journal.window.thinking.copy.processing.runs.at.the.endpoint.you",
                         ),
                     ),
                 ]),
@@ -382,49 +517,86 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "confidential_checking",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("waiting on")),
-                    ("value", CopyValue::String("confidential processing")),
-                    ("detail", CopyValue::String("checking the hardware…")),
+                    (
+                        "label",
+                        CopyValue::String("journal.window.thinking.copy.waiting.on"),
+                    ),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+                    ),
+                    (
+                        "detail",
+                        CopyValue::String("journal.window.thinking.copy.checking.the.hardware"),
+                    ),
                 ]),
             ),
             (
                 "confidential_verified",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("processing with")),
-                    ("value", CopyValue::String("confidential processing")),
+                    (
+                        "label",
+                        CopyValue::String("journal.window.thinking.copy.processing.with"),
+                    ),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+                    ),
                     (
                         "detail",
-                        CopyValue::String("confidential processing is ready · reachable {checked}"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.confidential.processing.is.ready.reachable.checked",
+                        ),
                     ),
                 ]),
             ),
             (
                 "confidential_available",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("available")),
-                    ("value", CopyValue::String("confidential processing")),
+                    (
+                        "label",
+                        CopyValue::String("journal.window.thinking.copy.available"),
+                    ),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+                    ),
                     (
                         "detail",
-                        CopyValue::String("confidential processing is available."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.confidential.processing.is.available",
+                        ),
                     ),
                 ]),
             ),
             (
                 "confidential_blocked",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("holding")),
-                    ("value", CopyValue::String("confidential processing")),
-                    ("detail", CopyValue::String("{message}")),
+                    (
+                        "label",
+                        CopyValue::String("journal.window.thinking.copy.holding"),
+                    ),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.confidential.processing"),
+                    ),
+                    (
+                        "detail",
+                        CopyValue::String("journal.window.thinking.copy.message"),
+                    ),
                 ]),
             ),
             (
                 "none",
                 CopyValue::Object(&[
-                    ("value", CopyValue::String("not thinking yet")),
+                    (
+                        "value",
+                        CopyValue::String("journal.window.thinking.copy.not.thinking.yet"),
+                    ),
                     (
                         "detail",
                         CopyValue::String(
-                            "your journal is here. choose how processing runs below.",
+                            "journal.window.thinking.copy.your.journal.is.here.choose.how",
                         ),
                     ),
                 ]),
@@ -436,234 +608,312 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
         CopyValue::Object(&[
             (
                 "intro",
-                CopyValue::String(
-                    "bring your own model. sol pbc is never in the path. your key or sign-in stays in your journal.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.bring.your.own.model.sol.pbc"),
             ),
-            ("chooser_key", CopyValue::String("a provider")),
-            ("chooser_endpoint", CopyValue::String("your own endpoint")),
-            ("key_heading", CopyValue::String("pick your provider")),
+            (
+                "chooser_key",
+                CopyValue::String("journal.window.thinking.copy.a.provider"),
+            ),
+            (
+                "chooser_endpoint",
+                CopyValue::String("journal.window.thinking.copy.your.own.endpoint"),
+            ),
+            (
+                "key_heading",
+                CopyValue::String("journal.window.thinking.copy.pick.your.provider"),
+            ),
             (
                 "key_sub",
-                CopyValue::String(
-                    "they all work the same in solstone. choose one you have a key for, or sign in with ChatGPT.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.they.all.work.the.same.in"),
             ),
             (
                 "chatgpt",
                 CopyValue::Object(&[
                     (
                         "lane_signed_in",
-                        CopyValue::String("using ChatGPT · manage →"),
+                        CopyValue::String("journal.window.thinking.copy.using.chatgpt.manage"),
                     ),
                     (
                         "lane_signed_out",
-                        CopyValue::String("signed out of ChatGPT · sign in →"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.signed.out.of.chatgpt.sign.in",
+                        ),
                     ),
                     (
                         "card_body",
                         CopyValue::String(
-                            "use your ChatGPT plan. you sign in with ChatGPT, so there's no key to paste.",
+                            "journal.window.thinking.copy.use.your.chatgpt.plan.you.sign",
                         ),
                     ),
-                    ("pill_signed_in", CopyValue::String("signed in")),
-                    ("manage", CopyValue::String("manage ChatGPT")),
+                    (
+                        "pill_signed_in",
+                        CopyValue::String("journal.window.thinking.copy.signed.in"),
+                    ),
+                    (
+                        "manage",
+                        CopyValue::String("journal.window.thinking.copy.manage.chatgpt"),
+                    ),
                     (
                         "reminder",
                         CopyValue::String(
-                            "OpenAI will see the parts of your journal that processing uses.",
+                            "journal.window.thinking.copy.openai.will.see.the.parts.of",
                         ),
                     ),
                     (
                         "pending_heading",
-                        CopyValue::String("finish signing in with ChatGPT"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.finish.signing.in.with.chatgpt",
+                        ),
                     ),
                     (
                         "pending_sub",
                         CopyValue::String(
-                            "ChatGPT opened in a new tab. sign in there, and this page carries on by itself.",
+                            "journal.window.thinking.copy.chatgpt.opened.in.a.new.tab",
                         ),
                     ),
-                    ("pending_status", CopyValue::String("waiting for ChatGPT…")),
-                    ("reopen", CopyValue::String("open the ChatGPT tab again")),
-                    ("cancel", CopyValue::String("cancel")),
+                    (
+                        "pending_status",
+                        CopyValue::String("journal.window.thinking.copy.waiting.for.chatgpt"),
+                    ),
+                    (
+                        "reopen",
+                        CopyValue::String(
+                            "journal.window.thinking.copy.open.the.chatgpt.tab.again",
+                        ),
+                    ),
+                    (
+                        "cancel",
+                        CopyValue::String("journal.window.thinking.copy.cancel"),
+                    ),
                     (
                         "fallback_heading",
-                        CopyValue::String("not on your journal's computer?"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.not.on.your.journal.s.computer",
+                        ),
                     ),
                     (
                         "fallback_explanation",
                         CopyValue::String(
-                            "when you finish there, the last page says it can't be reached. that's expected. copy that page's whole address and paste it here.",
+                            "journal.window.thinking.copy.when.you.finish.there.the.last",
                         ),
                     ),
-                    ("address_label", CopyValue::String("that page's address")),
-                    ("finish", CopyValue::String("finish signing in")),
+                    (
+                        "address_label",
+                        CopyValue::String("journal.window.thinking.copy.that.page.s.address"),
+                    ),
+                    (
+                        "finish",
+                        CopyValue::String("journal.window.thinking.copy.finish.signing.in"),
+                    ),
                     (
                         "strip",
-                        CopyValue::String("signed in to ChatGPT as {email}"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.signed.in.to.chatgpt.as.email",
+                        ),
                     ),
-                    ("strip_no_email", CopyValue::String("signed in to ChatGPT")),
-                    ("sign_out", CopyValue::String("sign out")),
+                    (
+                        "strip_no_email",
+                        CopyValue::String("journal.window.thinking.copy.signed.in.to.chatgpt"),
+                    ),
+                    (
+                        "sign_out",
+                        CopyValue::String("journal.window.thinking.copy.sign.out"),
+                    ),
                     (
                         "model_heading",
-                        CopyValue::String("which model should processing use?"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.which.model.should.processing.use",
+                        ),
                     ),
                     (
                         "model_sub",
                         CopyValue::String(
-                            "these are the models your ChatGPT account offers. you can change your pick anytime.",
+                            "journal.window.thinking.copy.these.are.the.models.your.chatgpt",
                         ),
                     ),
-                    ("model_save", CopyValue::String("use this model")),
-                    ("start_over", CopyValue::String("start over with ChatGPT")),
+                    (
+                        "model_save",
+                        CopyValue::String("journal.window.thinking.copy.use.this.model"),
+                    ),
+                    (
+                        "start_over",
+                        CopyValue::String("journal.window.thinking.copy.start.over.with.chatgpt"),
+                    ),
                     (
                         "tuning_note",
                         CopyValue::String(
-                            "thinking may improve results, and it can use up your ChatGPT usage faster. processing is tuned to work well without it.",
+                            "journal.window.thinking.copy.thinking.may.improve.results.and.it",
                         ),
                     ),
                     (
                         "plan_usage_not_granted",
                         CopyValue::String(
-                            "sign-in finished, but ChatGPT usage wasn't allowed for solstone. continue with ChatGPT again and allow it when ChatGPT asks.",
+                            "journal.window.thinking.copy.sign.in.finished.but.chatgpt.usage",
                         ),
                     ),
                     (
                         "usage_limit_title",
-                        CopyValue::String("usage limit reached"),
+                        CopyValue::String("journal.window.thinking.copy.usage.limit.reached"),
                     ),
                     (
                         "usage_limit_body",
                         CopyValue::String(
-                            "a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings.",
+                            "journal.window.thinking.copy.a.chatgpt.usage.limit.was.reached",
                         ),
                     ),
                     (
                         "not_eligible",
                         CopyValue::String(
-                            "this ChatGPT account can't be used for processing. start over with ChatGPT to use another account, or pick another provider.",
+                            "journal.window.thinking.copy.this.chatgpt.account.can.t.be",
                         ),
                     ),
-                    ("pick_other", CopyValue::String("pick another provider")),
+                    (
+                        "pick_other",
+                        CopyValue::String("journal.window.thinking.copy.pick.another.provider"),
+                    ),
                     (
                         "revoke_unconfirmed",
                         CopyValue::String(
-                            "signed out on this journal. to finish, disconnect solstone in your ChatGPT settings.",
+                            "journal.window.thinking.copy.signed.out.on.this.journal.to",
                         ),
                     ),
                     (
                         "denied",
                         CopyValue::String(
-                            "sign-in was stopped in ChatGPT. continue with ChatGPT to try again.",
+                            "journal.window.thinking.copy.sign.in.was.stopped.in.chatgpt",
                         ),
                     ),
                     (
                         "expired",
-                        CopyValue::String(
-                            "sign-in didn't finish in time. continue with ChatGPT to try again.",
-                        ),
+                        CopyValue::String("journal.window.thinking.copy.sign.in.didn.t.finish.in"),
                     ),
                     (
                         "unfinished",
                         CopyValue::String(
-                            "sign-in didn't finish. continue with ChatGPT to try again.",
+                            "journal.window.thinking.copy.sign.in.didn.t.finish.continue",
                         ),
                     ),
                     (
                         "account_mismatch",
                         CopyValue::String(
-                            "that's a different ChatGPT account from the one signed in before. to change accounts, start over with ChatGPT.",
+                            "journal.window.thinking.copy.that.s.a.different.chatgpt.account",
                         ),
                     ),
                     (
                         "registration_refused",
                         CopyValue::String(
-                            "ChatGPT no longer accepts this journal's sign-in. start over with ChatGPT.",
+                            "journal.window.thinking.copy.chatgpt.no.longer.accepts.this.journal",
                         ),
                     ),
                     (
                         "superseded",
-                        CopyValue::String("another sign-in finished first."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.another.sign.in.finished.first",
+                        ),
                     ),
                     (
                         "busy",
-                        CopyValue::String("your journal was busy. try again in a moment."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.your.journal.was.busy.try.again",
+                        ),
                     ),
                     (
                         "storage",
                         CopyValue::String(
-                            "your journal can't read its ChatGPT sign-in. start over with ChatGPT.",
+                            "journal.window.thinking.copy.your.journal.can.t.read.its",
                         ),
                     ),
                     (
                         "keep_failing",
-                        CopyValue::String("if it keeps failing, start over with ChatGPT."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.if.it.keeps.failing.start.over",
+                        ),
                     ),
                     (
                         "models_failed",
                         CopyValue::String(
-                            "couldn't load your ChatGPT models. reload this page to try again.",
+                            "journal.window.thinking.copy.couldn.t.load.your.chatgpt.models",
                         ),
                     ),
                     (
                         "signed_out",
                         CopyValue::String(
-                            "signed out of ChatGPT. continue with ChatGPT to sign in again.",
+                            "journal.window.thinking.copy.signed.out.of.chatgpt.continue.with",
                         ),
                     ),
                     (
                         "model_not_found",
                         CopyValue::String(
-                            "your ChatGPT account no longer offers the model you picked. pick another.",
+                            "journal.window.thinking.copy.your.chatgpt.account.no.longer.offers",
                         ),
                     ),
-                    ("model_missing", CopyValue::String("pick a model first.")),
+                    (
+                        "model_missing",
+                        CopyValue::String("journal.window.thinking.copy.pick.a.model.first"),
+                    ),
                     (
                         "popup_blocked",
                         CopyValue::String(
-                            "your browser blocked the ChatGPT tab. allow pop-ups for this page, then try again.",
+                            "journal.window.thinking.copy.your.browser.blocked.the.chatgpt.tab",
                         ),
                     ),
                     (
                         "sign_in_failed",
-                        CopyValue::String("couldn't start signing in. try again in a moment."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.couldn.t.start.signing.in.try",
+                        ),
                     ),
                     (
                         "finish_refused",
                         CopyValue::String(
-                            "that address isn't from this sign-in, or it's cut off. paste the last page's whole address.",
+                            "journal.window.thinking.copy.that.address.isn.t.from.this",
                         ),
                     ),
                     (
                         "save_refused",
-                        CopyValue::String("couldn't save that choice. try again in a moment."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.couldn.t.save.that.choice.try",
+                        ),
                     ),
                     (
                         "sign_out_failed",
-                        CopyValue::String("couldn't sign out of ChatGPT. try again in a moment."),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.couldn.t.sign.out.of.chatgpt",
+                        ),
                     ),
                     (
                         "status_failed",
                         CopyValue::String(
-                            "couldn't check your ChatGPT sign-in. reload this page to check again.",
+                            "journal.window.thinking.copy.couldn.t.check.your.chatgpt.sign",
                         ),
                     ),
                     (
                         "poll_failed",
-                        CopyValue::String("couldn't reach your journal just now. still checking…"),
+                        CopyValue::String(
+                            "journal.window.thinking.copy.couldn.t.reach.your.journal.just",
+                        ),
                     ),
-                    ("continue", CopyValue::String("Continue with ChatGPT")),
-                    ("plan", CopyValue::String("Using ChatGPT plan")),
-                    ("manage_usage", CopyValue::String("Manage usage")),
-                    ("manage_usage_link", CopyValue::String("Manage usage ↗")),
+                    (
+                        "continue",
+                        CopyValue::String("journal.window.thinking.copy.continue.with.chatgpt"),
+                    ),
+                    (
+                        "plan",
+                        CopyValue::String("journal.window.thinking.copy.using.chatgpt.plan"),
+                    ),
+                    (
+                        "manage_usage",
+                        CopyValue::String("journal.window.thinking.copy.manage.usage"),
+                    ),
+                    (
+                        "manage_usage_link",
+                        CopyValue::String("journal.window.thinking.copy.manage.usage.variant2"),
+                    ),
                 ]),
             ),
             (
                 "openai_card",
-                CopyValue::String(
-                    "use an OpenAI API key. this connects to OpenAI itself. for another OpenAI-compatible provider, use {endpoint}.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.use.an.openai.api.key.this"),
             ),
             // One thinking setting for the whole "your own model" lane. The key
             // lanes ask the provider to think. On the owner's own endpoint, off
@@ -672,23 +922,45 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "tuning",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("tuning")),
-                    ("default", CopyValue::String("default")),
-                    ("choice", CopyValue::String("{budget} tokens")),
-                    ("saved", CopyValue::String("saved")),
+                    (
+                        "label",
+                        CopyValue::String("journal.window.thinking.copy.tuning"),
+                    ),
+                    (
+                        "default",
+                        CopyValue::String("journal.window.thinking.copy.default"),
+                    ),
+                    (
+                        "choice",
+                        CopyValue::String("journal.window.thinking.copy.budget.tokens"),
+                    ),
+                    (
+                        "saved",
+                        CopyValue::String("journal.window.thinking.copy.saved"),
+                    ),
                     (
                         "key",
                         CopyValue::Object(&[
-                            ("state", CopyValue::String("thinking budget {budget}")),
+                            (
+                                "state",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.thinking.budget.budget",
+                                ),
+                            ),
                             (
                                 "check",
-                                CopyValue::String("let the model think longer before it answers"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.let.the.model.think.longer.before",
+                                ),
                             ),
-                            ("budget", CopyValue::String("thinking budget")),
+                            (
+                                "budget",
+                                CopyValue::String("journal.window.thinking.copy.thinking.budget"),
+                            ),
                             (
                                 "note",
                                 CopyValue::String(
-                                    "thinking may improve results, and it costs more with your provider. processing is tuned to work well without it.",
+                                    "journal.window.thinking.copy.thinking.may.improve.results.and.it.variant2",
                                 ),
                             ),
                         ]),
@@ -696,196 +968,247 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "endpoint",
                         CopyValue::Object(&[
-                            ("state", CopyValue::String("thinking room {budget}")),
+                            (
+                                "state",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.thinking.room.budget",
+                                ),
+                            ),
                             (
                                 "check",
-                                CopyValue::String("leave room for the model to think"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.leave.room.for.the.model.to",
+                                ),
                             ),
-                            ("budget", CopyValue::String("thinking room")),
+                            (
+                                "budget",
+                                CopyValue::String("journal.window.thinking.copy.thinking.room"),
+                            ),
                             (
                                 "note",
                                 CopyValue::String(
-                                    "while this is off, processing asks your model not to think, though some models think anyway. turn it on to let your model think, with room to finish. processing is tuned to work well without thinking.",
+                                    "journal.window.thinking.copy.while.this.is.off.processing.asks",
                                 ),
                             ),
                         ]),
                     ),
                 ]),
             ),
-            ("get_key", CopyValue::String("get a key ↗")),
+            (
+                "get_key",
+                CopyValue::String("journal.window.thinking.copy.get.a.key"),
+            ),
             (
                 "paste_title",
-                CopyValue::String("paste your {provider} key"),
+                CopyValue::String("journal.window.thinking.copy.paste.your.provider.key"),
             ),
             (
                 "key_hint",
-                CopyValue::String(
-                    "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.the.key.stays.in.your.journal"),
             ),
             (
                 "terms",
                 CopyValue::String(
-                    "your questions are processed by {provider}, stored only briefly for processing, and never used for training.",
+                    "journal.window.thinking.copy.your.questions.are.processed.by.provider",
                 ),
             ),
-            ("terms_link", CopyValue::String("terms ↗")),
+            (
+                "terms_link",
+                CopyValue::String("journal.window.thinking.copy.terms"),
+            ),
             (
                 "endpoint_heading",
-                CopyValue::String("point processing at your own endpoint"),
+                CopyValue::String(
+                    "journal.window.thinking.copy.point.processing.at.your.own.endpoint",
+                ),
             ),
             (
                 "endpoint_sub",
-                CopyValue::String("any OpenAI-compatible URL. your server, your rules."),
+                CopyValue::String(
+                    "journal.window.thinking.copy.any.openai.compatible.url.your.server",
+                ),
             ),
             (
                 "endpoint_honesty",
                 CopyValue::String(
-                    "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
+                    "journal.window.thinking.copy.processing.checks.the.endpoint.works.before",
                 ),
             ),
             (
                 "endpoint_image_checking",
-                CopyValue::String("checking whether {model} reads images…"),
+                CopyValue::String(
+                    "journal.window.thinking.copy.checking.whether.model.reads.images",
+                ),
             ),
             (
                 "endpoint_image_not_read",
-                CopyValue::String(
-                    "endpoint saved, but {model} didn't name the color of a test image, so screen and photo descriptions may fail or come out wrong. if it's meant to read images, try another model, then save again.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.endpoint.saved.but.model.didn.t"),
             ),
             (
                 "endpoint_schema_not_followed",
                 CopyValue::String(
-                    "endpoint saved, but {model} didn't answer in the structured form processing asks for, so most processing will fail. some servers can't do this with every model: try another model or server, then save again.",
+                    "journal.window.thinking.copy.endpoint.saved.but.model.didn.t.variant2",
                 ),
             ),
             (
                 "endpoint_image_unchecked",
                 CopyValue::String(
-                    "endpoint saved. couldn't check whether {model} reads images: {reason}.",
+                    "journal.window.thinking.copy.endpoint.saved.couldn.t.check.whether",
                 ),
             ),
             (
                 "endpoint_reason_unreachable",
-                CopyValue::String("couldn't reach the endpoint"),
+                CopyValue::String("journal.window.thinking.copy.couldn.t.reach.the.endpoint"),
             ),
             (
                 "endpoint_reason_timeout",
-                CopyValue::String("it didn't answer in time"),
+                CopyValue::String("journal.window.thinking.copy.it.didn.t.answer.in.time"),
             ),
             (
                 "endpoint_reason_busy",
-                CopyValue::String("your journal was busy with other work"),
+                CopyValue::String("journal.window.thinking.copy.your.journal.was.busy.with.other"),
             ),
             (
                 "endpoint_reason_key",
-                CopyValue::String("it didn't accept the key"),
+                CopyValue::String("journal.window.thinking.copy.it.didn.t.accept.the.key"),
             ),
             (
                 "endpoint_reason_rejected",
-                CopyValue::String("it rejected the request"),
+                CopyValue::String("journal.window.thinking.copy.it.rejected.the.request"),
             ),
             (
                 "endpoint_reason_unusable",
-                CopyValue::String("it sent back nothing usable"),
+                CopyValue::String("journal.window.thinking.copy.it.sent.back.nothing.usable"),
             ),
             (
                 "endpoint_reason_other",
-                CopyValue::String("something went wrong"),
+                CopyValue::String("journal.window.thinking.copy.something.went.wrong"),
             ),
-            ("paste_cta", CopyValue::String("check this key →")),
+            (
+                "paste_cta",
+                CopyValue::String("journal.window.thinking.copy.check.this.key"),
+            ),
             (
                 "checking_key",
-                CopyValue::String("checking your key with {provider}…"),
+                CopyValue::String("journal.window.thinking.copy.checking.your.key.with.provider"),
             ),
             (
                 "key_ok_strip",
-                CopyValue::String("your {provider} key works, checked {when}"),
+                CopyValue::String(
+                    "journal.window.thinking.copy.your.provider.key.works.checked.when",
+                ),
             ),
-            ("check_again", CopyValue::String("check again")),
+            (
+                "check_again",
+                CopyValue::String("journal.window.thinking.copy.check.again"),
+            ),
             (
                 "use_different_key",
-                CopyValue::String("use a different key"),
+                CopyValue::String("journal.window.thinking.copy.use.a.different.key"),
             ),
             (
                 "key_failed",
-                CopyValue::String(
-                    "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.this.key.didn.t.work.reason"),
             ),
             (
                 "reason_rejected",
-                CopyValue::String("{provider} didn't accept it"),
+                CopyValue::String("journal.window.thinking.copy.provider.didn.t.accept.it"),
             ),
             (
                 "reason_quota",
-                CopyValue::String("{provider} says it's out of quota right now"),
+                CopyValue::String("journal.window.thinking.copy.provider.says.it.s.out.of"),
             ),
             (
                 "reason_network",
-                CopyValue::String("couldn't reach {provider}. check your connection"),
+                CopyValue::String(
+                    "journal.window.thinking.copy.couldn.t.reach.provider.check.your",
+                ),
             ),
             (
                 "reason_unknown",
-                CopyValue::String("{provider} couldn't be checked"),
+                CopyValue::String("journal.window.thinking.copy.provider.couldn.t.be.checked"),
             ),
             (
                 "model_heading",
-                CopyValue::String("which model should your key use?"),
+                CopyValue::String("journal.window.thinking.copy.which.model.should.your.key.use"),
             ),
             (
                 "model_sub",
-                CopyValue::String(
-                    "type the model id exactly as {provider} lists it. your journal checks it with {provider} before saving, and you can change it anytime.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.type.the.model.id.exactly.as"),
             ),
-            ("model_label", CopyValue::String("model id")),
+            (
+                "model_label",
+                CopyValue::String("journal.window.thinking.copy.model.id"),
+            ),
             (
                 "custom_not_found",
-                CopyValue::String(
-                    "{provider} doesn't offer \"{model}\" to this key. check the spelling, or try another model id.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.provider.doesn.t.offer.model.to"),
             ),
-            ("model_save", CopyValue::String("use this model")),
+            (
+                "model_save",
+                CopyValue::String("journal.window.thinking.copy.use.this.model"),
+            ),
             (
                 "model_save_restore",
-                CopyValue::String("remember this model"),
+                CopyValue::String("journal.window.thinking.copy.remember.this.model"),
             ),
             (
                 "model_saving",
-                CopyValue::String("checking {model} with your key…"),
+                CopyValue::String("journal.window.thinking.copy.checking.model.with.your.key"),
             ),
             (
                 "model_saved_restore",
-                CopyValue::String("remembered {label}. confidential processing stays on."),
+                CopyValue::String(
+                    "journal.window.thinking.copy.remembered.label.confidential.processing.stays.on",
+                ),
             ),
             (
                 "probe_failed_save",
-                CopyValue::String("your key works, but {model} didn't answer: {reason}."),
+                CopyValue::String("journal.window.thinking.copy.your.key.works.but.model.didn"),
             ),
         ]),
     ),
     (
         "lane_switch",
         CopyValue::Object(&[
-            ("heading", CopyValue::String("switch how processing runs?")),
-            ("current_label", CopyValue::String("now")),
-            ("target_label", CopyValue::String("switch to")),
-            ("confirm", CopyValue::String("switch")),
-            ("cancel", CopyValue::String("keep using {current}")),
+            (
+                "heading",
+                CopyValue::String("journal.window.thinking.copy.switch.how.processing.runs"),
+            ),
+            (
+                "current_label",
+                CopyValue::String("journal.window.thinking.copy.now"),
+            ),
+            (
+                "target_label",
+                CopyValue::String("journal.window.thinking.copy.switch.to"),
+            ),
+            (
+                "confirm",
+                CopyValue::String("journal.window.thinking.copy.switch"),
+            ),
+            (
+                "cancel",
+                CopyValue::String("journal.window.thinking.copy.keep.using.current"),
+            ),
             (
                 "to_local_note",
-                CopyValue::String(
-                    "processing will run right on your journal's computer. your {current} setup stays saved. switch back anytime.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.processing.will.run.right.on.your"),
             ),
             (
                 "to_byo_note",
-                CopyValue::String("processing will use your own model. {setup} is still here."),
+                CopyValue::String(
+                    "journal.window.thinking.copy.processing.will.use.your.own.model",
+                ),
             ),
-            ("setup_key", CopyValue::String("a saved key")),
-            ("setup_endpoint", CopyValue::String("your endpoint")),
+            (
+                "setup_key",
+                CopyValue::String("journal.window.thinking.copy.a.saved.key"),
+            ),
+            (
+                "setup_endpoint",
+                CopyValue::String("journal.window.thinking.copy.your.endpoint"),
+            ),
         ]),
     ),
     (
@@ -894,115 +1217,147 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "phases",
                 CopyValue::Object(&[
-                    ("resolving", CopyValue::String("resolving")),
-                    ("downloading", CopyValue::String("downloading")),
-                    ("verifying", CopyValue::String("verifying")),
-                    ("installing", CopyValue::String("installing")),
+                    (
+                        "resolving",
+                        CopyValue::String("journal.window.thinking.copy.resolving"),
+                    ),
+                    (
+                        "downloading",
+                        CopyValue::String("journal.window.thinking.copy.downloading"),
+                    ),
+                    (
+                        "verifying",
+                        CopyValue::String("journal.window.thinking.copy.verifying"),
+                    ),
+                    (
+                        "installing",
+                        CopyValue::String("journal.window.thinking.copy.installing"),
+                    ),
                 ]),
             ),
-            ("pill_inflight", CopyValue::String("setting up")),
-            ("pill_failed", CopyValue::String("couldn't finish")),
+            (
+                "pill_inflight",
+                CopyValue::String("journal.window.thinking.copy.setting.up"),
+            ),
+            (
+                "pill_failed",
+                CopyValue::String("journal.window.thinking.copy.couldn.t.finish"),
+            ),
             (
                 "failed_verdict",
-                CopyValue::String("local setup didn't finish"),
+                CopyValue::String("journal.window.thinking.copy.local.setup.didn.t.finish"),
             ),
             (
                 "failed_reason",
-                CopyValue::String("local setup stopped before it finished."),
-            ),
-            (
-                "cancelled_verdict",
-                CopyValue::String("installation cancelled"),
-            ),
-            (
-                "download_failed",
-                CopyValue::String("couldn't finish the download for local thinking. try again."),
-            ),
-            (
-                "interrupted_verdict",
-                CopyValue::String("installation stopped"),
-            ),
-            (
-                "stopped_reason",
-                CopyValue::String("you can try setup again when you're ready."),
-            ),
-            (
-                "gpu_memory_insufficient",
                 CopyValue::String(
-                    "the selected GPU has less than the 6 GB of GPU memory needed for local thinking.",
+                    "journal.window.thinking.copy.local.setup.stopped.before.it.finished",
                 ),
             ),
             (
+                "cancelled_verdict",
+                CopyValue::String("journal.window.thinking.copy.installation.cancelled"),
+            ),
+            (
+                "download_failed",
+                CopyValue::String("journal.window.thinking.copy.couldn.t.finish.the.download.for"),
+            ),
+            (
+                "interrupted_verdict",
+                CopyValue::String("journal.window.thinking.copy.installation.stopped"),
+            ),
+            (
+                "stopped_reason",
+                CopyValue::String("journal.window.thinking.copy.you.can.try.setup.again.when"),
+            ),
+            (
+                "gpu_memory_insufficient",
+                CopyValue::String("journal.window.thinking.copy.the.selected.gpu.has.less.than"),
+            ),
+            (
                 "gpu_memory_unknown",
-                CopyValue::String("couldn't check GPU memory on your journal's computer."),
+                CopyValue::String("journal.window.thinking.copy.couldn.t.check.gpu.memory.on"),
             ),
             (
                 "gpu_unavailable",
-                CopyValue::String("couldn't find a supported GPU for local thinking."),
+                CopyValue::String("journal.window.thinking.copy.couldn.t.find.a.supported.gpu"),
             ),
             (
                 "integrity_failed",
-                CopyValue::String("the downloaded files couldn't be verified. try setup again."),
+                CopyValue::String("journal.window.thinking.copy.the.downloaded.files.couldn.t.be"),
             ),
             (
                 "package_failed",
                 CopyValue::String(
-                    "some files needed for local thinking are missing. update the journal and try setup again.",
+                    "journal.window.thinking.copy.some.files.needed.for.local.thinking",
                 ),
             ),
             (
                 "package_invalid",
                 CopyValue::String(
-                    "some files needed for local thinking couldn't be verified. update the journal and try setup again.",
+                    "journal.window.thinking.copy.some.files.needed.for.local.thinking.variant2",
                 ),
             ),
             (
                 "unsupported_failed",
-                CopyValue::String("this local model isn't supported on your journal's computer."),
+                CopyValue::String("journal.window.thinking.copy.this.local.model.isn.t.supported"),
             ),
             (
                 "disk_failed",
-                CopyValue::String(
-                    "there isn't enough free disk space for local thinking. free up some space and try again.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.there.isn.t.enough.free.disk"),
             ),
             (
                 "memory_failed",
-                CopyValue::String(
-                    "your journal's computer doesn't have enough memory for local thinking.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.your.journal.s.computer.doesn.t"),
             ),
             (
                 "unidentified_failed",
-                CopyValue::String(
-                    "couldn't tell why local setup stopped. check the diagnostic console for details.",
-                ),
+                CopyValue::String("journal.window.thinking.copy.couldn.t.tell.why.local.setup"),
             ),
-            ("retry", CopyValue::String("try setup again")),
-            ("install", CopyValue::String("install local model")),
-            ("cancel", CopyValue::String("cancel")),
+            (
+                "retry",
+                CopyValue::String("journal.window.thinking.copy.try.setup.again"),
+            ),
+            (
+                "install",
+                CopyValue::String("journal.window.thinking.copy.install.local.model"),
+            ),
+            (
+                "cancel",
+                CopyValue::String("journal.window.thinking.copy.cancel"),
+            ),
             (
                 "notice_inflight",
-                CopyValue::String("local thinking will stay in your journal once setup finishes."),
+                CopyValue::String("journal.window.thinking.copy.local.thinking.will.stay.in.your"),
             ),
         ]),
     ),
     (
         "local_recovery",
         CopyValue::Object(&[
-            ("retry", CopyValue::String("try starting local again")),
+            (
+                "retry",
+                CopyValue::String("journal.window.thinking.copy.try.starting.local.again"),
+            ),
             (
                 "states",
                 CopyValue::Object(&[
                     (
                         "checking",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("checking")),
-                            ("verdict", CopyValue::String("checking local setup")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.checking"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.checking.local.setup",
+                                ),
+                            ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "checking the selected model and your journal's computer.",
+                                    "journal.window.thinking.copy.checking.the.selected.model.and.your",
                                 ),
                             ),
                         ]),
@@ -1010,42 +1365,83 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "starting",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("starting")),
-                            ("verdict", CopyValue::String("starting local thinking")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.starting"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.starting.local.thinking",
+                                ),
+                            ),
                             (
                                 "reason",
-                                CopyValue::String("checking the model before using it."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.checking.the.model.before.using.it",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "recovering",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("recovering")),
-                            ("verdict", CopyValue::String("local thinking is recovering")),
-                            ("reason", CopyValue::String("starting it again shortly.")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.recovering"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.is.recovering",
+                                ),
+                            ),
+                            (
+                                "reason",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.starting.it.again.shortly",
+                                ),
+                            ),
                         ]),
                     ),
                     (
                         "retrying",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("retrying")),
-                            ("verdict", CopyValue::String("trying local thinking again")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.retrying"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.trying.local.thinking.again",
+                                ),
+                            ),
                             (
                                 "reason",
-                                CopyValue::String("starting a new recovery attempt."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.starting.a.new.recovery.attempt",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "waiting",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("waiting")),
-                            ("verdict", CopyValue::String("local thinking is waiting")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.waiting"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.is.waiting",
+                                ),
+                            ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "it will start when your journal's computer is ready.",
+                                    "journal.window.thinking.copy.it.will.start.when.your.journal",
                                 ),
                             ),
                         ]),
@@ -1053,17 +1449,20 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "unsupported",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("unavailable")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.unavailable"),
+                            ),
                             (
                                 "verdict",
                                 CopyValue::String(
-                                    "your journal's computer can't run this local model",
+                                    "journal.window.thinking.copy.your.journal.s.computer.can.t",
                                 ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "local thinking needs supported hardware where your journal lives.",
+                                    "journal.window.thinking.copy.local.thinking.needs.supported.hardware.where",
                                 ),
                             ),
                         ]),
@@ -1071,15 +1470,20 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "gpu_memory_insufficient",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("unavailable")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.unavailable"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("the selected GPU needs more memory"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.the.selected.gpu.needs.more.memory",
+                                ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "local thinking needs a compatible GPU with at least 6 GB of GPU memory.",
+                                    "journal.window.thinking.copy.local.thinking.needs.a.compatible.gpu",
                                 ),
                             ),
                         ]),
@@ -1087,12 +1491,20 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "gpu_probe_failed",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("couldn't check")),
-                            ("verdict", CopyValue::String("couldn't check GPU memory")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.couldn.t.check"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.couldn.t.check.gpu.memory",
+                                ),
+                            ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "couldn't read GPU memory on your journal's computer. try checking again in a moment.",
+                                    "journal.window.thinking.copy.couldn.t.read.gpu.memory.on",
                                 ),
                             ),
                         ]),
@@ -1100,15 +1512,20 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "gpu_allocation_failed",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("needs attention")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.needs.attention"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local thinking ran out of memory"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.ran.out.of.memory",
+                                ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "the GPU didn't have enough available memory to start the local model.",
+                                    "journal.window.thinking.copy.the.gpu.didn.t.have.enough",
                                 ),
                             ),
                         ]),
@@ -1116,26 +1533,41 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "local_probe_failed",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("couldn't check")),
-                            ("verdict", CopyValue::String("couldn't check local setup")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.couldn.t.check"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.couldn.t.check.local.setup",
+                                ),
+                            ),
                             (
                                 "reason",
-                                CopyValue::String("try checking again in a moment."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.try.checking.again.in.a.moment",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "failed",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("needs attention")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.needs.attention"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local thinking couldn't start"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.couldn.t.start",
+                                ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "the local model stopped before it became ready.",
+                                    "journal.window.thinking.copy.the.local.model.stopped.before.it",
                                 ),
                             ),
                         ]),
@@ -1143,26 +1575,41 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "changing",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("changing")),
-                            ("verdict", CopyValue::String("finishing the local change")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.changing"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.finishing.the.local.change",
+                                ),
+                            ),
                             (
                                 "reason",
-                                CopyValue::String("waiting for current local work to finish."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.waiting.for.current.local.work.to",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "cleanup_failed",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("needs attention")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.needs.attention"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local couldn't finish changing state"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.couldn.t.finish.changing.state",
+                                ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "couldn't confirm that local processing stopped. it will keep checking safely.",
+                                    "journal.window.thinking.copy.couldn.t.confirm.that.local.processing",
                                 ),
                             ),
                         ]),
@@ -1170,26 +1617,41 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "corrupt",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("can't verify")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.can.t.verify"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local status can't be confirmed"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.status.can.t.be.confirmed",
+                                ),
                             ),
                             (
                                 "reason",
-                                CopyValue::String("check again before changing local setup."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.check.again.before.changing.local.setup",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "unavailable",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("can't verify")),
-                            ("verdict", CopyValue::String("local status can't be read")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.can.t.verify"),
+                            ),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.status.can.t.be.read",
+                                ),
+                            ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "correct the local file-access problem, then check again.",
+                                    "journal.window.thinking.copy.correct.the.local.file.access.problem",
                                 ),
                             ),
                         ]),
@@ -1197,40 +1659,59 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "stale",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("can't verify")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.can.t.verify"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local status couldn't be refreshed"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.status.couldn.t.be.refreshed",
+                                ),
                             ),
                             (
                                 "reason",
-                                CopyValue::String("check again before changing local setup."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.check.again.before.changing.local.setup",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "ready",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("on")),
-                            ("verdict", CopyValue::String("local thinking is ready")),
+                            ("pill", CopyValue::String("journal.window.thinking.copy.on")),
+                            (
+                                "verdict",
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.is.ready",
+                                ),
+                            ),
                             (
                                 "reason",
-                                CopyValue::String("a model is running on your journal's computer."),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.a.model.is.running.on.your",
+                                ),
                             ),
                         ]),
                     ),
                     (
                         "ready_proof_unavailable",
                         CopyValue::Object(&[
-                            ("pill", CopyValue::String("on, needs a check")),
+                            (
+                                "pill",
+                                CopyValue::String("journal.window.thinking.copy.on.needs.a.check"),
+                            ),
                             (
                                 "verdict",
-                                CopyValue::String("local thinking is still running"),
+                                CopyValue::String(
+                                    "journal.window.thinking.copy.local.thinking.is.still.running",
+                                ),
                             ),
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "couldn't refresh the local status check. it won't start a replacement until the check returns.",
+                                    "journal.window.thinking.copy.couldn.t.refresh.the.local.status",
                                 ),
                             ),
                         ]),
@@ -1241,8 +1722,14 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
     ),
 ]);
 
-pub fn thinking_copy_payload() -> CopyValue {
-    THINKING_COPY_PAYLOAD
+pub fn thinking_copy_payload() -> Value {
+    localized_thinking_copy_payload(ENGLISH)
+}
+
+pub fn localized_thinking_copy_payload(locale: &str) -> Value {
+    let mut value = serde_json::to_value(THINKING_COPY_PAYLOAD).expect("Thinking copy is JSON");
+    resolve_table(locale, &mut value);
+    value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1308,7 +1795,7 @@ pub fn current_setup_facts() -> SetupCatalogFacts {
 pub fn setup_copy(facts: &SetupCatalogFacts) -> serde_json::Value {
     // A phone can be the journal itself; everywhere else it is a computer.
     let on_phone = matches!(facts.platform, "ios" | "android");
-    let choices = LANES
+    let choices = lanes(ENGLISH)
         .into_iter()
         .map(|mut lane| {
             // Setup actions use spp; the existing Thinking page uses confidential.
@@ -1563,7 +2050,7 @@ mod tests {
             .collect::<Vec<_>>();
         ids.sort_unstable();
         assert_eq!(ids, ["byo", "local", "spp"]);
-        for (choice, lane) in choices.iter().zip(LANES) {
+        for (choice, lane) in choices.iter().zip(lanes(ENGLISH)) {
             assert_eq!(choice["label"], lane.label);
             assert_eq!(choice["sub"], lane.sub);
             assert_eq!(choice["description"], lane.description);

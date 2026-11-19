@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's thinking view.",
+  "context": "Journal window, thinking view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07431d9e2b255c54962a261d9a5e1675a7503f5f37f70aa794152f999ff1fb93",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

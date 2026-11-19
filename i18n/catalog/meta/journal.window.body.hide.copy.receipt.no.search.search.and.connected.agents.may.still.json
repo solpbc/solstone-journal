@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy receipt no search in the journal's body view.",
+  "context": "Journal window, body view. Hide copy receipt no search.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "619845de52b9a0459131e75b5379ce95438105ee0ab68ae564393fa991ebfc9a",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

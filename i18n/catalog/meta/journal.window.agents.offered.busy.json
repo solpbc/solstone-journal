@@ -1,0 +1,16 @@
+{
+  "description": "Service operation already busy in the journal's agents view.",
+  "context": "Journal window, agents view. Service operation already busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c2d0a1c77c917c1a74f467b449a6bfa760c8eabf509a77826ee86acc58ce249",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

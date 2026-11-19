@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach spl manage label.",
+  "context": "Network view copy, reach spl manage label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 104,
+  "source_revision": "a75ff5bd15abf3f956ea8b31edb91a32b41f8c9bdceaf7f09bc24542b5cafd26",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

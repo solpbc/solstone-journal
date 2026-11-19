@@ -1,0 +1,16 @@
+{
+  "description": "Owner undo done in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner undo done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bf1cb9c1cbe93bc3542128f60b47715ebc0e9bb7c9c6c9a47081b33a9cc9f30",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -229,21 +229,11 @@ fn main() {
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
     let speakers = read_object(&speakers_copy);
-    let speaker_copy = serde_json::to_string(&Value::Object(prefixed_object(&speakers, "SPK_")))
-        .expect("speaker copy serializes");
-    let network_copy_json = serde_json::to_string(&Value::Object(read_object(&network_copy)))
-        .expect("network copy serializes");
-    let spl_outcome_strings_json = serde_json::to_string(&Value::Object(read_object(&outcomes)))
-        .expect("SPL outcome copy serializes");
-    let home_address_strings_json =
-        serde_json::to_string(&Value::Object(read_object(&pairing_config)))
-            .expect("home address copy serializes");
-    let not_in_new_voices = serde_json::to_string(required_string(
-        &speakers_copy,
-        &speakers,
-        "TR_NOT_IN_NEW_VOICES",
-    ))
-    .expect("copy string serializes");
+    let speaker_copy = Value::Object(prefixed_object(&speakers, "SPK_"));
+    let network_copy = Value::Object(read_object(&network_copy));
+    let outcomes = Value::Object(read_object(&outcomes));
+    let home_address = Value::Object(read_object(&pairing_config));
+    let not_in_new_voices = required_string(&speakers_copy, &speakers, "TR_NOT_IN_NEW_VOICES");
 
     let mut generated = String::from("pub(super) static GENERATED_ASSETS: &[EmbeddedAsset] = &[\n");
     for (route, path) in &assets {
@@ -283,21 +273,21 @@ fn main() {
     }
     generated.push_str("];\n");
 
-    generated.push_str(&format!(
-        "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
-    ));
-    generated.push_str(&format!(
-        "pub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
-    ));
-    generated.push_str(&format!(
-        "pub(super) const SPL_OUTCOME_STRINGS_JSON: &str = {spl_outcome_strings_json:?};\n"
-    ));
-    generated.push_str(&format!(
-        "pub(super) const HOME_ADDRESS_STRINGS_JSON: &str = {home_address_strings_json:?};\n"
-    ));
-    generated.push_str(&format!(
-        "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"
-    ));
+    generated.push_str("pub(super) static COPY_TABLES: &[(&str, CopyTables)] = &[\n");
+    for locale in &locales {
+        let table = |value: &Value| {
+            serde_json::to_string(&copy_messages(value, locale)).expect("copy table serializes")
+        };
+        generated.push_str(&format!(
+            "    ({locale:?}, CopyTables {{ speakers: {:?}, network: {:?}, outcomes: {:?}, home_address: {:?}, not_in_new_voices: {:?} }}),\n",
+            table(&speaker_copy),
+            table(&network_copy),
+            table(&outcomes),
+            table(&home_address),
+            window_message(locale, not_in_new_voices),
+        ));
+    }
+    generated.push_str("];\n");
 
     fs::write(output.join("embedded_assets.rs"), generated)
         .expect("generated embedded asset source writes");
@@ -336,7 +326,8 @@ fn shell_bundles(
         panic!("the shell page needs scripts in both the boot file and the rest file");
     }
 
-    let registry = serde_json::to_string(&registry::shell_registry()).expect("registry serializes");
+    let registry = serde_json::to_string(&registry::shell_registry_using(str::to_owned))
+        .expect("registry serializes");
     let registry = format!("globalThis.SOL_SHELL_REGISTRY = {registry};\n");
 
     let map_name = SHELL_SCRIPT_MAP.rsplit('/').next().expect("map file name");
@@ -582,7 +573,7 @@ fn entry_table_json(
     index: &BTreeMap<String, usize>,
     hashed: &dyn Fn(&str) -> Option<String>,
 ) -> String {
-    let payload = registry::shell_registry();
+    let payload = registry::shell_registry_using(str::to_owned);
     let mut views = serde_json::Map::new();
     let mut date_code: BTreeSet<String> = BTreeSet::new();
     for app in &payload.apps {
@@ -927,11 +918,7 @@ fn shell_message_edits(page: &str, locale: &str) -> Vec<(usize, usize, String)> 
         let open = start + 2;
         let end = open + page[open..].find("}}").expect("shell message is closed");
         let id = &page[open..end];
-        let message =
-            window_catalog::render_dotted_with_options(locale, id, &[], locale != SOURCE_LOCALE)
-                .unwrap_or_else(|error| {
-                    panic!("shell catalog message {id} for {locale}: {error:?}")
-                });
+        let message = window_message(locale, id);
         let escaped = message
             .replace('&', "&amp;")
             .replace('<', "&lt;")
@@ -945,4 +932,52 @@ fn shell_message_edits(page: &str, locale: &str) -> Vec<(usize, usize, String)> 
         edits.push((start, start + "en".len(), locale.to_owned()));
     }
     edits
+}
+
+fn english_window_message(id: &str) -> String {
+    window_message(SOURCE_LOCALE, id)
+}
+
+fn window_message(locale: &str, id: &str) -> String {
+    use window_catalog::Value::String as Text;
+
+    let (locale, arguments): (&str, &[(&str, window_catalog::Value<'_>)]) = match id {
+        "journal.window.loading.other" => (locale, &[("name", Text("{name}"))]),
+        "journal.window.network.success.heading" | "journal.window.network.unpair.title.format" => {
+            (locale, &[("label", Text("{label}"))])
+        }
+        "journal.window.network.pair.network.line"
+        | "journal.window.network.pair.public.address.line"
+        | "journal.window.network.pair.relay.line"
+        | "journal.window.network.pair.this.computer.line" => (locale, &[("time", Text("{time}"))]),
+        "journal.window.network.private.link.portal.cta"
+        | "journal.window.network.private.link.needs.subscription.detail" => (SOURCE_LOCALE, &[]),
+        _ => (locale, &[]),
+    };
+    window_catalog::render_dotted_with_options(locale, id, arguments, locale != SOURCE_LOCALE)
+        .unwrap_or_else(|error| panic!("window catalog message {id} for {locale}: {error:?}"))
+}
+
+fn copy_messages(template: &Value, locale: &str) -> Value {
+    match template {
+        Value::Object(entries) => Value::Object(
+            entries
+                .iter()
+                .map(|(key, value)| (key.clone(), copy_messages(value, locale)))
+                .collect(),
+        ),
+        Value::String(id) if id.starts_with("journal.window.") => {
+            Value::String(window_message(locale, id))
+        }
+        Value::String(id) if id.starts_with("!journal.window.") => {
+            Value::String(window_message(SOURCE_LOCALE, &id[1..]))
+        }
+        Value::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| copy_messages(value, locale))
+                .collect(),
+        ),
+        value => value.clone(),
+    }
 }

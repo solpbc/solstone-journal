@@ -10,43 +10,43 @@
   'use strict';
 
   const COPY = {
-    title: 'year',
-    days: 'days',
-    threads: 'threads',
-    switchLabel: 'how to see this year',
-    stepLabel: 'other years',
-    daysLede: 'each square is a day, colored by the count you choose below.',
-    layerLabel: 'what to count',
-    daysNone: 'nothing of this kind in {year}.',
-    threadsLede: 'each row is a place or a name your journal found. each square is a week, colored by how many days that week the place or name appears on. rows are in the order they first appear.',
-    find: 'find a place or a name',
-    findNone: 'nothing in {year} has that name.',
-    threadsNone: 'no places or names in {year}.',
-    threadsNoneListed: 'nothing listed for {year}.',
-    places: 'places',
-    otherNames: 'other names',
-    sectionCount: '{count}',
-    namesUnavailable: "names aren't listed: your journal couldn't check which ones to leave out.",
-    placesUnavailable: "places aren't listed: the place names that come with your journal couldn't be read.",
-    peekHint: 'choose a row, or a week on it, to see its days.',
-    rowSummary: '{days} in {year}, {first} to {last}, across {weeks}.',
-    rowSummaryOne: '1 day in {year}, {first}.',
-    rowStart: 'start at {first}',
-    weekOf: 'week of {from} to {to}',
-    weekDays: '{days} of this week:',
-    weekBefore: 'the earlier week with days on this row',
-    weekAfter: 'the later week with days on this row',
-    cell: '{label}, week of {from}: {days}',
-    day: ['day', 'days'],
-    week: ['week', 'weeks'],
-    place: ['place', 'places'],
-    name: ['name', 'names'],
-    yearNone: 'nothing to show here for {year}.',
-    empty: 'nothing here yet.',
-    emptyDetail: 'once your journal has activities, places or names for a day, its year shows here.',
-    emptyAction: 'see your sources',
-    error: "this didn't load.",
-    retry: 'try again',
+    title: global.JournalI18n.render('journal.window.year.copy.title.year'),
+    days: global.JournalI18n.render('journal.window.year.copy.days.days'),
+    threads: global.JournalI18n.render('journal.window.year.copy.threads.threads'),
+    switchLabel: global.JournalI18n.render('journal.window.year.copy.switch.label.how.to.see.this.year'),
+    stepLabel: global.JournalI18n.render('journal.window.year.copy.step.label.other.years'),
+    daysLede: global.JournalI18n.render('journal.window.year.copy.days.lede.each.square.is.a.day.colored'),
+    layerLabel: global.JournalI18n.render('journal.window.year.copy.layer.label.what.to.count'),
+    daysNone: global.JournalI18n.render('journal.window.year.copy.days.none.nothing.of.this.kind.in.year'),
+    threadsLede: global.JournalI18n.render('journal.window.year.copy.threads.lede.each.row.is.a.place.or'),
+    find: global.JournalI18n.render('journal.window.year.copy.find.find.a.place.or.a.name'),
+    findNone: global.JournalI18n.render('journal.window.year.copy.find.none.nothing.in.year.has.that.name'),
+    threadsNone: global.JournalI18n.render('journal.window.year.copy.threads.none.no.places.or.names.in.year'),
+    threadsNoneListed: global.JournalI18n.render('journal.window.year.copy.threads.none.listed.nothing.listed.for.year'),
+    places: global.JournalI18n.render('journal.window.year.copy.places.places'),
+    otherNames: global.JournalI18n.render('journal.window.year.copy.other.names.other.names'),
+    sectionCount: global.JournalI18n.render('journal.window.year.copy.section.count.count'),
+    namesUnavailable: global.JournalI18n.render('journal.window.year.copy.names.unavailable.names.aren.t.listed.your.journal'),
+    placesUnavailable: global.JournalI18n.render('journal.window.year.copy.places.unavailable.places.aren.t.listed.the.place'),
+    peekHint: global.JournalI18n.render('journal.window.year.copy.peek.hint.choose.a.row.or.a.week'),
+    rowSummary: global.JournalI18n.render('journal.window.year.copy.row.summary.days.in.year.first.to.last'),
+    rowSummaryOne: global.JournalI18n.render('journal.window.year.copy.row.summary.one.day.in.year.first'),
+    rowStart: global.JournalI18n.render('journal.window.year.copy.row.start.start.at.first'),
+    weekOf: global.JournalI18n.render('journal.window.year.copy.week.of.week.of.from.to.to'),
+    weekDays: global.JournalI18n.render('journal.window.year.copy.week.days.days.of.this.week'),
+    weekBefore: global.JournalI18n.render('journal.window.year.copy.week.before.the.earlier.week.with.days.on'),
+    weekAfter: global.JournalI18n.render('journal.window.year.copy.week.after.the.later.week.with.days.on'),
+    cell: global.JournalI18n.render('journal.window.year.copy.cell.label.week.of.from.days'),
+    day: [global.JournalI18n.render('journal.window.year.copy.day.day'), global.JournalI18n.render('journal.window.year.copy.day.days')],
+    week: [global.JournalI18n.render('journal.window.year.copy.week.week'), global.JournalI18n.render('journal.window.year.copy.week.weeks')],
+    place: [global.JournalI18n.render('journal.window.year.copy.place.place'), global.JournalI18n.render('journal.window.year.copy.place.places')],
+    name: [global.JournalI18n.render('journal.window.year.copy.name.name'), global.JournalI18n.render('journal.window.year.copy.name.names')],
+    yearNone: global.JournalI18n.render('journal.window.year.copy.year.none.nothing.to.show.here.for.year'),
+    empty: global.JournalI18n.render('journal.window.year.copy.empty.nothing.here.yet'),
+    emptyDetail: global.JournalI18n.render('journal.window.year.copy.empty.detail.once.your.journal.has.activities.places'),
+    emptyAction: global.JournalI18n.render('journal.window.year.copy.empty.action.see.your.sources'),
+    error: global.JournalI18n.render('journal.window.year.copy.error.this.didn.t.load'),
+    retry: global.JournalI18n.render('journal.window.year.copy.retry.try.again'),
   };
 
   const PATH = '/app/year/';
@@ -56,21 +56,29 @@
   // What a day cell can count. Each is a count its own app already shows,
   // with that app's nouns; a day opens on that app's page for it.
   const LAYERS = [
-    { key: 'activities', label: 'activities', path: '/app/activities', unit: { one: 'activity', other: 'activities', none: 'no activities' } },
-    { key: 'location', label: 'location', path: '/app/map', unit: { one: 'record', other: 'records', none: 'no location' } },
+    { key: 'activities', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), path: '/app/activities', unit: { one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activity'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.activities') } },
+    { key: 'location', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.location'), path: '/app/map', unit: { one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.record'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.records'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.location') } },
   ];
 
   const TYPE_LABELS = {
-    person: 'people',
-    company: 'companies',
-    organization: 'organizations',
-    project: 'projects',
-    tool: 'tools',
-    place: 'named places',
+    person: global.JournalI18n.render('journal.window.year.type.labels.person.people'),
+    company: global.JournalI18n.render('journal.window.year.type.labels.company.companies'),
+    organization: global.JournalI18n.render('journal.window.year.type.labels.organization.organizations'),
+    project: global.JournalI18n.render('journal.window.year.type.labels.project.projects'),
+    tool: global.JournalI18n.render('journal.window.year.type.labels.tool.tools'),
+    place: global.JournalI18n.render('journal.window.year.type.labels.place.named.places'),
   };
 
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = [global.JournalI18n.render('journal.window.year.months.label.jan'), global.JournalI18n.render('journal.window.year.months.label.feb'), global.JournalI18n.render('journal.window.year.months.label.mar'), global.JournalI18n.render('journal.window.year.months.label.apr'), global.JournalI18n.render('journal.window.year.months.label.may'), global.JournalI18n.render('journal.window.year.months.label.jun'), global.JournalI18n.render('journal.window.year.months.label.jul'), global.JournalI18n.render('journal.window.year.months.label.aug'), global.JournalI18n.render('journal.window.year.months.label.sep'), global.JournalI18n.render('journal.window.year.months.label.oct'), global.JournalI18n.render('journal.window.year.months.label.nov'), global.JournalI18n.render('journal.window.year.months.label.dec')];
+  const WEEKDAYS = [
+    global.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    global.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  ];
 
   function fill(template, values) {
     return String(template).replace(/\{(\w+)\}/g, (_, key) => (key in values ? String(values[key]) : ''));

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_SOURCE_WORDS participation in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_SOURCE_WORDS participation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3825fc004102f16d5bd1a29f4433f7a0bb499629754e08209d738e8008ce5f11",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

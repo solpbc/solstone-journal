@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach vpn use this.",
+  "context": "Network view copy, reach vpn use this.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "7beb58a313644d107e8508d5ef986f724f37dfb1c2a49e6bd48df8837b67dd6e",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

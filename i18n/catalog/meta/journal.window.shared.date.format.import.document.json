@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.date.format view.",
+  "context": "Journal window, shared.date.format view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d92a063de1452f5956d988009be60c653bceeb4ef339c3ab52ad3b446e4f66c4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1075,14 +1075,18 @@ fn consent_page_named(
             }
         },
         kind_choices = solstone_core_format::content::kinds::permission_kinds()
-            .map(|kind| format!(
+            .map(|kind| {
+                use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+                let copy = kind.permission_copy.expect("registered permissions have copy");
+                format!(
                 r#"<label class="check{}"><input type="checkbox" name="category" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
                 if kind.option_of().is_some() { " option" } else { "" },
                 kind.stored_word,
                 checked(selection.categories.iter().any(|word| word == kind.stored_word)),
-                html_escape(kind.label),
-                html_escape(kind.description),
-            ))
+                html_escape(&text(ENGLISH, copy.label_id)),
+                html_escape(&text(ENGLISH, copy.description_id)),
+                )
+            })
             .collect::<String>(),
     );
     let body = match stage {

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, direct online vpn.",
+  "context": "Network view copy, direct online vpn.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "ca0909196e16acfbdacc2c5d9387f04720160b62bead4a4e93164b4a11ac65f0",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

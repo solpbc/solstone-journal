@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_WORDS created in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_WORDS created.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c90dfb7246168d95f78106b7645a554f8da5a4966d3a2907293cefa16fba4104",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

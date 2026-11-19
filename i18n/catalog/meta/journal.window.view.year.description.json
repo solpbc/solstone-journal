@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.year view.",
+  "context": "Journal window, view.year view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fcffe59121b336a543c0b973515ed7bb4a75fab2114547767725bb4fe5a4fde",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

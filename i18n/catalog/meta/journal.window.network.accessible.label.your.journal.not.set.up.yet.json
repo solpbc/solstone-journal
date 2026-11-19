@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's network view.",
+  "context": "Journal window, network view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a1802ba66f1ae2bc23e3356a25a3c0981799da3a35e93469ce59997c1e058ea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

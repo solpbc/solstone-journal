@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, direct online.",
+  "context": "Network view copy, direct online.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 84,
+  "source_revision": "d560f15d5e8f1e3a56d27b2f6cf8342b11d71783253f9658fedab7846ab264ea",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

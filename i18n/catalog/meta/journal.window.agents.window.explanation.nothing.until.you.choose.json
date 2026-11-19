@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's agents view.",
+  "context": "Journal window, agents view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5465f61dd65c4665130f7b32189d5d5c3b7e207e9a1cdf37558beb463e4387f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

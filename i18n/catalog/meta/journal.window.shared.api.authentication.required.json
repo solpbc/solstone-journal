@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.api view.",
+  "context": "Journal window, shared.api view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ada5dc200a7512636167f4517e704ae7267f14a98449b1fe125f3c4bcf72ad73",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

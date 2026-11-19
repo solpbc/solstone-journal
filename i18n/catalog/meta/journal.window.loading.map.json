@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the map journal route loads on first paint.",
+  "context": "Status shown while the map journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "6f90c94105f6b7e3c4d7c9c965d53e063133a5029ae650699151db4ffdbf12db",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

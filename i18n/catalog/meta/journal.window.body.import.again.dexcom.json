@@ -1,0 +1,16 @@
+{
+  "description": "Body display import again dexcom in the journal's body view.",
+  "context": "Journal window, body view. Body display import again dexcom.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16db439380cc27f8f926befe579d358a20ebc25825810701ee7df7accc6e5a4e",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

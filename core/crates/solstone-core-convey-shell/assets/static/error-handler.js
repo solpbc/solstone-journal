@@ -266,8 +266,8 @@
   function ownerSummary(message) {
     const copy = window.CONVEY_COPY || {};
     return NETWORK_FAILURE.test(String(message || ''))
-      ? (copy.CONSOLE_SUMMARY_LOAD_FAILED || "couldn't load part of this page.")
-      : (copy.CONSOLE_SUMMARY_UNEXPECTED || "something on this page didn't work.");
+      ? (copy.CONSOLE_SUMMARY_LOAD_FAILED || window.JournalI18n.render('journal.window.shared.error.handler.window.explanation.couldn.t.load.part.of.this'))
+      : (copy.CONSOLE_SUMMARY_UNEXPECTED || window.JournalI18n.render('journal.window.shared.error.handler.window.explanation.something.on.this.page.didn.t'));
   }
 
   // X-01: the guards above all key on a signal that arrives *before* the
@@ -289,7 +289,7 @@
   const deferredAborts = new Map();
   function noteNavigationAbort(error, context) {
     if (window.console && typeof window.console.debug === 'function') {
-      window.console.debug('navigation aborted a read:', error, context || '');
+      window.console.debug(window.JournalI18n.render('journal.window.shared.error.handler.window.explanation.navigation.aborted.a.read'), error, context || '');
     }
   }
   function dropDeferredAborts() {

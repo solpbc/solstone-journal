@@ -1,0 +1,16 @@
+{
+  "description": "Byo outside copy outside_wrong_certificate in the journal's agents view.",
+  "context": "Journal window, agents view. Byo outside copy outside_wrong_certificate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ce2838456fb95a2d1ddc74b43ca1b5b0d26af3f867afb1b1dc0b09360ba4784",
+  "max_length": 178,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

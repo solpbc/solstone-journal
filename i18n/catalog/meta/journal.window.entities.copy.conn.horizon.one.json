@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_CONN_HORIZON_ONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_HORIZON_ONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8ab87cd4f40a6fdda842a513e7fcd203371f2b381f79f69498815d28489ddf4",
+  "max_length": 176,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

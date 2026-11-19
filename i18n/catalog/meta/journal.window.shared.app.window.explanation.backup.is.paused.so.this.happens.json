@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.app view.",
+  "context": "Journal window, shared.app view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c3cbeede60c01b75ab414a64519c0e24edb428bed3c387ef11498755b10f4df",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

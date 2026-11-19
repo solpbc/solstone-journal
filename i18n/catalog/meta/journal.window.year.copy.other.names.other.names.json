@@ -1,0 +1,16 @@
+{
+  "description": "Copy other names in the journal's year view.",
+  "context": "Journal window, year view. Copy other names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e88e16210ce3b28c439e351f80bd44c6510516eda1fc247f5f5ecfd003b9d1b7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

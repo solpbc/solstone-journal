@@ -1,0 +1,28 @@
+{
+  "description": "Window explanation in the journal's agents view.",
+  "context": "Journal window, agents view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd8ea540431d702dfa5d57dc4f1539beb5b5088592c2738d1349f61cf9567266",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

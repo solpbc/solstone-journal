@@ -1,0 +1,16 @@
+{
+  "description": "Window state text in the journal's speakers view.",
+  "context": "Journal window, speakers view. Window state text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f3ccd2d0cd33ea0459d0475cce113ea77df98aa5c9ec64c00972f176556898b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Months label in the journal's sources view.",
+  "context": "Journal window, sources view. Months label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d08cbcf0e93f61f58f475a72a82789c3947cea57ce6fd89266939ecf1e588710",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

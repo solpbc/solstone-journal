@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const manifestDir = process.argv[2];
 assert.ok(manifestDir, 'manifest directory argument is required');
@@ -183,6 +184,7 @@ async function renderWorkspace(payload) {
     document: { querySelector: (selector) => (selector === '[data-curation-root]' ? root : null) },
     console,
   });
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   vm.runInContext(curationEvidenceSource, context);
   vm.runInContext(workspaceScript, context);
@@ -277,6 +279,7 @@ function createCurationEnvironment() {
     Boolean,
   });
 
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   vm.runInContext(curationEvidenceSource, context);
 

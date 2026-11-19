@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_FACES_FROM_DAY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_FROM_DAY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0de49a7a4574d9cdfa103ddac2ab79d56e30c2de62a02749eac00341edcd640f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the year journal route loads on first paint.",
+  "context": "Status shown while the year journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "8f70a00da579eb56adefbdc8afd8492249d3ba1df9f04cfdecad83257ee12d6d",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

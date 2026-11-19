@@ -1,0 +1,16 @@
+{
+  "description": "Column heading in the journal's agents view.",
+  "context": "Journal window, agents view. Column heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e598ddc8806b97b0234973e2af16ce51cf36991019b895b5e1ae2b7a8398cf8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

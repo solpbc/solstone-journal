@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_LABEL_FALLBACKS mentioned in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_LABEL_FALLBACKS mentioned.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f8def087f7da004d4318f38c2ecf3afd6d7e7bd26dfb5ca8676eeb2f3c127b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

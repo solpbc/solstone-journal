@@ -1,0 +1,33 @@
+{
+  "description": "Copy cell in the journal's year view.",
+  "context": "Journal window, year view. Copy cell.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c66b1d5df99ee8229d73e76c30ed464fffecde3b678c6d215aad436277dbb2f",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{label}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{from}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{days}"
+    }
+  ]
+}

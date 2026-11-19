@@ -1,0 +1,16 @@
+{
+  "description": "Owner not ready short or mixed in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner not ready short or mixed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a77c3ade1b23411ad36a3caa54e8f6a014cc1f3e8e74f0da59149f010c46a82",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

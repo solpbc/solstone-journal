@@ -1,0 +1,16 @@
+{
+  "description": "Owner relabel waiting in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner relabel waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "212fc68ee3c522776b309e272d916f43f20eaed6095178515e3be009b4054a6d",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

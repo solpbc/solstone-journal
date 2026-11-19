@@ -1,0 +1,16 @@
+{
+  "description": "Paired-device authorization refusal in the journal's shell view.",
+  "context": "Journal window, shell view. Paired-device authorization refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2cbb592bb8a8244259db0c0be54aac5e7c8bf6bd155a0202a1fb8af2db06303",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

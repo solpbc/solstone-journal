@@ -1,0 +1,51 @@
+{
+  "description": "Body display import old month in the journal's body view.",
+  "context": "Journal window, body view. Body display import old month.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "action",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9d7e4af67445e1a07b80a2c710e297976772d027940738c9955d34e2b3f9051",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

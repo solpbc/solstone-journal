@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's agents view.",
+  "context": "Journal window, agents view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c05a22429ad6a4e0ac3fb4456173ba87b832ca32a4a8671393dd014c5bf52e17",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

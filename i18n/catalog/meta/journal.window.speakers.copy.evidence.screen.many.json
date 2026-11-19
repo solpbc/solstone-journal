@@ -1,0 +1,23 @@
+{
+  "description": "Evidence screen many in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Evidence screen many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1cc6e2352882138d2ec421a12bac719b98829fdf542bf8b2e6e2211e989ad5f",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{count}"
+    }
+  ]
+}

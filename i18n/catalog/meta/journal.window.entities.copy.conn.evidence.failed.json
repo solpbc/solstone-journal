@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_EVIDENCE_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_EVIDENCE_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "786642e609ba8c334187f2f4487b3a29969b3a378f7c926c3876b0e5b8ad9e5b",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

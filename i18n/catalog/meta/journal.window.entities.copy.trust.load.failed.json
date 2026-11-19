@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_LOAD_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_LOAD_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "155316f2a97a612424359c9659af00dca292119478978c1925310ec9b4953df4",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SHOW_AGAIN in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SHOW_AGAIN.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "829a4e7b03223e7e2566f24f0aab0ae8f7e99578a696d9b42f9a6bceb43e827c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

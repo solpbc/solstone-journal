@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_HIDE_DONE_DETAIL in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_HIDE_DONE_DETAIL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab126b030aed676be187689313bf04ba542c574b0eef94c86c7e1b1f773f53f7",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

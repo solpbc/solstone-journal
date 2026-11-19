@@ -42,6 +42,18 @@
     // address, or asks again itself if an answer isn't a plain success. The
     // table is generated with the journal from each view's fragment.
     window.__SOL_ENTRY_TABLE__ = {/*entry-table*/};
+    window.solWindowRequest = function (url, options, originalHeaders) {
+      var language = document.documentElement.lang;
+      if (!language || language === 'en' || language === 'en-US') return options;
+      try {
+        if (new URL(url, window.location.href).origin !== window.location.origin) return options;
+      } catch (_) {
+        return options;
+      }
+      var headers = new Headers(options && options.headers !== undefined ? options.headers : originalHeaders);
+      headers.set('X-Solstone-Locale', language);
+      return Object.assign({}, options, { headers: headers });
+    };
     (function () {
       function newTable() {
         return { view: null, claimed: false, reads: Object.create(null), stats: {} };
@@ -50,10 +62,10 @@
         try {
           var controller = typeof AbortController === 'function' ? new AbortController() : null;
           var href = new URL(path, window.location.href).href;
-          var response = fetch(href, {
+          var response = fetch(href, window.solWindowRequest(href, {
             credentials: 'same-origin',
             signal: controller ? controller.signal : undefined
-          });
+          }));
           response.catch(function () {});
           early.reads[href] = { response: response, controller: controller, startedAt: Date.now(), expect: expect };
         } catch (_) {}
@@ -167,7 +179,7 @@
   <script src="/static/question.js" defer data-shell-part="boot"></script>
   <script src="/static/shell_boot.js" defer data-shell-part="boot"></script>
 </head>
-<body>
+<body data-presentation-banner="{{journal.window.shell.presentation.banner}}">
 <script>
   // Presentation mode is decided here, once, so its class is on the body
   // before the first paint: ?present=1|on|true turns it on and stores it,
@@ -219,7 +231,7 @@
     </div>
     <div id="version-section" style="margin-top: 12px;">
       <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600;">{{journal.window.shell.version}}</h4>
-      <span id="version-text" style="font-size: 13px; color: var(--ink-faint);">vunknown</span>
+      <span id="version-text" style="font-size: 13px; color: var(--ink-faint);">{{journal.window.shell.version.unknown}}</span>
       <a href="https://solstone.app/install#updating" target="_blank" rel="noreferrer" referrerpolicy="no-referrer" style="margin-left: 8px; font-size: 13px;">{{journal.window.shell.update.link}}</a>
       <div id="security-text" style="margin-top: 4px; font-size: 13px; display: none;"></div>
       <div id="automatic-update-text" style="margin-top: 4px; font-size: 13px; display: none;"></div>
@@ -268,7 +280,31 @@
 <main id="main-content" class="workspace" tabindex="-1">
   <div class="surface-state surface-state--loading" role="status" aria-busy="true">
     <div class="surface-state-spinner" aria-hidden="true"></div>
-    <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading">{{journal.window.shell.loading}}</span>
+    <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading"
+      data-loading-activities="{{journal.window.loading.activities}}"
+      data-loading-agents="{{journal.window.loading.agents}}"
+      data-loading-backup="{{journal.window.loading.backup}}"
+      data-loading-day="{{journal.window.loading.day}}"
+      data-loading-entities="{{journal.window.loading.entities}}"
+      data-loading-facets="{{journal.window.loading.facets}}"
+      data-loading-health="{{journal.window.loading.health}}"
+      data-loading-home="{{journal.window.loading.home}}"
+      data-loading-import="{{journal.window.loading.import}}"
+      data-loading-map="{{journal.window.loading.map}}"
+      data-loading-more="{{journal.window.loading.more}}"
+      data-loading-network="{{journal.window.loading.network}}"
+      data-loading-profile="{{journal.window.loading.profile}}"
+      data-loading-records="{{journal.window.loading.records}}"
+      data-loading-search="{{journal.window.loading.search}}"
+      data-loading-settings="{{journal.window.loading.settings}}"
+      data-loading-sources="{{journal.window.loading.sources}}"
+      data-loading-speakers="{{journal.window.loading.speakers}}"
+      data-loading-stats="{{journal.window.loading.stats}}"
+      data-loading-support="{{journal.window.loading.support}}"
+      data-loading-thinking="{{journal.window.loading.thinking}}"
+      data-loading-transcripts="{{journal.window.loading.transcripts}}"
+      data-loading-year="{{journal.window.loading.year}}"
+      data-loading-other="{{journal.window.loading.other}}">{{journal.window.shell.loading}}</span>
     <span class="surface-state-still" data-role="still-working">{{journal.window.chrome.still.working}}</span>
   </div>
 </main>
@@ -279,23 +315,16 @@
   (function () {
     var el = document.getElementById('shell-first-paint-loading');
     if (!el) { return; }
-    // Four apps name themselves differently in their own first frame, and the
-    // slug would contradict them one frame later. These are those apps' own
-    // words, not new ones.
-    var NAMES = {
-      home: 'your day',
-      network: 'devices',
-      import: 'imports',
-      thinking: 'thinking settings'
-    };
-    // Route slugs the owner never sees anywhere else. A plain "loading…" is
-    // better than internal vocabulary on the first frame.
-    var INTERNAL = { body: 1, curation: 1, tokens: 1, sol: 1, observer: 1, awareness: 1, link: 1 };
+    // Internal route names stay out of the first frame.
+    var internal = { body: 1, curation: 1, tokens: 1, sol: 1, observer: 1, awareness: 1, link: 1 };
     var app = (window.location.pathname.match(/^\/app\/([a-z0-9_-]+)/i) || [])[1];
-    if (app) {
-      var slug = app.toLowerCase();
-      var name = NAMES[slug] || (INTERNAL[slug] ? '' : slug.replace(/[_-]+/g, ' '));
-      if (name) { el.textContent = 'loading ' + name + '\u2026'; }
+    if (!app) return;
+    var slug = app.toLowerCase();
+    var label = el.getAttribute('data-loading-' + slug);
+    if (label !== null && slug !== 'other') {
+      el.textContent = label;
+    } else if (!Object.prototype.hasOwnProperty.call(internal, slug)) {
+      el.textContent = el.getAttribute('data-loading-other').replace('{name}', slug.replace(/[_-]+/g, ' '));
     }
   })();
 </script>

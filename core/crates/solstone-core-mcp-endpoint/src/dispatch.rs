@@ -440,9 +440,14 @@ fn scope_refusal(
 }
 
 pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
+    use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+    let copy = kind
+        .kind_spec()
+        .permission_copy
+        .expect("registered permissions have copy");
     format!(
         "this connection does not have permission to read {}",
-        kind.kind_spec().label
+        text(ENGLISH, copy.label_id)
     )
 }
 

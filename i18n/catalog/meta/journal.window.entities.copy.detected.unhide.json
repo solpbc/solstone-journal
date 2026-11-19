@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_UNHIDE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_UNHIDE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82fb4a6ec73c71e1e76018481079038eab7f82c9dbccaa2b2bd8e9ed8de00ca9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

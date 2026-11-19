@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's speakers view.",
+  "context": "Journal window, speakers view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5c146bb73eaf0a75cd16188de597cc60a2c730b74da06725312d387812be806",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_HEADING in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_HEADING.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ddf712fb567c66057769446970ffb6ccbd6afe55ab7797cc7938e084dbe85643",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_GRID_DEFAULT_DAY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_GRID_DEFAULT_DAY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa3f2e54acf2f7a4ebac44499921d7f2575782923c92ce461c45485d6f915bc0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

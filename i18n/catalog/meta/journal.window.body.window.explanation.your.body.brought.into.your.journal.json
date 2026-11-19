@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's body view.",
+  "context": "Journal window, body view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "def463d36eeeb67e1fb4de9427f8a733e9f25ff5f5a22f6390e54ec9c46e05e1",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

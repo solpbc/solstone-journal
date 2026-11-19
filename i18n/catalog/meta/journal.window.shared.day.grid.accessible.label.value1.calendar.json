@@ -1,0 +1,28 @@
+{
+  "description": "Accessible label in the journal's shared.day.grid view.",
+  "context": "Journal window, shared.day.grid view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38017ecd9855f3d8379c7cf97a7ea2b62c2915c546e16a133c681b66cabc82da",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

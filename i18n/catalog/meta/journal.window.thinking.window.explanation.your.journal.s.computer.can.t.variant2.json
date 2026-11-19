@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's thinking view.",
+  "context": "Journal window, thinking view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e9dc7e4e2e7e396d09797da28e4b04cfc2d9f883f73dabe9f78423d2972526b",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

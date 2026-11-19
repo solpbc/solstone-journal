@@ -1,0 +1,16 @@
+{
+  "description": "Discovery not ran in the journal's speakers view.",
+  "context": "Journal window, speakers view. Discovery not ran.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d60383b459c5f26a5dfc9f257c236bd4c83756551cf975329599d54fa59a82e9",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

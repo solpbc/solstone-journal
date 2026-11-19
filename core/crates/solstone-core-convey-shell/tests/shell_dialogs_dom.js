@@ -14,6 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const crateDir = path.resolve(__dirname, '..');
 const staticDir = path.join(crateDir, 'assets', 'static');
@@ -422,7 +423,7 @@ function makePage(options = {}) {
   win.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
   win.navigator = { userAgent: 'node' };
 
-  const context = vm.createContext({
+  const context = journalContext({
     window: win,
     document: doc,
     Element,

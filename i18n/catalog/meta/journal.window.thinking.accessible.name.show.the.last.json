@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's thinking view.",
+  "context": "Journal window, thinking view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64bc9dd6d91c57e7ad56f5f6b258f32242820e487d49b7503534bae421f238f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

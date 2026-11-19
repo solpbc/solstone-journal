@@ -1,0 +1,16 @@
+{
+  "description": "Sme already enabled detail in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme already enabled detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d4ee824b241c55f4defb49602203f676496bcc63a34c2be23b596d0a3158f48",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

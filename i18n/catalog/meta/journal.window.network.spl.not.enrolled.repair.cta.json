@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, spl not enrolled repair cta.",
+  "context": "Network view copy, spl not enrolled repair cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "4978fec6f335eb2126deb2e3e7d589101dbc03f907fecda7a42641b881f7016a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

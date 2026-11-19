@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's more view.",
+  "context": "Journal window, more view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "480b0f15163d94b73c4c396ddd08e5b0ae643fb792210a8468598e244cc85789",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

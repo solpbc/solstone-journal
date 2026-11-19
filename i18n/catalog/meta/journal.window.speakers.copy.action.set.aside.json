@@ -1,0 +1,16 @@
+{
+  "description": "Action set aside in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Action set aside.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fed1c35288fcae0cfc0ea764f8d2936e9f90eb606cb93623c48db4380f99723",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

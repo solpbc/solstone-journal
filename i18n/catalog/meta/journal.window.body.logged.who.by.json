@@ -1,0 +1,28 @@
+{
+  "description": "Body display logged who by in the journal's body view.",
+  "context": "Journal window, body view. Body display logged who by.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf36db6b5424c884c8868dfa1ba58d913b2e121ad7e4901233ec6de00331d339",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

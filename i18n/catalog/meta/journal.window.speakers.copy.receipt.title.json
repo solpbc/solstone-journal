@@ -1,0 +1,23 @@
+{
+  "description": "Receipt title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Receipt title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4951b1e426e5cfd552cbfe73f5c6a37f5ce5d6d010adcd59b3d3ff73370aac24",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

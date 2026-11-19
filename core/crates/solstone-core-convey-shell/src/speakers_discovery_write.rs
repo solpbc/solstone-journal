@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -106,7 +108,12 @@ pub(crate) fn preflight_identify_cluster(
     Ok(())
 }
 
-pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+pub async fn identify(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let body = match body(request).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -182,7 +189,7 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             {
                 return command(error, StatusCode::INTERNAL_SERVER_ERROR);
             }
-            map(value)
+            map(locale, value)
         }
         Err(error) => identify_error(error.to_string()),
     }
@@ -194,8 +201,10 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
 /// corrections and voiceprints, and the pool voice is confirmed.
 pub async fn identify_voice(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let body = match body(request).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -315,11 +324,16 @@ pub async fn identify_voice(
             &value.to_string(),
             StatusCode::BAD_REQUEST,
         ),
-        _ => map(value),
+        _ => map(locale, value),
     }
 }
 
-pub async fn undo(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+pub async fn undo(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let body = match body(request).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -336,7 +350,7 @@ pub async fn undo(Extension(root): Extension<Arc<JournalRoot>>, request: Request
         operation_id.trim(),
         &encoder(),
     ) {
-        Ok(value) => map(value),
+        Ok(value) => map(locale, value),
         Err(error) => identify_error(error.to_string()),
     }
 }
@@ -602,7 +616,7 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
         width: 256,
     }
 }
-fn map(value: Value) -> Response {
+fn map(locale: &str, value: Value) -> Response {
     match value.get("status").and_then(Value::as_str).unwrap_or("") {
         "identified" | "resolved" | "ambiguous" | "no_match" | "principal_match" | "undone"
         | "already_undone" => Json(value).into_response(),
@@ -636,7 +650,7 @@ fn map(value: Value) -> Response {
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
-        "invalid_request" => invalid_request(&value),
+        "invalid_request" => invalid_request(locale, &value),
         _ => command(
             format!(
                 "Unexpected speaker identify result status: {}",
@@ -652,14 +666,17 @@ fn map(value: Value) -> Response {
 
 /// Refuse an identify request, keeping the fields the "who is this" sheet
 /// reads to recover, such as refreshing a stale set of reviewed near matches.
-fn invalid_request(value: &Value) -> Response {
+fn invalid_request(locale: &str, value: &Value) -> Response {
     let detail = value
         .get("error")
         .and_then(Value::as_str)
         .unwrap_or("invalid request");
     let (status, Json(envelope)) = error_envelope(
         "invalid_request_value",
-        "that request couldn't be used.",
+        window_catalog::text(
+            locale,
+            "journal.window.speakers.error.that.request.couldn.t.be.used",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     );
@@ -742,6 +759,8 @@ mod tests {
     use sha2::{Digest, Sha256};
     use solstone_core_journal_io::SegmentLayout;
 
+    use crate::window_catalog;
+
     #[test]
     fn canonical_members_are_tuple_sorted_and_deduplicated() {
         let members = canonical_members(&[
@@ -773,11 +792,14 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_identify_keeps_the_sheet_recovery_code() {
-        let response = map(json!({
-            "status":"invalid_request",
-            "error":"reviewed_near_match_entity_ids must match shown near matches",
-            "invalid_request_code":"reviewed_near_match_set_mismatch",
-        }))
+        let response = map(
+            window_catalog::ENGLISH,
+            json!({
+                "status":"invalid_request",
+                "error":"reviewed_near_match_entity_ids must match shown near matches",
+                "invalid_request_code":"reviewed_near_match_set_mismatch",
+            }),
+        )
         .into_response();
         assert_eq!(response.status(), 400);
         let body: serde_json::Value = serde_json::from_slice(
@@ -796,20 +818,29 @@ mod tests {
     #[test]
     fn identify_status_classes_match_the_http_contract() {
         for status in ["recoverable", "repair_required", "conflict"] {
-            assert_eq!(map(json!({"status":status})).into_response().status(), 409);
+            assert_eq!(
+                map(window_catalog::ENGLISH, json!({"status":status}))
+                    .into_response()
+                    .status(),
+                409
+            );
         }
         assert_eq!(
-            map(json!({"status":"not_found"})).into_response().status(),
+            map(window_catalog::ENGLISH, json!({"status":"not_found"}))
+                .into_response()
+                .status(),
             404
         );
         assert_eq!(
-            map(json!({"status":"invalid_request"}))
+            map(window_catalog::ENGLISH, json!({"status":"invalid_request"}))
                 .into_response()
                 .status(),
             400
         );
         assert_eq!(
-            map(json!({"status":"unexpected"})).into_response().status(),
+            map(window_catalog::ENGLISH, json!({"status":"unexpected"}))
+                .into_response()
+                .status(),
             500
         );
     }

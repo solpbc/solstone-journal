@@ -1,0 +1,46 @@
+{
+  "description": "Body display import old listing in the journal's body view.",
+  "context": "Journal window, body view. Body display import old listing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "span",
+      "type": "string"
+    },
+    {
+      "name": "action",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa5298091330f3a572c00aa48bac621524cf06ce19bfcf98572b33f1dd1d48cb",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

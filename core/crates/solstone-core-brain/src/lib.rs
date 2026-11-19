@@ -44,8 +44,9 @@ pub use inspect::{
     project_brain_state, read_fingerprint_key_material,
 };
 pub use presentation::{
-    BrainEvidencePresentation, BrainPresentation, brain_reason_text, lane_label,
-    present_brain_inspection, processing_headline_for_reason, provider_model_text,
+    BrainEvidencePresentation, BrainPresentation, brain_reason_text, brain_reason_text_in,
+    lane_label, present_brain_inspection, present_brain_inspection_in,
+    processing_headline_for_reason, provider_model_text,
 };
 pub use record::{
     BrainStateRecord, CredentialRejectionHold, ValidationError, evidence_component_for_reason,

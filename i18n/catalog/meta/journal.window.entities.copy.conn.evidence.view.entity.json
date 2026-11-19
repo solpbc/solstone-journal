@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_EVIDENCE_VIEW_ENTITY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_EVIDENCE_VIEW_ENTITY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d00ef2e2bd648fb5ccbc582b829f5894e943deff97840b98a58105e8de19bc9c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

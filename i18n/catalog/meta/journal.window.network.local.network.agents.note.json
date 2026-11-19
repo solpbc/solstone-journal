@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network agents note.",
+  "context": "Network view copy, local network agents note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 176,
+  "source_revision": "5000868b95841652547c264941bb3c42735612f03ee68edbdd64a4b6de8f74d0",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

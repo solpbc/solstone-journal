@@ -3,15 +3,33 @@
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use serde_json::Value;
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::window_catalog::{ENGLISH, resolve_table, text};
 use std::sync::LazyLock;
 
 pub const ENTITY_TYPES: [&str; 4] = ["Person", "Company", "Project", "Tool"];
 pub const ATTENDANCE_KINDS: [&str; 3] = ["attended-with", "co-present", "scheduled-with"];
-pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
+static ENTITIES_COPY_IDS: LazyLock<Value> = LazyLock::new(|| {
     serde_json::from_str(include_str!("data/entities_copy.json"))
         .expect("entities_copy.json is valid JSON")
 });
+pub static ENTITIES_COPY: LazyLock<Value> = LazyLock::new(|| entities_copy(ENGLISH));
+
+pub fn entities_copy(locale: &str) -> Value {
+    let mut copy = ENTITIES_COPY_IDS.clone();
+    resolve_table(locale, &mut copy);
+    copy
+}
+
+pub fn copy_text(locale: &str, key: &str) -> String {
+    text(
+        locale,
+        ENTITIES_COPY_IDS[key]
+            .as_str()
+            .expect("entities message ID"),
+    )
+}
 
 /// How connection reads see merged and deleted entities: each merged id's
 /// rows count under the live entity it joined, and an id no entity holds
@@ -37,19 +55,15 @@ pub fn edge_aliases(journal_root: &std::path::Path) -> solstone_core_indexer_que
 }
 
 pub fn compose_connections_horizon_note(earlier_days: usize) -> String {
+    connections_horizon_note(ENGLISH, earlier_days)
+}
+
+pub fn connections_horizon_note(locale: &str, earlier_days: usize) -> String {
     debug_assert!(earlier_days >= 1);
     if earlier_days == 1 {
-        ENTITIES_COPY
-            .get("ENT_CONN_HORIZON_ONE")
-            .and_then(serde_json::Value::as_str)
-            .expect("ENT_CONN_HORIZON_ONE")
-            .to_owned()
+        copy_text(locale, "ENT_CONN_HORIZON_ONE")
     } else {
-        ENTITIES_COPY
-            .get("ENT_CONN_HORIZON")
-            .and_then(serde_json::Value::as_str)
-            .expect("ENT_CONN_HORIZON")
-            .replace("{n}", &earlier_days.to_string())
+        copy_text(locale, "ENT_CONN_HORIZON").replace("{n}", &earlier_days.to_string())
     }
 }
 

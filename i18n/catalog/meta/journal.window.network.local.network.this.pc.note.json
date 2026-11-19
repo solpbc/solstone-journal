@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network this pc note.",
+  "context": "Network view copy, local network this pc note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 426,
+  "source_revision": "9773fefbe2b0a94a4988eb76bacd717c4c07d689b3408af33fb8849628c31e9a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

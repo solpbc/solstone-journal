@@ -1,0 +1,16 @@
+{
+  "description": "Confidential Thinking unavailable on this platform in the journal's thinking view.",
+  "context": "Journal window, thinking view. Confidential Thinking unavailable on this platform.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d584c5109d11d009be097399f3c397d6710234ed6a5b4ce269603a33cefe24fe",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

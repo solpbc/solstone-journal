@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach loading in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach loading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f5a014df27670248e3a3a57300cc56dfa0de18ef52ae6b73342b23676d5a15a",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

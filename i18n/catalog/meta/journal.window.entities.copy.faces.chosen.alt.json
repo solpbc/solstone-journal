@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_FACES_CHOSEN_ALT in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_CHOSEN_ALT.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc238f44be04feb53f7fcc47d5a6f32fd48e750f0ee773cab48392755a851dd6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

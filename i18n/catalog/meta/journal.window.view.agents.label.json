@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.agents view.",
+  "context": "Journal window, view.agents view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "843478e7681686c2831d9361c987be1a601e8e204360fe6971255f681b2f7348",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

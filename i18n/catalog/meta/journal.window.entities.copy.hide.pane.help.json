@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_HIDE_PANE_HELP in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_HIDE_PANE_HELP.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b44046054d77258d267242aeda05d3baf89016c6c66317d97d12028ac45fb81b",
+  "max_length": 172,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

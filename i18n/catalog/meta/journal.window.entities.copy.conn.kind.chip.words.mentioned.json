@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_CHIP_WORDS mentioned in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_CHIP_WORDS mentioned.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7c88fa22a9e2e00ba33e159d07866a8bf929657263937f273d76dc84778086c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

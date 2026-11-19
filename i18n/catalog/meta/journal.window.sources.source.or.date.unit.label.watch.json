@@ -1,0 +1,16 @@
+{
+  "description": "Source or date unit label in the journal's sources view.",
+  "context": "Journal window, sources view. Source or date unit label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f34e874814d3c26cbd92a557a9a3f32b31a1ab43dff07a702e3c347b9d902d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

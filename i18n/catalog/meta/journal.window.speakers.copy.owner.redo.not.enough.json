@@ -1,0 +1,16 @@
+{
+  "description": "Owner redo not enough in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner redo not enough.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d807d0dcc2f25fbd41e2a357affc06996658dff7dadb2f57fae72d90e8d7f16",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Near match band in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Near match band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81679502df15c2fbe3e4c2a94062d32f2d907e07e8770f505a74421e228ce85f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

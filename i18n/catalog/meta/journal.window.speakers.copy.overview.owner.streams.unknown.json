@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner streams unknown in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner streams unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c2620710911a4b57544da9f9781cba02c4e0d7d6afee3d0ddecefa6a8d44c65",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

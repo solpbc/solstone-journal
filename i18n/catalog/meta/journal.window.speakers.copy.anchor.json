@@ -1,0 +1,16 @@
+{
+  "description": "Anchor in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Anchor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2084d849f1028b794dfc720cc372588fc99ab97fe5e53393db80b4980e6098d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

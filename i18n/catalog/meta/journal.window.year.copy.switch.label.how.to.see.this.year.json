@@ -1,0 +1,16 @@
+{
+  "description": "Copy switch label in the journal's year view.",
+  "context": "Journal window, year view. Copy switch label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da1bd98836596f851b4d3bdc3fe8c5fc96d3706ce328cb65ee75b23688ebc864",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

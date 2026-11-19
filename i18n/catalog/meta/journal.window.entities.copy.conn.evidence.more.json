@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_CONN_EVIDENCE_MORE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_EVIDENCE_MORE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd4dc8658f9c36f887fc5647976eed008c89c965c500fdf848d21032ae11ea27",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

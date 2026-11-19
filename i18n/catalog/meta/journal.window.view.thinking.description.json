@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.thinking view.",
+  "context": "Journal window, view.thinking view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "805a6ac1c1682bcf3ef625fb303dc7607fce05b5bc4fd7d7fe69f3367e7818e9",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

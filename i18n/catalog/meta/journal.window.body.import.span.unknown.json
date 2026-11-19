@@ -1,0 +1,16 @@
+{
+  "description": "Body display import span unknown in the journal's body view.",
+  "context": "Journal window, body view. Body display import span unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f13116d8efb16b071477af5f1b0e2e787fe825bac0802ad71470c69ef63ecea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

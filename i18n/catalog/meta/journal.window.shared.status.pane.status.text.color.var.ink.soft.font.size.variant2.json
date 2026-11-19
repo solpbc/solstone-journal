@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4eb0b1b8ae6846c98839af828639e21c68f0a839b52bfb50ea87ff614c5f7b3d",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

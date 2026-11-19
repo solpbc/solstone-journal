@@ -1,0 +1,16 @@
+{
+  "description": "Folder duplicates in the journal's entities view.",
+  "context": "Journal window, entities view. Folder duplicates.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14b38c2d01cb2f889d77ee974a263e1c5b815d67a7a75bbe4f58573686e595c8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

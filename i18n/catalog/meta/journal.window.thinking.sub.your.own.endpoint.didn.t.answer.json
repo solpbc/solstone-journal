@@ -1,0 +1,16 @@
+{
+  "description": "Sub in the journal's thinking view.",
+  "context": "Journal window, thinking view. Sub.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b15303666008f5e9ac6d3226014130e7b5390e9bd91c86c973f4185275b75f9",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

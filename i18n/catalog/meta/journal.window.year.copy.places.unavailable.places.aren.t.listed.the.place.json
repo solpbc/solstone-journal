@@ -1,0 +1,16 @@
+{
+  "description": "Copy places unavailable in the journal's year view.",
+  "context": "Journal window, year view. Copy places unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a4b97b9e22b9d21a91d549c390016d1b5ea236061d9551ee242b6ad4cba3161",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

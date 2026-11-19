@@ -1,0 +1,16 @@
+{
+  "description": "Body display date am in the journal's body view.",
+  "context": "Journal window, body view. Body display date am.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "613e4173e8a9bf4936bb7a46f1759fdb5e8e53a9e4fb94e018f0e6b9ebc5130f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

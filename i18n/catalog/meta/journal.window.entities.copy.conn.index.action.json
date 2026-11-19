@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_INDEX_ACTION in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_INDEX_ACTION.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51a5b952f6696af896596c3a5ec7fbcd915be781a82c7d440efd1518a748f755",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

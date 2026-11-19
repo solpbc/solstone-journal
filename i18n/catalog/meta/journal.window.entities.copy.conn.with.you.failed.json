@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_WITH_YOU_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_WITH_YOU_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afdbfa9481781404aaae8d268d3e4701eb8d8c90276c27d8258086b31f8ac1e6",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Thinking brain reason in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking brain reason.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d67da76f1b178b73313b3ba30f994366be9660dd5c5733994f25934b79f3f5c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

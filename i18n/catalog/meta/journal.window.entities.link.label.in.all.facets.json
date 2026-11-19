@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's entities view.",
+  "context": "Journal window, entities view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03af48523244788ac4947ecaf6a2e1228f45405e45e24bccda67d84ccd128141",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

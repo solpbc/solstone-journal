@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's entities view.",
+  "context": "Journal window, entities view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "402381795c9eb06b57e4d567f0e3b04309896c351e4e96474ca28140c8b40594",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

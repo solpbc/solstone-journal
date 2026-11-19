@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_WORDS uses in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_WORDS uses.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2ad8031820ae0de729b8b1ac8e11472bb33a4f8aab4c18f0c2879de5b6aa8e3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

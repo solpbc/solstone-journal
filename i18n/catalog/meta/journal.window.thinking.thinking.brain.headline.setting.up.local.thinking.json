@@ -1,0 +1,16 @@
+{
+  "description": "Thinking brain headline in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking brain headline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "217a96fc0e80e715c6bfff86317fa0bf376e22061e35a2d2f6e92e86b7435193",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

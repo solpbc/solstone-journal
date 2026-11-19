@@ -1,0 +1,16 @@
+{
+  "description": "Byo relay copy relay_not_configured in the journal's agents view.",
+  "context": "Journal window, agents view. Byo relay copy relay_not_configured.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2f3c2839cc278b1ca3d72accd7f1124017757412fb9e9445d277b8962961c8b",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

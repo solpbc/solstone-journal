@@ -1181,25 +1181,25 @@ a.body-day-cell:focus-visible {
   // Each string is set where its copy key says.
   const HIDE_API = "/app/body/api/hidden";
   const HIDE_COPY = {
-    hide: "hide this day",
-    hideLabel: "hide body data from {day}",
-    receiptTitle: "body data from {day} is hidden.",
-    receiptMessage: "it stays hidden when you import or sync it again.",
-    receiptNoSearch: "search and connected agents may still find it.",
-    tryAgain: "try again",
-    unhide: "unhide",
-    hideFailed: "couldn't hide this day. nothing changed.",
-    unhideFailed: "couldn't unhide this day. nothing changed.",
-    noAnswer: "your journal didn't answer",
-    noAnswerHide: "it may already be hidden. reload to check.",
-    noAnswerUnhide: "it may already be unhidden. reload to check.",
-    markHead: "you hid this day's body data",
-    markLine1: "it's still in your journal, and it stays hidden when you import or sync it again.",
-    markLine2: "search and the activities page leave it out, and connected agents can't reach it. a night that starts on this day is hidden with it, after midnight too.",
-    markUnhide: "unhide this day",
-    dayAfter: "the rest of a night or workout from {day}, a day you hid, is hidden here too.",
-    gridFoot: "striped days are ones you hid.",
-    unreadable: "your journal can't read which days you hid, so every day shows here, and you can't hide or unhide one. until it can, search and connected agents leave out all your body data.",
+    hide: window.JournalI18n.render('journal.window.body.hide.copy.hide.hide.this.day'),
+    hideLabel: window.JournalI18n.render('journal.window.body.hide.copy.hide.label.hide.body.data.from.day'),
+    receiptTitle: window.JournalI18n.render('journal.window.body.hide.copy.receipt.title.body.data.from.day.is.hidden'),
+    receiptMessage: window.JournalI18n.render('journal.window.body.hide.copy.receipt.message.it.stays.hidden.when.you.import'),
+    receiptNoSearch: window.JournalI18n.render('journal.window.body.hide.copy.receipt.no.search.search.and.connected.agents.may.still'),
+    tryAgain: window.JournalI18n.render('journal.window.body.hide.copy.try.again.try.again'),
+    unhide: window.JournalI18n.render('journal.window.body.hide.copy.unhide.unhide'),
+    hideFailed: window.JournalI18n.render('journal.window.body.hide.copy.hide.failed.couldn.t.hide.this.day.nothing'),
+    unhideFailed: window.JournalI18n.render('journal.window.body.hide.copy.unhide.failed.couldn.t.unhide.this.day.nothing'),
+    noAnswer: window.JournalI18n.render('journal.window.body.hide.copy.no.answer.your.journal.didn.t.answer'),
+    noAnswerHide: window.JournalI18n.render('journal.window.body.hide.copy.no.answer.hide.it.may.already.be.hidden.reload'),
+    noAnswerUnhide: window.JournalI18n.render('journal.window.body.hide.copy.no.answer.unhide.it.may.already.be.unhidden.reload'),
+    markHead: window.JournalI18n.render('journal.window.body.hide.copy.mark.head.you.hid.this.day.s.body'),
+    markLine1: window.JournalI18n.render('journal.window.body.hide.copy.mark.line1.it.s.still.in.your.journal'),
+    markLine2: window.JournalI18n.render('journal.window.body.hide.copy.mark.line2.search.and.the.activities.page.leave'),
+    markUnhide: window.JournalI18n.render('journal.window.body.hide.copy.mark.unhide.unhide.this.day'),
+    dayAfter: window.JournalI18n.render('journal.window.body.hide.copy.day.after.the.rest.of.a.night.or'),
+    gridFoot: window.JournalI18n.render('journal.window.body.hide.copy.grid.foot.striped.days.are.ones.you.hid'),
+    unreadable: window.JournalI18n.render('journal.window.body.hide.copy.unreadable.your.journal.can.t.read.which'),
   };
 
   function renderHeader(title, subtitle, backLink, options = {}) {
@@ -1212,7 +1212,7 @@ a.body-day-cell:focus-visible {
       '<header class="body-header">',
       showTitle ? `<h1 class="body-title">${escapeHtml(title)}</h1>` : "",
       subtitle ? `<p class="body-subtitle">${escapeHtml(subtitle)}</p>` : "",
-      backLink ? `<nav class="body-nav${options.day ? " body-day-nav" : ""}" aria-label="body views"><a class="body-link" href="/app/body/">&larr; body overview</a>${hide}</nav>` : "",
+      backLink ? `<nav class="body-nav${options.day ? " body-day-nav" : ""}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.body.views')}"><a class="body-link" href="/app/body/">${window.JournalI18n.renderHtml('journal.window.body.link.label.body.overview.variant2')}</a>${hide}</nav>` : "",
       '</header>',
     ]);
   }
@@ -1239,7 +1239,7 @@ a.body-day-cell:focus-visible {
       `<p class="body-hidden-copy" data-copy-key="markLine1">${escapeHtml(HIDE_COPY.markLine1)}</p>`,
       `<p class="body-hidden-copy" data-copy-key="markLine2">${escapeHtml(HIDE_COPY.markLine2)}</p>`,
       `<button type="button" class="body-btn body-btn--outline" data-body-unhide="${escapeHtml(day)}" data-copy-key="markUnhide">${icon("eye")}<span>${escapeHtml(HIDE_COPY.markUnhide)}</span></button>`,
-      (nearest.prev || nearest.next) ? `<p class="body-hidden-near">nearby days with data: ${nearbyDays(nearest)}</p>` : "",
+      (nearest.prev || nearest.next) ? `<p class="body-hidden-near">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nearby.days.with.data')} ${nearbyDays(nearest)}</p>` : "",
       '</section>',
     ]);
   }
@@ -1262,8 +1262,8 @@ a.body-day-cell:focus-visible {
     const anyHidden = blocks.some((block) => asArray(block.weeks).some((week) => asArray(week).some((cell) => cell && cell.hidden)));
     return html([
       '<section class="body-card body-section" aria-labelledby="body-history-title">',
-      '<h2 id="body-history-title" class="body-section-title">every day held</h2>',
-      '<div class="body-days" role="group" aria-label="days your journal holds body data">',
+      `<h2 id="body-history-title" class="body-section-title">${window.JournalI18n.renderHtml('journal.window.body.section.heading.every.day.held')}</h2>`,
+      `<div class="body-days" role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.days.your.journal.holds.body.data')}">`,
       blocks.map((block) => html([
         '<div class="body-days-year">',
         `<span class="body-days-year-label body-num" aria-hidden="true">${escapeHtml(block.year)}</span>`,
@@ -1303,7 +1303,7 @@ a.body-day-cell:focus-visible {
     if (!list.length) return "";
     return html([
       '<section class="body-card body-section" aria-labelledby="body-sources-title">',
-      '<h2 id="body-sources-title" class="body-section-title">sources held</h2>',
+      `<h2 id="body-sources-title" class="body-section-title">${window.JournalI18n.renderHtml('journal.window.body.section.heading.sources.held')}</h2>`,
       '<ul class="body-list">',
       list.map((item) => `<li><span>${escapeHtml(item.name)}</span><strong class="body-num">${escapeHtml(item.first_label)} &ndash; ${escapeHtml(item.last_label)} &middot; ${escapeHtml(item.days_label)}</strong></li>`).join(""),
       '</ul></section>',
@@ -1331,10 +1331,10 @@ a.body-day-cell:focus-visible {
     if (!fresh.length && !old.length) return "";
     return html([
       '<section class="body-card body-section" aria-labelledby="body-imports-title">',
-      '<h2 id="body-imports-title" class="body-section-title">imports</h2>',
+      `<h2 id="body-imports-title" class="body-section-title">${window.JournalI18n.renderHtml('journal.window.body.section.heading.imports')}</h2>`,
       fresh.length ? `<ul class="body-import-list">${fresh.map(renderNewImport).join("")}</ul>` : "",
       old.length ? html([
-        '<h3 class="body-card-label">earlier imports, kept but not read here</h3>',
+        `<h3 class="body-card-label">${window.JournalI18n.renderHtml('journal.window.body.section.heading.earlier.imports.kept.but.not.read')}</h3>`,
         `<ul class="body-import-list">${old.map((item) => `<li data-source="${escapeHtml(item.source)}">${escapeHtml(item.line)}</li>`).join("")}</ul>`,
       ]) : "",
       '</section>',
@@ -1351,12 +1351,12 @@ a.body-day-cell:focus-visible {
     const imports = status.imports;
     if (!hasDays && !asArray(imports?.new).length && !asArray(imports?.old).length) {
       return html([
-        renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in your workouts from a Strava download on the <a href="/app/import/">import page</a>. if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer\'s command line. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports</a>.</p>',
+        renderHeader(window.JournalI18n.render('journal.window.view.body.label'), window.JournalI18n.render('journal.window.body.window.explanation.your.body.brought.into.your.journal'), false),
+        `<p class="body-subtitle">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nothing.here.yet.bring.in.your')} <a href="/app/import/">${window.JournalI18n.renderHtml('journal.window.body.link.label.import.page')}</a>. ${window.JournalI18n.renderHtml('journal.window.body.empty.import.options')} <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">${window.JournalI18n.renderHtml('journal.window.body.link.label.read.about.body.imports')}</a>.</p>`,
       ]);
     }
     return html([
-      renderHeader("body", "your body, brought into your journal.", false),
+      renderHeader(window.JournalI18n.render('journal.window.view.body.label'), window.JournalI18n.render('journal.window.body.window.explanation.your.body.brought.into.your.journal'), false),
       status.hidden_unreadable ? renderUnreadableStrip() : "",
       renderSources(status.sources),
       renderDayGrid(status.day_grid),
@@ -1367,11 +1367,11 @@ a.body-day-cell:focus-visible {
   function renderEmptyDay(bodyDay, heldEarlier) {
     const nearest = asObject(bodyDay.nearest);
     return html([
-      '<section class="body-card" aria-label="empty day">',
-      heldEarlier ? "" : '<p class="body-empty">nothing for this day.</p>',
+      `<section class="body-card" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.empty.day')}">`,
+      heldEarlier ? "" : `<p class="body-empty">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nothing.for.this.day')}</p>`,
       (nearest.prev || nearest.next)
-        ? `<p>nearby days with data: ${nearbyDays(nearest)}</p>`
-        : '<p class="body-muted"><a class="body-link" href="/app/body/">body overview &rarr;</a></p>',
+        ? `<p>${window.JournalI18n.renderHtml('journal.window.body.visible.text.nearby.days.with.data')} ${nearbyDays(nearest)}</p>`
+        : `<p class="body-muted"><a class="body-link" href="/app/body/">${window.JournalI18n.renderHtml('journal.window.body.link.label.body.overview')}</a></p>`,
       '</section>',
     ]);
   }
@@ -1386,7 +1386,7 @@ a.body-day-cell:focus-visible {
     const id = escapeHtml(workout.strava_activity_id);
     const details = asArray(workout.details);
     const more = asArray(workout.more_from_strava);
-    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>more from Strava &middot; <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} ${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava')}</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.delete')} ${escapeHtml(workout.name)}">${window.JournalI18n.renderHtml('journal.window.body.button.label.delete')}</button>${details.length ? `<span class="body-workout-details">${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava.s.figures')} ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>${window.JournalI18n.renderHtml('journal.window.body.disclosure.label.more.from.strava')} <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
   }
 
   // Deleting a Strava workout moves every piece of it, on every day it covers, to
@@ -1396,28 +1396,28 @@ a.body-day-cell:focus-visible {
   const TRASH_PAGE = "/app/settings#trash";
   const WORKOUT_COPY = {
     move: {
-      title: "delete this workout?",
-      reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
-      stays: "activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.",
+      title: window.JournalI18n.render('journal.window.body.title.delete.this.workout'),
+      reach: window.JournalI18n.render('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2'),
+      stays: window.JournalI18n.render('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2'),
     },
     erase: {
-      title: "erase this workout now?",
-      reach: "it leaves your journal now and can't be recovered.",
-      stays: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+      title: window.JournalI18n.render('journal.window.body.title.erase.this.workout.now'),
+      reach: window.JournalI18n.render('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and'),
+      stays: window.JournalI18n.render('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from'),
     },
-    again: "importing a Strava download again brings this workout back. a day you hide stays hidden when you import it again.",
-    buttons: { eraseNow: "erase now", cancel: "cancel", moveToTrash: "move to trash", back: "back", recover: "recover", openTrash: "open trash" },
+    again: window.JournalI18n.render('journal.window.body.workout.copy.again.importing.a.strava.download.again.brings'),
+    buttons: { eraseNow: window.JournalI18n.render('journal.window.body.workout.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.body.workout.copy.cancel.cancel'), moveToTrash: window.JournalI18n.render('journal.window.body.workout.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.body.workout.copy.back.back'), recover: window.JournalI18n.render('journal.window.body.workout.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.body.workout.copy.open.trash.open.trash') },
     receipt: {
-      moved: { title: "moved to the trash", message: "erases {date} unless you recover it." },
-      recovered: { title: "workout recovered", message: "it's back in your journal." },
-      erased: { title: "workout erased from your journal" },
-      recoverFailed: { title: "couldn't recover that workout", message: "it's still in the trash. you can try again from there." },
-      moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
-      eraseRefused: { title: "couldn't erase that workout", message: "it's still in your journal." },
-      eraseFailed: { title: "couldn't erase that workout", message: "it's in the trash. you can try again from there." },
-      noAnswerMove: { title: "your journal didn't answer", message: "it may already be in the trash. reload to check." },
-      noAnswerErase: { title: "your journal didn't answer", message: "it may already be erased. reload to check." },
-      noAnswerRecover: { title: "your journal didn't answer", message: "it may already be back in your journal. reload to check." },
+      moved: { title: window.JournalI18n.render('journal.window.body.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.body.message.erases.date.unless.you.recover.it') },
+      recovered: { title: window.JournalI18n.render('journal.window.body.title.workout.recovered'), message: window.JournalI18n.render('journal.window.body.message.it.s.back.in.your.journal') },
+      erased: { title: window.JournalI18n.render('journal.window.body.title.workout.erased.from.your.journal') },
+      recoverFailed: { title: window.JournalI18n.render('journal.window.body.title.couldn.t.recover.that.workout'), message: window.JournalI18n.render('journal.window.body.message.it.s.still.in.the.trash') },
+      moveRefused: { title: window.JournalI18n.render('journal.window.body.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.body.message.it.s.still.in.your.journal') },
+      eraseRefused: { title: window.JournalI18n.render('journal.window.body.title.couldn.t.erase.that.workout'), message: window.JournalI18n.render('journal.window.body.message.it.s.still.in.your.journal') },
+      eraseFailed: { title: window.JournalI18n.render('journal.window.body.title.couldn.t.erase.that.workout'), message: window.JournalI18n.render('journal.window.body.message.it.s.in.the.trash.you') },
+      noAnswerMove: { title: window.JournalI18n.render('journal.window.body.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.body.message.it.may.already.be.in.the') },
+      noAnswerErase: { title: window.JournalI18n.render('journal.window.body.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.body.message.it.may.already.be.erased.reload') },
+      noAnswerRecover: { title: window.JournalI18n.render('journal.window.body.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.body.message.it.may.already.be.back.in') },
     },
   };
   function bodyToast(options) {
@@ -1705,7 +1705,7 @@ a.body-day-cell:focus-visible {
         node.classList.toggle("body-trash-erase", erasing);
         node.setAttribute("aria-label", copy.title);
         node.innerHTML = html([
-          `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="close">&times;</button></div>`,
+          `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.close')}">&times;</button></div>`,
           `<div class="body-trash-body"><div class="body-trash-note" data-workout-step="${step}"><p class="body-trash-meta"><strong>${escapeHtml(meta)}</strong></p><p>${escapeHtml(copy.reach)}</p><p>${escapeHtml(copy.stays)}</p><p>${escapeHtml(WORKOUT_COPY.again)}</p></div></div>`,
           erasing
             ? `<div class="body-trash-foot"><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-back>${escapeHtml(WORKOUT_COPY.buttons.back)}</button><button type="button" class="body-trash-btn body-trash-danger-fill" data-workout-erase>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button></span></div>`
@@ -1756,7 +1756,7 @@ a.body-day-cell:focus-visible {
 
     async function loadOverview() {
       const asked = epoch;
-      setLoading("loading body data…");
+      setLoading(window.JournalI18n.render('journal.window.body.window.state.text.loading.body.data'));
       try {
         const status = await read("/app/body/api/status");
         if (asked !== epoch || ctx.disposed) return;
@@ -1766,14 +1766,14 @@ a.body-day-cell:focus-visible {
         ctx.ready(hasData ? "content" : "empty");
       } catch (err) {
         if (asked !== epoch || ctx.disposed) return;
-        showError("couldn't load your body data", err, () => loadOverview());
+        showError(window.JournalI18n.render('journal.window.body.status.text.couldn.t.load.your.body.data'), err, () => loadOverview());
         ctx.ready("error");
       }
     }
 
     async function loadBodyDay(day, arrive, focus) {
       const asked = epoch;
-      setLoading("loading body day…");
+      setLoading(window.JournalI18n.render('journal.window.body.window.state.text.loading.body.day'));
       try {
         const bodyDay = await read(`/app/body/api/day/${day}`);
         if (asked !== epoch || ctx.disposed) return;
@@ -1783,7 +1783,7 @@ a.body-day-cell:focus-visible {
         ctx.ready(bodyDay.has_data || bodyDay.hidden ? "content" : "empty");
       } catch (err) {
         if (asked !== epoch || ctx.disposed) return;
-        showError("couldn't load body day", err, () => loadBodyDay(day, arrive));
+        showError(window.JournalI18n.render('journal.window.body.status.text.couldn.t.load.body.day'), err, () => loadBodyDay(day, arrive));
         if (arrive) focusArrived();
         ctx.ready("error");
       }
@@ -1865,10 +1865,10 @@ a.body-day-cell:focus-visible {
       `<section class="body-card body-section body-source-section" aria-labelledby="body-source-${escapeHtml(source.source)}">`,
       `<h2 id="body-source-${escapeHtml(source.source)}" class="body-question-title">${escapeHtml(source.name)}</h2>`,
       asArray(source.experiences).length ? `<ul class="body-workouts">${source.experiences.map(renderExperience).join("")}</ul>` : "",
-      renderReadings(source.readings) ? `<h3 class="body-card-label">readings</h3><ul class="body-facts">${renderReadings(source.readings)}</ul>` : "",
-      renderCounts(source.counts) ? `<h3 class="body-card-label">counts</h3><ul class="body-facts">${renderCounts(source.counts)}</ul>` : "",
-      renderLogged(source.logged) ? `<h3 class="body-card-label">logged</h3><ul class="body-facts">${renderLogged(source.logged)}</ul>` : "",
-      documents.length ? `<h3 class="body-card-label">for this date</h3><ul class="body-facts">${documents.map((doc) => renderFact(doc.name, doc.value ? escapeHtml(doc.value) : "")).join("")}</ul>` : "",
+      renderReadings(source.readings) ? `<h3 class="body-card-label">${window.JournalI18n.renderHtml('journal.window.body.section.heading.readings')}</h3><ul class="body-facts">${renderReadings(source.readings)}</ul>` : "",
+      renderCounts(source.counts) ? `<h3 class="body-card-label">${window.JournalI18n.renderHtml('journal.window.body.section.heading.counts')}</h3><ul class="body-facts">${renderCounts(source.counts)}</ul>` : "",
+      renderLogged(source.logged) ? `<h3 class="body-card-label">${window.JournalI18n.renderHtml('journal.window.body.section.heading.logged')}</h3><ul class="body-facts">${renderLogged(source.logged)}</ul>` : "",
+      documents.length ? `<h3 class="body-card-label">${window.JournalI18n.renderHtml('journal.window.body.section.heading.for.this.date')}</h3><ul class="body-facts">${documents.map((doc) => renderFact(doc.name, doc.value ? escapeHtml(doc.value) : "")).join("")}</ul>` : "",
       '</section>',
     ]);
   }
@@ -1878,7 +1878,7 @@ a.body-day-cell:focus-visible {
     if (!list.length) return "";
     return html([
       '<section class="body-card" aria-labelledby="body-strava-title">',
-      '<h2 id="body-strava-title" class="body-question-title">Strava</h2>',
+      `<h2 id="body-strava-title" class="body-question-title">${window.JournalI18n.renderHtml('journal.window.body.section.heading.strava')}</h2>`,
       `<ul class="body-workouts">${list.map(renderStravaWorkout).join("")}</ul>`,
       '</section>',
     ]);
@@ -1892,7 +1892,7 @@ a.body-day-cell:focus-visible {
     const after = renderHiddenWith(bodyDay.hidden_with);
     const earlier = renderEarlierImports(bodyDay.earlier_imports);
     const unreadable = Number(bodyDay.unreadable_windows) > 0
-      ? '<p class="body-muted body-earlier">part of this day couldn\'t be read.</p>'
+      ? `<p class="body-muted body-earlier">${window.JournalI18n.renderHtml('journal.window.body.visible.text.part.of.this.day.couldn.t')}</p>`
       : "";
     if (!bodyDay.has_data) {
       return html([header, strip, after, earlier, renderEmptyDay(bodyDay, Boolean(earlier)), unreadable]);

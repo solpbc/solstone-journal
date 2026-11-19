@@ -1,0 +1,21 @@
+{
+  "description": "Network view copy, unpair title format.",
+  "context": "Network view copy, unpair title format.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "2854d4d13de997f0f218cec64526a2fb16232577d20e7e03c957d2b13f396d0c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

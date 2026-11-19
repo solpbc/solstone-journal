@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's body view.",
+  "context": "Journal window, body view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "465e9858541e58fc15754bbfd52cc9ab3e26ad5e05ddc1f3cd3d1307a4656fe8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

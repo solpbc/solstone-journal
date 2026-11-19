@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, mode byo name.",
+  "context": "Network view copy, mode byo name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "5b550093c5a8d42266251d3adbca9a4b99ab0fb63222bb04d2b842919ec2eae3",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

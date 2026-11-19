@@ -1,0 +1,16 @@
+{
+  "description": "Body display error hidden days list in the journal's body view.",
+  "context": "Journal window, body view. Body display error hidden days list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23dda44a69e04075040858ce2a0fa4efb2d547f903131574312df19408306d5b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

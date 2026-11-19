@@ -1,0 +1,16 @@
+{
+  "description": "Type labels organization in the journal's year view.",
+  "context": "Journal window, year view. Type labels organization.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9c23d66aaa1d3e58cee4b8b739bb9a248ed1c3771a5b8e7f9d33f71f61cbd31",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

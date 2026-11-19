@@ -1,0 +1,16 @@
+{
+  "description": "Lane own in the journal's agents view.",
+  "context": "Journal window, agents view. Lane own.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b550093c5a8d42266251d3adbca9a4b99ab0fb63222bb04d2b842919ec2eae3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

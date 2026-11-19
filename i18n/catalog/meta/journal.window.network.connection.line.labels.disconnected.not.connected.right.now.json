@@ -1,0 +1,16 @@
+{
+  "description": "Connection line labels disconnected in the journal's network view.",
+  "context": "Journal window, network view. Connection line labels disconnected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b68ec1f0b04ae21fb033394765ee828e8ed3aa4063c970acb6cb0fc1810b2ed7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

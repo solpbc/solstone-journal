@@ -1,0 +1,16 @@
+{
+  "description": "Copy days lede in the journal's year view.",
+  "context": "Journal window, year view. Copy days lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "917f8677a34b1a69ef155ee707e54f0545706fdc64ba360fb9ea065afff646b6",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.gate.drawer view.",
+  "context": "Journal window, shared.gate.drawer view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "169e35485a2fe79ef88b5c1ab37aed5528237e22bc19f8b5c37ccad885f0a16d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach selector title.",
+  "context": "Network view copy, reach selector title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 70,
+  "source_revision": "227fb398335a4bf43bc4ec7e530bf29ff97ae2df5b12e040ab78029f50708b50",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

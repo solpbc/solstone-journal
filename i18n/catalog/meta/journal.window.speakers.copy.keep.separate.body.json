@@ -1,0 +1,23 @@
+{
+  "description": "Keep separate body in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Keep separate body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb4292640472f7700eb4212842f163fab64e7d8b8eb01b605387de435b31e641",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

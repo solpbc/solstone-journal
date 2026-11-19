@@ -1,0 +1,16 @@
+{
+  "description": "Window state text in the journal's entities view.",
+  "context": "Journal window, entities view. Window state text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e657db8aa9f1b06c84a8736dd8cd3890f96c3072f7188c0ea6114b049ec41a50",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

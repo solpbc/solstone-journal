@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.gate.drawer view.",
+  "context": "Journal window, shared.gate.drawer view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8c9f9cd3223e6b706377a5dce2899e3423ce78ffa40374e5b06f4034983ea1b",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

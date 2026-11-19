@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_UNREADABLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_UNREADABLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "189e9c3073d2b10e579969a705ec489733c4d87a90f70f56245784ed9ca6be16",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

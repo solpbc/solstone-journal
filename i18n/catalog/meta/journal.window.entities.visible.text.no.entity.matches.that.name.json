@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's entities view.",
+  "context": "Journal window, entities view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cf300b1b7034d77fc42450a625c5fcef8b67fe3d28359da33edecb17f360988",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

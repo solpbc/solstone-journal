@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's speakers view.",
+  "context": "Journal window, speakers view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "891fcb96a9febb5c2d3a93bf5296e84e9fac7f677ff47968e0eba3eedafe5452",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

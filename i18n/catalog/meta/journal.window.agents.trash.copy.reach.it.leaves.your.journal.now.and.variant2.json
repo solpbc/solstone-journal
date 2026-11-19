@@ -1,0 +1,16 @@
+{
+  "description": "Trash copy reach in the journal's agents view.",
+  "context": "Journal window, agents view. Trash copy reach.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d43b8213486c87107e7eb2f86f2de84cce5e669a11053dc2c67748fc3403dfd",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

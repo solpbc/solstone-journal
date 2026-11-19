@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the more journal route loads on first paint.",
+  "context": "Status shown while the more journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "979f906eb0eae7c88e09f0c060a042df13842f9ecb92c96ec10944ec8c31ba87",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

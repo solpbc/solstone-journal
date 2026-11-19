@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's body view.",
+  "context": "Journal window, body view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8eb50823d2d6a986e9ce8b3c8317648e71844acc94ca0a088cab7fe6348806b",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

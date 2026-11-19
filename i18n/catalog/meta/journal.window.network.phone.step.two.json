@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, phone step 2.",
+  "context": "Network view copy, phone step 2.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 102,
+  "source_revision": "8350dadf6ed7ad53f6f07a8fb0a43027002057cf3bd150d811cc4f57bb019c24",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

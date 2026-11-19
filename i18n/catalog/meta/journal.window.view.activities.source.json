@@ -1,0 +1,16 @@
+{
+  "description": "More card data source in the journal's view.activities view.",
+  "context": "Journal window, view.activities view. More card data source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f2f883467798620d7acc3ef858d3e7c886562118994c4c2077b66bc0daf5219",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

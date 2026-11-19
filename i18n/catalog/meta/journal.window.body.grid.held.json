@@ -1,0 +1,28 @@
+{
+  "description": "Body display grid held in the journal's body view.",
+  "context": "Journal window, body view. Body display grid held.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1162c8a5d19b64bbf666af1bcfa5f6478f3822abfd81ac1c3d9118b7a51d12cf",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

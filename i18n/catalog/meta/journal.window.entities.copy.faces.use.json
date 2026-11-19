@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_USE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_USE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "590e817e6326813853a98b32d31f3572df1031facaac4c32e95791d4a7e9bc72",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

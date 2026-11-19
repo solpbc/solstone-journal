@@ -1,0 +1,16 @@
+{
+  "description": "Displayed fallback for the journal version in the journal's shell view.",
+  "context": "Journal window, shell view. Displayed fallback for the journal version.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72ba4af8ec6fe0aba5c39beefeaea84cca0d422238896381b94515c73793060b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

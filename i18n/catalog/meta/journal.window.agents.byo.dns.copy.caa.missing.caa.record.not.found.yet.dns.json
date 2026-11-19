@@ -1,0 +1,16 @@
+{
+  "description": "Byo dns copy caa_missing in the journal's agents view.",
+  "context": "Journal window, agents view. Byo dns copy caa_missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "daf3533e3e4c86882e98ce0c35cc6c4553d045e125c624e68a22ba7e169efc4b",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

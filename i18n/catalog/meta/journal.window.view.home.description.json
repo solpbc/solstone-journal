@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.home view.",
+  "context": "Journal window, view.home view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fe97a2adbf3982b21e1595af50121aa761fb137757ff697e7373044a92425a1",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

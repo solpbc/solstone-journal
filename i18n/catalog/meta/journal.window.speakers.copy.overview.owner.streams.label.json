@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner streams label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner streams label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "063d47fc27729a9feaacda4755c90ac9e0128225d847f601e91ff6f2faf3a798",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Group shape in the journal's more view.",
+  "context": "Journal window, more view. Group shape.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "923fb425471a4e644638290bf03d814c4c07b44d5d57a055176934dca103b1bf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

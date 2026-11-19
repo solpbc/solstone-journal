@@ -1,0 +1,16 @@
+{
+  "description": "Agents status in the journal's agents view.",
+  "context": "Journal window, agents view. Agents status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11f9caba98ea8556f4a4d788b3a15171975ababe6258131744ddaf03c517d617",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

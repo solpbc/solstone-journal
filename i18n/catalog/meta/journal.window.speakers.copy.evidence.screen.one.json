@@ -1,0 +1,16 @@
+{
+  "description": "Evidence screen one in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Evidence screen one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "327f13257753656ea37a46e01f1629744a8be653f660573dd0281041c1e9a0b2",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

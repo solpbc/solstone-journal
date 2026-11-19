@@ -1,0 +1,16 @@
+{
+  "description": "Thinking lane label in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "395c18645da3d71b332fe24b03061b56484cdf9af28cfaf5e478ebf1afb48f06",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

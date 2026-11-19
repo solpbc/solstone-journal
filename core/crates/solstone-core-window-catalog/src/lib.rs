@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Render packaged journal-window messages.
+
+#[allow(clippy::all, dead_code)]
+mod compiled {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../i18n/generated/window/rust/journal-window/api.rs"
+    ));
+}
+
+pub const ENGLISH: &str = "en-US";
+
+pub use compiled::Value;
+
+pub fn text(locale: &str, id: &str) -> String {
+    render(locale, id, &[])
+}
+
+pub fn strings<const N: usize>(locale: &str, id: &str, args: [(&str, &str); N]) -> String {
+    render(
+        locale,
+        id,
+        &args.map(|(name, value)| (name, Value::String(value))),
+    )
+}
+
+/// Resolve message IDs in a trusted copy table while preserving its keys.
+pub fn resolve_table(locale: &str, table: &mut serde_json::Value) {
+    match table {
+        serde_json::Value::String(value)
+            if value.starts_with("journal.window.") || value.starts_with("!journal.window.") =>
+        {
+            *value = text(locale, value);
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                resolve_table(locale, value);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                resolve_table(locale, value);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn render(locale: &str, id: &str, arguments: &[(&str, Value<'_>)]) -> String {
+    let (locale, id) = id
+        .strip_prefix('!')
+        .map_or((locale, id), |id| (ENGLISH, id));
+    compiled::render_dotted_with_options(locale, id, arguments, locale != ENGLISH)
+        .unwrap_or_else(|error| panic!("window catalog message {id} for {locale}: {error:?}"))
+}
+
+pub fn language_tag(locale: &str) -> &str {
+    if locale == ENGLISH { "en" } else { locale }
+}
+
+pub fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+pub fn html(locale: &str, id: &str) -> String {
+    escape_html(&text(locale, id))
+}

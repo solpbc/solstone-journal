@@ -1,0 +1,28 @@
+{
+  "description": "Known voice segment count in the journal's speakers view.",
+  "context": "Journal window, speakers view. Known voice segment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c77fbb220713d1846d0c09948c8e9b1c27024f9a724379ffc4ee84a93d7a21b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

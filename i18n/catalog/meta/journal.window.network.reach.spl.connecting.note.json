@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach spl connecting note.",
+  "context": "Network view copy, reach spl connecting note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "0825e31dfdede12a28c21737f38aad33f51b5f032b9024b803a8141ebe76d9d7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

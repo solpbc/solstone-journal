@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SETTINGS_LINK in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SETTINGS_LINK.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16cac2073af610872109ea0aaf3c11ce99db25d9351a6b5c01be9cc22252a35a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

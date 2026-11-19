@@ -1,0 +1,16 @@
+{
+  "description": "Overview cohesion unmeasured in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview cohesion unmeasured.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49bf57a9b44aaca44f933ed1bb45d3038b5245283a144dbd82b78f39bdd6ee4a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

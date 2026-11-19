@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy busy in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf69642e38b1d6695c999b3e0bd001da2ccdeeb2242b03799f16c3f5c1246f10",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

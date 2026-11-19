@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance network error in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance network error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce689c783a2792a65ce626dbc406019890a6ba260ab180073421be1d0bc71133",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

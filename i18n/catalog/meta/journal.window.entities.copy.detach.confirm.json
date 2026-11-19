@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_DETACH_CONFIRM in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETACH_CONFIRM.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "77384a8cae51429ad8dbbe17e61866bb10b09b50895e47d913666e403009aaeb",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

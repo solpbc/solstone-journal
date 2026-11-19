@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_WORDS family-of in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_WORDS family-of.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06181dcc28090e4872a4984c48eac7df28d6c4d44c50b4110277775bf6db4126",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

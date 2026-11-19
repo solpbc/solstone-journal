@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality missing label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality missing label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8e2f0622db42d7c15971fd6f6d14e990230804ba7fb91b88f0bc0fda3458c65",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

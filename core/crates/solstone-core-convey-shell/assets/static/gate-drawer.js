@@ -9,25 +9,25 @@
   // both name intra_cosine_p25, but this static module cannot share that payload
   // key without tripping the speakers html payload-key test.
   const copy = Object.freeze({
-    drawer_label: 'why not yet?',
+    drawer_label: window.JournalI18n.render('journal.window.shared.gate.drawer.open.label'),
     na: 'n/a',
-    manual_tags_label: 'statements you taught:',
-    segments_label: 'recordings with audio:',
+    manual_tags_label: window.JournalI18n.render('journal.window.shared.gate.drawer.manual.tags'),
+    segments_label: window.JournalI18n.render('journal.window.shared.gate.drawer.audio.recordings'),
     reasons: Object.freeze({
       too_few_stmts: Object.freeze({
         row_label: 'statements',
-        next: 'teach a few more of your longer statements.'
+        next: window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.teach.a.few.more.of.your')
       }),
       median_duration_too_short: Object.freeze({
-        row_label: 'median length',
-        next: 'pick longer statements when you teach your voice.'
+        row_label: window.JournalI18n.render('journal.window.shared.gate.drawer.median.length'),
+        next: window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.pick.longer.statements.when.you.teach')
       }),
       cluster_too_diffuse: Object.freeze({
         row_label: 'consistency',
-        next: 'pick statements where only you are talking.'
+        next: window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.pick.statements.where.only.you.are')
       })
     }),
-    next_ready: "you've taught enough to save your voice.",
+    next_ready: window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.you.ve.taught.enough.to.save'),
   });
   // --- end owner-facing strings ---
 
@@ -73,7 +73,7 @@
 
   function lineFor(reason, observed, threshold) {
     if (reason === 'too_few_stmts') {
-      const base = `${formatMetric(observed)} longer statements so far`;
+      const base = window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.value1.longer.statements.so.far', [['value1', String(formatMetric(observed))]]);
       return threshold === null ? base : `${base}, needs ${formatMetric(threshold)}`;
     }
     if (reason === 'median_duration_too_short') {
@@ -83,7 +83,7 @@
         : `${base}, needs ${formatWithUnit(threshold, 's')}`;
     }
     if (reason === 'cluster_too_diffuse') {
-      return 'voice pattern is still too spread out';
+      return window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.voice.pattern.is.still.too.spread');
     }
   }
 
@@ -105,7 +105,7 @@
     if (!config) return '';
     const values = metricValueFor(reason, observed, threshold);
     const needHtml = values.threshold
-      ? ` <span class="gate-need">needs ${escapeHtml(values.threshold)}</span>`
+      ? ` <span class="gate-need">${window.JournalI18n.renderHtml('journal.window.shared.gate.drawer.visible.text.needs')} ${escapeHtml(values.threshold)}</span>`
       : '';
     return '<div class="gate-row">' +
       `<span>${escapeHtml(config.row_label)}</span>` +

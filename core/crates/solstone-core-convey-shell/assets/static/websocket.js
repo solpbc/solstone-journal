@@ -202,16 +202,16 @@
   // STATUS_MAP is JSON-shaped on purpose because a --lib contract test in this
   // crate extracts and asserts it.
   const STATUS_MAP = [
-    {"ws": "connecting", "capture": "*", "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
-    {"ws": "connected", "capture": null, "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
-    {"ws": "disconnected", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "disconnected"},
-    {"ws": "*", "capture": "degraded", "unviewed": "*", "variant": "mark-attention", "label": "a device needs attention"},
-    {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label": "attention"},
-    {"ws": "*", "capture": "offline", "unviewed": "*", "variant": "mark-paused", "label": "a device hasn't added recently"},
-    {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-paused", "label": "a device hasn't added recently"},
-    {"ws": "*", "capture": "no_clients", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
-    {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "going in"},
-    {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "can't confirm"}
+    {"ws": "connecting", "capture": "*", "unviewed": "*", "variant": "mark-connecting", "label_message": "journal.window.shared.websocket.label.connecting"},
+    {"ws": "connected", "capture": null, "unviewed": "*", "variant": "mark-connecting", "label_message": "journal.window.shared.websocket.label.connecting"},
+    {"ws": "disconnected", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label_message": "journal.window.shared.websocket.label.disconnected"},
+    {"ws": "*", "capture": "degraded", "unviewed": "*", "variant": "mark-attention", "label_message": "journal.window.shared.websocket.label.a.device.needs.attention"},
+    {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label_message": "journal.window.shared.websocket.label.attention"},
+    {"ws": "*", "capture": "offline", "unviewed": "*", "variant": "mark-paused", "label_message": "journal.window.shared.websocket.label.a.device.hasn.t.added.recently"},
+    {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-paused", "label_message": "journal.window.shared.websocket.label.a.device.hasn.t.added.recently"},
+    {"ws": "*", "capture": "no_clients", "unviewed": "*", "variant": "mark-paused", "label_message": "journal.window.shared.websocket.label.no.devices.connected"},
+    {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label_message": "journal.window.shared.websocket.label.going.in"},
+    {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label_message": "journal.window.shared.websocket.label.can.t.confirm"}
   ];
 
   function statusFieldMatches(expected, actual) {
@@ -236,7 +236,8 @@
       return {
         variant: row.variant,
         connecting: row.variant === 'mark-connecting',
-        label: row.label
+        labelMessage: row.label_message,
+        label: window.JournalI18n.render(row.label_message)
       };
     }
     throw new Error('STATUS_MAP has no matching row');
@@ -278,6 +279,7 @@
     const mark = deriveStatusMark(connectionState, lastCaptureStatus, hasUnviewed);
     if (window.appEvents) {
       window.appEvents.statusLabel = mark.label;
+      window.appEvents.statusLabelMessage = mark.labelMessage;
     }
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -342,7 +344,7 @@
   }
 
 	  function reconnectAttemptDetails() {
-	    if (!reconnectAttempts.length) return 'no reconnect attempts recorded yet.';
+	    if (!reconnectAttempts.length) return window.JournalI18n.render('journal.window.shared.websocket.window.explanation.no.reconnect.attempts.recorded.yet');
 	    const formatTime = ts => {
 	      if (window.JournalClock) {
 	        return window.JournalClock.formatInstant(ts, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -363,19 +365,19 @@
 	    }
 	    disconnectSecondPhase = true;
 	    window.AppServices?.notifications?.update(disconnectCardId, {
-	      title: 'connection lost',
-	      message: 'last reconnect attempt failed.',
+	      title: window.JournalI18n.render('journal.window.shared.websocket.title.connection.lost'),
+	      message: window.JournalI18n.render('journal.window.shared.websocket.message.last.reconnect.attempt.failed'),
 	      buttons: [
 	        {
-	          label: 'Reconnect now',
+	          label: window.JournalI18n.render('journal.window.shared.websocket.label.reconnect.now'),
 	          onClick: () => reconnectNow(),
 	          dismiss: false
 	        },
 	        {
-	          label: 'Show details',
+	          label: window.JournalI18n.render('journal.window.shared.websocket.label.show.details'),
 	          onClick: (notification) => {
 	            window.AppServices?.notifications?.update(notification.id, {
-	              message: 'last reconnect attempt failed. ' + reconnectAttemptDetails()
+	              message: window.JournalI18n.render('journal.window.shared.websocket.message.last.reconnect.attempt.failed.variant2') + reconnectAttemptDetails()
 	            });
 	          },
 	          dismiss: false
@@ -454,8 +456,8 @@
         const id = window.AppServices?.notifications?.show({
           app: 'system',
           icon: 'triangle-alert',
-          title: 'connection lost',
-          message: 'reconnecting. some features may be delayed',
+          title: window.JournalI18n.render('journal.window.shared.websocket.title.connection.lost'),
+          message: window.JournalI18n.render('journal.window.shared.websocket.message.reconnecting.some.features.may.be.delayed'),
           dismissible: false
         });
         if (id != null) {
@@ -682,7 +684,7 @@
           app: 'system',
           icon: 'check',
           title: 'reconnected',
-          message: 'live updates connected',
+          message: window.JournalI18n.render('journal.window.shared.websocket.message.live.updates.connected'),
           dismissible: true
         });
         if (reconnectedId != null) {
@@ -781,7 +783,8 @@
   window.renderStatusMark = renderStatusMark;
 
   window.appEvents = {
-    statusLabel: 'connecting',
+    statusLabel: window.JournalI18n.render('journal.window.shared.websocket.label.connecting'),
+    statusLabelMessage: 'journal.window.shared.websocket.label.connecting',
     probeCount: 0,
 
     buildChanged() {

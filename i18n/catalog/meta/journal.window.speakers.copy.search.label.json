@@ -1,0 +1,16 @@
+{
+  "description": "Search label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Search label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bd7d03346e36e872eea66f10620a1f291cbbc98fb84f0d14af8a053c6becf18",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

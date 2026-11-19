@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_INDEX_UNAVAILABLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_INDEX_UNAVAILABLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac0c36bd51a03d804d8ca3028040bf9ab0f150a0883fe9059e927c2f56fff6a6",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

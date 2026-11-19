@@ -1,0 +1,16 @@
+{
+  "description": "Overview your voice confirmed in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview your voice confirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5814027934921558514df925db9b170e8d6e3f9b4d5851ff84c552d01c3bde73",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

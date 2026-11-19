@@ -1,0 +1,16 @@
+{
+  "description": "Grid title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Grid title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ab4f67af5cb3c2d8fcf3a843488aa1d146d471f1e23c9423a2039d149b6cb8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -179,7 +179,7 @@
       source: 'api',
       // Owner language on the owner's instrument; the method, status, url,
       // server message and correlation id stay in the detail below (G1-118).
-      summary: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+      summary: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.shared.api.window.explanation.couldn.t.finish.that.request'),
       detail: {
         apiError: {
           method,
@@ -538,7 +538,8 @@
     };
     const ask = () => {
       arm('first-byte', bounds?.firstByteMs);
-      return rawFetch()(url, { ...fetchOptions, signal: controller.signal });
+      const options = { ...fetchOptions, signal: controller.signal };
+      return rawFetch()(url, window.solWindowRequest?.(url, options) ?? options);
     };
 
     let started;
@@ -698,10 +699,11 @@
 
   function boundedFetch(input, init) {
     const fetchImpl = nativeFetch;
+    const url = isRequest(input) ? input.url : String(input);
+    init = window.solWindowRequest?.(url, init, isRequest(input) ? input.headers : undefined) ?? init;
     if (!fetchImpl || !boundedFetchApplies(input, init)) {
       return fetchImpl ? fetchImpl(input, init) : Promise.reject(new TypeError('fetch unavailable'));
     }
-    const url = isRequest(input) ? input.url : String(input);
     const bounds = readBoundsFor(url);
     const controller = new Abort();
     const callerSignal = init?.signal || (isRequest(input) ? input.signal : null);
@@ -820,7 +822,7 @@
       const apiError = new ApiError({
         status: response.status,
         statusText: response.statusText,
-        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.shared.api.window.explanation.couldn.t.finish.that.request'),
         url: url,
         cause: 'loopback_refused',
         timestamp: Date.now()
@@ -840,7 +842,7 @@
       const apiError = new ApiError({
         status: response.status,
         statusText: response.statusText,
-        serverMessage: 'Authentication required',
+        serverMessage: window.JournalI18n.render('journal.window.shared.api.authentication.required'),
         url: url,
         correlationId,
         timestamp
@@ -856,7 +858,7 @@
       const apiError = new ApiError({
         status: response.status,
         statusText: response.statusText,
-        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.shared.api.window.explanation.couldn.t.finish.that.request'),
         url: url,
         cause: 'setup_required',
         correlationId: response.headers.get('X-Solstone-Request-Id') || '',
@@ -894,7 +896,7 @@
       }
       const serverMessage = payload?.error
         ?? payload?.message
-        ?? `Request failed (HTTP ${response.status})`;
+        ?? window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]);
       const correlationId = response.headers.get('X-Solstone-Request-Id') || '';
       const timestamp = Date.now();
       const reasonCode = payload?.reason_code ?? null;
@@ -924,7 +926,7 @@
     const apiError = new ApiError({
       status: response.status,
       statusText: response.statusText,
-      serverMessage: 'Malformed server response',
+      serverMessage: window.JournalI18n.render('journal.window.shared.api.malformed.response'),
       url: url,
       cause: 'parse',
       correlationId,
@@ -972,7 +974,7 @@
         }
         const serverMessage = error instanceof ApiError
           ? error.serverMessage
-          : (error && error.message ? error.message : 'Request failed');
+          : (error && error.message ? error.message : window.JournalI18n.render('journal.window.shared.api.request.failed'));
         renderControlError(el, errorHost, serverMessage);
         if (typeof onError === 'function') {
           onError(error);

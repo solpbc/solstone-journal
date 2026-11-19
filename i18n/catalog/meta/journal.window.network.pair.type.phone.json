@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair type phone.",
+  "context": "Network view copy, pair type phone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "29a5ad3102acb646e9cfe8939608f411b8e53171550b04827444c9847803957c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

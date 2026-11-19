@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's body view.",
+  "context": "Journal window, body view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85c93f3b11fccfb500c07b9704eb8117d332b22fe9b18146618fcb5fd206babb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

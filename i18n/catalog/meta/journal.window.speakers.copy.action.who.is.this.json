@@ -1,0 +1,16 @@
+{
+  "description": "Action who is this in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Action who is this.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a5e96ae16c1fb19f09934e1742c104cbb45d8db6e22ecb442939dc8c2e1e6be",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

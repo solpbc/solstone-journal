@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_SOURCE_WORDS event-legacy in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_SOURCE_WORDS event-legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e32090e4a95873f2ca155e821c984f7bee65e875740b12ddf3e931945b36622",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

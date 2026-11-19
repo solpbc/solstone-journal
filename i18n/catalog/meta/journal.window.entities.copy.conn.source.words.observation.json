@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_SOURCE_WORDS observation in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_SOURCE_WORDS observation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e16e1b17ba657ee7f6368a19aa3b80fecfdde5b30338356cc6233bb9d9f5267",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

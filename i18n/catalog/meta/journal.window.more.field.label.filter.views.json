@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's more view.",
+  "context": "Journal window, more view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d7afa0cbbebafbe5573e62fe4c8ec7c4ad59ef511fadb7e0539d2c93f7125a1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

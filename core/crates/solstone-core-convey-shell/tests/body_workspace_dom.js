@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const rootDir = process.argv[2] || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(rootDir, 'assets/body/workspace.html'), 'utf8');
@@ -201,7 +202,7 @@ function boot(fixtures = {}) {
     },
     logError() {},
   };
-  const context = vm.createContext({
+  const context = journalContext({
     window,
     document,
     console,

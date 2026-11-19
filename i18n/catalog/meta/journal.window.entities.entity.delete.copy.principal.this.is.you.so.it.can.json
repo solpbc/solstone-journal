@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy principal in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy principal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8eaa2bcbaceb762a8e0e47ec84da0dd24596a8ffa7d573d677e526b96b86496a",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

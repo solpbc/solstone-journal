@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, modal title.",
+  "context": "Network view copy, modal title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

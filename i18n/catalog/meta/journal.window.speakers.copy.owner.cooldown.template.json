@@ -1,0 +1,23 @@
+{
+  "description": "Owner cooldown template in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner cooldown template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c88b5bca296e971a84a1713f4bbe1b62d3d5014d7e3769212a00a81a56f890e2",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{date}"
+    }
+  ]
+}

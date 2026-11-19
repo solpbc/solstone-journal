@@ -1,0 +1,16 @@
+{
+  "description": "Empty import options in the journal's body view.",
+  "context": "Journal window, body view. Empty import options.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6802af7e4b670833ce3fef8a1e39f6be2f282f4dd223bdb229fd3e985fbdcc69",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

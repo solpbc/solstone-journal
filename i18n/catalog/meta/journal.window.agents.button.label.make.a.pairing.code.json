@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's agents view.",
+  "context": "Journal window, agents view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63b5b512eabffdb03cd215d44f3f5bd6975a61c2f6afe220b7e8344921b0ac75",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "More card data source in the journal's view.map view.",
+  "context": "Journal window, view.map view. More card data source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b26c9dde8dbd93244b02fdb413e14ab441af63bc2513c52e40d892c6e6f9a001",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

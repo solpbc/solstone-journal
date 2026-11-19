@@ -1,0 +1,16 @@
+{
+  "description": "Redirect title and heading in the journal's shell.redirect view.",
+  "context": "Journal window, shell.redirect view. Redirect title and heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21346a413329c90f408a10958a9ddb443978ef76c7a7374fa45b0bfb4f9bc945",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

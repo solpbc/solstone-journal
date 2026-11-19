@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -30,9 +32,11 @@ pub struct KnownQuery {
 }
 
 pub async fn known(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     Query(query): Query<KnownQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let sort = query
         .sort
         .filter(|sort| !sort.is_empty())
@@ -44,8 +48,14 @@ pub async fn known(
     ) {
         return error_envelope(
             "invalid_request_value",
-            "one of those values couldn't be used.",
-            "Invalid sort parameter",
+            window_catalog::text(
+                locale,
+                "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+            ),
+            window_catalog::text(
+                locale,
+                "journal.window.speakers.error.invalid.sort.parameter",
+            ),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -58,7 +68,10 @@ pub async fn known(
                 Err(error) => {
                     return error_envelope(
                         "speaker_command_failed",
-                        "that speaker command didn't finish.",
+                        window_catalog::text(
+                            locale,
+                            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+                        ),
                         error.to_string(),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )

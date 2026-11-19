@@ -1,0 +1,16 @@
+{
+  "description": "Overview cohesion labels item1 in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview cohesion labels item1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2fad389621a3715b2328ef2fe0bb1533d310bdeb45d4823a871d49f14dfcbab8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

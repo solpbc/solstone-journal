@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's agents view.",
+  "context": "Journal window, agents view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "baa54d6a0e94c345787188708a0fb7bd4bef4b17205e82dbf6df0c811870e97d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

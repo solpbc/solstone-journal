@@ -1,0 +1,16 @@
+{
+  "description": "Overview today link label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview today link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca7a469ff056b90a545df0e25a33a2cc84171e0698cbd37478bcf559ce22c83e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

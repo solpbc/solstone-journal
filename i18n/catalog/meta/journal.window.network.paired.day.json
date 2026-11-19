@@ -1,0 +1,28 @@
+{
+  "description": "Paired day in the journal's network view.",
+  "context": "Journal window, network view. Paired day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbeec495d8e7f825e9c57eb52c772c7f6e0564a05c9e5465063fb17167cf9ce3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

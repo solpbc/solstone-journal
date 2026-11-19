@@ -4,6 +4,8 @@
 use std::io::ErrorKind;
 use std::process::Command;
 
+use solstone_core_convey_shell::assets::network_copy_json;
+
 #[test]
 fn network_pairing_dom_contract() {
     match Command::new("node").arg("--version").output() {
@@ -23,6 +25,7 @@ fn network_pairing_dom_contract() {
             env!("CARGO_MANIFEST_DIR")
         ))
         .arg(env!("CARGO_MANIFEST_DIR"))
+        .env("SOLSTONE_TEST_NETWORK_COPY", network_copy_json())
         .output()
         .expect("network pairing DOM harness starts");
     let stdout = String::from_utf8_lossy(&output.stdout);

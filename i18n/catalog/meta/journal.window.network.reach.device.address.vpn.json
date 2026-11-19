@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach device address vpn.",
+  "context": "Network view copy, reach device address vpn.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "740a0b0a71b52d24ae83580fa086a490a12128448d773aba6f78bba10bcbbb76",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

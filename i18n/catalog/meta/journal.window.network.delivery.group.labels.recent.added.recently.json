@@ -1,0 +1,16 @@
+{
+  "description": "Delivery group labels recent in the journal's network view.",
+  "context": "Journal window, network view. Delivery group labels recent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "047928e11c481c7d961437754be18ae3268aade919905866aa68ceee24e7775e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

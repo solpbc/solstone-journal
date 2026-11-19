@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, check pairing cta.",
+  "context": "Network view copy, check pairing cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "0702e5779a79d2bdb067c5f90199400f0cceb6d28e8ebbfdd58c0c375f26b0af",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

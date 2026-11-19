@@ -1,0 +1,16 @@
+{
+  "description": "Overview known voices empty in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview known voices empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ddd138057e68c48fa53ec49405881a45f5df76c69d135fdedd1d5e2268cad258",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

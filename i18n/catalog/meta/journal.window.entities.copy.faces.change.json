@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_CHANGE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_CHANGE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f129f4a20bf39d6b05fed94d9083aae7a2a3016d8640d420814ac82549565119",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

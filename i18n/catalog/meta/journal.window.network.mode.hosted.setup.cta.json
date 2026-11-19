@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, mode hosted setup cta.",
+  "context": "Network view copy, mode hosted setup cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "f9013435c666782a7ace3e40475bf879ac2a04d19b9386d062c54e63269d719b",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

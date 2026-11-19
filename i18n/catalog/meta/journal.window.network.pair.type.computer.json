@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair type computer.",
+  "context": "Network view copy, pair type computer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "02ae8484e210a696e4cdb73de20b913cb89ec7796ee275eb5e45ed9fef1dd7d9",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

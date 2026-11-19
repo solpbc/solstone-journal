@@ -1,0 +1,33 @@
+{
+  "description": "Body display strava heart maximum in the journal's body view.",
+  "context": "Journal window, body view. Body display strava heart maximum.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9dcbccd44ae31dbada514c18e0f3caa46eb59ece40d5a4a431cc68e31047d0a0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

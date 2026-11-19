@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link timeout body.",
+  "context": "Network view copy, private link timeout body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 108,
+  "source_revision": "9c9e59168b04acd13151d2d7f205d09b14131d78ce849a7e0777e58c87985c67",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

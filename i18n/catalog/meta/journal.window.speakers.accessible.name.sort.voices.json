@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's speakers view.",
+  "context": "Journal window, speakers view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8623936cb1457a2b7aef07fe2e2a5cd4c22e6fb4bdd757bda6968bf2ffb9aba0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

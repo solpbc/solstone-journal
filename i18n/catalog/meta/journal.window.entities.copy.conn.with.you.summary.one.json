@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_CONN_WITH_YOU_SUMMARY_ONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_WITH_YOU_SUMMARY_ONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce9c9e3394cf7471a2418d9543596dea57a94c52970df6ff7ee604d6d9ad5f0c",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{kind}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

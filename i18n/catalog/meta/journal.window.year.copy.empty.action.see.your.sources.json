@@ -1,0 +1,16 @@
+{
+  "description": "Copy empty action in the journal's year view.",
+  "context": "Journal window, year view. Copy empty action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f4914aae4deba96f84bfbba42091b440e948b6f89bf9f59efa53de11bfaec4a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

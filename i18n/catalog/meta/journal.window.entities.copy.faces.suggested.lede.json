@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SUGGESTED_LEDE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SUGGESTED_LEDE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d1cfd25a8918ff06a432f257944c7132421f6b3ababc977a343870c0612405b",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

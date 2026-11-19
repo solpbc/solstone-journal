@@ -1,0 +1,16 @@
+{
+  "description": "Lede in the journal's sources view.",
+  "context": "Journal window, sources view. Lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6dc0b21414887bba87e7e720c2a1a27a2733e1b95dede91e3882c92e499eac5",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

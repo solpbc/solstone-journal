@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach host address note.",
+  "context": "Network view copy, reach host address note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 296,
+  "source_revision": "4eb34aebc146907e8bd380a219f79279cebf57d71c1d0c98dc356ee2104cf1f7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

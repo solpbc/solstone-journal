@@ -1,0 +1,16 @@
+{
+  "description": "Connection network in the journal's agents view.",
+  "context": "Journal window, agents view. Connection network.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86e6d33e69468b7379632bac3ab26c060de5493285c38e8474163271ce6cfdb2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

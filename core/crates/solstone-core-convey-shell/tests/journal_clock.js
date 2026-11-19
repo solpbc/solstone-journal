@@ -5,6 +5,7 @@ const nodeAssert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 let executedCases = 0;
 let passedCases = 0;
@@ -133,7 +134,7 @@ function createBaseContext(customIntl) {
     Date,
     console,
   };
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(fs.readFileSync(path.resolve(crateDir, '../../../i18n/generated/window/classic/journal-window/api.js'), 'utf8'), context);
   vm.runInContext(copySrc, context, { filename: 'convey_copy.js' });
   vm.runInContext(clockSrc, context, { filename: 'journal_clock.js' });

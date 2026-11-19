@@ -1,0 +1,16 @@
+{
+  "description": "Back link to the journal in the journal's link view.",
+  "context": "Journal window, link view. Back link to the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93447fbb45796882d7bc655b665bb12cde2912fd185f4f0af750fa601458819e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

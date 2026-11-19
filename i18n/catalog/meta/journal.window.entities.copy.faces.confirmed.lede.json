@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_FACES_CONFIRMED_LEDE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_CONFIRMED_LEDE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0e119c7a80e4ad9585414b4d5271ce7cf3b9aa9455a369fc235495cd8cc0b8e",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

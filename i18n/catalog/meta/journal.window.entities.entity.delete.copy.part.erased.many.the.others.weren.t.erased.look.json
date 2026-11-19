@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy part erased many in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy part erased many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0231ecb3662af866d71043a35ff63df88a4b06efa64a72f327dd44382c1e7fb",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

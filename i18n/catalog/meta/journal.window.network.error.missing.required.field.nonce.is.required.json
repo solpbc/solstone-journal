@@ -1,0 +1,16 @@
+{
+  "description": "Refusal in the device view in the journal's network.error view.",
+  "context": "Journal window, network.error view. Refusal in the device view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5db656dd038039a97f64250687da7f996c4397d8f9a8904fc4380a768b3006c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

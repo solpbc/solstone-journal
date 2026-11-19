@@ -10,31 +10,31 @@
   'use strict';
 
   const COPY = {
-    title: 'sources',
-    lede: 'when your devices last added something to your journal.',
-    empty: 'no devices are paired yet.',
-    pair: 'pair a device',
-    manage: 'manage devices',
-    nothing: 'nothing added yet',
-    error: "this didn't load.",
-    retry: 'try again',
+    title: global.JournalI18n.render('journal.window.sources.copy.title.sources'),
+    lede: global.JournalI18n.render('journal.window.sources.lede.when.your.devices.last.added.something'),
+    empty: global.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet'),
+    pair: global.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device'),
+    manage: global.JournalI18n.render('journal.window.sources.copy.manage.manage.devices'),
+    nothing: global.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet'),
+    error: global.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load'),
+    retry: global.JournalI18n.render('journal.window.sources.copy.retry.try.again'),
   };
 
   const NETWORK = '/app/network/';
   const CLIENTS = '/app/network/api/clients';
 
   const NAMED = [
-    { label: 'audio', keys: ['audio'], carried: 'audio' },
-    { label: 'screen', keys: ['screen'], carried: 'screen' },
-    { label: 'terminal', keys: ['terminal', 'tmux'] },
-    { label: 'browsers', keys: ['browser', 'browsers'] },
-    { label: 'Obsidian', keys: ['obsidian'] },
-    { label: 'location', keys: ['location'], carried: 'location' },
-    { label: 'calendar', keys: ['calendar'] },
-    { label: 'camera', keys: ['camera'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.audio'), keys: ['audio'], carried: 'audio' },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.screen'), keys: ['screen'], carried: 'screen' },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.terminal'), keys: ['terminal', 'tmux'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.browsers'), keys: ['browser', 'browsers'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.obsidian'), keys: ['obsidian'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.location'), keys: ['location'], carried: 'location' },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.calendar'), keys: ['calendar'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.camera'), keys: ['camera'] },
     // S1 / J4 in the design system's screenshots copy file.
-    { label: 'screenshots', keys: ['screenshots'] },
-    { label: 'watch', keys: ['watch', 'watch-audio'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.screenshots'), keys: ['screenshots'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.watch'), keys: ['watch', 'watch-audio'] },
   ];
 
   const NOT_ROWS = { '': true, mobile: true, 'mobile-segment': true, share: true };
@@ -43,8 +43,8 @@
   const OWN_CAPTURE = ['', 'mobile', 'mobile-segment'];
 
   const MONTHS = [
-    'january', 'february', 'march', 'april', 'may', 'june',
-    'july', 'august', 'september', 'october', 'november', 'december',
+    global.JournalI18n.render('journal.window.sources.months.label.january'), global.JournalI18n.render('journal.window.sources.months.label.february'), global.JournalI18n.render('journal.window.sources.months.label.march'), global.JournalI18n.render('journal.window.sources.months.label.april'), global.JournalI18n.render('journal.window.sources.months.label.may'), global.JournalI18n.render('journal.window.sources.months.label.june'),
+    global.JournalI18n.render('journal.window.sources.months.label.july'), global.JournalI18n.render('journal.window.sources.months.label.august'), global.JournalI18n.render('journal.window.sources.months.label.september'), global.JournalI18n.render('journal.window.sources.months.label.october'), global.JournalI18n.render('journal.window.sources.months.label.november'), global.JournalI18n.render('journal.window.sources.months.label.december'),
   ];
 
   function parseTime(iso) {

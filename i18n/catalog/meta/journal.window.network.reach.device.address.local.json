@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach device address local.",
+  "context": "Network view copy, reach device address local.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "71d0c1f0a9654033c91528b7500a6d71666368a0e9f488a75f6df69e57482270",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

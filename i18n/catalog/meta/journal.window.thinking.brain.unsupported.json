@@ -1,0 +1,16 @@
+{
+  "description": "Thinking brain state in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking brain state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7610c7a945540caff55e0a41fd5be7e3f130f58f71e366758b603c14c889a4d",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

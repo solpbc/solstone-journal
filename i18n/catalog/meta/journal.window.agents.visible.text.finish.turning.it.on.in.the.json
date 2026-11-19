@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's agents view.",
+  "context": "Journal window, agents view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f5320285d77fce2b6252e997bacdb4fbda81db65180bcc7d67ca004d2919a49",
+  "max_length": 151,
+  "risk": "payment",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

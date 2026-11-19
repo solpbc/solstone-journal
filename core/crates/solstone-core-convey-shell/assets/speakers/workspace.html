@@ -1339,25 +1339,25 @@
   <div id="spkOwnerBanner" class="spk-owner-banner" tabindex="-1"></div>
   <div id="spkDiscoveryBanner" class="spk-discovery-banner" aria-live="polite"></div>
   <div class="spk-layout">
-    <nav class="spk-segments" aria-label="segments">
+    <nav class="spk-segments" aria-label="{{journal.window.speakers.accessible.name.segments}}">
       <h2 class="spk-segments-header">
         <span id="spkSegmentsHeader"></span>
       </h2>
       <div id="spkFilterIndicator" class="spk-filter-indicator"></div>
       <div id="spkSegmentsStatus" class="spk-segments-status" aria-live="polite"></div>
       <ul class="spk-segments-list" id="spkSegmentList" role="listbox">
-        <li class="spk-empty">loading…</li>
+        <li class="spk-empty">{{journal.window.speakers.visible.text.loading}}</li>
       </ul>
       <div class="spk-load-more" id="spkLoadMore" style="display: none;">
-        <button class="spk-load-more-btn" id="spkLoadMoreBtn">load more segments</button>
+        <button class="spk-load-more-btn" id="spkLoadMoreBtn">{{journal.window.speakers.button.label.load.more.segments}}</button>
       </div>
     </nav>
 
     <div class="spk-detail" id="spkDetail" aria-live="polite">
       <div class="surface-state surface-state--empty">
         <div class="surface-state-icon" id="spkInitialEmptyIcon" aria-hidden="true"></div>
-        <h2 class="surface-state-heading">ready to review</h2>
-        <p class="surface-state-desc">select a segment from the list to review speaker assignments</p>
+        <h2 class="surface-state-heading">{{journal.window.speakers.section.heading.ready.to.review}}</h2>
+        <p class="surface-state-desc">{{journal.window.speakers.visible.text.select.a.segment.from.the.list}}</p>
       </div>
     </div>
   </div>
@@ -1688,8 +1688,8 @@
     <div class="spk-overview-header">
       <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
       <div class="spk-overview-controls">
-        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
-        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="{{journal.window.speakers.field.placeholder.find.a.voice.by.name}}" aria-label="{{journal.window.speakers.accessible.name.find.a.voice.by.name}}">
+        <select id="spkKnownSort" class="spk-overview-select" aria-label="{{journal.window.speakers.accessible.name.sort.voices}}"></select>
       </div>
     </div>
     <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
@@ -1699,7 +1699,7 @@
   <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
     <div class="spk-overview-header">
       <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
-      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
+      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">{{journal.window.speakers.button.label.look.for.new.voices}}</button>
     </div>
     <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
     <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
@@ -1946,13 +1946,13 @@ function runDay(ctx, page) {
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
   const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
-  const DAY_DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
+  const DAY_DISCOVERY_LOAD_ERROR = window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.new.voices.right');
   // The day view reads the cached look and never starts one, so its two quiet
   // states point at the overview, which carries the control. They are distinct
   // answers: nothing has looked yet is not the same as nothing is waiting.
-  const DAY_DISCOVERY_NEVER_RUN = 'nothing has looked for new voices yet.';
-  const DAY_DISCOVERY_EMPTY = 'no new voices are waiting.';
-  const DAY_DISCOVERY_OVERVIEW_LINK = 'look for new voices';
+  const DAY_DISCOVERY_NEVER_RUN = window.JournalI18n.render('journal.window.speakers.window.explanation.nothing.has.looked.for.new.voices');
+  const DAY_DISCOVERY_EMPTY = window.JournalI18n.render('journal.window.speakers.window.explanation.no.new.voices.are.waiting');
+  const DAY_DISCOVERY_OVERVIEW_LINK = window.JournalI18n.render('journal.window.speakers.window.explanation.look.for.new.voices');
   const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   const initialEmptyIcon = document.getElementById('spkInitialEmptyIcon');
   if (initialEmptyIcon) {
@@ -1965,7 +1965,7 @@ function runDay(ctx, page) {
         const msg = document.createElement('div');
         msg.className = 'spk-status spk-status-error';
         msg.setAttribute('role', 'alert');
-        msg.innerHTML = 'couldn\'t load this audio<button class="spk-status-dismiss" aria-label="dismiss">&times;</button>';
+        msg.innerHTML = `${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.couldn.t.load.this.audio')}<button class="spk-status-dismiss" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.dismiss')}">&times;</button>`;
         msg.querySelector('.spk-status-dismiss').addEventListener('click', (e) => {
           e.target.closest('.spk-status-error').remove();
         });
@@ -1992,16 +1992,16 @@ function runDay(ctx, page) {
   }
 
   const METHOD_DISPLAY = {
-    acoustic: 'voice match',
-    structural_single_speaker: 'only speaker',
-    structural_setting: 'setting match',
-    owner_centroid: 'voice profile match',
-    user_confirmed: 'you confirmed',
-    user_corrected: 'you corrected',
-    user_assigned: 'you assigned',
-    user_identified: 'you identified',
-    context: 'context match',
-    contextual: 'context match',
+    acoustic: window.JournalI18n.render('journal.window.speakers.window.state.text.voice.match'),
+    structural_single_speaker: window.JournalI18n.render('journal.window.speakers.window.state.text.only.speaker'),
+    structural_setting: window.JournalI18n.render('journal.window.speakers.window.state.text.setting.match'),
+    owner_centroid: window.JournalI18n.render('journal.window.speakers.window.state.text.voice.profile.match'),
+    user_confirmed: window.JournalI18n.render('journal.window.speakers.window.state.text.you.confirmed'),
+    user_corrected: window.JournalI18n.render('journal.window.speakers.window.state.text.you.corrected'),
+    user_assigned: window.JournalI18n.render('journal.window.speakers.window.state.text.you.assigned'),
+    user_identified: window.JournalI18n.render('journal.window.speakers.window.state.text.you.identified'),
+    context: window.JournalI18n.render('journal.window.speakers.window.state.text.context.match'),
+    contextual: window.JournalI18n.render('journal.window.speakers.window.state.text.context.match'),
   };
   let day = '';
   let SPK_COPY = {};
@@ -2207,7 +2207,7 @@ function runDay(ctx, page) {
   function renderSpeakersStateError(err) {
     window.logError?.(err, { context: 'speakers-state' });
     const errorHtml = window.SurfaceState.error({
-      heading: "couldn't load speakers",
+      heading: window.JournalI18n.render('journal.window.speakers.heading.couldn.t.load.speakers'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
@@ -2225,7 +2225,7 @@ function runDay(ctx, page) {
     const context = page.context;
     if (!context.isDay) return;
     document.getElementById('speakersDayView').hidden = false;
-    segmentList.innerHTML = '<li class="spk-empty">loading…</li>';
+    segmentList.innerHTML = `<li class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.loading')}</li>`;
     try {
       const payload = await settled(page.state);
       applySpeakersDayState(payload);
@@ -2414,7 +2414,7 @@ function runDay(ctx, page) {
             })
             .catch((err) => {
               ownerDetectionInFlight = false;
-              renderOwnerBanner(`couldn't analyze voice patterns: ${err.serverMessage}`);
+              renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.analyze.voice.patterns.value1', [['value1', String(err.serverMessage)]]));
               window.logError(err, { context: 'speakers: owner detect failed' });
             });
         }
@@ -2465,7 +2465,7 @@ function runDay(ctx, page) {
       if (stale()) return;
       ownerDetectionInFlight = false;
       hideDiscovery();
-      renderOwnerBanner(`couldn't load owner status: ${err.serverMessage}`);
+      renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.owner.status.value1', [['value1', String(err.serverMessage)]]));
       window.logError(err, { context: 'speakers: checkOwnerStatus failed' });
     }
   }
@@ -2474,7 +2474,7 @@ function runDay(ctx, page) {
     ownerBanner.style.display = 'block';
     ownerBanner.innerHTML = `
       <div class="spk-owner-panel">
-        <div class="spk-owner-title">Owner voiceprint</div>
+        <div class="spk-owner-title">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.owner.voiceprint')}</div>
         <div class="spk-owner-copy">${escapeHtml(message)}</div>
       </div>
     `;
@@ -2500,9 +2500,9 @@ function runDay(ctx, page) {
 
     function sampleNotice(sample) {
       if (sample.evidence_state === 'unbound' || sample.evidence_state === 'mismatch') {
-        return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || 'unverified evidence')}</div>`;
+        return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || window.JournalI18n.render('journal.window.speakers.status.text.unverified.evidence'))}</div>`;
       }
-      return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNAVAILABLE || "this sample isn't available")}</div>`;
+      return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNAVAILABLE || window.JournalI18n.render('journal.window.speakers.status.text.this.sample.isn.t.available'))}</div>`;
     }
 
     function updateActionButtons() {
@@ -2531,11 +2531,11 @@ function runDay(ctx, page) {
           ${samples.map((sample, index) => {
             const hasOffset = Number.isFinite(sample.offset_s);
             const playFromHere = (sample.artifact_eligible && sample.audio_url && hasOffset)
-              ? `<button type="button" class="spk-owner-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || 'play from here')}</button>`
+              ? `<button type="button" class="spk-owner-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || window.JournalI18n.render('journal.window.speakers.status.text.play.from.here'))}</button>`
               : '';
             return `
             <div class="spk-owner-sample" data-sample-idx="${index}">
-              <div class="spk-owner-sample-title">${escapeHtml(ownerSampleWhen(sample) || `sample ${index + 1}`)}</div>
+              <div class="spk-owner-sample-title">${escapeHtml(ownerSampleWhen(sample) || window.JournalI18n.render('journal.window.speakers.status.text.sample.value1', [['value1', String(index + 1)]]))}</div>
               ${sample.text ? `<div class="spk-owner-sample-text">${escapeHtml(sample.text)}</div>` : ''}
               ${sample.artifact_eligible && sample.audio_url
                 ? `<div class="spk-owner-sample-player">
@@ -2871,7 +2871,7 @@ function runDay(ctx, page) {
 
   function renderOwnerColdStartDiagnostics(data) {
     return `<details class="spk-owner-diagnostics">
-          <summary class="spk-owner-diagnostics-summary">why not yet?</summary>
+          <summary class="spk-owner-diagnostics-summary">${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.why.not.yet')}</summary>
           <div class="spk-owner-diagnostics-body">
             <div class="spk-owner-diagnostics-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, OWNER_MIN || 0))}</div>
             <div class="spk-owner-diagnostics-line">${escapeHtml(ownerTeachTemplateText(SPK_COPY.SPK_OWNER_RECORDINGS_TEMPLATE, { count: Number(data.segments_available || 0).toLocaleString() }))}</div>
@@ -2971,7 +2971,7 @@ function runDay(ctx, page) {
         <div class="spk-owner-copy">${escapeHtml(ownerTeachState.notice || '')}</div>
         <div class="spk-owner-actions" style="margin-top: 8px;">
           <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerTeachRetry" type="button">
-            ${escapeHtml(SPK_COPY.SPK_ACTION_RETRY || 'try again')}
+            ${escapeHtml(SPK_COPY.SPK_ACTION_RETRY || window.JournalI18n.render('journal.window.speakers.status.text.try.again'))}
           </button>
         </div>
       `;
@@ -3032,7 +3032,7 @@ function runDay(ctx, page) {
           ` : ''}
           ${(!current && !ownerTeachState.loading && (data.status === 'candidate' || data.version)) ? `
             <button class="spk-owner-btn" id="spkOwnerTeachSetAside" type="button">
-              ${escapeHtml(SPK_COPY.SPK_ACTION_SET_ASIDE || 'set aside')}
+              ${escapeHtml(SPK_COPY.SPK_ACTION_SET_ASIDE || window.JournalI18n.render('journal.window.speakers.status.text.set.aside'))}
             </button>
           ` : ''}
           <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachPause" type="button">
@@ -3206,7 +3206,7 @@ function runDay(ctx, page) {
         ...ownerTeachState,
         loading: false,
         failed_count: 1,
-        notice: SPK_COPY.SPK_OWNER_TEACH_FAILED || "couldn't load voice samples.",
+        notice: SPK_COPY.SPK_OWNER_TEACH_FAILED || window.JournalI18n.render('journal.window.speakers.notice.couldn.t.load.voice.samples'),
         noticeKind: 'failed',
       };
       renderOwnerTeachSession();
@@ -3366,7 +3366,7 @@ function runDay(ctx, page) {
     const requestSeq = dayDiscoveryRequestSeq + 1;
     dayDiscoveryRequestSeq = requestSeq;
     discoveryBanner.style.display = 'block';
-    discoveryBanner.innerHTML = '<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> loading new voices…</div></div>';
+    discoveryBanner.innerHTML = `<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.loading.new.voices')}</div></div>`;
     return apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
       .then(data => {
         if (requestSeq !== dayDiscoveryRequestSeq) return false;
@@ -3421,7 +3421,7 @@ function runDay(ctx, page) {
         </div>
         <div class="spk-discovery-notice-actions">
           ${retry}
-          <button id="spkDayDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="dismiss">&times;</button>
+          <button id="spkDayDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.dismiss')}">&times;</button>
         </div>
       </div>
     `;
@@ -3461,20 +3461,20 @@ function runDay(ctx, page) {
         ${renderDayDiscoveryNotice(dayDiscoveryNotice)}
         ${clusters.length ? `
           <details class="spk-day-discovery" ${dayDiscoveryOpen ? 'open' : ''}>
-          <summary class="spk-discovery-title">unnamed voices across your journal (${clusters.length})</summary>
+          <summary class="spk-discovery-title">${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.unnamed.voices.across.your.journal')}${clusters.length})</summary>
           <div class="spk-discovery-copy">
-            ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
+            ${clusters.length} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.recurring.voice.pattern')}${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? window.JournalI18n.renderHtml('journal.window.speakers.window.state.text.don.t') : window.JournalI18n.renderHtml('journal.window.speakers.window.state.text.doesn.t')} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.match.anyone.you.ve.named.listen')}
           </div>
           ${dayDiscoveryOverviewLinkHtml()}
           <div class="spk-discovery-clusters">
             ${clusters.map(cluster => `
               <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
                 <div class="spk-discovery-cluster-title">
-                  Unknown speaker <span style="font-weight: 400">&middot; ${cluster.size} ${pluralize(cluster.size, 'sample')} &middot; ${cluster.segment_count} ${pluralize(cluster.segment_count, 'segment')}</span>
+                  ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.unknown.speaker')} <span style="font-weight: 400">&middot; ${cluster.size} ${pluralize(cluster.size, 'sample')} &middot; ${cluster.segment_count} ${pluralize(cluster.segment_count, 'segment')}</span>
                 </div>
                 ${(cluster.samples || []).map(sample => `
                   <div class="spk-discovery-sample">
-                    <div class="spk-discovery-sample-text">${escapeHtml(sample.text || '(no transcript)')}</div>
+                    <div class="spk-discovery-sample-text">${escapeHtml(sample.text || window.JournalI18n.render('journal.window.speakers.status.text.no.transcript'))}</div>
                     ${sample.audio_url ? `<audio controls preload="none" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
                   </div>
                 `).join('')}
@@ -3569,7 +3569,7 @@ function runDay(ctx, page) {
 	          if (!found && segments.length < segmentTotal) {
 	            loadUntilFound(hashKey, requestSeq);
 	          } else if (!found && segmentsComplete) {
-	            setSegmentsStatus("that speaker review couldn't be loaded.");
+	            setSegmentsStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.that.speaker.review.couldn.t.be'));
 	          }
 	        }
         return true;
@@ -3579,13 +3579,13 @@ function runDay(ctx, page) {
         segmentsComplete = false;
         if (segments.length === 0) {
           segmentList.innerHTML = `<li>${window.SurfaceState.error({
-            heading: "couldn't load segments",
+            heading: window.JournalI18n.render('journal.window.speakers.heading.couldn.t.load.segments'),
             desc: window.CONVEY_COPY.RELOAD_HINT,
             serverMessage: err.serverMessage,
             detail: err,
           })}</li>`;
         } else {
-          setSegmentsStatus("couldn't reload segments. showing the last loaded segments.", err.serverMessage);
+          setSegmentsStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.reload.segments.showing.the'), err.serverMessage);
         }
         reportSpeakersReady('error');
         if (throwOnError) throw err;
@@ -3613,7 +3613,7 @@ function runDay(ctx, page) {
       .catch((err) => {
         if (requestSeq !== segmentsRequestSeq) return false;
         segmentsComplete = false;
-        setSegmentsStatus("couldn't load more segments", err.serverMessage);
+        setSegmentsStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.more.segments'), err.serverMessage);
         window.logError(err, { context: 'speakers: loadMoreSegments failed' });
         if (btn) btn.disabled = false;
         return false;
@@ -3638,7 +3638,7 @@ function runDay(ctx, page) {
           return loadUntilFound(key, activeSeq);
         }
         if (!found && segmentsComplete) {
-          setSegmentsStatus("that speaker review couldn't be loaded.");
+          setSegmentsStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.that.speaker.review.couldn.t.be'));
           return false;
         }
         return found;
@@ -3646,7 +3646,7 @@ function runDay(ctx, page) {
       .catch((err) => {
         if (activeSeq !== segmentsRequestSeq) return false;
         segmentsComplete = false;
-        setSegmentsStatus("couldn't load more segments", err.serverMessage);
+        setSegmentsStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.more.segments'), err.serverMessage);
         window.logError(err, { context: 'speakers: loadUntilFound failed' });
         return false;
       });
@@ -3659,7 +3659,7 @@ function runDay(ctx, page) {
 
     if (segmentTotal > 20 && segments.length < segmentTotal) {
       container.style.display = '';
-      btn.textContent = `load more segments (${segments.length} of ${segmentTotal})`;
+      btn.textContent = window.JournalI18n.render('journal.window.speakers.visible.text.load.more.segments.value1.of.value2', [['value1', String(segments.length)], ['value2', String(segmentTotal)]]);
       btn.onclick = loadMoreSegments;
     } else {
       container.style.display = 'none';
@@ -3670,10 +3670,10 @@ function runDay(ctx, page) {
     if (segments.length === 0) {
       const emptyHeading = speakerFilter
         ? (SPK_COPY.SPK_FILTER_NO_SEGMENTS_TODAY || '')
-        : 'no speakers discovered today';
+        : window.JournalI18n.render('journal.window.speakers.window.explanation.no.speakers.discovered.today');
       const emptyDesc = speakerFilter
         ? ''
-        : 'no speaker segments found for this day yet';
+        : window.JournalI18n.render('journal.window.speakers.window.explanation.no.speaker.segments.found.for.this');
       segmentList.innerHTML = '<li>' + window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('audio-lines'),
         heading: emptyHeading,
@@ -3709,7 +3709,7 @@ function runDay(ctx, page) {
           role="option"
           tabindex="${segmentIdentity(seg) === focusIdentity ? '0' : '-1'}"
           aria-selected="${sameSegment(selectedSegment, seg)}"
-          aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + ' to review' : ''}">
+          aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.speaker')}${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + window.JournalI18n.render('journal.window.speakers.window.state.text.to.review') : ''}">
         <div class="spk-segment-time">
           ${seg.start} - ${seg.end}
           ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${seg.speaker_count} ${pluralize(seg.speaker_count, 'speaker')}</span>` : ''}
@@ -3718,7 +3718,7 @@ function runDay(ctx, page) {
         <div class="spk-segment-sources">
           ${seg.sources.map(s => `<span class="spk-source-badge">${formatSource(s)}</span>`).join('')}
         </div>
-        ${seg.attribution_needs_review > 0 ? `<div class="spk-review-badge">${seg.attribution_needs_review} to review</div>` : ''}
+        ${seg.attribution_needs_review > 0 ? `<div class="spk-review-badge">${seg.attribution_needs_review} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.to.review')}</div>` : ''}
       </li>
     `).join('');
 
@@ -3743,7 +3743,7 @@ function runDay(ctx, page) {
     const header = document.querySelector('.spk-segments-header');
     if (header) {
       if (segmentTotal > 20) {
-        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${segments.length} of ${segmentTotal}</span>`;
+        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${segments.length} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.of')} ${segmentTotal}</span>`;
       } else {
         header.textContent = segmentHeaderLabel();
       }
@@ -3770,19 +3770,19 @@ function runDay(ctx, page) {
     if (!seg.sources.length) {
       detailPanel.innerHTML = window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('volume-2'),
-        heading: 'no audio sources',
-        desc: 'this segment doesn\'t have any audio'
+        heading: window.JournalI18n.render('journal.window.speakers.heading.no.audio.sources'),
+        desc: window.JournalI18n.render('journal.window.speakers.window.explanation.this.segment.doesn.t.have.any')
       });
       return;
     }
 
     const summaryParts = [];
     if (seg.speaker_count > 0) {
-      summaryParts.push(`<span>${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}</span>`);
+      summaryParts.push(`<span>${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.speaker')}${seg.speaker_count !== 1 ? 's' : ''}</span>`);
     }
     if (seg.attribution_total > 0) {
       const reviewed = seg.attribution_total - seg.attribution_needs_review;
-      summaryParts.push(`<span>${reviewed}/${seg.attribution_total} attributed</span>`);
+      summaryParts.push(`<span>${reviewed}/${seg.attribution_total} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.attributed')}</span>`);
     }
 
     let html = `
@@ -3792,7 +3792,7 @@ function runDay(ctx, page) {
       ${summaryParts.length ? `<div class="spk-detail-summary">${summaryParts.join('')}</div>` : ''}
     `;
 
-    html += '<div class="spk-speakers" id="spkSpeakers"><div class="spk-empty">loading speakers…</div></div>';
+    html += `<div class="spk-speakers" id="spkSpeakers"><div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.loading.speakers')}</div></div>`;
 
     if (seg.sources.length > 1) {
       html += `
@@ -3809,11 +3809,11 @@ function runDay(ctx, page) {
     html += '<div class="spk-audio-player" id="spkAudioContainer"></div>';
 
     if (!detailExpanded) {
-      html += '<button class="spk-expand-btn" id="spkExpandBtn">show sentences and details</button>';
+      html += `<button class="spk-expand-btn" id="spkExpandBtn">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.show.sentences.and.details')}</button>`;
     }
 
     html += '<div id="spkReviewStatus" class="spk-review-status" aria-live="polite"></div>';
-    html += '<div class="spk-sentences" id="spkSentences"><div class="spk-empty">loading…</div></div>';
+    html += `<div class="spk-sentences" id="spkSentences"><div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.loading')}</div></div>`;
     detailPanel.innerHTML = html;
 
     if (!detailExpanded) {
@@ -3869,7 +3869,7 @@ function runDay(ctx, page) {
       })
       .catch((err) => {
         if (requestSeq !== segmentSpeakersRequestSeq) return false;
-        container.innerHTML = '<div class="spk-empty">Failed to load speakers</div>';
+        container.innerHTML = `<div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.failed.to.load.speakers')}</div>`;
         if (throwOnError) throw err;
         return false;
       });
@@ -3888,8 +3888,8 @@ function runDay(ctx, page) {
     if (!hasMatched && !hasUnmatched) {
       container.innerHTML = window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('users'),
-        heading: 'no speakers found',
-        desc: 'no speaker voices were detected in this segment'
+        heading: window.JournalI18n.render('journal.window.speakers.heading.no.speakers.found'),
+        desc: window.JournalI18n.render('journal.window.speakers.window.explanation.no.speaker.voices.were.detected.in')
       });
       return;
     }
@@ -3932,7 +3932,7 @@ function runDay(ctx, page) {
       && container.textContent.trim() === 'loading…'
     );
     if (container && isFirstPaint) {
-      container.innerHTML = '<div class="spk-empty">loading…</div>';
+      container.innerHTML = `<div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.loading')}</div>`;
     }
 
     setReviewStatus();
@@ -3968,13 +3968,13 @@ function runDay(ctx, page) {
         if (container) {
           if (isFirstPaint) {
             container.innerHTML = window.SurfaceState.error({
-              heading: "couldn't load review",
+              heading: window.JournalI18n.render('journal.window.speakers.heading.couldn.t.load.review'),
               desc: window.CONVEY_COPY.RELOAD_HINT,
               serverMessage: err.serverMessage,
               detail: err,
             });
           } else {
-            setReviewStatus("couldn't refresh review. showing last known state.", err.serverMessage);
+            setReviewStatus(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.refresh.review.showing.last'), err.serverMessage);
           }
         }
         if (throwOnError) throw err;
@@ -3988,17 +3988,17 @@ function runDay(ctx, page) {
     if (audio_file) {
       audioContainer.innerHTML = `
         <div class="spk-player-controls">
-          <button class="spk-skip-back" id="spkSkipBack" title="back 5s">↺ 5s</button>
+          <button class="spk-skip-back" id="spkSkipBack" title="${window.JournalI18n.renderHtml('journal.window.speakers.tooltip.back.s')}">↺ 5s</button>
           <audio id="spkAudio" controls preload="metadata">
             <source src="${audio_file}" type="${audio_mimetype}">
           </audio>
-          <button class="spk-speed-toggle" id="spkSpeedToggle" title="playback speed">1x</button>
+          <button class="spk-speed-toggle" id="spkSpeedToggle" title="${window.JournalI18n.renderHtml('journal.window.speakers.tooltip.playback.speed')}">1x</button>
         </div>
       `;
       audioPlayer = document.getElementById('spkAudio');
       setupAudioListeners();
     } else {
-      audioContainer.innerHTML = '<div class="spk-empty">no audio file available</div>';
+      audioContainer.innerHTML = `<div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.no.audio.file.available')}</div>`;
       audioPlayer = null;
     }
 
@@ -4016,8 +4016,8 @@ function runDay(ctx, page) {
     if (total === 0) {
       container.innerHTML = window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('file-text'),
-        heading: 'no sentences to review',
-        desc: 'this segment doesn\'t have any sentences to work with yet'
+        heading: window.JournalI18n.render('journal.window.speakers.heading.no.sentences.to.review'),
+        desc: window.JournalI18n.render('journal.window.speakers.window.explanation.this.segment.doesn.t.have.any.variant2')
       });
       return;
     }
@@ -4027,19 +4027,19 @@ function runDay(ctx, page) {
         <span id="spkSentenceCount">${escapeHtml(countLabel)}</span>
       </h2>
       <div class="spk-filter-bar">
-        <button class="spk-filter-btn${currentFilter === 'all' ? ' active' : ''}" data-filter="all">all</button>
-        <button class="spk-filter-btn${currentFilter === 'needs_review' ? ' active' : ''}" data-filter="needs_review">needs review</button>
-        <button class="spk-filter-btn${currentFilter === 'corrections' ? ' active' : ''}" data-filter="corrections">corrections</button>
+        <button class="spk-filter-btn${currentFilter === 'all' ? ' active' : ''}" data-filter="all">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.all')}</button>
+        <button class="spk-filter-btn${currentFilter === 'needs_review' ? ' active' : ''}" data-filter="needs_review">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.needs.review')}</button>
+        <button class="spk-filter-btn${currentFilter === 'corrections' ? ' active' : ''}" data-filter="corrections">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.corrections')}</button>
       </div>
       ${(() => {
         const seg = selectedSegment;
         const nonOwnerTotal = seg?.attribution_non_owner_total || 0;
         const nullCount = seg?.attribution_null || 0;
         const showPrompt = seg?.speaker_count > 0 && nonOwnerTotal > 0 && (nullCount / nonOwnerTotal) > 0.5;
-        return showPrompt ? `<div class="spk-seeding-prompt">this meeting has ${seg.speaker_count} named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.</div>` : '';
+        return showPrompt ? `<div class="spk-seeding-prompt">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.this.meeting.has')} ${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.named.speakers.but.their.voices.can')}</div>` : '';
       })()}
-      ${!hasLabels ? '<div class="spk-status spk-status-info">speakers haven\'t been identified yet. assign a few sentences to improve voice matching.</div>' : ''}
-      ${sentences.length === 0 ? '<div class="spk-empty">no sentences match this filter</div>' : sentences.map(renderSentence).join('')}
+      ${!hasLabels ? `<div class="spk-status spk-status-info">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.speakers.haven.t.been.identified.yet')}</div>` : ''}
+      ${sentences.length === 0 ? `<div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.no.sentences.match.this.filter')}</div>` : sentences.map(renderSentence).join('')}
     `;
 
     container.querySelectorAll('.spk-filter-btn').forEach(btn => {
@@ -4067,7 +4067,7 @@ function runDay(ctx, page) {
     if (currentFilter === 'all') {
       return `sentences (${total})`;
     }
-    return `sentences (${visible} of ${total})`;
+    return window.JournalI18n.render('journal.window.speakers.window.explanation.sentences.value1.of.value2', [['value1', String(visible)], ['value2', String(total)]]);
   }
 
   function renderSentence(sentence) {
@@ -4093,7 +4093,7 @@ function runDay(ctx, page) {
 
   function renderSpeakerDisplay(sentence) {
     if (!sentence.speaker_name) {
-      return '<span class="spk-review-state">unassigned</span>';
+      return `<span class="spk-review-state">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.unassigned')}</span>`;
     }
 
     let dotClass = '';
@@ -4105,7 +4105,7 @@ function runDay(ctx, page) {
 
     let html = '';
     if (dotClass) {
-      html += `<span class="spk-confidence-dot${dotClass}" aria-label="${sentence.confidence} confidence"></span>`;
+      html += `<span class="spk-confidence-dot${dotClass}" aria-label="${sentence.confidence} ${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.confidence')}"></span>`;
       html += `<span class="spk-confidence-label">${escapeHtml(sentence.confidence)}</span>`;
     }
 
@@ -4116,7 +4116,7 @@ function runDay(ctx, page) {
     html += `<span>${escapeHtml(sentence.speaker_name)}</span>`;
 
     if (sentence.needs_review) {
-      html += '<span class="spk-review-state">needs review</span>';
+      html += `<span class="spk-review-state">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.needs.review')}</span>`;
     } else if (sentence.method) {
       html += `<span class="spk-review-state">${escapeHtml(METHOD_DISPLAY[sentence.method] || sentence.method)}</span>`;
     }
@@ -4126,7 +4126,7 @@ function runDay(ctx, page) {
 
   function renderActions(sentence) {
     if (!hasLabels) {
-      return '<span class="spk-review-state">not yet identified</span>';
+      return `<span class="spk-review-state">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.not.yet.identified')}</span>`;
     }
 
     const options = reviewEntities.map(entity => (
@@ -4135,16 +4135,16 @@ function runDay(ctx, page) {
 
     if (sentence.speaker_entity_id) {
       const correctSelect = `
-        <select class="spk-select-small spk-correct-select" aria-label="correct attribution" data-sentence-id="${sentence.id}">
-          <option value="">correct…</option>
+        <select class="spk-select-small spk-correct-select" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.correct.attribution')}" data-sentence-id="${sentence.id}">
+          <option value="">${window.JournalI18n.renderHtml('journal.window.speakers.option.label.correct')}</option>
           ${options}
         </select>
-        <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="correct" style="display:none" aria-label="apply correction">&#10003;</button>
+        <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="correct" style="display:none" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.apply.correction')}">&#10003;</button>
       `;
 
       if (sentence.confidence === 'medium') {
         return `
-          <button class="spk-btn spk-btn-primary spk-confirm-btn" data-sentence-id="${sentence.id}">confirm &#10003;</button>
+          <button class="spk-btn spk-btn-primary spk-confirm-btn" data-sentence-id="${sentence.id}">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.confirm')}</button>
           ${correctSelect}
         `;
       }
@@ -4153,11 +4153,11 @@ function runDay(ctx, page) {
     }
 
     return `
-      <select class="spk-select-small spk-assign-select" aria-label="assign speaker" data-sentence-id="${sentence.id}">
-        <option value="">assign…</option>
+      <select class="spk-select-small spk-assign-select" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.assign.speaker')}" data-sentence-id="${sentence.id}">
+        <option value="">${window.JournalI18n.renderHtml('journal.window.speakers.option.label.assign')}</option>
         ${options}
       </select>
-      <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="assign" style="display:none" aria-label="apply assignment">&#10003;</button>
+      <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="assign" style="display:none" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.apply.assignment')}">&#10003;</button>
     `;
   }
 
@@ -4248,7 +4248,7 @@ function runDay(ctx, page) {
         sentence.is_correction = true;
       }
       renderReviewList();
-      showStatusBySentence(sentenceId, 'Attribution confirmed', 'success');
+      showStatusBySentence(sentenceId, window.JournalI18n.render('journal.window.speakers.window.state.text.attribution.confirmed'), 'success');
       loadSegments();
       if (isPrincipalAttestation) {
         checkOwnerStatus();
@@ -4256,7 +4256,7 @@ function runDay(ctx, page) {
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong. try again',
+        err.serverMessage || window.JournalI18n.render('journal.window.speakers.window.explanation.something.went.wrong.try.again'),
         'error'
       );
     }
@@ -4284,7 +4284,7 @@ function runDay(ctx, page) {
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong. try again',
+        err.serverMessage || window.JournalI18n.render('journal.window.speakers.window.explanation.something.went.wrong.try.again'),
         'error'
       );
     }
@@ -4305,7 +4305,7 @@ function runDay(ctx, page) {
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong. try again',
+        err.serverMessage || window.JournalI18n.render('journal.window.speakers.window.explanation.something.went.wrong.try.again'),
         'error'
       );
     }
@@ -4332,7 +4332,7 @@ function runDay(ctx, page) {
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong. try again',
+        err.serverMessage || window.JournalI18n.render('journal.window.speakers.window.explanation.something.went.wrong.try.again'),
         'error'
       );
     }
@@ -4354,7 +4354,7 @@ function runDay(ctx, page) {
     }
     if (type === 'error') {
       container.setAttribute('aria-live', 'assertive');
-      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="const box=this.closest('.spk-status-container');box.innerHTML='';box.setAttribute('aria-live','polite')">&times;</button></div>`;
+      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.dismiss')}" onclick="const box=this.closest('.spk-status-container');box.innerHTML='';box.setAttribute('aria-live','polite')">&times;</button></div>`;
     } else {
       container.setAttribute('aria-live', 'polite');
       container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}</div>`;
@@ -4436,7 +4436,7 @@ function runDay(ctx, page) {
     audioPlayer.addEventListener('error', () => {
       const container = document.getElementById('spkAudioContainer');
       if (container) {
-        container.innerHTML = '<div class="spk-status spk-status-error" role="alert">couldn\'t load audio. the file may be missing or in an unsupported format<button class="spk-status-dismiss" aria-label="dismiss">&times;</button></div>';
+        container.innerHTML = `<div class="spk-status spk-status-error" role="alert">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.couldn.t.load.audio.the.file')}<button class="spk-status-dismiss" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.dismiss')}">&times;</button></div>`;
         container.querySelector('.spk-status-dismiss')?.addEventListener('click', (e) => {
           e.target.closest('.spk-status-error').remove();
         });
@@ -4566,16 +4566,16 @@ function runOverview(ctx, page) {
   let mountedDayGridKey = null;
   let whoIsThisSheet = null;
   let discoveryClustersById = new Map();
-  const DISCOVERY_SCAN_LABEL = 'look for new voices';
-  const DISCOVERY_SCAN_RUNNING = 'looking for new voices…';
-  const DISCOVERY_EMPTY = 'no new voices are waiting. check again any time.';
+  const DISCOVERY_SCAN_LABEL = window.JournalI18n.render('journal.window.speakers.window.explanation.look.for.new.voices');
+  const DISCOVERY_SCAN_RUNNING = window.JournalI18n.render('journal.window.speakers.window.state.text.looking.for.new.voices');
+  const DISCOVERY_EMPTY = window.JournalI18n.render('journal.window.speakers.window.explanation.no.new.voices.are.waiting.check');
   // X-11 turned the scan into an owner action, which created a state the page
   // had no sentence for: nothing has looked yet. "found nothing" and "has not
   // looked" read identically, and only one of them has an action.
-  const DISCOVERY_NEVER_RUN = 'nothing has looked for new voices yet. use "look for new voices" above to start.';
-  const DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
-  const KNOWN_LOAD_ERROR = "couldn't load known voices";
-  const DISCOVERY_HANDOFF_BUSY = 'looking for new voices waits until you finish with the voice you came here for.';
+  const DISCOVERY_NEVER_RUN = window.JournalI18n.render('journal.window.speakers.discovery.not.ran');
+  const DISCOVERY_LOAD_ERROR = window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.new.voices.right');
+  const KNOWN_LOAD_ERROR = window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.known.voices');
+  const DISCOVERY_HANDOFF_BUSY = window.JournalI18n.render('journal.window.speakers.window.explanation.looking.for.new.voices.waits.until');
   let lastKnownData = null;
   let discoveryScanRunning = false;
   let qualityRequestSeq = 0;
@@ -4626,7 +4626,7 @@ function runOverview(ctx, page) {
     if (window.RelativeTime?.formatTimestamp) return window.RelativeTime.formatTimestamp(ms);
     const delta = Math.max(0, Date.now() - ms);
     const hours = Math.floor(delta / 3600000);
-    if (hours < 1) return 'just now';
+    if (hours < 1) return window.JournalI18n.render('journal.window.speakers.window.state.text.just.now');
     if (hours < 48) return `${hours}h ago`;
     return `${Math.floor(hours / 24)}d ago`;
   }
@@ -4775,9 +4775,9 @@ function runOverview(ctx, page) {
 
     function sampleNotice(sample) {
       if (sample.evidence_state === 'unbound' || sample.evidence_state === 'mismatch') {
-        return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || 'unverified evidence')}</div>`;
+        return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || window.JournalI18n.render('journal.window.speakers.status.text.unverified.evidence'))}</div>`;
       }
-      return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNAVAILABLE || "this sample isn't available")}</div>`;
+      return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNAVAILABLE || window.JournalI18n.render('journal.window.speakers.status.text.this.sample.isn.t.available'))}</div>`;
     }
 
     function updateActionButtons() {
@@ -4802,12 +4802,12 @@ function runOverview(ctx, page) {
         ${samples.map((sample, index) => {
           const hasOffset = Number.isFinite(sample.offset_s);
           const playFromHere = (sample.artifact_eligible && sample.audio_url && hasOffset)
-            ? `<button type="button" class="spk-overview-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(COPY.SPK_PLAY_FROM_HERE_LABEL || 'play from here')}</button>`
+            ? `<button type="button" class="spk-overview-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(COPY.SPK_PLAY_FROM_HERE_LABEL || window.JournalI18n.render('journal.window.speakers.status.text.play.from.here'))}</button>`
             : '';
           const when = sampleWhen(sample);
           return `
           <div class="spk-owner-sample" data-sample-idx="${index}">
-            <div class="spk-card-title">${escapeHtml(when || `sample ${index + 1}`)}</div>
+            <div class="spk-card-title">${escapeHtml(when || window.JournalI18n.render('journal.window.speakers.status.text.sample.value1', [['value1', String(index + 1)]]))}</div>
             ${sample.text ? `<div class="spk-card-line">${escapeHtml(sample.text)}</div>` : ''}
             ${sample.artifact_eligible && sample.audio_url
               ? `<div class="spk-owner-sample-player">
@@ -5041,7 +5041,7 @@ function runOverview(ctx, page) {
     const total = statements.reduce((sum, [, value]) => sum + value, 0);
     const lines = [];
     if (total > 0) {
-      lines.push(`<p class="spk-overview-muted">across ${escapeHtml(total.toLocaleString())} ${escapeHtml(pluralize(total, 'statement'))}</p>`);
+      lines.push(`<p class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.across')} ${escapeHtml(total.toLocaleString())} ${escapeHtml(pluralize(total, 'statement'))}</p>`);
     }
     statements.filter(([, value]) => value > 0).forEach(([label, value]) => {
       lines.push(qualityLine(label, value, total));
@@ -5051,14 +5051,14 @@ function runOverview(ctx, page) {
     // as sharing it, and they count a different thing. S-12.
     const liveSegments = segments.filter(([, value]) => value > 0);
     if (liveSegments.length) {
-      lines.push('<p class="spk-overview-muted">counted in segments</p>');
+      lines.push(`<p class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.counted.in.segments')}</p>`);
     }
     liveSegments.forEach(([label, value]) => {
       lines.push(qualityLine(label, value, 0));
     });
     const empty = statements.concat(segments).filter(([, value]) => value === 0);
     if (empty.length) {
-      lines.push(`<p class="spk-card-line spk-overview-muted">none right now: ${escapeHtml(empty.map(([label]) => label).join(', '))}</p>`);
+      lines.push(`<p class="spk-card-line spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.none.right.now')} ${escapeHtml(empty.map(([label]) => label).join(', '))}</p>`);
     }
     return lines.join('');
   }
@@ -5170,8 +5170,8 @@ function runOverview(ctx, page) {
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
         <div class="spk-known-card"><a href="${href}">
-          <h3 class="spk-card-title">${escapeHtml(speaker.name || 'no name yet')}</h3>
-          <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(pluralize(speaker.embedding_count || 0, 'sample'))} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(pluralize(speaker.segment_count || 0, 'segment'))}</p>
+          <h3 class="spk-card-title">${escapeHtml(speaker.name || window.JournalI18n.render('journal.window.speakers.status.text.no.name.yet'))}</h3>
+          <p class="spk-card-line">${window.JournalI18n.renderHtml((speaker.embedding_count || 0) === 1 ? 'journal.window.speakers.known.count.sample.one' : 'journal.window.speakers.known.count.sample.other', [['count', String(speaker.embedding_count || 0)]])} · ${window.JournalI18n.renderHtml((speaker.segment_count || 0) === 1 ? 'journal.window.speakers.known.count.segment.one' : 'journal.window.speakers.known.count.segment.other', [['count', String(speaker.segment_count || 0)]])}</p>
           <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
           ${cohesion(speaker.intra_cosine_p25)}
         </a><a class="spk-samples-link" href="/app/entities#${encodeURIComponent(speaker.entity_id)}">${escapeHtml(COPY.SPK_VIEW_VOICE_SAMPLES)}</a></div>
@@ -5190,18 +5190,18 @@ function runOverview(ctx, page) {
       // A filter that matches nothing is a different state from a journal that
       // has learned no other voice yet, and the two must not read alike.
       emptyNotice = query
-        ? `<div class="spk-overview-muted">no known voice matches "${escapeHtml(knownFilter.value.trim())}"</div>`
+        ? `<div class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.no.known.voice.matches')}${escapeHtml(knownFilter.value.trim())}"</div>`
         : `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
     }
     // G1-206: this disclosure and the one under "new voices" both read
     // "unlabeled voices (N)" one section apart, with counts that differed by a
     // factor of 48 and nothing to tell them apart. Each now says what it holds.
     const unnamedBlock = unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>voices still using a placeholder name (${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
+      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.voices.still.using.a.placeholder.name')}${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
       : '';
     const capped = !query && named.length > KNOWN_PHONE_CAP;
     const showAll = capped
-      ? `<button type="button" id="spkKnownShowAll" class="spk-known-more">show all ${named.length} voices →</button>`
+      ? `<button type="button" id="spkKnownShowAll" class="spk-known-more">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.show.all')} ${named.length} ${window.JournalI18n.renderHtml('journal.window.speakers.button.label.voices')}</button>`
       : '';
     knownContainer.innerHTML = `${emptyNotice}<div class="spk-known-grid"${capped ? ' data-capped' : ''}>${named.map(renderCard).join('')}${unnamedBlock}</div>${showAll}`;
     document.getElementById('spkKnownShowAll')?.addEventListener('click', (event) => {
@@ -5210,12 +5210,15 @@ function runOverview(ctx, page) {
     });
   }
 
+  // These values are the query protocol. The catalog supplies the labels.
+  const knownSorts = ['recent', 'most samples', 'alphabetical'];
+
   const reportSpeakersReady = ctx.reportReady;
   function loadKnown(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = knownRequestSeq + 1;
     knownRequestSeq = requestSeq;
-    const sort = sortSelect.value || COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[0];
+    const sort = sortSelect.value || knownSorts[0];
     return apiJson(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
       .then((data) => {
         if (requestSeq !== knownRequestSeq) return false;
@@ -5245,8 +5248,8 @@ function runOverview(ctx, page) {
   }
 
   function setupSort() {
-    sortSelect.innerHTML = COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS.map((sort) => (
-      `<option value="${escapeHtml(sort)}">${escapeHtml(sort)}</option>`
+    sortSelect.innerHTML = knownSorts.map((sort, index) => (
+      `<option value="${escapeHtml(sort)}">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[index])}</option>`
     )).join('');
     sortSelect.addEventListener('change', () => {
       loadKnown();
@@ -5418,7 +5421,7 @@ function runOverview(ctx, page) {
         </div>
         <div class="spk-discovery-notice-actions">
           ${retry}
-          <button id="spkOverviewDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="dismiss">&times;</button>
+          <button id="spkOverviewDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.dismiss')}">&times;</button>
         </div>
       </div>
     `;
@@ -5454,7 +5457,7 @@ function runOverview(ctx, page) {
     }
     const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
-        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'not yet named')}</h3>
+        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || window.JournalI18n.render('journal.window.speakers.status.text.not.yet.named'))}</h3>
         <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(pluralize(cluster.size || cluster.count || 0, 'sample'))}</p>
         <div class="spk-discovery-actions">
           <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
@@ -5467,7 +5470,7 @@ function runOverview(ctx, page) {
     // G1-206: paired with the known-voices disclosure above, which holds the
     // voices that already carry a placeholder name.
     discoveryContainer.innerHTML = named.map(renderCluster).join('') + (unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>voices without a name yet (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
+      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.voices.without.a.name.yet')}${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
     discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
       const trigger = card.querySelector('.spk-who-trigger');
       const cluster = discoveryClustersById.get(card.dataset.clusterId);
@@ -5747,7 +5750,7 @@ function runOverview(ctx, page) {
   function renderOverviewStateError(err) {
     window.logError?.(err, { context: 'speakers-overview-state' });
     ownerPanel.innerHTML = window.SurfaceState.error({
-      heading: "couldn't load speakers",
+      heading: window.JournalI18n.render('journal.window.speakers.heading.couldn.t.load.speakers'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
@@ -5768,11 +5771,11 @@ function runOverview(ctx, page) {
     const context = page.context;
     if (context.isDay) return;
     document.getElementById('speakersOverviewView').hidden = false;
-    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading your voice…' });
+    ownerPanel.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.speakers.text.loading.your.voice') });
     // These two panels otherwise sit blank (not a labeled loading state) for
     // as long as their own reads take, which can be well over ten seconds.
-    qualityPanel.innerHTML = window.SurfaceState.loading({ text: 'loading voice quality…' });
-    knownContainer.innerHTML = window.SurfaceState.loading({ text: 'loading known voices…' });
+    qualityPanel.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.speakers.text.loading.voice.quality') });
+    knownContainer.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.speakers.text.loading.known.voices') });
     sortSelect.hidden = true;
     try {
       const payload = await settled(page.state);

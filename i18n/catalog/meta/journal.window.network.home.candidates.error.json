@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, home candidates error.",
+  "context": "Network view copy, home candidates error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 78,
+  "source_revision": "fb421912e2b5c7cb973c95e35e493ee78486e5ee49c0c8a10ed7d07acf589b1a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance revoked in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance revoked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9678d3159c9e7791c2673d628cd16758704a15cafad9bdaa2f508628ccf435e3",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

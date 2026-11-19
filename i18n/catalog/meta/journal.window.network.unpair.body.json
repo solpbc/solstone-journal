@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, unpair body.",
+  "context": "Network view copy, unpair body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 458,
+  "source_revision": "c0c3fffc1501ce7e0c453f63ba6bc86be6f9505e2ac3fbb60367810839b58ac7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

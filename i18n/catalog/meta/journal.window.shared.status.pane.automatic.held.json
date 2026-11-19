@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "572f69b43274d3573415e942dc47ce46382a33d0f8531e751b6f281c9308b1c1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

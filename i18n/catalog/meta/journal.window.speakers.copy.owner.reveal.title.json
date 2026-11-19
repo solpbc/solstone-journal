@@ -1,0 +1,16 @@
+{
+  "description": "Owner reveal title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner reveal title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f3a8c3792f86720597565221b3d275f7abcdeb90d834d9805ca4e1a95346943",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

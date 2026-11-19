@@ -1,0 +1,16 @@
+{
+  "description": "Attribution response in the journal's speakers.attribution view.",
+  "context": "Journal window, speakers.attribution view. Attribution response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62768e53a4c387e333971cc8aeaa7ed29589e1806c4a097adf1bdead9b0dc18a",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

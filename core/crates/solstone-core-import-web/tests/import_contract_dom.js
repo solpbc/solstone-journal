@@ -14,6 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -867,6 +868,7 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
   });
   context.self = window;
   const shell = env.shellDir;
+  loadWindowCatalog(context);
   for (const name of ['store.js', 'views.js', 'router.js', 'focus.js']) {
     vm.runInContext(fs.readFileSync(path.join(shell, name), 'utf8'), context);
   }

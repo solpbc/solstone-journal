@@ -17,10 +17,12 @@ use axum::{Json, Router};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::refusal::MergeRepairRequired;
+use solstone_core_convey_http::window_catalog::response_locale;
 use solstone_core_entity_matching::{
     EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
 };
@@ -34,8 +36,8 @@ use solstone_core_indexer_query::{
 };
 
 use crate::model::{
-    ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
-    refusal, refusal_with_status,
+    ATTENDANCE_KINDS, ENTITY_TYPES, ReasonCode, connections_horizon_note, entities_copy, refusal,
+    refusal_with_status,
 };
 
 #[derive(Clone)]
@@ -1048,11 +1050,14 @@ pub(crate) fn admitted(b: &AccessBasis) -> Option<Response> {
     (!require_access(b)).then(|| refusal(ReasonCode::AgentUnavailable, "access denied"))
 }
 
-async fn state_route(Extension(b): Extension<AccessBasis>) -> Response {
+async fn state_route(
+    Extension(b): Extension<AccessBasis>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
     if let Some(r) = admitted(&b) {
         return r;
     }
-    Json(json!({"entities_copy":ENTITIES_COPY.clone(),"attendance_kinds":ATTENDANCE_KINDS}))
+    Json(json!({"entities_copy":entities_copy(response_locale(locale)),"attendance_kinds":ATTENDANCE_KINDS}))
         .into_response()
 }
 async fn types_route(Extension(b): Extension<AccessBasis>) -> Response {
@@ -5376,6 +5381,7 @@ fn network_plate_work(
     journal_root: &Path,
     query: &IndexPlateQuery,
     entity: &str,
+    locale: &str,
 ) -> Result<IndexPlateOutcome, IndexPlateError> {
     let journal_entities =
         load_journal_resolution_entities(journal_root).map_err(IndexPlateError::Store)?;
@@ -5424,7 +5430,7 @@ fn network_plate_work(
                 object.insert("horizon_day".to_owned(), Value::String(horizon.day));
                 object.insert(
                     "horizon_note".to_owned(),
-                    Value::String(compose_connections_horizon_note(horizon.earlier_days)),
+                    Value::String(connections_horizon_note(locale, horizon.earlier_days)),
                 );
             }
             Ok(IndexPlateOutcome::Payload(value))
@@ -6031,6 +6037,7 @@ async fn index_plate_network(
     Extension(basis): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RawQuery(raw): RawQuery,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&basis) {
         return response;
@@ -6043,8 +6050,9 @@ async fn index_plate_network(
         Ok(entity) => entity,
         Err(response) => return *response,
     };
+    let locale = response_locale(locale);
     finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
-        network_plate_work(&root, &query, &entity)
+        network_plate_work(&root, &query, &entity, locale)
     }))
     .await
 }

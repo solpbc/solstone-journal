@@ -1,0 +1,16 @@
+{
+  "description": "Message in the journal's body view.",
+  "context": "Journal window, body view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d282f32d03071c80a2c6d093c7a0dab0e25826bbbecbfb14740f3a8e146f04a5",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

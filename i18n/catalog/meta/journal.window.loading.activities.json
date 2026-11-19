@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the activities journal route loads on first paint.",
+  "context": "Status shown while the activities journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "69eea397175962e2663a66e7b63d054f2a8200724f2d62079f2b5d3f304331b9",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

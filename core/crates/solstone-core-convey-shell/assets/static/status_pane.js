@@ -15,12 +15,12 @@ window.whenShellReady(() => {
   // health's banner counts the devices from the rollup. One screen was stating
   // the same fact twice with two different numbers. Both now read the count
   // from the one rollup this pane already fetches.
-  const SILENT_DEVICE_LABEL = "a device hasn't added recently";
+  const SILENT_DEVICE_MESSAGE = 'journal.window.shared.websocket.label.a.device.hasn.t.added.recently';
   let silentDeviceCount = 0;
   function statusLabelText() {
-    const label = window.appEvents?.statusLabel || 'connecting';
-    if (label === SILENT_DEVICE_LABEL && silentDeviceCount > 1) {
-      return silentDeviceCount + " devices haven't added recently";
+    const label = window.appEvents?.statusLabel || window.JournalI18n.render('journal.window.shared.websocket.label.connecting');
+    if (window.appEvents?.statusLabelMessage === SILENT_DEVICE_MESSAGE && silentDeviceCount > 1) {
+      return window.JournalI18n.render('journal.window.shell.status.silent.devices', [['count', String(silentDeviceCount)]]);
     }
     return label;
   }
@@ -50,10 +50,10 @@ window.whenShellReady(() => {
 
   function updateDiagnosticConsoleLink() {
     if (!statusConsoleLink) return;
-    const base = window.CONVEY_COPY?.CONSOLE_LINK_LABEL || 'system messages';
+    const base = window.CONVEY_COPY.CONSOLE_LINK_LABEL;
     const unread = window.convey?.diagnosticConsole?.unreadCount?.() || 0;
     statusConsoleLink.textContent = unread > 0 ? `${base} (${unread})` : base;
-    statusConsoleLink.setAttribute('aria-label', unread > 0 ? `${base}, ${unread} unread` : base);
+    statusConsoleLink.setAttribute('aria-label', unread > 0 ? window.JournalI18n.render('journal.window.shared.status.pane.accessible.label.value1.value2.unread', [['value1', String(base)], ['value2', String(unread)]]) : base);
   }
 
   let initialDestinationPending = true;
@@ -156,10 +156,10 @@ window.whenShellReady(() => {
         statusSentence.textContent = statusLabelText();
         statusSentence.style.color = '';
       } else if (metrics.state === 'connecting') {
-        statusSentence.textContent = 'connecting…';
+        statusSentence.textContent = window.CONVEY_COPY.CONNECTION_CONNECTING;
         statusSentence.style.color = '';
       } else {
-        statusSentence.textContent = 'connection lost. reconnecting';
+        statusSentence.textContent = window.CONVEY_COPY.CONNECTION_RECONNECTING;
         statusSentence.style.color = '';
       }
     }
@@ -171,11 +171,11 @@ window.whenShellReady(() => {
         // minute reads as "just now" rather than a vague "a few seconds".
         const MINUTE = 60000;
         const uptimeText = metrics.uptimeMs < MINUTE
-          ? 'connected just now'
-          : `connected for ${relativeTime(metrics.uptimeMs)}`;
+          ? window.JournalI18n.render('journal.window.shared.status.pane.connection.just.now')
+          : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.connected.for.value1', [['value1', String(relativeTime(metrics.uptimeMs))]]);
         if (metrics.lastMessageMs !== null) {
           const lastUpdate = metrics.lastMessageMs < MINUTE
-            ? 'updated just now'
+            ? window.JournalI18n.render('journal.window.shared.status.pane.update.just.now')
             : `updated ${relativeTime(metrics.lastMessageMs)} ago`;
           statusDetail.textContent = `${uptimeText} · ${lastUpdate}`;
         } else {
@@ -184,7 +184,7 @@ window.whenShellReady(() => {
       } else if (metrics.state === 'connecting') {
         statusDetail.textContent = '';
       } else {
-        statusDetail.textContent = 'some features may be delayed';
+        statusDetail.textContent = window.CONVEY_COPY.CONNECTION_DELAYED;
       }
     }
 
@@ -197,7 +197,7 @@ window.whenShellReady(() => {
         // G3-104: the ladder's floor said as a length of time. "24s" and
         // "0 seconds ago" were the same defect on two lines of one disclosure.
         wsUptimeRaw.textContent = metrics.uptimeMs < 60000
-          ? 'under a minute'
+          ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.under.a.minute')
           : relativeTime(metrics.uptimeMs);
       } else {
         wsUptimeRaw.textContent = '-';
@@ -207,10 +207,10 @@ window.whenShellReady(() => {
     if (wsLastMessageRaw) {
       if (metrics.lastMessageMs !== null) {
         wsLastMessageRaw.textContent = metrics.lastMessageMs < 60000
-          ? 'just now'
-          : `${relativeTime(metrics.lastMessageMs)} ago`;
+          ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.just.now')
+          : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.value1.ago', [['value1', String(relativeTime(metrics.lastMessageMs))]]);
       } else if (metrics.connected) {
-        wsLastMessageRaw.textContent = 'no messages yet';
+        wsLastMessageRaw.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.no.messages.yet');
       } else {
         wsLastMessageRaw.textContent = '-';
       }
@@ -263,7 +263,7 @@ window.whenShellReady(() => {
 
   // Plural forms are real: the pane read '1 uploads turned away'.
   function uploadsTurnedAway(count) {
-    return count === 1 ? '1 upload turned away' : count + ' uploads turned away';
+    return count === 1 ? window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.upload.turned.away') : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.value1.uploads.turned.away', [['value1', String(count)]]);
   }
 
 	  function renderCaptureSection(capture) {
@@ -289,14 +289,14 @@ window.whenShellReady(() => {
 		      const appendHealthLink = () => {
 		        const link = document.createElement('a');
 		        link.href = '/app/health';
-		        link.textContent = 'view device health →';
+		        link.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.view.device.health');
 		        link.style.cssText = 'display: inline-block; margin-top: 4px; color: var(--danger); font-size: 12px;';
 		        text.appendChild(link);
 		      };
 
 		      if (!degraded.length) {
-		        appendLine('a device needs attention', 'color: var(--danger); font-weight: 600;');
-		        appendLine("a device isn't reaching your journal.", 'color: var(--danger); font-size: 12px;');
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.needs.attention'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.weight'));
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.size.px'));
 		        appendHealthLink();
 		        return;
 		      }
@@ -304,42 +304,42 @@ window.whenShellReady(() => {
 		      const first = degraded[0];
 		      const rej = first.ingest_rejection;
 		      const name = (first.name || '').trim();
-		      const title = name ? name + ' needs attention' : 'a device needs attention';
+		      const title = name ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.value1.needs.attention', [['value1', String(name)]]) : window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.a.device.needs.attention');
 		      const firstMs = typeof rej.first === 'string' ? Date.parse(rej.first) : NaN;
 		      const latestMs = typeof rej.latest === 'string' ? Date.parse(rej.latest) : NaN;
 		      const hasFirstTs = Number.isFinite(firstMs);
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
-		      appendLine(title, 'color: var(--danger); font-weight: 600;');
+		      appendLine(title, window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.weight'));
 
 		      // X-02: health's sentence is the source for this state. The pane
 		      // echoes it, says what the device adds rather than what it senses,
 		      // and counts in a real plural.
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
-			        consequence = "what it adds hasn't reached your journal since " + sinceDay(firstMs) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
+			        consequence = window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.what.it.adds.hasn.t.reached') + sinceDay(firstMs) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasActiveCount) {
-			        consequence = "what it adds isn't reaching your journal. " + uploadsTurnedAway(rej.active_count) + '.';
+			        consequence = window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.what.it.adds.isn.t.reaching.variant2') + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasFirstTs) {
-			        consequence = "what it adds hasn't reached your journal since " + sinceDay(firstMs) + '.';
+			        consequence = window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.what.it.adds.hasn.t.reached') + sinceDay(firstMs) + '.';
 		      } else {
-			        consequence = "what it adds isn't reaching your journal.";
+			        consequence = window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.what.it.adds.isn.t.reaching');
 		      }
-		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
+		      appendLine(consequence, window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.size.px'));
 
-		      appendLine('update or restart it on that device, then a valid upload clears this.', 'color: var(--ink-soft); font-size: 12px;');
+		      appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.update.or.restart.it.on.that'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size'));
 
 		      const parts = [];
 		      if (rej.reason_code) parts.push('reason: ' + rej.reason_code);
 		      if (Number.isFinite(latestMs)) {
-		        parts.push('last rejected ' + relativeTime(Date.now() - latestMs) + ' ago');
+		        parts.push(window.JournalI18n.render('journal.window.shared.status.pane.visible.text.last.rejected.value1.ago', [['value1', String(relativeTime(Date.now() - latestMs))]]));
 		      }
 		      if (parts.length) {
-		        appendLine(parts.join(' · '), 'color: var(--ink-soft); font-size: 11px;');
+		        appendLine(parts.join(' · '), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant2'));
 		      }
 
 		      appendHealthLink();
 		      if (degraded.length > 1) {
-		        appendLine('and ' + (degraded.length - 1) + ' more need attention', 'color: var(--ink-soft); font-size: 12px; margin-top: 2px;');
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.and') + (degraded.length - 1) + window.JournalI18n.render('journal.window.shared.status.pane.status.text.more.need.attention'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant3'));
 		      }
 		      return;
 	    } else if (status === 'offline' || status === 'stale') {
@@ -348,13 +348,13 @@ window.whenShellReady(() => {
       text.style.color = 'var(--ink-faint)';
     }
     if (status === 'no_clients') {
-      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
+      text.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.no.devices.are.running.the.solstone');
     } else if (status === 'offline' || status === 'stale') {
       text.textContent = silentDeviceSentence(capture);
     } else if (status === 'active') {
-      text.textContent = 'devices are adding to your journal';
+      text.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.devices.are.adding.to.your.journal');
     } else {
-      text.textContent = 'device status is unavailable right now.';
+      text.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.device.status.is.unavailable.right.now');
     }
   }
 
@@ -370,18 +370,18 @@ window.whenShellReady(() => {
       .filter(client => client.name)
       .sort((a, b) => (b.ageMs === null ? -1 : b.ageMs) - (a.ageMs === null ? -1 : a.ageMs));
     if (named.length === 0) {
-      return "a device hasn't added to your journal recently.";
+      return window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.a.device.hasn.t.added.to');
     }
     if (named.length === 1) {
       const only = named[0];
       return only.ageMs === null
-        ? only.name + " hasn't added to your journal recently."
-        : only.name + " hasn't added to your journal in " + relativeTime(only.ageMs) + '.';
+        ? only.name + window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.hasn.t.added.to.your.journal.variant2')
+        : only.name + window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.hasn.t.added.to.your.journal') + relativeTime(only.ageMs) + '.';
     }
     const parts = named.map(
       client => client.name + (client.ageMs === null ? '' : ' (' + relativeTime(client.ageMs) + ')')
     );
-    return named.length + " devices haven't added to your journal recently: " + parts.join(', ') + '.';
+    return named.length + window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.devices.haven.t.added.to.your') + parts.join(', ') + '.';
   }
 
   function captureAgeMs(timestamp) {
@@ -399,7 +399,7 @@ window.whenShellReady(() => {
     section.style.display = '';
     const isAvailable = version?.availability === 'available' || (!version?.availability && Boolean(version?.update_available));
     if (!version?.availability && version?.update_available === false) {
-      text.textContent = 'v' + (version?.current || 'unknown');
+      text.textContent = 'v' + (version?.current || window.JournalI18n.render('journal.window.shared.status.pane.visible.text.unknown'));
       text.style.color = 'var(--ink-faint)';
     } else if (isAvailable) {
       const differ = Boolean(
@@ -412,21 +412,21 @@ window.whenShellReady(() => {
       text.appendChild(document.createTextNode('v' + (version?.current || '?') + ' · '));
       const span = document.createElement('span');
       span.style.color = 'var(--warn-ink)';
-      span.textContent = 'update available (v' + targetVer + ')';
+      span.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.update.available.v') + targetVer + ')';
       text.appendChild(span);
       const how = automaticSuffix(version, true);
       if (how) text.appendChild(document.createTextNode(' · ' + how));
       text.style.color = '';
     } else if (version?.availability === 'installed') {
       text.textContent = 'v' + (version?.current || '?') + ' · v' + (version?.target?.journal_version || '?')
-        + ' is installed and starts the next time your journal does';
+        + window.JournalI18n.render('journal.window.shared.status.pane.visible.text.is.installed.and.starts.the.next');
       text.style.color = '';
     } else if (version?.availability === 'not_available') {
       const how = automaticSuffix(version, false);
-      text.textContent = 'v' + (version?.current || 'unknown') + ' · up to date' + (how ? ' · ' + how : '');
+      text.textContent = 'v' + (version?.current || window.JournalI18n.render('journal.window.shared.status.pane.visible.text.unknown')) + window.JournalI18n.render('journal.window.shared.status.pane.visible.text.up.to.date') + (how ? ' · ' + how : '');
       text.style.color = '';
     } else {
-      text.textContent = 'update status unknown';
+      text.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.update.status.unknown');
       text.style.color = '';
     }
   }
@@ -435,13 +435,13 @@ window.whenShellReady(() => {
   function automaticSuffix(version, available) {
     const automatic = version?.automatic;
     if (automatic?.choice !== 'on' || automatic.paused) return '';
-    if (!available) return 'updates automatically';
-    if (automatic.last_result === 'metered') return "installs on a connection that isn't metered";
-    if (automatic.last_result === 'held') return 'updates are held';
+    if (!available) return window.JournalI18n.render('journal.window.shared.status.pane.automatic.updates');
+    if (automatic.last_result === 'metered') return window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.installs.on.a.connection.that.isn');
+    if (automatic.last_result === 'held') return window.JournalI18n.render('journal.window.shared.status.pane.automatic.held');
     // Nothing is promised while the release names no installer yet, or while
     // the hold can't be read.
     if (automatic.last_result === 'waiting-for-signed-installer' || automatic.last_result === 'hold-unknown') return '';
-    return 'installs automatically';
+    return window.JournalI18n.render('journal.window.shared.status.pane.automatic.installs');
   }
 
   // A failed press says why under the button's own section; a pressed button
@@ -498,33 +498,33 @@ window.whenShellReady(() => {
     };
     if (version?.package) {
       if (version.package.repository) {
-        line("installed from a package. updates come through your system's updater.");
+        line(window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.installed.from.a.package.updates.come'));
       } else {
-        const div = line("installed from a package. to get updates through your system's updater, add the solstone repository: ");
+        const div = line(window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.installed.from.a.package.to.get'));
         const link = document.createElement('a');
         link.href = 'https://solstone.app/install#linux-packages';
         link.target = '_blank';
         link.rel = 'noreferrer';
         link.referrerPolicy = 'no-referrer';
-        link.textContent = 'solstone.app/install#linux-packages';
+        link.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.solstone.app.install.linux.packages');
         div.appendChild(link);
       }
     } else if (automatic?.eligible && automatic.choice === 'unasked') {
-      const ask = line('update your journal automatically?');
+      const ask = line(window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.update.your.journal.automatically'));
       ask.style.fontWeight = '600';
       line(automatic.with_app
-        ? 'once a day your journal and the solstone app check for a new version and install it in the background. your journal never restarts on its own.'
-        : 'once a day your journal checks for a new version and installs it in the background. it never restarts on its own.');
+        ? window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.once.a.day.your.journal.and')
+        : window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.once.a.day.your.journal.checks'));
       const buttons = document.createElement('div');
       buttons.style.marginTop = '4px';
-      buttons.appendChild(actionButton('turn on', () => postSystem('/api/system/updates/automatic', { on: true }, box)));
-      buttons.appendChild(actionButton('no thanks', () => postSystem('/api/system/updates/automatic', { on: false }, box)));
+      buttons.appendChild(actionButton(window.JournalI18n.render('journal.window.shared.status.pane.automatic.enable'), () => postSystem('/api/system/updates/automatic', { on: true }, box)));
+      buttons.appendChild(actionButton(window.JournalI18n.render('journal.window.shared.status.pane.automatic.decline'), () => postSystem('/api/system/updates/automatic', { on: false }, box)));
       box.appendChild(buttons);
     } else if (automatic?.choice === 'on' && automatic.paused) {
-      line("automatic updates stopped after two tries that didn't work.").style.color = 'var(--warn-ink)';
+      line(window.JournalI18n.render('journal.window.shared.status.pane.automatic.paused')).style.color = 'var(--warn-ink)';
       const buttons = document.createElement('div');
       buttons.style.marginTop = '4px';
-      buttons.appendChild(actionButton('try again', () => postSystem('/api/system/updates/retry', {}, box)));
+      buttons.appendChild(actionButton(window.JournalI18n.render('journal.window.shared.status.pane.automatic.retry'), () => postSystem('/api/system/updates/retry', {}, box)));
       box.appendChild(buttons);
     }
     box.style.display = box.childNodes.length ? '' : 'none';
@@ -543,22 +543,22 @@ window.whenShellReady(() => {
       flags.forEach(function (flag) {
         const line = document.createElement('div');
         if (flag?.restart) {
-          line.textContent = 'a security update is installed. restart your journal to finish it.';
+          line.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.a.security.update.is.installed.restart');
           text.appendChild(line);
           const buttons = document.createElement('div');
           buttons.style.marginTop = '4px';
-          buttons.appendChild(actionButton('restart your journal', () => postSystem('/api/system/restart', {}, text)));
+          buttons.appendChild(actionButton(window.JournalI18n.render('journal.window.shared.status.pane.security.restart'), () => postSystem('/api/system/restart', {}, text)));
           text.appendChild(buttons);
           return;
         }
         line.textContent = (flag?.subject === 'journal'
-          ? 'your journal is missing a security fix'
-          : 'the solstone app on ' + (flag?.device || 'one of your devices') + ' is missing a security fix')
-          + ' (update to ' + (flag?.fixed_in || '?') + ').';
+          ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.your.journal.is.missing.a.security')
+          : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.the.solstone.app.on') + (flag?.device || window.JournalI18n.render('journal.window.shared.status.pane.visible.text.one.of.your.devices')) + window.JournalI18n.render('journal.window.shared.status.pane.visible.text.is.missing.a.security.fix'))
+          + window.JournalI18n.render('journal.window.shared.status.pane.visible.text.update.to') + (flag?.fixed_in || '?') + ').';
         text.appendChild(line);
       });
     } else if (security?.state === 'unconfirmed') {
-      text.textContent = "couldn't check for security updates.";
+      text.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.couldn.t.check.for.security.updates');
       text.style.color = 'var(--ink-faint)';
     }
     text.style.display = text.textContent ? '' : 'none';
@@ -579,7 +579,7 @@ window.whenShellReady(() => {
       list.textContent = '';
       const empty = document.createElement('span');
       empty.style.color = 'var(--ink-faint-paper)';
-      empty.textContent = 'no notifications held back';
+      empty.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.no.notifications.held.back');
       list.appendChild(empty);
       return;
     }
@@ -645,7 +645,7 @@ window.whenShellReady(() => {
       const hint = document.createElement('span');
       hint.setAttribute('data-quiet-notif-hint', 'true');
       hint.style.cssText = 'flex-shrink: 0; color: var(--ink-faint); font-size: 11px;';
-      hint.textContent = btn.getAttribute('aria-expanded') === 'true' ? 'hide details' : 'show details';
+      hint.textContent = btn.getAttribute('aria-expanded') === 'true' ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.hide.details') : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.show.details');
       btn.appendChild(hint);
 
       panel.textContent = n.message || '';
@@ -664,7 +664,7 @@ window.whenShellReady(() => {
       const panel = document.getElementById(btn.getAttribute('aria-controls'));
       if (panel) panel.hidden = expanded;
       const hint = btn.querySelector('[data-quiet-notif-hint]');
-      if (hint) hint.textContent = expanded ? 'show details' : 'hide details';
+      if (hint) hint.textContent = expanded ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.show.details') : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.hide.details');
     });
   }
 
@@ -686,7 +686,7 @@ window.whenShellReady(() => {
     const recentCount = window.AppServices?.notifications?.getHistory?.()?.length || 0;
     const bothEmpty = quietCount === 0 && recentCount === 0;
 
-    quietLabel.textContent = bothEmpty ? 'notifications' : 'quiet notifications';
+    quietLabel.textContent = bothEmpty ? window.JournalI18n.render('journal.window.shared.status.pane.visible.text.notifications') : window.JournalI18n.render('journal.window.shared.status.pane.visible.text.quiet.notifications');
     if (quietExplainer) quietExplainer.hidden = bothEmpty;
     recentHeading.hidden = bothEmpty;
     history.hidden = bothEmpty;
@@ -699,7 +699,7 @@ window.whenShellReady(() => {
       quietList.textContent = '';
       const line = document.createElement('span');
       line.style.color = 'var(--ink-faint-paper)';
-      line.textContent = 'nothing held back, nothing new';
+      line.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.nothing.held.back.nothing.new');
       quietList.appendChild(line);
     }
   }
@@ -715,7 +715,7 @@ window.whenShellReady(() => {
     const resolveIcon = value => window.AppServices.notifications._resolveIcon(value);
 
     if (history.length === 0) {
-      container.innerHTML = '<span style="color: var(--ink-faint-paper);">no notifications yet</span>';
+      container.innerHTML = `<span style="color: var(--ink-faint-paper);">${window.JournalI18n.renderHtml('journal.window.shared.status.pane.visible.text.no.notifications.yet')}</span>`;
       return;
     }
 
@@ -749,16 +749,16 @@ window.whenShellReady(() => {
     bell.setAttribute('data-perm', perm);
     if (perm === 'granted') {
       bell.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('bell') || '')}</span>`;
-      bell.title = 'browser notifications enabled';
-      bell.setAttribute('aria-label', 'browser notifications enabled');
+      bell.title = window.JournalI18n.render('journal.window.shared.status.pane.tooltip.browser.notifications.enabled');
+      bell.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.status.pane.accessible.label.browser.notifications.enabled'));
     } else if (perm === 'denied') {
       bell.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('bell-off') || '')}</span>`;
-      bell.title = 'notifications blocked. update in browser settings';
-      bell.setAttribute('aria-label', 'notifications blocked. update in browser settings');
+      bell.title = window.JournalI18n.render('journal.window.shared.status.pane.tooltip.notifications.blocked.update.in.browser.settings');
+      bell.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.status.pane.accessible.label.notifications.blocked.update.in.browser.settings'));
     } else {
       bell.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('bell') || '')}</span>`;
-      bell.title = 'enable browser notifications';
-      bell.setAttribute('aria-label', 'enable browser notifications');
+      bell.title = window.JournalI18n.render('journal.window.shared.status.pane.tooltip.enable.browser.notifications');
+      bell.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.status.pane.accessible.label.enable.browser.notifications'));
     }
   }
 

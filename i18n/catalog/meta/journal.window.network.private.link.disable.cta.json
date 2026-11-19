@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link disable cta.",
+  "context": "Network view copy, private link disable cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "ed0ce7c9fb264eafa638c1307bc9b91534602a29380021eb75c0913a5532e078",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

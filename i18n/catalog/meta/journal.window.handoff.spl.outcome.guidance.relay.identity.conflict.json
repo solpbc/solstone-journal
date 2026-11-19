@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance relay identity conflict in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance relay identity conflict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bbd4abb8033ca62bc46ba91016f42ac98df092389ec0bb3393295754f1b54a5",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

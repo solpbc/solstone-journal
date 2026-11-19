@@ -1,0 +1,16 @@
+{
+  "description": "Connection line labels connected in the journal's network view.",
+  "context": "Journal window, network view. Connection line labels connected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46feaac0e51afd5b2b236c00afa3a8b228dfb272be21a25689f87d74191483a5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

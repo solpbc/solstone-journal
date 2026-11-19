@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_HIDE_NO_SEARCH in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_HIDE_NO_SEARCH.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abd4c603a41e09caa1502faec1afa1e93a5adb87faa50f8d970f247fdc03d350",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

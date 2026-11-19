@@ -1,0 +1,16 @@
+{
+  "description": "Notice in the journal's thinking view.",
+  "context": "Journal window, thinking view. Notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "741242e3f031b5875cbb8bf3c7dd286b3645b4a8f1b9a50ea60cc4830ba60bd8",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

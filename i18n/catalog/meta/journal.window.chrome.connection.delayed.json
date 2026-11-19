@@ -1,0 +1,16 @@
+{
+  "description": "Status pane explanation while the connection is down.",
+  "context": "Status pane explanation while the connection is down.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 96,
+  "source_revision": "2f20e4ec6146daf7c96d8ed78333a65ea98b181df38604f9d8548f6f418dba83",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

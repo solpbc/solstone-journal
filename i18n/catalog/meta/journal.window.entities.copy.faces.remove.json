@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_REMOVE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_REMOVE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ace868dd0ff22e61735396e1c1fdea78a419961ae05f0b77e41ab8fa415edb59",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

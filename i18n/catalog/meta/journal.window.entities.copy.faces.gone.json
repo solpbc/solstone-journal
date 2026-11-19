@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_GONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_GONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7cb6830ccf2cbae7df0f5d09243dad17b2151910a2e16a458f80c109ee50c317",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

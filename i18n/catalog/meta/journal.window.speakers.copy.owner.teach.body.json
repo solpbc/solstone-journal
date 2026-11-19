@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach body in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d52422e5f9f4572c150d0a6f0b48067e31dabe08276a78eb67e2df0e1b391c2",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

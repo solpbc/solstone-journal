@@ -3,6 +3,8 @@
 
 const assert = require('assert');
 const path = require('path');
+const { journalContext } = require('./journal_catalog_dom.js');
+globalThis.JournalI18n = journalContext({}).JournalI18n;
 const year = require(path.join(__dirname, '../assets/year/year.js'));
 
 function matches(node, sel) {

@@ -1,0 +1,33 @@
+{
+  "description": "Entities display table ENT_TRUST_SUGGESTION_SUMMARY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_SUGGESTION_SUMMARY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "deef83895e6aca750ff591f44608190da6cc1700fe72d59733ef6fe16face918",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{source}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{target}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

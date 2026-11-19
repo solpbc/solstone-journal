@@ -1,0 +1,16 @@
+{
+  "description": "Status pane headline while reconnecting to the journal.",
+  "context": "Status pane headline while reconnecting to the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 96,
+  "source_revision": "286b56f2d1d023009e7be528bdc962c05faecf28b3aed7f02ac97f01558fe9c6",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

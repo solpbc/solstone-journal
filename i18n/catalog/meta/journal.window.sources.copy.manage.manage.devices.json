@@ -1,0 +1,16 @@
+{
+  "description": "Copy manage in the journal's sources view.",
+  "context": "Journal window, sources view. Copy manage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6b8d5706958e8458d205c28562ed6777ac1f3734291bec991de6c42f7c75cea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Owner voice error detail in the journal's speakers.owner.write view.",
+  "context": "Journal window, speakers.owner.write view. Owner voice error detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "865f58fa5c49a940469c0de6a3ebc44ef6ceb1040bb35c73d55292fe62ee67eb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

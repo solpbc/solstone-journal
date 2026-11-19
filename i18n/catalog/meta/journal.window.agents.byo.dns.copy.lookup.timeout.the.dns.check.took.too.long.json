@@ -1,0 +1,16 @@
+{
+  "description": "Byo dns copy lookup_timeout in the journal's agents view.",
+  "context": "Journal window, agents view. Byo dns copy lookup_timeout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8ddeb1b759430daaf208500e5f0029e031047f02f4a3bf4705678e367a869c1",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

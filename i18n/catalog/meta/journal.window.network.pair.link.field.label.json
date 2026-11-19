@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair link field label.",
+  "context": "Network view copy, pair link field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "b42839d232a0383ca48bc748ea3db184d478bb0a06065b89c592cf94ecb25a21",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

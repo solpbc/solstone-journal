@@ -1,0 +1,32 @@
+{
+  "description": "Body display date short in the journal's body view.",
+  "context": "Journal window, body view. Body display date short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a36b1ef21e79bc0bba650a5dac52c6063fdd60f6b706cbf431046a5abe2a5d00",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

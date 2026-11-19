@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_SOURCE_WORDS calendar in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_SOURCE_WORDS calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "777c3049e7895e31bbc8f9f9673f4c84adcaa1f0ac5fe342080fb661587246e3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

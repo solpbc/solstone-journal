@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_EMPTY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_EMPTY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a29d61ed61c2bdc270d12a0fafc6eab4619933d31aa47dae2cd616082f0943cf",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

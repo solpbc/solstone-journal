@@ -1,0 +1,28 @@
+{
+  "description": "Window explanation in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5174760d2a8df156fd72568eec1d65735bce26489abde45f02197fda8caf487e",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

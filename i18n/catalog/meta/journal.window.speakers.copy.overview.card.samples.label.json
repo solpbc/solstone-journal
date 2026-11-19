@@ -1,0 +1,16 @@
+{
+  "description": "Overview card samples label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview card samples label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f801bdcc1fcbd43803a910f9a53a802ee256befaeb835830a106c0d8fd20f56",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

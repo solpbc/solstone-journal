@@ -2,7 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use crate::{
-    ENTITIES_COPY, photos,
+    model::copy_text,
+    photos,
     router::{RouterState, admitted},
 };
 use axum::{
@@ -14,6 +15,8 @@ use axum::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
+use solstone_core_convey_http::window_catalog::{response_locale, text};
 use solstone_core_convey_http::{envelope::error_envelope, identity::AccessBasis};
 use solstone_core_entity::{
     VoiceprintRemoval, remove_voiceprints_by_key, try_load_entity_voiceprints_file,
@@ -22,13 +25,11 @@ use std::{path::Path, sync::Arc};
 
 const PAGE_SIZE: usize = 50;
 
-fn failure(detail: impl std::fmt::Display) -> Response {
+fn failure(locale: &str, detail: impl std::fmt::Display) -> Response {
     log::warn!("voice samples request failed: {detail}");
     error_envelope(
         "entity_operation_failed",
-        ENTITIES_COPY["ENT_VOICE_ERROR"]
-            .as_str()
-            .unwrap_or_default(),
+        copy_text(locale, "ENT_VOICE_ERROR"),
         detail.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -90,14 +91,16 @@ pub(crate) async fn panel(
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
     Query(page): Query<Page>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(r) = admitted(&b) {
         return r;
     }
+    let locale = response_locale(locale);
     match solstone_core_serving::seam::run_blocking(move || list(&root, &id, page.cursor)).await {
         Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => failure(e),
-        Err(e) => failure(e),
+        Ok(Err(e)) => failure(locale, e),
+        Err(e) => failure(locale, e),
     }
 }
 
@@ -111,11 +114,13 @@ pub(crate) async fn remove_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
     if let Some(r) = admitted(&b) {
         return r;
     }
+    let locale = response_locale(locale);
     let body = match axum::body::to_bytes(request.into_body(), 16 * 1024)
         .await
         .ok()
@@ -125,10 +130,8 @@ pub(crate) async fn remove_route(
         None => {
             return error_envelope(
                 "invalid_request",
-                ENTITIES_COPY["ENT_VOICE_ERROR"]
-                    .as_str()
-                    .unwrap_or_default(),
-                "invalid voice sample key",
+                copy_text(locale, "ENT_VOICE_ERROR"),
+                text(locale, "journal.window.entities.voice.invalid.key"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -136,7 +139,7 @@ pub(crate) async fn remove_route(
     };
     match solstone_core_serving::seam::run_blocking(move || remove(&root, &id, &body.key)).await {
         Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => failure(e),
-        Err(e) => failure(e),
+        Ok(Err(e)) => failure(locale, e),
+        Err(e) => failure(locale, e),
     }
 }

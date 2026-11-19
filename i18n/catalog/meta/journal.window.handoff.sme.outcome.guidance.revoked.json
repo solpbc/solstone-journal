@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance revoked in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance revoked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b11f5adc7ec019c13894da860358c2e1ed2c51d71d9d7527d1b13d5cfc960ae",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

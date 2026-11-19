@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_ERROR in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_ERROR.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b16262404ae3efe07e441a98bb4889a3a36af99151bf58b305bb9f887310cd9",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

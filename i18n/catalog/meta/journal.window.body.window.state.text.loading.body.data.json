@@ -1,0 +1,16 @@
+{
+  "description": "Window state text in the journal's body view.",
+  "context": "Journal window, body view. Window state text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "415995e5cdf8eb6346260770d4e44f595e3697260c52d587f76e7d7bd5cacc64",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

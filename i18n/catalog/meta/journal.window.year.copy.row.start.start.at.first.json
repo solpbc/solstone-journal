@@ -1,0 +1,23 @@
+{
+  "description": "Copy row start in the journal's year view.",
+  "context": "Journal window, year view. Copy row start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f14b96ebd8a553546b1079cc522d3c4c7942a58e3353d56cd8cbc8523080298",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{first}"
+    }
+  ]
+}

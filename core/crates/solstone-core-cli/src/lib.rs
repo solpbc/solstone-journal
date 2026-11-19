@@ -673,6 +673,14 @@ pub const MCP_HELP: &str = concat!(
 );
 
 /// The help for each `journal mcp` subcommand, chosen by [`mcp_help`].
+pub fn permission_kind_label(kind: &solstone_core_format::content::kinds::KindSpec) -> String {
+    use solstone_core_window_catalog::{ENGLISH, text};
+    let copy = kind
+        .permission_copy
+        .expect("registered permissions have copy");
+    text(ENGLISH, copy.label_id)
+}
+
 fn mcp_subcommand_help(words: &[&str]) -> &'static str {
     match words {
         ["service", ..] => concat!(
@@ -776,8 +784,10 @@ fn mcp_subcommand_help(words: &[&str]) -> &'static str {
             "  --facet FACET        only this facet, by name; repeat for more (default: the whole journal)\n",
             ).to_owned();
             use std::fmt::Write as _;
+            use solstone_core_window_catalog::{ENGLISH, text};
             for kind in solstone_core_format::content::kinds::permission_kinds() {
-                let _ = writeln!(help, "  {:<12} {}: {}", kind.stored_word, kind.label, kind.description);
+                let copy = kind.permission_copy.expect("registered permissions have copy");
+                let _ = writeln!(help, "  {:<12} {}: {}", kind.stored_word, permission_kind_label(kind), text(ENGLISH, copy.description_id));
             }
             help
             }).as_str()

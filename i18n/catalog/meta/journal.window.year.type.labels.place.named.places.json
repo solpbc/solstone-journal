@@ -1,0 +1,16 @@
+{
+  "description": "Type labels place in the journal's year view.",
+  "context": "Journal window, year view. Type labels place.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f228d2efa724c68d5323a340090e494788abd0953b91cefc66a182dcfc4ff4b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

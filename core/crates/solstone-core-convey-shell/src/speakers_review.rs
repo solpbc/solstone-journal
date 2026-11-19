@@ -3,6 +3,8 @@
 
 //! Segment speaker matching and the sentence-review read surface.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,10 +42,12 @@ pub struct StreamLayoutQuery {
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 
 pub async fn segment_speakers(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key)): RoutePath<(String, String, String)>,
     Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return bad_request(
             "invalid_day",
@@ -53,6 +57,7 @@ pub async fn segment_speakers(
     }
     spawn_blocking_response(OwnerReadRole::SpeakersSegmentSpeakers, move || {
         let segment_dir = match lookup_read_segment(
+            locale,
             &root.0,
             &day,
             &stream,
@@ -94,10 +99,12 @@ pub async fn segment_speakers(
 }
 
 pub async fn review(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key, source)): RoutePath<(String, String, String, String)>,
     Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return bad_request(
             "invalid_day",
@@ -114,7 +121,7 @@ pub async fn review(
     }
     spawn_blocking_response(OwnerReadRole::SpeakersReview, move || {
         let layout = decode_stream_layout(query.stream_layout.as_deref());
-        let segment_dir = match lookup_read_segment(
+        let segment_dir = match lookup_read_segment(locale,
             &root.0,
             &day,
             &stream,
@@ -125,8 +132,8 @@ pub async fn review(
             Ok(None) => {
                 return error_envelope(
                     "speaker_review_unavailable",
-                    "that speaker review couldn't be loaded.",
-                    "No transcript found",
+                    window_catalog::text(locale, "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded"),
+                    window_catalog::text(locale, "journal.window.speakers.error.no.transcript.found"),
                     StatusCode::NOT_FOUND,
                 )
                 .into_response();
@@ -139,7 +146,7 @@ pub async fn review(
             Err(error) => {
                 return error_envelope(
                     "speaker_review_unavailable",
-                    "that speaker review couldn't be loaded.",
+                    window_catalog::text(locale, "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded"),
                     error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
@@ -149,8 +156,8 @@ pub async fn review(
         if sentences.is_empty() {
             return error_envelope(
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
-                "No transcript found",
+                window_catalog::text(locale, "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded"),
+                window_catalog::text(locale, "journal.window.speakers.error.no.transcript.found"),
                 StatusCode::NOT_FOUND,
             )
             .into_response();
@@ -294,6 +301,7 @@ fn bad_request(reason_code: &str, message: &str, detail: &str) -> Response {
 
 #[allow(clippy::result_large_err)]
 fn lookup_read_segment(
+    locale: &str,
     root: &Path,
     day: &str,
     stream: &str,
@@ -316,7 +324,10 @@ fn lookup_read_segment(
         )),
         SegmentLookup::Failed(error) => Err(error_envelope(
             "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
+            window_catalog::text(
+                locale,
+                "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
+            ),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )

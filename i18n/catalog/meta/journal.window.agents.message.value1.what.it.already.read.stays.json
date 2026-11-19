@@ -1,0 +1,28 @@
+{
+  "description": "Message in the journal's agents view.",
+  "context": "Journal window, agents view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c96d7a1258947946d2edba6ced3ab4ecf6ed39254067396494c0fd4e8872eaad",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

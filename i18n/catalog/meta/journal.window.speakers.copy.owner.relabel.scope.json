@@ -1,0 +1,16 @@
+{
+  "description": "Owner relabel scope in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner relabel scope.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f2c5343976536d6f4b47ec0640266c5ab1164d4a68b104d633887751ce85572",
+  "max_length": 206,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Byo dns copy lookup_error in the journal's agents view.",
+  "context": "Journal window, agents view. Byo dns copy lookup_error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdb8931ab99c236fa07abb452ba711d17e9d96b7d0974947492cd19116ac7c49",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

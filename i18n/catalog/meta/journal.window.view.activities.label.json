@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.activities view.",
+  "context": "Journal window, view.activities view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dd85e09659b602514a962de9135f812d83e7792f378840ab9e324a5d070d7bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

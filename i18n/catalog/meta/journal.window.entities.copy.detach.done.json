@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_DETACH_DONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETACH_DONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b53ca421404d7f2ec79a0c8faba6fc7e4f770a71a0d7947c728c572d5b7a6750",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

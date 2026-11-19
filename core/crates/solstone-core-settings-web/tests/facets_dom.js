@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -490,6 +491,7 @@ function createHarness() {
   // The mount sends its own fetches through `window.fetch`; a case that
   // swaps the page's fetch swaps it for those too.
   Object.defineProperty(window, 'fetch', { get: () => context.fetch, set: (value) => { context.fetch = value; }, configurable: true });
+  loadWindowCatalog(context);
   vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'api.js'), 'utf8'), context, { filename: 'api.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'settings.js'), 'utf8'), context, { filename: 'settings.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'date_format.js'), 'utf8'), context, { filename: 'date_format.js' });

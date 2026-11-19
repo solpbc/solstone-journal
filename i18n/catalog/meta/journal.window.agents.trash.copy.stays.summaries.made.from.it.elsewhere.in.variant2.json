@@ -1,0 +1,16 @@
+{
+  "description": "Trash copy stays in the journal's agents view.",
+  "context": "Journal window, agents view. Trash copy stays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "637810ed0f5b0e299deb0d553bef7aa7c2313bf0c94adafbc220884aa878b9f1",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

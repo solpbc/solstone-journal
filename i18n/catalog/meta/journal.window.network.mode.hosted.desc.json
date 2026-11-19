@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, mode hosted desc.",
+  "context": "Network view copy, mode hosted desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 142,
+  "source_revision": "9f511264d95c80f61de4d0429f990c69064f74b877849d37ffe275e24d04af39",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

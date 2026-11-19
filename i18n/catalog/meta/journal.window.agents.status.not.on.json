@@ -1,0 +1,16 @@
+{
+  "description": "Status not on in the journal's agents view.",
+  "context": "Journal window, agents view. Status not on.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d113949529d9821783b3ac098ede08599e0ccc5588fc991b0dc5150ea35d7458",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

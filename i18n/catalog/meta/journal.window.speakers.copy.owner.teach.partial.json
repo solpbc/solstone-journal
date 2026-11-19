@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach partial in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea5dc7c9f745019e8a805de342ad718e3a8ec69e52006b6bdabe61192802b232",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

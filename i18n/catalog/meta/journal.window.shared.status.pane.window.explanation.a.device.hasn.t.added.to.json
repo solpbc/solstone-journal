@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8fccafb8d338e706c04fb4412b9df40b36a472dbc3ffcb1cec6960163c34b19",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

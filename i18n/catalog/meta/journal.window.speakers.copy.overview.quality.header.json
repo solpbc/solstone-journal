@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality header in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "147e42a3df8bf029b1352360e6ba16bd9782425467f78c0c48bf03b4a5e6b1e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

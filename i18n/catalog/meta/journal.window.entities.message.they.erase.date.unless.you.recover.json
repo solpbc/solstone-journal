@@ -1,0 +1,23 @@
+{
+  "description": "Message in the journal's entities view.",
+  "context": "Journal window, entities view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8bfff041051acab2e76f9d5c11b0b9469d6e3746219e71789db50c1919c8ea70",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{date}"
+    }
+  ]
+}

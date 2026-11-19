@@ -5,10 +5,28 @@
   'use strict';
 
   const MONTH_SHORT = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    window.JournalI18n.render('journal.window.date.months.short.jan'),
+    window.JournalI18n.render('journal.window.date.months.short.feb'),
+    window.JournalI18n.render('journal.window.date.months.short.mar'),
+    window.JournalI18n.render('journal.window.date.months.short.apr'),
+    window.JournalI18n.render('journal.window.date.months.short.may'),
+    window.JournalI18n.render('journal.window.date.months.short.jun'),
+    window.JournalI18n.render('journal.window.date.months.short.jul'),
+    window.JournalI18n.render('journal.window.date.months.short.aug'),
+    window.JournalI18n.render('journal.window.date.months.short.sep'),
+    window.JournalI18n.render('journal.window.date.months.short.oct'),
+    window.JournalI18n.render('journal.window.date.months.short.nov'),
+    window.JournalI18n.render('journal.window.date.months.short.dec')
   ];
-  const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const WEEKDAY_SHORT = [
+    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  ];
   const DAY_RE = /^\d{8}$/;
   const DAY_ATTR = 'data-daygrid-date';
   const MIN_AUTOSCROLL_OVERFLOW = 24;
@@ -269,9 +287,9 @@
       // order (less → more), so bare swatches still read; two presence swatches do
       // not — without words, nothing says which square is the one that happened.
       const emptyLabel = document.createElement('span');
-      emptyLabel.textContent = unit?.none || 'none';
+      emptyLabel.textContent = unit?.none || window.JournalI18n.render('journal.window.shared.day.grid.visible.text.none');
       const presentLabel = document.createElement('span');
-      presentLabel.textContent = unit?.one || 'yes';
+      presentLabel.textContent = unit?.one || window.JournalI18n.render('journal.window.shared.day.grid.visible.text.yes');
       scale.append(empty, emptyLabel, present, presentLabel);
       root.append(scale);
       host.appendChild(root);
@@ -279,7 +297,7 @@
     }
 
     const less = document.createElement('span');
-    less.textContent = 'less';
+    less.textContent = window.JournalI18n.render('journal.window.shared.day.grid.visible.text.less');
     scale.appendChild(less);
     const empty = document.createElement('span');
     empty.className = 'daygrid-legend-swatch daygrid-legend-swatch--empty';
@@ -291,7 +309,7 @@
       scale.appendChild(swatch);
     });
     const more = document.createElement('span');
-    more.textContent = 'more';
+    more.textContent = window.JournalI18n.render('journal.window.shared.day.grid.visible.text.more');
     scale.appendChild(more);
 
     const hasPending = data
@@ -300,7 +318,7 @@
     if (hasPending) {
       const pending = document.createElement('div');
       pending.className = 'daygrid-legend-pending';
-      pending.innerHTML = '<span class="daygrid-legend-pending-mark" aria-hidden="true"></span><span>pending rollup</span>';
+      pending.innerHTML = `<span class="daygrid-legend-pending-mark" aria-hidden="true"></span><span>${window.JournalI18n.renderHtml('journal.window.shared.day.grid.visible.text.pending.rollup')}</span>`;
       root.append(scale, pending);
     } else {
       root.append(scale);
@@ -320,7 +338,7 @@
     const label = normalized === 0 && activity > 0 && activityUnit
       ? nav.countLabel(activity, activityUnit)
       : nav.countLabel(normalized, unit);
-    const suffix = pending ? ', rollup pending' : '';
+    const suffix = pending ? window.JournalI18n.render('journal.window.shared.day.grid.rollup.pending') : '';
     return `${displayDay(day, today)}: ${label}${suffix}`;
   }
 
@@ -498,7 +516,7 @@
   function renderBlock(block, config) {
     const row = document.createElement('section');
     row.className = 'daygrid-year-block';
-    row.setAttribute('aria-label', `${block.year} calendar`);
+    row.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.day.grid.accessible.label.value1.calendar', [['value1', String(block.year)]]));
 
     const grid = document.createElement('div');
     grid.className = 'daygrid-year-grid';
@@ -637,7 +655,7 @@
       previewDay = day;
       selectedRange = null;
       syncRangeClasses();
-      announce(`range starts ${displayDay(day, config.today)}. pick the last day.`);
+      announce(window.JournalI18n.render('journal.window.shared.day.grid.window.explanation.range.starts.value1.pick.the.last', [['value1', String(displayDay(day, config.today))]]));
     }
 
     function commitRange(range) {
@@ -654,7 +672,7 @@
       selectionAnchor = null;
       previewDay = null;
       syncRangeClasses();
-      announce('range cleared');
+      announce(window.JournalI18n.render('journal.window.shared.day.grid.range.cleared'));
       if (config.onRange) config.onRange(null);
       return true;
     }
@@ -663,7 +681,7 @@
       if (!selectedRange) return false;
       selectedRange = null;
       syncRangeClasses();
-      announce('range cleared');
+      announce(window.JournalI18n.render('journal.window.shared.day.grid.range.cleared'));
       if (config.onRange) config.onRange(null);
       return true;
     }
@@ -711,14 +729,14 @@
       if (config.mode === 'select' && selectionAnchor) {
         const hint = document.createElement('span');
         hint.className = 'daygrid-peek-hint';
-        hint.textContent = `finishes the range from ${displayDay(selectionAnchor, config.today)}`;
+        hint.textContent = window.JournalI18n.render('journal.window.shared.day.grid.visible.text.finishes.the.range.from.value1', [['value1', String(displayDay(selectionAnchor, config.today))]]);
         peek.appendChild(hint);
       }
       if (cell.matches('a[href]')) {
         const open = document.createElement('a');
         open.className = 'daygrid-peek-open';
         open.href = cell.href;
-        open.textContent = 'open →';
+        open.textContent = window.JournalI18n.render('journal.window.shared.day.grid.visible.text.open');
         peek.appendChild(open);
       }
       peek.hidden = false;

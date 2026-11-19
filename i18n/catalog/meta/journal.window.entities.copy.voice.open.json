@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_OPEN in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_OPEN.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a20fccb4e3a22cecb547d783b76573d76eacb5e32f5c9c9970914b3cb439a10",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

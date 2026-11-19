@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, readCopyTable } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -646,7 +647,7 @@ function makePage(env, address = `/app/speakers/${DAY}`, { answers } = {}) {
   parseInto(doc, doc.body, '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/speakers/" data-app-name="speakers">speakers</a></nav><main id="main-content" tabindex="-1"></main><div id="view-announcer"></div>');
   const main = doc.getElementById('main-content');
 
-  const context = vm.createContext({
+  const context = journalContext({
     window, document: doc, location, history: window.history,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, WeakRef, Map, Set, Promise,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Uint8Array, Symbol,
@@ -740,7 +741,7 @@ module.exports = async function speakersContractCases(manifestDir) {
     .replace(/<script[^>]*><\/script>/g, '')
     .replace(/<link[^>]*>/g, '');
   const whoIsThis = fs.readFileSync(path.join(manifestDir, 'assets/speakers/who_is_this.js'), 'utf8');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/speakers/copy.json'), 'utf8'));
+  const copy = readCopyTable(path.join(manifestDir, 'assets/speakers/copy.json'));
   const env = { manifestDir, script, markup, whoIsThis, copy };
 
   // ---- AC 1: a contract view, in both modes

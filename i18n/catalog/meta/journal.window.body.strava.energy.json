@@ -1,0 +1,28 @@
+{
+  "description": "Body display strava energy in the journal's body view.",
+  "context": "Journal window, body view. Body display strava energy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f118eac34bd295c113e287770d1025a6174efcd74e76e7d62c140eaec930a32",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

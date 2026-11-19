@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the facets journal route loads on first paint.",
+  "context": "Status shown while the facets journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "d7b00b419f085846ba747914768698afb0e7a52f0e8a5899ea13b91cfe0f18a7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

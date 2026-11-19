@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 const { runtime: viewRuntime } = require('./view_runtime');
 
 // The originals page is part of home, which is on the view contract: home's
@@ -106,10 +107,9 @@ function copyTable(source) {
 // stale the moment the formatter learned to parse the key (G1-203 / S-1).
 const FORMAT = (() => {
   const host = { createViewReady: () => () => {} };
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'),
-    { window: host },
-  );
+  const context = vm.createContext({ window: host });
+  loadWindowCatalog(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), context);
   return host.JournalFormat;
 })();
 
@@ -176,7 +176,9 @@ async function boot(source, lists, responses, labels = null, options = {}) {
   // The originals list mounts on its own page only.
   window.location = { pathname: '/app/home/originals/' };
   class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
+  const context = vm.createContext({ window, Date: FixtureDate });
+  loadWindowCatalog(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), context);
   if (labels) window.JournalFormat.installStreamLabels({ status: 'complete', labels });
   if (options.clock) window.JournalClock = options.clock;
   const load = () => vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });

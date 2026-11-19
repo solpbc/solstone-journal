@@ -1,0 +1,16 @@
+{
+  "description": "Page heading in the journal's more view.",
+  "context": "Journal window, more view. Page heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0418a22c3fb71c81414192629668161561addaea702c2351c28edd892ec17670",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

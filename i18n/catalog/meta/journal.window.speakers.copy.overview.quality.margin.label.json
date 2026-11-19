@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality margin label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality margin label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bd447e305105debd82f2f312ec8bd5b7c950e10c12559bfb09f2517903b12d9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

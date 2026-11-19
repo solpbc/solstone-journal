@@ -1,0 +1,28 @@
+{
+  "description": "One known voice segment in the journal's speakers view.",
+  "context": "Journal window, speakers view. One known voice segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e59af3de44950ec6807bc7413ea903ebe497d4566d8c160b0b3a21739b3b44bc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

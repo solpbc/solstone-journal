@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, identity header label.",
+  "context": "Network view copy, identity header label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "1c9b5b6c8c538ab46bf72673712c486354349f0d47a56ee7793eb900b8231ae7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

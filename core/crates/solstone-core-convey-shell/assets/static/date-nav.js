@@ -6,28 +6,36 @@
   const APP_DAY_RE = /^\/app\/[a-z0-9_-]+\/(\d{8})\/?$/;
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
   const WEEKDAYS = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday'
+    window.JournalI18n.render('journal.window.date.weekdays.sunday'),
+    window.JournalI18n.render('journal.window.date.weekdays.monday'),
+    window.JournalI18n.render('journal.window.date.weekdays.tuesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.wednesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.thursday'),
+    window.JournalI18n.render('journal.window.date.weekdays.friday'),
+    window.JournalI18n.render('journal.window.date.weekdays.saturday')
   ];
-  const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const WEEKDAYS_SHORT = [
+    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  ];
   const MONTHS = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December'
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.january'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.february'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.march'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.april'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.may'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.june'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.july'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.august'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.september'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.october'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.november'),
+    window.JournalI18n.render('journal.window.shared.date.nav.months.label.december')
   ];
   const MONTHS_SHORT = [
     'Jan',
@@ -243,7 +251,7 @@
     const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
-    let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
+    let label = window.JournalI18n.render('journal.window.shared.date.nav.visible.text.week.of.value1.value2', [['value1', String(MONTHS_SHORT[target.getMonth()])], ['value2', String(target.getDate())]]);
     if (target.getFullYear() !== nowYear(activeNow)) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
@@ -257,9 +265,9 @@
     const normalized = dayString(target);
     const thisSunday = sundayOf(nowDayKey(activeNow));
     const lastSunday = thisSunday ? addDays(thisSunday, -7) : null;
-    if (normalized === thisSunday) return 'This week';
-    if (normalized === lastSunday) return 'Last week';
-    let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
+    if (normalized === thisSunday) return window.JournalI18n.render('journal.window.shared.date.nav.week.current');
+    if (normalized === lastSunday) return window.JournalI18n.render('journal.window.shared.date.nav.week.previous');
+    let label = window.JournalI18n.render('journal.window.shared.date.nav.visible.text.week.of.value1.value2', [['value1', String(MONTHS_SHORT[target.getMonth()])], ['value2', String(target.getDate())]]);
     if (target.getFullYear() !== nowYear(activeNow)) {
       label += `, ${target.getFullYear()}`;
     }
@@ -468,14 +476,14 @@
   function freshnessNote() {
     const freshness = state.freshness;
     if (!freshness || freshness.complete !== false) return '';
-    if (freshness.behind > 0) return 'still counting days…';
+    if (freshness.behind > 0) return window.JournalI18n.render('journal.window.shared.date.nav.days.counting');
     if (freshness.failed > 0) {
       return freshness.failed === 1
-        ? "couldn't count 1 day. still trying."
-        : `couldn't count ${freshness.failed} days. still trying.`;
+        ? window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.count.day.still.trying')
+        : window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.count.value1.days.still', [['value1', String(freshness.failed)]]);
     }
     // Not complete with nothing counted: the journal couldn't be read at all.
-    return "couldn't load which months have material.";
+    return window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.load.which.months.have');
   }
 
   // Only an index that answers with `freshness` takes part, so every other
@@ -645,24 +653,24 @@
     state.host.innerHTML =
       '<div class="date-nav-content" data-date-nav-root>' +
       '<div class="date-nav-content__bar">' +
-      `<button class="date-nav-content__arrow" type="button" data-date-nav-prev aria-label="previous ${stepLabel}">‹</button>` +
+      `<button class="date-nav-content__arrow" type="button" data-date-nav-prev aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.previous')} ${stepLabel}">‹</button>` +
       '<button class="date-nav-content__trigger" type="button" data-date-nav-trigger aria-haspopup="dialog" aria-expanded="false">' +
       '<span data-date-nav-label></span>' +
       '<svg class="date-nav-content__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<rect x="3" y="5" width="18" height="16" rx="3"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>' +
       '<span class="date-nav-content__warning" data-date-nav-warning aria-hidden="true" hidden>!</span>' +
       '</button>' +
-      `<button class="date-nav-content__arrow" type="button" data-date-nav-next aria-label="next ${stepLabel}">›</button>` +
+      `<button class="date-nav-content__arrow" type="button" data-date-nav-next aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.next')} ${stepLabel}">›</button>` +
       '</div>' +
       '<div class="date-nav-content__popover" data-date-nav-popover role="dialog" hidden>' +
       '<div class="date-nav-content__panelbar">' +
-      '<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-prev aria-label="previous">‹</button>' +
-      '<button class="date-nav-content__panel-title" type="button" data-date-nav-title aria-label="change date level"></button>' +
-      '<button class="date-nav-content__today" type="button" data-date-nav-today aria-label="go to today">' +
-      '<span class="date-nav-content__today-full">today</span>' +
+      `<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-prev aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.previous')}">‹</button>` +
+      `<button class="date-nav-content__panel-title" type="button" data-date-nav-title aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.change.date.level')}"></button>` +
+      `<button class="date-nav-content__today" type="button" data-date-nav-today aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.go.to.today')}">` +
+      `<span class="date-nav-content__today-full">${window.JournalI18n.renderHtml('journal.window.shared.date.nav.visible.text.today')}</span>` +
       '<span class="date-nav-content__today-short" aria-hidden="true">T</span>' +
       '</button>' +
-      '<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-next aria-label="next">›</button>' +
+      `<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-next aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.next')}">›</button>` +
       '</div>' +
       '<div class="date-nav-content__grid" data-date-nav-grid role="grid"></div>' +
       '<div class="date-nav-content__freshness" data-date-nav-freshness role="status" hidden></div>' +
@@ -715,7 +723,7 @@
     const label = state.host?.querySelector('[data-date-nav-label]');
     if (label) {
       label.textContent = dayless
-        ? 'pick a day'
+        ? window.JournalI18n.render('journal.window.shared.date.nav.visible.text.pick.a.day')
         : isWeekStep()
         ? weekControlLabel(state.day)
         : controlLabel(state.day);
@@ -901,7 +909,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'date-nav-content__retry';
-      button.textContent = 'try again';
+      button.textContent = window.JournalI18n.render('journal.window.shared.date.nav.visible.text.try.again');
       button.addEventListener('click', retry);
       state.grid.appendChild(button);
     }
@@ -910,26 +918,26 @@
   function renderIndexPending() {
     if (state.indexLoaded) return false;
     if (state.indexInflight) {
-      renderGridNote('loading months…');
+      renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.months.loading'));
       state.indexInflight.then(() => {
         if (state.open) renderPanel();
       });
       return true;
     }
     if (state.indexError) {
-      renderGridNote("couldn't load which months have material.", () => {
+      renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.load.which.months.have'), () => {
         state.indexError = null;
         fetchIndex(true).then(() => {
           if (state.open) renderPanel();
         });
-        renderGridNote('loading months…');
+        renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.months.loading'));
       });
       return true;
     }
     fetchIndex(true).then(() => {
       if (state.open) renderPanel();
     });
-    renderGridNote('loading months…');
+    renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.months.loading'));
     return true;
   }
 
@@ -1035,9 +1043,9 @@
     const cached = state.monthCache.get(month);
     if (!cached) {
       if (state.monthError.has(month)) {
-        renderGridNote("couldn't load which days have material.", () => {
+        renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.load.which.days.have'), () => {
           state.monthError.delete(month);
-          renderGridNote('loading days…');
+          renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.days.loading'));
           fetchMonth(month, true).then(() => {
             if (state.open && state.zoom === 'days' && state.month === month) renderPanel();
           });
@@ -1050,7 +1058,7 @@
           prefetchAdjacentMonths(month);
         }
       });
-      renderGridNote('loading days…');
+      renderGridNote(window.JournalI18n.render('journal.window.shared.date.nav.days.loading'));
       return;
     }
     prefetchAdjacentMonths(month);
@@ -1142,7 +1150,7 @@
       const present = coerceCount(data[sundayKey]) > 0;
       return renderCell({
         value: sundayKey,
-        label: `week of ${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}`,
+        label: window.JournalI18n.render('journal.window.shared.date.nav.label.week.of.value1.value2', [['value1', String(MONTHS_SHORT[date.getMonth()])], ['value2', String(date.getDate())]]),
         count: present ? 1 : 0,
         selected: sundayKey === state.day,
         disabled: !present,
@@ -1415,9 +1423,9 @@
     if (!local.host || !local.day || typeof local.onSelect !== 'function') return null;
     local.host.innerHTML =
       '<div class="date-nav-content" data-date-nav-root>' +
-      '<button type="button" data-date-nav-prev aria-label="previous day">‹</button>' +
+      `<button type="button" data-date-nav-prev aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.previous.day')}">‹</button>` +
       '<span data-date-nav-label></span>' +
-      '<button type="button" data-date-nav-next aria-label="next day">›</button>' +
+      `<button type="button" data-date-nav-next aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.next.day')}">›</button>` +
       '</div>';
     const label = local.host.querySelector('[data-date-nav-label]');
     const render = () => {

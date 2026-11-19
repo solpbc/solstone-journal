@@ -1,0 +1,16 @@
+{
+  "description": "Loopback request refusal in the journal's shell view.",
+  "context": "Journal window, shell view. Loopback request refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0efd3651ab96a570f9dc79a0dc02341ffa44c7c68a7c866858d17d7f4cc5d22d",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search placeholder in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Search placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "307d733b7b540bb4a6e8e32e6c67e0b3954bce27a1888eefb7bd4b008171225a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

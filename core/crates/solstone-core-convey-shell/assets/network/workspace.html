@@ -47,7 +47,7 @@
       <p class="link-secthint" data-copy="REACH_SELECTOR_HINT"></p>
     </div>
 
-    <div class="link-modeseg" role="radiogroup" aria-label="how your devices reach your journal">
+    <div class="link-modeseg" role="radiogroup" aria-label="{{journal.window.network.accessible.name.how.your.devices.reach.your.journal}}">
       <button
         type="button"
         id="link-seg-byo"
@@ -190,14 +190,14 @@
 
 
   <div class="workspace-content">
-    <section aria-label="devices">
-      <h2 class="section-title" id="devices" tabindex="-1">devices</h2>
+    <section aria-label="{{journal.window.network.accessible.name.devices}}">
+      <h2 class="section-title" id="devices" tabindex="-1">{{journal.window.network.section.heading.devices}}</h2>
       <button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA"></button>
       <div id="clientsList" role="list">
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
-          <span class="surface-state-text" data-role="loading-status">loading devices…</span>
-          <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+          <span class="surface-state-text" data-role="loading-status">{{journal.window.network.visible.text.loading.devices}}</span>
+          <span class="surface-state-still" data-role="still-working">{{journal.window.network.visible.text.still.working}}</span>
         </div>
       </div>
     </section>
@@ -205,7 +205,7 @@
 
   <div id="link-pairing-dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="link-pairing-dialog-title" hidden>
     <div class="modal-content link-pairing-content">
-      <button type="button" class="modal-close" data-pairing-action="close" aria-label="close">&times;</button>
+      <button type="button" class="modal-close" data-pairing-action="close" aria-label="{{journal.window.network.accessible.name.close}}">&times;</button>
       <h3 id="link-pairing-dialog-title" data-copy="MODAL_TITLE" tabindex="-1"></h3>
       <div id="link-pairing-starting" role="status" aria-busy="true">
         <span class="surface-state-spinner" aria-hidden="true"></span>
@@ -1117,9 +1117,9 @@ systemctl --user start solstone-linux</code></div>
       container.innerHTML = '<div class="link-mark-chips">' +
         '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-1)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
         '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-2)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
-        '</div><div class="link-mark-words"><span>your</span><span class="link-mark-sep">·</span><span>journal</span></div>';
+        `</div><div class="link-mark-words"><span>${window.JournalI18n.renderHtml('journal.window.network.visible.text.your')}</span><span class="link-mark-sep">·</span><span>${window.JournalI18n.renderHtml('journal.window.network.visible.text.journal')}</span></div>`;
       container.setAttribute('role', 'img');
-      container.setAttribute('aria-label', 'your journal, not set up yet');
+      container.setAttribute('aria-label', window.JournalI18n.render('journal.window.network.accessible.label.your.journal.not.set.up.yet'));
     }
 
     function renderUnavailableIdentityMark(container) {
@@ -1127,9 +1127,9 @@ systemctl --user start solstone-linux</code></div>
       container.innerHTML = '<div class="link-mark-chips">' +
         '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
         '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
-        '</div><div class="link-mark-words"><span>mark</span><span class="link-mark-sep">·</span><span>unavailable</span></div>';
+        `</div><div class="link-mark-words"><span>${window.JournalI18n.renderHtml('journal.window.network.visible.text.mark')}</span><span class="link-mark-sep">·</span><span>${window.JournalI18n.renderHtml('journal.window.network.visible.text.unavailable')}</span></div>`;
       container.setAttribute('role', 'img');
-      container.setAttribute('aria-label', "your journal's mark, unavailable right now");
+      container.setAttribute('aria-label', window.JournalI18n.render('journal.window.network.accessible.label.your.journal.s.mark.unavailable.right'));
     }
 
     function applyIdentityToAll(type, spec) {
@@ -1241,7 +1241,7 @@ systemctl --user start solstone-linux</code></div>
 
     function setStatusSentence(key) {
       const sentences = linkCopy.STATUS_SENTENCES || {};
-      setText(statusText, sentences[key] || sentences.checking || 'checking your journal…');
+      setText(statusText, sentences[key] || sentences.checking || window.JournalI18n.render('journal.window.network.status.text.checking.your.journal'));
       const colour = ['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key) ? 'is-green'
         : ['offline', 'lan_unreachable'].includes(key) ? 'is-red' : 'is-amber';
       ['is-green', 'is-amber', 'is-red'].forEach((name) => setClass(statusDot, name, name === colour));
@@ -1268,7 +1268,7 @@ systemctl --user start solstone-linux</code></div>
         code.textContent = address;
         const use = document.createElement('span');
         use.className = 'link-vpn-candidate-use';
-        use.textContent = vpnCandidatesEl.dataset.useLabel || 'use this';
+        use.textContent = vpnCandidatesEl.dataset.useLabel || window.JournalI18n.render('journal.window.network.visible.text.use.this');
         item.appendChild(label);
         item.appendChild(code);
         item.appendChild(use);
@@ -1332,7 +1332,7 @@ systemctl --user start solstone-linux</code></div>
           restoreHomeCandidatesFromStatus();
         }
       } catch (err) {
-        showHomeCandidateWriteError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        showHomeCandidateWriteError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.that.request'));
         restoreHomeCandidatesFromStatus();
         window.logError?.(err, { context: 'link: home candidate select failed' });
       } finally {
@@ -1529,7 +1529,7 @@ systemctl --user start solstone-linux</code></div>
       try {
         await submitHostAddress(hostAddressInput.value);
       } catch (err) {
-        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.that.request'));
         window.logError?.(err, { context: 'link: host address override failed' });
       } finally {
         setBusy(hostAddressApply, false);
@@ -1542,7 +1542,7 @@ systemctl --user start solstone-linux</code></div>
       try {
         await submitHostAddress(null);
       } catch (err) {
-        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.that.request'));
         window.logError?.(err, { context: 'link: host address clear failed' });
       } finally {
         setBusy(hostAddressClear, false);
@@ -1567,7 +1567,7 @@ systemctl --user start solstone-linux</code></div>
         window.logError(err, { context: 'link: refreshStatus failed' });
         revealStatusPanel();
         window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
-          heading: "Can't reach pairing service",
+          heading: window.JournalI18n.render('journal.window.network.heading.can.t.reach.pairing.service'),
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: err.serverMessage,
           detail: err,
@@ -1600,12 +1600,12 @@ systemctl --user start solstone-linux</code></div>
         setHidden(privateLinkOperationLink, !linkUrl);
         setAttr(privateLinkOperationLink, 'href', linkUrl);
         setText(privateLinkOperationLink, subscribeUrl
-          ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'open the services portal'
-          : linkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →');
+          ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || window.JournalI18n.renderEnglish('journal.window.network.status.text.open.the.services.portal')
+          : linkCopy.PRIVATE_LINK_PORTAL_CTA || window.JournalI18n.renderEnglish('journal.window.network.status.text.continue.to.approve'));
       }
       if (privateLinkOperationRetry) {
         setHidden(privateLinkOperationRetry, !privateLinkRetryAction);
-        setText(privateLinkOperationRetry, linkCopy.PRIVATE_LINK_RETRY_CTA || 'try again');
+        setText(privateLinkOperationRetry, linkCopy.PRIVATE_LINK_RETRY_CTA || window.JournalI18n.render('journal.window.network.status.text.try.again'));
       }
     }
 
@@ -1618,7 +1618,7 @@ systemctl --user start solstone-linux</code></div>
       if (!operation) {
         if (latestPrivateLink.state === 'inconsistent') {
           setPrivateLinkOperation(
-            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || window.JournalI18n.render('journal.window.network.window.explanation.your.private.network.needs.setting.up'),
             '',
             { retryAction: startPrivateLinkSetup },
           );
@@ -1629,19 +1629,19 @@ systemctl --user start solstone-linux</code></div>
       }
 
       const phase = operation.phase;
-      let headline = linkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…';
+      let headline = linkCopy.PRIVATE_LINK_SETTING_UP || window.JournalI18n.render('journal.window.network.window.state.text.setting.up.your.private.network');
       let detail = typeof operation.guidance === 'string' ? operation.guidance : '';
       let retryAction = null;
       let subscribeUrl = '';
 
       if (phase === 'enabled') {
-        headline = linkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
+        headline = linkCopy.PRIVATE_LINK_SETUP_SUCCESS || window.JournalI18n.render('journal.window.network.window.explanation.your.private.network.is.on');
       } else if (phase === 'subscribing') {
-        headline = linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || "private network isn't on yet";
+        headline = linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || window.JournalI18n.render('journal.window.network.window.explanation.private.network.isn.t.on.yet');
         detail = linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
         subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';
       } else if (phase === 'revoked' || phase === 'error') {
-        headline = linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.";
+        headline = linkCopy.PRIVATE_LINK_SETUP_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.setting.up.your');
         retryAction = startPrivateLinkSetup;
       }
 
@@ -1678,8 +1678,8 @@ systemctl --user start solstone-linux</code></div>
         await privateLinkSleep(1000);
       }
       setPrivateLinkOperation(
-        linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
-        'timed out waiting for your private network.',
+        linkCopy.PRIVATE_LINK_SETUP_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.setting.up.your'),
+        window.JournalI18n.render('journal.window.network.window.explanation.timed.out.waiting.for.your.private'),
         { retryAction: startPrivateLinkSetup },
       );
       return null;
@@ -1695,7 +1695,7 @@ systemctl --user start solstone-linux</code></div>
     async function startPrivateLinkSetup() {
       const keep = keepPrivateLinkFocus(pressed());
       setPrivateLinkButtonsBusy(true);
-      setPrivateLinkOperation(linkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…');
+      setPrivateLinkOperation(linkCopy.PRIVATE_LINK_SETTING_UP || window.JournalI18n.render('journal.window.network.window.state.text.setting.up.your.private.network'));
       try {
         const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
         // The owner has left: going back shows the operation and its link.
@@ -1710,7 +1710,7 @@ systemctl --user start solstone-linux</code></div>
         await refreshStatus();
       } catch (err) {
         setPrivateLinkOperation(
-          linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
+          linkCopy.PRIVATE_LINK_SETUP_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.finish.setting.up.your'),
           err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
           { retryAction: startPrivateLinkSetup },
         );
@@ -1730,10 +1730,10 @@ systemctl --user start solstone-linux</code></div>
         const status = result?.status || {};
         latestPrivateLink = status;
         if (status.state === 'not_enabled') {
-          setPrivateLinkOperation((localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_SUCCESS_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_SUCCESS) || 'your private network is off.');
+          setPrivateLinkOperation((localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_SUCCESS_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_SUCCESS) || window.JournalI18n.render('journal.window.network.window.explanation.your.private.network.is.off'));
         } else {
           setPrivateLinkOperation(
-            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || window.JournalI18n.render('journal.window.network.window.explanation.your.private.network.needs.setting.up'),
             '',
             { retryAction: startPrivateLinkSetup },
           );
@@ -1741,7 +1741,7 @@ systemctl --user start solstone-linux</code></div>
         await refreshStatus();
       } catch (err) {
         setPrivateLinkOperation(
-          linkCopy.PRIVATE_LINK_DISABLE_FAILED || "couldn't turn off your private network.",
+          linkCopy.PRIVATE_LINK_DISABLE_FAILED || window.JournalI18n.render('journal.window.network.window.explanation.couldn.t.turn.off.your.private'),
           err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
           { retryAction: disablePrivateLink },
         );
@@ -1797,7 +1797,7 @@ systemctl --user start solstone-linux</code></div>
       if (dashboardContent) dashboardContent.hidden = true;
       if (!stateGate || !window.SurfaceState) return;
       stateGate.hidden = false;
-      stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network…' });
+      stateGate.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.network.text.loading.network') });
     }
 
     function revealWorkspace() {
@@ -1813,7 +1813,7 @@ systemctl --user start solstone-linux</code></div>
       if (!stateGate || !window.SurfaceState) return;
       stateGate.hidden = false;
       stateGate.innerHTML = window.SurfaceState.error({
-        heading: "Couldn't load network",
+        heading: window.JournalI18n.render('journal.window.network.heading.couldn.t.load.network'),
         retry: true,
         serverMessage: err?.serverMessage,
         detail: err,
@@ -1997,8 +1997,8 @@ systemctl --user start solstone-linux</code></div>
           const text = idValue ? idValue.textContent : '';
           if (!text) return;
           const ok = await clipboardWriteText(text);
-          showToast(ok ? (linkCopy.IDENTITY_ID_COPY_SUCCESS_TOAST || 'journal id copied')
-                       : (linkCopy.IDENTITY_ID_COPY_FAIL_TOAST || "couldn't copy journal id"));
+          showToast(ok ? (linkCopy.IDENTITY_ID_COPY_SUCCESS_TOAST || window.JournalI18n.render('journal.window.network.status.text.journal.id.copied'))
+                       : (linkCopy.IDENTITY_ID_COPY_FAIL_TOAST || window.JournalI18n.render('journal.window.network.status.text.couldn.t.copy.journal.id')));
         });
       }
       // Paused while the page is hidden, read again on return.
@@ -2030,14 +2030,14 @@ systemctl --user start solstone-linux</code></div>
     // phone and a keyboard never reach, and 'last added' sat on the card face where
     // the two could not be read against each other. Both values are labelled here,
     // next to each other, and the distinction is visible text.
-    const CHECK_IN_NOTE = 'a device can add material without checking in again, so these two can differ.';
+    const CHECK_IN_NOTE = window.JournalI18n.render('journal.window.network.window.explanation.a.device.can.add.material.without');
 
     function clientStatsHTML(client, deliveryGroup) {
       const segment = window.NetworkRender.segmentDisplay(client.last_accepted_segment);
       // G3-216: the readable time answers the question; the storage key stays with
       // it as the exact id rather than standing in for one.
       const segmentCell = segment
-        ? `${escapeHtml(segment.readable || 'time unavailable')}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
+        ? `${escapeHtml(segment.readable || window.JournalI18n.render('journal.window.network.status.text.time.unavailable'))}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
         : 'none';
       const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
       // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
@@ -2046,13 +2046,13 @@ systemctl --user start solstone-linux</code></div>
       const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
       const lastAdded = client.last_accepted_ingest_at
         ? window.JournalFormat.timestamp(client.last_accepted_ingest_at)
-        : 'nothing yet';
+        : window.JournalI18n.render('journal.window.network.window.state.text.nothing.yet');
       return `<dl>
-        <div><dt>last added</dt><dd>${escapeHtml(lastAdded)}</dd></div>
-        <div><dt>last check-in</dt><dd><span data-check-in>${escapeHtml(checkInText(client))}</span><span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
-        ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
-        <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
-        ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
+        <div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.last.added')}</dt><dd>${escapeHtml(lastAdded)}</dd></div>
+        <div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.last.check.in')}</dt><dd><span data-check-in>${escapeHtml(checkInText(client))}</span><span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
+        ${connectionLabel ? `<div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.connection')}</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
+        <div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.last.journal.segment')}</dt><dd>${segmentCell}</dd></div>
+        ${failure ? `<div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.delivery.detail')}</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
       </dl>`;
     }
 
@@ -2086,15 +2086,15 @@ systemctl --user start solstone-linux</code></div>
     // delivered keeps 'unpair' in its disclosure and is never offered 'forget'. Both
     // refusals on the forget route stay as they are.
     function forgetActionHTML(client) {
-      const name = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
+      const name = client.role === 'peer' ? window.JournalI18n.render('journal.window.network.window.state.text.another.journal') : (client.display_label || client.device_label || client.client_label || client.cid_short);
       return `
         <div class="client-forget" data-forget-cid="${escapeHtml(client.cid)}">
-          <button type="button" class="client-forget-open" data-forget-action="ask">forget this device</button>
+          <button type="button" class="client-forget-open" data-forget-action="ask">${window.JournalI18n.renderHtml('journal.window.network.button.label.forget.this.device')}</button>
           <div class="client-forget-confirm" hidden>
-            <p class="client-forget-question">forget ${escapeHtml(name)}? it will need to pair again to add anything.</p>
+            <p class="client-forget-question">${window.JournalI18n.renderHtml('journal.window.network.visible.text.forget')} ${escapeHtml(name)}${window.JournalI18n.renderHtml('journal.window.network.visible.text.it.will.need.to.pair.again')}</p>
             <div class="client-forget-buttons">
-              <button type="button" class="danger" data-forget-action="confirm">forget</button>
-              <button type="button" data-forget-action="cancel">keep it</button>
+              <button type="button" class="danger" data-forget-action="confirm">${window.JournalI18n.renderHtml('journal.window.network.button.label.forget')}</button>
+              <button type="button" data-forget-action="cancel">${window.JournalI18n.renderHtml('journal.window.network.button.label.keep.it')}</button>
             </div>
           </div>
           <p class="client-forget-status" role="status" hidden></p>
@@ -2127,13 +2127,13 @@ systemctl --user start solstone-linux</code></div>
         const selection = active === 'input' ? [activeElement.selectionStart, activeElement.selectionEnd, activeElement.selectionDirection] : null;
         if (section) section.outerHTML = clientLabelHTML(state.row);
         if (card) {
-          const displayName = state.row.role === 'peer' ? 'another journal' : state.row.display_label;
+          const displayName = state.row.role === 'peer' ? window.JournalI18n.render('journal.window.network.window.state.text.another.journal') : state.row.display_label;
           card.querySelector('.client-name').textContent = displayName;
           const render = window.NetworkRender;
           const connection = render.deliveryGroupFor(state.row) === 'adding' ? '' : render.connectionLineLabel(state.row);
           card.setAttribute('aria-label', [displayName, render.deliveryChipLabel(state.row), connection].filter(Boolean).join(', '));
           const question = card.querySelector('.client-forget-question');
-          if (question) question.textContent = `forget ${displayName}? it will need to pair again to add anything.`;
+          if (question) question.textContent = window.JournalI18n.render('journal.window.network.visible.text.forget.value1.it.will.need.to', [['value1', String(displayName)]]);
           if (active) {
             const target = card.querySelector(`[data-label-action="${active}"]`);
             target?.focus();
@@ -2148,22 +2148,22 @@ systemctl --user start solstone-linux</code></div>
       const state = clientLabels.editor(client.cid);
       if (!state) return '';
       const cid = escapeHtml(client.cid);
-      const facts = [['reported name', client.reported?.name], ['platform', client.reported?.platform],
-        ['device type', client.reported?.device_type], ['app', client.reported?.app_id],
-        ['app version', client.reported?.app_version]].filter(([, value]) => typeof value === 'string' && value);
+      const facts = [[window.JournalI18n.render('journal.window.network.window.state.text.reported.name'), client.reported?.name], ['platform', client.reported?.platform],
+        [window.JournalI18n.render('journal.window.network.window.state.text.device.type'), client.reported?.device_type], ['app', client.reported?.app_id],
+        [window.JournalI18n.render('journal.window.network.window.state.text.app.version'), client.reported?.app_version]].filter(([, value]) => typeof value === 'string' && value);
       const reported = facts.length ? `<dl>${facts.map(([label, value]) =>
         `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
-        : "<p>device details haven't been shared yet.</p>";
+        : `<p>${window.JournalI18n.renderHtml('journal.window.network.visible.text.device.details.haven.t.been.shared')}</p>`;
       const editor = `
         <form data-label-cid="${cid}" aria-busy="${state.pending}">
-          <label for="client-label-${cid}">your name for this device</label>
+          <label for="client-label-${cid}">${window.JournalI18n.renderHtml('journal.window.network.field.label.your.name.for.this.device')}</label>
           <input id="client-label-${cid}" data-label-action="input" type="text" value="${escapeHtml(state.draft)}"
             aria-describedby="client-label-help-${cid}" ${state.pending ? 'readonly' : ''}>
-          <p id="client-label-help-${cid}">leave blank to use the device's reported name when available.</p>
+          <p id="client-label-help-${cid}">${window.JournalI18n.renderHtml('journal.window.network.visible.text.leave.blank.to.use.the.device')}</p>
           <div class="client-label-actions">
-            <button type="submit" data-label-action="save" aria-disabled="${state.pending}">save name</button>
-            <button type="button" data-label-action="clear" aria-disabled="${state.pending}">clear your name</button>
-            <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">cancel edit</button>
+            <button type="submit" data-label-action="save" aria-disabled="${state.pending}">${window.JournalI18n.renderHtml('journal.window.network.button.label.save.name')}</button>
+            <button type="button" data-label-action="clear" aria-disabled="${state.pending}">${window.JournalI18n.renderHtml('journal.window.network.button.label.clear.your.name')}</button>
+            <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">${window.JournalI18n.renderHtml('journal.window.network.button.label.cancel.edit')}</button>
           </div>
         </form>`;
       return `<div class="client-label-section">${editor}
@@ -2210,7 +2210,7 @@ systemctl --user start solstone-linux</code></div>
     }
     function cardFacts(client) {
       const render = window.NetworkRender;
-      const displayName = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
+      const displayName = client.role === 'peer' ? window.JournalI18n.render('journal.window.network.window.state.text.another.journal') : (client.display_label || client.device_label || client.client_label || client.cid_short);
       const deliveryLabel = chipLabel(client);
       const deliveryGroup = render.deliveryGroupFor(client);
       // A device that is actively adding says so in the chip already; a stale
@@ -2240,10 +2240,10 @@ systemctl --user start solstone-linux</code></div>
       const render = window.NetworkRender;
       const { displayName, deliveryLabel, deliveryGroup, ariaLabel } = cardFacts(client);
       const lastAdded = client.last_accepted_ingest_at
-        ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
+        ? `<p class="client-last-material">${window.JournalI18n.renderHtml('journal.window.network.visible.text.last.added')} ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
         : '';
       const pairedDay = render.dayKeyFor(client.paired_at);
-      const pairedLabel = pairedDay ? `paired ${window.JournalFormat.day(pairedDay)}` : '';
+      const pairedLabel = pairedDay ? window.JournalI18n.render('journal.window.network.paired.day', [['date', String(window.JournalFormat.day(pairedDay))]]) : '';
       return `
         <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}" tabindex="-1">
           <div class="client-header">
@@ -2254,11 +2254,11 @@ systemctl --user start solstone-linux</code></div>
           ${pairedLabel ? `<p class="client-paired">${escapeHtml(pairedLabel)}</p>` : ''}
           ${deliveryGroup === 'never' ? forgetActionHTML(client) : ''}
           <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
-            <summary>device details</summary>
+            <summary>${window.JournalI18n.renderHtml('journal.window.network.disclosure.label.device.details')}</summary>
             ${clientLabelHTML(client)}
-            <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
+            <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>${window.JournalI18n.renderHtml('journal.window.network.visible.text.device.id')}</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
           ${deliveryGroup === 'never' ? '' : `<div class="client-actions">
-            <button class="danger" data-cid="${escapeHtml(client.cid)}" data-network-action="unpair">unpair</button>
+            <button class="danger" data-cid="${escapeHtml(client.cid)}" data-network-action="unpair">${window.JournalI18n.renderHtml('journal.window.network.button.label.unpair')}</button>
           </div>`}
           </details>
         </div>
@@ -2373,7 +2373,7 @@ systemctl --user start solstone-linux</code></div>
       } catch (err) {
         if (epoch !== clientsEpoch) return;
         window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
-          heading: 'your devices couldn\'t be loaded.',
+          heading: window.JournalI18n.render('journal.window.network.heading.your.devices.couldn.t.be.loaded'),
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: window.SurfaceState.serverMessageFrom(err),
           detail: err,
@@ -2415,7 +2415,7 @@ systemctl --user start solstone-linux</code></div>
           } catch (_err) {
             detail = '';
           }
-          showForgetStatus(row, detail || 'that device couldn\'t be forgotten. ' + window.CONVEY_COPY.RELOAD_HINT);
+          showForgetStatus(row, detail || window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.forgotten') + window.CONVEY_COPY.RELOAD_HINT);
           setBusy(confirmBtn, false);
           return;
         }
@@ -2424,7 +2424,7 @@ systemctl --user start solstone-linux</code></div>
         loadClients({ focusFrom: held ? cid : null });
       } catch (err) {
         if (ctx.disposed) return;
-        showForgetStatus(row, 'that device couldn\'t be forgotten. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT);
+        showForgetStatus(row, window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.forgotten.variant2') + window.CONVEY_COPY.RELOAD_HINT);
         setBusy(confirmBtn, false);
       }
     }
@@ -2451,14 +2451,14 @@ systemctl --user start solstone-linux</code></div>
     });
 
     function clientNameFor(button) {
-      return button.closest('.client-card')?.querySelector('.client-name')?.textContent || 'this device';
+      return button.closest('.client-card')?.querySelector('.client-name')?.textContent || window.JournalI18n.render('journal.window.network.window.state.text.this.device');
     }
 
     async function unpairClient(cid, button) {
       const name = clientNameFor(button);
       const copy = linkCopy || {};
-      const title = (copy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?").replace('{label}', name);
-      if (!(await window.SolQuestion.ask({ message: copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title, action: 'unpair', signal: ctx.signal, opener: () => Array.from(workspaceRoot.querySelectorAll('[data-network-action="unpair"]')).find(el => el.dataset.cid === cid) })) || ctx.disposed) {
+      const title = (copy.UNPAIR_TITLE_FORMAT || window.JournalI18n.render('journal.window.network.window.state.text.unpair.label')).replace('{label}', name);
+      if (!(await window.SolQuestion.ask({ message: copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title, action: window.JournalI18n.render('journal.window.network.unpair.action'), signal: ctx.signal, opener: () => Array.from(workspaceRoot.querySelectorAll('[data-network-action="unpair"]')).find(el => el.dataset.cid === cid) })) || ctx.disposed) {
         return;
       }
 
@@ -2469,13 +2469,13 @@ systemctl --user start solstone-linux</code></div>
 
         if (!response.ok) {
           const data = await response.json();
-          throw new Error(data.error || 'Failed to unpair');
+          throw new Error(data.error || window.JournalI18n.render('journal.window.network.window.state.text.failed.to.unpair'));
         }
 
         loadClients();
       } catch (err) {
         if (ctx.disposed) return;
-        const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+        const msg = window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.removed') + window.CONVEY_COPY.RELOAD_HINT;
         window.showError?.(msg);
       }
     }

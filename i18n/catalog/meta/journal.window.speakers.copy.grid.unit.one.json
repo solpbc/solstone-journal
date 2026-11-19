@@ -1,0 +1,16 @@
+{
+  "description": "Grid unit one in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Grid unit one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9720127a1c31ebd8b17aa60857bbe939edc1fb9b599ce951acaa2a8dfe086a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

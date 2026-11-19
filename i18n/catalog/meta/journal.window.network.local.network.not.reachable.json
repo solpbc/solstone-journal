@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network not reachable.",
+  "context": "Network view copy, local network not reachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 86,
+  "source_revision": "6a512b71937b72f234f7f3c964d0c1f45eb183dc48e6bc3457a897e4a2b4d2c5",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

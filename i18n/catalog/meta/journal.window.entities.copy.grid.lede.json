@@ -1,0 +1,38 @@
+{
+  "description": "Entities display table ENT_GRID_LEDE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_GRID_LEDE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aff48955312e97de29fa9fb6a58e9bf94796cf5e20abf788bf630a94581c7c6d",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{observation_unit}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{d}"
+    },
+    {
+      "name": "slot4",
+      "kind": "accepted-input",
+      "value": "{day_unit}"
+    }
+  ]
+}

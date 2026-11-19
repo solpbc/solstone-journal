@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_EVENTS_ONLY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_EVENTS_ONLY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2595dacd0b0bbd349b5e728a4de708a5c14c556fbcb661328d3b949970dccf69",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

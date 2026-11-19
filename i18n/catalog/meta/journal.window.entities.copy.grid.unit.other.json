@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_GRID_UNIT_OTHER in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_GRID_UNIT_OTHER.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aba8fe05e204eaccd08b72f204e66b12801988cb611021413af05acfb250f154",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

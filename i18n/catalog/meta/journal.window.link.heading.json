@@ -1,0 +1,16 @@
+{
+  "description": "Heading and title when a source cannot open in the journal's link view.",
+  "context": "Journal window, link view. Heading and title when a source cannot open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08f54d967d3ec25b91659325502bfdc44ab1bc51b1012fb25699ad72cc1cb344",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, brandlock line.",
+  "context": "Network view copy, brandlock line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 86,
+  "source_revision": "4bf0c70d1505e1f0f130b95842c3cab7b27d1db88f3fbb1d29a641728b4a1b0c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

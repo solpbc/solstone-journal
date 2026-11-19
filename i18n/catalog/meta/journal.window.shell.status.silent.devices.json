@@ -1,0 +1,28 @@
+{
+  "description": "Silent devices in the journal's shell.status view.",
+  "context": "Journal window, shell.status view. Silent devices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "caffffd532ed30b1b2c65609fb6304e88b3320f90813e647949c58ada86b2c74",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

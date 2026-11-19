@@ -1,0 +1,16 @@
+{
+  "description": "Body display error limit integer in the journal's body view.",
+  "context": "Journal window, body view. Body display error limit integer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4192fe98d2fd85e1e906d1f872a6eb703d7decf59a51e298fcf9ded591407d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

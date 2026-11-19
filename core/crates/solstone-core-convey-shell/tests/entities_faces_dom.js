@@ -6,6 +6,7 @@
 // that every refusal offers a next step, and that only a chosen photo reaches
 // a list. Wording and look are voice-check's and design QA's, not this file's.
 
+const { readCopyTable } = require('./journal_catalog_dom.js');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -124,7 +125,7 @@ module.exports = async function facesCases(manifestDir) {
   let cases = 0;
   const check = (condition, message) => { cases += 1; assert.ok(condition, message); };
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/entities/workspace.html'), 'utf8');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
+  const copy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   const block = extract(workspace);
 
   function mount(responses) {

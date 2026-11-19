@@ -1,0 +1,16 @@
+{
+  "description": "Body display error window bounds in the journal's body view.",
+  "context": "Journal window, body view. Body display error window bounds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cdb319f4a7e4290d7afa54d597b16f421b9b01de548bf4e6cbd57a9342f18ab0",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

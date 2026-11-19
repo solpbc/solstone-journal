@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy unreadable in the journal's body view.",
+  "context": "Journal window, body view. Hide copy unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29c934ab0ceca383a922d5a14d28599b5be33e64b0f3d19d20fd3dcbbab75ca6",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

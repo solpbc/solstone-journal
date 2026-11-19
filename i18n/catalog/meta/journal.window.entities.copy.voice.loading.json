@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_LOADING in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_LOADING.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5f50824555179b01b33fbf458c985b3765909724ea3e1b8b9afd65fb507f054",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

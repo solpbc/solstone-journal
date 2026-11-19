@@ -1,0 +1,28 @@
+{
+  "description": "Elapsed month count (other) in the journal's time.duration view.",
+  "context": "Journal window, time.duration view. Elapsed month count (other).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b4883db1dda8d4cc0818e190cd28aa01e416f6d5308540d1838e83a917817bf2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

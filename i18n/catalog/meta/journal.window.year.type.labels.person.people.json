@@ -1,0 +1,16 @@
+{
+  "description": "Type labels person in the journal's year view.",
+  "context": "Journal window, year view. Type labels person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc6fba1fd99cacf035f12815218359c5d8b702f107e9f2c2ec1e2a7eadd11534",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

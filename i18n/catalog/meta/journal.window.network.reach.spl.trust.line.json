@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, reach spl trust line.",
+  "context": "Network view copy, reach spl trust line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 298,
+  "source_revision": "a5ac8b850e4f064a94b3e8792b609b6bb623d20e9a87584fb120fcf6184b08d7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

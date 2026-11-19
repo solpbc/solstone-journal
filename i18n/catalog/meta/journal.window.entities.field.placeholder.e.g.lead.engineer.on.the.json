@@ -1,0 +1,16 @@
+{
+  "description": "Field placeholder in the journal's entities view.",
+  "context": "Journal window, entities view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26e006c609c3c8fad313b38aeb7d844e2237f92c1621c7eae2028122fe56024e",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

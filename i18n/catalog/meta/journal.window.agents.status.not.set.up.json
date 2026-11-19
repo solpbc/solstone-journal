@@ -1,0 +1,16 @@
+{
+  "description": "Status not set up in the journal's agents view.",
+  "context": "Journal window, agents view. Status not set up.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e43af28da03ec712e421be66970e748e85e5d6144d543ced453b2ed1f05c7431",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -7,8 +7,10 @@ use std::path::Path;
 
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{BrainInspection, inspect_brain_state, present_brain_inspection};
+use solstone_core_brain::brain_reason_text_in;
+use solstone_core_brain::{BrainInspection, inspect_brain_state, present_brain_inspection_in};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+use solstone_core_window_catalog::{ENGLISH, text};
 
 /// The `POST /api/brain/check` response. `sent` reports whether the refresh
 /// request itself reached the supervisor over Callosum -- not whether the
@@ -17,11 +19,20 @@ use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpo
 /// (it needs the Callosum client, which this crate does not depend on); this
 /// only shapes the response.
 pub fn check_response(journal: &Path, config: &Map<String, Value>, sent: bool) -> Value {
+    check_response_in(journal, config, sent, ENGLISH)
+}
+
+pub fn check_response_in(
+    journal: &Path,
+    config: &Map<String, Value>,
+    sent: bool,
+    locale: &str,
+) -> Value {
     let spp_configured = matches!(
         &resolve_local_endpoint(config),
         LocalEndpointResolution::Byo(value) if value.is_confidential
     );
-    let brain_view = presentation(journal, config, spp_configured);
+    let brain_view = presentation_in(journal, config, spp_configured, locale);
     let mut response = Map::new();
     response.insert("ok".to_owned(), Value::Bool(sent));
     response.insert("brain".to_owned(), brain_view["brain"].clone());
@@ -35,11 +46,21 @@ pub fn check_response(journal: &Path, config: &Map<String, Value>, sent: bool) -
 }
 
 pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured: bool) -> Value {
+    presentation_in(journal, config, spp_configured, ENGLISH)
+}
+
+pub fn presentation_in(
+    journal: &Path,
+    config: &Map<String, Value>,
+    spp_configured: bool,
+    locale: &str,
+) -> Value {
     presentation_on(
         journal,
         config,
         spp_configured,
         crate::confidential::offered_on_this_platform(),
+        locale,
     )
 }
 
@@ -48,15 +69,16 @@ fn presentation_on(
     config: &Map<String, Value>,
     spp_configured: bool,
     verifier_on_platform: bool,
+    locale: &str,
 ) -> Value {
     let now = Timestamp::now();
     let inspection = inspect_brain_state(journal, config, now);
-    let view = present_brain_inspection(&inspection, now);
+    let view = present_brain_inspection_in(&inspection, now, locale);
     let record = inspection.record.as_ref();
     let projection = &inspection.projection;
     let reason = projection.reason_code.as_deref();
     let components = json!({
-        "generate": component(record, "generate"),
+        "generate": component(record, "generate", locale),
     });
     let brain = json!({
         "state": projection.aggregate_state,
@@ -91,7 +113,7 @@ pub fn not_on_platform_attestation() -> Value {
     json!({"state":"not_on_platform","reason":"nvattest_platform_unsupported","observed_at":null,"expires_at":null})
 }
 
-fn component(record: Option<&Value>, name: &str) -> Value {
+fn component(record: Option<&Value>, name: &str, locale: &str) -> Value {
     let value = record
         .and_then(|record| record.get("evidence"))
         .and_then(Value::as_object)
@@ -102,14 +124,9 @@ fn component(record: Option<&Value>, name: &str) -> Value {
     json!({
         "status": value.and_then(|item| item.get("status")).cloned().unwrap_or(Value::Null),
         "reason_code": reason,
-        "reason_text": reason.map(reason_text).unwrap_or_else(|| if value.and_then(|item| item.get("status")).and_then(Value::as_str) == Some("ok") { "ok".to_owned() } else { "unknown".to_owned() }),
+        "reason_text": reason.map(|reason| brain_reason_text_in(Some(reason), locale)).unwrap_or_else(|| if value.and_then(|item| item.get("status")).and_then(Value::as_str) == Some("ok") { text(locale, "journal.window.thinking.thinking.brain.reason.ok") } else { text(locale, "journal.window.thinking.thinking.component.status.unknown.unknown") }),
         "observed_at": value.and_then(|item| item.get("observed_at")).cloned().unwrap_or(Value::Null),
     })
-}
-
-/// A component's reason reads in the same words as the brain's own.
-fn reason_text(reason: &str) -> String {
-    solstone_core_brain::brain_reason_text(Some(reason))
 }
 
 fn action(
@@ -464,7 +481,7 @@ mod tests {
     #[test]
     fn with_no_hardware_check_confidential_processing_reads_not_on_platform() {
         let (journal, config) = journal_with(&json!({}));
-        let unconfigured = presentation_on(journal.path(), &config, false, false);
+        let unconfigured = presentation_on(journal.path(), &config, false, false, ENGLISH);
         assert_eq!(
             unconfigured["confidential_attestation"],
             not_on_platform_attestation()
@@ -477,12 +494,12 @@ mod tests {
             &config,
             "nvattest_platform_unsupported",
         );
-        let configured = presentation_on(journal.path(), &config, true, false);
+        let configured = presentation_on(journal.path(), &config, true, false, ENGLISH);
         assert_eq!(
             configured["confidential_attestation"],
             not_on_platform_attestation()
         );
-        let offered = presentation_on(journal.path(), &config, true, true);
+        let offered = presentation_on(journal.path(), &config, true, true, ENGLISH);
         assert_ne!(
             offered["confidential_attestation"]["state"],
             "not_on_platform"

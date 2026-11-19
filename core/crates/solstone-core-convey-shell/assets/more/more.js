@@ -26,9 +26,9 @@ const MORE_STATE_FIELDS = [
   let pinWrite = null;
 
   const GROUPS = [
-    ['keeps', 'what your journal keeps', 'your days, as your journal holds them'],
-    ['shape', 'what you shape', 'fix and tidy what it keeps'],
-    ['runs', 'how it runs', 'set it up and keep it running']
+    ['keeps', window.JournalI18n.render('journal.window.more.window.explanation.what.your.journal.keeps'), window.JournalI18n.render('journal.window.more.window.explanation.your.days.as.your.journal.holds')],
+    ['shape', window.JournalI18n.render('journal.window.more.group.shape'), window.JournalI18n.render('journal.window.more.window.explanation.fix.and.tidy.what.it.keeps')],
+    ['runs', window.JournalI18n.render('journal.window.more.group.runs'), window.JournalI18n.render('journal.window.more.window.explanation.set.it.up.and.keep.it')]
   ];
   const COVERAGE_VIEWS = ['activities', 'transcripts', 'map', 'body', 'speakers'];
   // lucide `pin`, inlined so the page doesn't fetch the whole icon catalogue for it.
@@ -57,57 +57,57 @@ const MORE_STATE_FIELDS = [
     if (body === null || typeof body !== 'object') return null;
     if (COVERAGE_VIEWS.indexOf(view) !== -1) {
       if (!Object.prototype.hasOwnProperty.call(body, 'coverage')) return null;
-      if (body.coverage === null) return { text: 'nothing yet', action: false };
+      if (body.coverage === null) return { text: window.JournalI18n.render('journal.window.more.text.nothing.yet'), action: false };
       if (typeof body.coverage !== 'object' || typeof body.coverage.start !== 'string') return null;
       const since = window.JournalFormat && typeof window.JournalFormat.sinceDay === 'function'
         ? window.JournalFormat.sinceDay(body.coverage.start)
         : '';
       if (!since) return null;
-      return { text: 'since ' + since, action: false };
+      return { text: window.JournalI18n.render('journal.window.more.coverage.since', [['date', String(since)]]), action: false };
     }
     if (view === 'entities') {
       const count = leaf(body, ['folder_counts', 'all']);
       if (typeof count !== 'number') return null;
-      if (count > 0) return { text: count + ' kept', action: false };
-      if (count === 0) return { text: 'nothing yet', action: false };
+      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.entities.kept', [['count', String(count)]]), action: false };
+      if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.nothing.yet'), action: false };
       return null;
     }
     if (view === 'import') {
       if (typeof body.total !== 'number') return null;
-      if (body.total === 0) return { text: 'none yet', action: false };
-      if (body.total === 1) return { text: '1 import', action: false };
-      if (body.total > 1) return { text: body.total + ' imports', action: false };
+      if (body.total === 0) return { text: window.JournalI18n.render('journal.window.more.text.none.yet'), action: false };
+      if (body.total === 1) return { text: window.JournalI18n.render('journal.window.more.text.import'), action: false };
+      if (body.total > 1) return { text: window.JournalI18n.render('journal.window.more.imports.many', [['count', String(body.total)]]), action: false };
       return null;
     }
     if (view === 'network') {
       if (!Array.isArray(body.clients)) return null;
-      if (body.clients.length === 0) return { text: 'no devices yet', action: true };
+      if (body.clients.length === 0) return { text: window.JournalI18n.render('journal.window.more.text.no.devices.yet'), action: true };
       return null;
     }
     if (view === 'thinking') {
       const lane = leaf(body, ['providers', 'active_lane', 'lane']);
-      if (lane === undefined || lane === 'none') return { text: 'not set up yet', action: true };
+      if (lane === undefined || lane === 'none') return { text: window.JournalI18n.render('journal.window.more.text.not.set.up.yet'), action: true };
       return null;
     }
     if (view === 'curation') {
       const count = body.to_review;
       if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return null;
-      if (count > 0) return { text: count + ' to review', action: true };
-      if (count === 0) return { text: 'nothing to review', action: false };
+      if (count > 0) return { text: count + window.JournalI18n.render('journal.window.more.text.to.review'), action: true };
+      if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.nothing.to.review'), action: false };
       return null;
     }
     if (view === 'agents') {
       if (!Array.isArray(body.connections)) return null;
       const count = body.connections.length;
-      if (count > 0) return { text: count + ' connected', action: false };
-      if (count === 0) return { text: 'none yet', action: false };
+      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.agents.connected', [['count', String(count)]]), action: false };
+      if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.none.yet'), action: false };
       return null;
     }
     if (view === 'backup') {
       if (body.success !== true) return null;
       if (!window.BackupStatus || typeof window.BackupStatus.initialPanel !== 'function') return null;
       const panel = window.BackupStatus.initialPanel(body);
-      if (panel === 'intro') return { text: 'not set up yet', action: true };
+      if (panel === 'intro') return { text: window.JournalI18n.render('journal.window.more.text.not.set.up.yet'), action: true };
       return null;
     }
     return null;
@@ -130,7 +130,7 @@ const MORE_STATE_FIELDS = [
       : '';
     const control = app.pinnable
       ? `<button type="button" class="more-pin more-pin-button" data-pin-view="${escapeHtml(app.name)}" aria-pressed="${pinned ? 'true' : 'false'}" aria-label="${escapeHtml(pinLabel(app, pinned))}" title="${escapeHtml(pinLabel(app, pinned))}">${pinIcon}</button>`
-      : `<span class="more-pin more-pin-static" title="always in the side rail" aria-hidden="true">${pinIcon}</span>`;
+      : `<span class="more-pin more-pin-static" title="${window.JournalI18n.renderHtml('journal.window.more.tooltip.always.in.the.side.rail')}" aria-hidden="true">${pinIcon}</span>`;
     return (
       `<article class="more-card" data-app-name="${escapeHtml(app.name)}">` +
       `<a class="more-card-link" href="/app/${encodeURIComponent(app.name)}/">` +
@@ -147,8 +147,8 @@ const MORE_STATE_FIELDS = [
 
   function pinLabel(app, pinned) {
     return pinned
-      ? `unpin ${app.label} from the side rail`
-      : `pin ${app.label} to the side rail`;
+      ? window.JournalI18n.render('journal.window.more.window.explanation.unpin.value1.from.the.side.rail', [['value1', String(app.label)]])
+      : window.JournalI18n.render('journal.window.more.window.explanation.pin.value1.to.the.side.rail', [['value1', String(app.label)]]);
   }
 
   function paint(root, shell, pinIcon) {
@@ -164,13 +164,13 @@ const MORE_STATE_FIELDS = [
       );
     }).join('');
     root.innerHTML =
-      '<h1>more</h1>' +
-      '<p class="more-lede">every view your journal has: what each one shows, and where its contents come from.</p>' +
+      `<h1>${window.JournalI18n.renderHtml('journal.window.more.page.heading.more')}</h1>` +
+      `<p class="more-lede">${window.JournalI18n.renderHtml('journal.window.more.visible.text.every.view.your.journal.has.what')}</p>` +
       '<div class="more-live" role="status" aria-live="polite"></div>' +
-      '<label class="visually-hidden" for="more-filter">filter views</label>' +
-      '<input id="more-filter" class="more-filter" type="search" placeholder="type to filter views" autocomplete="off">' +
+      `<label class="visually-hidden" for="more-filter">${window.JournalI18n.renderHtml('journal.window.more.field.label.filter.views')}</label>` +
+      `<input id="more-filter" class="more-filter" type="search" placeholder="${window.JournalI18n.renderHtml('journal.window.more.field.placeholder.type.to.filter.views')}" autocomplete="off">` +
       groups +
-      '<p class="more-empty" hidden>no views match that.</p>';
+      `<p class="more-empty" hidden>${window.JournalI18n.renderHtml('journal.window.more.visible.text.no.views.match.that')}</p>`;
   }
 
   function syncPins(root, shell) {
@@ -197,7 +197,7 @@ const MORE_STATE_FIELDS = [
 
   function showSaveError(root) {
     const live = root.querySelector('.more-live');
-    if (live) live.textContent = "couldn't save that. try again.";
+    if (live) live.textContent = window.JournalI18n.render('journal.window.more.visible.text.couldn.t.save.that.try.again');
   }
 
   function clearSaveError(root) {

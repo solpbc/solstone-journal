@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, success remove fail.",
+  "context": "Network view copy, success remove fail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 134,
+  "source_revision": "df7422b5f58a2d81a26f8999880aee2041a320cee901976582d7edc5bce48a65",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

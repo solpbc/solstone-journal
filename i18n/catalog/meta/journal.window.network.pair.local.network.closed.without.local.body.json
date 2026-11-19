@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, pair local network closed without local body.",
+  "context": "Network view copy, pair local network closed without local body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 310,
+  "source_revision": "777f7773177d56ead23bcf2471060adaef712d9db3b5684d70ce70a91bd93293",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_GRID_CLEAR_RANGE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_GRID_CLEAR_RANGE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e09cae1f70a5f0d72fc548f294b584797e6fff57afdf61f1707a7525c5c9195",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

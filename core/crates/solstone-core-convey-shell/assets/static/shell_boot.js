@@ -35,27 +35,23 @@
 
   const escapeHtml = window.AppServices.escapeHtml;
 
-  function copyText(key, fallback) {
-    return window.CONVEY_COPY?.[key] || fallback;
-  }
-
   function applyChromeCopy() {
     const statusLink = document.getElementById('status-pane-console-link');
-    const consoleLabel = copyText('CONSOLE_LINK_LABEL', 'system messages');
+    const consoleLabel = window.CONVEY_COPY.CONSOLE_LINK_LABEL;
     if (statusLink) {
       statusLink.textContent = consoleLabel;
       statusLink.setAttribute('aria-label', consoleLabel);
     }
 
-    const consoleHeading = copyText('CONSOLE_HEADING', 'system messages');
+    const consoleHeading = window.CONVEY_COPY.CONSOLE_HEADING;
     const title = document.getElementById('diagnostic-console-title');
     if (title) title.textContent = consoleHeading;
     const tabs = document.querySelector('.diagnostic-console-tabs');
     if (tabs) tabs.setAttribute('aria-label', consoleHeading);
 
     const actions = {
-      clear: copyText('CONSOLE_ACTION_CLEAR', 'clear'),
-      'send-all': copyText('CONSOLE_ACTION_SEND_ALL', 'send to support')
+      clear: window.CONVEY_COPY.CONSOLE_ACTION_CLEAR,
+      'send-all': window.CONVEY_COPY.CONSOLE_ACTION_SEND_ALL
     };
     for (const [action, label] of Object.entries(actions)) {
       const button = document.querySelector(`[data-diagnostic-action="${action}"]`);
@@ -63,22 +59,19 @@
     }
     const close = document.querySelector('[data-diagnostic-action="close"]');
     if (close) {
-      close.setAttribute('aria-label', copyText('CONSOLE_ACTION_CLOSE', 'close'));
+      close.setAttribute('aria-label', window.CONVEY_COPY.CONSOLE_ACTION_CLOSE);
     }
 
     const reportingOff = document.querySelector('[data-diagnostic-reporting-off]');
     if (reportingOff) {
-      reportingOff.textContent = copyText(
-        'CONSOLE_REPORTING_OFF',
-        'sending reports is off.'
-      );
+      reportingOff.textContent = window.CONVEY_COPY.CONSOLE_REPORTING_OFF;
     }
 
     const tabLabels = {
-      all: copyText('CONSOLE_TAB_ALL', 'all'),
-      error: copyText('CONSOLE_TAB_ERRORS', 'errors'),
-      warning: copyText('CONSOLE_TAB_WARNINGS', 'warnings'),
-      info: copyText('CONSOLE_TAB_INFO', 'info')
+      all: window.CONVEY_COPY.CONSOLE_TAB_ALL,
+      error: window.CONVEY_COPY.CONSOLE_TAB_ERRORS,
+      warning: window.CONVEY_COPY.CONSOLE_TAB_WARNINGS,
+      info: window.CONVEY_COPY.CONSOLE_TAB_INFO
     };
     for (const [filter, label] of Object.entries(tabLabels)) {
       const button = document.querySelector(`[data-diagnostic-filter="${filter}"]`);
@@ -91,10 +84,7 @@
 
     const empty = document.getElementById('diagnostic-console-empty');
     if (empty) {
-      empty.textContent = copyText(
-        'CONSOLE_EMPTY',
-        'no system messages this session.'
-      );
+      empty.textContent = window.CONVEY_COPY.CONSOLE_EMPTY;
     }
   }
 
@@ -105,9 +95,9 @@
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
-        '<h2 class="surface-state-heading">couldn\'t load this section</h2>' +
-        '<p class="surface-state-desc">reload to try again.</p>' +
-        '<button type="button" class="surface-state-retry">try again</button>' +
+        `<h2 class="surface-state-heading">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.section.heading.couldn.t.load.this.section')}</h2>` +
+        `<p class="surface-state-desc">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.visible.text.reload.to.try.again')}</p>` +
+        `<button type="button" class="surface-state-retry">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.button.label.try.again')}</button>` +
         '</div>';
     }
     const button = target.querySelector('.surface-state-retry');
@@ -117,7 +107,7 @@
   }
 
   function applyBodyState(app) {
-    document.title = `${app.label} - journal`;
+    document.title = window.JournalI18n.render('journal.window.shared.shell.boot.tooltip.value1.journal', [['value1', String(app.label)]]);
   }
 
   function appsByRank(shell, groupField, rankField, group) {
@@ -162,13 +152,13 @@
     return (
       `<a class="${className}${isCurrent ? ' is-current' : ''}" href="/app/more/" data-app-name="more"${onMore ? ' aria-current="page"' : ''}>` +
       `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
-      '<span class="app-chrome-label">more</span></a>'
+      `<span class="app-chrome-label">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.visible.text.more')}</span></a>`
     );
   }
 
   function aboutLink(shell) {
     const version = String(shell.version || '').replace(/^v/, '');
-    return `<a class="journal-about-link" href="/app/settings/#about" aria-label="about">${escapeHtml(version)}</a>`;
+    return `<a class="journal-about-link" href="/app/settings/#about" aria-label="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.accessible.name.about')}">${escapeHtml(version)}</a>`;
   }
 
   function renderAppRail(shell, currentAppName) {
@@ -210,7 +200,7 @@
     const instrument = document.getElementById('status-instrument');
     if (!instrument) return;
     if (!instrument.querySelector('.status-icon')) instrument.innerHTML =
-      '<a class="status-icon" href="/app/health/#healthSystemDetails" aria-label="connecting" title="connecting">' +
+      `<a class="status-icon" href="/app/health/#healthSystemDetails" aria-label="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.accessible.name.connecting')}" title="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.tooltip.connecting')}">` +
       '<img class="status-indicator status-indicator--connecting" src="' + STATUS_MARKS + 'mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
       '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
       '</a>' +
@@ -270,7 +260,7 @@
     try {
       const response = await fetch(app.background_url, { credentials: 'same-origin' });
       if (!response.ok) {
-        throw new Error(`Request failed (HTTP ${response.status})`);
+        throw new Error(window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]));
       }
       const code = await response.text();
       new Function(code)();
@@ -288,6 +278,26 @@
   // asset), and meanwhile shows the apps it does know.
   const SHELL_BUILD_RELOAD_STAMP_KEY = 'solstone.shellBuildReloadAt';
 
+  function localizeApp(app) {
+    const text = (value) => typeof value === "string" && value.startsWith("journal.window.") ? window.JournalI18n.render(value) : value;
+    const nav = app.date_nav;
+    const dateNav = nav && {
+      ...nav,
+      unit: {
+        one: text(nav.unit.one),
+        other: text(nav.unit.other),
+        none: text(nav.unit.none)
+      }
+    };
+    return {
+      ...app,
+      label: text(app.label),
+      description: text(app.description),
+      source: text(app.source),
+      date_nav: dateNav
+    };
+  }
+
   function shellFrom(state) {
     const registry = window.SOL_SHELL_REGISTRY || {};
     const definitions = new Map((registry.apps || []).map((app) => [app.name, app]));
@@ -296,7 +306,7 @@
       window.reloadOnce(SHELL_BUILD_RELOAD_STAMP_KEY);
     }
     return Object.assign({}, state, {
-      apps: names.map((name) => definitions.get(name)).filter(Boolean),
+      apps: names.map((name) => definitions.get(name)).filter(Boolean).map(localizeApp),
       settings: registry.settings || {}
     });
   }

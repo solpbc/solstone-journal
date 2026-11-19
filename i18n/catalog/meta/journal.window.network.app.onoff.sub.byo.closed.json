@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, app onoff sub byo closed.",
+  "context": "Network view copy, app onoff sub byo closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 74,
+  "source_revision": "8284678c132608b6894651eb04fb201faa4ba5e01bc9448d35148bb586e9aa9e",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

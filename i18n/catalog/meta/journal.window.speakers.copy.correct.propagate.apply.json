@@ -1,0 +1,16 @@
+{
+  "description": "Correct propagate apply in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Correct propagate apply.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "619337719a265592d354709df7441610fa2c78a71b5220e9bae2e9cb93d4025b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

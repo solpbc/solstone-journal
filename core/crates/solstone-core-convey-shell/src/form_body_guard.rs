@@ -23,11 +23,10 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use solstone_core_convey_http::envelope::error_envelope;
 
+use crate::window_catalog;
+
 /// Routes whose handlers take only a `multipart/form-data` upload.
 const UPLOAD_ROUTES: [&str; 2] = ["/app/devices/ingest", "/app/import/api/save"];
-
-const MESSAGE: &str =
-    "your journal turned this request away because it wasn't sent by your journal's own pages.";
 
 /// Guard the shared convey router, so it applies on every carrier.
 pub(crate) fn apply_layer(router: Router) -> Router {
@@ -36,10 +35,11 @@ pub(crate) fn apply_layer(router: Router) -> Router {
 
 async fn refuse_form_bodies(request: Request<Body>, next: Next) -> Response {
     if refused(request.method(), request.uri().path(), request.headers()) {
+        let locale = window_catalog::request_locale(request.headers());
         return error_envelope(
             "unsupported_media_type",
-            MESSAGE,
-            "state-changing requests take application/json",
+            window_catalog::text(locale, "journal.window.shell.guard.form.denied"),
+            window_catalog::text(locale, "journal.window.shell.guard.form.detail"),
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         )
         .into_response();

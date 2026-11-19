@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance expired in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9aaa7c9931ecfa34a8ce3e8ec853d780df7d538288e726910f3201eb31823998",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

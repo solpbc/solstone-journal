@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_BUSY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_BUSY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e985a5040ce249013086995ab0d7a3e4a34430ce2118101fb35bece08d8ba4f",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

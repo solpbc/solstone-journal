@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_OBS_EMPTY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_OBS_EMPTY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7c40ec2ee991f2dc0dd8b869e4d2b16da1f7b8771c507eb14e2397a8d464b07",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

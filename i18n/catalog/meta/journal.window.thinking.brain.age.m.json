@@ -1,0 +1,21 @@
+{
+  "description": "Thinking evidence age in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking evidence age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3da4afa86ca7d7a6ae7bcff83f29d7cc97c903504072c47fc6b9fad9c6a5502b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

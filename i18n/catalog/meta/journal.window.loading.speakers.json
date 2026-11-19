@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the speakers journal route loads on first paint.",
+  "context": "Status shown while the speakers journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "b963a4d5c49381d80e59c8a66e06e4c7a8d481271483819a5cd6d9a99134f265",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

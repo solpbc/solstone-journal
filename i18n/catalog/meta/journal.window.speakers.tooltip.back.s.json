@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's speakers view.",
+  "context": "Journal window, speakers view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "339023f795c1bfa9c55908d5d34f92f35395e2d4c5d64a91f0be8047eccfa4a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's more view.",
+  "context": "Journal window, more view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eabb47b443c9ba7db0e5237731ebf1a50a4a087454bb118338fb2f0acb320bbb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

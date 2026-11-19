@@ -1,0 +1,16 @@
+{
+  "description": "Heading in the journal's speakers view.",
+  "context": "Journal window, speakers view. Heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5dcdc5b7e9de90d6de51a2ea238b37d9965abd0df0ede3d86ced23f6bc88992e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body display error limit minimum in the journal's body view.",
+  "context": "Journal window, body view. Body display error limit minimum.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06312e881adbe5ae932f6791ff832bad9f1713d1d371b9b4adae94eae13802a0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Column heading in the journal's thinking view.",
+  "context": "Journal window, thinking view. Column heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5612a7c699ce4fece2ac5b23a153d464cb0cbe335ceb053b733973085eb197d4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -5,10 +5,13 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
+globalThis.JournalI18n = journalContext({}).window.JournalI18n;
 // network.js takes the shared focus helpers from the page, as the fragment loads them first.
 require(path.join(__dirname, '../assets/static/focus.js'));
 
 let cases = 0;
+const networkCopy = JSON.parse(process.env.SOLSTONE_TEST_NETWORK_COPY);
 
 const REQUIRED_COPY_KEYS = [
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'DEVICE_PAIR_CTA', 'MODAL_TITLE', 'PAIR_TYPE_PROMPT',
@@ -72,7 +75,7 @@ function renderEmptyStateHTML(workspace, copy) {
   const end = workspace.indexOf('function clientStatsHTML', start);
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
-  const context = vm.createContext({
+  const context = journalContext({
     linkCopy: copy,
     window: {
       NetworkRender: { resolve: (values, key) => values[key] || '' },
@@ -92,7 +95,7 @@ function localNetworkEnvironment(workspace, copy) {
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
   const nodes = new Map();
-  const context = vm.createContext({
+  const context = journalContext({
     linkCopy: copy,
     window: {},
     document: { getElementById(id) {
@@ -505,7 +508,7 @@ function createEnvironment(manifestDir, options = {}) {
     whenShellReady(callback) { callback(); },
   };
   window.window = window;
-  const context = vm.createContext({
+  const context = journalContext({
     window,
     document,
     MutationObserver: MutationObserverShim,
@@ -601,10 +604,12 @@ async function testCase(_name, callback) {
 async function main() {
   const manifestDir = path.resolve(process.argv[2]);
   if (!manifestDir) throw new Error('manifest directory required');
-  const workspace = fs.readFileSync(path.join(manifestDir, 'assets/network/workspace.html'), 'utf8');
+  const workspace = globalThis.JournalI18n.renderWorkspace(
+    fs.readFileSync(path.join(manifestDir, 'assets/network/workspace.html'), 'utf8')
+  );
 
   await testCase('a retained Windows Block rule replaces the open-network claim and clears after recovery', async () => {
-    const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
+    const copy = networkCopy;
     const env = localNetworkEnvironment(workspace, copy);
     const status = { open: true, can_change: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
     env.render(status);
@@ -850,7 +855,7 @@ async function main() {
       const disclosure = { hidden: !hidden };
       const idValue = { textContent: '' };
       const section = { hidden: true, querySelector: () => disclosure };
-      const context = vm.createContext({
+      const context = journalContext({
         document: { getElementById: (id) => ({ 'link-identity-header': section, 'link-identity-id-value': idValue })[id] || null },
         ctx: { read: async () => body },
         window: {},
@@ -873,7 +878,7 @@ async function main() {
     assert.notStrictEqual(end, -1);
     const nodes = new Map(['link-identity-mark', 'link-pairing-identity-mark', 'link-pairing-success-mark'].map((id) => [id, {}]));
     const drawn = [];
-    const context = vm.createContext({
+    const context = journalContext({
       document: { getElementById: (id) => nodes.get(id) || null },
       renderIdentityMark: (container) => drawn.push(['ready', container]),
       renderUnavailableIdentityMark: (container) => drawn.push(['unavailable', container]),
@@ -1153,14 +1158,14 @@ async function main() {
   });
 
   await testCase('unpair asks with the unpair copy and removes nothing when declined', async () => {
-    const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
+    const copy = networkCopy;
     const start = workspace.indexOf('function clientNameFor(button) {');
     const end = workspace.indexOf('function landOnDevices', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const asked = [];
     const fetched = [];
-    const context = vm.createContext({
+    const context = journalContext({
       linkCopy: copy,
       ctx: { disposed: false },
       window: { SolQuestion: { ask: async ({message}) => { asked.push(message); return null; } } },
@@ -1184,7 +1189,7 @@ async function main() {
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     globalThis.relativeTime = () => '2 months';
-    const context = vm.createContext({
+    const context = journalContext({
       window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
       clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
@@ -1750,8 +1755,6 @@ async function main() {
   await testCase('AC6: workspace html markup and network_copy satisfy unusable home address contract', async () => {
     assert.ok(workspace.includes('id="link-home-address-unusable"'), 'link-home-address-unusable id present');
     assert.ok(workspace.includes('data-copy="REACH_HOME_ADDRESS_UNUSABLE"'), 'REACH_HOME_ADDRESS_UNUSABLE data-copy present');
-    const copyPath = path.join(manifestDir, 'assets/network_copy.json');
-    const networkCopy = JSON.parse(fs.readFileSync(copyPath, 'utf8'));
     assert.ok(
       typeof networkCopy.REACH_HOME_ADDRESS_UNUSABLE === 'string' && networkCopy.REACH_HOME_ADDRESS_UNUSABLE,
       'REACH_HOME_ADDRESS_UNUSABLE has a value'
@@ -1785,7 +1788,7 @@ async function main() {
     const end = workspace.indexOf('let homeCandidatePending', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
-    const context = vm.createContext({
+    const context = journalContext({
       document: {
         createElement: makeNode,
         createTextNode: (text) => ({ tagName: '#text', textContent: text }),
@@ -1838,7 +1841,7 @@ async function main() {
     const end = workspace.indexOf('function renderReach', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
-    const context = vm.createContext({
+    const context = journalContext({
       linkCopy: copy,
       window: {},
       document: { activeElement: null },
@@ -1911,7 +1914,7 @@ async function main() {
     window.window = window;
     window.top = window;
     const navigator = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' };
-    const context = vm.createContext({
+    const context = journalContext({
       window,
       linkCopy: {},
       ctx: { disposed: false },
@@ -1944,7 +1947,7 @@ async function main() {
     assert.strictEqual(location.assigned, 'https://services.example/consent', 'assigned consent portal URL');
   });
 
-  cases += await require(path.join(__dirname, 'network_contract_dom.js'))(manifestDir);
+  cases += await require(path.join(__dirname, 'network_contract_dom.js'))(manifestDir, networkCopy);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

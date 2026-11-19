@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network close cta.",
+  "context": "Network view copy, local network close cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 64,
+  "source_revision": "1f0714b6b843334fb54eb242170a04699a8efb1f4af27f47d3ccd57fee19b65a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

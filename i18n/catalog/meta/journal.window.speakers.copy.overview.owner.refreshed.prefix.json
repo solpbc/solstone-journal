@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner refreshed prefix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner refreshed prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21301bf6af59d6c4d5e72a5d1d6fe2f462731978069ada831a4a93559eb723d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

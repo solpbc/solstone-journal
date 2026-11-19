@@ -1,0 +1,16 @@
+{
+  "description": "Title in the journal's body view.",
+  "context": "Journal window, body view. Title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c30f4db0442ffcdf1e4d5da4d4b453f6252aaf4adb50fa1d1197afa56d2051a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

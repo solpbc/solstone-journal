@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const manifestDir = process.argv[2];
 assert.ok(manifestDir, 'manifest directory argument is required');
@@ -154,6 +155,7 @@ function createSearchEnvironment() {
     Boolean,
   });
 
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
 
   const scriptStart = searchHtml.indexOf('<script>') + '<script>'.length;

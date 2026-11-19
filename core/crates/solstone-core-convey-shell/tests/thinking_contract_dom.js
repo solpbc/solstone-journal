@@ -13,6 +13,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -780,7 +781,7 @@ function makePage(env, address = '/app/thinking/', { phase = 'bundled_local', ov
     },
   };
 
-  const context = vm.createContext({
+  const context = journalContext({
     window, document: doc, location, history: window.history, navigator: window.navigator, sessionStorage: window.sessionStorage,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, WeakRef, Map, Set, Promise,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Symbol, Infinity, CustomEvent: class {},

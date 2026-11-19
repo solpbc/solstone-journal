@@ -1,0 +1,28 @@
+{
+  "description": "Invalid open in the journal's local.access view.",
+  "context": "Journal window, local.access view. Invalid open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e70df66cc946af71b920a71173621dcfb8bc6dbf8d45b5e3e84754c759c1196",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{\"open\": true}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{\"open\": false}"
+    }
+  ]
+}

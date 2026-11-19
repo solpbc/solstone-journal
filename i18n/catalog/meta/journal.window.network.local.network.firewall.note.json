@@ -1,0 +1,28 @@
+{
+  "description": "Network view copy, local network firewall note.",
+  "context": "Network view copy, local network firewall note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 480,
+  "source_revision": "cb2e40ee384034e58ff33d1c37fc873de2a7822fe012ca18c338d7ef6e8b7baf",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "windowsSecurity",
+      "kind": "accepted-input",
+      "value": "Windows Security"
+    },
+    {
+      "name": "windowsPath",
+      "kind": "accepted-input",
+      "value": "Firewall & network protection › Allow an app through firewall"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the search journal route loads on first paint.",
+  "context": "Status shown while the search journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "90cf321732a311ce749ed3c5350f8db3afe3ce469fe1b7ccda0da4e8ca37bdcd",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

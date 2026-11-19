@@ -4,6 +4,7 @@
 //! How the Body app says dates and numbers.
 
 use jiff::civil::{Date, DateTime};
+use solstone_core_convey_http::window_catalog::{strings, text};
 
 use crate::presentation::display_number;
 
@@ -11,22 +12,29 @@ pub(crate) fn number(value: f64) -> String {
     display_number("", value, None)
 }
 
-pub(crate) fn clock(time: DateTime) -> String {
+pub(crate) fn clock(time: DateTime, locale: &str) -> String {
     let hour = time.hour() % 12;
     format!(
         "{}:{:02} {}",
         if hour == 0 { 12 } else { hour },
         time.minute(),
-        if time.hour() < 12 { "AM" } else { "PM" }
+        if time.hour() < 12 {
+            text(locale, "journal.window.body.date.am")
+        } else {
+            text(locale, "journal.window.body.date.pm")
+        }
     )
 }
 
-pub(crate) fn long_day(day: Date) -> String {
-    format!(
-        "{} {}, {}",
-        month_full_name(day.month()),
-        day.day(),
-        day.year()
+pub(crate) fn long_day(day: Date, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.body.date.full",
+        [
+            ("month", &month_full_name(day.month(), locale)),
+            ("day", &day.day().to_string()),
+            ("year", &day.year().to_string()),
+        ],
     )
 }
 
@@ -41,43 +49,66 @@ pub(crate) fn days_through(first: Date, last: Date) -> impl Iterator<Item = Date
         .take_while(move |date| *date <= last)
 }
 
-pub(crate) fn short_day(day: &str) -> Option<String> {
-    parse_day(day).map(|day| format!("{} {}", month_abbr(day.month()), day.day()))
+pub(crate) fn short_day(day: &str, locale: &str) -> Option<String> {
+    parse_day(day).map(|day| {
+        strings(
+            locale,
+            "journal.window.body.date.short",
+            [
+                ("month", &month_abbr(day.month(), locale)),
+                ("day", &day.day().to_string()),
+            ],
+        )
+    })
 }
 
-pub(crate) fn short_day_year(day: &str) -> Option<String> {
+pub(crate) fn short_day_year(day: &str, locale: &str) -> Option<String> {
     let date = parse_day(day)?;
-    Some(format!(
-        "{} {}, {}",
-        month_abbr(date.month()),
-        date.day(),
-        date.year()
+    Some(strings(
+        locale,
+        "journal.window.body.date.full",
+        [
+            ("month", &month_abbr(date.month(), locale)),
+            ("day", &date.day().to_string()),
+            ("year", &date.year().to_string()),
+        ],
     ))
 }
 
-pub(crate) fn month_abbr(month: i8) -> &'static str {
+pub(crate) fn month_abbr(month: i8, locale: &str) -> String {
     const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "journal.window.date.months.short.jan",
+        "journal.window.date.months.short.feb",
+        "journal.window.date.months.short.mar",
+        "journal.window.date.months.short.apr",
+        "journal.window.date.months.short.may",
+        "journal.window.date.months.short.jun",
+        "journal.window.date.months.short.jul",
+        "journal.window.date.months.short.aug",
+        "journal.window.date.months.short.sep",
+        "journal.window.date.months.short.oct",
+        "journal.window.date.months.short.nov",
+        "journal.window.date.months.short.dec",
     ];
-    MONTHS[month_index(month)]
+    text(locale, MONTHS[month_index(month)])
 }
 
-fn month_full_name(month: i8) -> &'static str {
+pub(crate) fn month_full_name(month: i8, locale: &str) -> String {
     const MONTHS: [&str; 12] = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
+        "journal.window.shared.date.nav.months.label.january",
+        "journal.window.shared.date.nav.months.label.february",
+        "journal.window.shared.date.nav.months.label.march",
+        "journal.window.shared.date.nav.months.label.april",
+        "journal.window.shared.date.nav.months.label.may",
+        "journal.window.shared.date.nav.months.label.june",
+        "journal.window.shared.date.nav.months.label.july",
+        "journal.window.shared.date.nav.months.label.august",
+        "journal.window.shared.date.nav.months.label.september",
+        "journal.window.shared.date.nav.months.label.october",
+        "journal.window.shared.date.nav.months.label.november",
+        "journal.window.shared.date.nav.months.label.december",
     ];
-    MONTHS[month_index(month)]
+    text(locale, MONTHS[month_index(month)])
 }
 
 fn month_index(month: i8) -> usize {
@@ -111,6 +142,16 @@ pub(crate) fn grouped(value: u64) -> String {
 }
 
 /// "1 reading", "3 readings".
-pub(crate) fn count_noun(count: u64, one: &str, many: &str) -> String {
-    format!("{} {}", grouped(count), if count == 1 { one } else { many })
+pub(crate) fn count_noun(count: u64, one_id: &str, many_id: &str, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.body.count.label",
+        [
+            ("count", &grouped(count)),
+            (
+                "noun",
+                &text(locale, if count == 1 { one_id } else { many_id }),
+            ),
+        ],
+    )
 }

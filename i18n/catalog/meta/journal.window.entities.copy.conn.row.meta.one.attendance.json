@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_CONN_ROW_META_ONE_ATTENDANCE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_ROW_META_ONE_ATTENDANCE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31516ca954984aadd29f7ee949403c9ec683736ae4f0a545dc55f52bb479d8f3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

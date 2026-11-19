@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_MERGE_LABEL in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_MERGE_LABEL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1102382c8ec1b39e6093265c1d3e7ff245a8e01f4dbe7f9c021f2537866b3194",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

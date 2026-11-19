@@ -29,7 +29,8 @@ function relativeTime(ms) {
           value = Math.floor(days / 7);
           unit = 'week';
         } else if (days < 60) {
-          return '1 month';
+          value = 1;
+          unit = 'month';
         } else {
           value = Math.floor(days / 30);
           unit = 'month';
@@ -37,7 +38,8 @@ function relativeTime(ms) {
       }
     }
   }
-  return `${value} ${unit}${value === 1 ? '' : 's'}`;
+  const form = value === 1 ? 'one' : 'other';
+  return window.JournalI18n.render(`journal.window.time.duration.${unit}.${form}`, [['value', String(value)]]);
 }
 
 window.relativeTime = relativeTime;

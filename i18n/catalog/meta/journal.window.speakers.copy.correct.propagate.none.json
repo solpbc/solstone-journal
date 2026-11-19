@@ -1,0 +1,16 @@
+{
+  "description": "Correct propagate none in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Correct propagate none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3eb30b94bd28c35667d75e26e58ff78e0d528dec65357289077c1474378ca220",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

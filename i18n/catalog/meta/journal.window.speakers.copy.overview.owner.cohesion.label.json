@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner cohesion label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner cohesion label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6995bf55c1b39bba77dc08325968e6503da3c510a427f7b5a4ae13f9d12a51f2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

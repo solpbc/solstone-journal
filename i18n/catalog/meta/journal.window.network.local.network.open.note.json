@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network open note.",
+  "context": "Network view copy, local network open note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "8c4e7e93a1edba3e57f71b81b0a60c4f72771adec4a9e903014dcb2521120e6c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_WORDS scheduled-with in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_WORDS scheduled-with.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f99343d5c5b14ca6823cec535ed95efe971c962e9d56dee75cf412d6dee7aeb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

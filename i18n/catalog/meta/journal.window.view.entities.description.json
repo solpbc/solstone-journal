@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.entities view.",
+  "context": "Journal window, view.entities view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83972fedeae3286a6778fb1ac2b6006c8896fc72b891787c0558dad2a9edeaf4",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

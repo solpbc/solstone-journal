@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's shared.date.nav view.",
+  "context": "Journal window, shared.date.nav view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d243fbe2c45daff6cf2d6d280eba0672b78d74f411b348e32b51522a061e71e2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

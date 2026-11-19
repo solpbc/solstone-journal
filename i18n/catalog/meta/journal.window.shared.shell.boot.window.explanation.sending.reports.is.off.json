@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.shell.boot view.",
+  "context": "Journal window, shared.shell.boot view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "544b24a2ffc60eaae00202853d48c066f64b471bd27585ac1d7e40af809c167a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Correct scope in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Correct scope.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21e98db9ec45b4a3ea0a88c9fcd712ca552630cf9ddaaaeab4167914af4e6144",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

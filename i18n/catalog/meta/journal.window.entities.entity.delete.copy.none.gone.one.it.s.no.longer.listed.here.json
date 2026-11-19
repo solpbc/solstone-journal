@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy none gone one in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy none gone one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a7980def3a7fe50e587a42dfb1850a0979fd1d2c6380b2e8cd4f8a7cafd1184",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

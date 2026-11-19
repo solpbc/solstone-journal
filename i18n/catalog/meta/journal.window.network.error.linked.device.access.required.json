@@ -1,0 +1,16 @@
+{
+  "description": "Journal response error or detail in the journal's network view.",
+  "context": "Journal window, network view. Journal response error or detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1dd9286ccc89e1434dab96eefdf90a5a89c2af767c99986336a89efbad7cb1a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

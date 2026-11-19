@@ -26,6 +26,8 @@
 //! listener alone: opening the network raises a prompt on this computer's
 //! screen, so a paired device cannot ask for it.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -231,7 +233,11 @@ pub(crate) fn routes(door: Arc<DoorLifecycle>) -> Router {
     router.layer(Extension(door))
 }
 
-async fn door_status(Extension(door): Extension<std::sync::Weak<DoorLifecycle>>) -> Response {
+async fn door_status(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(door): Extension<std::sync::Weak<DoorLifecycle>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match door.upgrade() {
         Some(door) => {
             let mut body = status_body(&door, None).await;
@@ -240,7 +246,10 @@ async fn door_status(Extension(door): Extension<std::sync::Weak<DoorLifecycle>>)
         }
         None => refusal(
             "service_unavailable",
-            "the journal is stopping.",
+            &window_catalog::text(
+                locale,
+                "journal.window.network.error.the.journal.is.stopping",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     }
@@ -250,12 +259,20 @@ async fn status(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
     Json(status_body(&door, None).await).into_response()
 }
 
-async fn open(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
-    set_and_rebind(&door, true).await
+async fn open(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(door): Extension<Arc<DoorLifecycle>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    set_and_rebind(locale, &door, true).await
 }
 
-async fn close(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
-    set_and_rebind(&door, false).await
+async fn close(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(door): Extension<Arc<DoorLifecycle>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    set_and_rebind(locale, &door, false).await
 }
 
 /// How often the door rechecks the choice and agents on your network. The
@@ -276,14 +293,17 @@ pub(crate) async fn watch(door: Arc<DoorLifecycle>) {
     }
 }
 
-async fn set_and_rebind(door: &DoorLifecycle, open: bool) -> Response {
+async fn set_and_rebind(locale: &str, door: &DoorLifecycle, open: bool) -> Response {
     let changed = match save(door.journal_root(), open) {
         Ok(changed) => changed,
         Err(error) => {
             log::warn!("local-network choice was not saved: {error}");
             return refusal(
                 "service_operation_failed",
-                "the choice couldn't be saved. nothing changed.",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.network.error.the.choice.couldn.t.be.saved.nothing.changed",
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -297,10 +317,10 @@ async fn set_and_rebind(door: &DoorLifecycle, open: bool) -> Response {
     // the owner turns that off in agents.
     if !open && want {
         body["reason_code"] = Value::String("agents_on_network".to_owned());
-        body["detail"] = Value::String(
-            "your journal stays open to devices on your network while \"agents on your network\" is on. it closes to them when you turn that off in agents."
-                .to_owned(),
-        );
+        body["detail"] = Value::String(window_catalog::text(
+            locale,
+            "journal.window.network.local.network.agents.on",
+        ));
         return (StatusCode::CONFLICT, Json(body)).into_response();
     }
     // A withheld door (setup not finished) just keeps the choice for its first

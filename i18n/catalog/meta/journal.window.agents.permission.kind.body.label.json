@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for body in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "702afdf25e49ffe5c937a2f981869a3d292696eb23f1865bce89b98f9b427769",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

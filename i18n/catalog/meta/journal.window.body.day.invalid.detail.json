@@ -1,0 +1,16 @@
+{
+  "description": "Day invalid detail in the journal's body view.",
+  "context": "Journal window, body view. Day invalid detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4878ba51a6cc8ecc1966c9605fe44dc3efd46b371a36740ed3f1839e7b20275",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

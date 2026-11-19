@@ -1,0 +1,16 @@
+{
+  "description": "Shelf mentions in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Shelf mentions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5032610da688863fd968bc14dae7bac2195df8d45dcb4d34205e58e9df00dc27",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

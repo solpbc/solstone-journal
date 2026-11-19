@@ -2139,8 +2139,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <div id="entities-loading" class="entities-loading">
     <div class="surface-state surface-state--loading" role="status" aria-busy="true">
       <div class="surface-state-spinner spinner" aria-hidden="true"></div>
-      <span class="surface-state-text" data-role="loading-status">loading entities…</span>
-      <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+      <span class="surface-state-text" data-role="loading-status">{{journal.window.entities.visible.text.loading.entities}}</span>
+      <span class="surface-state-still" data-role="still-working">{{journal.window.entities.visible.text.still.working}}</span>
     </div>
   </div>
   <div id="entities-scope-anchor" class="entities-scope-anchor"></div>
@@ -2154,12 +2154,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <!-- Journal-wide entities view (all-facet mode) -->
   <div id="journal-entities-view" style="display: none;">
     <div class="journal-browse">
-      <nav class="journal-folders" id="journal-folders" aria-label="entity folders"></nav>
+      <nav class="journal-folders" id="journal-folders" aria-label="{{journal.window.entities.accessible.name.entity.folders}}"></nav>
       <div class="journal-browse-main">
         <div class="journal-tidy-band" id="journal-tidy-band" hidden></div>
         <div id="journal-list-panel">
           <div class="journal-list-head">
-            <input type="text" id="journal-entity-card-search" class="entity-search-input" aria-label="search entities">
+            <input type="text" id="journal-entity-card-search" class="entity-search-input" aria-label="{{journal.window.entities.accessible.name.search.entities}}">
             <span id="journal-card-search-count" class="journal-list-range"></span>
             <span class="journal-list-pager" id="journal-list-pager"></span>
             <button type="button" class="btn btn-secondary btn-sm ent-select-btn" id="journal-select-btn" hidden></button>
@@ -2174,12 +2174,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
               <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-delete"></button><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-done-some"></button></span>
             </div>
           </div>
-          <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in.</p>
+          <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>{{journal.window.entities.visible.text.dots.are.the.facets.a.name}}</p>
           <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
           <div id="journal-entity-cards-content" class="journal-rows"></div>
           <div id="no-journal-entities" class="no-journal-entities" style="display: none;">
-            <h2>no entities yet</h2>
-            <p>Select a facet to add entities to your journal.</p>
+            <h2>{{journal.window.entities.section.heading.no.entities.yet}}</h2>
+            <p>{{journal.window.entities.visible.text.select.a.facet.to.add.entities}}</p>
           </div>
           <div id="no-journal-card-matches" class="no-card-matches" style="display: none;"></div>
         </div>
@@ -2193,7 +2193,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <!-- Journal entity detail view (all-facet mode) -->
   <div id="journal-entity-detail-view" class="entity-detail-view" style="display: none;">
     <div class="entity-detail-header">
-      <a class="entity-detail-back" href="#" data-entities-action="list">← back to entities</a>
+      <a class="entity-detail-back" href="#" data-entities-action="list">{{journal.window.entities.link.label.back.to.entities}}</a>
       <div class="entity-detail-title">
         <h2 class="entity-detail-name" id="journal-detail-name"></h2>
         <span class="entity-detail-type" id="journal-detail-type"></span>
@@ -2206,12 +2206,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <section class="entity-detail-section" id="journal-detail-voice-samples" aria-live="polite" hidden></section>
 
     <div class="entity-detail-section">
-      <h4>facets</h4>
+      <h4>{{journal.window.entities.visible.text.facets}}</h4>
       <div id="journal-detail-facets"></div>
     </div>
 
     <div class="entity-detail-section">
-      <h4>connections</h4>
+      <h4>{{journal.window.entities.visible.text.connections}}</h4>
       <div id="journal-detail-connections"></div>
     </div>
 
@@ -2236,8 +2236,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     </div>
 
     <div class="entity-detail-section">
-      <h4>edit entity</h4>
-      <p class="entity-edit-note" id="journal-detail-edit-note">loading this entity…</p>
+      <h4>{{journal.window.entities.visible.text.edit.entity}}</h4>
+      <p class="entity-edit-note" id="journal-detail-edit-note">{{journal.window.entities.visible.text.loading.this.entity}}</p>
       <div id="journal-detail-edit-error" class="error-message" style="display: none;"></div>
       <form class="entity-edit-form" id="journal-detail-edit-form">
         <!-- G2-B01: disabled until the entity resolves. Every control below
@@ -2245,23 +2245,23 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
              to assert. -->
         <fieldset class="entity-edit-fields" id="journal-detail-edit-fields" disabled>
         <div class="form-group">
-          <label for="journal-detail-edit-name">name</label>
+          <label for="journal-detail-edit-name">{{journal.window.entities.field.label.name}}</label>
           <input type="text" id="journal-detail-edit-name" required>
         </div>
         <div class="form-group">
-          <label for="journal-detail-edit-type">type</label>
+          <label for="journal-detail-edit-type">{{journal.window.entities.field.label.type}}</label>
           <select id="journal-detail-edit-type">
             <!-- Populated by loadEntityTypes(); the selected option is set
                  only once the entity has been read (setJournalEditType). -->
           </select>
         </div>
         <div class="form-group">
-          <label for="journal-detail-edit-akas">alternative names (AKAs)</label>
-          <input type="text" id="journal-detail-edit-akas" placeholder="alias1, alias2, alias3">
-          <small>comma-separated list of alternative names for audio transcription</small>
+          <label for="journal-detail-edit-akas">{{journal.window.entities.field.label.alternative.names.akas}}</label>
+          <input type="text" id="journal-detail-edit-akas" placeholder="{{journal.window.entities.field.placeholder.alias1.alias2.alias3}}">
+          <small>{{journal.window.entities.visible.text.comma.separated.list.of.alternative.names}}</small>
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="journal-detail-save-btn">save changes</button>
+          <button type="submit" class="btn btn-primary" id="journal-detail-save-btn">{{journal.window.entities.button.label.save.changes}}</button>
         </div>
         </fieldset>
       </form>
@@ -2269,12 +2269,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 
     <div class="entity-action-section entity-detach-section">
       <div style="display: flex; gap: 0.5em; flex-wrap: wrap;">
-        <button class="btn btn-secondary" id="journal-detail-block-btn" disabled>hide</button>
+        <button class="btn btn-secondary" id="journal-detail-block-btn" disabled>{{journal.window.entities.button.label.hide}}</button>
         <button type="button" class="btn btn-secondary" id="journal-detail-delete-btn" hidden></button>
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
       <p style="margin-top: 0.75em; font-size: 0.85em; color: var(--ink-faint);">
-        <strong>hide</strong> <span id="journal-detail-hide-help"></span>
+        <strong>{{journal.window.entities.visible.text.hide}}</strong> <span id="journal-detail-hide-help"></span>
         <span id="journal-detail-delete-help" hidden><strong id="journal-detail-delete-help-name"></strong> <span id="journal-detail-delete-help-text"></span></span>
       </p>
     </div>
@@ -2286,15 +2286,15 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <!-- Facet Entities Section (Cards) -->
     <div class="entities-section">
       <h3 id="facet-entities-heading">
-        <span>entities</span>
-        <input type="text" id="entity-card-search" class="entity-search-input" placeholder="search entities…" aria-label="search entity cards">
+        <span>{{journal.window.entities.visible.text.entities}}</span>
+        <input type="text" id="entity-card-search" class="entity-search-input" placeholder="{{journal.window.entities.field.placeholder.search.entities}}" aria-label="{{journal.window.entities.accessible.name.search.entity.cards}}">
         <span id="facet-card-search-count" class="entity-card-search-count" style="display: none;"></span>
       </h3>
-      <p class="entities-subtitle" id="facet-entities-subtitle">people, places, and things you're tending</p>
+      <p class="entities-subtitle" id="facet-entities-subtitle">{{journal.window.entities.visible.text.people.places.and.things.you.re}}</p>
       <div class="entity-cards-container">
         <div id="entity-cards-content"></div>
         <div id="no-facet-entities" class="no-entities" style="display: none;"></div>
-        <div id="no-facet-card-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
+        <div id="no-facet-card-matches" class="no-card-matches" style="display: none;">{{journal.window.entities.visible.text.no.entities.match.your.search}}</div>
       </div>
     </div>
 
@@ -2302,25 +2302,25 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <div class="entities-section">
       <div class="entities-container">
         <h3 id="all-entities-title">
-          <span>detected entities</span>
-          <input type="text" id="entity-search" class="entity-search-input" placeholder="search entities…" aria-label="search detected entities">
+          <span>{{journal.window.entities.visible.text.detected.entities}}</span>
+          <input type="text" id="entity-search" class="entity-search-input" placeholder="{{journal.window.entities.field.placeholder.search.entities}}" aria-label="{{journal.window.entities.accessible.name.search.detected.entities}}">
         </h3>
-        <p class="entities-subtitle">found by AI in the last 30 days. star to add to your journal</p>
+        <p class="entities-subtitle">{{journal.window.entities.visible.text.found.by.ai.in.the.last}}</p>
         <div id="detected-action-error" class="error-message" role="status" style="display: none;"></div>
         <table class="entities-table">
           <thead>
             <tr>
               <th></th>
-              <th class="entity-type">type</th>
-              <th class="entity-name">name</th>
-              <th class="entity-desc">description</th>
+              <th class="entity-type">{{journal.window.entities.column.heading.type}}</th>
+              <th class="entity-name">{{journal.window.entities.column.heading.name}}</th>
+              <th class="entity-desc">{{journal.window.entities.column.heading.description}}</th>
             </tr>
           </thead>
           <tbody id="all-entities-tbody">
           </tbody>
         </table>
         <div id="no-detected-entities" class="no-entities" style="display: none;"></div>
-        <div id="no-detected-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
+        <div id="no-detected-matches" class="no-card-matches" style="display: none;">{{journal.window.entities.visible.text.no.entities.match.your.search}}</div>
         <div id="detected-hidden-foot" class="ent-hidden-foot" hidden>
           <span id="detected-hidden-count"></span>
           <button type="button" id="detected-hidden-toggle" class="btn btn-secondary btn-sm" aria-expanded="false" aria-controls="detected-hidden-list"></button>
@@ -2342,8 +2342,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <div id="entity-detail-view" class="entity-detail-view" style="display: none;">
     <div class="entity-detail-header">
       <div class="entity-detail-link-row">
-        <a class="entity-detail-back" href="#" data-entities-action="list">← back to entities</a>
-        <a class="entity-detail-allfacets" href="#" data-entities-action="all-facets">edit <span id="detail-allfacets-name"></span> in all facets →</a>
+        <a class="entity-detail-back" href="#" data-entities-action="list">{{journal.window.entities.link.label.back.to.entities}}</a>
+        <a class="entity-detail-allfacets" href="#" data-entities-action="all-facets">{{journal.window.entities.link.label.edit}} <span id="detail-allfacets-name"></span> {{journal.window.entities.link.label.in.all.facets}}</a>
       </div>
       <div class="entity-detail-title">
         <h2 class="entity-detail-name" id="detail-name"></h2>
@@ -2354,13 +2354,13 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     </div>
 
     <div class="entity-detail-section">
-      <h4>description</h4>
+      <h4>{{journal.window.entities.visible.text.description}}</h4>
       <div id="detail-description-container"></div>
       <div id="description-save-error" class="error-message" style="display: none;"></div>
     </div>
 
     <div class="entity-detail-section">
-      <h4>connections</h4>
+      <h4>{{journal.window.entities.visible.text.connections}}</h4>
       <div id="detail-connections"></div>
     </div>
 
@@ -2389,13 +2389,13 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <div id="detach-action-error" class="error-message" style="display: none;"></div>
 
     <div class="entity-attach-section" id="detail-attach-section" style="display: none;">
-      <h4>attach to <span id="attach-facet-name"></span></h4>
+      <h4>{{journal.window.entities.visible.text.attach.to}} <span id="attach-facet-name"></span></h4>
       <label class="attach-description-label">
-        description <span class="required">*</span>
-        <small style="font-weight: normal; color: var(--ink-faint);">(how does this entity relate to this facet?)</small>
+        {{journal.window.entities.field.label.description}} <span class="required">*</span>
+        <small style="font-weight: normal; color: var(--ink-faint);">{{journal.window.entities.visible.text.how.does.this.entity.relate.to}}</small>
       </label>
-      <textarea id="attach-description" placeholder="e.g., lead engineer on the project, primary contact for sales…"></textarea>
-      <button class="btn-attach" id="attach-entity-btn" disabled>attach to facet</button>
+      <textarea id="attach-description" placeholder="{{journal.window.entities.field.placeholder.e.g.lead.engineer.on.the}}"></textarea>
+      <button class="btn-attach" id="attach-entity-btn" disabled>{{journal.window.entities.button.label.attach.to.facet}}</button>
       <div id="attach-error" style="color: var(--danger); margin-top: 0.5em; display: none;"></div>
     </div>
   </div>
@@ -2406,7 +2406,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <div class="modal-content">
     <div class="modal-header" id="entityDeleteModalHeader">
       <h3 id="entityDeleteModalTitle"></h3>
-      <button type="button" class="close" id="entityDeleteModalClose" aria-label="close">&times;</button>
+      <button type="button" class="close" id="entityDeleteModalClose" aria-label="{{journal.window.entities.accessible.name.close}}">&times;</button>
     </div>
     <div class="modal-body">
       <div id="entityDeleteModalBody" class="trash-dlg-note"></div>
@@ -2431,15 +2431,15 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 <div id="detachConfirmModal" class="modal">
   <div class="modal-content">
     <div class="modal-header">
-      <h3>detach</h3>
-      <button class="close" aria-label="close" data-entities-action="detach-close">&times;</button>
+      <h3>{{journal.window.entities.section.heading.detach}}</h3>
+      <button class="close" aria-label="{{journal.window.entities.accessible.name.close}}" data-entities-action="detach-close">&times;</button>
     </div>
     <div class="modal-body">
       <p id="detachConfirmMessage"></p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" data-entities-action="detach-close">cancel</button>
-      <button id="confirmDetachBtn" class="btn btn-primary" data-entities-action="detach-confirm">detach</button>
+      <button class="btn btn-secondary" data-entities-action="detach-close">{{journal.window.entities.button.label.cancel}}</button>
+      <button id="confirmDetachBtn" class="btn btn-primary" data-entities-action="detach-confirm">{{journal.window.entities.button.label.detach}}</button>
     </div>
   </div>
 </div>
@@ -3003,13 +3003,13 @@ function fillLastMentionedDate(element, day) {
   const absolute = formatMentionedDate(day);
   const short = formatDateShort(day);
   if (absolute) {
-    element.title = `Last mentioned: ${absolute}`;
+    element.title = window.JournalI18n.render('journal.window.entities.tooltip.last.mentioned.value1.variant2', [['value1', String(absolute)]]);
   }
   element.innerHTML = '';
   if (absolute) {
     const hiddenSpan = document.createElement('span');
     hiddenSpan.className = 'visually-hidden';
-    hiddenSpan.textContent = `Last mentioned: ${absolute}`;
+    hiddenSpan.textContent = window.JournalI18n.render('journal.window.entities.visible.text.last.mentioned.value1.variant2', [['value1', String(absolute)]]);
     element.appendChild(hiddenSpan);
   }
   const visibleSpan = document.createElement('span');
@@ -3281,7 +3281,7 @@ async function fetchAllDetailObservations() {
     while (hasMore) {
       const url = `/app/entities/api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200&after_id=${encodeURIComponent(afterId)}`;
       const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error('failed to load observations');
+      if (!res.ok) throw new Error(window.JournalI18n.render('journal.window.entities.window.explanation.failed.to.load.observations'));
       const data = await res.json();
       if (!detailObservationTokenCurrent(currentToken)) return;
       const items = Array.isArray(data.items) ? data.items : [];
@@ -3583,7 +3583,7 @@ function isCurrentConnectionEntity(entityId) {
 async function renderConnectionsSection(entityId, containerId, isPrincipal) {
   const container = document.getElementById(containerId);
   if (!container || !entityId) return;
-  container.innerHTML = '<span class="observations-empty">loading…</span>';
+  container.innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
 
   try {
     const network = await loadEntityNetwork(entityId);
@@ -3942,7 +3942,7 @@ async function toggleConnectionEvidence(entityId, peerId, pane, referenceDay, bu
 }
 
 async function loadInitialConnectionEvidence(entityId, peerId, pane, referenceDay) {
-  pane.innerHTML = '<span class="observations-empty">loading…</span>';
+  pane.innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   try {
     const history = await loadConnectionHistory(entityId, peerId, 0);
     if (!isCurrentConnectionEntity(entityId)) return;
@@ -4426,15 +4426,15 @@ function showFacetDetailView(entityId) {
   const openToken = beginDetailObservationOpen();
   // Show loading state
   currentDetailEntity = null;
-  document.getElementById('detail-name').textContent = 'loading…';
-  document.getElementById('detail-allfacets-name').textContent = 'loading…';
+  document.getElementById('detail-name').textContent = window.JournalI18n.render('journal.window.entities.visible.text.loading');
+  document.getElementById('detail-allfacets-name').textContent = window.JournalI18n.render('journal.window.entities.visible.text.loading');
   document.getElementById('detail-type').textContent = '';
   document.getElementById('detail-aka').textContent = '';
   document.getElementById('detail-indicators').innerHTML = '';
-  document.getElementById('detail-description-container').innerHTML = '<span class="entity-desc-display empty">loading…</span>';
-  document.getElementById('detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('detail-description-container').innerHTML = `<span class="entity-desc-display empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
+  document.getElementById('detail-connections').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   document.getElementById('detail-observations-heading').textContent = ENT_COPY.ENT_OBS_HEADING || '';
-  document.getElementById('detail-observations').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('detail-observations').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   loadObservationDayGrid(currentFacet, entityId, openToken);
 
   // Fetch entity details
@@ -4459,7 +4459,7 @@ function showFacetDetailView(entityId) {
       const container = document.getElementById('detail-description-container');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
-          heading: "this entity couldn't be loaded",
+          heading: window.JournalI18n.render('journal.window.entities.heading.this.entity.couldn.t.be.loaded'),
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: entityErrorMessage(error),
           detail: error,
@@ -4517,7 +4517,7 @@ function setJournalEditType(type) {
   if (!value) {
     // A record that carries no type of its own. Saying so is the honest read;
     // selecting the first option would offer to write that type back.
-    setJournalEditTypeState('not set');
+    setJournalEditTypeState(window.JournalI18n.render('journal.window.entities.window.state.text.not.set'));
     return;
   }
   // A type the server offers no option for still belongs to this entity. Show
@@ -4576,13 +4576,13 @@ function showJournalDetailView(entityId) {
   // Show loading state
   currentDetailEntity = null;
   const knownName = knownEntityName(entityId);
-  document.getElementById('journal-detail-name').textContent = knownName || 'loading…';
-  setJournalEditLoading('loading this entity…', 'loading…');
+  document.getElementById('journal-detail-name').textContent = knownName || window.JournalI18n.render('journal.window.entities.visible.text.loading');
+  setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.state.text.loading.this.entity'), 'loading…');
   document.getElementById('journal-detail-type').textContent = '';
   document.getElementById('journal-detail-aka').textContent = '';
   document.getElementById('journal-detail-indicators').innerHTML = '';
-  document.getElementById('journal-detail-facets').innerHTML = '<span class="observations-empty">loading…</span>';
-  document.getElementById('journal-detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('journal-detail-facets').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
+  document.getElementById('journal-detail-connections').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   renderEntityDeleteAction(null);
   resetJournalTrustSurface();
   resetFacesPanel();
@@ -4605,11 +4605,11 @@ function showJournalDetailView(entityId) {
       console.error('Error loading journal entity details:', error);
       reportEntitiesReady('error');
       document.getElementById('journal-detail-name').textContent = knownName;
-      setJournalEditLoading("this entity couldn't be loaded, so it can't be edited.", 'unavailable');
+      setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.explanation.this.entity.couldn.t.be.loaded'), 'unavailable');
       const container = document.getElementById('journal-detail-facets');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
-          heading: "this entity couldn't be loaded",
+          heading: window.JournalI18n.render('journal.window.entities.heading.this.entity.couldn.t.be.loaded'),
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: entityErrorMessage(error),
           detail: error,
@@ -4646,8 +4646,8 @@ function renderJournalDetailView(entity) {
       principalBadge = document.createElement('span');
       principalBadge.id = 'journal-detail-principal-badge';
       principalBadge.className = 'entity-detail-principal-badge';
-      principalBadge.textContent = 'you';
-      principalBadge.title = 'this is you';
+      principalBadge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.you');
+      principalBadge.title = window.JournalI18n.render('journal.window.entities.tooltip.this.is.you');
       typeEl.parentNode.insertBefore(principalBadge, typeEl.nextSibling);
     }
   } else if (principalBadge) {
@@ -4661,8 +4661,8 @@ function renderJournalDetailView(entity) {
       blockedBadge = document.createElement('span');
       blockedBadge.id = 'journal-detail-blocked-badge';
       blockedBadge.className = 'entity-detail-blocked-badge';
-      blockedBadge.textContent = 'hidden';
-      blockedBadge.title = 'this entity is hidden';
+      blockedBadge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hidden');
+      blockedBadge.title = window.JournalI18n.render('journal.window.entities.tooltip.this.entity.is.hidden');
       typeEl.parentNode.insertBefore(blockedBadge, typeEl.nextSibling);
     }
   } else if (blockedBadge) {
@@ -4677,19 +4677,19 @@ function renderJournalDetailView(entity) {
   if (isPrincipal) {
     // Principal cannot be hidden; it has no delete at all.
     blockBtn.disabled = true;
-    blockBtn.textContent = 'hide';
-    blockBtn.title = 'cannot hide yourself';
+    blockBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hide');
+    blockBtn.title = window.JournalI18n.render('journal.window.entities.tooltip.cannot.hide.yourself');
     blockBtn.onclick = null;
   } else if (isBlocked) {
     // Show unblock option
     blockBtn.disabled = false;
-    blockBtn.textContent = 'unhide';
-    blockBtn.title = 'unhide this entity';
+    blockBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.unhide');
+    blockBtn.title = window.JournalI18n.render('journal.window.entities.tooltip.unhide.this.entity');
     blockBtn.onclick = unblockJournalEntity;
   } else {
     // Normal state
     blockBtn.disabled = false;
-    blockBtn.textContent = 'hide';
+    blockBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hide');
     blockBtn.title = '';
     blockBtn.onclick = blockJournalEntity;
   }
@@ -4698,7 +4698,7 @@ function renderJournalDetailView(entity) {
   // AKAs
   const akaEl = document.getElementById('journal-detail-aka');
   if (entity.aka && entity.aka.length > 0) {
-    akaEl.textContent = `Also known as: ${entity.aka.join(', ')}`;
+    akaEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.also.known.as.value1.variant2', [['value1', String(entity.aka.join(', '))]]);
   } else {
     akaEl.textContent = '';
   }
@@ -4723,7 +4723,7 @@ function renderJournalDetailView(entity) {
   const facets = entity.facets || [];
 
   if (facets.length === 0) {
-    facetsContainer.innerHTML = '<div class="no-facet-relationships">not attached to any facets yet.</div>';
+    facetsContainer.innerHTML = `<div class="no-facet-relationships">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.not.attached.to.any.facets.yet')}</div>`;
   } else {
     facetsContainer.innerHTML = '<div class="facet-relationships-list"></div>';
     const list = facetsContainer.querySelector('.facet-relationships-list');
@@ -4739,10 +4739,10 @@ function renderJournalDetailView(entity) {
 
       if (isBlocked) {
         // Blocked dominates: non-navigable (covers blocked, and blocked+detached).
-        row.title = 'entity is hidden and detached from this facet';
+        row.title = window.JournalI18n.render('journal.window.entities.tooltip.entity.is.hidden.and.detached.from');
       } else {
         // Navigable — now includes detached-but-not-blocked rows (re-attach lives in the facet detail).
-        row.title = `Click to view in ${facet.title}`;
+        row.title = window.JournalI18n.render('journal.window.entities.tooltip.click.to.view.in.value1', [['value1', String(facet.title)]]);
         row.onclick = () => {
           // Switch this page to the facet while preserving the entity detail hash.
           selectEntityScope(facet.name);
@@ -4779,7 +4779,7 @@ function renderJournalDetailView(entity) {
       if (isDetachedFacet) {
         const detachedBadge = document.createElement('span');
         detachedBadge.className = 'facet-rel-detached-badge';
-        detachedBadge.textContent = 'detached';
+        detachedBadge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.detached');
         header.appendChild(detachedBadge);
       }
 
@@ -4808,7 +4808,7 @@ function renderJournalDetailView(entity) {
       if (facet.has_voiceprint) {
         const voiceprint = document.createElement('span');
         voiceprint.className = 'facet-rel-voiceprint';
-        voiceprint.title = 'Has voiceprint';
+        voiceprint.title = window.JournalI18n.render('journal.window.entities.tooltip.has.voiceprint');
         voiceprint.setAttribute('role', 'img');
         voiceprint.setAttribute('aria-label', voiceprint.title);
         voiceprint.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('mic-vocal') || '')}</span>`;
@@ -4879,8 +4879,8 @@ function resetJournalTrustSurface() {
   document.getElementById('journal-detail-merge-preview').innerHTML = '';
   document.getElementById('journal-detail-merge-panel').hidden = true;
   document.getElementById('journal-detail-merge-panel').innerHTML = '';
-  document.getElementById('journal-detail-suggestions').innerHTML = '<span class="observations-empty">loading…</span>';
-  document.getElementById('journal-detail-history').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('journal-detail-suggestions').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
+  document.getElementById('journal-detail-history').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   hideInlineError('journal-detail-trust-error');
 }
 
@@ -4914,7 +4914,7 @@ function renderJournalMergeResults(items, emptyMessage) {
     const empty = document.createElement('li');
     empty.setAttribute('role', 'presentation');
     empty.className = 'entity-merge-empty';
-    empty.textContent = emptyMessage || 'no entity matches that name.';
+    empty.textContent = emptyMessage || window.JournalI18n.render('journal.window.entities.visible.text.no.entity.matches.that.name');
     results.append(empty);
   } else {
     items.forEach((candidate) => {
@@ -4950,7 +4950,7 @@ function showJournalMergeSuggestions() {
     return;
   }
   renderJournalMergeResults(journalMergeSuggestions.map((row) => Object.assign({}, row, {
-    meta: 'suggested match',
+    meta: window.JournalI18n.render('journal.window.entities.window.state.text.suggested.match'),
   })));
 }
 
@@ -4966,7 +4966,7 @@ async function runJournalMergeSearch(entity, term) {
   } catch (err) {
     if (request !== journalMergeRequest) return;
     window.logError(err, {context: 'entities: merge target search failed'});
-    renderJournalMergeResults([], "couldn't search for a merge target.");
+    renderJournalMergeResults([], window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.search.for.a.merge'));
   }
 }
 
@@ -5022,7 +5022,7 @@ function renderJournalTrustControls(entity) {
   const input = document.getElementById('journal-detail-merge-target');
   const mergeButton = document.getElementById('journal-detail-merge-btn');
   input.value = '';
-  input.placeholder = 'type a name to find it';
+  input.placeholder = window.JournalI18n.render('journal.window.entities.field.placeholder.type.a.name.to.find.it');
   input.disabled = entity.blocked === true;
   mergeButton.disabled = true;
   mergeButton.onclick = () => {
@@ -5281,13 +5281,13 @@ document.getElementById('journal-detail-edit-form').addEventListener('submit', f
   const saveBtn = document.getElementById('journal-detail-save-btn');
 
   if (!name) {
-    errorEl.textContent = 'name is required';
+    errorEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.name.is.required');
     errorEl.style.display = 'block';
     return;
   }
 
   saveBtn.disabled = true;
-  saveBtn.textContent = 'saving…';
+  saveBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.saving');
 
   fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`, {
     method: 'PUT',
@@ -5312,25 +5312,25 @@ document.getElementById('journal-detail-edit-form').addEventListener('submit', f
     document.getElementById('journal-detail-type').textContent = type;
     const akaEl = document.getElementById('journal-detail-aka');
     if (aka.length > 0) {
-      akaEl.textContent = `also known as: ${aka.join(', ')}`;
+      akaEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.also.known.as.value1', [['value1', String(aka.join(', '))]]);
     } else {
       akaEl.textContent = '';
     }
 
     errorEl.style.display = 'none';
-    saveBtn.textContent = 'saved!';
+    saveBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.saved');
     saveBtn.classList.add('saved');
     setTimeout(() => {
       saveBtn.classList.remove('saved');
-      saveBtn.textContent = 'save changes';
+      saveBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.save.changes');
       saveBtn.disabled = false;
     }, 1500);
   })
   .catch(error => {
     console.error('Error updating journal entity:', error);
-    errorEl.textContent = error.message || 'failed to save changes';
+    errorEl.textContent = error.message || window.JournalI18n.render('journal.window.entities.visible.text.failed.to.save.changes');
     errorEl.style.display = 'block';
-    saveBtn.textContent = 'save changes';
+    saveBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.save.changes');
     saveBtn.disabled = false;
   });
 });
@@ -5342,7 +5342,7 @@ function blockJournalEntity() {
 
   const btn = document.getElementById('journal-detail-block-btn');
   btn.disabled = true;
-  btn.textContent = 'hiding…';
+  btn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hiding');
 
   fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/block`, {
     method: 'POST'
@@ -5359,9 +5359,9 @@ function blockJournalEntity() {
   })
   .catch(error => {
     console.error('Error hiding entity:', error);
-    showInlineError('block-action-error', "couldn't hide entity");
+    showInlineError('block-action-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.hide.entity'));
     btn.disabled = false;
-    btn.textContent = 'hide';
+    btn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hide');
   });
 }
 
@@ -5371,7 +5371,7 @@ function unblockJournalEntity() {
 
   const btn = document.getElementById('journal-detail-block-btn');
   btn.disabled = true;
-  btn.textContent = 'unhiding…';
+  btn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.unhiding');
 
   fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/unblock`, {
     method: 'POST'
@@ -5388,9 +5388,9 @@ function unblockJournalEntity() {
   })
   .catch(error => {
     console.error('Error unhiding entity:', error);
-    showInlineError('block-action-error', "couldn't unhide entity");
+    showInlineError('block-action-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.unhide.entity'));
     btn.disabled = false;
-    btn.textContent = 'unhide';
+    btn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.unhide');
   });
 }
 
@@ -5400,121 +5400,121 @@ function unblockJournalEntity() {
 // trash's own, as the import and transcripts pages have them; what moves is
 // the entity's own.
 const ENTITY_DELETE_COPY = {
-  noun: 'entity',
-  things: 'entities',
-  button: 'delete',
-  paneHelp: "moves it to the trash, where you can recover it until it's erased.",
-  select: 'select',
-  selectAll: 'select all',
-  selectAllPage: 'select all on this page',
-  selected: '{n} selected',
-  delete: 'delete',
-  done: 'done',
-  pickLabel: 'select {name}',
-  more: 'and {n} more',
+  noun: window.JournalI18n.render('journal.window.entities.entity.delete.copy.noun.entity'),
+  things: window.JournalI18n.render('journal.window.entities.entity.delete.copy.things.entities'),
+  button: window.JournalI18n.render('journal.window.entities.entity.delete.copy.button.delete'),
+  paneHelp: window.JournalI18n.render('journal.window.entities.entity.delete.copy.pane.help.moves.it.to.the.trash.where'),
+  select: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.select'),
+  selectAll: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.all.select.all'),
+  selectAllPage: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.all.page.select.all.on.this.page'),
+  selected: window.JournalI18n.render('journal.window.entities.entity.delete.copy.selected.n.selected'),
+  delete: window.JournalI18n.render('journal.window.entities.entity.delete.copy.delete.delete'),
+  done: window.JournalI18n.render('journal.window.entities.entity.delete.copy.done.done'),
+  pickLabel: window.JournalI18n.render('journal.window.entities.entity.delete.copy.pick.label.select.name'),
+  more: window.JournalI18n.render('journal.window.entities.entity.delete.copy.more.and.n.more'),
   move: {
-    title: 'delete this entity?',
-    titleMany: 'delete {n} entities?',
-    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
-    reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
-    lead: "this moves the entity's own:",
-    ownMany: "this moves each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.",
-    stays: 'transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention it.',
-    staysMany: 'transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention them.',
+    title: window.JournalI18n.render('journal.window.entities.title.delete.this.entity'),
+    titleMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.title.many.delete.n.entities'),
+    reach: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2'),
+    reachMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2'),
+    lead: window.JournalI18n.render('journal.window.entities.entity.delete.copy.lead.this.moves.the.entity.s.own'),
+    ownMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own'),
+    stays: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in.variant2'),
+    staysMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in.variant2'),
   },
   erase: {
-    title: 'erase this entity now?',
-    titleMany: 'erase {n} entities now?',
-    reach: "it leaves your journal now and can't be recovered.",
-    reachMany: "they leave your journal now and can't be recovered.",
-    lead: "this erases the entity's own:",
-    ownMany: "this erases each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.",
-    stays: "transcripts, summaries and activities elsewhere in your journal aren't erased and may still mention it.",
-    staysMany: "transcripts, summaries and activities elsewhere in your journal aren't erased and may still mention them.",
+    title: window.JournalI18n.render('journal.window.entities.title.erase.this.entity.now'),
+    titleMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.title.many.erase.n.entities.now'),
+    reach: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and'),
+    reachMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and'),
+    lead: window.JournalI18n.render('journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own'),
+    ownMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.own.many.this.erases.each.one.s.own'),
+    stays: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in'),
+    staysMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in'),
   },
-  again: "if your journal finds it again later, it's added as a new entity.",
-  againMany: 'any of them your journal finds again later is added as a new entity.',
+  again: window.JournalI18n.render('journal.window.entities.entity.delete.copy.again.if.your.journal.finds.it.again'),
+  againMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.again.many.any.of.them.your.journal.finds'),
   list: {
-    details: 'its details and version history',
-    facetOne: 'its place and notes in 1 facet',
-    facetMany: 'its place and notes in {n} facets',
-    voice: 'what your journal keeps about its voice',
-    facetUnknown: "its place and notes in each facet it's in",
-    voiceUnknown: 'what your journal keeps about its voice, if anything',
+    details: window.JournalI18n.render('journal.window.entities.entity.delete.copy.details.its.details.and.version.history'),
+    facetOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.one.its.place.and.notes.in.facet'),
+    facetMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.many.its.place.and.notes.in.n'),
+    voice: window.JournalI18n.render('journal.window.entities.entity.delete.copy.voice.what.your.journal.keeps.about.its'),
+    facetUnknown: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.each'),
+    voiceUnknown: window.JournalI18n.render('journal.window.entities.entity.delete.copy.voice.unknown.what.your.journal.keeps.about.its'),
   },
   buttons: {
-    eraseNow: 'erase now',
-    cancel: 'cancel',
-    moveToTrash: 'move to trash',
-    back: 'back',
-    recover: 'recover',
-    openTrash: 'open trash',
+    eraseNow: window.JournalI18n.render('journal.window.entities.entity.delete.copy.erase.now.erase.now'),
+    cancel: window.JournalI18n.render('journal.window.entities.entity.delete.copy.cancel.cancel'),
+    moveToTrash: window.JournalI18n.render('journal.window.entities.entity.delete.copy.move.to.trash.move.to.trash'),
+    back: window.JournalI18n.render('journal.window.entities.entity.delete.copy.back.back'),
+    recover: window.JournalI18n.render('journal.window.entities.entity.delete.copy.recover.recover'),
+    openTrash: window.JournalI18n.render('journal.window.entities.entity.delete.copy.open.trash.open.trash'),
   },
   // A refused entity in a set, keyed by the journal's reason.
   notes: {
-    busy: "something else is changing this right now, so it wasn't moved. try again in a minute.",
-    record_damaged: "your journal couldn't update its record of entities, so this wasn't moved.",
-    other: "this wasn't moved. try again.",
+    busy: window.JournalI18n.render('journal.window.entities.entity.delete.copy.busy.something.else.is.changing.this.right'),
+    record_damaged: window.JournalI18n.render('journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its.variant3'),
+    other: window.JournalI18n.render('journal.window.entities.entity.delete.copy.other.this.wasn.t.moved.try.again'),
   },
   eraseNotes: {
-    busy: "something else is changing this right now, so it wasn't erased. try again in a minute.",
-    record_damaged: "your journal couldn't update its record of entities, so this wasn't erased.",
-    other: "this wasn't erased. try again.",
+    busy: window.JournalI18n.render('journal.window.entities.entity.delete.copy.busy.something.else.is.changing.this.right.variant2'),
+    record_damaged: window.JournalI18n.render('journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its.variant4'),
+    other: window.JournalI18n.render('journal.window.entities.entity.delete.copy.other.this.wasn.t.erased.try.again'),
   },
   // What a refused one says, keyed by the journal's reason.
   refused: {
-    busy: 'something else is changing it right now. try again in a minute.',
-    record_damaged: "your journal couldn't update its record of entities. nothing moved.",
-    gone: "it's no longer in your journal.",
-    last_facet: "your journal needs at least one facet that isn't muted.",
-    principal: "this is you, so it can't be deleted.",
+    busy: window.JournalI18n.render('journal.window.entities.entity.delete.copy.busy.something.else.is.changing.it.right'),
+    record_damaged: window.JournalI18n.render('journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its'),
+    gone: window.JournalI18n.render('journal.window.entities.entity.delete.copy.gone.it.s.no.longer.in.your'),
+    last_facet: window.JournalI18n.render('journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one'),
+    principal: window.JournalI18n.render('journal.window.entities.entity.delete.copy.principal.this.is.you.so.it.can'),
   },
   eraseRefused: {
-    record_damaged: "your journal couldn't update its record of entities. nothing was erased.",
+    record_damaged: window.JournalI18n.render('journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its.variant2'),
   },
   receipt: {
-    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
-    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
-    erased: { title: '{noun} erased from your journal' },
-    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
-    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
-    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
-    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
-    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
-    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
-    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+    moved: { title: window.JournalI18n.render('journal.window.entities.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.entities.message.erases.date.unless.you.recover.it') },
+    recovered: { title: window.JournalI18n.render('journal.window.entities.title.noun.recovered'), message: window.JournalI18n.render('journal.window.entities.message.it.s.back.in.your.journal') },
+    erased: { title: window.JournalI18n.render('journal.window.entities.title.noun.erased.from.your.journal') },
+    recoverFailed: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.entities.message.it.s.still.in.the.trash') },
+    moveRefused: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.entities.message.it.s.still.in.your.journal') },
+    eraseRefused: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.entities.message.it.s.still.in.your.journal') },
+    eraseFailed: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.entities.message.it.s.in.the.trash.you') },
+    noAnswerMove: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.it.may.already.be.in.the') },
+    noAnswerErase: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.it.may.already.be.erased.reload') },
+    noAnswerRecover: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.it.may.already.be.back.in') },
   },
   set: {
-    moved: { title: 'moved {n} {things} to the trash', message: 'they erase {date} unless you recover them.' },
-    partMoved: { title: 'moved {done} of {n} to the trash' },
-    stillOne: "{k} couldn't be moved and is still in your journal, marked below.",
-    stillMany: "{k} couldn't be moved and are still in your journal, marked below.",
-    markedOne: "{k} couldn't be moved and is marked below.",
-    markedMany: "{k} couldn't be moved and are marked below.",
-    goneMoreOne: '{g} more is no longer listed.',
-    goneMoreMany: '{g} more are no longer listed.',
-    othersGoneOne: 'the other is no longer listed here.',
-    othersGoneMany: 'the others are no longer listed here.',
-    noneMoved: { title: "couldn't move those to the trash" },
-    noneStillOne: '{k} is still in your journal, marked below.',
-    noneStillMany: '{k} are still in your journal, marked below.',
-    noneGoneOne: "it's no longer listed here.",
-    noneGoneMany: "they're no longer listed here.",
-    erased: { title: 'erased {n} {things} from your journal' },
-    partErased: { title: 'erased {done} of {n}' },
-    partErasedOne: "the other wasn't erased. look for it below or in the trash.",
-    partErasedMany: "the others weren't erased. look for them below or in the trash.",
-    noneErased: { title: "couldn't erase those" },
-    noneErasedOne: 'look for it below or in the trash.',
-    noneErasedMany: 'look for them below or in the trash.',
-    recovered: { title: '{n} {things} recovered', message: "they're back in your journal." },
-    partRecovered: { title: 'recovered {done} of {n}' },
-    partRecoveredOne: 'the other is still in the trash. you can try again from there.',
-    partRecoveredMany: 'the others are still in the trash. you can try again from there.',
-    recoverFailed: { title: "couldn't recover those", message: "they're still in the trash. you can try again from there." },
-    noAnswerMove: { title: "your journal didn't answer", message: 'they may already be in the trash. reload to check.' },
-    noAnswerErase: { title: "your journal didn't answer", message: 'they may already be erased. reload to check.' },
-    noAnswerRecover: { title: "your journal didn't answer", message: 'they may already be back in your journal. reload to check.' },
+    moved: { title: window.JournalI18n.render('journal.window.entities.title.moved.n.things.to.the.trash'), message: window.JournalI18n.render('journal.window.entities.message.they.erase.date.unless.you.recover') },
+    partMoved: { title: window.JournalI18n.render('journal.window.entities.title.moved.done.of.n.to.the') },
+    stillOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.still.one.k.couldn.t.be.moved.and'),
+    stillMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.still.many.k.couldn.t.be.moved.and'),
+    markedOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.marked.one.k.couldn.t.be.moved.and'),
+    markedMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.marked.many.k.couldn.t.be.moved.and'),
+    goneMoreOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.gone.more.one.g.more.is.no.longer.listed'),
+    goneMoreMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.gone.more.many.g.more.are.no.longer.listed'),
+    othersGoneOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.others.gone.one.the.other.is.no.longer.listed'),
+    othersGoneMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.others.gone.many.the.others.are.no.longer.listed'),
+    noneMoved: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.move.those.to.the') },
+    noneStillOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.still.one.k.is.still.in.your.journal'),
+    noneStillMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.still.many.k.are.still.in.your.journal'),
+    noneGoneOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.gone.one.it.s.no.longer.listed.here'),
+    noneGoneMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.gone.many.they.re.no.longer.listed.here'),
+    erased: { title: window.JournalI18n.render('journal.window.entities.title.erased.n.things.from.your.journal') },
+    partErased: { title: window.JournalI18n.render('journal.window.entities.title.erased.done.of.n') },
+    partErasedOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.erased.one.the.other.wasn.t.erased.look'),
+    partErasedMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.erased.many.the.others.weren.t.erased.look'),
+    noneErased: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.erase.those') },
+    noneErasedOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.erased.one.look.for.it.below.or.in'),
+    noneErasedMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.erased.many.look.for.them.below.or.in'),
+    recovered: { title: window.JournalI18n.render('journal.window.entities.title.n.things.recovered'), message: window.JournalI18n.render('journal.window.entities.message.they.re.back.in.your.journal') },
+    partRecovered: { title: window.JournalI18n.render('journal.window.entities.title.recovered.done.of.n') },
+    partRecoveredOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.recovered.one.the.other.is.still.in.the'),
+    partRecoveredMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.recovered.many.the.others.are.still.in.the'),
+    recoverFailed: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.entities.message.they.re.still.in.the.trash') },
+    noAnswerMove: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.they.may.already.be.in.the') },
+    noAnswerErase: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.they.may.already.be.erased.reload') },
+    noAnswerRecover: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.they.may.already.be.back.in') },
   },
 };
 const ENTITY_TRASH_PAGE = '/app/settings#trash';
@@ -6209,7 +6209,7 @@ function renderDetailView(entity, observations, detailData) {
       detachedBadge.className = 'entity-detail-detached-badge';
       typeEl.parentNode.insertBefore(detachedBadge, typeEl.nextSibling);
     }
-    detachedBadge.textContent = needsAttachment ? 'not attached' : 'detached';
+    detachedBadge.textContent = needsAttachment ? window.JournalI18n.render('journal.window.entities.visible.text.not.attached') : window.JournalI18n.render('journal.window.entities.visible.text.detached');
   } else if (detachedBadge) {
     detachedBadge.remove();
   }
@@ -6222,8 +6222,8 @@ function renderDetailView(entity, observations, detailData) {
       principalBadge = document.createElement('span');
       principalBadge.id = 'detail-principal-badge';
       principalBadge.className = 'entity-detail-principal-badge';
-      principalBadge.textContent = 'you';
-      principalBadge.title = 'This is your entity in this facet';
+      principalBadge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.you');
+      principalBadge.title = window.JournalI18n.render('journal.window.entities.tooltip.this.is.your.entity.in.this');
       typeEl.parentNode.insertBefore(principalBadge, typeEl.nextSibling);
     }
   } else if (principalBadge) {
@@ -6233,7 +6233,7 @@ function renderDetailView(entity, observations, detailData) {
   // AKAs
   const akaEl = document.getElementById('detail-aka');
   if (entity.aka && entity.aka.length > 0) {
-    akaEl.textContent = `Also known as: ${entity.aka.join(', ')}`;
+    akaEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.also.known.as.value1.variant2', [['value1', String(entity.aka.join(', '))]]);
   } else {
     akaEl.textContent = '';
   }
@@ -6245,7 +6245,7 @@ function renderDetailView(entity, observations, detailData) {
     indicators.push(`Last mentioned: ${displayDate}`);
   }
   if (entity.has_voiceprint) {
-    indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${(window.ConveyIcons?.svg('mic-vocal') || '')}</span> Has voiceprint`);
+    indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${window.ConveyIcons?.svg('mic-vocal') || ''}</span> ${window.JournalI18n.renderHtml('journal.window.entities.visible.text.has.voiceprint')}`);
   }
   document.getElementById('detail-indicators').innerHTML = indicators.join(' · ');
   renderFacetPhotoHint(entity);
@@ -6308,7 +6308,7 @@ function renderDetailView(entity, observations, detailData) {
       detachBtn.className = 'btn btn-primary';
       detachBtn.onclick = () => reattachEntity(entity);
     } else {
-      detachBtn.textContent = 'detach';
+      detachBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.detach');
       detachBtn.className = 'btn btn-secondary';
       detachBtn.onclick = () => showDetachConfirmModal(entity);
     }
@@ -6321,7 +6321,7 @@ function renderDescriptionSection(entity) {
 
   const descSpan = document.createElement('span');
   descSpan.className = entity.description ? 'entity-desc-display' : 'entity-desc-display empty';
-  descSpan.textContent = entity.description || 'no description. click to add…';
+  descSpan.textContent = entity.description || window.JournalI18n.render('journal.window.entities.visible.text.no.description.click.to.add');
   descSpan.style.cursor = 'pointer';
   descSpan.onclick = () => startDescriptionEdit(entity);
 
@@ -6338,7 +6338,7 @@ function startDescriptionEdit(entity) {
   const textarea = document.createElement('textarea');
   textarea.className = 'entity-desc-input';
   textarea.value = entity.description || '';
-  textarea.placeholder = 'enter description…';
+  textarea.placeholder = window.JournalI18n.render('journal.window.entities.field.placeholder.enter.description');
 
   const btnContainer = document.createElement('div');
   btnContainer.style.display = 'flex';
@@ -6348,12 +6348,12 @@ function startDescriptionEdit(entity) {
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'btn btn-primary btn-sm';
-  saveBtn.textContent = 'save';
+  saveBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.save');
 
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'btn btn-secondary btn-sm';
-  cancelBtn.textContent = 'cancel';
+  cancelBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.cancel');
 
   btnContainer.appendChild(saveBtn);
   btnContainer.appendChild(cancelBtn);
@@ -6395,12 +6395,12 @@ function saveDescription(entity, newDescription) {
       hideInlineError('description-save-error');
       renderDescriptionSection(entity);
     } else {
-      throw new Error(data.detail || data.error || 'Failed to save');
+      throw new Error(data.detail || data.error || window.JournalI18n.render('journal.window.entities.window.state.text.failed.to.save'));
     }
   })
   .catch(error => {
     console.error('Error saving description:', error);
-    showInlineError('description-save-error', "couldn't save description");
+    showInlineError('description-save-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.save.description'));
   });
 }
 
@@ -6476,12 +6476,12 @@ function detachEntity(entity) {
         ]
       });
     } else {
-      throw new Error(data.detail || data.error || 'Failed to detach');
+      throw new Error(data.detail || data.error || window.JournalI18n.render('journal.window.entities.window.state.text.failed.to.detach'));
     }
   })
   .catch(error => {
     console.error('Error detaching entity:', error);
-    showInlineError('detach-action-error', "couldn't detach entity");
+    showInlineError('detach-action-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.detach.entity'));
   });
 }
 
@@ -6509,12 +6509,12 @@ function reattachEntity(entity) {
       showDetailView(entity.id);
       refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
-      throw new Error(data.detail || data.error || 'Failed to re-attach');
+      throw new Error(data.detail || data.error || window.JournalI18n.render('journal.window.entities.window.state.text.failed.to.re.attach'));
     }
   })
   .catch(error => {
     console.error('Error re-attaching entity:', error);
-    showInlineError('detach-action-error', "couldn't re-attach entity");
+    showInlineError('detach-action-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.re.attach.entity'));
   });
 }
 
@@ -6523,7 +6523,7 @@ function attachEntityToFacet(entity, description) {
   const attachError = document.getElementById('attach-error');
 
   attachBtn.disabled = true;
-  attachBtn.textContent = 'attaching…';
+  attachBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.attaching');
   attachError.style.display = 'none';
 
   fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}`, {
@@ -6545,7 +6545,7 @@ function attachEntityToFacet(entity, description) {
       showDetailView(entity.id);
       refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
-      throw new Error(data.detail || data.error || 'failed to attach');
+      throw new Error(data.detail || data.error || window.JournalI18n.render('journal.window.entities.window.state.text.failed.to.attach.variant2'));
     }
   })
   .catch(error => {
@@ -6553,14 +6553,14 @@ function attachEntityToFacet(entity, description) {
     attachError.textContent = error.message;
     attachError.style.display = 'block';
     attachBtn.disabled = false;
-    attachBtn.textContent = 'attach to facet';
+    attachBtn.textContent = window.JournalI18n.render('journal.window.entities.visible.text.attach.to.facet');
   });
 }
 
 function resetEntitiesLoading() {
   const loading = document.getElementById('entities-loading');
   if (!loading) return;
-  loading.innerHTML = window.SurfaceState.loading({ text: 'loading entities…' });
+  loading.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.entities.text.loading.entities') });
   loading.style.display = 'flex';
 }
 
@@ -6574,7 +6574,7 @@ async function loadEntitiesState() {
   } catch (err) {
     window.logError(err, { context: 'entities: state failed' });
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-      heading: "Couldn't load entities",
+      heading: window.JournalI18n.render('journal.window.entities.heading.couldn.t.load.entities'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: entityErrorMessage(err),
       detail: err,
@@ -6637,7 +6637,7 @@ async function loadEntityScopeMetadata(stateLoaded = null) {
   } catch (err) {
     window.logError(err, { context: 'entities: scope metadata failed' });
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-      heading: "Couldn't load entities",
+      heading: window.JournalI18n.render('journal.window.entities.heading.couldn.t.load.entities'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: entityErrorMessage(err),
       detail: err,
@@ -6769,7 +6769,7 @@ async function loadEntities() {
   } catch (err) {
     window.logError(err, { context: 'entities: loadEntities failed' });
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-      heading: "Couldn't load entities",
+      heading: window.JournalI18n.render('journal.window.entities.heading.couldn.t.load.entities'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: entityErrorMessage(err),
       detail: err,
@@ -6804,7 +6804,7 @@ function journalFilterLoadingLabel() {
   if (term && type) return `finding ${type} entities matching "${term}"…`;
   if (term) return `finding entities matching "${term}"…`;
   if (type) return `finding ${type} entities…`;
-  return 'finding entities…';
+  return window.JournalI18n.render('journal.window.entities.window.state.text.finding.entities');
 }
 
 async function loadJournalEntities({refresh = false, silent = false, queryChanged = false} = {}) {
@@ -6823,7 +6823,7 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
       document.getElementById('no-journal-entities')?.style.setProperty('display', 'none');
     }
     container.setAttribute('aria-busy', 'true');
-    if (countEl) { countEl.style.display = ''; countEl.textContent = 'loading entities…'; }
+    if (countEl) { countEl.style.display = ''; countEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.loading.entities'); }
   }
   const request = ++journalSummaryRequest;
   try {
@@ -6844,8 +6844,8 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
       // would have been, not an answer to a question the owner replaced.
       if (queryChanged && container) {
         container.innerHTML = window.SurfaceState.error({
-          heading: "that search couldn't be run",
-          desc: 'try again.',
+          heading: window.JournalI18n.render('journal.window.entities.heading.that.search.couldn.t.be.run'),
+          desc: window.JournalI18n.render('journal.window.entities.window.state.text.try.again'),
           serverMessage: entityErrorMessage(err),
           detail: err,
         });
@@ -6857,7 +6857,7 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
       return;
     }
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-      heading: "Couldn't load entities",
+      heading: window.JournalI18n.render('journal.window.entities.heading.couldn.t.load.entities'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: entityErrorMessage(err),
       detail: err,
@@ -6924,7 +6924,7 @@ function showJournalListError(err) {
   if (!box) return;
   box.replaceChildren();
   const text = document.createElement('span');
-  text.textContent = "couldn't load that page of entities.";
+  text.textContent = window.JournalI18n.render('journal.window.entities.visible.text.couldn.t.load.that.page.of');
   box.append(text);
   const message = entityErrorMessage(err);
   if (message) {
@@ -6935,7 +6935,7 @@ function showJournalListError(err) {
   }
   const retry = document.createElement('button');
   retry.type = 'button';
-  retry.textContent = 'try again';
+  retry.textContent = window.JournalI18n.render('journal.window.entities.visible.text.try.again');
   retry.onclick = () => {
     hideJournalListError();
     loadJournalEntities({refresh: true, silent: true});
@@ -6969,7 +6969,7 @@ function renderJournalEntities() {
     if (!journalSearchDebounce && searchInput.value.trim() !== journalEntitySearch) {
       searchInput.value = journalEntitySearch;
     }
-    searchInput.placeholder = `search ${groupedCount(journalFolderCount(journalFolder))} entities`;
+    searchInput.placeholder = window.JournalI18n.render('journal.window.entities.field.placeholder.search.value1.entities', [['value1', String(groupedCount(journalFolderCount(journalFolder)))]]);
   }
   container.replaceChildren();
   container.classList.toggle('journal-rows-plain', !entityPick.on);
@@ -6977,16 +6977,16 @@ function renderJournalEntities() {
   noEntities.style.display = entityTotal ? 'none' : 'block';
   // `.no-card-matches` carries `display:none` in the stylesheet, so the
   // visible state has to name its own display value.
-  noMatchEl.textContent = journalEntitySearch ? `no entities match "${journalEntitySearch}".` : 'nothing here.';
+  noMatchEl.textContent = journalEntitySearch ? window.JournalI18n.render('journal.window.entities.visible.text.no.entities.match.value1', [['value1', String(journalEntitySearch)]]) : window.JournalI18n.render('journal.window.entities.visible.text.nothing.here');
   noMatchEl.style.display = entityTotal && !total ? 'block' : 'none';
   countEl.textContent = total
-    ? `${groupedCount(start + 1)}–${groupedCount(start + items.length)} of ${groupedCount(total)}`
+    ? window.JournalI18n.render('journal.window.entities.visible.text.value1.value2.of.value3', [['value1', String(groupedCount(start + 1))], ['value2', String(groupedCount(start + items.length))], ['value3', String(groupedCount(total))]])
     : '';
   items.forEach(entity => container.append(createJournalEntityRow(entity)));
   const pager = document.getElementById('journal-list-pager');
   pager.replaceChildren();
   if (total > JOURNAL_ENTITY_PAGE_SIZE) {
-    for (const [text, label, delta, disabled] of [['‹', 'previous page', -1, journalEntityPage === 0], ['›', 'next page', 1, start + items.length >= total]]) {
+    for (const [text, label, delta, disabled] of [['‹', window.JournalI18n.render('journal.window.entities.window.state.text.previous.page'), -1, journalEntityPage === 0], ['›', window.JournalI18n.render('journal.window.entities.window.state.text.next.page'), 1, start + items.length >= total]]) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = text;
@@ -7006,13 +7006,13 @@ function renderJournalEntities() {
 }
 
 const JOURNAL_FOLDERS = [
-  ['', 'all', 'all'],
-  ['person', 'people', 'people'],
-  ['company', 'companies', 'companies'],
-  ['project', 'projects', 'projects'],
-  ['tool', 'tools', 'tools'],
-  ['other', 'other', 'other'],
-  ['hidden', 'hidden', 'hidden'],
+  ['', window.JournalI18n.render('journal.window.entities.folder.all'), 'all'],
+  ['person', window.JournalI18n.render('journal.window.entities.folder.people'), 'people'],
+  ['company', window.JournalI18n.render('journal.window.entities.folder.companies'), 'companies'],
+  ['project', window.JournalI18n.render('journal.window.entities.folder.projects'), 'projects'],
+  ['tool', window.JournalI18n.render('journal.window.entities.folder.tools'), 'tools'],
+  ['other', window.JournalI18n.render('journal.window.entities.folder.other'), 'other'],
+  ['hidden', window.JournalI18n.render('journal.window.entities.folder.hidden'), 'hidden'],
 ];
 
 function journalFolderCount(folder) {
@@ -7071,19 +7071,19 @@ function renderJournalFolders() {
   JOURNAL_FOLDERS.forEach(([key, label]) => nav.append(folderButton(key, label, journalFolderCount(key))));
   const heading = document.createElement('p');
   heading.className = 'journal-folder-heading';
-  heading.textContent = 'worth a look';
+  heading.textContent = window.JournalI18n.render('journal.window.entities.visible.text.worth.a.look');
   nav.append(heading);
   const loaded = Boolean(tidyState.data);
-  nav.append(folderButton('ids', 'look like an ID', loaded ? journalFolderCount('ids') : null));
-  nav.append(folderButton('duplicates', 'possible duplicates', loaded ? journalFolderCount('duplicates') : null));
+  nav.append(folderButton('ids', window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'), loaded ? journalFolderCount('ids') : null));
+  nav.append(folderButton('duplicates', window.JournalI18n.render('journal.window.entities.folder.duplicates'), loaded ? journalFolderCount('duplicates') : null));
 }
 
 /// The per-entity count is the notes count everywhere in this app. A null
 /// count (an unreadable notes file) is an empty cell, never "no notes".
 function journalNotesLabel(count) {
   if (count === null || count === undefined) return '';
-  if (count === 0) return 'no notes';
-  return count === 1 ? '1 note' : `${groupedCount(count)} notes`;
+  if (count === 0) return window.JournalI18n.render('journal.window.entities.notes.none');
+  return count === 1 ? window.JournalI18n.render('journal.window.entities.notes.one') : window.JournalI18n.render('journal.window.entities.notes.many',[ ['count', String(groupedCount(count))] ]);
 }
 
 function appendJournalRowCells(row, entity, {notes, day}) {
@@ -7095,13 +7095,13 @@ function appendJournalRowCells(row, entity, {notes, day}) {
   if (entity.is_principal) {
     const badge = document.createElement('span');
     badge.className = 'journal-row-badge';
-    badge.textContent = 'you';
+    badge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.you');
     name.append(badge);
   }
   if (entity.blocked) {
     const badge = document.createElement('span');
     badge.className = 'journal-row-badge';
-    badge.textContent = 'hidden';
+    badge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hidden');
     name.append(badge);
   }
   const meta = document.createElement('span');
@@ -7113,7 +7113,7 @@ function appendJournalRowCells(row, entity, {notes, day}) {
     const dot = document.createElement('span');
     dot.className = 'entity-facet-dot';
     dot.style.backgroundColor = record?.color || 'var(--ink-faint)';
-    dot.title = `facet: ${record?.title || record?.name || facet}`;
+    dot.title = window.JournalI18n.render('journal.window.entities.tooltip.facet.value1', [['value1', String(record?.title || record?.name || facet)]]);
     dot.setAttribute('role', 'img');
     dot.setAttribute('aria-label', dot.title);
     dots.append(dot);
@@ -7123,9 +7123,9 @@ function appendJournalRowCells(row, entity, {notes, day}) {
   // The weekday is dropped from dated days so the column stays narrow.
   const shortDay = day ? (formatDateShort(day) || '').replace(/^[A-Za-z]{3}, /, '') : null;
   if (shortDay) {
-    date.textContent = `last mentioned ${shortDay}`;
+    date.textContent = window.JournalI18n.render('journal.window.entities.visible.text.last.mentioned.value1', [['value1', String(shortDay)]]);
     const absolute = formatMentionedDate(day);
-    if (absolute) date.title = `last mentioned ${absolute}`;
+    if (absolute) date.title = window.JournalI18n.render('journal.window.entities.tooltip.last.mentioned.value1', [['value1', String(absolute)]]);
   }
   meta.append(dots, date);
   const notesEl = document.createElement('span');
@@ -7165,7 +7165,7 @@ function appendTypeIndicator(card, type) {
   card.classList.add('entity-card-type-' + label.replace(/\s+/g, '-'));
   const dot = document.createElement('span');
   dot.className = 'entity-card-type-indicator';
-  dot.title = `type: ${label}`;
+  dot.title = window.JournalI18n.render('journal.window.entities.tooltip.type.value1', [['value1', String(label)]]);
   dot.setAttribute('role', 'img');
   dot.setAttribute('aria-label', dot.title);
   let markers = card.querySelector('.entity-card-facet-dots');
@@ -7193,7 +7193,7 @@ function renderEntityCards(searchTerm = '') {
   if (facetHeading && currentFacet) {
     const title = facetTitle(currentFacet);
     const headingSpan = facetHeading.querySelector('span');
-    if (headingSpan) headingSpan.textContent = `entities in ${title}`;
+    if (headingSpan) headingSpan.textContent = window.JournalI18n.render('journal.window.entities.visible.text.entities.in.value1', [['value1', String(title)]]);
   }
 
   const noEntities = document.getElementById('no-facet-entities');
@@ -7247,7 +7247,7 @@ function renderEntityCards(searchTerm = '') {
 
   const matchCount = container.querySelectorAll('.entity-card').length;
   if (term) {
-    countEl.textContent = `${groupedCount(matchCount)} of ${groupedCount(totalCount)} entities`;
+    countEl.textContent = window.JournalI18n.render('journal.window.entities.visible.text.value1.of.value2.entities', [['value1', String(groupedCount(matchCount))], ['value2', String(groupedCount(totalCount))]]);
     countEl.style.display = '';
     noMatchEl.style.display = matchCount === 0 && totalCount > 0 ? 'block' : 'none';
   } else {
@@ -7269,7 +7269,7 @@ function createEntityCard(entity) {
     // "You" badge (top-left corner)
     const principalBadge = document.createElement('div');
     principalBadge.className = 'entity-card-principal-badge';
-    principalBadge.textContent = 'you';
+    principalBadge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.you');
     card.appendChild(principalBadge);
   }
 
@@ -7313,7 +7313,7 @@ function createEntityCard(entity) {
   if (entity.has_voiceprint) {
     const voiceIcon = document.createElement('span');
     voiceIcon.className = 'voiceprint-icon';
-    voiceIcon.title = 'Has voiceprint';
+    voiceIcon.title = window.JournalI18n.render('journal.window.entities.tooltip.has.voiceprint');
     voiceIcon.setAttribute('role', 'img');
     voiceIcon.setAttribute('aria-label', voiceIcon.title);
     voiceIcon.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('mic-vocal') || '')}</span>`;
@@ -7340,9 +7340,9 @@ function renderDetectedPagination(total, start, end) {
   const prevDisabled = detectedPage <= 1 ? 'disabled' : '';
   const nextDisabled = detectedPage >= totalPages ? 'disabled' : '';
   el.innerHTML =
-    `<button ${prevDisabled} id="detected-prev-btn">previous</button>` +
-    `<span class="detected-page-info">showing ${groupedCount(start + 1)}\u2013${groupedCount(end)} of ${groupedCount(total)} detected entities</span>` +
-    `<button ${nextDisabled} id="detected-next-btn">next</button>`;
+    `<button ${prevDisabled} id="detected-prev-btn">${window.JournalI18n.renderHtml('journal.window.entities.button.label.previous')}</button>` +
+    `<span class="detected-page-info">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.showing')} ${groupedCount(start + 1)}–${groupedCount(end)} ${window.JournalI18n.renderHtml('journal.window.entities.visible.text.of')} ${groupedCount(total)} ${window.JournalI18n.renderHtml('journal.window.entities.visible.text.detected.entities')}</span>` +
+    `<button ${nextDisabled} id="detected-next-btn">${window.JournalI18n.renderHtml('journal.window.entities.button.label.next')}</button>`;
 
   const prevBtn = document.getElementById('detected-prev-btn');
   const nextBtn = document.getElementById('detected-next-btn');
@@ -7456,7 +7456,7 @@ function createDetectedRow(entity) {
   const starBtn = document.createElement('button');
   starBtn.className = 'star-button';
   starBtn.textContent = '☆';
-  starBtn.title = 'Add to facet';
+  starBtn.title = window.JournalI18n.render('journal.window.entities.tooltip.add.to.facet');
   starBtn.onclick = () => attachDetectedEntity(entity, starBtn);
   starCell.appendChild(starBtn);
   row.appendChild(starCell);
@@ -7477,7 +7477,7 @@ function createDetectedRow(entity) {
     const badge = document.createElement('span');
     badge.className = 'mention-count-badge';
     badge.textContent = groupedCount(entity.count);
-    badge.title = `${groupedCount(entity.count)} mention${entity.count !== 1 ? 's' : ''}: days detected in the last 30 days`;
+    badge.title = window.JournalI18n.render('journal.window.entities.tooltip.value1.mention.value2.days.detected.in', [['value1', String(groupedCount(entity.count))], ['value2', String(entity.count !== 1 ? 's' : '')]]);
     nameCell.appendChild(badge);
   }
   row.appendChild(nameCell);
@@ -7571,7 +7571,7 @@ function createHiddenRow(entry) {
   }
   const unhideBtn = document.createElement('button');
   unhideBtn.type = 'button';
-  unhideBtn.className = 'btn btn-secondary btn-sm ent-unhide-btn';
+  unhideBtn.className = window.JournalI18n.render('journal.window.entities.window.explanation.btn.btn.secondary.btn.sm.ent');
   unhideBtn.textContent = detectedFill('ENT_DETECTED_UNHIDE');
   unhideBtn.onclick = () => unhideDetectedName(entry.name, unhideBtn);
   lastCell.appendChild(unhideBtn);
@@ -7714,12 +7714,12 @@ function attachDetectedEntity(entity, button) {
       // Reload to get full entity data
       refreshEntitiesAfterMutation();
     } else {
-      throw new Error(data.detail || data.error || 'Failed to attach');
+      throw new Error(data.detail || data.error || window.JournalI18n.render('journal.window.entities.window.state.text.failed.to.attach'));
     }
   })
   .catch(error => {
     console.error('Error attaching entity:', error);
-    showInlineError('detected-action-error', "couldn't attach entity");
+    showInlineError('detected-action-error', window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.attach.entity'));
     button.disabled = false;
     button.style.opacity = '1';
   });
@@ -7787,8 +7787,8 @@ function tidyPathsText(paths) {
 
 function tidyRecordsUnreadable(paths) {
   return paths.length === 1
-    ? `a record in your journal can't be read (${paths[0]})`
-    : `${paths.length} records in your journal can't be read (${tidyPathsText(paths)})`;
+    ? window.JournalI18n.render('journal.window.entities.window.explanation.a.record.in.your.journal.can', [['value1', String(paths[0])]])
+    : window.JournalI18n.render('journal.window.entities.window.explanation.value1.records.in.your.journal.can', [['value1', String(paths.length)], ['value2', String(tidyPathsText(paths))]]);
 }
 
 async function fetchTidyPage(offset) {
@@ -7897,7 +7897,7 @@ function renderTidyBand() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-secondary';
-    button.textContent = 'review';
+    button.textContent = window.JournalI18n.render('journal.window.entities.visible.text.review');
     button.onclick = () => selectJournalFolder(folder);
     el.append(button);
     band.append(el);
@@ -7905,13 +7905,13 @@ function renderTidyBand() {
   const ids = data.id_shaped || {};
   if (ids.count > 0) {
     const names = (ids.items || []).slice(0, 3).map(item => item.name).filter(Boolean);
-    card(`${groupedCount(ids.count)} ${tidyPlural(ids.count, 'looks like an ID', 'look like an ID')}`,
+    card(`${groupedCount(ids.count)} ${tidyPlural(ids.count, window.JournalI18n.render('journal.window.entities.window.explanation.looks.like.an.id'), window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'))}`,
       names.length ? `e.g. ${names.join(', ')}` : '', 'ids');
   }
   const dups = data.duplicates || {};
   if (dups.count > 0) {
     const first = (dups.items || [])[0];
-    card(`${groupedCount(dups.count)} ${tidyPlural(dups.count, 'possible duplicate', 'possible duplicates')}`,
+    card(`${groupedCount(dups.count)} ${tidyPlural(dups.count, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`,
       first ? `e.g. ${first.names[0]} and ${first.names[1]}` : '', 'duplicates');
   }
   band.hidden = band.children.length === 0;
@@ -7922,11 +7922,11 @@ function tidyLoadError(panel) {
   box.className = 'journal-tidy-status journal-tidy-status-error';
   box.dataset.tidyState = 'load-error';
   const text = document.createElement('span');
-  text.textContent = "couldn't load this group. ";
+  text.textContent = window.JournalI18n.render('journal.window.entities.visible.text.couldn.t.load.this.group');
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'journal-tidy-link';
-  retry.textContent = 'try again';
+  retry.textContent = window.JournalI18n.render('journal.window.entities.visible.text.try.again');
   retry.onclick = () => {
     if (tidyState.dupConfirm?.pendingReport) {
       finishDuplicateReport(tidyState.dupConfirm.pendingReport);
@@ -7945,9 +7945,9 @@ function tidyPager(page, total, onPage) {
   const start = page * TIDY_PAGE_SIZE;
   const range = document.createElement('span');
   range.className = 'journal-tidy-count';
-  range.textContent = `${groupedCount(start + 1)}–${groupedCount(Math.min(total, start + TIDY_PAGE_SIZE))} of ${groupedCount(total)}`;
+  range.textContent = window.JournalI18n.render('journal.window.entities.visible.text.value1.value2.of.value3', [['value1', String(groupedCount(start + 1))], ['value2', String(groupedCount(Math.min(total, start + TIDY_PAGE_SIZE)))], ['value3', String(groupedCount(total))]]);
   pager.append(range);
-  for (const [text, label, delta, disabled] of [['‹', 'previous page', -1, page === 0], ['›', 'next page', 1, start + TIDY_PAGE_SIZE >= total]]) {
+  for (const [text, label, delta, disabled] of [['‹', window.JournalI18n.render('journal.window.entities.window.state.text.previous.page'), -1, page === 0], ['›', window.JournalI18n.render('journal.window.entities.window.state.text.next.page'), 1, start + TIDY_PAGE_SIZE >= total]]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = text;
@@ -7965,23 +7965,23 @@ function renderIdsPanel() {
   panel.replaceChildren();
   if (!tidyState.data) {
     if (tidyState.error) tidyLoadError(panel);
-    else panel.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    else panel.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.entities.text.loading') });
     return;
   }
   const group = tidyState.data.id_shaped || {};
   const damage = tidyState.data.damage || {count: 0, paths: []};
   const n = group.count || 0;
   const title = document.createElement('h3');
-  title.textContent = `${groupedCount(n)} ${tidyPlural(n, 'looks like an ID', 'look like an ID')}`;
+  title.textContent = `${groupedCount(n)} ${tidyPlural(n, window.JournalI18n.render('journal.window.entities.window.explanation.looks.like.an.id'), window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'))}`;
   const lede = document.createElement('p');
   lede.className = 'journal-tidy-lede';
-  lede.textContent = 'names shaped like codes, file names or request numbers. none has a note.';
+  lede.textContent = window.JournalI18n.render('journal.window.entities.visible.text.names.shaped.like.codes.file.names');
   panel.append(title, lede);
   if (damage.count > 0 || !group.actionable || !group.members) {
     const paused = document.createElement('p');
     paused.className = 'journal-tidy-paused';
     paused.dataset.tidyState = 'paused';
-    paused.textContent = `hiding is paused: ${tidyRecordsUnreadable(damage.paths || [])}.`;
+    paused.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hiding.is.paused.value1', [['value1', String(tidyRecordsUnreadable(damage.paths || []))]]);
     panel.append(paused);
     appendHiddenExplainer(panel);
     return;
@@ -7996,7 +7996,7 @@ function renderIdsPanel() {
   count.className = 'journal-tidy-count';
   count.dataset.tidyCount = 'ids';
   const ticked = idSelection().length;
-  count.textContent = `${groupedCount(ticked)} of ${groupedCount(total)} ticked`;
+  count.textContent = window.JournalI18n.render('journal.window.entities.visible.text.value1.of.value2.ticked', [['value1', String(groupedCount(ticked))], ['value2', String(groupedCount(total))]]);
   bar.append(count, tidyPager(tidyState.idsPage, total, async (page) => {
     tidyState.idsPage = page;
     tidyState.idsPageData = page === 0 ? tidyState.data : null;
@@ -8013,20 +8013,20 @@ function renderIdsPanel() {
   panel.append(bar);
   const note = document.createElement('p');
   note.className = 'journal-tidy-note';
-  note.textContent = 'unticked ones stay as they are.';
+  note.textContent = window.JournalI18n.render('journal.window.entities.visible.text.unticked.ones.stay.as.they.are');
   panel.append(note);
   const actions = document.createElement('div');
   actions.className = 'journal-tidy-actions';
   const notNow = document.createElement('button');
   notNow.type = 'button';
   notNow.className = 'btn btn-secondary';
-  notNow.textContent = 'not now';
+  notNow.textContent = window.JournalI18n.render('journal.window.entities.visible.text.not.now');
   notNow.onclick = () => selectJournalFolder('');
   const hide = document.createElement('button');
   hide.type = 'button';
   hide.className = 'btn btn-primary';
   hide.dataset.action = 'tidy-hide';
-  hide.textContent = `hide ${groupedCount(ticked)}`;
+  hide.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hide.value1', [['value1', String(groupedCount(ticked))]]);
   hide.disabled = running || ticked === 0 || Boolean(tidyState.op && tidyState.op.phase !== 'finished');
   hide.onclick = () => startBulkHide();
   actions.append(notNow, hide);
@@ -8035,14 +8035,14 @@ function renderIdsPanel() {
     const progress = document.createElement('p');
     progress.className = 'journal-tidy-status';
     progress.setAttribute('role', 'status');
-    progress.textContent = `hiding… ${groupedCount(tidyState.op.done || 0)} of ${groupedCount(tidyState.op.selection.length)}`;
+    progress.textContent = window.JournalI18n.render('journal.window.entities.visible.text.hiding.value1.of.value2', [['value1', String(groupedCount(tidyState.op.done || 0))], ['value2', String(groupedCount(tidyState.op.selection.length))]]);
     panel.append(progress);
   }
   const rows = document.createElement('div');
   rows.className = 'journal-rows';
   const pageItems = tidyState.idsPageData?.id_shaped?.items;
   if (!pageItems) {
-    rows.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    rows.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.entities.text.loading') });
   } else {
     pageItems.forEach(item => {
       const row = document.createElement('div');
@@ -8077,9 +8077,9 @@ function appendHiddenExplainer(panel) {
   const more = document.createElement('details');
   more.className = 'journal-tidy-more';
   const summary = document.createElement('summary');
-  summary.textContent = 'more about hidden';
+  summary.textContent = window.JournalI18n.render('journal.window.entities.visible.text.more.about.hidden');
   const body = document.createElement('p');
-  body.textContent = "they move to hidden, where you can unhide them. connected agents can't reach them. your own entity is never in this group.";
+  body.textContent = window.JournalI18n.render('journal.window.entities.visible.text.they.move.to.hidden.where.you');
   more.append(summary, body);
   panel.append(more);
 }
@@ -8308,47 +8308,47 @@ function tidyToastContent(op) {
   const k = op.other.size;
   switch (op.view) {
     case 'hiding':
-      return {text: `hiding… ${groupedCount(op.done || 0)} of ${groupedCount(t)}`};
+      return {text: window.JournalI18n.render('journal.window.entities.text.hiding.value1.of.value2', [['value1', String(groupedCount(op.done || 0))], ['value2', String(groupedCount(t))]])};
     case 'hide-done': {
-      let text = m === 1 ? 'hid 1 entity.' : `hid ${groupedCount(m)} entities.`;
-      if (k > 0) text += k === 1 ? ' 1 was already hidden or gone.' : ` ${groupedCount(k)} were already hidden or gone.`;
+      let text = m === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.hid.entity') : `hid ${groupedCount(m)} entities.`;
+      if (k > 0) text += k === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.was.already.hidden.or.gone') : window.JournalI18n.render('journal.window.entities.window.explanation.value1.were.already.hidden.or.gone', [['value1', String(groupedCount(k))]]);
       return {
         text,
         small: m === 1
-          ? "undo puts it back, facets included. it's also under hidden whenever you want it."
-          : "undo puts them back, facets included. they're also under hidden whenever you want them.",
+          ? window.JournalI18n.render('journal.window.entities.window.explanation.undo.puts.it.back.facets.included')
+          : window.JournalI18n.render('journal.window.entities.window.explanation.undo.puts.them.back.facets.included'),
         actions: m > 0 ? ['undo'] : [],
       };
     }
     case 'hide-partial':
       return {
-        text: `hid ${groupedCount(m)} of ${groupedCount(t)}. ${t - m === 1 ? "the rest wasn't hidden." : "the rest weren't hidden."}`,
+        text: window.JournalI18n.render('journal.window.entities.text.hid.value1.of.value2.value3', [['value1', String(groupedCount(m))], ['value2', String(groupedCount(t))], ['value3', String(t - m === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.the.rest.wasn.t.hidden') : window.JournalI18n.render('journal.window.entities.window.explanation.the.rest.weren.t.hidden'))]]),
         actions: m > 0 ? ['undo'] : [],
       };
     case 'hide-stopped':
-      return {text: 'hiding stopped partway. undo puts back everything it hid.', actions: ['undo', 'retry-hide']};
+      return {text: window.JournalI18n.render('journal.window.entities.text.hiding.stopped.partway.undo.puts.back'), actions: ['undo', 'retry-hide']};
     case 'hide-failed': {
       const err = op.refusal;
       if (err?.reasonCode === 'entity_record_damaged' && err.serverMessage) {
-        return {text: `couldn't hide them: a record in your journal can't be read (${err.serverMessage}).`};
+        return {text: window.JournalI18n.render('journal.window.entities.text.couldn.t.hide.them.a.record', [['value1', String(err.serverMessage)]])};
       }
-      return {text: "couldn't hide them.", actions: ['retry-new']};
+      return {text: window.JournalI18n.render('journal.window.entities.text.couldn.t.hide.them'), actions: ['retry-new']};
     }
     case 'undoing':
-      return {text: `putting back… ${groupedCount(undoProgressCount(op))} of ${groupedCount(op.undo.total ?? 0)}`};
+      return {text: window.JournalI18n.render('journal.window.entities.text.putting.back.value1.of.value2', [['value1', String(groupedCount(undoProgressCount(op)))], ['value2', String(groupedCount(op.undo.total ?? 0))]])};
     case 'undo-done': {
       const restored = op.undo.restored.size;
       const failed = op.undo.failed.size;
       let text;
       if (failed > 0) {
-        text = `put back ${groupedCount(restored)} of ${groupedCount(op.undo.total ?? restored + failed)}. ${failed === 1 ? "1 couldn't be put back; it's still under hidden." : `${groupedCount(failed)} couldn't be put back; they're still under hidden.`}`;
+        text = window.JournalI18n.render('journal.window.entities.window.explanation.put.back.value1.of.value2.value3', [['value1', String(groupedCount(restored))], ['value2', String(groupedCount(op.undo.total ?? restored + failed))], ['value3', String(failed === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.be.put.back.it') : `${groupedCount(failed)} couldn't be put back; they're still under hidden.`)]]);
       } else {
-        text = restored === 1 ? 'put back 1 entity.' : `put back ${groupedCount(restored)} entities.`;
+        text = restored === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.put.back.entity') : `put back ${groupedCount(restored)} entities.`;
       }
       const skipped = Array.from(op.undo.skipped);
       let small = null;
       if (restored > 0 && skipped.length > 0) {
-        small = `${restored === 1 ? 'it may have come back without all its facets' : 'some may have come back without all their facets'}: ${tidyRecordsUnreadable(skipped)}.`;
+        small = `${restored === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.it.may.have.come.back.without') : window.JournalI18n.render('journal.window.entities.window.explanation.some.may.have.come.back.without')}: ${tidyRecordsUnreadable(skipped)}.`;
       }
       return {text, small};
     }
@@ -8356,8 +8356,8 @@ function tidyToastContent(op) {
       const restored = op.undo?.restored.size || 0;
       return {
         text: restored > 0
-          ? `undo stopped after putting back ${groupedCount(restored)} of ${groupedCount(op.undo.total ?? restored)}. the rest are still under hidden.`
-          : "undo stopped before putting any back. they're still under hidden.",
+          ? window.JournalI18n.render('journal.window.entities.text.undo.stopped.after.putting.back.value1', [['value1', String(groupedCount(restored))], ['value2', String(groupedCount(op.undo.total ?? restored))]])
+          : window.JournalI18n.render('journal.window.entities.text.undo.stopped.before.putting.any.back'),
         actions: ['retry-undo'],
       };
     }
@@ -8385,7 +8385,7 @@ function renderTidyToast() {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.action = action;
-    button.textContent = action === 'undo' ? 'undo' : 'try again';
+    button.textContent = action === 'undo' ? window.JournalI18n.render('journal.window.entities.visible.text.undo') : window.JournalI18n.render('journal.window.entities.visible.text.try.again');
     button.onclick = () => {
       if (action === 'undo') runTidyUndo();
       else if (action === 'retry-hide') runBulkHide(op.nextBatch || 0);
@@ -8398,7 +8398,7 @@ function renderTidyToast() {
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'journal-tidy-toast-close';
-    close.setAttribute('aria-label', 'dismiss');
+    close.setAttribute('aria-label', window.JournalI18n.render('journal.window.entities.accessible.label.dismiss'));
     close.textContent = '×';
     close.onclick = dismissTidyToast;
     toast.append(close);
@@ -8452,16 +8452,16 @@ function renderDupsPanel() {
   panel.replaceChildren();
   if (!tidyState.data) {
     if (tidyState.error) tidyLoadError(panel);
-    else panel.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    else panel.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.entities.text.loading') });
     return;
   }
   const group = tidyState.data.duplicates || {};
   const n = group.count || 0;
   const title = document.createElement('h3');
-  title.textContent = `${groupedCount(n)} ${tidyPlural(n, 'possible duplicate', 'possible duplicates')}`;
+  title.textContent = `${groupedCount(n)} ${tidyPlural(n, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`;
   const lede = document.createElement('p');
   lede.className = 'journal-tidy-lede';
-  lede.textContent = "pairs that might be the same person or thing. a merge can't be undone.";
+  lede.textContent = window.JournalI18n.render('journal.window.entities.visible.text.pairs.that.might.be.the.same');
   panel.append(title, lede);
   if (group.error || (tidyState.error && tidyState.dupConfirm?.pendingReport)) {
     tidyLoadError(panel);
@@ -8479,12 +8479,12 @@ function renderDupsPanel() {
   const count = document.createElement('span');
   count.className = 'journal-tidy-count';
   count.dataset.tidyCount = 'duplicates';
-  count.textContent = `${groupedCount(t)} of ${groupedCount(members.length)} ticked`;
+  count.textContent = window.JournalI18n.render('journal.window.entities.visible.text.value1.of.value2.ticked', [['value1', String(groupedCount(t))], ['value2', String(groupedCount(members.length))]]);
   const selectAll = document.createElement('button');
   selectAll.type = 'button';
   selectAll.className = 'journal-tidy-link';
   selectAll.dataset.action = 'dup-select-all';
-  selectAll.textContent = `select all ${groupedCount(members.length)}`;
+  selectAll.textContent = window.JournalI18n.render('journal.window.entities.visible.text.select.all.value1', [['value1', String(groupedCount(members.length))]]);
   selectAll.disabled = busy;
   selectAll.onclick = () => {
     members.forEach(member => tidyState.dupSelected.add(dupKey(member.pair)));
@@ -8497,7 +8497,7 @@ function renderDupsPanel() {
     clear.type = 'button';
     clear.className = 'journal-tidy-link';
     clear.dataset.action = 'dup-clear';
-    clear.textContent = 'clear selection';
+    clear.textContent = window.JournalI18n.render('journal.window.entities.visible.text.clear.selection');
     clear.disabled = busy;
     clear.onclick = () => {
       tidyState.dupSelected.clear();
@@ -8525,20 +8525,20 @@ function renderDupsPanel() {
   const notNow = document.createElement('button');
   notNow.type = 'button';
   notNow.className = 'btn btn-secondary';
-  notNow.textContent = 'not now';
+  notNow.textContent = window.JournalI18n.render('journal.window.entities.visible.text.not.now');
   notNow.onclick = () => selectJournalFolder('');
   const keep = document.createElement('button');
   keep.type = 'button';
   keep.className = 'btn btn-secondary';
   keep.dataset.action = 'dup-keep';
-  keep.textContent = `keep ${groupedCount(t)} separate`;
+  keep.textContent = window.JournalI18n.render('journal.window.entities.visible.text.keep.value1.separate', [['value1', String(groupedCount(t))]]);
   keep.disabled = busy || t === 0;
   keep.onclick = () => keepDuplicatesSeparate();
   const merge = document.createElement('button');
   merge.type = 'button';
   merge.className = 'btn btn-primary';
   merge.dataset.action = 'dup-merge';
-  merge.textContent = `merge ${groupedCount(t)}`;
+  merge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
   merge.disabled = busy || t === 0;
   merge.onclick = () => {
     tidyState.dupConfirm = {...planDuplicateMerge(members, tidyState.dupSelected), focus: true};
@@ -8570,7 +8570,7 @@ function renderDupsPanel() {
   rows.className = 'journal-rows';
   const pageItems = tidyState.dupsPageData?.duplicates?.items;
   if (!pageItems) {
-    rows.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    rows.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.entities.text.loading') });
   } else {
     pageItems.forEach(item => {
       const key = dupKey(item.pair);
@@ -8591,7 +8591,7 @@ function renderDupsPanel() {
       tick.append(box);
       const name = document.createElement('span');
       name.className = 'journal-row-name';
-      name.textContent = `${item.names[0]} merges into ${item.names[1]}`;
+      name.textContent = window.JournalI18n.render('journal.window.entities.visible.text.value1.merges.into.value2', [['value1', String(item.names[0])], ['value2', String(item.names[1])]]);
       if ((item.bases || []).includes(FACES_MERGE_BASIS)) name.append(facesMergeReason(item));
       const facets = document.createElement('span');
       facets.className = 'journal-dup-facets';
@@ -8609,11 +8609,11 @@ function renderMergeConfirm(plan) {
   box.className = 'journal-dup-confirm';
   box.dataset.tidyState = 'merge-confirm';
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', t === 1 ? 'merge 1 pair?' : `merge ${t} pairs?`);
+  box.setAttribute('aria-label', t === 1 ? window.JournalI18n.render('journal.window.entities.accessible.label.merge.pair') : window.JournalI18n.render('journal.window.entities.accessible.label.merge.value1.pairs', [['value1', String(t)]]));
   const heading = document.createElement('h4');
-  heading.textContent = t === 1 ? 'merge 1 pair?' : `merge ${groupedCount(t)} pairs?`;
+  heading.textContent = t === 1 ? window.JournalI18n.render('journal.window.entities.visible.text.merge.pair') : window.JournalI18n.render('journal.window.entities.visible.text.merge.value1.pairs', [['value1', String(groupedCount(t))]]);
   const body = document.createElement('p');
-  body.textContent = "each pair below becomes one entity. a merge can't be undone.";
+  body.textContent = window.JournalI18n.render('journal.window.entities.visible.text.each.pair.below.becomes.one.entity');
   const list = document.createElement('ul');
   list.dataset.list = 'kept';
   const previewLoads = [];
@@ -8643,8 +8643,8 @@ function renderMergeConfirm(plan) {
     const k = plan.leaving.length;
     const line = document.createElement('p');
     line.textContent = k === 1
-      ? '1 more pair leaves the list without merging: it includes an entity merged away above.'
-      : `${groupedCount(k)} more pairs leave the list without merging: each includes an entity merged away above.`;
+      ? window.JournalI18n.render('journal.window.entities.visible.text.more.pair.leaves.the.list.without')
+      : window.JournalI18n.render('journal.window.entities.visible.text.value1.more.pairs.leave.the.list', [['value1', String(groupedCount(k))]]);
     const leaving = document.createElement('ul');
     leaving.dataset.list = 'leaving';
     plan.leaving.forEach(member => {
@@ -8659,13 +8659,13 @@ function renderMergeConfirm(plan) {
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'btn btn-secondary';
-  cancel.textContent = 'cancel';
+  cancel.textContent = window.JournalI18n.render('journal.window.entities.visible.text.cancel');
   cancel.onclick = () => { tidyState.dupConfirm = null; renderDupsPanel(); };
   const confirm = document.createElement('button');
   confirm.type = 'button';
   confirm.className = 'btn btn-primary';
   confirm.dataset.action = 'dup-merge-confirm';
-  confirm.textContent = `merge ${groupedCount(t)}`;
+  confirm.textContent = window.JournalI18n.render('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
   confirm.disabled = true;
   Promise.all(previewLoads).then(() => {
     if (!ctx.disposed && tidyState.dupConfirm === plan) confirm.disabled = false;
@@ -8768,15 +8768,15 @@ async function finishDuplicateReport(report) {
 }
 
 function mergeReportText(m, f, t) {
-  if (f === 0) return t === 1 ? 'merged 1 pair.' : `merged ${groupedCount(t)} pairs.`;
-  if (m === 0) return t === 1 ? "couldn't merge it. it's still listed." : "couldn't merge them. they're still listed.";
-  return `merged ${groupedCount(m)} of ${groupedCount(t)} pairs. ${f === 1 ? "1 couldn't be merged." : `${groupedCount(f)} couldn't be merged.`}`;
+  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.merged.pair') : `merged ${groupedCount(t)} pairs.`;
+  if (m === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.merge.it.it.s') : window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.merge.them.they.re');
+  return `merged ${groupedCount(m)} of ${groupedCount(t)} pairs. ${f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.be.merged') : `${groupedCount(f)} couldn't be merged.`}`;
 }
 
 function keepReportText(m, f, t) {
-  if (f === 0) return t === 1 ? 'kept 1 pair separate.' : `kept ${groupedCount(t)} pairs separate.`;
-  if (m === 0) return t === 1 ? "couldn't keep it separate. it's still listed." : "couldn't keep them separate. they're still listed.";
-  return `kept ${groupedCount(m)} of ${groupedCount(t)} pairs separate. ${f === 1 ? '1 is still listed.' : `${groupedCount(f)} are still listed.`}`;
+  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.kept.pair.separate') : `kept ${groupedCount(t)} pairs separate.`;
+  if (m === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.keep.it.separate.it') : window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.keep.them.separate.they');
+  return window.JournalI18n.render('journal.window.entities.window.explanation.kept.value1.of.value2.pairs.separate', [['value1', String(groupedCount(m))], ['value2', String(groupedCount(t))], ['value3', String(f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.is.still.listed') : `${groupedCount(f)} are still listed.`)]]);
 }
 
 // --- detail view -------------------------------------------------------------
@@ -8793,11 +8793,11 @@ async function renderJournalDetailIdNote(entity) {
   const note = document.createElement('p');
   note.className = 'journal-detail-id-note';
   note.dataset.tidyState = 'id-note';
-  note.append('this name looks like an ID. ');
+  note.append(window.JournalI18n.render('journal.window.entities.window.explanation.this.name.looks.like.an.id'));
   const link = document.createElement('button');
   link.type = 'button';
   link.className = 'journal-tidy-link';
-  link.textContent = 'review the group';
+  link.textContent = window.JournalI18n.render('journal.window.entities.visible.text.review.the.group');
   link.onclick = () => {
     navigateToList();
     selectJournalFolder('ids');

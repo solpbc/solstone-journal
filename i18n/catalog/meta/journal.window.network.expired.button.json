@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, expired button.",
+  "context": "Network view copy, expired button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "93b3c9bafc02f994c3b2a11c068095d3098008764e3ce63cbd85ba1b93c42576",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

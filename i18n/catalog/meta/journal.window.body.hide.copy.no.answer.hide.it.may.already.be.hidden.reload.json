@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy no answer hide in the journal's body view.",
+  "context": "Journal window, body view. Hide copy no answer hide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "060ac5db14c0da3a8a1b706dc6232ce3dc1518a3dcdb5badb1f600fb6168ce01",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

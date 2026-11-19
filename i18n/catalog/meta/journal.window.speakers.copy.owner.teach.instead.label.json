@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach instead label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach instead label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6301c1513f7f53ccbe10bc21c0ae2ad720f1d81fc20819ad30e5595f0c9219bd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

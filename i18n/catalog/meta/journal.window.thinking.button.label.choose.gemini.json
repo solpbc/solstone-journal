@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's thinking view.",
+  "context": "Journal window, thinking view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b0f4d3f89f088255adacfc043403765f965db289ccdf156059052b649360228",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Owner voice response in the journal's speakers.owner.write view.",
+  "context": "Journal window, speakers.owner.write view. Owner voice response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a36a7d457bb6ac75db632b6a5a2f7a5fd72b05108bc7023dc6f8ea16fbe7ffb1",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

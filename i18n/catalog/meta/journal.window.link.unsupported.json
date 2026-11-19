@@ -1,0 +1,16 @@
+{
+  "description": "Journal source link unsupported in the journal's link view.",
+  "context": "Journal window, link view. Journal source link unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a675a60e14546215da383c6690f843021c22bc02545a2a4947ad67d6ac63360",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_KIND_WORDS other in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_KIND_WORDS other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb360b0a681d6c15bae924f2ce14de74a126598f2e2789107976aae4ea33c2fd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

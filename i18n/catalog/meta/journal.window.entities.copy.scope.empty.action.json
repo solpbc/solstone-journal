@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_SCOPE_EMPTY_ACTION in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_SCOPE_EMPTY_ACTION.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3d703fe9e7b2224503f171ab0a033cde074919dc359f3ca348fa22ba8260814",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

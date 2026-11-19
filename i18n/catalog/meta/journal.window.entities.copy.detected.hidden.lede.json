@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_HIDDEN_LEDE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_HIDDEN_LEDE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e026e75c17e4001da36b86ee592ad57a9bf48ad59748ef3244d7ae7520b17b72",
+  "max_length": 241,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

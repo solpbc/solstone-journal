@@ -1,0 +1,16 @@
+{
+  "description": "Journal response error or detail in the journal's thinking view.",
+  "context": "Journal window, thinking view. Journal response error or detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8d6cf6e31f15f5c567450e00dec668e6a7408b2eff087c3d8cb0520e3f60b1f",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

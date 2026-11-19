@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -542,6 +543,7 @@ const dateFormatSource = fs.readFileSync(path.join(crateDir, '../solstone-core-c
 function seededJournalFormat(labels, says = {}) {
   const context = { window: { createViewReady: () => () => {},}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console };
   vm.createContext(context);
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   const format = context.window.JournalFormat;
   format.installStreamLabels({ status: 'complete', labels, says });
@@ -553,6 +555,7 @@ const journalClockSource = fs.readFileSync(path.join(crateDir, '../solstone-core
 function seededJournalClock(tz) {
   const context = { window: {}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console };
   vm.createContext(context);
+  loadWindowCatalog(context);
   vm.runInContext(journalClockSource, context);
   context.window.JournalClock.seed({ tz, label: '' });
   return context.window.JournalClock;
@@ -1107,6 +1110,7 @@ async function createEnvironment(
     if (windowObj[name] === undefined) windowObj[name] = sandbox[name];
   }
   const context = vm.createContext(sandbox);
+  loadWindowCatalog(context);
   vm.runInContext(apiSource, context);
   vm.runInContext(drawerSource, context);
   vm.runInContext(viewRuntimeSource, context);

@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.app view.",
+  "context": "Journal window, shared.app view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0cc5e712bfcf68b29b2dcf9128f9eaf010a09a16c012ed866d438dae99ffee80",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

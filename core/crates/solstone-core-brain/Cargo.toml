@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-window-catalog.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 hmac.workspace = true
 jiff.workspace = true

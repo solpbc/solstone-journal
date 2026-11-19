@@ -1,0 +1,28 @@
+{
+  "description": "One known voice sample in the journal's speakers view.",
+  "context": "Journal window, speakers view. One known voice sample.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a6b9a2b3c42ce5ef58a2121cf692419a973b74ab213de6af82c7621f9dfa794",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

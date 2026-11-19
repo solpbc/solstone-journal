@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy select all in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy select all.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f753915a343c3cec895489705f428983686126eb0ec35e67d39b45384244670",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, window closed button.",
+  "context": "Network view copy, window closed button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 74,
+  "source_revision": "a789779c7c115ca1b46e36d95dd07519368371682b127a2da9b35ff9904a3f2b",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

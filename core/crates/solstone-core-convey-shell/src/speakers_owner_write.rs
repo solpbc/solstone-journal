@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use jiff::Timestamp;
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
 use solstone_core_speaker_resolve::owner_candidate::{
@@ -38,19 +39,22 @@ use solstone_core_speaker_resolve::owner_voice::{
 use crate::JournalRoot;
 use crate::speakers_attribution::action;
 use crate::speakers_source::is_safe_source_component;
+use crate::window_catalog;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 
-const EXISTING_CENTROID_GUIDANCE: &str = "Owner centroid already exists. Run solstone call speakers rebuild-owner to refresh it from current manual tags.";
+const EXISTING_CENTROID_GUIDANCE: &str = "journal.window.speakers.owner.write.owner.voice.guidance.owner.centroid.already.exists.run.solstone";
 const OWNER_IDENTITY_INVALID_MESSAGE: &str =
-    "that speaker command couldn't run because your configured owner identity needs attention.";
-const OWNER_IDENTITY_INVALID_DETAIL: &str = "configured owner identity is not admitted";
+    "journal.window.speakers.owner.write.owner.voice.response.that.speaker.command.couldn.t.run";
+const OWNER_IDENTITY_INVALID_DETAIL: &str = "journal.window.speakers.owner.write.owner.voice.error.detail.configured.owner.identity.is.not.admitted";
 
 pub(crate) async fn detect(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let body = optional_json(request).await;
     let force = body.get("force") == Some(&Value::Bool(true));
     match detect_owner_candidate(&root.0, force) {
@@ -60,8 +64,9 @@ pub(crate) async fn detect(
                     Ok(count) => count,
                     Err(error) => {
                         return err(
+                            locale,
                             "speaker_command_failed",
-                            "that speaker command didn't finish.",
+                            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.command.didn.t.finish",
                             &error.to_string(),
                             StatusCode::INTERNAL_SERVER_ERROR,
                         );
@@ -72,17 +77,27 @@ pub(crate) async fn detect(
             }
             Json(value).into_response()
         }
-        Err(error) => owner_error(error),
+        Err(error) => owner_error(locale, error),
     }
 }
 
-pub(crate) async fn build_from_tags(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match bootstrap_owner_from_manual_tags(&root.0) {
-        Ok(value) if value["reason_code"] == OWNER_IDENTITY_INVALID => owner_identity_invalid(),
+pub(crate) async fn build_from_tags(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    match bootstrap_owner_from_manual_tags(locale, &root.0) {
+        Ok(value) if value["reason_code"] == OWNER_IDENTITY_INVALID => {
+            owner_identity_invalid(locale)
+        }
         Ok(value) if value.get("error").is_some() => err(
+            locale,
             "entity_not_found",
-            "that person couldn't be found.",
-            value["error"].as_str().unwrap_or("owner build failed"),
+            "journal.window.speakers.owner.write.owner.voice.response.that.person.couldn.t.be.found",
+            value["error"].as_str().unwrap_or(&window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.owner.build.failed",
+            )),
             StatusCode::BAD_REQUEST,
         ),
         Ok(value) => {
@@ -93,24 +108,26 @@ pub(crate) async fn build_from_tags(Extension(root): Extension<Arc<JournalRoot>>
                     json!({"principal_id":value["principal_id"],"cluster_size":value["cluster_size"]}),
                 )
             {
-                return owner_error(error);
+                return owner_error(locale, error);
             }
             Json(value).into_response()
         }
-        Err(error) => owner_error(error),
+        Err(error) => owner_error(locale, error),
     }
 }
 
 pub(crate) async fn rebuild(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let body = optional_json(request).await;
     let override_regression = body.get("override") == Some(&Value::Bool(true));
     match rebuild_owner(&root.0, override_regression) {
         Ok(value) => {
             if value["reason_code"] == OWNER_IDENTITY_INVALID {
-                return owner_identity_invalid();
+                return owner_identity_invalid(locale);
             }
             if value["status"] == "rebuilt"
                 && let Err(error) = action(
@@ -119,51 +136,61 @@ pub(crate) async fn rebuild(
                     json!({"principal_id":value["principal_id"],"cluster_size":value["cluster_size"],"override":value["override_applied"]}),
                 )
             {
-                return owner_error(error);
+                return owner_error(locale, error);
             }
             Json(value).into_response()
         }
-        Err(error) => owner_error(error),
+        Err(error) => owner_error(locale, error),
     }
 }
 
 pub(crate) async fn confirm(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match required_json(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match required_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
     let Some(principal_id) = admitted_principal_id(&root.0) else {
-        return owner_identity_invalid();
+        return owner_identity_invalid(locale);
     };
 
     test_hooks::wait_if_hold_confirm_or_reject();
 
     let _lock = match hold_owner_candidate_lock(&root.0) {
         Ok(guard) => guard,
-        Err(error) => return owner_error(error.to_string()),
+        Err(error) => return owner_error(locale, error.to_string()),
     };
 
     let candidate = match load_owner_candidate(&root.0) {
         Ok(Some(candidate)) => candidate,
         Ok(None) => {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
-                "No candidate available",
+                "journal.window.speakers.owner.write.owner.voice.response.that.speaker.review.couldn.t.be",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.owner.write.owner.voice.error.detail.no.candidate.available",
+                ),
                 StatusCode::NOT_FOUND,
             );
         }
-        Err(error) => return owner_error(error.to_string()),
+        Err(error) => return owner_error(locale, error.to_string()),
     };
     let awareness = voiceprint_state(&root.0);
     if awareness.get("status").and_then(Value::as_str) != Some("candidate") {
         return err(
+            locale,
             "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
-            "Awareness state is not candidate",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.review.couldn.t.be",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.awareness.state.is.not.candidate",
+            ),
             StatusCode::NOT_FOUND,
         );
     }
@@ -173,44 +200,56 @@ pub(crate) async fn confirm(
         || awareness.get("detected_at").and_then(Value::as_str) != Some(&candidate.version)
     {
         return err(
+            locale,
             "speaker_candidate_stale_version",
-            "that speaker candidate is no longer current.",
-            "Candidate version mismatch or stale generation",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.candidate.is.no.longer",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.candidate.version.mismatch.or.stale.generation",
+            ),
             StatusCode::CONFLICT,
         );
     }
 
     let Some(day) = body.get("day").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(stream) = body.get("stream").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(segment_key) = body.get("segment_key").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(source) = body.get("source").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     if !is_safe_source_component(source) {
         return err(
+            locale,
             "invalid_request_value",
-            "source name is invalid.",
-            "use one file name, without a path",
+            "journal.window.speakers.owner.write.owner.voice.response.source.name.is.invalid",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.use.one.file.name.without.a",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
     let Some(sentence_id) = body.get("sentence_id").and_then(Value::as_i64) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(audio_sha256) = body.get("audio_sha256").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     if audio_sha256.is_empty() {
         return err(
+            locale,
             "speaker_candidate_unverified",
-            "that speaker sample has unverified audio evidence.",
-            "audio_sha256 must be a non-empty hex hash",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.sample.has.unverified.audio",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.audio.sha256.must.be.a.non",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -228,9 +267,13 @@ pub(crate) async fn confirm(
 
     let Some(sample_row) = sample_match else {
         return err(
+            locale,
             "speaker_candidate_unverified",
-            "that speaker sample is not part of the active candidate.",
-            "Sample not found in active candidate samples",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.sample.is.not.part",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.sample.not.found.in.active.candidate",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -244,9 +287,13 @@ pub(crate) async fn confirm(
         || sample_audio_sha256 != Some(audio_sha256)
     {
         return err(
+            locale,
             "speaker_candidate_unverified",
-            "that speaker sample does not have valid evidentiary hashes.",
-            "Sample hash verification failed",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.sample.does.not.have",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.sample.hash.verification.failed",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -260,8 +307,9 @@ pub(crate) async fn confirm(
             .and_then(Value::as_str)
             .unwrap_or("evidence_not_eligible");
         return err(
+            locale,
             "speaker_candidate_unverified",
-            "that speaker sample could not be verified against on-disk evidence.",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.sample.could.not.be",
             reason,
             StatusCode::BAD_REQUEST,
         );
@@ -277,10 +325,10 @@ pub(crate) async fn confirm(
             evidence_tier: candidate.evidence_tier.clone(),
         },
     ) {
-        return owner_error(error.to_string());
+        return owner_error(locale, error.to_string());
     }
     if let Err(error) = clear_owner_candidate_in_lock(&root.0) {
-        return owner_error(error.to_string());
+        return owner_error(locale, error.to_string());
     }
     let relabel = match record_owner_voice_saved(
         &root.0,
@@ -289,14 +337,14 @@ pub(crate) async fn confirm(
         &candidate.evidence_tier,
     ) {
         Ok(relabel) => relabel,
-        Err(error) => return owner_error(error),
+        Err(error) => return owner_error(locale, error),
     };
     if let Err(error) = action(
         &root.0,
         "owner_voiceprint_confirm",
         json!({"principal_id":principal_id,"cluster_size":candidate.cluster_size}),
     ) {
-        return owner_error(error);
+        return owner_error(locale, error);
     }
     Json(json!({"status":"confirmed","principal_id":principal_id,"relabel":relabel}))
         .into_response()
@@ -304,9 +352,11 @@ pub(crate) async fn confirm(
 
 pub(crate) async fn reject(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match required_json(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match required_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -317,78 +367,100 @@ pub(crate) async fn reject(
         .unwrap_or_default();
     match reject_owner_candidate(&root.0, version) {
         Ok(value) => Json(value).into_response(),
-        Err(error) => owner_voice_error(error),
+        Err(error) => owner_voice_error(locale, error),
     }
 }
 
-pub(crate) async fn undo(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub(crate) async fn undo(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match undo_owner_voice(&root.0) {
         Ok(value) => {
             if let Err(error) = action(&root.0, "owner_voiceprint_undo", json!({})) {
-                return owner_error(error);
+                return owner_error(locale, error);
             }
             Json(value).into_response()
         }
-        Err(error) => owner_voice_error(error),
+        Err(error) => owner_voice_error(locale, error),
     }
 }
 
 /// Map a shared owner-voice failure onto the owner-write error envelope.
-pub(crate) fn owner_voice_error(error: OwnerVoiceError) -> Response {
+pub(crate) fn owner_voice_error(locale: &str, error: OwnerVoiceError) -> Response {
     match error {
-        OwnerVoiceError::IdentityInvalid => owner_identity_invalid(),
+        OwnerVoiceError::IdentityInvalid => owner_identity_invalid(locale),
         OwnerVoiceError::NoCandidate => err(
+            locale,
             "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
-            "No candidate available",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.review.couldn.t.be",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.no.candidate.available",
+            ),
             StatusCode::NOT_FOUND,
         ),
         OwnerVoiceError::StaleCandidate => err(
+            locale,
             "speaker_candidate_stale_version",
-            "that speaker candidate is no longer current.",
-            "Candidate version mismatch or stale generation",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.candidate.is.no.longer",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.candidate.version.mismatch.or.stale.generation",
+            ),
             StatusCode::CONFLICT,
         ),
         OwnerVoiceError::NoSavedVoice => err(
+            locale,
             "speaker_owner_voice_missing",
-            "there's no saved voice to undo.",
-            "No owner voice is saved",
+            "journal.window.speakers.owner.write.owner.voice.response.there.s.no.saved.voice.to",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.no.owner.voice.is.saved",
+            ),
             StatusCode::NOT_FOUND,
         ),
-        OwnerVoiceError::Failed(detail) => owner_error(detail),
+        OwnerVoiceError::Failed(detail) => owner_error(locale, detail),
     }
 }
 
 pub(crate) async fn set_aside(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match required_json(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match required_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
     if admitted_principal_id(&root.0).is_none() {
-        return owner_identity_invalid();
+        return owner_identity_invalid(locale);
     }
 
     test_hooks::wait_if_hold_confirm_or_reject();
 
     let _lock = match hold_owner_candidate_lock(&root.0) {
         Ok(guard) => guard,
-        Err(error) => return owner_error(error.to_string()),
+        Err(error) => return owner_error(locale, error.to_string()),
     };
 
     let candidate = match load_owner_candidate(&root.0) {
         Ok(Some(candidate)) => candidate,
         Ok(None) => {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
-                "No candidate available",
+                "journal.window.speakers.owner.write.owner.voice.response.that.speaker.review.couldn.t.be",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.owner.write.owner.voice.error.detail.no.candidate.available",
+                ),
                 StatusCode::NOT_FOUND,
             );
         }
-        Err(error) => return owner_error(error.to_string()),
+        Err(error) => return owner_error(locale, error.to_string()),
     };
     let awareness = voiceprint_state(&root.0);
 
@@ -397,61 +469,75 @@ pub(crate) async fn set_aside(
         || awareness.get("detected_at").and_then(Value::as_str) != Some(&candidate.version)
     {
         return err(
+            locale,
             "speaker_candidate_stale_version",
-            "that speaker candidate is no longer current.",
-            "Candidate version mismatch or stale generation",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.candidate.is.no.longer",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.candidate.version.mismatch.or.stale.generation",
+            ),
             StatusCode::CONFLICT,
         );
     }
 
     if let Err(error) = clear_owner_candidate_in_lock(&root.0) {
-        return owner_error(error.to_string());
+        return owner_error(locale, error.to_string());
     }
     if let Err(error) = update_voiceprint_state(
         &root.0,
         json!({"status":"no_cluster","detected_at":Value::Null,"samples":[]}),
     ) {
-        return owner_error(error);
+        return owner_error(locale, error);
     }
     Json(json!({"status":"no_cluster"})).into_response()
 }
 
 pub(crate) async fn classify(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match required_json(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match required_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
     let Some(day) = body.get("day").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(stream) = body.get("stream").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(segment_key) = body.get("segment_key").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     let Some(source) = body.get("source").and_then(Value::as_str) else {
-        return missing_fields();
+        return missing_fields(locale);
     };
     if !is_safe_source_component(source) {
         return err(
+            locale,
             "invalid_request_value",
-            "source name is invalid.",
-            "use one file name, without a path",
+            "journal.window.speakers.owner.write.owner.voice.response.source.name.is.invalid",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.use.one.file.name.without.a",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
     let Some(principal) = admitted_principal_id(&root.0) else {
-        return owner_identity_invalid();
+        return owner_identity_invalid(locale);
     };
     if !valid_day(day) {
         return err(
+            locale,
             "invalid_day",
-            "that day couldn't be used.",
-            "Invalid day format",
+            "journal.window.speakers.owner.write.owner.voice.response.that.day.couldn.t.be.used",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.owner.write.owner.voice.error.detail.invalid.day.format",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -466,16 +552,21 @@ pub(crate) async fn classify(
         SegmentLookup::Absent => return Json(json!({"sentences":[]})).into_response(),
         SegmentLookup::MalformedLayout => {
             return err(
+                locale,
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
-                "Invalid segment key",
+                "journal.window.speakers.owner.write.owner.voice.response.that.segment.or.stream.couldn.t",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.owner.write.owner.voice.error.detail.invalid.segment.key",
+                ),
                 StatusCode::BAD_REQUEST,
             );
         }
         SegmentLookup::Failed(error) => {
             return err(
+                locale,
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                "journal.window.speakers.owner.write.owner.voice.response.that.speaker.command.didn.t.finish",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -493,21 +584,25 @@ pub(crate) async fn classify(
     Json(json!({"sentences":sentences})).into_response()
 }
 
-pub(crate) async fn ready(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub(crate) async fn ready(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match owner_detection_ready(&root.0) {
         Ok(value) => Json(value).into_response(),
-        Err(()) => owner_identity_invalid(),
+        Err(()) => owner_identity_invalid(locale),
     }
 }
 
 /// Shared in-process owner bootstrap used by attribution's owner-teach path.
-pub(crate) fn bootstrap_owner_from_manual_tags(root: &Path) -> Result<Value, String> {
+pub(crate) fn bootstrap_owner_from_manual_tags(locale: &str, root: &Path) -> Result<Value, String> {
     let Some(principal_id) = admitted_principal_id(root) else {
         return Ok(identity_invalid_value());
     };
     if let Ok(Some(centroid)) = load_owner_centroid(root, &principal_id) {
         return Ok(
-            json!({"status":"confirmed","principal_id":principal_id,"cluster_size":centroid.cluster_size,"evidence_tier":centroid.evidence_tier.unwrap_or_else(|| "standard".to_owned()),"next_step":"rebuild_owner","guidance":EXISTING_CENTROID_GUIDANCE}),
+            json!({"status":"confirmed","principal_id":principal_id,"cluster_size":centroid.cluster_size,"evidence_tier":centroid.evidence_tier.unwrap_or_else(|| "standard".to_owned()),"next_step":"rebuild_owner","guidance":window_catalog::text(locale, EXISTING_CENTROID_GUIDANCE)}),
         );
     }
     let evidence =
@@ -724,11 +819,12 @@ fn admitted_principal_id(root: &Path) -> Option<String> {
 fn identity_invalid_value() -> Value {
     json!({"reason_code":OWNER_IDENTITY_INVALID})
 }
-fn owner_identity_invalid() -> Response {
+fn owner_identity_invalid(locale: &str) -> Response {
     err(
+        locale,
         OWNER_IDENTITY_INVALID,
         OWNER_IDENTITY_INVALID_MESSAGE,
-        OWNER_IDENTITY_INVALID_DETAIL,
+        &window_catalog::text(locale, OWNER_IDENTITY_INVALID_DETAIL),
         StatusCode::CONFLICT,
     )
 }
@@ -747,60 +843,72 @@ async fn optional_json(request: Request) -> Value {
         .unwrap_or_default();
     serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}))
 }
-async fn required_json(request: Request) -> Result<Value, Response> {
+async fn required_json(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
-        .map_err(|_| missing_body())?;
+        .map_err(|_| missing_body(locale))?;
     if bytes.is_empty() {
-        return Err(missing_body());
+        return Err(missing_body(locale));
     }
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
-        err(
+        err(locale,
             "invalid_json_request",
-            "that JSON request couldn't be read.",
-            "request body must be a JSON object",
+            "journal.window.speakers.owner.write.owner.voice.response.that.json.request.couldn.t.be",
+            &window_catalog::text(locale, "journal.window.speakers.owner.write.owner.voice.error.detail.request.body.must.be.a.json"),
             StatusCode::BAD_REQUEST,
         )
     })?;
-    (!value.is_null()).then_some(value).ok_or_else(missing_body)
+    (!value.is_null())
+        .then_some(value)
+        .ok_or_else(|| missing_body(locale))
 }
 fn valid_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
-fn missing_fields() -> Response {
+fn missing_fields(locale: &str) -> Response {
     err(
+        locale,
         "missing_required_field",
-        "a required field is missing.",
-        "Missing required fields",
+        "journal.window.speakers.owner.write.owner.voice.response.a.required.field.is.missing",
+        &window_catalog::text(
+            locale,
+            "journal.window.speakers.owner.write.owner.voice.error.detail.missing.required.fields",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
-fn missing_body() -> Response {
+fn missing_body(locale: &str) -> Response {
     err(
+        locale,
         "missing_request_body",
-        "that request had no data in it.",
-        "No data provided",
+        "journal.window.speakers.owner.write.owner.voice.response.that.request.had.no.data.in",
+        &window_catalog::text(
+            locale,
+            "journal.window.speakers.owner.write.owner.voice.error.detail.no.data.provided",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(code, window_catalog::text(locale, message), detail, status).into_response()
 }
-fn owner_error(detail: String) -> Response {
+fn owner_error(locale: &str, detail: String) -> Response {
     if detail == OWNER_IDENTITY_INVALID {
-        return owner_identity_invalid();
+        return owner_identity_invalid(locale);
     }
     if detail.contains("busy") || detail.contains("lock") {
         err(
+            locale,
             "speaker_voiceprint_busy",
-            "that voice couldn't be updated right now because it was busy. try again in a moment.",
+            "journal.window.speakers.owner.write.owner.voice.response.that.voice.couldn.t.be.updated",
             &detail,
             StatusCode::SERVICE_UNAVAILABLE,
         )
     } else {
         err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.owner.write.owner.voice.response.that.speaker.command.didn.t.finish",
             &detail,
             StatusCode::BAD_REQUEST,
         )

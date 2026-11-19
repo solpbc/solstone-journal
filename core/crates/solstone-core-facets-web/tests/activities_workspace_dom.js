@@ -9,6 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -420,6 +421,7 @@ async function createPage({ items, url = `https://journal.example/app/activities
   win.setTimeout = (fn, ms) => armTimer(fn, ms, true);
   win.clearTimeout = clearTimer;
   vm.createContext(sandbox);
+  loadWindowCatalog(sandbox);
   vm.runInContext(apiSource, sandbox);
   vm.runInContext(drawerSource, sandbox);
   vm.runInContext(storeSource, sandbox);

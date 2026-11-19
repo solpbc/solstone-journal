@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_UNDONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_UNDONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd93f47520eca7adde690ce18d68c90c89907613bc01a049d9126f12cde0914d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

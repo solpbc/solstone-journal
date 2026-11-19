@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.home view.",
+  "context": "Journal window, view.home view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "682640950b9214f1f3bffe5f94b9d89e3b5effafbf3e9c21647605df43b5e7d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

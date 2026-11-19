@@ -1,0 +1,16 @@
+{
+  "description": "Day without matching content in the journal's view.transcripts view.",
+  "context": "Journal window, view.transcripts view. Day without matching content.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18cee6c2cac7218a6e6fbc5cc223bde395adc3f1f3343b0d4dd71a8d80d1d3fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

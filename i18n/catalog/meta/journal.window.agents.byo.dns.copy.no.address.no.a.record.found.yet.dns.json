@@ -1,0 +1,16 @@
+{
+  "description": "Byo dns copy no_address in the journal's agents view.",
+  "context": "Journal window, agents view. Byo dns copy no_address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21074aebd52624ce709f62256c7698e1831d4c077c67e09a24accdddd3395e29",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

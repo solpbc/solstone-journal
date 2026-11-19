@@ -3,6 +3,8 @@
 
 //! Native speaker-attribution writes and their owner-contamination admission gate.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::Arc;
@@ -15,6 +17,7 @@ use axum::{Extension, Json};
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::window_catalog::strings;
 use solstone_core_entity::{EncoderIdentity, normalize_embedding};
 use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
@@ -32,48 +35,53 @@ use solstone_core_speaker_resolve::segment_catalog::{
 
 const OWNER_TOO_CLOSE: (&str, &str, StatusCode) = (
     "speaker_owner_voice_too_close",
-    "that voice couldn't be saved because it sounds too much like yours.",
+    "journal.window.speakers.attribution.attribution.response.that.voice.couldn.t.be.saved",
     StatusCode::BAD_REQUEST,
 );
 const OWNER_NOT_ENOUGH: (&str, &str, StatusCode) = (
     "speaker_owner_centroid_required",
-    "that speaker command can't run until your owner voice is set up.",
+    "journal.window.speakers.attribution.attribution.response.that.speaker.command.can.t.run",
     StatusCode::CONFLICT,
 );
 const OWNER_DAMAGED: (&str, &str, StatusCode) = (
     "speaker_owner_voice_reference_invalid",
-    "that voice couldn't be saved because your owner voice reference needs attention.",
+    "journal.window.speakers.attribution.attribution.response.that.voice.couldn.t.be.saved.variant2",
     StatusCode::CONFLICT,
 );
 const OWNER_IDENTITY_INVALID: (&str, &str, StatusCode) = (
     OWNER_IDENTITY_INVALID_REASON,
-    "that speaker command couldn't run because your configured owner identity needs attention.",
+    "journal.window.speakers.attribution.attribution.response.that.speaker.command.couldn.t.run",
     StatusCode::CONFLICT,
 );
 
-pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match request_json(request).await {
+pub async fn assign(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match request_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
-    let fields = match assign_fields(&body) {
+    let fields = match assign_fields(locale, &body) {
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    let segment = match lookup_mutation_segment(&root.0, &fields) {
+    let segment = match lookup_mutation_segment(locale, &root.0, &fields) {
         Ok(path) => path,
         Err(response) => return response,
     };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
-        Err(error) => return write_error(error.to_string(), true),
+        Err(error) => return write_error(locale, error.to_string(), true),
     };
     let labels = match solstone_core_speaker_id::labels::read_labels_for_patch(&segment) {
         Ok(value) => value,
-        Err(_) => return review_unavailable(),
+        Err(_) => return review_unavailable(locale),
     };
     let current = label(&labels, fields.sentence_id);
-    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
+    if let Err(response) = entity_allowed(locale, &root.0, &fields.speaker) {
         return response;
     }
     if current.is_some_and(|row| {
@@ -92,27 +100,45 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         .is_some()
     {
         return err(
+            locale,
             "speaker_attribution_state_invalid",
-            "that change couldn't be applied because the sentence isn't in the right state.",
-            "Pick a sentence without a speaker.",
+            "journal.window.speakers.attribution.attribution.response.that.change.couldn.t.be.applied",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.pick.a.sentence.without.a.speaker",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
     if !sentence_exists(&segment, &fields.source, fields.sentence_id) {
-        return sentence_missing("Pick a different sentence with an embedding.");
+        return sentence_missing(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.pick.a.different.sentence.with.an",
+            ),
+        );
     }
     let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
         Some(value) => value,
-        None => return sentence_missing("Pick a different sentence with an embedding."),
+        None => {
+            return sentence_missing(
+                locale,
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.attribution.attribution.response.detail.pick.a.different.sentence.with.an",
+                ),
+            );
+        }
     };
-    if let Err(response) = contamination_allowed(&root.0, &fields, &embedding) {
+    if let Err(response) = contamination_allowed(locale, &root.0, &fields, &embedding) {
         return response;
     }
     let old_method = current
         .and_then(|row| row.get("method").and_then(Value::as_str))
         .map(str::to_owned);
     if let Err(error) = write_voiceprint(&root.0, &fields, embedding) {
-        return write_error(error, false);
+        return write_error(locale, error, false);
     }
     if let Err(error) = patch(
         &segment,
@@ -121,7 +147,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         "user_assigned",
         true,
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = correction(
         &segment,
@@ -130,14 +156,14 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         &fields.speaker,
         old_method.as_deref(),
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = action(
         &root.0,
         "attribution_assign",
         json!({"day":fields.day,"stream_layout":layout_name(fields.layout),"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"speaker":fields.speaker}),
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     drop(_trust);
     reresolve_segment(&root.0, &fields);
@@ -146,46 +172,61 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     if principal.as_deref() == Some(fields.speaker.as_str()) {
         owner_bootstrap_response(
             &mut response,
-            crate::speakers_owner_write::bootstrap_owner_from_manual_tags(&root.0),
+            crate::speakers_owner_write::bootstrap_owner_from_manual_tags(locale, &root.0),
         );
     }
     Json(response).into_response()
 }
 
-pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match request_json(request).await {
+pub async fn confirm(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match request_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
-    let fields = match common_fields(&body, false) {
+    let fields = match common_fields(locale, &body, false) {
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    let segment = match lookup_mutation_segment(&root.0, &fields) {
+    let segment = match lookup_mutation_segment(locale, &root.0, &fields) {
         Ok(path) => path,
         Err(response) => return response,
     };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
-        Err(error) => return write_error(error.to_string(), true),
+        Err(error) => return write_error(locale, error.to_string(), true),
     };
     let labels = match labels(&segment) {
         Some(value) => value,
-        None => return review_unavailable(),
+        None => return review_unavailable(locale),
     };
     let Some(current) = label(&labels, fields.sentence_id) else {
-        return sentence_missing("Sentence not found in labels");
+        return sentence_missing(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.sentence.not.found.in.labels",
+            ),
+        );
     };
     let Some(speaker) = current.get("speaker").and_then(Value::as_str) else {
         return err(
+            locale,
             "speaker_attribution_state_invalid",
-            "that change couldn't be applied because the sentence isn't in the right state.",
-            "sentence has no speaker assignment yet",
+            "journal.window.speakers.attribution.attribution.response.that.change.couldn.t.be.applied",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.sentence.has.no.speaker.assignment.yet",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
     let speaker = speaker.to_owned();
-    if let Err(response) = entity_allowed(&root.0, &speaker) {
+    if let Err(response) = entity_allowed(locale, &root.0, &speaker) {
         return response;
     }
     if current.get("confidence").and_then(Value::as_str) == Some("high")
@@ -195,25 +236,37 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     }
     if current.get("confidence").and_then(Value::as_str) != Some("medium") {
         return err(
+            locale,
             "speaker_attribution_state_invalid",
-            "that change couldn't be applied because the sentence isn't in the right state.",
-            "attribution is not medium confidence",
+            "journal.window.speakers.attribution.attribution.response.that.change.couldn.t.be.applied",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.attribution.is.not.medium.confidence",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
     let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
         Some(value) => value,
-        None => return sentence_missing("Sentence embedding not found"),
+        None => {
+            return sentence_missing(
+                locale,
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.attribution.attribution.response.detail.sentence.embedding.not.found",
+                ),
+            );
+        }
     };
     let target = Fields {
         speaker,
         ..fields.clone()
     };
-    if let Err(response) = contamination_allowed(&root.0, &target, &embedding) {
+    if let Err(response) = contamination_allowed(locale, &root.0, &target, &embedding) {
         return response;
     }
     if let Err(error) = write_voiceprint(&root.0, &target, embedding) {
-        return write_error(error, false);
+        return write_error(locale, error, false);
     }
     let old_method = current.get("method").and_then(Value::as_str);
     if let Err(error) = patch(
@@ -223,7 +276,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         "user_confirmed",
         false,
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = correction(
         &segment,
@@ -232,45 +285,56 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         &target.speaker,
         old_method,
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = action(
         &root.0,
         "attribution_confirm",
         json!({"day":target.day,"stream_layout":layout_name(target.layout),"stream":target.stream,"segment_key":target.segment_key,"source":target.source,"sentence_id":target.sentence_id,"speaker":target.speaker}),
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     maybe_bootstrap_owner(&root.0, &target.speaker);
     Json(json!({"success":true,"status":"confirmed","speaker":target.speaker,"stream_layout":layout_name(target.layout)})).into_response()
 }
 
-pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match request_json(request).await {
+pub async fn correct(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match request_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
-    let fields = match common_fields(&body, true) {
+    let fields = match common_fields(locale, &body, true) {
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    let segment = match lookup_mutation_segment(&root.0, &fields) {
+    let segment = match lookup_mutation_segment(locale, &root.0, &fields) {
         Ok(path) => path,
         Err(response) => return response,
     };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
-        Err(error) => return write_error(error.to_string(), true),
+        Err(error) => return write_error(locale, error.to_string(), true),
     };
-    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
+    if let Err(response) = entity_allowed(locale, &root.0, &fields.speaker) {
         return response;
     };
     let labels = match labels(&segment) {
         Some(value) => value,
-        None => return review_unavailable(),
+        None => return review_unavailable(locale),
     };
     let Some(current) = label(&labels, fields.sentence_id) else {
-        return sentence_missing("Sentence not found in labels");
+        return sentence_missing(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.sentence.not.found.in.labels",
+            ),
+        );
     };
     let old_speaker = current
         .get("speaker")
@@ -285,9 +349,17 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     }
     let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
         Some(value) => value,
-        None => return sentence_missing("Sentence embedding not found"),
+        None => {
+            return sentence_missing(
+                locale,
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.attribution.attribution.response.detail.sentence.embedding.not.found",
+                ),
+            );
+        }
     };
-    if let Err(response) = contamination_allowed(&root.0, &fields, &embedding) {
+    if let Err(response) = contamination_allowed(locale, &root.0, &fields, &embedding) {
         return response;
     }
     let removal = if let Some(old) = old_speaker.as_deref() {
@@ -316,13 +388,13 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
                 "file_deleted": report.file_removed,
                 "path": format!("entities/{old}/voiceprints.npz"),
             }),
-            Err(error) => return write_error(error.to_string(), false),
+            Err(error) => return write_error(locale, error.to_string(), false),
         }
     } else {
         json!({"outcome":"not_found","entity_id":"","keys_removed":[],"file_deleted":false,"path":Value::Null})
     };
     if let Err(error) = write_voiceprint(&root.0, &fields, embedding) {
-        return write_error(error, false);
+        return write_error(locale, error, false);
     }
     if let Err(error) = patch(
         &segment,
@@ -331,7 +403,7 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         "user_corrected",
         false,
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = correction(
         &segment,
@@ -340,14 +412,14 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         &fields.speaker,
         old_method.as_deref(),
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     if let Err(error) = action(
         &root.0,
         "attribution_correct",
         json!({"day":fields.day,"stream_layout":layout_name(fields.layout),"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal}),
     ) {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     drop(_trust);
     reresolve_segment(&root.0, &fields);
@@ -409,7 +481,10 @@ fn propagation_offer(
 
 fn maybe_bootstrap_owner(root: &std::path::Path, speaker: &str) {
     if admitted_owner(root).as_deref() == Some(speaker) {
-        let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(root);
+        let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(
+            window_catalog::ENGLISH,
+            root,
+        );
     }
 }
 
@@ -460,8 +535,13 @@ fn owner_bootstrap_response(response: &mut Value, result: Result<Value, String>)
 
 /// Native propagation keeps the existing resolver and accumulation primitive; the full
 /// segment-reprocessing policy is deliberately kept here rather than reopening the Python path.
-pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match request_json(request).await {
+pub async fn propagate(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match request_json(locale, request).await {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -470,50 +550,74 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
     else {
-        return required("Missing required fields");
+        return required(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields",
+            ),
+        );
     };
     let Some(new_speaker) = body
         .get("new_speaker")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
     else {
-        return required("Missing required fields");
+        return required(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields",
+            ),
+        );
     };
     if old_speaker == new_speaker {
         return err(
+            locale,
             "invalid_request_value",
-            "one of those values couldn't be used.",
-            "Choose two different speakers.",
+            "journal.window.speakers.attribution.attribution.response.one.of.those.values.couldn.t",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.choose.two.different.speakers",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
-    if let Err(response) = entity_allowed(&root.0, new_speaker) {
+    if let Err(response) = entity_allowed(locale, &root.0, new_speaker) {
         return response;
     }
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let trust = if commit {
         match solstone_core_entity::hold_entity_trust_lock(&root.0) {
             Ok(lock) => Some(lock),
-            Err(error) => return write_error(error.to_string(), true),
+            Err(error) => return write_error(locale, error.to_string(), true),
         }
     } else {
         None
     };
     if admitted_owner(&root.0).is_none() {
         return owner_refusal(
+            locale,
             OWNER_IDENTITY_INVALID,
-            "configured owner identity is not admitted",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.error.configured.owner.identity.is.not.admitted",
+            ),
         );
     }
     let result = match propagate_speaker_correction(&root.0, old_speaker, new_speaker, commit) {
         Ok(result) => result,
         Err(PropagationError::OwnerIdentityInvalid) => {
             return owner_refusal(
+                locale,
                 OWNER_IDENTITY_INVALID,
-                "configured owner identity is not admitted",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.configured.owner.identity.is.not.admitted",
+                ),
             );
         }
-        Err(PropagationError::Failed(error)) => return write_error(error, true),
+        Err(PropagationError::Failed(error)) => return write_error(locale, error, true),
     };
     let statement_count = result["statement_count"].as_u64().unwrap_or(0);
     if commit
@@ -524,7 +628,7 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             json!({"old_speaker":old_speaker,"new_speaker":new_speaker,"statement_count":statement_count,"segment_count":result["segment_count"]}),
         )
     {
-        return write_error(error, true);
+        return write_error(locale, error, true);
     }
     drop(trust);
     if commit {
@@ -856,69 +960,93 @@ struct Fields {
 }
 
 #[allow(clippy::result_large_err)]
-fn assign_fields(value: &Value) -> Result<Fields, Response> {
-    let object = value.as_object().ok_or_else(missing_body)?;
+fn assign_fields(locale: &str, value: &Value) -> Result<Fields, Response> {
+    let object = value.as_object().ok_or_else(|| missing_body(locale))?;
     let day = object
         .get("day")
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let stream = object
         .get("stream")
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let segment_key = object
         .get("segment_key")
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let source = object
         .get("source")
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let sentence_id = object
         .get("sentence_id")
         .and_then(Value::as_i64)
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let speaker = object
         .get("speaker")
         .map(ToString::to_string)
         .map(|value| value.trim_matches('"').to_owned())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let Some(day) = day.as_str() else {
         return Err(invalid_day(
-            "Use a valid day, stream, and segment, then pick a sentence.",
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and",
+            ),
         ));
     };
     let Some(segment_key) = segment_key.as_str() else {
         return Err(invalid_segment_or_stream(
-            "Use a valid day, stream, and segment, then pick a sentence.",
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and",
+            ),
         ));
     };
     let Some(stream) = stream.as_str() else {
         return Err(invalid_segment_or_stream(
-            "Use a valid day, stream, and segment, then pick a sentence.",
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and",
+            ),
         ));
     };
     let Some(source) = source.as_str() else {
         return Err(err(
+            locale,
             "internal_error",
-            "that request didn't finish.",
-            "source was not a string",
+            "journal.window.speakers.attribution.attribution.response.that.request.didn.t.finish",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.source.was.not.a.string",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     };
     if !is_safe_source_component(source) {
-        return Err(invalid_source());
+        return Err(invalid_source(locale));
     }
     if !valid_day(day) {
         return Err(invalid_day(
-            "Use a valid day, stream, and segment, then pick a sentence.",
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and",
+            ),
         ));
     }
     if stream != DEFAULT_STREAM && !valid_stream(stream) {
         return Err(invalid_segment_or_stream(
-            "Use a valid day, stream, and segment, then pick a sentence.",
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and",
+            ),
         ));
     }
     let layout =
         decode_required_stream_layout_value(object.get("stream_layout")).map_err(|_| {
-            invalid_segment_or_stream("Use a valid day, stream, and segment, then pick a sentence.")
+            invalid_segment_or_stream(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.stream.and"))
         })?;
     Ok(Fields {
         day: day.to_owned(),
@@ -931,28 +1059,28 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
     })
 }
 #[allow(clippy::result_large_err)]
-fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
-    let object = value.as_object().ok_or_else(missing_body)?;
+fn common_fields(locale: &str, value: &Value, correction: bool) -> Result<Fields, Response> {
+    let object = value.as_object().ok_or_else(|| missing_body(locale))?;
     let day = object
         .get("day")
         .cloned()
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let stream = object
         .get("stream")
         .cloned()
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let segment_key = object
         .get("segment_key")
         .cloned()
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let source = object
         .get("source")
         .cloned()
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     let sentence_id = object
         .get("sentence_id")
         .and_then(Value::as_i64)
-        .ok_or_else(|| required("Missing required fields"))?;
+        .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?;
     // Python's confirm/correct regex calls on non-strings raise; retain the 500 class rather than
     // converting those malformed values into a normal validation refusal.
     let (Some(day), Some(stream), Some(segment_key), Some(source)) = (
@@ -962,29 +1090,45 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
         source.as_str(),
     ) else {
         return Err(err(
+            locale,
             "internal_error",
-            "that request didn't finish.",
-            "regex input was not a string",
+            "journal.window.speakers.attribution.attribution.response.that.request.didn.t.finish",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.regex.input.was.not.a.string",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     };
     if !is_safe_source_component(source) {
-        return Err(invalid_source());
+        return Err(invalid_source(locale));
     }
     if !valid_day(day) {
-        return Err(invalid_day("Invalid day format"));
+        return Err(invalid_day(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.invalid.day.format",
+            ),
+        ));
     }
     if stream != DEFAULT_STREAM && !valid_stream(stream) {
-        return Err(invalid_segment_or_stream("Invalid stream"));
+        return Err(invalid_segment_or_stream(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.invalid.stream",
+            ),
+        ));
     }
     let layout = decode_required_stream_layout_value(object.get("stream_layout"))
-        .map_err(|_| invalid_segment_or_stream("Invalid stream layout"))?;
+        .map_err(|_| invalid_segment_or_stream(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.invalid.stream.layout")))?;
     let speaker = if correction {
         object
             .get("new_speaker")
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| required("Missing required fields"))?
+            .ok_or_else(|| required(locale, &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.missing.required.fields")))?
             .to_owned()
     } else {
         String::new()
@@ -1002,6 +1146,7 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
 
 #[allow(clippy::result_large_err)]
 fn contamination_allowed(
+    locale: &str,
     root: &std::path::Path,
     fields: &Fields,
     embedding: &[f32],
@@ -1011,7 +1156,13 @@ fn contamination_allowed(
         return Ok(());
     }
     if normalize_embedding(embedding).is_none() {
-        return Err(sentence_missing("Sentence embedding not found"));
+        return Err(sentence_missing(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.sentence.embedding.not.found",
+            ),
+        ));
     }
     let probe = ContaminationProbe {
         day: fields.day.clone(),
@@ -1024,21 +1175,26 @@ fn contamination_allowed(
     match screen_owner_contamination(root, &probe, &encoder()) {
         Ok(ContaminationScreen::Clear { .. }) => Ok(()),
         Ok(ContaminationScreen::Contaminated { .. }) => Err(owner_refusal(
+            locale,
             OWNER_TOO_CLOSE,
-            "Embedding too similar to owner voice; cannot save",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.error.embedding.too.similar.to.owner.voice.cannot.save",
+            ),
         )),
         Ok(ContaminationScreen::Indeterminate { reason }) => {
-            match classify_indeterminate(&reason) {
-                Ok(class) => Err(owner_refusal(class, &reason)),
+            match classify_indeterminate(locale, &reason) {
+                Ok(class) => Err(owner_refusal(locale, class, &reason)),
                 Err(response) => Err(response),
             }
         }
-        Err(error) => Err(owner_refusal(OWNER_DAMAGED, &error.to_string())),
+        Err(error) => Err(owner_refusal(locale, OWNER_DAMAGED, &error.to_string())),
     }
 }
 
 #[allow(clippy::result_large_err)]
 fn classify_indeterminate(
+    locale: &str,
     reason: &str,
 ) -> Result<(&'static str, &'static str, StatusCode), Response> {
     if reason == "speaker_owner_identity_invalid" {
@@ -1056,9 +1212,14 @@ fn classify_indeterminate(
         // responses should be unreachable unless the sidecar changed underneath us.
         "probe_not_found" | "probe_zero_norm" => Ok(OWNER_DAMAGED),
         _ => Err(err(
+            locale,
             "internal_error",
-            "that request didn't finish.",
-            &format!("unknown owner-contamination reason: {reason}"),
+            "journal.window.speakers.attribution.attribution.response.that.request.didn.t.finish",
+            &strings(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.unknown.owner.contamination.reason.reason",
+                [("reason", reason)],
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
     }
@@ -1109,7 +1270,11 @@ fn correction(
     solstone_core_speaker_id::corrections::append_correction(segment, json!({"sentence_id":sentence_id,"original_speaker":original_speaker,"corrected_speaker":corrected_speaker,"original_method":original_method,"timestamp":Timestamp::now().as_millisecond()}).as_object().expect("correction is object").clone()).map_err(|error| error.to_string())
 }
 #[allow(clippy::result_large_err)]
-pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response> {
+pub(crate) fn entity_allowed(
+    locale: &str,
+    root: &std::path::Path,
+    speaker: &str,
+) -> Result<(), Response> {
     let entity = solstone_core_entity::load_all_journal_entities(root)
         .ok()
         .into_iter()
@@ -1117,24 +1282,37 @@ pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<()
         .find(|entity| entity.id == speaker);
     match entity {
         Some(entity) if entity.is_blocked() => Err(err(
+            locale,
             "entity_blocked",
-            "that speaker couldn't be used because it's hidden.",
-            &format!("Entity '{speaker}' is hidden"),
+            "journal.window.speakers.attribution.attribution.response.that.speaker.couldn.t.be.used",
+            &strings(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.entity.speaker.is.hidden",
+                [("speaker", speaker)],
+            ),
             StatusCode::BAD_REQUEST,
         )),
         Some(entity) if !solstone_core_entity::is_admissible_person(&entity) => Err(err(
+            locale,
             "speaker_not_person",
-            "that speaker couldn't be used because it isn't a person.",
-            &format!(
-                "Entity '{speaker}' is not a Person. Select an existing Person who isn't hidden."
+            "journal.window.speakers.attribution.attribution.response.that.speaker.couldn.t.be.used.variant2",
+            &strings(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.entity.speaker.is.not.a.person",
+                [("speaker", speaker)],
             ),
             StatusCode::BAD_REQUEST,
         )),
         Some(_) => Ok(()),
         None => Err(err(
+            locale,
             "speaker_not_found",
-            "that speaker couldn't be found.",
-            &format!("Entity '{speaker}' not found"),
+            "journal.window.speakers.attribution.attribution.response.that.speaker.couldn.t.be.found",
+            &strings(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.entity.speaker.not.found",
+                [("speaker", speaker)],
+            ),
             StatusCode::NOT_FOUND,
         )),
     }
@@ -1176,6 +1354,7 @@ fn sentence_embedding(
 }
 #[allow(clippy::result_large_err)]
 fn lookup_mutation_segment(
+    locale: &str,
     root: &std::path::Path,
     fields: &Fields,
 ) -> Result<std::path::PathBuf, Response> {
@@ -1187,11 +1366,15 @@ fn lookup_mutation_segment(
         Ok(fields.layout),
     ) {
         SegmentLookup::Present(path) => Ok(path),
-        SegmentLookup::MalformedLayout => {
-            Err(invalid_segment_or_stream("Invalid segment key or stream"))
-        }
-        SegmentLookup::Absent => Err(review_unavailable()),
-        SegmentLookup::Failed(error) => Err(write_error(error.to_string(), true)),
+        SegmentLookup::MalformedLayout => Err(invalid_segment_or_stream(
+            locale,
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.attribution.attribution.response.detail.invalid.segment.key.or.stream",
+            ),
+        )),
+        SegmentLookup::Absent => Err(review_unavailable(locale)),
+        SegmentLookup::Failed(error) => Err(write_error(locale, error.to_string(), true)),
     }
 }
 fn layout_name(layout: SegmentLayout) -> &'static str {
@@ -1213,27 +1396,33 @@ fn valid_stream(value: &str) -> bool {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
         })
 }
-fn invalid_day(detail: &str) -> Response {
+fn invalid_day(locale: &str, detail: &str) -> Response {
     err(
+        locale,
         "invalid_day",
-        "that day couldn't be used.",
+        "journal.window.speakers.attribution.attribution.response.that.day.couldn.t.be.used",
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid_segment_or_stream(detail: &str) -> Response {
+fn invalid_segment_or_stream(locale: &str, detail: &str) -> Response {
     err(
+        locale,
         "invalid_segment_or_stream",
-        "that segment or stream couldn't be used.",
+        "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid_source() -> Response {
+fn invalid_source(locale: &str) -> Response {
     err(
+        locale,
         "invalid_request_value",
-        "source name is invalid.",
-        "use one file name, without a path",
+        "journal.window.speakers.attribution.attribution.response.source.name.is.invalid",
+        &window_catalog::text(
+            locale,
+            "journal.window.speakers.attribution.attribution.response.detail.use.one.file.name.without.a",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
@@ -1248,87 +1437,104 @@ pub(crate) fn action(root: &std::path::Path, action: &str, params: Value) -> Res
     solstone_core_facets::append_action_log(root, None, "app", "speakers", action, params)
         .map_err(|error| error.to_string())
 }
-async fn request_json(request: Request) -> Result<Value, Response> {
+async fn request_json(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
-        .map_err(|_| missing_body())?;
+        .map_err(|_| missing_body(locale))?;
     if bytes.is_empty() {
-        return Err(missing_body());
+        return Err(missing_body(locale));
     }
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
-        err(
+        err(locale,
             "invalid_json_request",
-            "that JSON request couldn't be read.",
-            "request body must be a JSON object",
+            "journal.window.speakers.attribution.attribution.response.that.json.request.couldn.t.be",
+            &window_catalog::text(locale, "journal.window.speakers.attribution.attribution.response.detail.request.body.must.be.a.json"),
             StatusCode::BAD_REQUEST,
         )
     })?;
     if value.is_null() {
-        Err(missing_body())
+        Err(missing_body(locale))
     } else {
         Ok(value)
     }
 }
-fn owner_refusal(reason: (&str, &str, StatusCode), detail: &str) -> Response {
-    err(reason.0, reason.1, detail, reason.2)
+fn owner_refusal(locale: &str, reason: (&str, &str, StatusCode), detail: &str) -> Response {
+    err(locale, reason.0, reason.1, detail, reason.2)
 }
-fn sentence_missing(detail: &str) -> Response {
+fn sentence_missing(locale: &str, detail: &str) -> Response {
     err(
+        locale,
         "speaker_sentence_missing",
-        "that sentence couldn't be found. try refreshing the page.",
+        "journal.window.speakers.attribution.attribution.response.that.sentence.couldn.t.be.found",
         detail,
         StatusCode::NOT_FOUND,
     )
 }
-fn review_unavailable() -> Response {
+fn review_unavailable(locale: &str) -> Response {
     err(
+        locale,
         "speaker_review_unavailable",
-        "that speaker review couldn't be loaded.",
-        "No speaker labels found",
+        "journal.window.speakers.attribution.attribution.response.that.speaker.review.couldn.t.be",
+        &window_catalog::text(
+            locale,
+            "journal.window.speakers.attribution.attribution.response.detail.no.speaker.labels.found",
+        ),
         StatusCode::NOT_FOUND,
     )
 }
-fn missing_body() -> Response {
+fn missing_body(locale: &str) -> Response {
     err(
+        locale,
         "missing_request_body",
-        "that request had no data in it.",
-        "No data provided",
+        "journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in",
+        &window_catalog::text(
+            locale,
+            "journal.window.speakers.attribution.attribution.response.detail.no.data.provided",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
-fn required(detail: &str) -> Response {
+fn required(locale: &str, detail: &str) -> Response {
     err(
+        locale,
         "missing_required_field",
-        "a required field is missing.",
+        "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn write_error(detail: String, labels: bool) -> Response {
+fn write_error(locale: &str, detail: String, labels: bool) -> Response {
     if detail.contains("busy") || detail.contains("lock") {
         let (code, message) = if labels {
             (
                 "speaker_labels_busy",
-                "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
+                "journal.window.speakers.attribution.attribution.response.those.speaker.attributions.couldn.t.be",
             )
         } else {
             (
                 "speaker_voiceprint_busy",
-                "that voice couldn't be updated right now because it was busy. try again in a moment.",
+                "journal.window.speakers.attribution.attribution.response.that.voice.couldn.t.be.updated",
             )
         };
-        err(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE)
+        err(
+            locale,
+            code,
+            message,
+            &detail,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
     } else {
         err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.attribution.attribution.response.that.speaker.command.didn.t.finish",
             &detail,
             StatusCode::BAD_REQUEST,
         )
     }
 }
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(code, window_catalog::text(locale, message), detail, status).into_response()
 }
 
 #[cfg(test)]
@@ -1346,6 +1552,8 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::window_catalog;
 
     struct TestJournal(PathBuf);
 
@@ -1439,15 +1647,16 @@ mod tests {
             "below_embedding_floor",
             "provisional_zero_norm",
         ] {
-            let class = classify_indeterminate(reason).expect("known reason maps");
+            let class =
+                classify_indeterminate(window_catalog::ENGLISH, reason).expect("known reason maps");
             assert!(class == OWNER_NOT_ENOUGH || class == OWNER_DAMAGED);
             assert_ne!(class.0, "speaker_owner_voice_too_close");
         }
         assert!(matches!(
-            classify_indeterminate("speaker_owner_identity_invalid"),
+            classify_indeterminate(window_catalog::ENGLISH, "speaker_owner_identity_invalid"),
             Ok(class) if class == OWNER_IDENTITY_INVALID
         ));
-        assert!(classify_indeterminate("unknown_reason").is_err());
+        assert!(classify_indeterminate(window_catalog::ENGLISH, "unknown_reason").is_err());
     }
 
     #[tokio::test]
@@ -1471,8 +1680,9 @@ mod tests {
             sentence_id: 1,
             speaker: "new".to_owned(),
         };
-        let response = contamination_allowed(&journal.0, &fields, &[1.0; 256])
-            .expect_err("the direct correction gate remains independently refused");
+        let response =
+            contamination_allowed(window_catalog::ENGLISH, &journal.0, &fields, &[1.0; 256])
+                .expect_err("the direct correction gate remains independently refused");
         // A journal with no admitted owner is a state the command conflicts
         // with, not a malformed request, like its other owner-voice refusals.
         assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);

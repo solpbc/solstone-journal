@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, direct closed.",
+  "context": "Network view copy, direct closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "a76ad89e9f84908b5980051427dd75b5cfe2c877a9f589189bee749080336e2c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

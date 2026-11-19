@@ -1,0 +1,16 @@
+{
+  "description": "Presentation mode banner in the journal's shell view.",
+  "context": "Journal window, shell view. Presentation mode banner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bd8fcd9db6bd39a24cda5b95e7ccff2757890a42e9103057a2cb2f5a9dcc603",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

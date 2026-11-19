@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach home candidates refresh fail.",
+  "context": "Network view copy, reach home candidates refresh fail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "e637476ecbc24135dc47627b80d226734cee3e4846510381e0a657055ba65029",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

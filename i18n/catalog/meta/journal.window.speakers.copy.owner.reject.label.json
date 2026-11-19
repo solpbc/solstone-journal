@@ -1,0 +1,16 @@
+{
+  "description": "Owner reject label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner reject label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91e4638ac1e39cfd633f0c922343983238addf89104afe5136fd22961373e68d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

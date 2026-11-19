@@ -11,6 +11,7 @@ const { answerQuestion } = require('./question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, readCopyTable } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -619,7 +620,7 @@ function makePage(env, address = '/app/entities/', { answers, storage } = {}) {
   parseInto(doc, doc.body, '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/entities/" data-app-name="entities">entities</a></nav><main id="main-content" tabindex="-1"></main><div id="view-announcer"></div>');
   const main = doc.getElementById('main-content');
 
-  const context = vm.createContext({
+  const context = journalContext({
     window, document: doc, location, history: window.history,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, Map, Set, Promise,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Uint8Array, Symbol,
@@ -722,7 +723,7 @@ module.exports = async function entitiesContractCases(manifestDir) {
     .replace(/<style>[\s\S]*?<\/style>/g, '')
     .replace(/<script[^>]*><\/script>/g, '')
     .replace(/<link[^>]*>/g, '');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
+  const copy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   const env = { manifestDir, script, markup, copy };
 
   // ---- AC 1: a contract view

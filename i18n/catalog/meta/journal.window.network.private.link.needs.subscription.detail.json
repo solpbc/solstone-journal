@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link needs subscription detail.",
+  "context": "Network view copy, private link needs subscription detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 248,
+  "source_revision": "93c8a3ff208b25046dc3ba39a4febc3048613e5d776139eee3b025e3fa88397c",
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

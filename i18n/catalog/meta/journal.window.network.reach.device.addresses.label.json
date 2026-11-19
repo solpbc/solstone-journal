@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach device addresses label.",
+  "context": "Network view copy, reach device addresses label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "8fc10840ff6871a9613a49381a20e6347162fd562177294b904403370b71605e",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -13,6 +13,7 @@ const { answerQuestion } = require('../../solstone-core-convey-shell/tests/quest
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -753,6 +754,7 @@ function makePage(env, address = '/app/stats/', { answers } = {}) {
   });
   context.self = window;
   window.confirm = () => { throw new Error("browser confirm is forbidden"); };
+  loadWindowCatalog(context);
   const shell = env.shellDir;
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);

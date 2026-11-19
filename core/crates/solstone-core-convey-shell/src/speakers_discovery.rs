@@ -3,6 +3,8 @@
 
 //! Read-only speaker discovery-cache routes.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -92,7 +94,11 @@ struct ConversationKey(String, String, String, String, String);
 type Evidence = Vec<(String, Vec<String>)>;
 type EvidenceGaps = Vec<(String, String)>;
 
-pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn cache(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(root): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     spawn_blocking_response(OwnerReadRole::SpeakersDiscoveryCache, move || {
         let Some(cache) = load_discovery_cache(&root.0) else {
             return Json(json!({"status": "cache_unavailable", "clusters": []})).into_response();
@@ -105,7 +111,10 @@ pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             Ok(clusters) => Json(json!({"status": "ok", "clusters": clusters})).into_response(),
             Err(detail) => error_envelope(
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+                ),
                 detail,
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
@@ -116,13 +125,18 @@ pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 }
 
 pub async fn presence(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath(cluster_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if cluster_id.is_empty() || !cluster_id.bytes().all(|byte| byte.is_ascii_digit()) {
         return error_envelope(
             "http_error",
-            "that request didn't finish.",
+            window_catalog::text(
+                locale,
+                "journal.window.speakers.error.that.request.didn.t.finish",
+            ),
             "",
             StatusCode::NOT_FOUND,
         )
@@ -131,16 +145,19 @@ pub async fn presence(
     let raw_cluster_id = cluster_id;
     let cluster_id = raw_cluster_id.parse::<i64>().ok();
     let Some(cluster_id) = cluster_id else {
-        return cluster_not_found(&raw_cluster_id);
+        return cluster_not_found(locale, &raw_cluster_id);
     };
     spawn_blocking_response(
         OwnerReadRole::SpeakersDiscoveryPresence,
         move || match cluster_presence(&root.0, cluster_id) {
             Ok(Some(payload)) => Json(payload).into_response(),
-            Ok(None) => cluster_not_found(&cluster_id.to_string()),
+            Ok(None) => cluster_not_found(locale, &cluster_id.to_string()),
             Err(detail) => error_envelope(
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+                ),
                 detail,
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
@@ -151,9 +168,11 @@ pub async fn presence(
 }
 
 pub async fn resolve_statement(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     Query(query): Query<ResolveStatementQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let layout = match solstone_core_speaker_resolve::segment_catalog::decode_stream_layout(
         query.voice_stream_layout.as_deref(),
     ) {
@@ -161,7 +180,10 @@ pub async fn resolve_statement(
         Err(error) => {
             return error_envelope(
                 "invalid_request_value",
-                "one of those values couldn't be used.",
+                window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+                ),
                 error.to_string(),
                 StatusCode::BAD_REQUEST,
             )
@@ -188,7 +210,10 @@ pub async fn resolve_statement(
     if !missing.is_empty() {
         return error_envelope(
             "missing_required_field",
-            "that request didn't finish.",
+            window_catalog::text(
+                locale,
+                "journal.window.speakers.error.that.request.didn.t.finish",
+            ),
             format!("Missing required fields: {}", missing.join(", ")),
             StatusCode::BAD_REQUEST,
         )
@@ -205,8 +230,14 @@ pub async fn resolve_statement(
         Err(_) => {
             return error_envelope(
                 "invalid_request_value",
-                "one of those values couldn't be used.",
-                "voice_sentence_id must be an integer",
+                window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+                ),
+                window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.voice.sentence.id.must.be.an.integer",
+                ),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -890,10 +921,13 @@ fn resolve_statement_cluster(
     json!({"status": "miss", "cluster_id": null})
 }
 
-fn cluster_not_found(cluster_id: &str) -> Response {
+fn cluster_not_found(locale: &str, cluster_id: &str) -> Response {
     error_envelope(
         "speaker_review_unavailable",
-        "that speaker review couldn't be loaded.",
+        window_catalog::text(
+            locale,
+            "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
+        ),
         format!("Cluster {cluster_id} was not found. Run a discovery scan first."),
         StatusCode::NOT_FOUND,
     )

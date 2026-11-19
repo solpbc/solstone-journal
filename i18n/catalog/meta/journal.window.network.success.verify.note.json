@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, success verify note.",
+  "context": "Network view copy, success verify note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 162,
+  "source_revision": "e8a128f3eec24a31d0572b730cf01ed4af22c65eee50ea6bcf173ce9fc9104c0",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

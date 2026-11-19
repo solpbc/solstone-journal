@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,25 +28,29 @@ use solstone_core_speaker_resolve::segment_catalog::{
 
 const QUALITY_WINDOW_DAYS: usize = 30;
 
-pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn quality(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(root): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersQuality,
         move || match quality_status(&root.0) {
             Ok(status) => Json(status).into_response(),
             Err(QualityError::IdentityInvalid) => error_envelope(
                 "speaker_owner_identity_invalid",
-                "speaker quality couldn't be loaded because your configured owner identity needs attention.",
-                "configured owner identity is not admitted",
+                window_catalog::text(locale, "journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity"),
+                window_catalog::text(locale, "journal.window.speakers.error.configured.owner.identity.is.not.admitted"),
                 StatusCode::CONFLICT,
             )
             .into_response(),
             Err(QualityError::Archive(error)) => error_envelope(
-                "speaker_command_failed", "that speaker command didn't finish.", error,
+                "speaker_command_failed", window_catalog::text(locale, "journal.window.speakers.error.that.speaker.command.didn.t.finish"), error,
                 StatusCode::INTERNAL_SERVER_ERROR,
             ).into_response(),
             Err(QualityError::Catalog(error)) => error_envelope(
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                window_catalog::text(locale, "journal.window.speakers.error.that.speaker.command.didn.t.finish"),
                 error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )

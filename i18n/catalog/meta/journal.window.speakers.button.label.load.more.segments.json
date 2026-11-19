@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's speakers view.",
+  "context": "Journal window, speakers view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82251e3fd2c6acd888e30a4bc81355935496c3cba4c136bdebfe7c1d269b07fa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

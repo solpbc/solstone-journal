@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner build from tags label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner build from tags label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45603ebef45597a9d189273b5f6e457df27dcd19e750ff8e1e74d955135d8f43",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

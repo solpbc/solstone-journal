@@ -1,0 +1,23 @@
+{
+  "description": "Paired-device authorization unavailable in the journal's shell view.",
+  "context": "Journal window, shell view. Paired-device authorization unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e186cb5432aabe751a153acd6daa1198972dc9571a348f540e36d3bb85bb88f",
+  "max_length": 254,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "command",
+      "value": "solstone journal doctor --verbose"
+    }
+  ]
+}

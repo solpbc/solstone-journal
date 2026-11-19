@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner built prefix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner built prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5050c0253d13f6daccaf676030f28ac3011d05babe485a4db49ce4d147d2d455",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

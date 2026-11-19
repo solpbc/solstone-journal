@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the profile journal route loads on first paint.",
+  "context": "Status shown while the profile journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "a6d1144c5194817fa608c604fa6ec8d730ae1e3b34b18dc019533172e1988704",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_VOICE_CHANGED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_CHANGED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2265b0e3d56d540689e8b2bb7c4a3375e693b66f13fdc217e23694a675d47bd6",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

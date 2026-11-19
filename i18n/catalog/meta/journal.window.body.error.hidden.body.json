@@ -1,0 +1,16 @@
+{
+  "description": "Body display error hidden body in the journal's body view.",
+  "context": "Journal window, body view. Body display error hidden body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8fc7c7a19a1b2dbcb4d2a04730efc0215c6be18ca991d1d014016edb38f6648a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Months label in the journal's year view.",
+  "context": "Journal window, year view. Months label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e780739f879a3cae2552fefdca01b54313d773d28a5dbf3ce8d5d0916c87855",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -26,7 +26,7 @@
     if (editing) {
       const label = document.createElement('label');
       label.setAttribute('for', 'convey-question-input');
-      label.textContent = 'name';
+      label.textContent = window.JournalI18n.render('journal.window.shared.question.visible.text.name');
       input = document.createElement('input');
       input.id = 'convey-question-input';
       input.type = 'text';
@@ -39,7 +39,7 @@
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.setAttribute('data-question-cancel', '');
-    cancel.textContent = 'cancel';
+    cancel.textContent = window.JournalI18n.render('journal.window.shared.question.visible.text.cancel');
     const accept = document.createElement('button');
     accept.type = 'submit';
     accept.setAttribute('data-question-accept', '');

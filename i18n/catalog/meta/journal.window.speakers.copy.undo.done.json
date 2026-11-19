@@ -1,0 +1,16 @@
+{
+  "description": "Undo done in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Undo done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5d6fa14762803e180e6d8eaa0841f832bd5b8099df5512461cba103d1a96c86",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

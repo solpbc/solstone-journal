@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_SUGGESTIONS_EMPTY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_SUGGESTIONS_EMPTY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e4675f69d9702f7b2797ee56714c20efc5bfd42526666b5f4a4063c8ffc0a5f",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

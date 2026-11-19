@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, app onoff label.",
+  "context": "Network view copy, app onoff label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "44816c0ecc39ecbd145873d420895a45eb09bd307eb526de3620032d492a2e55",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, ca fp label.",
+  "context": "Network view copy, ca fp label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "ec4acabccc2d8747da2ba0ec9f926814145c266f714bfd80efe95808047012a8",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

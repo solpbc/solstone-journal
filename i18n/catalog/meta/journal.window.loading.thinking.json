@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the thinking journal route loads on first paint.",
+  "context": "Status shown while the thinking journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "b28dd757608fb443d2f24c46c647b13f62c261caba4e0e107b4008bcd05cfa13",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach spl active body.",
+  "context": "Network view copy, reach spl active body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 136,
+  "source_revision": "2ceb2f07175b587394c2493fcb2e065c25f1509939c8ffa8a7dc952246d3f988",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

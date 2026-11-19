@@ -1,0 +1,16 @@
+{
+  "description": "Body display logged who you in the journal's body view.",
+  "context": "Journal window, body view. Body display logged who you.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8cfe1287aaad3f9a715030f14c8649703d644ff1b39b153b85611a35c32cf346",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

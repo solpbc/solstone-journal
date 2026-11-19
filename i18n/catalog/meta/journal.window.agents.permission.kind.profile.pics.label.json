@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for profile.pics in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for profile.pics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd2167345355811a5a8394da4546e5dc1e65f576abe487eceaa1e620a400394d",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

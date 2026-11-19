@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link disable failed.",
+  "context": "Network view copy, private link disable failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 130,
+  "source_revision": "f3e68852587194b30e7f640dc255204831a8e0ca00dd621336b392a5204ae8d4",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

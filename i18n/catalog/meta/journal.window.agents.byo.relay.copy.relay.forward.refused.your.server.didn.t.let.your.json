@@ -1,0 +1,16 @@
+{
+  "description": "Byo relay copy relay_forward_refused in the journal's agents view.",
+  "context": "Journal window, agents view. Byo relay copy relay_forward_refused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8d5a5f084706ef693c9145cc558854038cdcbe38492a08e20b4b7be79250ee64",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

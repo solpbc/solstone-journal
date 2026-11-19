@@ -1,0 +1,16 @@
+{
+  "description": "Copy day in the journal's year view.",
+  "context": "Journal window, year view. Copy day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0dda79a5f38209e101372ae3ef42457f77c716f44ee7be097da1dae47dfc4f0f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -62,24 +62,23 @@ pub fn lookup(path: &str) -> Option<&'static EmbeddedAsset> {
         .map(|index| &GENERATED_ASSETS[index])
 }
 
-pub fn speaker_copy_json() -> &'static str {
-    SPEAKER_COPY_JSON
+pub(super) struct CopyTables {
+    pub speakers: &'static str,
+    pub network: &'static str,
+    pub outcomes: &'static str,
+    pub home_address: &'static str,
+    pub not_in_new_voices: &'static str,
+}
+
+pub(crate) fn copy_tables(locale: &str) -> &'static CopyTables {
+    COPY_TABLES
+        .iter()
+        .find_map(|(tag, table)| (*tag == locale).then_some(table))
+        .expect("selected locale has packaged copy tables")
 }
 
 pub fn network_copy_json() -> &'static str {
-    NETWORK_COPY_JSON
-}
-
-pub fn spl_outcome_strings_json() -> &'static str {
-    SPL_OUTCOME_STRINGS_JSON
-}
-
-pub fn home_address_strings_json() -> &'static str {
-    HOME_ADDRESS_STRINGS_JSON
-}
-
-pub fn not_in_new_voices_copy() -> &'static str {
-    NOT_IN_NEW_VOICES_COPY
+    copy_tables(crate::window_catalog::ENGLISH).network
 }
 
 /// The record for a stable dashboard path.

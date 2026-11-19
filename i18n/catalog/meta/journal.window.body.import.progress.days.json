@@ -1,0 +1,51 @@
+{
+  "description": "Body display import progress days in the journal's body view.",
+  "context": "Journal window, body view. Body display import progress days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lead",
+      "type": "string"
+    },
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "709988aa723cc3cbcc38e27872ea522a0c6ae497f32c4ee534f02da729390de8",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

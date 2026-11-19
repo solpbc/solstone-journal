@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_DETECTED_HIDE_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_HIDE_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0e901be4fa3677477c3b37cf10b6915afc31d35353e9057f73f9023ba0a76b6",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

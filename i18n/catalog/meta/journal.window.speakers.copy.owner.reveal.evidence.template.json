@@ -1,0 +1,23 @@
+{
+  "description": "Owner reveal evidence template in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner reveal evidence template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3baf4fd93e31a5e18e628e1ebb99e43de8ed4941945169634f2484811b9eea7e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{tier}"
+    }
+  ]
+}

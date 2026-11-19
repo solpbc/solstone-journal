@@ -1,0 +1,16 @@
+{
+  "description": "Text in the journal's entities view.",
+  "context": "Journal window, entities view. Text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0afc6e855e0b5142576dc24dc933de3734078440f02547d99add1fc6aa3ef08d",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

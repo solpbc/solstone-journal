@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's network view.",
+  "context": "Journal window, network view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0669be25e8722bf70f6b55a0e0b7cdd792a5ebc6b98ce9138ae07da8a2719493",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

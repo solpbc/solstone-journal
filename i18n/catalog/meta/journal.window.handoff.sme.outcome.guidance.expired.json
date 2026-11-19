@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance expired in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ea9229762aed45431aa1fde17887f1853ae74c6c78c99bcd8f4fcb4219bf909",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

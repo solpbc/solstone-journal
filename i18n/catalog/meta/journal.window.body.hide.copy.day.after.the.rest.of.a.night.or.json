@@ -1,0 +1,23 @@
+{
+  "description": "Hide copy day after in the journal's body view.",
+  "context": "Journal window, body view. Hide copy day after.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8624720a4b71ba8b61345a8642adde5d1ab077e9fd723d742a71b5de6dc3c32b",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

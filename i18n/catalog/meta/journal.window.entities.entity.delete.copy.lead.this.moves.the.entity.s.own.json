@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy lead in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6a82be14edb7fd3d03b936a84b48b6fe79d1ca6665c57008ab77f216402a650",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

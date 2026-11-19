@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
@@ -485,15 +486,20 @@ async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 async fn delete_client(
     Extension(root): Extension<Arc<JournalRoot>>,
     Path(cid): Path<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     match crate::paired_device::remove_paired_device(&root.0, &cid) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({"unpaired": cid})).into_response(),
         Ok(_) => crate::network::refusal(
             "paired_device_not_found",
-            "paired device not found",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.paired.device.not.found.paired.device.not.found",
+            ),
             StatusCode::NOT_FOUND,
         ),
-        Err(error) => crate::network::unpair_mutation_refusal(error),
+        Err(error) => crate::network::unpair_mutation_refusal(error, locale),
     }
 }
 

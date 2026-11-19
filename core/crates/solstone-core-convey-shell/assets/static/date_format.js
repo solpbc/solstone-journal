@@ -3,28 +3,36 @@
 
 (function () {
   const WEEKDAYS = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday'
+    window.JournalI18n.render('journal.window.date.weekdays.sunday'),
+    window.JournalI18n.render('journal.window.date.weekdays.monday'),
+    window.JournalI18n.render('journal.window.date.weekdays.tuesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.wednesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.thursday'),
+    window.JournalI18n.render('journal.window.date.weekdays.friday'),
+    window.JournalI18n.render('journal.window.date.weekdays.saturday')
   ];
-  const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const WEEKDAYS_SHORT = [
+    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  ];
   const MONTHS_SHORT = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec'
+    window.JournalI18n.render('journal.window.date.months.short.jan'),
+    window.JournalI18n.render('journal.window.date.months.short.feb'),
+    window.JournalI18n.render('journal.window.date.months.short.mar'),
+    window.JournalI18n.render('journal.window.date.months.short.apr'),
+    window.JournalI18n.render('journal.window.date.months.short.may'),
+    window.JournalI18n.render('journal.window.date.months.short.jun'),
+    window.JournalI18n.render('journal.window.date.months.short.jul'),
+    window.JournalI18n.render('journal.window.date.months.short.aug'),
+    window.JournalI18n.render('journal.window.date.months.short.sep'),
+    window.JournalI18n.render('journal.window.date.months.short.oct'),
+    window.JournalI18n.render('journal.window.date.months.short.nov'),
+    window.JournalI18n.render('journal.window.date.months.short.dec')
   ];
 
   function parseDay(dateString) {
@@ -73,9 +81,9 @@
     }
     const deltaDays = Math.round((parsed.getTime() - today.getTime()) / 86400000);
 
-    if (deltaDays === 0) return 'Today';
-    if (deltaDays === -1) return 'Yesterday';
-    if (deltaDays === 1) return 'Tomorrow';
+    if (deltaDays === 0) return window.JournalI18n.render('journal.window.date.today');
+    if (deltaDays === -1) return window.JournalI18n.render('journal.window.date.yesterday');
+    if (deltaDays === 1) return window.JournalI18n.render('journal.window.date.tomorrow');
     if (deltaDays >= -6 && deltaDays < 0) return WEEKDAYS[parsed.getDay()];
 
     let short = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
@@ -111,17 +119,17 @@
     apple_health: 'Apple Health',
     oura: 'Oura',
     strava: 'Strava',
-    ics: 'calendar',
-    document: 'documents',
-    image: 'images',
-    audio: 'audio',
+    ics: window.JournalI18n.render('journal.window.shared.date.format.import.ics'),
+    document: window.JournalI18n.render('journal.window.shared.date.format.import.document'),
+    image: window.JournalI18n.render('journal.window.shared.date.format.import.image'),
+    audio: window.JournalI18n.render('journal.window.shared.date.format.import.audio'),
     // import catalog
     chatgpt: 'ChatGPT',
     claude: 'Claude',
     gemini: 'Gemini',
-    journal_archive: 'another journal',
+    journal_archive: window.JournalI18n.render('journal.window.shared.date.format.import.journal.archive'),
     kindle: 'Kindle',
-    obsidian: 'notes',
+    obsidian: window.JournalI18n.render('journal.window.shared.date.format.import.obsidian'),
     evernote: 'Evernote',
   };
 
@@ -150,25 +158,25 @@
   }
 
   function dottedFallback(raw) {
-    if (!raw || raw === '_default') return 'source unknown';
+    if (!raw || raw === '_default') return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
     // Exactly one dot with a name on each side, the shape the journal's own
     // table reads; anything else is unknown there too.
     const parts = raw.split('.');
-    if (parts.length !== 2 || parts.some(part => part === '')) return 'source unknown';
+    if (parts.length !== 2 || parts.some(part => part === '')) return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
     if (parts[0] === 'import' && parts.length === 2) {
       const branded = Object.prototype.hasOwnProperty.call(IMPORT_SOURCE_LABELS, parts[1])
         ? IMPORT_SOURCE_LABELS[parts[1]]
         : parts[1].replace(/[_-]+/g, ' ').trim().toLowerCase();
-      return `${branded} · imported`;
+      return window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.imported', [['value1', String(branded)]]);
     }
     if (parts.length === 2) {
       const qualifier = parts[1];
-      if (qualifier === 'tmux') return 'your terminal';
-      if (qualifier === 'watch') return 'your watch';
-      if (qualifier === 'mobile' || qualifier === 'phone') return 'your phone';
-      if (qualifier === 'browser') return 'your browser';
+      if (qualifier === 'tmux') return window.JournalI18n.render('journal.window.shared.date.format.source.terminal');
+      if (qualifier === 'watch') return window.JournalI18n.render('journal.window.shared.date.format.source.watch');
+      if (qualifier === 'mobile' || qualifier === 'phone') return window.JournalI18n.render('journal.window.shared.date.format.source.phone');
+      if (qualifier === 'browser') return window.JournalI18n.render('journal.window.shared.date.format.source.browser');
     }
-    return 'source unknown';
+    return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
   }
 
   // A complete table replaces any table; a partial one replaces a partial
@@ -230,10 +238,10 @@
 
   function formatStreamLabel(stream) {
     const raw = String(stream || '').trim();
-    if (!raw || raw === '_default') return 'source unknown';
+    if (!raw || raw === '_default') return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
     if (hasStreamLabel(raw)) return streamLabelsTable.labels[raw];
     if (!streamLabelsTable || fallbackStreams.has(raw)) return dottedFallback(raw);
-    return 'source unknown';
+    return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
   }
 
   // Reads the table. Resolves true when the read answered (complete or
@@ -277,7 +285,7 @@
   // shown stay as they are.
   function noteLiveStream(name) {
     const raw = String(name || '').trim();
-    if (!raw || raw === '_default') return Promise.resolve('source unknown');
+    if (!raw || raw === '_default') return Promise.resolve(window.JournalI18n.render('journal.window.shared.date.format.source.unknown'));
     if (hasStreamLabel(raw) || settledRereadStreams.has(raw)) {
       return Promise.resolve(formatStreamLabel(raw));
     }
@@ -299,7 +307,7 @@
 
   function formatSegmentTime(segment) {
     const clock = parseSegmentClock(segment);
-    return clock ? `${clock[1]}:${clock[2]}:${clock[3]}` : 'time unavailable';
+    return clock ? `${clock[1]}:${clock[2]}:${clock[3]}` : window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
   }
 
   // The same segment prefix on the page's own clock. `formatSegmentTime` is
@@ -307,16 +315,16 @@
   // wrong on a row that sits under a "10:55 PM". G1-202.
   function formatSegmentTimeOfDay(segment) {
     const clock = parseSegmentClock(segment);
-    if (!clock) return 'time unavailable';
+    if (!clock) return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]), Number(clock[3]))
       .toLocaleString(globalThis.window?.JournalI18n?.formatLocale, { hour: 'numeric', minute: '2-digit' });
   }
 
   function formatTimestamp(timestamp) {
-    if (timestamp === null || timestamp === undefined || timestamp === '') return 'time unavailable';
+    if (timestamp === null || timestamp === undefined || timestamp === '') return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     const thisYear = currentJournalYear();
     const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    if (Number.isNaN(d.getTime())) return 'time unavailable';
+    if (Number.isNaN(d.getTime())) return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     const p = window.JournalClock ? window.JournalClock.parts(d) : null;
     const isThisYear = p ? p.year === thisYear : d.getFullYear() === thisYear;
     const options = {
@@ -335,9 +343,9 @@
   // The time half of the absolute ladder, for a list that already knows which
   // day it is showing. Same rendering as `formatTimestamp`, without the date.
   function formatTimeOfDay(timestamp) {
-    if (timestamp === null || timestamp === undefined || timestamp === '') return 'time unavailable';
+    if (timestamp === null || timestamp === undefined || timestamp === '') return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    if (Number.isNaN(d.getTime())) return 'time unavailable';
+    if (Number.isNaN(d.getTime())) return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     const options = { hour: 'numeric', minute: '2-digit' };
     if (window.JournalClock) {
       return window.JournalClock.formatInstant(d, options);
@@ -346,9 +354,9 @@
   }
 
   function formatDuration(seconds) {
-    if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'duration unavailable';
+    if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return window.JournalI18n.render('journal.window.shared.date.format.duration.unavailable');
     const value = Math.round(Math.max(0, Number(seconds)));
-    if (value < 60) return `${value} sec`;
+    if (value < 60) return window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.sec', [['value1', String(value)]]);
     // Stats' hour buckets reach thousands of minutes, so the ladder needs an
     // hours rung or 1,995 minutes reads "1995 min 0 sec". S-3 / G2-B14. A zero
     // remainder is dropped at every rung above seconds, so five minutes reads
@@ -356,11 +364,11 @@
     if (value < 3600) {
       const remainderSeconds = value % 60;
       const minutes = Math.floor(value / 60);
-      return remainderSeconds ? `${minutes} min ${remainderSeconds} sec` : `${minutes} min`;
+      return remainderSeconds ? window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min.value2.sec', [['value1', String(minutes)], ['value2', String(remainderSeconds)]]) : window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min', [['value1', String(minutes)]]);
     }
     const remainderMinutes = Math.floor((value % 3600) / 60);
     const hours = Math.floor(value / 3600);
-    return remainderMinutes ? `${hours} hr ${remainderMinutes} min` : `${hours} hr`;
+    return remainderMinutes ? window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.hr.value2.min', [['value1', String(hours)], ['value2', String(remainderMinutes)]]) : window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.hr', [['value1', String(hours)]]);
   }
 
   // A bare lookup on an object literal reaches Object.prototype, so a lane
@@ -375,11 +383,11 @@
   // G2-43, S-5, and the matching notes in thinking.js and token-card.js).
   // 'confidential processing' is one phrase in both, so the column already
   // reads that way.
-  const PROCESSING_LANES = {spp: 'confidential processing', local: 'local thinking',
-    bundled: 'local thinking', 'byo-cloud': 'your own model', 'byo-endpoint': 'your own model',
+  const PROCESSING_LANES = {spp: window.JournalI18n.render('journal.window.shared.date.format.lane.spp'), local: window.JournalI18n.render('journal.window.shared.date.format.lane.local'),
+    bundled: window.JournalI18n.render('journal.window.shared.date.format.lane.local'), 'byo-cloud': window.JournalI18n.render('journal.window.shared.date.format.lane.byo'), 'byo-endpoint': window.JournalI18n.render('journal.window.shared.date.format.lane.byo'),
     openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google'};
   function processingLane(lane) {
-    return Object.hasOwn(PROCESSING_LANES, lane) ? PROCESSING_LANES[lane] : 'processing';
+    return Object.hasOwn(PROCESSING_LANES, lane) ? PROCESSING_LANES[lane] : window.JournalI18n.render('journal.window.shared.date.format.lane.default');
   }
 
   // A "since ..." sentence needs the day itself. formatDateShort answers
@@ -387,7 +395,20 @@
   // "since" and stop being true while the sentence is still on screen. So this
   // one is absolute, lowercase, and carries the year only when it is not this
   // one (F-15). status_pane.js and health.js each held their own copy of it.
-  const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const SINCE_MONTHS = [
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.jan'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.feb'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.mar'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.apr'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.may'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.jun'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.jul'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.aug'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.sep'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.oct'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.nov'),
+    window.JournalI18n.render('journal.window.shared.date.format.months.since.dec'),
+  ];
   function sinceDay(input) {
     if (input === null || input === undefined || input === '') return '';
     const thisYear = currentJournalYear();

@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_TRUST_HISTORY_SUGGESTED_BY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_HISTORY_SUGGESTED_BY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b410e2b8abf2e9b3a52e455478a52943b961447e4dca56a505240cfecfb9bf9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{agent}"
+    }
+  ]
+}

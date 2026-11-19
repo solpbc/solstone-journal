@@ -1,0 +1,16 @@
+{
+  "description": "Thinking lane early_access in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane early_access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d519af3b5876ed8bf147db4f1876a4d67240ecb6e5d9ff5db28f21ac13fda3c4",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

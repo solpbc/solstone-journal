@@ -11,6 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, runWithJournalCatalog } = require('./journal_catalog_dom.js');
 const {permissionKinds} = require('./agents_contract_dom.js');
 
 const root = process.argv[2] || path.join(__dirname, '..');
@@ -31,7 +32,7 @@ function sourceTable(source, name) {
     if (source[end] === '{') depth++;
     else if (source[end] === '}' && --depth === 0) break;
   }
-  return vm.runInNewContext(`(${source.slice(open, end + 1)})`);
+  return runWithJournalCatalog(`(${source.slice(open, end + 1)})`);
 }
 const TRASH_COPY = sourceTable(script, 'TRASH_COPY');
 const escText = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -39,7 +40,7 @@ const escText = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').repl
 // The shell's real JournalClock, seeded with a zone, for dates on the journal's clock.
 function seededJournalClock(tz) {
   const context = {window: {}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console};
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(fs.readFileSync(path.join(root, 'assets/static/journal_clock.js'), 'utf8'), context);
   context.window.JournalClock.seed({tz, label: ''});
   return context.window.JournalClock;
@@ -217,7 +218,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     querySelectorAll: () => [],
     addEventListener(name, listener) { (view.listeners[name] ||= []).push(listener); },
   };
-  const context = vm.createContext({window, document, navigator, location, URL, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => { throw new Error('browser confirm is forbidden'); }, prompt: () => { throw new Error('browser prompt is forbidden'); }, URLSearchParams, console});
+  const context = journalContext({window, document, navigator, location, URL, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => { throw new Error('browser confirm is forbidden'); }, prompt: () => { throw new Error('browser prompt is forbidden'); }, URLSearchParams, console});
   const hostJs = fs.readFileSync(path.join(root, 'assets/static/journal-web-host.js'), 'utf8');
   const navJs = fs.readFileSync(path.join(root, 'assets/static/external-navigation.js'), 'utf8');
   vm.runInContext(hostJs, context, {filename: 'journal-web-host.js'});
@@ -466,7 +467,7 @@ async function selectLandingCases() {
     assert.ok(p.doc.activeElement === drawn, 'the redraw keeps focus on the new select');
   });
 }
-function has(view, text, why) { assert(view.innerHTML.includes(text), why || `missing: ${text}`); }
+function has(view, text, why) { assert(view.innerHTML.replaceAll('&#39;', "'").includes(text), why || `missing: ${text}`); }
 function lacks(view, text, why) { assert(!view.innerHTML.includes(text), why || `unexpected: ${text}`); }
 async function test(name, body) {
   try { await body(); } catch (error) { error.message = `${name}: ${error.message}`; throw error; }
@@ -640,7 +641,9 @@ async function test(name, body) {
     await test(`your own not listening (${reason})`, async () => {
       const {view} = await boot(baseState(door({enabled: expected.enabled, listening: false, reason})));
       has(view, `<span class="tag ${reason === 'port_in_use' ? 'bad' : expected.tag === 'off' ? '' : 'warn'}">${expected.tag}</span>`);
-      if (expected.text) assert(view.innerHTML.includes(expected.text) || (expected.alt && view.innerHTML.includes(expected.alt)), `missing panel text for ${reason}`);
+      if (expected.text) {
+        has(view, expected.alt || expected.text, `missing panel text for ${reason}`);
+      }
       has(view, `data-action="${expected.action}"`);
       lacks(view, 'set up solstone.me', 'your own must not teach solstone.me');
       for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);

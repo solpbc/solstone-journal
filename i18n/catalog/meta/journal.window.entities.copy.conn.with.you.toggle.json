@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_WITH_YOU_TOGGLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_WITH_YOU_TOGGLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da430e4611a17876178797911b5532e7617bc9348f30092911dae738d557f16c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

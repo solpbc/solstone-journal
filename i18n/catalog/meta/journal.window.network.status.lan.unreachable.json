@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, lan unreachable.",
+  "context": "Network view copy, lan unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "aa1d8b2acdad70a1ab3710d1858e97887af1aab41fb12ada712161c07edbc020",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

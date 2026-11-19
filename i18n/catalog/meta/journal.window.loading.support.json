@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the support journal route loads on first paint.",
+  "context": "Status shown while the support journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "e6c0c47e0e55e5c6f25d15a58c695f34500cb9b6cf5ace0147b9aa289a5d6607",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

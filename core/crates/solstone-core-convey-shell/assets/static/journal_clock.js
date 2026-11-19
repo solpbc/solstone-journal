@@ -288,11 +288,11 @@
 
   function formatInstant(instant, options) {
     if (instant === null || instant === undefined || instant === '') {
-      return 'time unavailable';
+      return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     }
     const d = instant instanceof Date ? instant : new Date(instant);
     if (Number.isNaN(d.getTime())) {
-      return 'time unavailable';
+      return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     }
     const opts = options ? Object.assign({}, options) : {};
     if (_zone) {

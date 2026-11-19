@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance relay unavailable in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance relay unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10295a840d009d5eabd5f69a25c5fd34254eb858965311b69c2a5d99426f0e35",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

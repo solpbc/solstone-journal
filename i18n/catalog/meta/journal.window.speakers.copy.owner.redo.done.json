@@ -1,0 +1,16 @@
+{
+  "description": "Owner redo done in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner redo done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "090fb0d00d301888266202716f4217d97ee9f6f80d5609b227cbd9f9df113d3d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

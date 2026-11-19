@@ -1,0 +1,23 @@
+{
+  "description": "Entity delete copy gone more one in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy gone more one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3af3e4cfff108a3d1fcd9b7985fcbd94412af8a400c90540c56b940d45cf6fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{g}"
+    }
+  ]
+}

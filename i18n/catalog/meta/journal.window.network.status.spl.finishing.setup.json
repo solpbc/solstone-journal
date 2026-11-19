@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, spl finishing setup.",
+  "context": "Network view copy, spl finishing setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 84,
+  "source_revision": "2e7b08a090f98bbdfbc2590a5ee7cba94f2bf9ea7779779503e35580c3def628",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

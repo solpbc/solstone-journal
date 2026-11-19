@@ -1,0 +1,16 @@
+{
+  "description": "Text in the journal's speakers view.",
+  "context": "Journal window, speakers view. Text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c790bc7631fea119b6097f9a4e59953e3537687de35939cb879f4bb8de41aa9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

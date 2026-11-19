@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach skip label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach skip label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4867417f81bd5fe9f4e25f0d533f88cda603852edb90bc4fa990811d9ede9a5b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

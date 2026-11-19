@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_MERGE_DONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_MERGE_DONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b947f5996a070b92f25f42d8d68fdb43d61167075a5462e24509551971940462",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

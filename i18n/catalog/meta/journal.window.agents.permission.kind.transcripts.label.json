@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for transcripts in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for transcripts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "661e5bbed08310798815b807e51189de24d40c26b82a979a9f1ff005e6eba0c8",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

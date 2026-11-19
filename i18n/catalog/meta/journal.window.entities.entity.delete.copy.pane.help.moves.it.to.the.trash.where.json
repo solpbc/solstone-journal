@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy pane help in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy pane help.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5ef3851f9deaeee43d457d250faefab9bf995c86a0416ff82d47b401a8c1b57",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

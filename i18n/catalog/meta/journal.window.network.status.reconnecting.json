@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reconnecting.",
+  "context": "Network view copy, reconnecting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "02d1f60688643f0667e9ca206a7b4b5af31e8086f0a7633e8a80d9a599e95968",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

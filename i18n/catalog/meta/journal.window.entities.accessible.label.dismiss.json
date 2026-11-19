@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's entities view.",
+  "context": "Journal window, entities view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9dbaf882187a75810fa21e17d2e888e82f540e910cf17ef6b8524ba577ad9149",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

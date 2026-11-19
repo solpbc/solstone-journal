@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the backup journal route loads on first paint.",
+  "context": "Status shown while the backup journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "bc49822f5b5962eae7075400755ba1f9608f14b7e2a9f605f8d8b30a83b89e20",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

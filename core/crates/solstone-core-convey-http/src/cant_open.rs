@@ -4,22 +4,32 @@
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 
+use crate::window_catalog::{ENGLISH, escape_html, html, language_tag};
+
 pub fn cant_open_response(status: StatusCode, reason: &str) -> Response {
+    cant_open_response_for(ENGLISH, status, reason)
+}
+
+pub fn cant_open_response_for(locale: &str, status: StatusCode, reason: &str) -> Response {
+    let lang = language_tag(locale);
+    let heading = html(locale, "journal.window.link.heading");
+    let back = html(locale, "journal.window.link.back");
+    let reason = escape_html(reason);
     let script = include_str!("../../solstone-core-convey-shell/assets/static/source_link_back.js");
     let body = format!(
         r#"<!doctype html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>this source can't be opened</title>
+<title>{heading}</title>
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/tokens-dark.css">
 </head>
 <body>
-<h1>this source can't be opened</h1>
+<h1>{heading}</h1>
 <p>{reason}</p>
-<p><a href="/app/home/" id="back-link">← back</a></p>
+<p><a href="/app/home/" id="back-link">{back}</a></p>
 <script>
 {script}
 </script>
@@ -50,29 +60,32 @@ pub enum LinkPageAction<'a> {
 /// The reason is the heading and takes focus; one action leads back. Nothing
 /// about the place is shown: a hidden place and an absent one read the same.
 pub fn link_cant_open_response(
+    locale: &str,
     status: StatusCode,
     reason: &str,
     supporting: Option<&str>,
     action: LinkPageAction<'_>,
 ) -> Response {
+    let lang = language_tag(locale);
+    let reason = escape_html(reason);
     let supporting = supporting
-        .map(|text| format!("<p>{text}</p>\n"))
+        .map(|text| format!("<p>{}</p>\n", escape_html(text)))
         .unwrap_or_default();
     let (href, label) = match action {
-        LinkPageAction::OpenJournal => ("/".to_owned(), "open your journal"),
+        LinkPageAction::OpenJournal => (
+            "/".to_owned(),
+            html(locale, "journal.window.link.open.journal"),
+        ),
         // Escaped here, whatever the caller checked: this is the one value on
         // the page that isn't a fixed string.
         LinkPageAction::TryAgain(href) => (
-            href.replace('&', "&amp;")
-                .replace('"', "&quot;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;"),
-            "try again",
+            escape_html(href),
+            html(locale, "journal.window.link.try.again"),
         ),
     };
     let body = format!(
         r#"<!doctype html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -102,6 +115,7 @@ mod tests {
     #[tokio::test]
     async fn the_try_again_address_is_escaped_whatever_it_holds() {
         let response = link_cant_open_response(
+            ENGLISH,
             StatusCode::INTERNAL_SERVER_ERROR,
             "your journal couldn't check this source.",
             None,

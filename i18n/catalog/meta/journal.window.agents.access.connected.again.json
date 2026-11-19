@@ -1,0 +1,23 @@
+{
+  "description": "Reconnect outcome in the journal's agents view.",
+  "context": "Journal window, agents view. Reconnect outcome.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "357eed8b26c0c67179dd94f726e9d5c6a010c37b7b429d710653ac0a53375eca",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

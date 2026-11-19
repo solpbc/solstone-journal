@@ -1,0 +1,16 @@
+{
+  "description": "Anchor has voice in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Anchor has voice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7e4d59c035e9fcbe63767bf5f13b7f2cc03fc8318db18b1e81e646bb623fd50",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

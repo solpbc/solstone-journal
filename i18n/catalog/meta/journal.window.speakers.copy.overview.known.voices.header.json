@@ -1,0 +1,16 @@
+{
+  "description": "Overview known voices header in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview known voices header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42522ef4586513d2ea1432e9ef5968a0f43619d0c3cb5c0bb0aa2b05fdc0ce1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

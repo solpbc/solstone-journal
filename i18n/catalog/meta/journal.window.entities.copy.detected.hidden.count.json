@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_DETECTED_HIDDEN_COUNT in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_HIDDEN_COUNT.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4ce27cc702d4e14b1cae0f96a573b835b61fa8f3b788fb0e6b9d34d272d725c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

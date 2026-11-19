@@ -1,0 +1,16 @@
+{
+  "description": "Connection domain in the journal's agents view.",
+  "context": "Journal window, agents view. Connection domain.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "796e593f3049908b89e4d514fd4b68cb6a73ffd0e45a4924895ff3a97d3099bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

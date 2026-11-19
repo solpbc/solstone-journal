@@ -1,0 +1,16 @@
+{
+  "description": "Label in the journal's shared.websocket view.",
+  "context": "Journal window, shared.websocket view. Label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ead46129065932f37b26f1879e3457f154856ae229d188351e03d018229264b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

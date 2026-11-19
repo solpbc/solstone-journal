@@ -1,0 +1,16 @@
+{
+  "description": "Owner redo save label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner redo save label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a2e91de5aaba9326c7a7eec4f38d932a0f9eb5cd692cfbefb77272357cbd0db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

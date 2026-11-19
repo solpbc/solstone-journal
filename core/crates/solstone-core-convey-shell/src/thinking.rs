@@ -17,6 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
@@ -30,16 +31,13 @@ use solstone_core_backup_web::require_https_portal_url;
 use solstone_core_brain::derive_active_brain_lane;
 
 use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
+use crate::window_catalog::{response_locale, text};
 use crate::{JournalRoot, asset_response, not_found_response};
 
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
 /// The page shows only `error`, so the generic save failure carries the next
 /// step itself.
-const SETTINGS_NOT_SAVED: &str = "those settings couldn't be saved. try again, and if it keeps happening, check the health dashboard.";
-const GENERIC_THINKING_ERROR: &str =
-    "something went wrong - try again, and if it persists, check the health dashboard";
-const NOT_VERIFIED_GUIDANCE: &str =
-    "Hardware attestation is not yet verified. Thinking stays blocked until verification finishes.";
+const NOT_VERIFIED_GUIDANCE: &str = "journal.window.handoff.spp.not.verified";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PollOutcome {
@@ -545,14 +543,15 @@ pub(crate) fn router_with_roots(
 async fn shell() -> Response {
     asset_response("/static/shell.html")
 }
-async fn shell_redirect() -> Response {
+async fn shell_redirect(headers: axum::http::HeaderMap) -> Response {
+    let locale = crate::window_catalog::request_locale(&headers);
     let location = "/app/thinking/";
     Response::builder()
         .status(StatusCode::PERMANENT_REDIRECT)
         .header(header::LOCATION, location)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(format!(
-            "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
+        .body(Body::from(crate::session_gate::redirect_body(
+            location, locale,
         )))
         .expect("redirect builds")
 }
@@ -585,7 +584,9 @@ async fn state(
     Extension(access_cache): Extension<Arc<std::sync::Mutex<AccessCache>>>,
     override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
     access_client: Option<Extension<AccessClientHandle>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     match config(&journal.0) {
         Ok(config) => {
@@ -613,14 +614,15 @@ async fn state(
                 ""
             };
             let mut state_json = json!({
-                "providers": solstone_core_thinking::providers::payload(
+                "providers": solstone_core_thinking::providers::payload_in(
                     &journal.0,
                     &config,
                     solstone_core_thinking::local::default_model(),
-                    operations.operation(SERVICE_SPP),
+                    crate::window_catalog::localize_handoff(operations.operation(SERVICE_SPP), locale),
+            locale,
                 ),
                 "keys": solstone_core_thinking::providers::keys(&config),
-                "copy": solstone_core_thinking_copy::thinking_copy_payload(),
+                "copy": solstone_core_thinking_copy::localized_thinking_copy_payload(locale),
                 "saved_lane": saved_lane,
                 "host_capabilities": solstone_core_system::owner_host::capabilities(),
                 "local_capability": {
@@ -666,10 +668,12 @@ async fn state(
     }
 }
 async fn providers(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     let Some(model) =
         solstone_core_thinking::local::accepted_model(query.get("local_model").map(String::as_str))
@@ -682,11 +686,12 @@ async fn providers(
         ));
     };
     match config(&journal.0) {
-        Ok(config) => json_response(solstone_core_thinking::providers::payload(
+        Ok(config) => json_response(solstone_core_thinking::providers::payload_in(
             &journal.0,
             &config,
             model,
-            operations.operation(SERVICE_SPP),
+            crate::window_catalog::localize_handoff(operations.operation(SERVICE_SPP), locale),
+            locale,
         )),
         Err(response) => *response,
     }
@@ -699,15 +704,18 @@ async fn keys(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     }
 }
 async fn local_status(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     match config(&journal.0) {
         Ok(config) => json_response(solstone_core_thinking::providers::local_status_only(
             &journal.0,
             &config,
-            operations.operation(SERVICE_SPP),
+            crate::window_catalog::localize_handoff(operations.operation(SERVICE_SPP), locale),
+            locale,
         )),
         Err(response) => *response,
     }
@@ -743,10 +751,12 @@ async fn runtime(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
 
 async fn retry_local_runtime(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     const EXPECTED_FIELDS: [&str; 3] = [
         "health_revision",
@@ -773,7 +783,13 @@ async fn retry_local_runtime(
     let Some((Some(health_revision), Some(retry_revision), Some(desired_fingerprint_sha256))) =
         fields
     else {
-        return invalid_request("runtime retry requires the current recovery state");
+        return invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.runtime.retry.requires.the.current.recovery",
+            ),
+        );
     };
     match solstone_core_thinking::local::request_runtime_retry(
         &journal.0,
@@ -788,15 +804,24 @@ async fn retry_local_runtime(
             | solstone_core_thinking::local::RuntimeRetryError::DesiredFingerprintConflict
             | solstone_core_thinking::local::RuntimeRetryError::PhaseNotFailed
             | solstone_core_thinking::local::RuntimeRetryError::RetryAlreadyRequested,
-        ) => invalid_state("local status changed; check again"),
+        ) => invalid_state(text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.local.status.changed.check.again",
+        )),
         Err(
             solstone_core_thinking::local::RuntimeRetryError::Malformed(_)
             | solstone_core_thinking::local::RuntimeRetryError::Unavailable(_),
-        ) => thinking_failure_with_detail("local status can't be changed right now; check again"),
+        ) => thinking_failure_with_detail(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.local.status.can.t.be.changed",
+            ),
+        ),
         Err(
             solstone_core_thinking::local::RuntimeRetryError::InvalidProvider(_)
             | solstone_core_thinking::local::RuntimeRetryError::Random,
-        ) => thinking_failure(),
+        ) => thinking_failure(locale),
     }
 }
 
@@ -843,10 +868,12 @@ pub(crate) mod bootstrap_capability_test {
 }
 
 async fn start_local_bootstrap(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     admitted_root: Option<Extension<Arc<solstone_core_journal_io::JournalRoot>>>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     let Some(model) =
         solstone_core_thinking::local::accepted_model(query.get("model").map(String::as_str))
@@ -868,8 +895,8 @@ async fn start_local_bootstrap(
         let root = journal.0.clone();
         match tokio::task::spawn_blocking(move || crate::thinking_install::reconcile(&root)).await {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => return thinking_failure_with_detail(error),
-            Err(_) => return thinking_failure(),
+            Ok(Err(error)) => return thinking_failure_with_detail(locale, error),
+            Err(_) => return thinking_failure(locale),
         }
     }
     let config = match config(&journal.0) {
@@ -888,12 +915,19 @@ async fn start_local_bootstrap(
             StatusCode::CONFLICT,
             json!({"install_state":state,"reason_code":"install_busy"}),
         ),
-        solstone_core_thinking::local::BootstrapResponse::ByoEndpointActive => {
-            invalid_request("BYO local endpoint is active")
-        }
+        solstone_core_thinking::local::BootstrapResponse::ByoEndpointActive => invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.byo.local.endpoint.is.active",
+            ),
+        ),
         solstone_core_thinking::local::BootstrapResponse::HostIneligible(reason) => envelope(
             "host_ineligible",
-            "local thinking can't start on this device.",
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.local.thinking.can.t.start.on",
+            ),
             reason,
             StatusCode::BAD_REQUEST,
         ),
@@ -917,19 +951,23 @@ async fn start_local_bootstrap(
             .await
             {
                 Ok(Ok(payload)) => json_response(payload),
-                Ok(Err(error)) => thinking_failure_with_detail(error),
-                Err(_) => thinking_failure(),
+                Ok(Err(error)) => thinking_failure_with_detail(locale, error),
+                Err(_) => thinking_failure(locale),
             }
         }
-        solstone_core_thinking::local::BootstrapResponse::Unavailable(_) => thinking_failure(),
+        solstone_core_thinking::local::BootstrapResponse::Unavailable(_) => {
+            thinking_failure(locale)
+        }
     }
 }
 
 async fn cancel_local_bootstrap(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Query(query): Query<HashMap<String, String>>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     let attempt_id = query.get("attempt_id").cloned().or_else(|| {
         request_object(&body).and_then(|o| {
@@ -939,50 +977,66 @@ async fn cancel_local_bootstrap(
         })
     });
     let Some(attempt_id) = attempt_id.filter(|id| !id.is_empty()) else {
-        return invalid_request("attempt_id is required");
+        return invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.attempt.id.is.required",
+            ),
+        );
     };
     let root = journal.0.clone();
     match tokio::task::spawn_blocking(move || crate::thinking_install::cancel(&root, &attempt_id))
         .await
     {
         Ok(Ok(status)) => json_response(json!(status)),
-        Ok(Err(err)) => thinking_failure_with_detail(err),
-        Err(_) => thinking_failure(),
+        Ok(Err(err)) => thinking_failure_with_detail(locale, err),
+        Err(_) => thinking_failure(locale),
     }
 }
 
-async fn check_brain(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+async fn check_brain(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     let config = match config(&journal.0) {
         Ok(config) => config,
         Err(response) => return *response,
     };
     let sent = send_brain_refresh_request(&journal.0);
-    json_response(solstone_core_thinking::brain::check_response(
-        &journal.0, &config, sent,
+    json_response(solstone_core_thinking::brain::check_response_in(
+        &journal.0, &config, sent, locale,
     ))
 }
 
 async fn confidential_enable(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(admitted_root): Extension<Arc<solstone_core_journal_io::JournalRoot>>,
     handoffs: Option<Extension<Arc<ServiceHandoffs>>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Extension(runtime): Extension<ConfidentialRuntime>,
     override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let handoffs =
         ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
-    if let Some(refusal) =
-        not_offered_refusal(solstone_core_thinking::confidential::offered_on_this_platform())
-    {
+    if let Some(refusal) = not_offered_refusal(
+        locale,
+        solstone_core_thinking::confidential::offered_on_this_platform(),
+    ) {
         return refusal;
     }
     let config = match handoffs.config() {
         Ok(config) => config.config.unwrap_or_default(),
-        Err(_) => return confidential_enable_failed(),
+        Err(_) => return confidential_enable_failed(locale),
     };
     if confidential_configured(&config) {
-        return invalid_state("confidential processing is already set up.");
+        return invalid_state(text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.is.already.set.up",
+        ));
     }
     let (portal_base_url, poll, before_attempt, now, sleep) = match override_runtime {
         Some(Extension(value)) => (
@@ -1057,8 +1111,10 @@ async fn confidential_enable(
         })
         .await;
     let handle = match start {
-        Err(crate::service_handoffs::StartRefused::Busy) => return service_busy(),
-        Err(crate::service_handoffs::StartRefused::Stopped) => return confidential_enable_failed(),
+        Err(crate::service_handoffs::StartRefused::Busy) => return service_busy(locale),
+        Err(crate::service_handoffs::StartRefused::Stopped) => {
+            return confidential_enable_failed(locale);
+        }
         Ok(handle) => handle,
     };
     let prepared = result.await;
@@ -1070,23 +1126,25 @@ async fn confidential_enable(
     match prepared {
         Ok(Ok(operation)) => json_response_with_status(
             StatusCode::ACCEPTED,
-            json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
+            json!({"success":true,"service":SERVICE_SPP,"operation":crate::window_catalog::localize_handoff(remap_operation(operation), locale)}),
         ),
-        Ok(Err(true)) => thinking_config_busy_response(),
+        Ok(Err(true)) => thinking_config_busy_response(locale),
         _ => match reply_operations.operation_for_handle(SERVICE_SPP, handle) {
             Some(operation) if operation["phase"] == "revoked" => json_response_with_status(
                 StatusCode::ACCEPTED,
-                json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
+                json!({"success":true,"service":SERVICE_SPP,"operation":crate::window_catalog::localize_handoff(remap_operation(operation), locale)}),
             ),
-            _ => confidential_enable_failed(),
+            _ => confidential_enable_failed(locale),
         },
     }
 }
 
 async fn confidential_disable(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
 ) -> Response {
+    let locale = response_locale(locale);
     operations.cancel(SERVICE_SPP, handoff_result(HandoffCode::Revoked));
     match disable_confidential(&journal.0) {
         Ok(outcome) => json_response(json!({
@@ -1098,36 +1156,51 @@ async fn confidential_disable(
             },
         })),
         Err(solstone_core_thinking::MutationError::ConfigLock(_)) => {
-            thinking_config_busy_response()
+            thinking_config_busy_response(locale)
         }
         Err(_) => envelope(
             "settings_operation_failed",
-            "confidential processing couldn't be turned off. try again, and if it keeps happening, check the health dashboard.",
-            GENERIC_THINKING_ERROR,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.couldn.t.be.turned",
+            ),
+            text(locale, "journal.window.thinking.error.generic"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
-async fn confidential_recheck(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+async fn confidential_recheck(
+    locale: Option<Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = response_locale(locale);
     let journal = journal.as_ref();
     let config = match config(&journal.0) {
         Ok(config) => config,
         Err(response) => return *response,
     };
     if !solstone_core_thinking::confidential::confidential_enabled(&config) {
-        return invalid_state("confidential processing is not active.");
+        return invalid_state(text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.is.not.active",
+        ));
     }
     let sent = send_brain_refresh_request(&journal.0);
-    json_response(solstone_core_thinking::brain::check_response(
-        &journal.0, &config, sent,
+    json_response(solstone_core_thinking::brain::check_response_in(
+        &journal.0, &config, sent, locale,
     ))
 }
 
 /// With no hardware check on this platform, turning confidential processing on
 /// is refused before any consent link is made.
-fn not_offered_refusal(offered: bool) -> Option<Response> {
-    (!offered).then(|| invalid_state(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM))
+fn not_offered_refusal(locale: &str, offered: bool) -> Option<Response> {
+    (!offered).then(|| {
+        invalid_state(text(
+            locale,
+            "journal.window.thinking.error.confidential.platform",
+        ))
+    })
 }
 
 fn confidential_configured(config: &serde_json::Map<String, Value>) -> bool {
@@ -1326,11 +1399,17 @@ fn remap_operation(mut operation: Value) -> Value {
     operation
 }
 
-fn service_busy() -> Response {
+fn service_busy(locale: &str) -> Response {
     envelope(
         "service_busy",
-        "confidential processing is already being turned on. finish turning it on in the services portal.",
-        "operation already running",
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.is.already.being.turned",
+        ),
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.operation.already.running",
+        ),
         StatusCode::SERVICE_UNAVAILABLE,
     )
 }
@@ -1443,28 +1522,44 @@ async fn validate_keys(Extension(journal): Extension<Arc<JournalRoot>>) -> Respo
     }
 }
 
-async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+async fn save_key(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let env_var = request
         .get("env_var")
         .or_else(|| request.get("key"))
         .and_then(Value::as_str);
     let Some(env_var) = env_var.filter(|value| key_provider(value).is_some()) else {
-        return invalid_config(format!(
-            "Invalid env var: {}. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-            request
-                .get("env_var")
-                .or_else(|| request.get("key"))
-                .map(json_display)
-                .unwrap_or_else(|| "None".to_owned())
-        ));
+        return invalid_config(
+            locale,
+            format!(
+                "Invalid env var: {}. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
+                request
+                    .get("env_var")
+                    .or_else(|| request.get("key"))
+                    .map(json_display)
+                    .unwrap_or_else(|| "None".to_owned())
+            ),
+        );
     };
     let value = match request.get("value") {
         None => "",
         Some(Value::String(value)) => value.as_str(),
-        Some(_) => return invalid_request("value must be a string"),
+        Some(_) => {
+            return invalid_request(
+                locale,
+                text(
+                    locale,
+                    "journal.window.thinking.thinking.response.error.or.detail.value.must.be.a.string",
+                ),
+            );
+        }
     };
     let value = value.trim();
     let provider = key_provider(env_var).expect("checked provider");
@@ -1472,12 +1567,12 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
         Ok(root) => Arc::new(root),
         Err(error) => {
             log::warn!("thinking key save refused the journal root: {error}");
-            return mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+            return mutation_error(locale, solstone_core_thinking::MutationError::StaleProbe);
         }
     };
     if let Err(error) = admitted.revalidate_canonical_binding() {
         log::warn!("thinking key save refused the journal root: {error}");
-        return mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+        return mutation_error(locale, solstone_core_thinking::MutationError::StaleProbe);
     }
     let identity = admitted.identity();
     let (pre_probe_key, pre_probe_entry) = match solstone_core_thinking::read_config(&journal.0) {
@@ -1500,16 +1595,16 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
             (key, entry)
         }
         Err(error) => {
-            return mutation_error(solstone_core_thinking::MutationError::Read(error));
+            return mutation_error(locale, solstone_core_thinking::MutationError::Read(error));
         }
     };
     if let Err(error) = admitted.revalidate_canonical_binding() {
         log::warn!("thinking key save refused the journal root: {error}");
-        return mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+        return mutation_error(locale, solstone_core_thinking::MutationError::StaleProbe);
     }
     if admitted.identity() != identity {
         log::warn!("thinking key save refused a replaced journal root");
-        return mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+        return mutation_error(locale, solstone_core_thinking::MutationError::StaleProbe);
     }
     let validation_witness = if value.is_empty() {
         None
@@ -1525,11 +1620,11 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
             Ok(witness) => Some(witness),
             Err(error) => {
                 log::warn!("thinking key validation lost its local authority: {error}");
-                return mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+                return mutation_error(locale, solstone_core_thinking::MutationError::StaleProbe);
             }
         }
     };
-    let validator = match one_shot_validator(&journal.0) {
+    let validator = match one_shot_validator(locale, &journal.0) {
         Ok(validator) => validator,
         Err(response) => return *response,
     };
@@ -1557,50 +1652,74 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
         validation_witness,
     ) {
         Ok(value) => json_response(value),
-        Err(error) => mutation_error(error),
+        Err(error) => mutation_error(locale, error),
     }
 }
 
-async fn persist_key_validations(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    let validator = match one_shot_validator(&journal.0) {
+async fn persist_key_validations(
+    locale: Option<Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = response_locale(locale);
+    let validator = match one_shot_validator(locale, &journal.0) {
         Ok(validator) => validator,
-        Err(_) => return key_check_failed(),
+        Err(_) => return key_check_failed(locale),
     };
     match solstone_core_thinking::providers::persist_key_validations(&journal.0, &validator) {
         Ok(value) => json_response(value),
         Err(
             error @ (solstone_core_thinking::MutationError::ConfigLock(_)
             | solstone_core_thinking::MutationError::ActionLog(_)),
-        ) => mutation_error(error),
-        Err(_) => key_check_failed(),
+        ) => mutation_error(locale, error),
+        Err(_) => key_check_failed(locale),
     }
 }
 
-async fn check_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+async fn check_key(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(env_var) = request
         .get("env_var")
         .and_then(Value::as_str)
         .filter(|value| key_provider(value).is_some())
     else {
-        return invalid_config(format!(
-            "Invalid env var: {}. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-            request
-                .get("env_var")
-                .map(json_display)
-                .unwrap_or_else(|| "None".to_owned())
-        ));
+        return invalid_config(
+            locale,
+            format!(
+                "Invalid env var: {}. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
+                request
+                    .get("env_var")
+                    .map(json_display)
+                    .unwrap_or_else(|| "None".to_owned())
+            ),
+        );
     };
     let Some(value) = request.get("value").unwrap_or(&Value::Null).as_str() else {
-        return invalid_request("value must be a string");
+        return invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.value.must.be.a.string",
+            ),
+        );
     };
     let value = value.trim();
     if value.is_empty() {
-        return invalid_request("value must not be empty");
+        return invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.value.must.not.be.empty",
+            ),
+        );
     }
-    let validator = match one_shot_validator(&journal.0) {
+    let validator = match one_shot_validator(locale, &journal.0) {
         Ok(value) => value,
         Err(response) => return *response,
     };
@@ -1614,22 +1733,30 @@ async fn check_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes)
     )
 }
 
-async fn validate_model(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+async fn validate_model(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body).filter(|value| !value.is_empty()) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(provider) = request
         .get("provider")
         .and_then(Value::as_str)
         .filter(|value| matches!(*value, "anthropic" | "google" | "openai"))
     else {
-        return invalid_request(format!(
-            "Invalid provider: {}. Must be one of: anthropic, google, openai",
-            request
-                .get("provider")
-                .map(json_display)
-                .unwrap_or_else(|| "None".to_owned())
-        ));
+        return invalid_request(
+            locale,
+            format!(
+                "Invalid provider: {}. Must be one of: anthropic, google, openai",
+                request
+                    .get("provider")
+                    .map(json_display)
+                    .unwrap_or_else(|| "None".to_owned())
+            ),
+        );
     };
     let Some(model) = request
         .get("model")
@@ -1637,11 +1764,17 @@ async fn validate_model(Extension(journal): Extension<Arc<JournalRoot>>, body: B
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return invalid_request("model must be a non-empty string.");
+        return invalid_request(
+            locale,
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.model.must.be.a.non.empty",
+            ),
+        );
     };
     let config = match solstone_core_thinking::read_config(&journal.0) {
         Ok(value) => value,
-        Err(_error) => return thinking_failure(),
+        Err(_error) => return thinking_failure(locale),
     };
     let env_var = match provider {
         "google" => "GOOGLE_API_KEY",
@@ -1663,7 +1796,7 @@ async fn validate_model(Extension(journal): Extension<Arc<JournalRoot>>, body: B
             identity,
         );
     };
-    let validator = match one_shot_validator(&journal.0) {
+    let validator = match one_shot_validator(locale, &journal.0) {
         Ok(value) => value,
         Err(response) => return *response,
     };
@@ -1680,10 +1813,12 @@ async fn validate_model(Extension(journal): Extension<Arc<JournalRoot>>, body: B
 async fn update_providers(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body).filter(|request| !request.is_empty()) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let unknown: Vec<_> = request
         .keys()
@@ -1696,28 +1831,37 @@ async fn update_providers(
         .cloned()
         .collect();
     if !unknown.is_empty() {
-        return invalid_config(format!("Unknown provider fields: {}", unknown.join(", ")));
+        return invalid_config(
+            locale,
+            format!("Unknown provider fields: {}", unknown.join(", ")),
+        );
     }
     let Some(lane_value) = request.get("lane") else {
-        return missing_field("lane");
+        return missing_field(locale, "lane");
     };
     let Some(lane) = lane_value.as_str() else {
-        return invalid_config(format!(
-            "Invalid lane: {}. Must be one of: byo, confidential, local",
-            json_display(lane_value)
-        ));
+        return invalid_config(
+            locale,
+            format!(
+                "Invalid lane: {}. Must be one of: byo, confidential, local",
+                json_display(lane_value)
+            ),
+        );
     };
     let update = match solstone_core_thinking::providers::resolve_provider_update(
         &journal.0, lane, &request,
     ) {
         Ok(update) => update,
         Err(solstone_core_thinking::providers::ProviderRequestError::InvalidInput(detail)) => {
-            return invalid_config(detail);
+            return invalid_config(locale, detail);
         }
         Err(solstone_core_thinking::providers::ProviderRequestError::ModelMissing(detail)) => {
             return envelope(
                 "invalid_config_value",
-                "choose which model to use with your key first.",
+                text(
+                    locale,
+                    "journal.window.thinking.thinking.response.error.or.detail.choose.which.model.to.use.with",
+                ),
                 detail,
                 StatusCode::BAD_REQUEST,
             );
@@ -1726,7 +1870,7 @@ async fn update_providers(
             return invalid_state(detail);
         }
         Err(solstone_core_thinking::providers::ProviderRequestError::ConfigUnreadable(_)) => {
-            return thinking_failure();
+            return thinking_failure(locale);
         }
         Err(solstone_core_thinking::providers::ProviderRequestError::Reason {
             reason_code,
@@ -1734,20 +1878,24 @@ async fn update_providers(
         }) => {
             return envelope(
                 reason_code,
-                "that setting couldn't be saved because one value was invalid.",
+                text(
+                    locale,
+                    "journal.window.thinking.thinking.response.error.or.detail.that.setting.couldn.t.be.saved",
+                ),
                 detail,
                 StatusCode::BAD_REQUEST,
             );
         }
     };
-    match solstone_core_thinking::providers::update_providers(
+    match solstone_core_thinking::providers::update_providers_in(
         &journal.0,
         update,
-        operations.operation(SERVICE_SPP),
+        crate::window_catalog::localize_handoff(operations.operation(SERVICE_SPP), locale),
+        locale,
     ) {
         Ok(value) => json_response(value),
         Err(solstone_core_thinking::providers::ProviderUpdateError::Mutation(error)) => {
-            mutation_error(error)
+            mutation_error(locale, error)
         }
         Err(solstone_core_thinking::providers::ProviderUpdateError::Confidential(detail)) => {
             invalid_state(detail)
@@ -1755,9 +1903,14 @@ async fn update_providers(
     }
 }
 
-async fn update_endpoint(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+async fn update_endpoint(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let Some(request) = request_object(&body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(endpoint_url) = request
         .get("endpoint_url")
@@ -1765,13 +1918,19 @@ async fn update_endpoint(Extension(journal): Extension<Arc<JournalRoot>>, body: 
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return missing_field("endpoint_url");
+        return missing_field(locale, "endpoint_url");
     };
     let Some(normalized) = normalize_endpoint(endpoint_url) else {
         return envelope(
             "invalid_config_value",
-            "that URL needs to start with http:// or https:// and name a host.",
-            "endpoint_url must be an http or https URL with a host",
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.that.url.needs.to.start.with",
+            ),
+            text(
+                locale,
+                "journal.window.thinking.thinking.response.error.or.detail.endpoint.url.must.be.an.http",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -1781,33 +1940,45 @@ async fn update_endpoint(Extension(journal): Extension<Arc<JournalRoot>>, body: 
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return missing_field("served_model_id");
+        return missing_field(locale, "served_model_id");
     };
     let credential = match request.get("credential") {
         None => None,
         Some(Value::Null) => Some(None),
         Some(Value::String(value)) => Some(Some(value.clone())),
-        Some(_) => return invalid_request("credential"),
+        Some(_) => return invalid_request(locale, "credential"),
     };
-    endpoint_result(solstone_core_thinking::local::update_endpoint(
-        &journal.0,
-        normalized,
-        served_model_id.to_owned(),
-        credential,
-    ))
+    endpoint_result(
+        locale,
+        solstone_core_thinking::local::update_endpoint(
+            &journal.0,
+            normalized,
+            served_model_id.to_owned(),
+            credential,
+        ),
+    )
 }
 
-async fn clear_endpoint(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    endpoint_result(solstone_core_thinking::local::clear_endpoint(&journal.0))
+async fn clear_endpoint(
+    locale: Option<Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = response_locale(locale);
+    endpoint_result(
+        locale,
+        solstone_core_thinking::local::clear_endpoint(&journal.0),
+    )
 }
 
 async fn check_local_endpoint_image(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     check_override: Option<Extension<EndpointCheckOverride>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let config = match solstone_core_thinking::read_config(&journal.0) {
         Ok(value) => value,
-        Err(_error) => return thinking_failure(),
+        Err(_error) => return thinking_failure(locale),
     };
     let resolution = solstone_core_local::endpoint::resolve_local_endpoint(&config);
     let own_endpoint = matches!(
@@ -1839,12 +2010,13 @@ async fn check_local_endpoint_image(
 }
 
 fn endpoint_result(
+    locale: &str,
     result: Result<Value, solstone_core_thinking::local::EndpointMutationError>,
 ) -> Response {
     match result {
         Ok(value) => json_response(value),
         Err(solstone_core_thinking::local::EndpointMutationError::Mutation(error)) => {
-            mutation_error(error)
+            mutation_error(locale, error)
         }
         Err(solstone_core_thinking::local::EndpointMutationError::Confidential(detail)) => {
             invalid_state(detail)
@@ -1866,13 +2038,15 @@ async fn endpoint_get_not_allowed() -> Response {
 
 async fn update_generators(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if body.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     let Some(request) = request_object(&body).filter(|request| !request.is_empty()) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     for (key, update) in &request {
         let Some(update) = update.as_object() else {
@@ -1880,7 +2054,7 @@ async fn update_generators(
         };
         for field in ["disabled"] {
             if update.contains_key(field) && !update[field].is_boolean() {
-                return invalid_config(format!("{field} must be boolean for {key}"));
+                return invalid_config(locale, format!("{field} must be boolean for {key}"));
             }
         }
     }
@@ -1888,11 +2062,11 @@ async fn update_generators(
         Ok(()) => match solstone_core_thinking::read_config(&journal.0) {
             Ok(config) => match solstone_core_thinking::generators::generators(&config) {
                 Ok(value) => json_response(value),
-                Err(_error) => thinking_failure(),
+                Err(_error) => thinking_failure(locale),
             },
-            Err(_error) => thinking_failure(),
+            Err(_error) => thinking_failure(locale),
         },
-        Err(error) => mutation_error(error),
+        Err(error) => mutation_error(locale, error),
     }
 }
 
@@ -2005,17 +2179,19 @@ fn key_provider(env_var: &str) -> Option<&'static str> {
 }
 
 fn one_shot_validator(
+    locale: &str,
     journal: &Path,
 ) -> Result<solstone_core_thinking::providers::OneShotKeyValidator, Box<Response>> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
+        let _ = locale;
         Ok(solstone_core_thinking::providers::OneShotKeyValidator::embedded(journal.to_path_buf()))
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let _ = journal;
         solstone_core_thinking::providers::OneShotKeyValidator::sibling()
-            .map_err(|_error| Box::new(thinking_failure()))
+            .map_err(|_error| Box::new(thinking_failure(locale)))
     }
 }
 
@@ -2072,41 +2248,56 @@ fn normalize_endpoint(value: &str) -> Option<String> {
 
 fn envelope(
     reason: &str,
-    message: &str,
+    message: impl Into<String>,
     detail: impl Into<String>,
     status: StatusCode,
 ) -> Response {
     error_envelope(reason, message, detail, status).into_response()
 }
 
-fn missing_request_body() -> Response {
+fn missing_request_body(locale: &str) -> Response {
     envelope(
         "missing_request_body",
-        "that request had no data in it.",
-        "No data provided",
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.that.request.had.no.data.in",
+        ),
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.no.data.provided",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
-fn missing_field(detail: impl Into<String>) -> Response {
+fn missing_field(locale: &str, detail: impl Into<String>) -> Response {
     envelope(
         "missing_required_field",
-        "a required field is missing.",
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.a.required.field.is.missing",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid_config(detail: impl Into<String>) -> Response {
+fn invalid_config(locale: &str, detail: impl Into<String>) -> Response {
     envelope(
         "invalid_config_value",
-        "that setting couldn't be saved because one value was invalid.",
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.that.setting.couldn.t.be.saved",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid_request(detail: impl Into<String>) -> Response {
+fn invalid_request(locale: &str, detail: impl Into<String>) -> Response {
     envelope(
         "invalid_request_value",
-        "one of those values couldn't be used.",
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.one.of.those.values.couldn.t",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -2125,61 +2316,75 @@ fn invalid_state(refusal: impl Into<String>) -> Response {
 }
 /// Turning confidential processing on failed before the handoff started. The
 /// owner pressed "turn on", so the refusal names that, not a save.
-fn confidential_enable_failed() -> Response {
+fn confidential_enable_failed(locale: &str) -> Response {
     envelope(
         "settings_operation_failed",
-        "confidential processing couldn't be turned on. try again, and if it keeps happening, check the health dashboard.",
-        GENERIC_THINKING_ERROR,
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.couldn.t.be.turned.variant2",
+        ),
+        text(locale, "journal.window.thinking.error.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
 /// The change committed but its audit append was not confirmed. The complete
 /// row may already be present, so report uncertainty without claiming absence.
-fn saved_unlogged() -> Response {
+fn saved_unlogged(locale: &str) -> Response {
     envelope(
         "settings_saved_unlogged",
-        "your change was saved, but your journal couldn't confirm its log entry. check the health dashboard.",
-        GENERIC_THINKING_ERROR,
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.your.change.was.saved.but.your",
+        ),
+        text(locale, "journal.window.thinking.error.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
 /// Checking a saved key failed before any answer came back from the provider.
-fn key_check_failed() -> Response {
+fn key_check_failed(locale: &str) -> Response {
     envelope(
         "settings_operation_failed",
-        "your key couldn't be checked. try again, and if it keeps happening, check the health dashboard.",
-        GENERIC_THINKING_ERROR,
+        text(
+            locale,
+            "journal.window.thinking.thinking.response.error.or.detail.your.key.couldn.t.be.checked",
+        ),
+        text(locale, "journal.window.thinking.error.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
-fn thinking_failure() -> Response {
-    thinking_failure_with_detail(GENERIC_THINKING_ERROR)
+fn thinking_failure(locale: &str) -> Response {
+    thinking_failure_with_detail(
+        locale,
+        text(locale, "journal.window.thinking.error.generic"),
+    )
 }
-fn thinking_failure_with_detail(detail: impl Into<String>) -> Response {
+fn thinking_failure_with_detail(locale: &str, detail: impl Into<String>) -> Response {
     envelope(
         "settings_operation_failed",
-        SETTINGS_NOT_SAVED,
+        text(locale, "journal.window.thinking.error.save"),
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
-fn mutation_error(error: solstone_core_thinking::MutationError) -> Response {
+fn mutation_error(locale: &str, error: solstone_core_thinking::MutationError) -> Response {
     match error {
-        solstone_core_thinking::MutationError::ConfigLock(_) => thinking_config_busy_response(),
-        solstone_core_thinking::MutationError::ConfigLoad(_error) => thinking_failure(),
-        solstone_core_thinking::MutationError::ConfigWrite(_error) => thinking_failure(),
-        solstone_core_thinking::MutationError::Read(_error) => thinking_failure(),
-        solstone_core_thinking::MutationError::ActionLog(_error) => saved_unlogged(),
-        solstone_core_thinking::MutationError::StaleProbe => thinking_failure(),
+        solstone_core_thinking::MutationError::ConfigLock(_) => {
+            thinking_config_busy_response(locale)
+        }
+        solstone_core_thinking::MutationError::ConfigLoad(_error) => thinking_failure(locale),
+        solstone_core_thinking::MutationError::ConfigWrite(_error) => thinking_failure(locale),
+        solstone_core_thinking::MutationError::Read(_error) => thinking_failure(locale),
+        solstone_core_thinking::MutationError::ActionLog(_error) => saved_unlogged(locale),
+        solstone_core_thinking::MutationError::StaleProbe => thinking_failure(locale),
     }
 }
 
 #[allow(dead_code)] // Wired by Thinking write routes in Thinking write-route chunks.
-fn thinking_config_busy_response() -> Response {
+fn thinking_config_busy_response(locale: &str) -> Response {
     error_envelope(
         "config_busy",
-        "those settings couldn't be saved right now because they were busy. try again in a moment.",
-        "your settings are busy. try again.",
+        text(locale, "journal.window.thinking.thinking.response.error.or.detail.those.settings.couldn.t.be.saved"),
+        text(locale, "journal.window.thinking.thinking.response.error.or.detail.your.settings.are.busy.try.again"),
         StatusCode::SERVICE_UNAVAILABLE,
     )
     .into_response()
@@ -2399,8 +2604,9 @@ mod tests {
     }
     #[tokio::test]
     async fn no_hardware_check_refuses_confidential_turn_on() {
-        assert!(super::not_offered_refusal(true).is_none());
-        let refusal = super::not_offered_refusal(false).expect("refused");
+        assert!(super::not_offered_refusal(crate::window_catalog::ENGLISH, true).is_none());
+        let refusal =
+            super::not_offered_refusal(crate::window_catalog::ENGLISH, false).expect("refused");
         assert_eq!(refusal.status(), StatusCode::BAD_REQUEST);
         let body: Value = serde_json::from_slice(
             &to_bytes(refusal.into_body(), usize::MAX)
@@ -2410,10 +2616,11 @@ mod tests {
         .expect("refusal is JSON");
         assert_eq!(
             body["error"],
-            solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
+            "confidential processing isn't available yet where your journal lives."
         );
         assert!(
             super::not_offered_refusal(
+                crate::window_catalog::ENGLISH,
                 solstone_core_thinking::confidential::offered_on_this_platform()
             )
             .is_none(),
@@ -2478,7 +2685,7 @@ mod tests {
             .expect("refusal is JSON");
             assert_eq!(
                 body["error"],
-                solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
+                "confidential processing isn't available yet where your journal lives."
             );
         }
         let _ = fs::remove_dir_all(root);
@@ -2692,7 +2899,7 @@ mod tests {
         expected_copy["confidential"]["audio"]["deferral"] = json!(AUDIO_DEFERRAL);
         // A journal with no hardware check says so in place of turning it on.
         expected_copy["confidential"]["attestation_states"]["not_on_platform"] =
-            json!(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM);
+            json!("confidential processing isn't available yet where your journal lives.");
         // Shared lane descriptions are current copy, not frozen corpus prose.
         expected_copy["lanes"] = live["lanes"].clone();
         // The pair-a-device invitation joined the copy after the capture.
@@ -4159,7 +4366,10 @@ mod tests {
         use axum::body::Bytes;
         use axum::extract::Extension;
 
-        let response = super::mutation_error(solstone_core_thinking::MutationError::StaleProbe);
+        let response = super::mutation_error(
+            crate::window_catalog::ENGLISH,
+            solstone_core_thinking::MutationError::StaleProbe,
+        );
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
@@ -4245,6 +4455,7 @@ mod tests {
 
         let rejected = super::save_key(
             Extension(Arc::new(crate::JournalRoot(root.clone()))),
+            None,
             Bytes::from(r#"{"env_var":"NOT_A_KEY","value":"key-a"}"#),
         )
         .await;
@@ -4406,6 +4617,7 @@ printf '%s' "$out"
             runtime.block_on(async {
                 let response = super::save_key(
                     Extension(Arc::new(crate::JournalRoot(root))),
+                    None,
                     Bytes::from(body),
                 )
                 .await;

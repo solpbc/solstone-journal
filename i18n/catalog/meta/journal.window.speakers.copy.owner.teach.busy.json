@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach busy in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eaca55ca19f97c5ffffa14b2356678a4084c9bc29d4c72cfd6d441a1e857a16f",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

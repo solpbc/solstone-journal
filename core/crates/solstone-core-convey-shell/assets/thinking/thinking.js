@@ -183,10 +183,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // reports no title at all falls back to the humanized id, and the exact id
   // stays in the group's disclosure either way (X-04).
   const talentLabels = {
-    'entities:detection': 'entity detection',
-    'entities:entity_observer': 'entity facts',
-    'entities:possible_names': 'possible names',
-    screen: 'screen descriptions',
+    'entities:detection': window.JournalI18n.render('journal.window.thinking.window.state.text.entity.detection'),
+    'entities:entity_observer': window.JournalI18n.render('journal.window.thinking.window.state.text.entity.facts'),
+    'entities:possible_names': window.JournalI18n.render('journal.window.thinking.window.state.text.possible.names'),
+    screen: window.JournalI18n.render('journal.window.thinking.window.state.text.screen.descriptions'),
   };
   // Filled from each day payload's `talents` map; empty until one arrives.
   let talentTitles = {};
@@ -202,8 +202,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     anthropic: 'Claude',
     google: 'Gemini',
     openai: 'GPT',
-    local: 'Local',
-    spp: 'confidential processing',
+    local: window.JournalI18n.render('journal.window.thinking.provider.local'),
+    spp: window.JournalI18n.render('journal.window.shared.date.format.lane.spp'),
   };
   let providerLabels = fallbackProviderLabels;
   // Mirrors stats' MODEL_LABELS (solstone-core-stats-web/assets/static/token-card.js):
@@ -212,7 +212,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // the same runs read the same way in both apps (G2-43); the exact raw id
   // stays in this view's own "exact ids" disclosure, untouched by this.
   const LOCAL_MODEL_LABELS = {
-    'local/qwen3.5-4b': 'Qwen 3.5 4B (local)',
+    'local/qwen3.5-4b': window.JournalI18n.render('journal.window.thinking.window.explanation.qwen.b.local'),
   };
   const providerTerms = {
     anthropic: 'https://www.anthropic.com/legal/commercial-terms',
@@ -450,14 +450,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // diagnostic console. "check again" is the page's own button: it re-reads the
   // true state, so a refusal that won't clear on its own doesn't loop the owner.
   const localSetupRefusals = {
-    check: "couldn't check local setup. check again in a moment.",
-    start: "local setup didn't start. check again in a moment.",
-    busy: 'local setup is already running. check again in a moment.',
-    cancel: "local setup couldn't be cancelled. check again in a moment.",
+    check: window.JournalI18n.render('journal.window.thinking.window.explanation.couldn.t.check.local.setup.check'),
+    start: window.JournalI18n.render('journal.window.thinking.window.explanation.local.setup.didn.t.start.check'),
+    busy: window.JournalI18n.render('journal.window.thinking.window.explanation.local.setup.is.already.running.check'),
+    cancel: window.JournalI18n.render('journal.window.thinking.window.explanation.local.setup.couldn.t.be.cancelled'),
     // Turning local on and clearing a URL are also asked from views with no
     // "check again", and pressing the same button again is harmless.
-    activate: "local thinking couldn't be turned on. try again in a moment.",
-    clear: "your own endpoint couldn't be cleared. try again in a moment.",
+    activate: window.JournalI18n.render('journal.window.thinking.window.explanation.local.thinking.couldn.t.be.turned'),
+    clear: window.JournalI18n.render('journal.window.thinking.window.explanation.your.own.endpoint.couldn.t.be'),
   };
 
   // A refused request, rethrown in owner words. The setup redirect passes
@@ -820,7 +820,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const stateName = attestation?.state || '';
     const blocked = stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable';
     if (!blocked || !lastCheckedLabel) return '';
-    return `last confirmed ${lastCheckedLabel}`;
+    return window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1', [['value1', String(lastCheckedLabel)]]);
   }
 
   function confidentialNoticeLine(operation, text) {
@@ -908,7 +908,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable') {
       return {
-        pill: stateName === 'unreachable' ? 'unreachable' : 'not ready',
+        pill: stateName === 'unreachable' ? 'unreachable' : window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
         tone: 'bad',
         message: states[stateName] || '',
         recheck: state.providers?.brain?.identity?.lane === 'spp',
@@ -924,14 +924,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (stateName === 'not_on_platform') {
       return {
-        pill: 'not yet',
+        pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.yet'),
         tone: '',
         message: states.not_on_platform || '',
         recheck: false,
       };
     }
     return {
-      pill: 'off',
+      pill: window.JournalI18n.render('journal.window.thinking.status.off'),
       tone: '',
       message: '',
       recheck: false,
@@ -1107,7 +1107,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setMode('paste');
       renderFn();
       const reason = byoReasonCopy(check?.reason_code, 'key', text, providerName);
-      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), 'error');
+      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'invalid', validation: check};
     }
     const result = await apiFn('api/keys', {
@@ -1121,7 +1121,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setMode('paste');
       renderFn();
       const reason = byoReasonCopy(validation.reason_code, 'key', text, providerName);
-      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), 'error');
+      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'invalid', validation};
     }
     resetDraft();
@@ -1158,14 +1158,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setMode('paste');
         renderFn();
         const reason = byoReasonCopy(probe.reason_code, 'key', text, providerName, model);
-        showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), 'error');
+        showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
         return {status: 'key_missing', probe};
       }
       const reason = byoReasonCopy(probe?.reason_code, 'probe', text, providerName, model);
       const message = probe?.reason_code === 'model_not_found'
         ? reason
         : formatCopy(text?.probe_failed_save || '', {provider: providerName, model, reason});
-      showStatus(message, 'error');
+      showStatus(message, window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'probe_failed', probe};
     }
     try {
@@ -1182,14 +1182,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (providers?.active_lane?.lane === 'confidential') {
         showStatus(
           formatCopy(text?.model_saved_restore || '', {label: model}),
-          'ok',
+          window.JournalI18n.render('journal.window.thinking.status.text.ok'),
         );
         return {status: 'restored', providers};
       }
       return {status: 'saved', providers};
     } catch (err) {
       renderFn();
-      showStatus(err?.message || '', 'error');
+      showStatus(err?.message || '', window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'save_failed', error: err};
     }
   }
@@ -1216,7 +1216,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function renderInitialLoading() {
     const loading = $('thinking-loading');
     if (!loading) return;
-    loading.innerHTML = window.SurfaceState.loading({ text: 'loading thinking settings…' });
+    loading.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.thinking.text.loading.thinking.settings') });
     loading.style.display = '';
     const app = $('thinkingApp');
     if (app) app.hidden = true;
@@ -1234,7 +1234,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const loading = $('thinking-loading');
     if (!loading) return;
     loading.innerHTML = window.SurfaceState.error({
-      heading: "Couldn't load thinking settings",
+      heading: window.JournalI18n.render('journal.window.thinking.heading.couldn.t.load.thinking.settings'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
@@ -1336,7 +1336,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       ? payload.error.trim()
       : '';
     const wrapped = new Error(
-      says || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+      says || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || window.JournalI18n.render('journal.window.thinking.window.explanation.couldn.t.finish.that.request'),
     );
     wrapped.status = err?.status;
     wrapped.reasonCode = err?.reasonCode ?? payload?.reason_code ?? payload?.error ?? null;
@@ -1692,7 +1692,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const canonical = thinkingRunsRoute({kind: 'runs', day: todayThinkingDay()});
       replaceThinkingHash(thinkingRunsHash(canonical));
       showThinkingSection('runs', canonical, origin);
-      setThinkingStatus('thinkingRunsStatus', "that run isn't available.");
+      setThinkingStatus('thinkingRunsStatus', window.JournalI18n.render('journal.window.thinking.window.explanation.that.run.isn.t.available'));
       return;
     }
     if (route?.kind === 'runs' || route?.kind === 'run-id') {
@@ -1774,9 +1774,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       ['model', runModelLabel(run)],
       ['provider', runProviderLabel(run)],
       ['runtime', runRuntimeLabel(run)],
-      ['status', run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ')],
-      ['thinking events', run.thinking_count],
-      ['tool calls', run.tool_count],
+      ['status', run.failed ? 'failed' : (run.status || window.JournalI18n.render('journal.window.thinking.runs.status.unknown')).replaceAll('_', ' ')],
+      [window.JournalI18n.render('journal.window.thinking.window.state.text.thinking.events'), run.thinking_count],
+      [window.JournalI18n.render('journal.window.thinking.window.state.text.tool.calls'), run.tool_count],
       ['facet', runFacetLabel(run)],
     ].filter(([, value]) => value !== null && value !== undefined && value !== '');
   }
@@ -1811,12 +1811,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!summary) return;
     summary.replaceChildren();
     const total = document.createElement('span');
-    total.textContent = `${runs.length} run${runs.length !== 1 ? 's' : ''}`;
+    total.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2', [['value1', String(runs.length)], ['value2', String(runs.length !== 1 ? 's' : '')]]);
     summary.appendChild(total);
     const failed = runs.filter((run) => run.failed).length;
     if (failed) {
       const item = document.createElement('span');
-      item.textContent = `${failed} failed`;
+      item.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.failed', [['value1', String(failed)]]);
       summary.appendChild(item);
     }
   }
@@ -1835,15 +1835,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const counted = run.thinking_count != null && run.tool_count != null;
     if (counted && !(run.thinking_count > 0) && !(run.tool_count > 0)) {
       button.classList.add('thinking-runs-run-control-empty');
-      button.title = 'this run left no log';
+      button.title = window.JournalI18n.render('journal.window.thinking.tooltip.this.run.left.no.log');
     }
-    button.textContent = 'run log';
+    button.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.run.log');
     button.addEventListener('click', () => navigateThinkingRun(run));
     return button;
   }
 
   function runStatusLabel(run) {
-    return run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ');
+    return run.failed ? window.JournalI18n.render('journal.window.thinking.runs.status.failed') : (run.status || window.JournalI18n.render('journal.window.thinking.runs.status.unknown')).replaceAll('_', ' ');
   }
 
   // "duration unavailable" is what the app says about a fact it failed to get.
@@ -1853,7 +1853,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // keeps the sentinel.
   function runRuntimeLabel(run) {
     const missing = run.runtime_seconds === null || run.runtime_seconds === undefined;
-    if (missing && !run.failed && run.status === 'running') return 'still running';
+    if (missing && !run.failed && run.status === 'running') return window.JournalI18n.render('journal.window.thinking.window.state.text.still.running');
     return window.JournalFormat.duration(run.runtime_seconds);
   }
 
@@ -1864,14 +1864,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // and two are always empty answers "is my journal thinking?" with mostly
   // noise (G2-46). `ran` and the run-log control are never hidden.
   const thinkingRunColumns = [
-    {key: 'status', label: 'status', hideable: true, value: runStatusLabel},
-    {key: 'model', label: 'model', hideable: true, value: runModelLabel},
-    {key: 'provider', label: 'provider', hideable: true, value: runProviderLabel},
-    {key: 'runtime', label: 'runtime', hideable: false, value: runRuntimeLabel},
-    {key: 'thinking_count', label: 'thinking events', hideable: false, value: (run) => run.thinking_count},
-    {key: 'tool_count', label: 'tool calls', hideable: false, value: (run) => run.tool_count},
-    {key: 'facet', label: 'facet', hideable: true, value: runFacetLabel},
-    {key: 'output', label: 'output', hideable: true, value: (run) => (run.output_file ? 'output' : '')},
+    {key: 'status', label: window.JournalI18n.render('journal.window.thinking.runs.column.status'), hideable: true, value: runStatusLabel},
+    {key: 'model', label: window.JournalI18n.render('journal.window.thinking.runs.column.model'), hideable: true, value: runModelLabel},
+    {key: 'provider', label: window.JournalI18n.render('journal.window.thinking.runs.column.provider'), hideable: true, value: runProviderLabel},
+    {key: 'runtime', label: window.JournalI18n.render('journal.window.thinking.runs.column.runtime'), hideable: false, value: runRuntimeLabel},
+    {key: 'thinking_count', label: window.JournalI18n.render('journal.window.thinking.label.thinking.events'), hideable: false, value: (run) => run.thinking_count},
+    {key: 'tool_count', label: window.JournalI18n.render('journal.window.thinking.label.tool.calls'), hideable: false, value: (run) => run.tool_count},
+    {key: 'facet', label: window.JournalI18n.render('journal.window.thinking.runs.column.facet'), hideable: true, value: runFacetLabel},
+    {key: 'output', label: window.JournalI18n.render('journal.window.thinking.runs.column.output'), hideable: true, value: (run) => (run.output_file ? window.JournalI18n.render('journal.window.thinking.runs.column.output') : '')},
   ];
 
   // Two reasons a hideable column earns its way out of the table, and they are
@@ -1932,7 +1932,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // of 2 sec and 38 sec averaged to "about 20 sec each", true of neither
     // run. So this is not an average at all: it is the runtime column's own
     // value, said once, and only when every run in the group reads the same.
-    const eachSuffix = group.length === 1 ? '' : ' each';
+    const eachSuffix = group.length === 1 ? '' : window.JournalI18n.render('journal.window.thinking.window.state.text.each');
     const runtimes = new Set(group.map(runRuntimeLabel));
     const sharedRuntime = runtimes.size === 1 ? [...runtimes][0] : null;
     // No hedge: this is not an average any more, it is the runtime column's
@@ -1942,7 +1942,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // "still running" joins "duration unavailable" as a value that is a state,
     // not a duration; neither belongs in a sentence about how long the runs
     // took (G2-B12).
-    const durationText = sharedRuntime && sharedRuntime !== 'duration unavailable' && sharedRuntime !== 'still running'
+    const measuredRuntime = group.every(run => run.runtime_seconds != null && Number.isFinite(Number(run.runtime_seconds)));
+    const durationText = sharedRuntime && measuredRuntime
       ? `, ${sharedRuntime}${eachSuffix}`
       : '';
     // A run can simply not record a model, and runModelLabel hands the absent
@@ -1951,7 +1952,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // the provider column stays in the table either way, so nothing is lost by
     // the silence.
     const modelLabel = uniformModel ? String([...models][0] ?? '').trim() : '';
-    const modelText = modelLabel ? ` on ${modelLabel}` : '';
+    const modelText = modelLabel ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.on.value1', [['value1', String(modelLabel)]]) : '';
     // No "all". It is a quantifier over the population, and the population
     // here is a filtered view -- `runs` is narrowed to failures when the
     // failed-runs-only box is checked, and the day payload is narrowed to one
@@ -1992,7 +1993,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const headRow = document.createElement('tr');
     // G2-45: this column holds the run-log button, not the prompt — the
     // word "prompt" already names a different tab inside the run detail.
-    for (const label of ['ran', ...visibleColumns.map((column) => column.label), 'run log']) {
+    for (const label of ['ran', ...visibleColumns.map((column) => column.label), window.JournalI18n.render('journal.window.thinking.window.state.text.run.log')]) {
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
@@ -2069,7 +2070,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       facet.replaceChildren();
       const all = document.createElement('option');
       all.value = '';
-      all.textContent = 'all';
+      all.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.all');
       facet.appendChild(all);
       returnedFacets.forEach((item) => {
         const option = document.createElement('option');
@@ -2092,14 +2093,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       context.textContent = talentLabel(route.talent);
       const all = document.createElement('a');
       all.href = thinkingRunsHash(thinkingRunsRoute({...route, talent: '', useId: ''}));
-      all.textContent = 'all runs for this day';
+      all.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.all.runs.for.this.day');
       controls.append(context, all);
     }
     const label = document.createElement('label');
     const input = document.createElement('input');
     input.type = 'checkbox'; input.checked = state.runsFailuresOnly;
     input.addEventListener('change', () => { state.runsFailuresOnly = input.checked; renderThinkingRunsDay(payload, route); host.querySelector('input[type=checkbox]')?.focus(); });
-    label.append(input, document.createTextNode(' failed runs only'));
+    label.append(input, document.createTextNode(window.JournalI18n.render('journal.window.thinking.window.state.text.failed.runs.only')));
     controls.append(label); host.append(controls);
     if (!runs.length) {
       const picked = returnedFacets.find((item) => (item?.name ?? item) === state.runsFacet);
@@ -2107,12 +2108,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const dayTotal = state.runsDayTotal && state.runsDayTotal.day === route.day ? state.runsDayTotal.count : null;
       const heading = document.createElement('p');
       heading.textContent = state.runsFailuresOnly
-        ? 'no failed runs match this view'
+        ? window.JournalI18n.render('journal.window.thinking.visible.text.no.failed.runs.match.this.view')
         : route.talent
-          ? 'no runs of this kind on this day'
+          ? window.JournalI18n.render('journal.window.thinking.visible.text.no.runs.of.this.kind.on')
           : facetFiltered
-            ? 'no runs in this facet on this day'
-            : 'no runs on this day';
+            ? window.JournalI18n.render('journal.window.thinking.visible.text.no.runs.in.this.facet.on')
+            : window.JournalI18n.render('journal.window.thinking.visible.text.no.runs.on.this.day');
       const detail = document.createElement('p');
       // G2-33: the failures-only heading is filter-aware, but this line used to
       // fall through to "runs appear here when processing takes place" even on
@@ -2126,10 +2127,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const count = matchingRuns.length;
         const runWord = count === 1 ? 'run' : 'runs';
         detail.textContent = facetFiltered
-          ? `all ${count} ${runWord} in ${facetTitle} on this day completed.`
-          : `all ${count} ${runWord} on this day completed.`;
+          ? window.JournalI18n.render('journal.window.thinking.visible.text.all.value1.value2.in.value3.on', [['value1', String(count)], ['value2', String(runWord)], ['value3', String(facetTitle)]])
+          : window.JournalI18n.render('journal.window.thinking.visible.text.all.value1.value2.on.this.day', [['value1', String(count)], ['value2', String(runWord)]]);
       } else if (route.talent) {
-        detail.textContent = 'no runs on this day match the current view. try all runs or another day.';
+        detail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.no.runs.on.this.day.match');
       } else if (facetFiltered) {
         // G2-B02: the facet branch is the sibling G2-33 missed. It fell through
         // to "runs appear here when processing takes place" on a day with 591
@@ -2137,10 +2138,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         // the truth. Say what the filter did, and count the day only when an
         // unfiltered read of this same day supplied the number.
         detail.textContent = dayTotal
-          ? `${dayTotal} ${dayTotal === 1 ? 'run' : 'runs'} on this day, none in ${facetTitle}.`
-          : `no run on this day carries ${facetTitle}.`;
+          ? window.JournalI18n.render('journal.window.thinking.visible.text.value1.value2.on.this.day.none', [['value1', String(dayTotal)], ['value2', String(dayTotal === 1 ? 'run' : 'runs')], ['value3', String(facetTitle)]])
+          : window.JournalI18n.render('journal.window.thinking.visible.text.no.run.on.this.day.carries', [['value1', String(facetTitle)]]);
       } else {
-        detail.textContent = 'runs appear here when processing takes place.';
+        detail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.runs.appear.here.when.processing.takes');
       }
       host.append(heading, detail);
       // X-03: this escape used to be withheld whenever the failures-only box
@@ -2151,7 +2152,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const showAll = document.createElement('button');
         showAll.type = 'button';
         showAll.className = 'thinking-runs-control';
-        showAll.textContent = 'show all facets';
+        showAll.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.show.all.facets');
         showAll.addEventListener('click', () => {
           const picker = $('thinkingRunsFacet');
           if (picker) picker.value = '';
@@ -2163,7 +2164,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const showAll = document.createElement('button');
         showAll.type = 'button';
         showAll.className = 'thinking-runs-control';
-        showAll.textContent = 'show all runs';
+        showAll.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.show.all.runs');
         showAll.addEventListener('click', () => {
           state.runsFailuresOnly = false;
           renderThinkingRunsDay(payload, route);
@@ -2191,13 +2192,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const summary = document.createElement('summary');
       const failedInGroup = group.filter((run) => run.failed).length;
       summary.textContent = failedInGroup
-        ? `${group.length} run${group.length !== 1 ? 's' : ''} · ${failedInGroup} failed`
-        : `${group.length} run${group.length !== 1 ? 's' : ''}`;
+        ? window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2.value3.failed', [['value1', String(group.length)], ['value2', String(group.length !== 1 ? 's' : '')], ['value3', String(failedInGroup)]])
+        : window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2', [['value1', String(group.length)], ['value2', String(group.length !== 1 ? 's' : '')]]);
       details.appendChild(summary);
       details.addEventListener('toggle', () => state.runsGroupOpen.set(name, details.open));
       const exact = document.createElement('p');
       exact.className = 'thinking-runs-group-id';
-      exact.textContent = `exact id: ${name}`;
+      exact.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.exact.id.value1', [['value1', String(name)]]);
       details.appendChild(exact);
       // Computed from the whole group, not just the shown page, so the
       // note and the set of hidden columns don't change shape as more rows
@@ -2218,7 +2219,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const more = document.createElement('button');
         more.type = 'button';
         more.className = 'thinking-runs-control';
-        more.textContent = `show ${next} more run${next !== 1 ? 's' : ''} · ${remaining} left`;
+        more.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.show.value1.more.run.value2.value3', [['value1', String(next)], ['value2', String(next !== 1 ? 's' : '')], ['value3', String(remaining)]]);
         more.addEventListener('click', () => {
           state.runsGroupShown.set(name, shown + thinkingRunsPageSize);
           state.runsGroupOpen.set(name, true);
@@ -2236,7 +2237,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!host) return;
     host.replaceChildren();
     const message = document.createElement('p');
-    message.textContent = 'loading runs…';
+    message.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.loading.runs');
     host.appendChild(message);
   }
 
@@ -2245,11 +2246,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!host) return;
     host.replaceChildren();
     const message = document.createElement('p');
-    message.textContent = "couldn't load runs";
+    message.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.couldn.t.load.runs');
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'thinking-runs-retry';
-    retry.textContent = 'try again';
+    retry.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.try.again');
     retry.addEventListener('click', () => loadThinkingRuns(parseThinkingHash(), true));
     host.append(message, retry);
   }
@@ -2266,7 +2267,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!list.length) return;
     const label = document.createElement('span');
     label.className = 'thinking-runs-updated-label';
-    label.textContent = "thinking hasn't caught up with these days yet:";
+    label.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.thinking.hasn.t.caught.up.with');
     host.appendChild(label);
     list.forEach((day) => {
       const link = document.createElement('a');
@@ -2281,7 +2282,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     ctx.read('/app/thinking/api/updated-days').then((days) => {
       if (isCurrentThinkingRequest(token)) renderThinkingUpdatedDays(days);
     }).catch(() => {
-      if (isCurrentThinkingRequest(token)) setThinkingStatus('thinkingRunsStatus', "some run details aren't available right now.");
+      if (isCurrentThinkingRequest(token)) setThinkingStatus('thinkingRunsStatus', window.JournalI18n.render('journal.window.thinking.window.explanation.some.run.details.aren.t.available'));
     }).finally(() => {
       if (isCurrentThinkingRequest(token)) state.runsInFlight.day = null;
     });
@@ -2366,9 +2367,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     panel.replaceChildren();
     if (run.status === 'running') {
       const progress = document.createElement('p');
-      progress.textContent = 'this run is still in progress.';
+      progress.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.this.run.is.still.in.progress');
       const check = document.createElement('p');
-      check.textContent = 'check back soon.';
+      check.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.check.back.soon');
       panel.append(progress, check);
       return;
     }
@@ -2394,8 +2395,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       });
       if (!item.children.length) {
         const noteText = runFinished
-          ? 'no detail was recorded for this step'
-          : (event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete');
+          ? window.JournalI18n.render('journal.window.thinking.window.explanation.no.detail.was.recorded.for.this')
+          : (event.event === 'tool_start' ? window.JournalI18n.render('journal.window.thinking.window.explanation.tool.call.did.not.complete') : window.JournalI18n.render('journal.window.thinking.window.state.text.did.not.complete'));
         if (noteText === lastEmptyNote) {
           lastEmptyNoteCount += 1;
           if (lastEmptyNoteElement) {
@@ -2453,7 +2454,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!panel) return;
     panel.replaceChildren();
     const message = document.createElement('p');
-    message.textContent = "couldn't load that run";
+    message.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.couldn.t.load.that.run');
     panel.appendChild(message);
   }
 
@@ -2493,7 +2494,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText('thinkingRunsDetailHeading', talentLabel(route.talent));
     setHidden('thinkingRunsDetailIds', true);
     const panel = $('thinkingRunsLogPanel');
-    if (panel) panel.textContent = 'loading run details…';
+    if (panel) panel.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.loading.run.details');
     loadThinkingRequest(
       'run',
       key,
@@ -2534,7 +2535,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       panel.appendChild(documentView);
       const source = document.createElement('details');
       const label = document.createElement('summary');
-      label.textContent = 'stored text';
+      label.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.stored.text');
       const text = document.createElement('pre');
       text.textContent = raw;
       source.append(label, text);
@@ -2556,13 +2557,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       renderThinkingOutput(panel, cached);
       return;
     }
-    panel.textContent = 'loading output…';
+    panel.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.loading.output');
     const encoded = String(run.output_file).split('/').map(encodeThinkingSegment).join('/');
     loadThinkingRequest(
       'output', key,
       () => ctx.read(`/app/thinking/api/output/${run.day}/${encoded}`),
       (payload) => renderThinkingOutput(panel, payload),
-      () => { panel.textContent = "couldn't load that output"; },
+      () => { panel.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.couldn.t.load.that.output'); },
     );
   }
 
@@ -2573,8 +2574,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     state.runsModalFocus = document.activeElement;
     modal.showModal();
     const content = $('thinkingRunsPromptContent');
-    $('thinkingRunsRequestContent').textContent = run.prompt || 'no request text was saved for this run.';
-    content.textContent = 'loading current template…';
+    $('thinkingRunsRequestContent').textContent = run.prompt || window.JournalI18n.render('journal.window.thinking.visible.text.no.request.text.was.saved.for');
+    content.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.loading.current.template');
     const key = thinkingCacheKey('prompt', {talent: run.name});
     const cached = readThinkingCache('prompt', key);
     if (cached) {
@@ -2585,7 +2586,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       'prompt', key,
       () => ctx.read(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
       (payload) => { content.textContent = payload.full_prompt || ''; },
-      () => { content.textContent = "couldn't load the current template"; },
+      () => { content.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.couldn.t.load.the.current.template'); },
     );
   }
 
@@ -2810,9 +2811,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function localUnreadyCopy() {
-    if (localAwaitingConfirmation()) return "installed. waiting for processing to confirm it's ready.";
-    if (!state.localAvailability) return "checking whether your journal's computer can run a local model.";
-    return "couldn't tell whether your journal's computer can run a local model.";
+    if (localAwaitingConfirmation()) return window.JournalI18n.render('journal.window.thinking.window.explanation.installed.waiting.for.processing.to.confirm');
+    if (!state.localAvailability) return window.JournalI18n.render('journal.window.thinking.window.explanation.checking.whether.your.journal.s.computer');
+    return window.JournalI18n.render('journal.window.thinking.window.explanation.couldn.t.tell.whether.your.journal');
   }
 
   // What the main view's local card says when local is blocked, by reason. The
@@ -2820,11 +2821,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // installed") or, with local selected, a bare issue code. The card's link
   // leads to local setup, which says what to do next.
   const localLaneBlocked = {
-    setup: "not set up on your journal's computer yet.",
-    ineligible: "installed, but it won't start on your journal's computer.",
-    check: "couldn't check local setup.",
-    unhealthy: "local thinking isn't ready yet.",
-    other: "couldn't get local thinking ready.",
+    setup: window.JournalI18n.render('journal.window.thinking.window.explanation.not.set.up.on.your.journal'),
+    ineligible: window.JournalI18n.render('journal.window.thinking.window.explanation.installed.but.it.won.t.start'),
+    check: window.JournalI18n.render('journal.window.thinking.window.explanation.couldn.t.check.local.setup'),
+    unhealthy: window.JournalI18n.render('journal.window.thinking.window.explanation.local.thinking.isn.t.ready.yet'),
+    other: window.JournalI18n.render('journal.window.thinking.window.explanation.couldn.t.get.local.thinking.ready'),
   };
 
   function localLaneBlockedKind(reason) {
@@ -2878,10 +2879,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       };
     }
     if (lane === 'local' && localIsReady()) {
-      return {kind: 'local', providerLabel: 'Local'};
+      return {kind: 'local', providerLabel: window.JournalI18n.render('journal.window.thinking.provider.local')};
     }
     if (lane === 'confidential' && confidentialProvenancePresent()) {
-      return {kind: 'confidential', providerLabel: 'Confidential processing'};
+      return {kind: 'confidential', providerLabel: window.JournalI18n.render('journal.window.thinking.window.state.text.confidential.processing')};
     }
     return {kind: 'none', providerLabel: ''};
   }
@@ -2898,7 +2899,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const stamp = Date.parse(iso);
     if (Number.isNaN(stamp)) return '';
     const seconds = Math.max(0, Math.floor((Date.now() - stamp) / 1000));
-    if (seconds < 60) return 'just now';
+    if (seconds < 60) return window.JournalI18n.render('journal.window.thinking.window.state.text.just.now');
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes} min ago`;
     const hours = Math.floor(minutes / 60);
@@ -2955,44 +2956,44 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     let activeValue = brain.headline || '';
 
     if (brain.state === 'ready') {
-      intro = 'your model is ready. you can change it in setup.';
+      intro = window.JournalI18n.render('journal.window.thinking.window.explanation.your.model.is.ready.you.can');
     } else if (brain.reason_code === 'thinking_engine_not_chosen') {
       if (state.savedLane === 'byo') {
         glanceState = 'saved';
         savedLaneAttr = 'byo';
-        activeValue = 'finish setting up your own model';
-        intro = 'finish setting up your own model. your journal keeps everything until you do.';
+        activeValue = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.your.own.model');
+        intro = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.your.own.model.variant2');
       } else if (state.savedLane === 'spp') {
         glanceState = 'saved';
         savedLaneAttr = 'spp';
-        activeValue = 'finish setting up confidential processing';
-        intro = 'finish setting up confidential processing. your journal keeps everything until you do.';
+        activeValue = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.confidential.processing');
+        intro = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.confidential.processing.your');
       } else if (state.savedLane === 'local') {
         if (localCapabilityBlocked()) {
           glanceState = 'cant_run';
           savedLaneAttr = null;
           activeValue = bundledLocalUnavailable()
-            ? "local thinking isn't available where your journal lives"
-            : "your journal's computer can't run local thinking";
+            ? window.JournalI18n.render('journal.window.thinking.window.explanation.local.thinking.isn.t.available.where')
+            : window.JournalI18n.render('journal.window.thinking.window.explanation.your.journal.s.computer.can.t');
           intro = bundledLocalUnavailable()
-            ? 'choose another thinking option. your journal keeps everything until you do.'
-            : "your journal's computer can't run local thinking. choose another way when you're ready. your journal keeps everything until then.";
+            ? window.JournalI18n.render('journal.window.thinking.window.explanation.choose.another.thinking.option.your.journal')
+            : window.JournalI18n.render('journal.window.thinking.window.explanation.your.journal.s.computer.can.t.variant2');
         } else {
           glanceState = 'saved';
           savedLaneAttr = 'local';
-          activeValue = 'finish setting up local thinking';
-          intro = 'finish setting up local thinking. your journal keeps everything until you do.';
+          activeValue = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.local.thinking');
+          intro = window.JournalI18n.render('journal.window.thinking.window.explanation.finish.setting.up.local.thinking.your');
         }
       } else {
         glanceState = 'not_chosen';
         savedLaneAttr = null;
         activeValue = brain.headline || '';
-        intro = 'choose where the thinking happens. your journal keeps everything until you do.';
+        intro = window.JournalI18n.render('journal.window.thinking.window.explanation.choose.where.the.thinking.happens.your');
       }
     } else if (brain.progressing && ['local_artifact_not_ready', 'local_runtime_not_ready'].includes(brain.reason_code)) {
-      intro = 'local thinking is getting ready. your journal keeps everything until it is.';
+      intro = window.JournalI18n.render('journal.window.thinking.window.explanation.local.thinking.is.getting.ready.your');
     } else {
-      intro = 'choose or check your model in setup.';
+      intro = window.JournalI18n.render('journal.window.thinking.window.explanation.choose.or.check.your.model.in');
     }
     setText('thinkingIntro', intro);
     const glance = $('brainGlance');
@@ -3014,7 +3015,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       glance.classList.toggle('none', brain.state === 'unknown' && !brain.reason_code);
     }
     writeHidden(glanceLabel, false);
-    setText('thinkingActiveLane', 'right now');
+    setText('thinkingActiveLane', window.JournalI18n.render('journal.window.thinking.status.text.right.now'));
     setText('thinkingActiveValue', activeValue);
 
     renderBrainAction(brain.action || null);
@@ -3062,7 +3063,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setHidden('brainCheckAction', true);
       } else {
         if (brain.state === 'ready') {
-          const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
+          const confirmed = evidence.age_text ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1.ago', [['value1', String(evidence.age_text)]]) : '';
           setText('thinkingActiveDetail', `${chatgptLabel}${confirmed}`);
         } else {
           setText('thinkingActiveDetail', `${chatgptLabel}: ${brain.reason_text || ''}`);
@@ -3084,7 +3085,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
       if (identity.lane && identity.provider && identity.model) {
         if (brain.state === 'ready') {
-          const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
+          const confirmed = evidence.age_text ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1.ago', [['value1', String(evidence.age_text)]]) : '';
           setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
         } else {
           setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
@@ -3225,7 +3226,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!confidentialOffered(attestation)) {
       setPill('confidentialLanePill', rendered.pill, rendered.tone);
       setText('confidentialLaneDescription', rendered.message);
-      setText('confidentialLaneStatus', active.confidential_provenance_configured ? 'manage →' : '');
+      setText('confidentialLaneStatus', active.confidential_provenance_configured ? window.JournalI18n.render('journal.window.thinking.status.text.manage') : '');
       setHidden('confidentialLaneStatus', !active.confidential_provenance_configured);
       return;
     }
@@ -3240,7 +3241,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       : confidentialCopy.credential_unknown || '';
     setPill(
       'confidentialLanePill',
-      operationActive ? operation.phase || '' : accessEnded ? 'not active' : rendered.pill,
+      operationActive ? operation.phase || '' : accessEnded ? window.JournalI18n.render('journal.window.thinking.window.state.text.not.active') : rendered.pill,
       operationActive ? '' : accessEnded ? 'bad' : rendered.tone,
     );
     setText(
@@ -3250,12 +3251,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText(
       'confidentialLaneStatus',
       operationActive
-        ? 'continue in browser →'
+        ? window.JournalI18n.render('journal.window.thinking.status.text.continue.in.browser')
         : attestation.state === 'off'
           ? confidentialCopy.actions?.off || ''
           : rendered.recheck
             ? confidentialCopy.actions?.recheck || ''
-            : 'manage →',
+            : window.JournalI18n.render('journal.window.thinking.status.text.manage'),
     );
   }
 
@@ -3305,7 +3306,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setLink(
         'confidentialLaneOperationLink',
         operation?.portal_url || '',
-        'continue in browser →',
+        window.JournalI18n.render('journal.window.thinking.window.state.text.continue.in.browser'),
       );
     } else {
       setLink('confidentialLaneOperationLink', '', '');
@@ -3352,13 +3353,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const endpointOverride = localEndpointConfigured();
     const forkHintEl = $('forkHint');
     if (brain.kind !== 'none') {
-      setText('forkHint', 'one at a time. the one with the dot is active right now.');
+      setText('forkHint', window.JournalI18n.render('journal.window.thinking.status.text.one.at.a.time.the.one'));
       setElementData(forkHintEl, 'forkHint', 'data-fork-hint', 'active');
     } else if (capabilityBlocked || capabilityUnknown || gpuBlocked) {
-      setText('forkHint', 'pick one of these, or choose later.');
+      setText('forkHint', window.JournalI18n.render('journal.window.thinking.status.text.pick.one.of.these.or.choose'));
       setElementData(forkHintEl, 'forkHint', 'data-fork-hint', 'no-local');
     } else {
-      setText('forkHint', 'pick one: use local when it is ready, or bring your own.');
+      setText('forkHint', window.JournalI18n.render('journal.window.thinking.status.text.pick.one.use.local.when.it'));
       setElementData(forkHintEl, 'forkHint', 'data-fork-hint', 'local-ready');
     }
     // A computer that can't run local thinking gets a plain card saying so,
@@ -3404,42 +3405,42 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (localActive) {
         setPill('localLanePill', 'active', 'hot');
         setText('localLaneDescription', localLane.description || '');
-        setText('localLaneStatus', 'manage →');
+        setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage'));
       } else if (endpointOverride) {
         setPill('localLanePill', 'endpoint');
         const managed = state.providers.active_lane?.lane === 'confidential';
         setText('localLaneDescription', managed
-          ? 'not in use while confidential processing is on.'
-          : 'not in use while your own endpoint is set.');
-        setText('localLaneStatus', 'set up the bundled model →');
+          ? window.JournalI18n.render('journal.window.thinking.status.text.not.in.use.while.confidential.processing')
+          : window.JournalI18n.render('journal.window.thinking.status.text.not.in.use.while.your.own'));
+        setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.set.up.the.bundled.model'));
       } else if (gpuBlocked) {
         setPill('localLanePill', 'unavailable', 'bad');
         const desc = $('localLaneDescription');
         drawPart(desc, ['gpu'], () => {
-          desc.textContent = "your journal's computer can't run a local model yet. it needs a supported GPU. ";
+          desc.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.your.journal.s.computer.can.t');
           const link = document.createElement('a');
           link.className = 'textlink';
           link.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
-          link.textContent = 'minimum requirements ↗';
+          link.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.minimum.requirements');
           desc.appendChild(link);
         });
-        setText('localLaneStatus', 'not available');
+        setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.not.available'));
       } else if (local.status === 'ready') {
-        setPill('localLanePill', 'off');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.status.off'));
         setText('localLaneDescription', localLane.description || '');
-        setText('localLaneStatus', 'turn on local →');
+        setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.turn.on.local'));
       } else if (installIsInFlight(state.install)) {
         // Mid-download is setup under way; "not set up" with "set up →" would
         // read as if nothing had started.
-        setPill('localLanePill', 'off');
-        setText('localLaneDescription', 'downloading the local model.');
-        setText('localLaneStatus', 'details →');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.status.off'));
+        setText('localLaneDescription', window.JournalI18n.render('journal.window.thinking.status.text.downloading.the.local.model'));
+        setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.details'));
       } else {
-        setPill('localLanePill', 'off');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.status.off'));
         setText('localLaneDescription', localLaneUnreadyLine(local));
-        setText('localLaneStatus', localAwaitingConfirmation() ? 'details →' : 'set up →');
+        setText('localLaneStatus', localAwaitingConfirmation() ? window.JournalI18n.render('journal.window.thinking.status.text.details') : window.JournalI18n.render('journal.window.thinking.status.text.set.up'));
       }
     }
 
@@ -3450,26 +3451,26 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const activeByo = brain.kind === 'byo';
     const byoProvider = activeByo ? brain.provider : configured[0] || defaultByoProvider();
     setCardActive('byo', activeByo);
-    setPill('byoLanePill', activeByo ? 'active' : 'off', activeByo ? 'hot' : '');
+    setPill('byoLanePill', activeByo ? window.JournalI18n.render('journal.window.thinking.status.active') : window.JournalI18n.render('journal.window.thinking.status.off'), activeByo ? 'hot' : '');
     setText('byoLaneDescription', byoLane.description || '');
     if (activeByo) {
       if (brain.byoKind === 'endpoint') {
-        setText('byoLaneStatus', 'using endpoint · manage →');
+        setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.using.endpoint.manage'));
       } else if (brain.byoKind === 'chatgpt' || brain.provider === 'chatgpt') {
         const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
         setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
       } else {
-        setText('byoLaneStatus', `using ${providerLabel(byoProvider)} key · manage →`);
+        setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.using.value1.key.manage', [['value1', String(providerLabel(byoProvider))]]));
       }
     } else if (endpointOverride) {
-      setText('byoLaneStatus', 'manage endpoint →');
+      setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage.endpoint'));
     } else if (byoProvider === 'chatgpt') {
       const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
       setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
     } else if (configured.length > 0) {
-      setText('byoLaneStatus', `manage ${providerLabel(byoProvider)} key →`);
+      setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage.value1.key', [['value1', String(providerLabel(byoProvider))]]));
     } else {
-      setText('byoLaneStatus', 'add a key or endpoint →');
+      setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.add.a.key.or.endpoint'));
     }
   }
 
@@ -3735,7 +3736,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setHidden('chatgptPending', !showChatGptPending);
     setHidden('chatgptPanel', !showChatGptPanel);
 
-    setText('byoBackLink', (pasteMode || modelMode || chatgptMode) ? '‹ pick a different provider' : '‹ thinking');
+    setText('byoBackLink', (pasteMode || modelMode || chatgptMode) ? window.JournalI18n.render('journal.window.thinking.status.text.pick.a.different.provider') : window.JournalI18n.render('journal.window.thinking.status.text.thinking'));
 
     markup().querySelectorAll('[data-provider-card]').forEach((card) => {
       const cardProvider = card.dataset.providerCard;
@@ -3759,11 +3760,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       renderChatGptPanel(chatgptText);
     }
 
-    setText('prov-google-desc', 'use a Google AI Studio key.');
+    setText('prov-google-desc', window.JournalI18n.render('journal.window.thinking.status.text.use.a.google.ai.studio.key'));
     renderOpenaiCardDescription(byoText);
     if (providerEnv[provider]) {
       setText('byoPasteTitle', formatCopy(byoText.paste_title, {provider: providerLabel(provider)}));
-      setText('byoKeyLabel', `your ${providerLabel(provider)} key`);
+      setText('byoKeyLabel', window.JournalI18n.render('journal.window.thinking.status.text.your.value1.key', [['value1', String(providerLabel(provider))]]));
       setText('byoKeyHint', byoText.key_hint || '');
       const terms = $('byoTermsLine');
       drawPart(terms, [provider, providerLabel(provider), byoText.terms || '', byoText.terms_link || ''], () => {
@@ -3918,15 +3919,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function localCopy() {
     if (bundledLocalUnavailable()) {
       return {pill: 'unavailable', title: 'local',
-        sub: "bundled local thinking isn't available where your journal lives.",
-        message: '', notice: 'choose another thinking option.',
+        sub: window.JournalI18n.render('journal.window.thinking.sub.bundled.local.thinking.isn.t.available'),
+        message: '', notice: window.JournalI18n.render('journal.window.thinking.notice.choose.another.thinking.option'),
         activate: false, bootstrap: false, cancel: false, tone: ''};
     }
     if (localCapabilityBlocked()) {
       return {
         pill: 'unavailable',
         title: 'local',
-        sub: "your journal's computer can't run local thinking",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.t.variant2'),
         message: '',
         notice: state.localCapability?.detail || '',
         activate: false,
@@ -3938,11 +3939,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (localCapabilityRefusedUnknown()) {
       const text = copy.local_recovery?.states?.local_probe_failed || {};
       return {
-        pill: text.pill || "couldn't check",
+        pill: text.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'),
         title: 'local',
-        sub: text.verdict || "couldn't check local setup",
+        sub: text.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'),
         message: '',
-        notice: text.reason || "try checking again in a moment.",
+        notice: text.reason || window.JournalI18n.render('journal.window.thinking.notice.try.checking.again.in.a.moment'),
         activate: false,
         bootstrap: false,
         tone: '',
@@ -3952,9 +3953,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: 'endpoint',
         title: 'local',
-        sub: "you're pointed at your own endpoint",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.you.re.pointed.at.your.own'),
         message: '',
-        notice: "you're pointed at your own endpoint. clear it to run the bundled model",
+        notice: window.JournalI18n.render('journal.window.thinking.notice.you.re.pointed.at.your.own'),
         activate: false,
         bootstrap: false,
         tone: '',
@@ -3965,9 +3966,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       || ['local_probe_failed', 'gpu_probe_failed', 'availability_unavailable'].includes(state.localAvailability?.reason_code);
     if (inspectionFailed) {
       const text = copy.local_recovery?.states?.local_probe_failed || {};
-      return {pill: text.pill || "couldn't check", title: 'local',
-        sub: text.verdict || "couldn't check local setup", message: '',
-        notice: text.reason || "try checking again in a moment.",
+      return {pill: text.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'), title: 'local',
+        sub: text.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'), message: '',
+        notice: text.reason || window.JournalI18n.render('journal.window.thinking.notice.try.checking.again.in.a.moment'),
         activate: false, bootstrap: false, tone: ''};
     }
     const installOverride = installCopyForStatus(state.install, copy.local_install || {});
@@ -3991,9 +3992,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // Disposition: ready is the only readiness branch that may offer activation.
     if (local.status === 'ready' || reason === 'ready') {
       return {
-        pill: 'off',
+        pill: window.JournalI18n.render('journal.window.thinking.status.off'),
         title: 'local',
-        sub: "your journal's computer can run a local model",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.run'),
         message: '',
         notice: copy.glance?.local?.detail || '',
         activate: true,
@@ -4007,9 +4008,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: 'unavailable',
         title: 'local',
-        sub: "your journal's computer can't run one yet",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.t'),
         message: '',
-        notice: `your journal's computer doesn't have a supported GPU, so a local model would be too slow to use. you can still use ${activeLaneLabel('byo')}.`,
+        notice: window.JournalI18n.render('journal.window.thinking.notice.your.journal.s.computer.doesn.t', [['value1', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4020,11 +4021,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (reason === 'gpu_probe_failed') {
       const copyProbe = copy.local_recovery?.states?.local_probe_failed;
       return {
-        pill: copyProbe?.pill || "couldn't check",
+        pill: copyProbe?.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'),
         title: 'local',
-        sub: copyProbe?.verdict || "couldn't check local setup",
+        sub: copyProbe?.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'),
         message: '',
-        notice: copyProbe?.reason || `couldn't check local setup. you can still use ${activeLaneLabel('byo')}.`,
+        notice: copyProbe?.reason || window.JournalI18n.render('journal.window.thinking.notice.couldn.t.check.local.setup.you', [['value1', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: '',
@@ -4040,7 +4041,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: copy.local_install?.pill_inflight || '',
         title: 'local',
-        sub: 'setting up a local model…',
+        sub: window.JournalI18n.render('journal.window.thinking.sub.setting.up.a.local.model'),
         message: '',
         notice: copy.local_install?.notice_inflight || '',
         activate: false,
@@ -4054,9 +4055,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: 'starting',
         title: 'local',
-        sub: 'starting the local model…',
+        sub: window.JournalI18n.render('journal.window.thinking.sub.starting.the.local.model'),
         message: '',
-        notice: 'local thinking will stay in your journal once the model is ready.',
+        notice: window.JournalI18n.render('journal.window.thinking.notice.local.thinking.will.stay.in.your'),
         activate: false,
         bootstrap: false,
         tone: '',
@@ -4066,11 +4067,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // model_missing, binary_missing, and runtime_missing.
     if (localSetupMissingReasons.has(reason)) {
       return {
-        pill: 'setup needed',
+        pill: window.JournalI18n.render('journal.window.thinking.window.state.text.setup.needed'),
         title: 'local',
-        sub: 'local setup is not finished yet',
+        sub: window.JournalI18n.render('journal.window.thinking.sub.local.setup.is.not.finished.yet'),
         message: '',
-        notice: 'finish local setup before turning on local thinking.',
+        notice: window.JournalI18n.render('journal.window.thinking.notice.finish.local.setup.before.turning.on'),
         activate: false,
         bootstrap: true,
         bootstrapLabel: copy.local_install?.install || '',
@@ -4081,11 +4082,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // override returns before readiness is consulted.
     if (reason === 'local_endpoint_unreachable') {
       return {
-        pill: 'not ready',
+        pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
         title: 'local',
-        sub: "your own endpoint didn't answer",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.your.own.endpoint.didn.t.answer'),
         message: '',
-        notice: `check the endpoint in ${activeLaneLabel('byo')}, then try again.`,
+        notice: window.JournalI18n.render('journal.window.thinking.notice.check.the.endpoint.in.value1.then', [['value1', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4095,11 +4096,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // unhealthy local-service view.
     if (localServerUnhealthyReasons.has(reason)) {
       return {
-        pill: 'not ready',
+        pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
         title: 'local',
-        sub: "local thinking isn't ready yet",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.local.thinking.isn.t.ready.yet'),
         message: '',
-        notice: 'check again after the local service settles.',
+        notice: window.JournalI18n.render('journal.window.thinking.notice.check.again.after.the.local.service'),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4111,9 +4112,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: 'unavailable',
         title: 'local',
-        sub: "your journal's computer needs more memory for local thinking",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.needs.more'),
         message: '',
-        notice: `you can still use ${activeLaneLabel('byo')}.`,
+        notice: window.JournalI18n.render('journal.window.thinking.notice.you.can.still.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4123,11 +4124,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // readiness data stays neutral.
     if (local.status === 'blocked') {
       return {
-        pill: 'not ready',
+        pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
         title: 'local',
-        sub: "couldn't get local thinking ready",
+        sub: window.JournalI18n.render('journal.window.thinking.sub.couldn.t.get.local.thinking.ready'),
         message: '',
-        notice: `try again, or use ${activeLaneLabel('byo')}.`,
+        notice: window.JournalI18n.render('journal.window.thinking.notice.try.again.or.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4136,7 +4137,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     return {
       pill: 'checking',
       title: 'local',
-      sub: 'checking local readiness.',
+      sub: window.JournalI18n.render('journal.window.thinking.sub.checking.local.readiness'),
       message: '',
       notice: '',
       activate: false,
@@ -4153,7 +4154,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const unavailable = bundledLocalUnavailable();
     const local = localCopy();
     setHidden('localModelField', unavailable);
-    setText('localSetupIntro', unavailable ? '' : 'run a thinking model right in your journal.');
+    setText('localSetupIntro', unavailable ? '' : window.JournalI18n.render('journal.window.thinking.status.text.run.a.thinking.model.right.in'));
     setPill('localSetupPill', local.pill, local.tone);
     setText('localSetupTitle', local.title);
     setText('localSetupSub', local.sub);
@@ -4176,8 +4177,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText(
       'localOverrideNoticeText',
       state.providers?.active_lane?.lane === 'confidential'
-        ? 'turn off confidential processing first, then switch to the bundled local model.'
-        : "you're pointed at your own endpoint. clear it to run the bundled model",
+        ? window.JournalI18n.render('journal.window.thinking.status.text.turn.off.confidential.processing.first.then')
+        : window.JournalI18n.render('journal.window.thinking.status.text.you.re.pointed.at.your.own'),
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
     setButtonState('localBootstrap', local.bootstrap, !local.bootstrap);
@@ -4198,14 +4199,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         requirements.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
         requirements.target = '_blank';
         requirements.rel = 'noopener noreferrer';
-        requirements.textContent = 'minimum requirements ↗';
+        requirements.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.minimum.requirements');
         const byo = document.createElement('button');
         byo.type = 'button';
         byo.className = 'textlink';
         byo.dataset.openView = 'byo-setup';
         byo.textContent = activeLaneLabel('byo');
         byo.addEventListener('click', () => showView('byo-setup'));
-        links.append(requirements, document.createTextNode(' or use '), byo);
+        links.append(requirements, document.createTextNode(window.JournalI18n.render('journal.window.thinking.window.state.text.or.use')), byo);
       }
     });
   }
@@ -4245,8 +4246,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function byoSavedSetupLabel(provider) {
-    if (provider === 'local') return copy.lane_switch?.setup_endpoint || 'your endpoint';
-    return copy.lane_switch?.setup_key || 'a saved key';
+    if (provider === 'local') return copy.lane_switch?.setup_endpoint || window.JournalI18n.render('journal.window.thinking.window.state.text.your.endpoint');
+    return copy.lane_switch?.setup_key || window.JournalI18n.render('journal.window.thinking.window.state.text.a.saved.key');
   }
 
   function renderLaneSwitch() {
@@ -4279,7 +4280,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         formatCopy(switchCopy.to_local_note, {current: byoSetupLabel(brain)}),
       );
     } else {
-      setText('switchNote', 'you can switch back anytime.');
+      setText('switchNote', window.JournalI18n.render('journal.window.thinking.status.text.you.can.switch.back.anytime'));
     }
     const primary = $('switchConfirmPrimary');
     if (primary) {
@@ -4903,7 +4904,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         if (unlogged) {
           setMessage('localEndpointStatus', unlogged, 'error');
         } else {
-          setMessage('localEndpointStatus', 'endpoint saved', 'ok');
+          setMessage('localEndpointStatus', window.JournalI18n.render('journal.window.thinking.window.state.text.endpoint.saved'), 'ok');
           showView('main');
         }
         return;
@@ -4955,7 +4956,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setSelectedByoProvider(defaultByoProvider());
       state.byoMode = 'pick';
     }
-    setMessage('localEndpointStatus', 'endpoint cleared', 'ok');
+    setMessage('localEndpointStatus', window.JournalI18n.render('journal.window.thinking.window.state.text.endpoint.cleared'), 'ok');
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
   }
 
@@ -5946,7 +5947,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const percent = (part, whole) => {
       if (!whole) return '0%';
       const value = (part / whole) * 100;
-      if (value > 0 && value < 1) return 'under 1%';
+      if (value > 0 && value < 1) return window.JournalI18n.render('journal.window.thinking.window.state.text.under');
       return `${Math.round(value)}%`;
     };
     const dayLabel = (day) => window.JournalFormat.day(day).toLowerCase();
@@ -6013,7 +6014,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (!trail) return;
       trail.hidden = median === null || median === undefined;
       if (!trail.hidden) {
-        trail.textContent = `${plural(median, 'thought', 'thoughts')} in a typical hour of thinking over the last 24 hours →`;
+        trail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.in.a.typical.hour.of', [['value1', String(plural(median, 'thought', 'thoughts'))]]);
       }
     }
 
@@ -6021,33 +6022,33 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const thinking = current.thinking_hours;
       setText('paceMedian', current.median === null ? '—' : number(current.median));
       setText('paceMedianSub', thinking
-        ? `in a typical hour of thinking. your journal finished thinking in ${number(thinking)} of the last ${plural(current.hours, 'hour', 'hours')}.`
-        : `nothing finished in the last ${plural(current.hours, 'hour', 'hours')}.`);
+        ? window.JournalI18n.render('journal.window.thinking.status.text.in.a.typical.hour.of.thinking', [['value1', String(number(thinking))], ['value2', String(plural(current.hours, 'hour', 'hours'))]])
+        : window.JournalI18n.render('journal.window.thinking.status.text.nothing.finished.in.the.last.value1', [['value1', String(plural(current.hours, 'hour', 'hours'))]]));
       const busiest = current.busiest;
       setText('paceBusiest', busiest ? number(busiest.thoughts) : '—');
-      setText('paceBusiestSub', busiest ? whenLabel(busiest) : 'no busy hour yet');
+      setText('paceBusiestSub', busiest ? whenLabel(busiest) : window.JournalI18n.render('journal.window.thinking.status.text.no.busy.hour.yet'));
       setText('paceOlder', current.thoughts ? percent(current.older, current.thoughts) : '—');
-      setText('paceOlderSub', 'of the thinking was about older days');
+      setText('paceOlderSub', window.JournalI18n.render('journal.window.thinking.status.text.of.the.thinking.was.about.older'));
       setText('paceUnfinished', number(current.unfinished));
       const ran = current.thoughts + current.unfinished;
-      setText('paceUnfinishedSub', ran ? `${percent(current.unfinished, ran)} of what your journal ran` : '');
+      setText('paceUnfinishedSub', ran ? window.JournalI18n.render('journal.window.thinking.status.text.value1.of.what.your.journal.ran', [['value1', String(percent(current.unfinished, ran))]]) : '');
     }
 
     function chartTitle(current) {
-      if (current.key === 'month') return "each day of the last 30, by that day's typical hour";
-      if (current.key === 'week') return 'each hour of the last 7 days';
-      return 'each hour of the last 24';
+      if (current.key === 'month') return window.JournalI18n.render('journal.window.thinking.window.explanation.each.day.of.the.last.by');
+      if (current.key === 'week') return window.JournalI18n.render('journal.window.thinking.window.explanation.each.hour.of.the.last.days');
+      return window.JournalI18n.render('journal.window.thinking.window.explanation.each.hour.of.the.last');
     }
 
     function readout(bar) {
-      if (!bar) return 'point at a bar, or select the chart and use the arrow keys.';
+      if (!bar) return window.JournalI18n.render('journal.window.thinking.window.explanation.point.at.a.bar.or.select');
       const total = bar.recent + bar.older;
       if (bar.start === undefined) {
         if (!bar.thinking_hours) return `${whenLabel(bar)}: nothing finished`;
-        return `${whenLabel(bar)}: ${plural(total, 'thought', 'thoughts')} in a typical hour, ${plural(bar.thoughts, 'thought', 'thoughts')} over ${plural(bar.thinking_hours, 'hour', 'hours')} of thinking, ${percent(bar.older_thoughts, bar.thoughts)} about older days`;
+        return window.JournalI18n.render('journal.window.thinking.window.explanation.value1.value2.in.a.typical.hour', [['value1', String(whenLabel(bar))], ['value2', String(plural(total, 'thought', 'thoughts'))], ['value3', String(plural(bar.thoughts, 'thought', 'thoughts'))], ['value4', String(plural(bar.thinking_hours, 'hour', 'hours'))], ['value5', String(percent(bar.older_thoughts, bar.thoughts))]]);
       }
       if (!total) return `${whenLabel(bar)}: nothing finished`;
-      return `${whenLabel(bar)}: ${plural(total, 'thought', 'thoughts')}, ${number(bar.older)} about older days`;
+      return window.JournalI18n.render('journal.window.thinking.window.explanation.value1.value2.value3.about.older.days', [['value1', String(whenLabel(bar))], ['value2', String(plural(total, 'thought', 'thoughts'))], ['value3', String(number(bar.older))]]);
     }
 
     // The axis top: four round steps that clear the tallest bar.
@@ -6114,7 +6115,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         element('line', {class: 'pace-median', x1: left, x2: left + plotWidth, y1: y(typical), y2: y(typical)}, svg);
         if (right > 30) {
           const label = element('text', {class: 'pace-axis pace-median-label', x: left + plotWidth + 6, y: y(typical) + 4}, svg);
-          label.textContent = `typical ${number(typical)}`;
+          label.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.typical.value1', [['value1', String(number(typical))]]);
         }
       }
       if (paceState.selected >= 0 && list[paceState.selected]) {
@@ -6144,9 +6145,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (!body) return;
       setText('paceTableWhen', current.key === 'month' ? 'day' : 'hour');
       const byDay = current.key === 'month';
-      setText('paceTableUnit', byDay ? 'typical hour' : 'thoughts');
-      setText('paceTableRecent', byDay ? 'thoughts that day' : 'recent days');
-      setText('paceTableOlder', byDay ? 'about older days' : 'older days');
+      setText('paceTableUnit', byDay ? window.JournalI18n.render('journal.window.thinking.status.text.typical.hour') : 'thoughts');
+      setText('paceTableRecent', byDay ? window.JournalI18n.render('journal.window.thinking.status.text.thoughts.that.day') : window.JournalI18n.render('journal.window.thinking.status.text.recent.days'));
+      setText('paceTableOlder', byDay ? window.JournalI18n.render('journal.window.thinking.status.text.about.older.days') : window.JournalI18n.render('journal.window.thinking.status.text.older.days'));
       const rows = bars(current).slice().reverse().map((bar) => {
         const row = document.createElement('tr');
         // A day's row gives its typical hour, then the day's own totals.
@@ -6178,8 +6179,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (empty) {
         const now = paceState.data.this_hour;
         setText('paceEmptyText', now
-          ? `your journal is thinking: ${plural(now, 'thought', 'thoughts')} so far this hour. its pace shows here once the hour is over.`
-          : "your journal hasn't finished any thinking in the last 30 days. once it does, its pace shows here.");
+          ? window.JournalI18n.render('journal.window.thinking.status.text.your.journal.is.thinking.value1.so', [['value1', String(plural(now, 'thought', 'thoughts'))]])
+          : window.JournalI18n.render('journal.window.thinking.status.text.your.journal.hasn.t.finished.any'));
         show('paceEmptySetup', !now);
       }
       if (!current || empty) return;
@@ -6190,8 +6191,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setText('paceReadout', readout(list[paceState.selected]));
       const through = hourLabel(paceState.data.through);
       setText('paceThrough', paceState.data.this_hour
-        ? `counted through ${through}. this hour so far: ${plural(paceState.data.this_hour, 'thought', 'thoughts')}.`
-        : `counted through ${through}.`);
+        ? window.JournalI18n.render('journal.window.thinking.status.text.counted.through.value1.this.hour.so', [['value1', String(through)], ['value2', String(plural(paceState.data.this_hour, 'thought', 'thoughts'))]])
+        : window.JournalI18n.render('journal.window.thinking.status.text.counted.through.value1', [['value1', String(through)]]));
       drawChart(current);
       renderTable(current);
     }

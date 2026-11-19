@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy mark unhide in the journal's body view.",
+  "context": "Journal window, body view. Hide copy mark unhide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49726d68f1d8d85bb79c824f7572b10296d59672e3ea9c724c55d6495f0045d8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

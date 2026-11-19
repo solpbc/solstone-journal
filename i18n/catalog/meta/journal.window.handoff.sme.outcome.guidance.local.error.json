@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance local error in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance local error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9feddb8b3757e96cd4539ebc49249b50ca70f3a502936fe3ec4e817f68772bed",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

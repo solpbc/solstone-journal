@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality medium label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality medium label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a14106dc21f36a3b258621932479700283a38b5bd86ff00ebf7e5148a1218f0a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

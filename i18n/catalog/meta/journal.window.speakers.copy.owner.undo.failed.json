@@ -1,0 +1,16 @@
+{
+  "description": "Owner undo failed in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner undo failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c0bef2af55d71b25bb941decf317eb09673fcdcf9bb5904f106be8830dc139c",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

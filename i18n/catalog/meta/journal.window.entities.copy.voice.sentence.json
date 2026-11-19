@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_VOICE_SENTENCE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_VOICE_SENTENCE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe09901af26c997297d9d10a3e32a619f56b92ecfa0ab7b15c58ad58462cb16d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{id}"
+    }
+  ]
+}

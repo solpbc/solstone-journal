@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's body view.",
+  "context": "Journal window, body view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27ef10afd0d72c3cd98b9976e955932888e783078f898763c620919b8e455355",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

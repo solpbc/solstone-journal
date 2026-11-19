@@ -1,0 +1,28 @@
+{
+  "description": "Body display sleep stage in the journal's body view.",
+  "context": "Journal window, body view. Body display sleep stage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d139d6daa1661ff12890d8421bd5bb80d5aa45af50913c05d353ad165214344",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

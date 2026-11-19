@@ -1,0 +1,16 @@
+{
+  "description": "Singular day content unit in the journal's view.map view.",
+  "context": "Journal window, view.map view. Singular day content unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0540af32cc3ee86cf7d12dae1209894b36df18fc9e63046863af5f712546374",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

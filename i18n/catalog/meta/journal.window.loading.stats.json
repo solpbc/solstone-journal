@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the stats journal route loads on first paint.",
+  "context": "Status shown while the stats journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "07d48f4e83b091acc7d35db09817f855ceffbd16d0be1d35f433bb985ec2f060",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body display strava commute in the journal's body view.",
+  "context": "Journal window, body view. Body display strava commute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70557393f7e94dcda405eb7bb3c0049863f92a1f69442bd0cf7a1720e3df2317",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

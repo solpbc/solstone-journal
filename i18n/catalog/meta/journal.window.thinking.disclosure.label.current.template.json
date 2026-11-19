@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's thinking view.",
+  "context": "Journal window, thinking view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1581508f84f761565a1537c48f7decf18bb49796172e4f3546e696fb5b611052",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

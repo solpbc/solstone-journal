@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_CALENDAR_ONLY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_CALENDAR_ONLY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4940760439232f368eb3d6ac45260769201f0c66a0e4578d334360ed5ed2c86f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

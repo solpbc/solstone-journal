@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair link copy fail toast.",
+  "context": "Network view copy, pair link copy fail toast.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "680f404ed03cf9d46657d01469afdcdfc76ace3f0b70a6f380ee2f5ad39a0f49",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

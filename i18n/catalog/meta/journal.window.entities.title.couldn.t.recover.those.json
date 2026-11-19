@@ -1,0 +1,16 @@
+{
+  "description": "Title in the journal's entities view.",
+  "context": "Journal window, entities view. Title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b15b0c1ae9fe1e4c13c2232296dbdd988b1fabc567996e3575299686dba1aab",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

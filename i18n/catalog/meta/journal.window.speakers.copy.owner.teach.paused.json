@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach paused in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bda7b9673b37f77789eee17c15e49df788bc12fa39cc982c6da6df58092d694",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

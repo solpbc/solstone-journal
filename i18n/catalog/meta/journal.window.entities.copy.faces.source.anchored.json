@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SOURCE_ANCHORED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SOURCE_ANCHORED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "795ae79234985ef375f9c9ee186c0ac33996aa7eca1fc67077931aeccdbfbbb7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

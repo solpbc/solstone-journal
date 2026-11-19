@@ -1,0 +1,16 @@
+{
+  "description": "Byo outside copy outside_unreachable in the journal's agents view.",
+  "context": "Journal window, agents view. Byo outside copy outside_unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ac4701e9dfa9eeaf23bdbd5ffb86ff68f2f4a4b242461b05377f11d3b78fda2",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

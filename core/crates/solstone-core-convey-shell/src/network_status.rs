@@ -15,6 +15,7 @@ use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::committed::{
@@ -38,6 +39,7 @@ use crate::JournalRoot;
 use crate::link_health_cache::{LINK_HEALTH_FRESHNESS_MS, RelayHealthCache, RelayHealthCacheStore};
 use crate::network::read_posture;
 use crate::network_writes::NetworkOperationsOverride;
+use crate::window_catalog::{self, response_locale};
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const HOME_CANDIDATES_ERROR: &str = "couldn't check your journal's addresses";
@@ -315,13 +317,17 @@ pub(crate) async fn private_link(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     override_operations: Option<Extension<NetworkOperationsOverride>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
     Json(private_link_body(
         &root.0,
-        Some(operations.operation_raw("spl")),
+        Some(window_catalog::localize_handoff(
+            operations.operation_raw("spl"),
+            response_locale(locale),
+        )),
     ))
     .into_response()
 }

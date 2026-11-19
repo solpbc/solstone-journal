@@ -1,0 +1,23 @@
+{
+  "description": "Copy threads none listed in the journal's year view.",
+  "context": "Journal window, year view. Copy threads none listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eeecdff95cf886a580b50daa735e0195442b4a3e4bf19ef5de8096e60fd5cbf6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{year}"
+    }
+  ]
+}

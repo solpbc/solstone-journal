@@ -1,0 +1,16 @@
+{
+  "description": "Lane byo in the journal's agents view.",
+  "context": "Journal window, agents view. Lane byo.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a64b0117aef5aa21ed75669c25ca27005f12d4af2540c3e001b3d356c500503",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Byo outside copy outside_ok in the journal's agents view.",
+  "context": "Journal window, agents view. Byo outside copy outside_ok.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6b9f777fbc8cb79ed5da710e3e2256fbec3c9a04edd73d7d22ee6bb4d1021ca",
+  "max_length": 184,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

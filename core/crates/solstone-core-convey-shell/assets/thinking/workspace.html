@@ -1176,8 +1176,8 @@
   <div id="thinking-loading">
     <div class="surface-state surface-state--loading" role="status" aria-busy="true">
       <div class="surface-state-spinner" aria-hidden="true"></div>
-      <span class="surface-state-text" data-role="loading-status">loading thinking settings…</span>
-      <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+      <span class="surface-state-text" data-role="loading-status">{{journal.window.thinking.visible.text.loading.thinking.settings}}</span>
+      <span class="surface-state-still" data-role="still-working">{{journal.window.thinking.visible.text.still.working}}</span>
     </div>
   </div>
 
@@ -1185,11 +1185,11 @@
     <header class="thinking-runs-header">
       <h1 id="thinkingHeading" tabindex="-1"></h1>
       <div class="thinking-runs-tabs" id="thinkingSectionTabs" role="tablist">
-        <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">setup</button>
-        <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">runs</button>
-        <button type="button" class="thinking-runs-tab" id="thinkingPaceTab" role="tab" aria-selected="false" aria-controls="thinkingPacePanel" tabindex="-1">thoughts per hour</button>
+        <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">{{journal.window.thinking.button.label.setup}}</button>
+        <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">{{journal.window.thinking.button.label.runs}}</button>
+        <button type="button" class="thinking-runs-tab" id="thinkingPaceTab" role="tab" aria-selected="false" aria-controls="thinkingPacePanel" tabindex="-1">{{journal.window.thinking.button.label.thoughts.per.hour}}</button>
       </div>
-      <p class="intro" id="thinkingIntro">loading your processing setup…</p>
+      <p class="intro" id="thinkingIntro">{{journal.window.thinking.visible.text.loading.your.processing.setup}}</p>
       <p class="devices-invite" id="thinkingDevicesInvite" hidden>
         <span class="devices-invite-ring" aria-hidden="true"></span>
         <span><span id="thinkingDevicesInviteText"></span> <a class="textlink" id="thinkingDevicesInviteLink" href="/app/network/#devices"></a></span>
@@ -1226,29 +1226,29 @@
         </div>
         <button type="button" class="btn" id="chatgptGlanceStartOver" hidden></button>
         <button type="button" class="btn ghost" id="chatgptGlancePickOther" hidden></button>
-        <details id="thinkingIdentityDetails" hidden><summary>processing details</summary><p class="gsub" id="thinkingActiveIdentity"></p></details>
+        <details id="thinkingIdentityDetails" hidden><summary>{{journal.window.thinking.disclosure.label.processing.details}}</summary><p class="gsub" id="thinkingActiveIdentity"></p></details>
         <button type="button" class="trail" id="brainCheckAction" hidden></button>
         <button type="button" class="trail" id="thinkingPaceTrail" hidden></button>
       </div>
 
       <div class="panelbody">
-        <h2>where the thinking happens</h2>
-        <p class="micro" id="forkHint">one at a time. the one with the dot is active right now.</p>
+        <h2>{{journal.window.thinking.section.heading.where.the.thinking.happens}}</h2>
+        <p class="micro" id="forkHint">{{journal.window.thinking.visible.text.one.at.a.time.the.one}}</p>
       </div>
 
       <div class="notice cant-run" id="localCantRun" role="note" hidden>
-        <h3>your journal's computer can't run local thinking</h3>
-        <p>it needs supported hardware. <a class="textlink" href="https://support.solstone.app/kb/solstone-memory-and-local-models" target="_blank" rel="noopener noreferrer">minimum requirements ↗</a></p>
+        <h3>{{journal.window.thinking.section.heading.your.journal.s.computer.can.t}}</h3>
+        <p>{{journal.window.thinking.visible.text.it.needs.supported.hardware}} <a class="textlink" href="https://support.solstone.app/kb/solstone-memory-and-local-models" target="_blank" rel="noopener noreferrer">{{journal.window.thinking.link.label.minimum.requirements}}</a></p>
       </div>
 
-      <section class="lanegrid" aria-label="thinking options">
+      <section class="lanegrid" aria-label="{{journal.window.thinking.accessible.name.thinking.options}}">
         <article class="lane" id="lane-local" data-lane="local" data-open-view="local-setup" role="button" tabindex="0">
           <div class="lanehead">
             <h2 id="localLaneTitle"></h2>
-            <span class="pill" id="localLanePill">checking</span>
+            <span class="pill" id="localLanePill">{{journal.window.thinking.visible.text.checking}}</span>
           </div>
           <p id="localLaneDescription"></p>
-          <span class="activetag" id="localActiveTag" hidden>active</span>
+          <span class="activetag" id="localActiveTag" hidden>{{journal.window.thinking.visible.text.active}}</span>
           <button type="button" class="trail" data-open-view="local-setup" id="localLaneStatus"></button>
         </article>
 
@@ -1258,17 +1258,17 @@
             <span class="pill" id="confidentialLanePill"></span>
           </div>
           <p><span id="confidentialLaneDescription"></span> <button type="button" class="laneinline" data-open-view="confidential-setup" id="confidentialLaneMore"></button></p>
-          <span class="activetag" id="confidentialActiveTag" hidden>active</span>
+          <span class="activetag" id="confidentialActiveTag" hidden>{{journal.window.thinking.visible.text.active}}</span>
           <button type="button" class="trail" data-open-view="confidential-setup" id="confidentialLaneStatus"></button>
         </article>
 
         <article class="lane" id="lane-byo" data-lane="byo" data-open-view="byo-setup" role="button" tabindex="0">
           <div class="lanehead">
             <h2 id="byoLaneTitle"></h2>
-            <span class="pill" id="byoLanePill">off</span>
+            <span class="pill" id="byoLanePill">{{journal.window.thinking.visible.text.off}}</span>
           </div>
           <p id="byoLaneDescription"></p>
-          <span class="activetag" id="byoActiveTag" hidden>active</span>
+          <span class="activetag" id="byoActiveTag" hidden>{{journal.window.thinking.visible.text.active}}</span>
           <button type="button" class="trail" data-open-view="byo-setup" id="byoLaneStatus"></button>
         </article>
       </section>
@@ -1276,7 +1276,7 @@
       </section>
 
       <section class="view" data-view="confidential-setup" hidden>
-        <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
+        <button type="button" class="backlink" data-open-view="main">{{journal.window.thinking.button.label.thinking}}</button>
         <div class="panelbody">
           <h2 id="confidentialSetupHeading" tabindex="-1"></h2>
           <p class="intro" id="confidentialSetupSub"></p>
@@ -1285,7 +1285,7 @@
         <div class="app-onoff" id="confidentialSetupCard">
           <div class="cardtop">
             <h3 id="confidentialSetupTitle"></h3>
-            <span class="pill" id="confidentialSetupPill">off</span>
+            <span class="pill" id="confidentialSetupPill">{{journal.window.thinking.visible.text.off}}</span>
           </div>
           <p class="gsub" id="confidentialSetupState"></p>
           <p class="meta" id="confidentialSetupMeta"></p>
@@ -1323,17 +1323,17 @@
       </section>
 
       <section class="view" data-view="byo-setup" hidden>
-        <button type="button" class="backlink" id="byoBackLink">‹ thinking</button>
+        <button type="button" class="backlink" id="byoBackLink">{{journal.window.thinking.button.label.thinking}}</button>
       <div class="panelbody">
         <h2 id="byoSetupTitle" tabindex="-1"></h2>
         <p class="intro" id="byoIntro"></p>
       </div>
 
-      <label class="hidden-select" for="byoProvider">provider</label>
-      <select id="byoProvider" class="hidden-select" aria-label="provider">
-        <option value="anthropic">Claude</option>
-        <option value="google">Gemini</option>
-        <option value="openai">GPT</option>
+      <label class="hidden-select" for="byoProvider">{{journal.window.thinking.field.label.provider}}</label>
+      <select id="byoProvider" class="hidden-select" aria-label="{{journal.window.thinking.accessible.name.provider}}">
+        <option value="anthropic">{{journal.window.thinking.option.label.claude}}</option>
+        <option value="google">{{journal.window.thinking.option.label.gemini}}</option>
+        <option value="openai">{{journal.window.thinking.option.label.gpt}}</option>
         <option value="chatgpt"></option>
       </select>
 
@@ -1346,37 +1346,37 @@
         <p class="micro" id="byoPickSub"></p>
       </section>
 
-      <section class="provgrid" id="byoProviderGrid" aria-label="provider choices">
+      <section class="provgrid" id="byoProviderGrid" aria-label="{{journal.window.thinking.accessible.name.provider.choices}}">
         <article class="prov" id="prov-anthropic" data-provider-card="anthropic">
           <div class="cardtop">
-            <h3>Claude</h3>
-            <span class="pill" id="prov-anthropic-pill">pick</span>
+            <h3>{{journal.window.thinking.section.heading.claude}}</h3>
+            <span class="pill" id="prov-anthropic-pill">{{journal.window.thinking.visible.text.pick}}</span>
           </div>
-          <p>use an Anthropic API key.</p>
+          <p>{{journal.window.thinking.visible.text.use.an.anthropic.api.key}}</p>
           <div class="inline-actions">
-            <button type="button" class="btn primary" data-byo-provider="anthropic">choose Claude</button>
+            <button type="button" class="btn primary" data-byo-provider="anthropic">{{journal.window.thinking.button.label.choose.claude}}</button>
             <a class="textlink" data-byo-key-link href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"></a>
           </div>
         </article>
         <article class="prov" id="prov-google" data-provider-card="google">
           <div class="cardtop">
-            <h3>Gemini</h3>
-            <span class="pill" id="prov-google-pill">pick</span>
+            <h3>{{journal.window.thinking.section.heading.gemini}}</h3>
+            <span class="pill" id="prov-google-pill">{{journal.window.thinking.visible.text.pick}}</span>
           </div>
-          <p id="prov-google-desc">use a Google AI Studio key.</p>
+          <p id="prov-google-desc">{{journal.window.thinking.visible.text.use.a.google.ai.studio.key}}</p>
           <div class="inline-actions">
-            <button type="button" class="btn primary" data-byo-provider="google">choose Gemini</button>
+            <button type="button" class="btn primary" data-byo-provider="google">{{journal.window.thinking.button.label.choose.gemini}}</button>
             <a class="textlink" data-byo-key-link href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"></a>
           </div>
         </article>
         <article class="prov" id="prov-openai" data-provider-card="openai">
           <div class="cardtop">
-            <h3>GPT</h3>
-            <span class="pill" id="prov-openai-pill">pick</span>
+            <h3>{{journal.window.thinking.section.heading.gpt}}</h3>
+            <span class="pill" id="prov-openai-pill">{{journal.window.thinking.visible.text.pick}}</span>
           </div>
-          <p id="prov-openai-desc">use an OpenAI API key.</p>
+          <p id="prov-openai-desc">{{journal.window.thinking.visible.text.use.an.openai.api.key}}</p>
           <div class="inline-actions">
-            <button type="button" class="btn primary" data-byo-provider="openai">choose GPT</button>
+            <button type="button" class="btn primary" data-byo-provider="openai">{{journal.window.thinking.button.label.choose.gpt}}</button>
             <a class="textlink" data-byo-key-link href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"></a>
           </div>
         </article>
@@ -1450,21 +1450,21 @@
         <p class="micro" id="byoEndpointSub"></p>
         <div class="details-grid">
           <div class="field">
-            <label for="localEndpointUrl">endpoint URL</label>
+            <label for="localEndpointUrl">{{journal.window.thinking.field.label.endpoint.url}}</label>
             <input type="url" id="localEndpointUrl">
           </div>
           <div class="field">
-            <label for="localEndpointModel">served model</label>
+            <label for="localEndpointModel">{{journal.window.thinking.field.label.served.model}}</label>
             <input type="text" id="localEndpointModel">
           </div>
           <div class="field">
-            <label for="localEndpointCredential">credential</label>
+            <label for="localEndpointCredential">{{journal.window.thinking.field.label.credential}}</label>
             <input type="password" id="localEndpointCredential" autocomplete="off">
           </div>
         </div>
         <div class="inline-actions">
-          <button type="button" class="btn" id="localEndpointSave">save endpoint</button>
-          <button type="button" class="btn ghost" id="localEndpointClear">clear endpoint</button>
+          <button type="button" class="btn" id="localEndpointSave">{{journal.window.thinking.button.label.save.endpoint}}</button>
+          <button type="button" class="btn ghost" id="localEndpointClear">{{journal.window.thinking.button.label.clear.endpoint}}</button>
         </div>
         <p class="micro" id="byoEndpointHonesty"></p>
         <div class="message" id="localEndpointStatus"></div>
@@ -1473,15 +1473,15 @@
       <section class="pastebox" id="byoPastePanel" hidden>
         <h3 id="byoPasteTitle"></h3>
         <div class="field">
-          <label for="byoKeyInput" id="byoKeyLabel">key</label>
+          <label for="byoKeyInput" id="byoKeyLabel">{{journal.window.thinking.field.label.key}}</label>
           <input type="password" id="byoKeyInput" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true">
         </div>
         <p class="micro" id="byoKeyHint"></p>
         <p class="micro" id="byoTermsLine"></p>
         <div class="message" id="byoKeyStatus" aria-live="polite"></div>
         <div class="actions">
-          <button type="button" class="btn primary" id="byoSaveKey">check this key →</button>
-          <button type="button" class="btn ghost" id="byoClearKey">clear key</button>
+          <button type="button" class="btn primary" id="byoSaveKey">{{journal.window.thinking.button.label.check.this.key}}</button>
+          <button type="button" class="btn ghost" id="byoClearKey">{{journal.window.thinking.button.label.clear.key}}</button>
         </div>
       </section>
 
@@ -1528,44 +1528,44 @@
     </section>
 
     <section class="view" data-view="local-setup" hidden>
-      <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
+      <button type="button" class="backlink" data-open-view="main">{{journal.window.thinking.button.label.thinking}}</button>
       <div class="panelbody">
-        <h2 id="localSetupHeading" tabindex="-1">local</h2>
-        <p class="intro" id="localSetupIntro">run a thinking model right in your journal.</p>
+        <h2 id="localSetupHeading" tabindex="-1">{{journal.window.thinking.section.heading.local}}</h2>
+        <p class="intro" id="localSetupIntro">{{journal.window.thinking.visible.text.run.a.thinking.model.right.in}}</p>
       </div>
 
       <div class="app-onoff" id="localSetupCard" aria-live="polite" aria-atomic="true">
         <div class="cardtop">
-          <h3 id="localSetupTitle">local</h3>
-          <span class="pill" id="localSetupPill">checking</span>
+          <h3 id="localSetupTitle">{{journal.window.thinking.section.heading.local}}</h3>
+          <span class="pill" id="localSetupPill">{{journal.window.thinking.visible.text.checking}}</span>
         </div>
-        <p class="gsub" id="localSetupSub">checking local readiness</p>
+        <p class="gsub" id="localSetupSub">{{journal.window.thinking.visible.text.checking.local.readiness}}</p>
       </div>
 
       <div class="field" id="localModelField">
-        <label for="localModelSelect">model</label>
+        <label for="localModelSelect">{{journal.window.thinking.field.label.model}}</label>
         <select id="localModelSelect"></select>
       </div>
       <div class="message" id="localSetupMessage" aria-live="polite" tabindex="-1"></div>
       <div class="notice" id="localOverrideNotice" hidden>
-        <span id="localOverrideNoticeText">you're pointed at your own endpoint. clear it to run the bundled model</span>
+        <span id="localOverrideNoticeText">{{journal.window.thinking.visible.text.you.re.pointed.at.your.own}}</span>
         <div class="inline-actions">
-          <button type="button" class="btn ghost" id="localEndpointClearFromLocal">clear endpoint</button>
+          <button type="button" class="btn ghost" id="localEndpointClearFromLocal">{{journal.window.thinking.button.label.clear.endpoint}}</button>
         </div>
       </div>
       <div class="actions">
-        <button type="button" class="btn" id="localRefresh">check again</button>
+        <button type="button" class="btn" id="localRefresh">{{journal.window.thinking.button.label.check.again}}</button>
         <button type="button" class="btn" id="localBootstrap"></button>
-        <button type="button" class="btn ghost" id="localCancel" hidden>cancel</button>
-        <button type="button" class="btn" id="localRuntimeRetry">try starting local again</button>
-        <button type="button" class="btn primary" id="localActivate">turn on local</button>
+        <button type="button" class="btn ghost" id="localCancel" hidden>{{journal.window.thinking.button.label.cancel}}</button>
+        <button type="button" class="btn" id="localRuntimeRetry">{{journal.window.thinking.button.label.try.starting.local.again}}</button>
+        <button type="button" class="btn primary" id="localActivate">{{journal.window.thinking.button.label.turn.on.local}}</button>
       </div>
       <p class="micro" id="localSetupLinks"></p>
       <div class="notice" id="localNotice" aria-live="polite"></div>
     </section>
 
     <section class="view" data-view="lane-switch" hidden>
-      <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
+      <button type="button" class="backlink" data-open-view="main">{{journal.window.thinking.button.label.thinking}}</button>
       <div class="switchcard">
         <h2 id="switchHeading" tabindex="-1"></h2>
         <div class="switchflow">
@@ -1589,41 +1589,41 @@
     </section>
 
     <section class="thinking-pace-panel" id="thinkingPacePanel" data-thinking-section="pace" role="tabpanel" aria-labelledby="thinkingPaceTab" hidden>
-      <h2 id="thinkingPaceHeading" tabindex="-1">thoughts per hour</h2>
-      <p class="micro">each thought is one run your journal finished, counted in the hour it finished.</p>
-      <p class="pace-note" id="paceLoading" role="status">reading your journal's thinking…</p>
+      <h2 id="thinkingPaceHeading" tabindex="-1">{{journal.window.thinking.section.heading.thoughts.per.hour}}</h2>
+      <p class="micro">{{journal.window.thinking.visible.text.each.thought.is.one.run.your}}</p>
+      <p class="pace-note" id="paceLoading" role="status">{{journal.window.thinking.visible.text.reading.your.journal.s.thinking}}</p>
       <div class="pace-note" id="paceFailed" role="alert" hidden>
-        <p>thoughts per hour couldn't be read.</p>
-        <button type="button" class="thinking-runs-retry" id="paceRetry">try again</button>
+        <p>{{journal.window.thinking.visible.text.thoughts.per.hour.couldn.t.be}}</p>
+        <button type="button" class="thinking-runs-retry" id="paceRetry">{{journal.window.thinking.button.label.try.again}}</button>
       </div>
       <div class="pace-note" id="paceEmpty" hidden>
         <p id="paceEmptyText"></p>
-        <button type="button" class="trail" id="paceEmptySetup">check setup →</button>
+        <button type="button" class="trail" id="paceEmptySetup">{{journal.window.thinking.button.label.check.setup}}</button>
       </div>
       <div class="pace-body" id="paceBody" hidden>
-        <div class="pace-ranges" role="group" aria-label="show the last">
-          <button type="button" class="pace-range" id="paceRange-day" aria-pressed="true">24 hours</button>
-          <button type="button" class="pace-range" id="paceRange-week" aria-pressed="false">7 days</button>
-          <button type="button" class="pace-range" id="paceRange-month" aria-pressed="false">30 days</button>
+        <div class="pace-ranges" role="group" aria-label="{{journal.window.thinking.accessible.name.show.the.last}}">
+          <button type="button" class="pace-range" id="paceRange-day" aria-pressed="true">{{journal.window.thinking.button.label.hours}}</button>
+          <button type="button" class="pace-range" id="paceRange-week" aria-pressed="false">{{journal.window.thinking.button.label.days}}</button>
+          <button type="button" class="pace-range" id="paceRange-month" aria-pressed="false">{{journal.window.thinking.button.label.days.variant2}}</button>
         </div>
         <div class="pace-tiles">
           <div class="pace-tile pace-lead">
-            <div class="glabel">thoughts per hour</div>
+            <div class="glabel">{{journal.window.thinking.visible.text.thoughts.per.hour}}</div>
             <div class="pace-value" id="paceMedian"></div>
             <p class="micro" id="paceMedianSub"></p>
           </div>
           <div class="pace-tile">
-            <div class="glabel">busiest hour</div>
+            <div class="glabel">{{journal.window.thinking.visible.text.busiest.hour}}</div>
             <div class="pace-value" id="paceBusiest"></div>
             <p class="micro" id="paceBusiestSub"></p>
           </div>
           <div class="pace-tile">
-            <div class="glabel">catching up</div>
+            <div class="glabel">{{journal.window.thinking.visible.text.catching.up}}</div>
             <div class="pace-value" id="paceOlder"></div>
             <p class="micro" id="paceOlderSub"></p>
           </div>
           <div class="pace-tile">
-            <div class="glabel">didn't finish</div>
+            <div class="glabel">{{journal.window.thinking.visible.text.didn.t.finish}}</div>
             <div class="pace-value" id="paceUnfinished"></div>
             <p class="micro" id="paceUnfinishedSub"></p>
           </div>
@@ -1632,20 +1632,20 @@
           <div class="pace-chart-head">
             <h3 id="paceChartTitle"></h3>
             <ul class="pace-legend">
-              <li><span class="pace-swatch pace-recent-swatch" aria-hidden="true"></span>recent days</li>
-              <li><span class="pace-swatch pace-older-swatch" aria-hidden="true"></span>older days</li>
-              <li><span class="pace-swatch pace-typical-swatch" aria-hidden="true"></span>typical hour</li>
+              <li><span class="pace-swatch pace-recent-swatch" aria-hidden="true"></span>{{journal.window.thinking.visible.text.recent.days}}</li>
+              <li><span class="pace-swatch pace-older-swatch" aria-hidden="true"></span>{{journal.window.thinking.visible.text.older.days}}</li>
+              <li><span class="pace-swatch pace-typical-swatch" aria-hidden="true"></span>{{journal.window.thinking.visible.text.typical.hour}}</li>
             </ul>
           </div>
-          <div class="pace-chart" id="paceChart" role="group" aria-roledescription="chart" tabindex="0" aria-describedby="paceReadout" aria-label="thoughts per hour chart. use the arrow keys to read each bar."></div>
+          <div class="pace-chart" id="paceChart" role="group" aria-roledescription="chart" tabindex="0" aria-describedby="paceReadout" aria-label="{{journal.window.thinking.accessible.name.thoughts.per.hour.chart.use.the}}"></div>
           <p class="micro pace-readout" id="paceReadout" aria-live="polite"></p>
         </section>
         <p class="micro" id="paceThrough"></p>
         <details class="pace-numbers">
-          <summary>show the numbers</summary>
+          <summary>{{journal.window.thinking.disclosure.label.show.the.numbers}}</summary>
           <div class="pace-table-wrap">
             <table>
-              <thead><tr><th scope="col" id="paceTableWhen">hour</th><th scope="col" id="paceTableUnit">thoughts</th><th scope="col" id="paceTableRecent">recent days</th><th scope="col" id="paceTableOlder">older days</th></tr></thead>
+              <thead><tr><th scope="col" id="paceTableWhen">{{journal.window.thinking.column.heading.hour}}</th><th scope="col" id="paceTableUnit">{{journal.window.thinking.column.heading.thoughts}}</th><th scope="col" id="paceTableRecent">{{journal.window.thinking.column.heading.recent.days}}</th><th scope="col" id="paceTableOlder">{{journal.window.thinking.column.heading.older.days}}</th></tr></thead>
               <tbody id="paceTableBody"></tbody>
             </table>
           </div>
@@ -1654,15 +1654,15 @@
     </section>
 
     <section class="thinking-runs-panel" id="thinkingRunsPanel" data-thinking-section="runs" role="tabpanel" aria-labelledby="thinkingRunsTab" hidden>
-      <h2 id="thinkingRunsHeading" tabindex="-1">runs</h2>
+      <h2 id="thinkingRunsHeading" tabindex="-1">{{journal.window.thinking.section.heading.runs}}</h2>
       <p class="thinking-runs-status" id="thinkingRunsStatus" role="status" aria-live="polite" hidden></p>
       <div class="thinking-runs-controls">
-        <label for="thinkingRunsDate">journal day</label>
-        <button type="button" class="thinking-runs-control" id="thinkingRunsPrevious">previous day</button>
+        <label for="thinkingRunsDate">{{journal.window.thinking.field.label.journal.day}}</label>
+        <button type="button" class="thinking-runs-control" id="thinkingRunsPrevious">{{journal.window.thinking.button.label.previous.day}}</button>
         <input type="date" id="thinkingRunsDate">
-        <button type="button" class="thinking-runs-control" id="thinkingRunsNext">next day</button>
-        <label for="thinkingRunsFacet">facet</label>
-        <select id="thinkingRunsFacet"><option value="">all</option></select>
+        <button type="button" class="thinking-runs-control" id="thinkingRunsNext">{{journal.window.thinking.button.label.next.day}}</button>
+        <label for="thinkingRunsFacet">{{journal.window.thinking.field.label.facet}}</label>
+        <select id="thinkingRunsFacet"><option value="">{{journal.window.thinking.option.label.all}}</option></select>
       </div>
       <div class="thinking-runs-updated" id="thinkingRunsUpdated" hidden></div>
       <div class="thinking-runs-summary" id="thinkingRunsSummary"></div>
@@ -1670,15 +1670,15 @@
       <section class="thinking-runs-detail" id="thinkingRunsDetail" hidden>
         <h3 id="thinkingRunsDetailHeading" tabindex="-1"></h3>
         <details class="thinking-runs-ids" id="thinkingRunsDetailIds" hidden>
-          <summary>exact ids</summary>
+          <summary>{{journal.window.thinking.disclosure.label.exact.ids}}</summary>
           <p id="thinkingRunsDetailIdsText"></p>
         </details>
         <div class="thinking-runs-detail-facts" id="thinkingRunsDetailFacts"></div>
-        <p class="thinking-runs-no-output" id="thinkingRunsNoOutput" hidden>this run doesn't have a saved output.</p>
-        <button type="button" class="thinking-runs-control" id="thinkingRunsPrompt">instructions</button>
+        <p class="thinking-runs-no-output" id="thinkingRunsNoOutput" hidden>{{journal.window.thinking.visible.text.this.run.doesn.t.have.a}}</p>
+        <button type="button" class="thinking-runs-control" id="thinkingRunsPrompt">{{journal.window.thinking.button.label.instructions}}</button>
         <div class="thinking-runs-detail-tabs" id="thinkingRunsDetailTabs" role="tablist">
-          <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsLogTab" role="tab" aria-selected="true" aria-controls="thinkingRunsLogPanel" tabindex="0">run log</button>
-          <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsOutputTab" role="tab" aria-selected="false" aria-controls="thinkingRunsOutputPanel" tabindex="-1" hidden>output</button>
+          <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsLogTab" role="tab" aria-selected="true" aria-controls="thinkingRunsLogPanel" tabindex="0">{{journal.window.thinking.button.label.run.log}}</button>
+          <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsOutputTab" role="tab" aria-selected="false" aria-controls="thinkingRunsOutputPanel" tabindex="-1" hidden>{{journal.window.thinking.button.label.output}}</button>
         </div>
         <div id="thinkingRunsLogPanel" role="tabpanel" aria-labelledby="thinkingRunsLogTab"></div>
         <div id="thinkingRunsOutputPanel" role="tabpanel" aria-labelledby="thinkingRunsOutputTab" hidden></div>
@@ -1688,13 +1688,13 @@
 
 <dialog class="thinking-runs-modal" id="thinkingRunsPromptModal" role="dialog" aria-modal="true" aria-labelledby="thinkingRunsPromptHeading">
   <div class="thinking-runs-modal-content">
-    <h2 id="thinkingRunsPromptHeading">run instructions</h2>
-    <button type="button" class="thinking-runs-modal-close" id="thinkingRunsPromptClose">close</button>
-    <h3>saved request</h3>
+    <h2 id="thinkingRunsPromptHeading">{{journal.window.thinking.section.heading.run.instructions}}</h2>
+    <button type="button" class="thinking-runs-modal-close" id="thinkingRunsPromptClose">{{journal.window.thinking.button.label.close}}</button>
+    <h3>{{journal.window.thinking.section.heading.saved.request}}</h3>
     <pre id="thinkingRunsRequestContent"></pre>
     <details>
-      <summary>current template</summary>
-      <p>this uses the current template and settings, not the full instructions used by this run. placeholders may be unfilled.</p>
+      <summary>{{journal.window.thinking.disclosure.label.current.template}}</summary>
+      <p>{{journal.window.thinking.visible.text.this.uses.the.current.template.and}}</p>
       <div id="thinkingRunsPromptContent" role="status" aria-live="polite"></div>
     </details>
   </div>

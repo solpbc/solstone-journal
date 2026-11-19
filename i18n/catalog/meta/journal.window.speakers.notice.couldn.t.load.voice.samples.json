@@ -1,0 +1,16 @@
+{
+  "description": "Notice in the journal's speakers view.",
+  "context": "Journal window, speakers view. Notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b21a58a44797aee21533bc69288a198dbeea73f4623c18ae68b77658e097be24",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

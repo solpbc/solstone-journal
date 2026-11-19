@@ -1,0 +1,16 @@
+{
+  "description": "Relative journal day in the journal's date view.",
+  "context": "Journal window, date view. Relative journal day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07f1323486587880c98d27490acf46cca7922f749cae87c60c259753fef1118f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

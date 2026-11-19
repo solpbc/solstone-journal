@@ -1,0 +1,16 @@
+{
+  "description": "Check name error in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Check name error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb64fd5a3de4e9fd3a625e50f040bc4473ea9da9b5beade2476a6efe422ded35",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, spl not enrolled.",
+  "context": "Network view copy, spl not enrolled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 142,
+  "source_revision": "d409b4688d16babe547c8c224d25962e73d0def48faece54c6751c26f8157a95",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

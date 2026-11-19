@@ -1,0 +1,16 @@
+{
+  "description": "Title in the journal's shared.websocket view.",
+  "context": "Journal window, shared.websocket view. Title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e741edb0e7767de542f40216f2c63f114ed35bb83b2e1d30da56c0bbaed88783",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

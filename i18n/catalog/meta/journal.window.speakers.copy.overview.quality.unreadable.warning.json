@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality unreadable warning in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality unreadable warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d8a16e89a66bca31b9ad9723df391883c5282e59696721836b734288939cec4",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

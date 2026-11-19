@@ -1,0 +1,16 @@
+{
+  "description": "Confidential operation guidance in the journal's handoff view.",
+  "context": "Journal window, handoff view. Confidential operation guidance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ecc3c557befa15b01104e55455cd669fbf34c6c6f2fc260f6835787130d8087",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

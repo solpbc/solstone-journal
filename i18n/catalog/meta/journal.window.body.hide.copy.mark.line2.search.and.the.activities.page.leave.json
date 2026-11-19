@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy mark line2 in the journal's body view.",
+  "context": "Journal window, body view. Hide copy mark line2.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e23c43f6c5fa783539dbe4a96f984f8edb7ad6404a95561583ff3cbd333fe191",
+  "max_length": 182,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

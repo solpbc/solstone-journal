@@ -1,0 +1,28 @@
+{
+  "description": "Tooltip in the journal's shared.shell.boot view.",
+  "context": "Journal window, shared.shell.boot view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0cc747b0c909d29c183b36e7777cb5391a4d0f2e5e35071f11cbcef102c56b8d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

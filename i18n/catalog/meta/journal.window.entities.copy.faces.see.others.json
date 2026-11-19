@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SEE_OTHERS in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SEE_OTHERS.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e5a3a9321c960525a398a10bd57de8119436c37860ae6649a18c8629839d9c6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

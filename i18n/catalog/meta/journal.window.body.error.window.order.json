@@ -1,0 +1,16 @@
+{
+  "description": "Body display error window order in the journal's body view.",
+  "context": "Journal window, body view. Body display error window order.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d146b783ac3442623356c8461d628241442c29c8daa4294cc00e4a158e95214",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

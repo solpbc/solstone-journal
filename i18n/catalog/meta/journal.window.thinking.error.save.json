@@ -1,0 +1,16 @@
+{
+  "description": "Thinking failure in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking failure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbb52256cb9d4660f977d0acfd8675f031ee7b8e3920c49bedfce3698647c9f5",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

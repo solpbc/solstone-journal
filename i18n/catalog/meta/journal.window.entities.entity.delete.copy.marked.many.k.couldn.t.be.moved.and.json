@@ -1,0 +1,23 @@
+{
+  "description": "Entity delete copy marked many in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy marked many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8dc0482a2f13b2a510d8525cc35980fd1e84d7d2f2b207012299921a18193e96",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    }
+  ]
+}

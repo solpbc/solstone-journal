@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, check again label.",
+  "context": "Network view copy, check again label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "cc48a30e7622ebf74eeeb965c49777bb6f38856c9b0dc4b23387e672453db1d3",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

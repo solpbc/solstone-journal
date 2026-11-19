@@ -1,0 +1,16 @@
+{
+  "description": "Byo dns copy cname in the journal's agents view.",
+  "context": "Journal window, agents view. Byo dns copy cname.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2684c7f56a0ce005a1a70484ed4359f2f33442f76e400c88edf2559a03c765c",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

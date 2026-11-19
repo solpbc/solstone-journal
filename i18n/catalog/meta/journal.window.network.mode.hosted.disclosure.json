@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, mode hosted disclosure.",
+  "context": "Network view copy, mode hosted disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "8885ac6dabd2bec7e8cdaea7e5a2be95e8ee2c052030bb95da6edbaedb351fe2",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Elapsed hour count (other) in the journal's time.duration view.",
+  "context": "Journal window, time.duration view. Elapsed hour count (other).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49792a5acadc5cf25127cc66ac1fdaeafe04fd44c66a94e67e440fbdf304e1fc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

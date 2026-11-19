@@ -1,0 +1,16 @@
+{
+  "description": "Owner redo label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner redo label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4deef491ad7252eca7198402d8f3a64da9bff7068503b3bb9ed66444af8235de",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

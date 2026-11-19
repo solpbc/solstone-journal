@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, identity id copy fail toast.",
+  "context": "Network view copy, identity id copy fail toast.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "102a48121ad890c46f7dd9b74f0dc3a2c925128132e1865210a05928dfa9b81a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

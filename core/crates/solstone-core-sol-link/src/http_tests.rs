@@ -511,8 +511,10 @@ async fn init_state_transports_shared_lanes_and_keeps_confidential_fixture() {
     .expect("pre-move init-state fixture parses");
     // Shared lane words changed after this snapshot. The unchanged
     // confidential detail remains pinned to the historical fixture.
-    expected["lanes"] =
-        serde_json::to_value(solstone_core_thinking_copy::LANES).expect("shared lanes serialize");
+    expected["lanes"] = serde_json::to_value(solstone_core_thinking_copy::lanes(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    ))
+    .expect("shared lanes serialize");
     assert_eq!(
         json!({
             "lanes": actual["lanes"].clone(),

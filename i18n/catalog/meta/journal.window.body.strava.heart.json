@@ -1,0 +1,42 @@
+{
+  "description": "Body display strava heart in the journal's body view.",
+  "context": "Journal window, body view. Body display strava heart.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "average",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14dbc19129468b4ce8d638ca47fff2404ca112ac7b3214b37a03c71f14ea3217",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Title in the journal's agents view.",
+  "context": "Journal window, agents view. Title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "183cd57260f95fc59d76e70b98da94a3a7642b5c5039bac3e06a685615194e2c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

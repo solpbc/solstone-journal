@@ -1,0 +1,16 @@
+{
+  "description": "Sheet title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Sheet title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bdc6c5efe547e2d27716be3411819f185a753c5ac25e14064f166939bc36424",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

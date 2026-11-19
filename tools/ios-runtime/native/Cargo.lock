@@ -5347,6 +5347,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-time",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]
@@ -5447,6 +5448,7 @@ dependencies = [
  "solstone-core-operational-logs",
  "solstone-core-setup",
  "solstone-core-system-health",
+ "solstone-core-window-catalog",
  "unicode-general-category",
 ]
 
@@ -5479,6 +5481,7 @@ dependencies = [
  "hyper-util",
  "serde",
  "serde_json",
+ "solstone-core-window-catalog",
  "tokio",
  "tower",
  "tower-http",
@@ -7358,6 +7361,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-talent-config",
  "solstone-core-time",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]
@@ -7367,6 +7371,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]
@@ -7531,6 +7536,14 @@ version = "2.0.85"
 dependencies = [
  "libloading 0.8.9",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "solstone-core-window-catalog"
+version = "2.0.85"
+dependencies = [
+ "fluent-bundle",
+ "serde_json",
 ]
 
 [[package]]

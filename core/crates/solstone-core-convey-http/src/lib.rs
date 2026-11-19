@@ -170,5 +170,6 @@ pub mod refusal;
 pub mod request;
 pub mod serve;
 pub mod server_timing;
+pub mod window_catalog;
 
 pub use cant_open::cant_open_response;

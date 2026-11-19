@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's shared.report.error view.",
+  "context": "Journal window, shared.report.error view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ddbe9cd991f45178c0d760fe18baa6c88a79888ba139ad28821e0a45dd4fce7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

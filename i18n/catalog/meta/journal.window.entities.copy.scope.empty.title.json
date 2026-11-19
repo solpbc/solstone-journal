@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_SCOPE_EMPTY_TITLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_SCOPE_EMPTY_TITLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "078ea41ca92d5ae48128f058eb1ad26b2298209437d331734a458b5fcac0439d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

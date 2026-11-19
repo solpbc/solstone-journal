@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy unhide failed in the journal's body view.",
+  "context": "Journal window, body view. Hide copy unhide failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "416fdbec55c7ed2901b97f5319d84ad2d79d1d52be5086c23c130db2c1c8bd55",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

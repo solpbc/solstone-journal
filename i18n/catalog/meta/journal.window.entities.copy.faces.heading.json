@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_HEADING in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_HEADING.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f731d98fa85bbcada7137ab3343a37e308f0d90899817b1155b545b3993407e1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

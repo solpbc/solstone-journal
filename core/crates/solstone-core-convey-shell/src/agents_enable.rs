@@ -11,6 +11,7 @@ use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, mutate_journal_config_at_root_checked,
@@ -19,6 +20,7 @@ use solstone_core_thinking::confidential::{HandoffResult, OperationRegistry, Pha
 
 use crate::assets;
 use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
+use crate::window_catalog::{self, response_locale};
 
 pub const SERVICE: &str = "sme";
 
@@ -26,8 +28,6 @@ pub(crate) fn cancel_pending(operations: &OperationRegistry) {
     operations.cancel(SERVICE, outcome(Phase::Revoked, "revoked", None));
 }
 pub(crate) const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
-const BUSY_ERROR: &str = "a request to turn on solstone.me is already open. finish it or wait for it to end, then try again.";
-const BUSY_DETAIL: &str = "operation already running";
 
 #[derive(Clone, Debug)]
 pub enum SmePollOutcome {
@@ -139,13 +139,14 @@ pub fn router(prefix: &str, operations: Arc<OperationRegistry>) -> axum::Router 
 async fn agents_operation(
     Extension(operations): Extension<Arc<OperationRegistry>>,
     override_operations: Option<Extension<SmeOperationsOverride>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
     Json(json!({
         "service": SERVICE,
-        "operation": operations.operation_raw(SERVICE)
+        "operation": window_catalog::localize_handoff(operations.operation_raw(SERVICE), response_locale(locale))
     }))
     .into_response()
 }
@@ -157,7 +158,9 @@ async fn agents_enable(
     Extension(runtime): Extension<SmeRuntime>,
     override_operations: Option<Extension<SmeOperationsOverride>>,
     override_runtime: Option<Extension<SmeRuntimeOverride>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let handoffs =
         ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
     let operations = override_operations
@@ -168,7 +171,7 @@ async fn agents_enable(
         Err(_) => {
             return refusal(
                 "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                &copy(locale, "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -179,7 +182,7 @@ async fn agents_enable(
     ) {
         return refusal(
             "invalid_operation_for_state",
-            &copy("SME_ALREADY_ENABLED_DETAIL"),
+            &copy(locale, "SME_ALREADY_ENABLED_DETAIL"),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -208,11 +211,11 @@ async fn agents_enable(
         })
         .await;
     let handle = match start {
-        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(),
+        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(locale),
         Err(crate::service_handoffs::StartRefused::Stopped) => {
             return refusal(
                 "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                &copy(locale, "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -230,20 +233,20 @@ async fn agents_enable(
             .into_response(),
         Err(_) => refusal(
             "service_operation_failed",
-            &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+            &copy(locale, "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
-fn busy_refusal() -> Response {
+fn busy_refusal(locale: &str) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({
             "reason_code": "service_busy",
             "reason": "service_busy",
-            "error": BUSY_ERROR,
-            "detail": BUSY_DETAIL,
+            "error": window_catalog::text(locale, "journal.window.agents.offered.busy"),
+            "detail": window_catalog::text(locale, "journal.window.agents.operation.busy"),
         })),
     )
         .into_response()
@@ -404,7 +407,7 @@ fn outcome_for_token(token: &str, _detail: Option<String>) -> HandoffResult {
 fn outcome(phase: Phase, code: &str, subscribe_url: Option<String>) -> HandoffResult {
     HandoffResult {
         phase,
-        guidance: guidance(code),
+        guidance: window_catalog::handoff_guidance("SME_OUTCOME_GUIDANCE", code, None),
         retryable: matches!(
             code,
             "expired" | "network_error" | "local_error" | "malformed"
@@ -413,17 +416,8 @@ fn outcome(phase: Phase, code: &str, subscribe_url: Option<String>) -> HandoffRe
     }
 }
 
-fn guidance(code: &str) -> Option<String> {
-    serde_json::from_str::<Value>(assets::spl_outcome_strings_json())
-        .ok()?
-        .get("SME_OUTCOME_GUIDANCE")?
-        .get(code)?
-        .as_str()
-        .map(str::to_owned)
-}
-
-fn copy(name: &str) -> String {
-    serde_json::from_str::<Value>(assets::spl_outcome_strings_json())
+fn copy(locale: &str, name: &str) -> String {
+    serde_json::from_str::<Value>(assets::copy_tables(locale).outcomes)
         .ok()
         .and_then(|value| value.get(name).and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_default()

@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's agents view.",
+  "context": "Journal window, agents view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f369f517f24a3640644cf3974291423146135f3e5b80412f6da6e73f666c993e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

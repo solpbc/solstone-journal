@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance malformed in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance malformed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3809a915b46f4f3080249982916850355483b83bafc419b02ed474ae0bf5f015",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

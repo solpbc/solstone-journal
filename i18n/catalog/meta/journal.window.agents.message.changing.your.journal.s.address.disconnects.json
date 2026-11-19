@@ -1,0 +1,16 @@
+{
+  "description": "Message in the journal's agents view.",
+  "context": "Journal window, agents view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d4090c40e59db08d0f0001e8c511de4281ae3e173f66afd6dc366a30dde1bdf",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

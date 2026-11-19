@@ -1,0 +1,16 @@
+{
+  "description": "Body display error month invalid in the journal's body view.",
+  "context": "Journal window, body view. Body display error month invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14a94cb488fba760e171a519f36a1d64b9444fa9b31098d3bc54d6e462ac70af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

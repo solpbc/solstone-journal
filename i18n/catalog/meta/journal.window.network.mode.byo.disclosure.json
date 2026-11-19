@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, mode byo disclosure.",
+  "context": "Network view copy, mode byo disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "66d19b34d5c6bb713dd875d3be4bd29389dd12e156ff2a1e4adb91c9ade1acdc",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

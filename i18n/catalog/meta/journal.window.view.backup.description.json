@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.backup view.",
+  "context": "Journal window, view.backup view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "737a29c9c8c826fdf64c8b5b082ff0912c2d2c5c47203db7903c383c58421317",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

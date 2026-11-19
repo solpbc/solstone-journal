@@ -12,6 +12,8 @@
 <a id="status-pane-console-link" href="#"></a>
 <div id="status-live-region"></div>
 <div id="results"></div>
+<script src="../journal-catalog.js"></script>
+<script src="../convey_copy.js"></script>
 <script>
   const results = document.getElementById('results');
   let failures = 0;
@@ -64,6 +66,7 @@
 
     window.appEvents = {
       statusLabel: offlineLabel,
+      statusLabelMessage: 'journal.window.shared.websocket.label.a.device.hasn.t.added.recently',
       setCaptureStatus() {},
       getMetrics() { return {}; },
     };
@@ -108,6 +111,7 @@
     // The substitution is keyed on that exact label: every other status word
     // passes through untouched, plural device count or not.
     window.appEvents.statusLabel = 'connecting';
+    window.appEvents.statusLabelMessage = 'journal.window.shared.websocket.label.connecting';
     window.updateStatusLabel();
     const other = document.querySelector('#status-instrument .status-label').textContent;
     assert('another status word is not re-plurals', other === 'connecting', `got "${other}"`);

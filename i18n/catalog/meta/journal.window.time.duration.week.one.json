@@ -1,0 +1,28 @@
+{
+  "description": "Elapsed week count (one) in the journal's time.duration view.",
+  "context": "Journal window, time.duration view. Elapsed week count (one).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "654ff2e5064d35c9ff8c34ef4384b1ee45c3b478b1c12c147575a0dce700de54",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

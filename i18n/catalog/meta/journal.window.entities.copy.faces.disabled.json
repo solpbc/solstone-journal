@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_DISABLED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_DISABLED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b13e9d6c832fd7c76f2e6802c828673c3af4426c998cbe462439b000e256ff92",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

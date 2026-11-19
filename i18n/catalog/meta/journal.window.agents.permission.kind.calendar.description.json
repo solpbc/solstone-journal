@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for calendar in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d73dcb6f31bd3fb1b132ee1e2e5ef63c7a1ef60d3e9319bb8269a630b9ccc462",
+  "max_length": 81,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

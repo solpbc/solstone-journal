@@ -1,0 +1,23 @@
+{
+  "description": "Copy find none in the journal's year view.",
+  "context": "Journal window, year view. Copy find none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbca5dd817c47eef8f317fad0c36ecdcb793b0d05d59c0cb1ca9482aad9e2208",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{year}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link disable confirm.",
+  "context": "Network view copy, private link disable confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 312,
+  "source_revision": "5442f81b1e6d253fbba91abf8f9f7c655f0a6f59ad23b50d043680bf812b2cca",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

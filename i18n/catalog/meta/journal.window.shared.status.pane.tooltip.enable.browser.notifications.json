@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23524c1d013edb88f849eaf6e9cf02b72fe161c72afbfea0e4d3db9a835dae28",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

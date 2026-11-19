@@ -1,0 +1,28 @@
+{
+  "description": "Elapsed day count (other) in the journal's time.duration view.",
+  "context": "Journal window, time.duration view. Elapsed day count (other).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "345f19b96b3277766d257d834c003f2aa025b9efcb97ce7a568e654d22e9f09d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

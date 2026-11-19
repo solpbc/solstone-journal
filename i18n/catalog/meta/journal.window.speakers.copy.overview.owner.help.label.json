@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner help label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner help label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "823f553daaee1c0fb9c2d7141bc2b768f7db3edc16d73cf3677b9473327c0016",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

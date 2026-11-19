@@ -1,0 +1,16 @@
+{
+  "description": "Byo relay copy relay_connecting in the journal's agents view.",
+  "context": "Journal window, agents view. Byo relay copy relay_connecting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a991567adb64a0bec0b0b731a92e26ee1967aba72e0f57ceac300445484593b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -95,6 +95,7 @@ mod local_endpoint;
 mod window_catalog;
 
 #[cfg(feature = "host")]
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::path::Path as FsPath;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1987,13 +1988,19 @@ async fn agents_workspace() -> Response {
     asset_response("/app/agents/workspace")
 }
 
+fn english_window_message(id: &str) -> String {
+    window_catalog::text(window_catalog::ENGLISH, id)
+}
+
 /// The shell's per-request part. The app table ships in the shell's script
 /// bundle; this names which of those apps this router serves, in order, with
 /// the journal's version, clock and the owner's pins.
 async fn shell_api(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(shell): Extension<Arc<ShellPayload>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let mut payload = serde_json::Map::new();
     payload.insert(
         "app_names".to_string(),
@@ -2032,7 +2039,10 @@ async fn shell_api(
         Err(error) => {
             return solstone_core_convey_http::envelope::error_envelope(
                 "corrupt_config",
-                "your settings couldn't be read.",
+                window_catalog::text(
+                    locale,
+                    "journal.window.shell.error.your.settings.couldn.t.be.read",
+                ),
                 error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )

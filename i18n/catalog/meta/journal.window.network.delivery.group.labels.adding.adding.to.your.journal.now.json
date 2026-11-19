@@ -1,0 +1,16 @@
+{
+  "description": "Delivery group labels adding in the journal's network view.",
+  "context": "Journal window, network view. Delivery group labels adding.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd3db9d39b38ff64e47fabb10842c4b86c9a6cf158f02217f6d4b8bf5611e24c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -351,6 +352,7 @@ function createEnvironment() {
     Array,
     Object,
   });
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   context.window.JournalFormat.day = (d) => `Apr 3, 2026`;
 
@@ -682,6 +684,7 @@ function createDeviceEnvironment() {
     serviceName: value => value, relativeTime: value => String(value), ageAgo: value => String(value),
     fetch: async () => ({ ok: true, json: async () => ({ clients: [] }) }),
   });
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   context.updateStatusSummary = () => {
     context.selection = vm.runInContext('selectGlanceSentence(state, Date.now())', context);

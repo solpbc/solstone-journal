@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_SCOPE_EMPTY_BODY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_SCOPE_EMPTY_BODY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4849884c4d0cb1c9d34a7eee2a35bb7e6aa8f503edd0bc7ef922a07ffc740567",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

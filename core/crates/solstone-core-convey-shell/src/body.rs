@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use crate::asset_response;
+use axum::http::HeaderMap;
 
 pub async fn shell() -> Response {
     asset_response("/static/shell.html")
@@ -16,11 +17,11 @@ pub async fn trends() -> Response {
     axum::response::Redirect::permanent("/app/body/").into_response()
 }
 
-pub async fn shell_for_day(Path(day): Path<String>) -> Response {
+pub async fn shell_for_day(Path(day): Path<String>, headers: HeaderMap) -> Response {
     if solstone_core_time::parse_day(&day).is_some() {
         return shell().await;
     }
-    day_refusal()
+    day_refusal(crate::window_catalog::request_locale(&headers))
 }
 
 pub async fn workspace() -> Response {
@@ -31,11 +32,11 @@ pub async fn background() -> Response {
     crate::not_found_response()
 }
 
-fn day_refusal() -> Response {
+fn day_refusal(locale: &str) -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         "invalid_day",
-        "that day couldn't be used.",
-        "Invalid day",
+        crate::window_catalog::text(locale, "journal.window.body.day.invalid"),
+        crate::window_catalog::text(locale, "journal.window.body.day.invalid.detail"),
         StatusCode::BAD_REQUEST,
     )
     .into_response()

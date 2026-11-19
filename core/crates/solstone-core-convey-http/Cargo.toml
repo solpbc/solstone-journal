@@ -19,6 +19,7 @@ test-hooks = []
 
 [dependencies]
 axum.workspace = true
+solstone-core-window-catalog.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 serde.workspace = true

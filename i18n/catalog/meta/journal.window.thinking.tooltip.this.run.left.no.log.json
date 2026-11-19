@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's thinking view.",
+  "context": "Journal window, thinking view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe7181d40ead87c5411d330e414b55e7f48ef9f9394d1dfa1bd51840f241734c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

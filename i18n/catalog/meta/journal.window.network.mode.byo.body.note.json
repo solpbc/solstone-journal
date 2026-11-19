@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, mode byo body note.",
+  "context": "Network view copy, mode byo body note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 156,
+  "source_revision": "4551f509024e84cc2d721e770fd85ba02cb0161c58f24d2bfd83f51b838f2b32",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

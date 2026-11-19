@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_SCOPE_FACET_MISSING in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_SCOPE_FACET_MISSING.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "328aab83536a935f6e38526ed35b6a3de51cc7dd240eb427adffb32042e7f90d",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

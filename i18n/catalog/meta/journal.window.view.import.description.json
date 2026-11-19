@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.import view.",
+  "context": "Journal window, view.import view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "541a2b669a291102a3d2de1228416f8ea0b900717cd5964ba9e49fe510d7e06a",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.question view.",
+  "context": "Journal window, shared.question view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7c2820b0db62f6f00d8b38e58ec128c51962216efaec4eb7e9be0ece4a95a50",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's more view.",
+  "context": "Journal window, more view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8eaf9fde2c761b3b1db41733c01af06a8331bac816d2fa1850005ea58ce9ec60",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

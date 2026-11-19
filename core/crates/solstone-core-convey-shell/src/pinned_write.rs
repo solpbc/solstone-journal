@@ -3,6 +3,8 @@
 
 //! `PUT /api/shell/pins`. The mutation closure reads, toggles, and normalizes.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::sync::Arc;
 
 use axum::Json;
@@ -18,36 +20,69 @@ use solstone_core_journal_io::LockOptions;
 use crate::JournalRoot;
 use crate::pinned::{is_pinnable, known_view, toggle};
 
-const INVALID: &str = "that setting couldn't be saved because one value was invalid.";
 /// A pin request is one view name and a boolean.
 const MAX_BODY_BYTES: usize = 4096;
 
 pub(crate) async fn put_pins(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
     body: Body,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(bytes) => bytes,
         Err(_) => {
-            return refuse("the pins request could not be read");
+            return refuse(
+                locale,
+                window_catalog::text(
+                    locale,
+                    "journal.window.shell.error.the.pins.request.could.not.be.read",
+                ),
+            );
         }
     };
     let request = match serde_json::from_slice::<Value>(&bytes) {
         Ok(Value::Object(object)) => object,
-        _ => return refuse("pins request must be an object"),
+        _ => {
+            return refuse(
+                locale,
+                window_catalog::text(
+                    locale,
+                    "journal.window.shell.error.pins.request.must.be.an.object",
+                ),
+            );
+        }
     };
     let Some(view) = request.get("view").and_then(Value::as_str) else {
-        return refuse("view must be a string");
+        return refuse(
+            locale,
+            window_catalog::text(locale, "journal.window.shell.error.view.must.be.a.string"),
+        );
     };
     let view = view.to_owned();
     let Some(pinned) = request.get("pinned").and_then(Value::as_bool) else {
-        return refuse("pinned must be a boolean");
+        return refuse(
+            locale,
+            window_catalog::text(
+                locale,
+                "journal.window.shell.error.pinned.must.be.a.boolean",
+            ),
+        );
     };
     if !known_view(&view) {
-        return refuse("unknown view");
+        return refuse(
+            locale,
+            window_catalog::text(locale, "journal.window.shell.error.unknown.view"),
+        );
     }
     if !is_pinnable(&view) {
-        return refuse("that view can't be pinned");
+        return refuse(
+            locale,
+            window_catalog::text(
+                locale,
+                "journal.window.shell.error.that.view.can.t.be.pinned",
+            ),
+        );
     }
 
     let saved = mutate_journal_config(&journal.0, LockOptions::default(), |config| {
@@ -69,20 +104,20 @@ pub(crate) async fn put_pins(
                 Json(serde_json::json!({ "pinned": pinned })),
             )
                 .into_response(),
-            Err(detail) => refuse(detail),
+            Err(detail) => refuse(locale, detail),
         },
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "your settings couldn't be saved.",
+            window_catalog::text(locale, "journal.window.shell.pin.error.save"),
         )
             .into_response(),
     }
 }
 
-fn refuse(detail: impl Into<String>) -> Response {
+fn refuse(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_config_value",
-        INVALID,
+        window_catalog::text(locale, "journal.window.shell.pin.error.invalid"),
         detail,
         StatusCode::BAD_REQUEST,
     )

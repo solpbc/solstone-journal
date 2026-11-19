@@ -1,0 +1,16 @@
+{
+  "description": "Tr not in new voices in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Tr not in new voices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1f47980aa9aeb2e562d9d298f1f8114eb3dd970876a0f2c7714f96ba0d7b8e3",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

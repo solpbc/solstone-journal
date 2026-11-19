@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -613,7 +614,7 @@ function createHarness(options = {}) {
   }
   window.window = window;
   window.top = window;
-  const context = vm.createContext({
+  const context = journalContext({
     window,
     document,
     Element,
@@ -1410,7 +1411,7 @@ testCase('presentation mode is decided once, by the shell page, before the first
   ]) {
     const storage = new Map(stored ? [['solstone:presentation-mode', stored]] : []);
     const classes = new Set();
-    const context = vm.createContext({
+    const context = journalContext({
       URLSearchParams,
       window: { location: { search } },
       sessionStorage: {
@@ -1588,7 +1589,7 @@ function aboutHarness() {
     logError() {},
   };
   // The about block reads through settings' mount (`settingsApi`).
-  const context = vm.createContext({document, window, settingsApi: (url, options) => window.apiJson(url, options)});
+  const context = journalContext({document, window, settingsApi: (url, options) => window.apiJson(url, options)});
   const source = fs.readFileSync(path.join(crateDir, '../solstone-core-settings-web/assets/workspace.html'), 'utf8');
   const start = source.indexOf("let settingsAbout = '';");
   const end = source.indexOf('function switchSection', start);
@@ -1740,7 +1741,7 @@ asyncCase('settings has no devices section and its old links land on network dev
   for (const [hash, expected] of [['devices', '/app/network/#devices'], ['observer', '/app/network/#devices'], ['vision', null]]) {
     const replaced = [];
     const switched = [];
-    const context = vm.createContext({
+    const context = journalContext({
       window: { location: { hash: '#' + hash, replace: (url) => replaced.push(url) } },
       VALID_SECTIONS: ['vision'],
       switchSection: (section) => switched.push(section),
@@ -1769,7 +1770,7 @@ function labelFormat(extra = {}) {
     }),
     ...extra,
   };
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets/static/date_format.js'), 'utf8'), context, { filename: 'date_format.js' });
   const answer = (body) => reads.shift().resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
   const fail = () => reads.shift().reject(new Error('offline'));
@@ -1968,7 +1969,7 @@ function loopbackApi(responses, { storage = new Map(), storageThrows = false } =
       });
     },
   };
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets/static/api.js'), 'utf8'), context, { filename: 'api.js' });
   return { api: context.window, reloads, assigned, storage };
 }

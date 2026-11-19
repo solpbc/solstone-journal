@@ -1,0 +1,16 @@
+{
+  "description": "Sme outcome guidance needs subscription in the journal's handoff view.",
+  "context": "Journal window, handoff view. Sme outcome guidance needs subscription.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74e9445e22380e21b08c46c5bfecb6b3df8d56e487a110bdd94f7c5825124086",
+  "max_length": 120,
+  "risk": "payment",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

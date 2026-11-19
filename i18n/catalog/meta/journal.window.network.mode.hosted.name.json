@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, mode hosted name.",
+  "context": "Network view copy, mode hosted name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "bb27a43f059e04ddcdbb0c28ae95b3792a76be3ea6146bb3f19f2ec53126e66d",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Access this device in the journal's agents view.",
+  "context": "Journal window, agents view. Access this device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7204d4c642208f2f1b7c3e4ffe87ba7bca935049731c59148d0bf2fd3ea2f1d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

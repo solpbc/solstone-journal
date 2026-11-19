@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for body in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "537a1a81274ff6c3987a35d9a8968688f0034b85326709e9413af56afddcd4e1",
+  "max_length": 241,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

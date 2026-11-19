@@ -72,10 +72,26 @@ pub fn payload(
     local_model: &str,
     confidential_operation: Value,
 ) -> Value {
+    payload_in(
+        journal,
+        config,
+        local_model,
+        confidential_operation,
+        solstone_core_window_catalog::ENGLISH,
+    )
+}
+
+pub fn payload_in(
+    journal: &Path,
+    config: &Map<String, Value>,
+    local_model: &str,
+    confidential_operation: Value,
+    locale: &str,
+) -> Value {
     let endpoint = resolve_local_endpoint(config);
     let spp_configured =
         matches!(&endpoint, LocalEndpointResolution::Byo(value) if value.is_confidential);
-    let brain_view = brain::presentation(journal, config, spp_configured);
+    let brain_view = brain::presentation_in(journal, config, spp_configured, locale);
     let active = active(config);
     let selected = active["provider"] == "local";
     let local_status = local_status(journal, &brain_view, selected, &endpoint);
@@ -140,12 +156,14 @@ pub fn local_status_only(
     journal: &Path,
     config: &Map<String, Value>,
     confidential_operation: Value,
+    locale: &str,
 ) -> Value {
-    payload(
+    payload_in(
         journal,
         config,
         local::default_model(),
         confidential_operation,
+        locale,
     )["provider_status"]["local"]
         .clone()
 }
@@ -1436,6 +1454,20 @@ pub fn update_providers(
     update: ProviderUpdate,
     confidential_operation: Value,
 ) -> Result<Value, ProviderUpdateError> {
+    update_providers_in(
+        journal,
+        update,
+        confidential_operation,
+        solstone_core_window_catalog::ENGLISH,
+    )
+}
+
+pub fn update_providers_in(
+    journal: &Path,
+    update: ProviderUpdate,
+    confidential_operation: Value,
+    locale: &str,
+) -> Result<Value, ProviderUpdateError> {
     let transaction = mutate_journal_config(journal, Default::default(), |config| {
         let confidential_active = is_confidential_active(config);
         let restore_only = confidential_active
@@ -1558,11 +1590,12 @@ pub fn update_providers(
     }
     let config = read_config(journal)
         .map_err(|error| ProviderUpdateError::Mutation(MutationError::Read(error)))?;
-    Ok(payload(
+    Ok(payload_in(
         journal,
         &config,
         local::default_model(),
         confidential_operation,
+        locale,
     ))
 }
 

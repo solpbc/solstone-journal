@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_OBS_SOURCE_LINK_TITLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_OBS_SOURCE_LINK_TITLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "064ae58a9650b2fe8950227916fe39aa34f1c7490bcb5bd60ba48821be52c666",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Owner reveal close label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner reveal close label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cacd477d0f0714ce579bdb1040df9a4afc7d8a6776827adef662c920b61a4b6f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent needed in the journal's local.access view.",
+  "context": "Journal window, local.access view. Consent needed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d6f577e9f8582ca7dd199fb1e6debf3e101e48efe6fe76e21b6c0eca681db45",
+  "max_length": 172,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

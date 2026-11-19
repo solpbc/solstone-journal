@@ -1,0 +1,16 @@
+{
+  "description": "Journal response error or detail in the journal's shell view.",
+  "context": "Journal window, shell view. Journal response error or detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b73a96b530da48d82cdeba326934377fe8c03e3f10580683860d1d82853cb96e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

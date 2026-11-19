@@ -68,8 +68,9 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     let mut s = String::new();
     s.push_str("// SPDX-License-Identifier: AGPL-3.0-only\n");
     s.push_str("// Copyright (c) 2026 sol pbc\n\n");
-    s.push_str("use fluent_bundle::{FluentArgs, FluentBundle, FluentResource, FluentValue};\n");
-    s.push_str("use std::collections::HashSet;\n\n");
+    s.push_str("use fluent_bundle::{FluentArgs, FluentResource, FluentValue};\n");
+    s.push_str("use fluent_bundle::concurrent::FluentBundle;\n");
+    s.push_str("use std::{collections::HashSet, sync::OnceLock};\n\n");
 
     s.push_str("#[derive(Clone, Debug, PartialEq)]\n");
     s.push_str("pub enum Value<'a> {\n");
@@ -126,17 +127,19 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str("        }\n");
     s.push_str("    }\n\n");
 
-    // Match locale to get FTL content and cardinal rule
-    s.push_str("    let (ftl_content, cardinal_rule) = match locale {\n");
+    // Cache each packaged locale and isolation mode independently.
+    s.push_str("    let (bundle, cardinal_rule) = match (locale, use_isolating) {\n");
     for loc in &bundle.locales {
         let card_opt = match &loc.cardinal {
             Some(c) => format!("Some(\"{}\")", c),
             None => "None".to_string(),
         };
-        s.push_str(&format!(
-            "        \"{}\" => (include_str!(\"{}.ftl\"), {}),\n",
-            loc.tag, loc.tag, card_opt
-        ));
+        for isolate in [false, true] {
+            s.push_str(&format!(
+                "        (\"{tag}\", {isolate}) => {{\n            static BUNDLE: OnceLock<Result<FluentBundle<FluentResource>, RenderError>> = OnceLock::new();\n            (BUNDLE.get_or_init(|| load_bundle(include_str!(\"{tag}.ftl\"), {isolate})), {card_opt})\n        }}\n",
+                tag = loc.tag,
+            ));
+        }
     }
     s.push_str("        _ => return Err(RenderError::UnknownLocale),\n");
     s.push_str("    };\n\n");
@@ -295,16 +298,9 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     }
     s.push_str("    };\n\n");
 
-    // Bundle creation and formatting (Fluent default isolation is preserved!)
+    // Formatting uses the same resource and isolation setting for this locale.
     s.push_str("    let _ = cardinal_rule;\n");
-    s.push_str("    let lang = \"und\".parse().map_err(|_| RenderError::FormatFailed)?;\n");
-    s.push_str("    let mut bundle = FluentBundle::new(vec![lang]);\n");
-    s.push_str(
-        "    bundle.set_use_isolating(use_isolating);\n    let _ = bundle.add_builtins();\n",
-    );
-    s.push_str("    let res = FluentResource::try_new(ftl_content.to_string()).map_err(|_| RenderError::FormatFailed)?;\n");
-    s.push_str("    bundle.add_resource(res).map_err(|_| RenderError::FormatFailed)?;\n\n");
-
+    s.push_str("    let bundle = bundle.as_ref().map_err(Clone::clone)?;\n");
     s.push_str("    let msg = bundle.get_message(&res_key).ok_or(RenderError::FormatFailed)?;\n");
     s.push_str("    let pattern = msg.value().ok_or(RenderError::FormatFailed)?;\n");
     s.push_str("    let mut errs = vec![];\n");
@@ -315,7 +311,19 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str("        return Err(RenderError::FormatFailed);\n");
     s.push_str("    }\n");
     s.push_str("    Ok(formatted.into_owned())\n");
-    s.push_str("}\n");
+    s.push_str("}\n\n");
+    s.push_str(
+        r#"fn load_bundle(ftl: &str, use_isolating: bool) -> Result<FluentBundle<FluentResource>, RenderError> {
+    let lang = "und".parse().map_err(|_| RenderError::FormatFailed)?;
+    let mut bundle = FluentBundle::new_concurrent(vec![lang]);
+    bundle.set_use_isolating(use_isolating);
+    let _ = bundle.add_builtins();
+    let resource = FluentResource::try_new(ftl.to_owned()).map_err(|_| RenderError::FormatFailed)?;
+    bundle.add_resource(resource).map_err(|_| RenderError::FormatFailed)?;
+    Ok(bundle)
+}
+"#,
+    );
 
     Ok(s)
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Close network while agents are available in the journal's network view.",
+  "context": "Journal window, network view. Close network while agents are available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fe81b7bad8baaaa2bb5ce8e2183486aca228b598426beb72cf57eab054170e0",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

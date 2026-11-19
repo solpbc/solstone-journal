@@ -11,6 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -1138,7 +1139,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     },
     SurfaceState: { error: () => '<div class="surface-state surface-state--error" role="alert"><button class="surface-state-retry">try again</button></div>' },
   });
-  vm.createContext(window);
+  journalContext(window);
   vm.runInContext(headScript(), window, { filename: 'shell.html' });
   for (const name of ['api.js', 'store.js', 'views.js', 'mount-workspace.js', 'router.js']) {
     vm.runInContext(staticSource(name), window, { filename: name });

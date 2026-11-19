@@ -1,0 +1,28 @@
+{
+  "description": "Owner relabel running template in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner relabel running template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a41542b6e830dcfed3435c9d4eea0e6b8ec3171c8ae5f1aa3f95513bb0db79fc",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{completed}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{total}"
+    }
+  ]
+}

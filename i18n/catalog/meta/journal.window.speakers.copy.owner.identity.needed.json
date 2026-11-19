@@ -1,0 +1,16 @@
+{
+  "description": "Owner identity needed in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner identity needed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a3d7162be7fadff94a94bea2275697b0c2a76573c32ea93c21e04501d06dcc1",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body display count day one in the journal's body view.",
+  "context": "Journal window, body view. Body display count day one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e8b6fb45ffc09724eb4fd8db91d111e778f7145e9844145b7b31030a14bed05",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_RESTORE_ACTION in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_RESTORE_ACTION.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdf0d9922b03c7c5f869c4013c1caed042b71736543756649557b73b37dec83f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

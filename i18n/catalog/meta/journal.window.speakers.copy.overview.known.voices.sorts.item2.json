@@ -1,0 +1,16 @@
+{
+  "description": "Overview known voices sorts item2 in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview known voices sorts item2.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cfc6c4490638e88d035daa28ce097696752d15e0f377cfb635f7161ba4f534a3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

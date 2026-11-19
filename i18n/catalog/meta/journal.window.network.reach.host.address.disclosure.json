@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach host address disclosure.",
+  "context": "Network view copy, reach host address disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "8bd72120df2e7ebd57551a29884dba57cba90b01faa9b9ebf951d1f1cf5b8fc7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

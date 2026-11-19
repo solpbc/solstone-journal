@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's agents view.",
+  "context": "Journal window, agents view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bffd976d790c7c7ce93d0d1de009d5e67bfa3866e897e25d213ed0de0f2341e4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

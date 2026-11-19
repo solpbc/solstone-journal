@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, identity id label.",
+  "context": "Network view copy, identity id label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "2390f555ef76d2e058e8c2ae23712c8e075e5e115c4a24395b0d06ffd885bbef",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

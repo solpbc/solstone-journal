@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_HEADING in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_HEADING.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "605ca641e94468043435ee618f85ed2c48fab3af911475bf05412bf4dd9218c2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

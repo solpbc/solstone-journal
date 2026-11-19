@@ -1643,7 +1643,7 @@ a.ev-meta:hover,
 
 /* Floating "PRESENT" badge — also a click-to-exit affordance. */
 body.presentation-mode::after {
-  content: 'PRESENT — Shift+P to exit';
+  content: attr(data-presentation-banner);
   position: fixed;
   bottom: 12px;
   right: 12px;

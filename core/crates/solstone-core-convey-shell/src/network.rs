@@ -16,6 +16,7 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::ledger::{
@@ -122,8 +123,12 @@ async fn script() -> Response {
     asset_response("/app/network/static/network.js")
 }
 
-async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    let link_copy = serde_json::from_str::<Value>(assets::network_copy_json())
+async fn state(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
+    let link_copy = serde_json::from_str::<Value>(assets::copy_tables(locale).network)
         .expect("generated network copy JSON parses");
     Json(json!({
         "link_copy": link_copy,
@@ -159,17 +164,24 @@ pub(crate) async fn pair_start(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    let locale = crate::window_catalog::request_locale(&headers);
     if !require_access(&basis) {
         return refusal(
             "pairing_request_invalid",
-            "owner access is required",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.pairing.request.invalid.owner.access.is.required",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
     let Some(object) = body.as_object() else {
         return refusal(
             "pairing_request_invalid",
-            "pairing request must be an object",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.pairing.request.invalid.pairing.request.must.be.an",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -194,7 +206,10 @@ pub(crate) async fn pair_start(
     {
         return refusal(
             "same_computer_pairing_unavailable",
-            "same-computer pairing isn't available where your journal lives",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.same.computer.pairing.unavailable.same.computer.pairing.isn.t",
+            ),
             StatusCode::CONFLICT,
         );
     }
@@ -213,13 +228,16 @@ pub(crate) async fn pair_start(
     {
         return refusal(
             "local_network_closed",
-            "your journal is closed to devices on your network. open it to pair another device directly, or turn on your private network to pair through the relay.",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.local.network.closed.your.journal.is.closed.to",
+            ),
             StatusCode::CONFLICT,
         );
     }
     let minted = if relay {
         let Some(Extension(pair_windows)) = pair_windows else {
-            return pairing_refusal(PairingError::RelayPairingUnavailable);
+            return pairing_refusal(PairingError::RelayPairingUnavailable, locale);
         };
         pair_windows
             .mint_and_register(&root.0, &request, now())
@@ -239,7 +257,7 @@ pub(crate) async fn pair_start(
             "link_addresses": pair_link_addresses(&response.pair_link),
         }))
         .into_response(),
-        Err(error) => pairing_refusal(error),
+        Err(error) => pairing_refusal(error, locale),
     }
 }
 
@@ -293,11 +311,16 @@ pub(crate) async fn nonce_status(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
     Query(query): Query<NonceQuery>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     if !require_access(&basis) {
         return refusal(
             "pairing_request_invalid",
-            "owner access is required",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.pairing.request.invalid.owner.access.is.required",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -331,7 +354,11 @@ fn paired_device_summary(journal_root: &std::path::Path, cid: &str) -> Option<Va
     Some(json!({"cid": entry.fingerprint, "display_label": display_label}))
 }
 
-pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub(crate) async fn devices(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     let authorized_path = root.0.join("link/authorized_clients.json");
     let entries = match read_authorized_clients(&authorized_path) {
         AuthorizedClientsRead::Present(entries) => entries,
@@ -342,7 +369,10 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             );
             return refusal(
                 "authorization_ledger_unreadable",
-                "authorized-client ledger could not be read",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             );
         }
@@ -352,7 +382,10 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             );
             return refusal(
                 "authorization_ledger_malformed",
-                "authorized-client ledger is invalid",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             );
         }
@@ -362,7 +395,10 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             );
             return refusal(
                 "authorization_ledger_duplicate_cid",
-                "authorized-client ledger contains a duplicate client identifier",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             );
         }
@@ -375,17 +411,21 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             None
         }
     };
-    let descriptions =
-        match solstone_core_sol_link::client_description_store::read_descriptions(&root.0) {
-            Ok(descriptions) => descriptions,
-            Err(_) => {
-                return refusal(
-                    "client_description_unreadable",
-                    "client description store could not be read",
-                    StatusCode::SERVICE_UNAVAILABLE,
-                );
-            }
-        };
+    let descriptions = match solstone_core_sol_link::client_description_store::read_descriptions(
+        &root.0,
+    ) {
+        Ok(descriptions) => descriptions,
+        Err(_) => {
+            return refusal(
+                "client_description_unreadable",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.client.description.unreadable.client.description.store.could.not",
+                ),
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+    };
     let devices = entries
         .iter()
         .map(|entry| {
@@ -399,7 +439,12 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
     Json(json!({"devices": devices})).into_response()
 }
 
-pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+pub(crate) async fn unpair(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    body: Bytes,
+) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     let object = serde_json::from_slice::<Value>(&body)
         .ok()
         .and_then(|value| value.as_object().cloned())
@@ -421,16 +466,22 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
             Ok(None) => {
                 return refusal(
                     "paired_device_not_found",
-                    "paired device not found",
+                    &crate::window_catalog::text(
+                        locale,
+                        "journal.window.network.error.paired.device.not.found.paired.device.not.found",
+                    ),
                     StatusCode::BAD_REQUEST,
                 );
             }
-            Err(error) => return unpair_label_refusal(error),
+            Err(error) => return unpair_label_refusal(error, locale),
         },
         (None, None) => {
             return refusal(
                 "missing_required_field",
-                "fingerprint or device_label is required",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.missing.required.field.fingerprint.or.device.label.is",
+                ),
                 StatusCode::BAD_REQUEST,
             );
         }
@@ -441,10 +492,13 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
         }
         Ok(_) => refusal(
             "paired_device_not_found",
-            "paired device not found",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.paired.device.not.found.paired.device.not.found",
+            ),
             StatusCode::BAD_REQUEST,
         ),
-        Err(error) => unpair_mutation_refusal(error),
+        Err(error) => unpair_mutation_refusal(error, locale),
     }
 }
 
@@ -487,48 +541,72 @@ fn resolve_unpair_label(
     }
 }
 
-fn unpair_label_refusal(error: UnpairLabelError) -> Response {
+fn unpair_label_refusal(error: UnpairLabelError, locale: &str) -> Response {
     match error {
         UnpairLabelError::DescriptionUnreadable => refusal(
             "client_description_unreadable",
-            "client description store could not be read",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.client.description.unreadable.client.description.store.could.not",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         UnpairLabelError::Unreadable => refusal(
             "authorization_ledger_unreadable",
-            "authorized-client ledger could not be read",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         UnpairLabelError::Malformed => refusal(
             "authorization_ledger_malformed",
-            "authorized-client ledger is invalid",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         UnpairLabelError::DuplicateCid => refusal(
             "authorization_ledger_duplicate_cid",
-            "authorized-client ledger contains a duplicate client identifier",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         UnpairLabelError::Ambiguous => refusal(
             "invalid_operation_for_state",
-            "device label matches more than one paired device",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.invalid.operation.for.state.device.label.matches.more.than",
+            ),
             StatusCode::BAD_REQUEST,
         ),
     }
 }
 
-pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
+pub(crate) fn unpair_mutation_refusal(
+    error: AuthorizedClientsMutationError,
+    locale: &str,
+) -> Response {
     match error {
         AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::Unreadable { .. })
         | AuthorizedClientsMutationError::Lock(_) => refusal(
             "authorization_ledger_unreadable",
-            "authorized-client ledger could not be read",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::Malformed { .. }) => {
             refusal(
                 "authorization_ledger_malformed",
-                "authorized-client ledger is invalid",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             )
         }
@@ -536,7 +614,10 @@ pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> 
             ..
         }) => refusal(
             "authorization_ledger_duplicate_cid",
-            "authorized-client ledger contains a duplicate client identifier",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         AuthorizedClientsMutationError::Write(_)
@@ -545,7 +626,10 @@ pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> 
         | AuthorizedClientsMutationError::InvalidLastSeenAt
         | AuthorizedClientsMutationError::InvalidActivityTimestamp(_) => refusal(
             "internal_error",
-            "couldn't unpair this device",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.internal.error.couldn.t.unpair.this.device",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -609,17 +693,24 @@ pub(crate) async fn pair(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
     pairing_admission: Option<Extension<PairingAdmission>>,
-    pair_windows: Option<Extension<Arc<PairWindowManager>>>,
-    snapshot: Option<Extension<PairingSnapshot>>,
+    (pair_windows, snapshot): (
+        Option<Extension<Arc<PairWindowManager>>>,
+        Option<Extension<PairingSnapshot>>,
+    ),
     Query(query): Query<PairTokenQuery>,
+    locale: Option<Extension<ResponseLocale>>,
     Json(request): Json<spl_core::PairRequest>,
 ) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     // The owner cannot drive the ceremony through loopback: a direct pairing
     // request is accepted only from the cert-less door carrier.
     if !matches!(basis, AccessBasis::PairingPeer { .. }) {
         return refusal(
             "pairing_request_invalid",
-            "pairing requires a pairing carrier",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.pairing.request.invalid.pairing.requires.a.pairing.carrier",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -631,7 +722,10 @@ pub(crate) async fn pair(
     }) else {
         return refusal(
             "missing_required_field",
-            "nonce is required",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.missing.required.field.nonce.is.required",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -643,7 +737,10 @@ pub(crate) async fn pair(
     if relay_nonce_mismatch {
         return refusal(
             "pairing_request_invalid",
-            "pairing nonce does not match the pairing carrier",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.pairing.request.invalid.pairing.nonce.does.not.match",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -651,7 +748,7 @@ pub(crate) async fn pair(
         Some(Extension(snapshot)) => snapshot,
         None => match snapshot_from_sources(&SystemInterfaceSource, &SystemRouteIpv4Source) {
             Ok(snapshot) => snapshot,
-            Err(error) => return pairing_refusal(PairingError::Address(error)),
+            Err(error) => return pairing_refusal(PairingError::Address(error), locale),
         },
     };
     let direct_port = match read_direct_door_port(&root.0) {
@@ -659,7 +756,10 @@ pub(crate) async fn pair(
         Err(_) => {
             return refusal(
                 "internal_error",
-                "couldn't read journal config",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.internal.error.couldn.t.read.journal.config",
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -672,10 +772,10 @@ pub(crate) async fn pair(
 
     if is_relay_pairing {
         let Some(Extension(ref pw)) = pair_windows else {
-            return pairing_refusal(PairingError::RelayPairingUnavailable);
+            return pairing_refusal(PairingError::RelayPairingUnavailable, locale);
         };
         let Some(relay_entry) = pw.get_relay_entry(nonce) else {
-            return pairing_refusal(PairingError::RelayPairingUnavailable);
+            return pairing_refusal(PairingError::RelayPairingUnavailable, locale);
         };
 
         #[cfg(test)]
@@ -724,8 +824,8 @@ pub(crate) async fn pair(
 
         let response = match pair_outcome {
             Some(Ok(resp)) => resp,
-            Some(Err(err)) => return pairing_refusal(err),
-            None => return pairing_refusal(PairingError::RelayPairingUnavailable),
+            Some(Err(err)) => return pairing_refusal(err, locale),
+            None => return pairing_refusal(PairingError::RelayPairingUnavailable, locale),
         };
 
         pw.remove_relay_entry(nonce);
@@ -735,7 +835,7 @@ pub(crate) async fn pair(
                 emit_pair_complete(&root.0, &response.fingerprint);
                 Json(value).into_response()
             }
-            Err(error) => pairing_refusal(error),
+            Err(error) => pairing_refusal(error, locale),
         }
     } else {
         let ceremony_now = now();
@@ -761,10 +861,10 @@ pub(crate) async fn pair(
                         emit_pair_complete(&root.0, &response.fingerprint);
                         Json(value).into_response()
                     }
-                    Err(error) => pairing_refusal(error),
+                    Err(error) => pairing_refusal(error, locale),
                 }
             }
-            Err(error) => pairing_refusal(error),
+            Err(error) => pairing_refusal(error, locale),
         }
     }
 }
@@ -871,7 +971,7 @@ pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> boo
             .all(|name| !headers.contains_key(*name))
 }
 
-fn pairing_refusal(error: PairingError) -> Response {
+fn pairing_refusal(error: PairingError, locale: &str) -> Response {
     let (reason, status) = match &error {
         PairingError::Certificate(_) => ("pairing_key_invalid", StatusCode::BAD_REQUEST),
         _ => (
@@ -879,9 +979,16 @@ fn pairing_refusal(error: PairingError) -> Response {
             StatusCode::from_u16(error.status()).expect("pairing status is valid"),
         ),
     };
-    let detail = error
-        .detail()
-        .unwrap_or("pairing request could not be completed");
+    let fallback;
+    let detail = if let Some(detail) = error.detail() {
+        detail
+    } else {
+        fallback = crate::window_catalog::text(
+            locale,
+            "journal.window.network.error.pairing.request.invalid.pairing.request.could.not.be",
+        );
+        &fallback
+    };
     refusal(reason, detail, status)
 }
 
@@ -1155,9 +1262,10 @@ mod tests {
 
     #[tokio::test]
     async fn no_usable_pairing_address_uses_the_declared_wire_reason_code() {
-        let response = pairing_refusal(PairingError::PairingRequestInvalid(
-            "no usable local address is available for pairing",
-        ));
+        let response = pairing_refusal(
+            PairingError::PairingRequestInvalid("no usable local address is available for pairing"),
+            crate::window_catalog::ENGLISH,
+        );
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(response.into_body(), usize::MAX)
             .await

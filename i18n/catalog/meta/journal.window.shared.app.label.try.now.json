@@ -1,0 +1,16 @@
+{
+  "description": "Label in the journal's shared.app view.",
+  "context": "Journal window, shared.app view. Label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5f21f15d2f30f05a04cb3951a5fd0a03fd8f0e515f0924c3ed1f1ae3a76ef1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

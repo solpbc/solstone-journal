@@ -1,0 +1,16 @@
+{
+  "description": "Discovery error in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Discovery error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9523d738829d59204eab917cbfa94b97db6cb548f7eb8ac53150ce4e14c4b88a",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Known voice sample count in the journal's speakers view.",
+  "context": "Journal window, speakers view. Known voice sample count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf85ec56cb4538fc77c57fc3eda8a0eb5e5c1ab6204d6274f688d27966de5286",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

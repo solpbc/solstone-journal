@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's entities view.",
+  "context": "Journal window, entities view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5c184f4e8b79a6fcd6d77c74a86e5dae3ba559ba3440aefaf9304a743067e4e",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

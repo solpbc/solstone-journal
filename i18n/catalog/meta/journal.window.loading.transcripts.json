@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the transcripts journal route loads on first paint.",
+  "context": "Status shown while the transcripts journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "c4808d719cf00862be91d9b0ea44d1176290a826478cc83ae681dfbbf0ecd0af",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

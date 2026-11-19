@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach failed in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e47c22f2ef3d417b36a0878f30325ec879cf9cce38230209ceb22c370c0a0f97",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

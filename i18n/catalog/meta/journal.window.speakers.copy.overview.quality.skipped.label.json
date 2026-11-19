@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality skipped label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality skipped label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6c8328e4f22e263797621beeeeba99dc0e2f9f886d7a955018d777fc74b010c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

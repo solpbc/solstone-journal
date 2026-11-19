@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's shared.app view.",
+  "context": "Journal window, shared.app view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56994b1ec848b6b83b808e9071e35db573a2eb98ae62b0eeafb8b580d4415d0d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Entities display table ENT_TRUST_HISTORY_SUMMARY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_HISTORY_SUMMARY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aaebde82a735de0b85709fedac77f0c6ba7dc10dd4b98fd543d959fa7c56a180",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{kind}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{date}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

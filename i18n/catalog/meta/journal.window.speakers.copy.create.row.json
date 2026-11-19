@@ -1,0 +1,23 @@
+{
+  "description": "Create row in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Create row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0367ebf52c5fa730e1a3e2774dea4b791fc36ef26b818a8e7dd07b13a8dbed47",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{query}"
+    }
+  ]
+}

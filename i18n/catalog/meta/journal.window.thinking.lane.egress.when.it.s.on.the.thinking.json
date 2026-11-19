@@ -1,0 +1,16 @@
+{
+  "description": "Thinking lane egress in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane egress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "655ae2d3c9a5fa6018e48664c262035e4e45c31ea7b7db2303260572edee0d18",
+  "max_length": 110,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

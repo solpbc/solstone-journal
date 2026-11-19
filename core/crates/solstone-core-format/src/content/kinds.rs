@@ -30,9 +30,14 @@ pub struct KindSpec {
     pub permission: Option<AdmittedCategory>,
     /// The capitalized spelling accepted by the query boundary, and nowhere else.
     pub query_alias: Option<&'static str>,
-    pub label: &'static str,
-    pub description: &'static str,
+    pub permission_copy: Option<PermissionCopy>,
     pub checked_by_default: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PermissionCopy {
+    pub label_id: &'static str,
+    pub description_id: &'static str,
 }
 
 // Permission order is also the existing consent/default order.
@@ -42,8 +47,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "transcripts",
         permission: Some(AdmittedCategory::Transcripts),
         query_alias: Some("Transcripts"),
-        label: "transcripts",
-        description: "words spoken or typed in conversations, and details drawn from those words.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.transcripts.label",
+            description_id: "journal.window.agents.permission.kind.transcripts.description",
+        }),
         checked_by_default: true,
     },
     KindSpec {
@@ -51,8 +58,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "entities",
         permission: Some(AdmittedCategory::Entities),
         query_alias: Some("Entities"),
-        label: "entities",
-        description: "people, places and projects in your journal, and what it has noted about them.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.entities.label",
+            description_id: "journal.window.agents.permission.kind.entities.description",
+        }),
         checked_by_default: true,
     },
     // An option of entities: the picture the journal shows for one. It reads
@@ -64,8 +73,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "profile_pics",
         permission: Some(AdmittedCategory::ProfilePics),
         query_alias: None,
-        label: "profile pics",
-        description: "the picture your journal shows for a person. needs entities.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.profile.pics.label",
+            description_id: "journal.window.agents.permission.kind.profile.pics.description",
+        }),
         checked_by_default: true,
     },
     KindSpec {
@@ -73,8 +84,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "facets",
         permission: Some(AdmittedCategory::Facets),
         query_alias: Some("Facets"),
-        label: "summaries",
-        description: "facet descriptions, activities, facet events and summaries made from other kinds in your journal. reading the original details requires their own permissions.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.facets.label",
+            description_id: "journal.window.agents.permission.kind.facets.description",
+        }),
         checked_by_default: true,
     },
     KindSpec {
@@ -82,8 +95,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "screen_text",
         permission: Some(AdmittedCategory::ScreenText),
         query_alias: Some("ScreenText"),
-        label: "screen text",
-        description: "text and summaries from your screens and terminal, with times when available. visible text can include passwords or other secrets. your redaction rules do not apply to that text.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.screen.text.label",
+            description_id: "journal.window.agents.permission.kind.screen.text.description",
+        }),
         checked_by_default: true,
     },
     KindSpec {
@@ -91,8 +106,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "body",
         permission: Some(AdmittedCategory::Body),
         query_alias: Some("Body"),
-        label: "body",
-        description: "readings, sleep, workouts, mindfulness sessions and what you logged, such as food or symptoms, imported from apps and devices like Apple Health, Oura or Strava, with their values and any notes you wrote on them.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.body.label",
+            description_id: "journal.window.agents.permission.kind.body.description",
+        }),
         checked_by_default: true,
     },
     KindSpec {
@@ -100,8 +117,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "notes",
         permission: Some(AdmittedCategory::Notes),
         query_alias: Some("Notes"),
-        label: "notes",
-        description: "notes you import, highlights and notes saved by other agents.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.notes.label",
+            description_id: "journal.window.agents.permission.kind.notes.description",
+        }),
         checked_by_default: false,
     },
     KindSpec {
@@ -109,8 +128,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "documents",
         permission: Some(AdmittedCategory::Documents),
         query_alias: Some("Documents"),
-        label: "documents",
-        description: "text from imported documents such as PDFs and Word files.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.documents.label",
+            description_id: "journal.window.agents.permission.kind.documents.description",
+        }),
         checked_by_default: false,
     },
     KindSpec {
@@ -118,8 +139,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "calendar",
         permission: Some(AdmittedCategory::Calendar),
         query_alias: Some("Calendar"),
-        label: "calendar",
-        description: "events from calendars you've connected or imported.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.calendar.label",
+            description_id: "journal.window.agents.permission.kind.calendar.description",
+        }),
         checked_by_default: false,
     },
     KindSpec {
@@ -127,8 +150,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "places",
         permission: Some(AdmittedCategory::Places),
         query_alias: Some("Places"),
-        label: "places",
-        description: "place names and times from your journal's location history.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.places.label",
+            description_id: "journal.window.agents.permission.kind.places.description",
+        }),
         checked_by_default: false,
     },
     KindSpec {
@@ -136,8 +161,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "photos",
         permission: Some(AdmittedCategory::Photos),
         query_alias: Some("Photos"),
-        label: "photos",
-        description: "photos you import, both the pictures and what your journal described in them.",
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.photos.label",
+            description_id: "journal.window.agents.permission.kind.photos.description",
+        }),
         checked_by_default: false,
     },
     KindSpec {
@@ -145,8 +172,7 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "video",
         permission: None,
         query_alias: None,
-        label: "video",
-        description: "",
+        permission_copy: None,
         checked_by_default: false,
     },
 ];

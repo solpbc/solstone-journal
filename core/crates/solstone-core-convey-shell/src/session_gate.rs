@@ -110,6 +110,7 @@ async fn require_session(
     next: Next,
 ) -> Response {
     let started = std::time::Instant::now();
+    let locale = crate::window_catalog::request_locale(request.headers());
     let path = request.uri().path();
     if is_exempt_with_agents(path, state.include_agents) {
         return next.run(request).await;
@@ -117,12 +118,12 @@ async fn require_session(
     if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
         &state.journal_root,
     ) {
-        return redirect_to_init();
+        return redirect_to_init(locale);
     }
     match classify_session(&state.journal_root) {
         SessionState::Established => {
             let Ok(target_use) = state.target_use.begin() else {
-                return redirect_to_init();
+                return redirect_to_init(locale);
             };
             request.extensions_mut().insert(target_use.root());
             request
@@ -138,28 +139,34 @@ async fn require_session(
             }
             response
         }
-        SessionState::Unestablished => redirect_to_init(),
-        SessionState::Corrupt { detail } => corrupt_response(path, detail),
+        SessionState::Unestablished => redirect_to_init(locale),
+        SessionState::Corrupt { detail } => corrupt_response(path, detail, locale),
     }
 }
 
-fn redirect_to_init() -> Response {
+fn redirect_to_init(locale: &str) -> Response {
     let location = "/init";
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(redirect_body(location)))
+        .body(Body::from(redirect_body(location, locale)))
         .expect("redirect response builds")
 }
 
-pub(crate) fn redirect_body(location: &str) -> String {
+pub(crate) fn redirect_body(location: &str, locale: &str) -> String {
+    use crate::window_catalog::{escape_html, html, language_tag};
+    let lang = language_tag(locale);
+    let location = escape_html(location);
+    let title = html(locale, "journal.window.shell.redirect.title");
+    let detail = html(locale, "journal.window.shell.redirect.detail")
+        .replace("{link}", &format!("<a href=\"{location}\">{location}</a>"));
     format!(
-        "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
+        "<!doctype html>\n<html lang={lang}>\n<title>{title}</title>\n<h1>{title}</h1>\n<p>{detail}\n"
     )
 }
 
-fn corrupt_response(path: &str, detail: String) -> Response {
+fn corrupt_response(path: &str, detail: String, locale: &str) -> Response {
     if path
         .trim_matches('/')
         .split('/')
@@ -167,7 +174,7 @@ fn corrupt_response(path: &str, detail: String) -> Response {
     {
         return error_envelope(
             "corrupt_config",
-            "your settings couldn't be read.",
+            crate::window_catalog::text(locale, "journal.window.shell.settings.read.failed"),
             detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         )

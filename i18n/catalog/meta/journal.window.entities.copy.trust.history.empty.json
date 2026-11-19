@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_HISTORY_EMPTY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_HISTORY_EMPTY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3efc9335fc3724c3ef971c95674971c5e0e4bbdf7cb8b3895eac478d5c3982d5",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

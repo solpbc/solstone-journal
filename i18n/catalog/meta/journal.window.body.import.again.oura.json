@@ -1,0 +1,16 @@
+{
+  "description": "Body display import again oura in the journal's body view.",
+  "context": "Journal window, body view. Body display import again oura.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "842d511c9e2c9d61382bba324c0e0e09b8666ac8e3892c4cdbb98552a3968762",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

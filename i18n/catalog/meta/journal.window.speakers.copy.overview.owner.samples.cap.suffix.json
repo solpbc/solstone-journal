@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner samples cap suffix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner samples cap suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a32b7b804d18c1fc2c51730d18ba021c1a661c4a78730a2c379af1d8a07152a1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Copy week days in the journal's year view.",
+  "context": "Journal window, year view. Copy week days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d9e8ed84f17b4c558fe734181c97aef24c5e038f422aa2d71b4b2f5c64508ba",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{days}"
+    }
+  ]
+}

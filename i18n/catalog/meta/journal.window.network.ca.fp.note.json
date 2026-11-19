@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, ca fp note.",
+  "context": "Network view copy, ca fp note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 188,
+  "source_revision": "ca142dc1561c86993fe996c97c99b02f0181b6c203e78e0447e43c261130f042",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Entities display table ENT_FACES_POSSIBLE_TITLE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_POSSIBLE_TITLE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de9e27e38bbf8aa9999f9fe03d65d69960d2a5823b8824e6b150eb54f428e309",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

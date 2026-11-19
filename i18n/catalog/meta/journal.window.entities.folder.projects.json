@@ -1,0 +1,16 @@
+{
+  "description": "Folder projects in the journal's entities view.",
+  "context": "Journal window, entities view. Folder projects.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72fcb8f573a445bc69a67fbe12c4ead02fe9be0cc38d8141cc6c239027bd7649",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -451,14 +451,12 @@ pub fn outcome_from_token(
 // What the owner reads when turning confidential processing on doesn't finish.
 // Every one of these is a handoff or local failure, never a verification
 // result, so each opens by saying plainly that it isn't on.
-const PENDING_GUIDANCE: &str = "finish turning it on in your browser.";
-const REVOKED_GUIDANCE: &str =
-    "confidential processing isn't on. turn it on again when you're ready.";
-const EXPIRED_GUIDANCE: &str = "confidential processing isn't on. the link to turn it on expired before you finished in your browser. turn it on again to start over.";
-const MALFORMED_GUIDANCE: &str = "confidential processing isn't on. the services portal sent a reply your journal couldn't read. turn it on again. if it keeps happening, update your journal.";
-const NETWORK_ERROR_GUIDANCE: &str = "confidential processing isn't on. your journal couldn't reach the services portal. check the connection on the computer your journal is on, then turn it on again.";
-const LOCAL_ERROR_GUIDANCE: &str =
-    "confidential processing isn't on. your journal couldn't save the setting. turn it on again.";
+const PENDING_GUIDANCE: &str = "journal.window.handoff.spp.pending";
+const REVOKED_GUIDANCE: &str = "journal.window.handoff.spp.revoked";
+const EXPIRED_GUIDANCE: &str = "journal.window.handoff.spp.expired";
+const MALFORMED_GUIDANCE: &str = "journal.window.handoff.spp.malformed";
+const NETWORK_ERROR_GUIDANCE: &str = "journal.window.handoff.spp.network.error";
+const LOCAL_ERROR_GUIDANCE: &str = "journal.window.handoff.spp.local.error";
 
 pub fn handoff_result(code: HandoffCode) -> HandoffResult {
     match code {

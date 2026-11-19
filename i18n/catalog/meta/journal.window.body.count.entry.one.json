@@ -1,0 +1,16 @@
+{
+  "description": "Body display count entry one in the journal's body view.",
+  "context": "Journal window, body view. Body display count entry one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "519c38f1faf5e19a85215f55752c7a21ae2edefa89d43b6a59e7a4c954a0610f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

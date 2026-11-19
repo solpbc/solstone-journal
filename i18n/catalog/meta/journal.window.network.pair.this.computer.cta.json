@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair this computer cta.",
+  "context": "Network view copy, pair this computer cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 76,
+  "source_revision": "cf43640a998ef9f9a8a41260609cb042db2393ae74c7aab265c24f8ff01f3fc9",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

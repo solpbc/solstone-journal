@@ -1,0 +1,16 @@
+{
+  "description": "Copy peek hint in the journal's year view.",
+  "context": "Journal window, year view. Copy peek hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04e28e7fa7df7fb89e017cc98facb0261751236c464f40cb9401ea45147b954f",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

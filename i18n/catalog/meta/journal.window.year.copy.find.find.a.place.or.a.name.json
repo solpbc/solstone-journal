@@ -1,0 +1,16 @@
+{
+  "description": "Copy find in the journal's year view.",
+  "context": "Journal window, year view. Copy find.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7793e15605d0e54f63186895489605c77c2c7249976aec81cd8ce7ac81fe3fa1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, this computer app finds.",
+  "context": "Network view copy, this computer app finds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 318,
+  "source_revision": "64c0c935e6f4cb0616d97a4f0b0c6f84f2d8edf98fc38a6aacee4e13c8bd4ea7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

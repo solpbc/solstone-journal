@@ -1,0 +1,16 @@
+{
+  "description": "Calendar name for months short in the journal's date view.",
+  "context": "Journal window, date view. Calendar name for months short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "639b96474bf91387c431be6e6c45fb39765222c681a371514655f824bba55cc3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

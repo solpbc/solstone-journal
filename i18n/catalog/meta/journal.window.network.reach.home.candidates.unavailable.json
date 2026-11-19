@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach home candidates unavailable.",
+  "context": "Network view copy, reach home candidates unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 140,
+  "source_revision": "1d390c08fd717104ff2f263da2a0c98cdd32eb4f719b190f078f5f31debe15a4",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

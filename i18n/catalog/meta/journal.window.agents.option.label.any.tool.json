@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's agents view.",
+  "context": "Journal window, agents view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba8108daf21ad89b9482b83b804fef02f32f30ae1d83f7c0db7f4ff9922f4c8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Keep separate title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Keep separate title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce459c13aa9f1f08ab434b2d5a0faf939bc80701ac1bd720e940abfb69bab6b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

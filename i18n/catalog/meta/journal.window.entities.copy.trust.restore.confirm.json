@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_RESTORE_CONFIRM in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_RESTORE_CONFIRM.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1cfb94cf1896c4aa23c48023d436fb69f9c0f20f3b0eb94e231255d5f62bbc8e",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,28 +1,28 @@
 {
-  "SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL": "your private network is already on",
-  "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't prepare the consent link",
+  "SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL": "journal.window.handoff.spl.private.link.already.enabled.detail",
+  "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL": "journal.window.handoff.spl.private.link.consent.link.prepare.failed.detail",
   "SPL_OUTCOME_GUIDANCE": {
     "approved": null,
-    "pending": "Keep the approval page open while the request finishes.",
-    "revoked": "Consent was not granted. Start a new enable flow when ready.",
-    "expired": "This enable link is no longer active. Start a new enable flow.",
-    "malformed": "The service response was not understood. Update solstone and try again.",
-    "network_error": "The service could not be reached. Check network access and try again.",
-    "local_error": "Local service state could not be written. Check journal permissions and try again.",
-    "relay_identity_conflict": "this journal is already set up under a different identity. reach out to support to reset it, then try again.",
-    "relay_rotation_unsupported": "this journal's security key changed and can't be re-registered automatically yet. reach out to support.",
-    "relay_unavailable": "the private network service isn't available right now. try again in a bit.",
-    "relay_rejected": "the relay couldn't finish setting up your private network (error {code})."
+    "pending": "!journal.window.handoff.spl.outcome.guidance.pending",
+    "revoked": "journal.window.handoff.spl.outcome.guidance.revoked",
+    "expired": "journal.window.handoff.spl.outcome.guidance.expired",
+    "malformed": "journal.window.handoff.spl.outcome.guidance.malformed",
+    "network_error": "journal.window.handoff.spl.outcome.guidance.network.error",
+    "local_error": "journal.window.handoff.spl.outcome.guidance.local.error",
+    "relay_identity_conflict": "journal.window.handoff.spl.outcome.guidance.relay.identity.conflict",
+    "relay_rotation_unsupported": "journal.window.handoff.spl.outcome.guidance.relay.rotation.unsupported",
+    "relay_unavailable": "journal.window.handoff.spl.outcome.guidance.relay.unavailable",
+    "relay_rejected": "journal.window.handoff.spl.outcome.guidance.relay.rejected"
   },
-  "SME_ALREADY_ENABLED_DETAIL": "solstone.me is already on",
-  "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't start turning on solstone.me. try again.",
+  "SME_ALREADY_ENABLED_DETAIL": "journal.window.handoff.sme.already.enabled.detail",
+  "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "journal.window.handoff.sme.consent.link.prepare.failed.detail",
   "SME_OUTCOME_GUIDANCE": {
     "approved": null,
-    "revoked": "try again when you're ready.",
-    "expired": "the request wasn't allowed within about fifteen minutes. turn solstone.me on again when you're ready.",
-    "malformed": "services.solstone.app replied in a way this computer didn't expect. try again in a bit.",
-    "network_error": "couldn't reach services.solstone.app. check this computer's connection and try again.",
-    "local_error": "this computer couldn't finish turning on solstone.me. try again.",
-    "needs_subscription": "finish turning it on in the services portal, then come back and turn solstone.me on again."
+    "revoked": "journal.window.handoff.sme.outcome.guidance.revoked",
+    "expired": "journal.window.handoff.sme.outcome.guidance.expired",
+    "malformed": "journal.window.handoff.sme.outcome.guidance.malformed",
+    "network_error": "journal.window.handoff.sme.outcome.guidance.network.error",
+    "local_error": "journal.window.handoff.sme.outcome.guidance.local.error",
+    "needs_subscription": "!journal.window.handoff.sme.outcome.guidance.needs.subscription"
   }
 }

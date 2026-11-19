@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for notes in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for notes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7b9de7e28ac263aee47cbb8d1007a851e57c4bf9c085a48d039a9bd4dc91071",
+  "max_length": 91,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

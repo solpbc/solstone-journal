@@ -1,0 +1,16 @@
+{
+  "description": "Delivery group labels never in the journal's network view.",
+  "context": "Journal window, network view. Delivery group labels never.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f0ea6214cce5d8012588011f49a35fe4867a239b1bfd4ea08d01de974f08f23",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

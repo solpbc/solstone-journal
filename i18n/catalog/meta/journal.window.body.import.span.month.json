@@ -1,0 +1,28 @@
+{
+  "description": "Body display import span month in the journal's body view.",
+  "context": "Journal window, body view. Body display import span month.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a48d3c38ad6cd1f9f9de0ffc07b70c72f100713a33a3279bb5e0b2a776ad22f7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Correct propagate offer in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Correct propagate offer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2118c253d3ad3c61de6f20ed8aec5e63775070fe195fdfe37d28a97e74bf1708",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

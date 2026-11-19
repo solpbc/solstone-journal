@@ -1,0 +1,16 @@
+{
+  "description": "More card data source in the journal's view.health view.",
+  "context": "Journal window, view.health view. More card data source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84908ec03d49137e2a4970bdd4a9f3064f28c2ba2686365ef20bddf7926fe02a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

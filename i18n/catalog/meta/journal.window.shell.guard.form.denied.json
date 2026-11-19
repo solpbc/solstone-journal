@@ -1,0 +1,16 @@
+{
+  "description": "Unsupported request media error in the journal's shell view.",
+  "context": "Journal window, shell view. Unsupported request media error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9adcded909b1745a2635f7beb2913008c52ed109acad7eb75e09e9c13d46d140",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, spl online.",
+  "context": "Network view copy, spl online.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 80,
+  "source_revision": "4d80a5e2e349590a2d1b0dcfcca29e86c5ee761c9bc38d2523b2c0a0064bbc95",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

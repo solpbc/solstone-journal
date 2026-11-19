@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality error heading in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality error heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3182ba239bb8318fde87b27d46829a537d9864d694e3e095aa555e280fac7de1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

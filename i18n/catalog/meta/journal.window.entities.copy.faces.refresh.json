@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_REFRESH in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_REFRESH.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfb87c36f736baf9c628211f7bcb235af9ad7625ca72bcddfc74f9fc9f191b60",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

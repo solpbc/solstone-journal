@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_TRUST_HISTORY_CHANGE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_HISTORY_CHANGE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80dffc3810a6c614260e81a2acae775f8a367917d2a08289ca5cbfbe5618e5a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{before}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{after}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's speakers view.",
+  "context": "Journal window, speakers view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ab9b6754786d5614f73f8b2fdbdf80843559364eae6402cc0b679416009b8fc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

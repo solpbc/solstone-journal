@@ -1,0 +1,28 @@
+{
+  "description": "Body display strava distance in the journal's body view.",
+  "context": "Journal window, body view. Body display strava distance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "distance",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "43a36c9580035cfbec95a9e7993420a53a0ef6f7bfc2475b77b112de5319981d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

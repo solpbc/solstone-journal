@@ -539,6 +539,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-window-catalog"
+package = "solstone-core-window-catalog"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-convey-shell"
 package = "solstone-core-convey-shell"
 set = "component"

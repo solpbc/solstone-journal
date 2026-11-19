@@ -1,0 +1,16 @@
+{
+  "description": "Overview your voice header in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview your voice header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0e9fa96ecf858c11c72258b0282163d9fcddd2beece8c17573f955f7d348932",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

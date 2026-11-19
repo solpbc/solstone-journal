@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_TRUST_PREVIEW_SUMMARY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_PREVIEW_SUMMARY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3ae619185e9d39fc6333e78bb3ff81ffa493274615b1f97942280713b7b44a5",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{aliases}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{emails}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Copy week after in the journal's year view.",
+  "context": "Journal window, year view. Copy week after.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6a92c972ac6f8d385309e0875010253f778989c9f9c0f35032585307bf11c16",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

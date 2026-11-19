@@ -1,0 +1,23 @@
+{
+  "description": "More card data source in the journal's view.backup view.",
+  "context": "Journal window, view.backup view. More card data source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "812293c5c93458564b5bcd5c3bec4c6eeaa6acb46f10a9ce382c7b3749bb6076",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

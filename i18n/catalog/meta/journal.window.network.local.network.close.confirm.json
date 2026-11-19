@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network close confirm.",
+  "context": "Network view copy, local network close confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 212,
+  "source_revision": "1b6c986a7cd2248865ec06bb9527a9cdb90134b97da76b582c508c0f4d0031fe",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

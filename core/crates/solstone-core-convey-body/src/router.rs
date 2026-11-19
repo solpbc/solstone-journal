@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::{response_locale, text};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::read_hidden_days;
 
@@ -29,26 +32,32 @@ pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
         .with_state(Arc::new(journal_root.as_ref().to_path_buf()))
 }
 
-async fn index_route(State(root): State<Arc<PathBuf>>) -> Response {
+async fn index_route(
+    State(root): State<Arc<PathBuf>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = response_locale(locale);
     match body_days(&root, &read_hidden_days(&root)) {
         Ok(days) => Json(index_payload(&days.shown)).into_response(),
-        Err(error) => unreadable_response(error),
+        Err(error) => unreadable_response(locale, error),
     }
 }
 
 async fn stats_route(
     State(root): State<Arc<PathBuf>>,
     RoutePath(month): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let days = match body_days(&root, &read_hidden_days(&root)) {
         Ok(days) => days,
-        Err(error) => return unreadable_response(error),
+        Err(error) => return unreadable_response(locale, error),
     };
     if !is_month(&month) {
         return error_envelope(
             "invalid_request_value",
-            "one of those values couldn't be used.",
-            "Invalid month",
+            text(locale, "journal.window.body.error.invalid.request"),
+            text(locale, "journal.window.body.error.month.invalid"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -57,10 +66,10 @@ async fn stats_route(
 }
 
 /// A journal whose body data can't be listed answers once with this.
-pub(crate) fn unreadable_response(detail: String) -> Response {
+pub(crate) fn unreadable_response(locale: &str, detail: String) -> Response {
     error_envelope(
         "body_unreadable",
-        "the body app couldn't read your journal.",
+        text(locale, "journal.window.body.error.unreadable"),
         detail,
         StatusCode::SERVICE_UNAVAILABLE,
     )

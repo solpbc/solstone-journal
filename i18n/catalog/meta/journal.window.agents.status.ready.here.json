@@ -1,0 +1,16 @@
+{
+  "description": "Status ready here in the journal's agents view.",
+  "context": "Journal window, agents view. Status ready here.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "329cbfa5a7d779698524d593908077a2f9f95b49c49cda47c1a6e053c4501959",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

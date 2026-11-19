@@ -1,0 +1,16 @@
+{
+  "description": "Journal source link wrong journal heading in the journal's link view.",
+  "context": "Journal window, link view. Journal source link wrong journal heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d75f7390e14ea965a4ed9906cdd11ab5d31acaa99f021f2c043b1ee5623dde4d",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

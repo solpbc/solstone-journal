@@ -86,9 +86,9 @@
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
-        '<h2 class="surface-state-heading">couldn\'t load this section</h2>' +
-        '<p class="surface-state-desc">reload to try again.</p>' +
-        '<button type="button" class="surface-state-retry">try again</button>' +
+        `<h2 class="surface-state-heading">${window.JournalI18n.renderHtml('journal.window.shared.mount.workspace.section.heading.couldn.t.load.this.section')}</h2>` +
+        `<p class="surface-state-desc">${window.JournalI18n.renderHtml('journal.window.shared.mount.workspace.visible.text.reload.to.try.again')}</p>` +
+        `<button type="button" class="surface-state-retry">${window.JournalI18n.renderHtml('journal.window.shared.mount.workspace.button.label.try.again')}</button>` +
         '</div>';
     }
     const button = target.querySelector('.surface-state-retry');
@@ -358,7 +358,7 @@
     }
     if (!response.ok) {
       request.discard();
-      const error = new Error(`Request failed (HTTP ${response.status})`);
+      const error = new Error(window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]));
       error.status = response.status;
       error.statusText = response.statusText || '';
       error.url = url;
@@ -411,7 +411,8 @@
       const fetched = await fetchFragment(url, options);
       if (!fetched || superseded()) return;
       const { html } = fetched;
-      const fragment = parseFragment(html);
+      const markup = window.JournalI18n.renderWorkspace(html);
+      const fragment = parseFragment(markup);
       if (contract) {
         if (fromAnotherBuild(options.appName, fragment)) {
           if (window.reloadOnce?.(BUILD_RELOAD_STAMP_KEY)) return;
@@ -456,7 +457,7 @@
         try {
           await loadStylesheets(fragment);
           window.SolViews?.dispose();
-          target.innerHTML = html;
+          target.innerHTML = markup;
           target.querySelectorAll('link[rel="stylesheet"]').forEach((link) => link.remove());
           performance.mark('workspace:inserted');
           await replayScripts(target, chain);

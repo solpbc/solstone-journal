@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, runWithJournalCatalog, readCopyTable } = require('./journal_catalog_dom.js');
 
 let cases = 0;
 function check(condition, message) {
@@ -298,7 +299,7 @@ function pickHarness() {
     holdFocus: (_own, done) => Promise.resolve(done),
     reportEntitiesReady: () => {},
   };
-  vm.createContext(context);
+  journalContext(context);
   return { context, doc, log, answers };
 }
 
@@ -649,7 +650,8 @@ async function detectedHideCases(workspace, copy) {
   const fill = (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), copy[key]);
   Object.keys(copy).filter((key) => key.startsWith('ENT_DETECTED_') || key === 'ENT_HIDE_PANE_HELP')
     .forEach((key) => check(typeof copy[key] === 'string' && copy[key].length > 0, `${key} has words`));
-  const paneHelp = /<strong>hide<\/strong>\s*<span id="journal-detail-hide-help"><\/span>/.test(workspace)
+  const markup = journalContext({}).JournalI18n.renderWorkspace(workspace);
+  const paneHelp = /<strong>hide<\/strong>\s*<span id="journal-detail-hide-help"><\/span>/.test(markup)
     && workspace.includes("hideHelp.textContent = ENT_COPY.ENT_HIDE_PANE_HELP");
   check(paneHelp, 'the pane helper takes its hide sentence from its copy key');
 
@@ -941,7 +943,7 @@ async function selectLandingCases(manifestDir) {
     .replace(/<style>[\s\S]*?<\/style>/g, '')
     .replace(/<script[^>]*><\/script>/g, '')
     .replace(/<link[^>]*>/g, '');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
+  const copy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   const focusJs = fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8');
   const env = { manifestDir, script, markup, copy };
 
@@ -1019,7 +1021,7 @@ async function main() {
     window: { createViewReady: () => () => {},SurfaceState: {serverMessageFrom: (err) => err?.serverMessage || ''}},
     ENT_COPY: {},
   };
-  vm.runInNewContext(
+  runWithJournalCatalog(
     `${workspace.slice(errorStart, errorEnd)}\nwindow.entityErrorMessage = entityErrorMessage;`,
     errorContext,
     {filename: 'entities-error-message.js'},
@@ -1067,7 +1069,7 @@ async function main() {
     apiJson: (...args) => mergeContext.window.apiJson(...args),
     showInlineError: (_id, message) => { shownError = message; },
   };
-  vm.runInNewContext(workspace.slice(errorStart, errorEnd) + workspace.slice(mergeStart, mergeEnd), mergeContext);
+  runWithJournalCatalog(workspace.slice(errorStart, errorEnd) + workspace.slice(mergeStart, mergeEnd), mergeContext);
   const mergeButton = {disabled: false};
   await mergeContext.commitJournalEntityMerge('source', 'target', 'target', mergeButton);
   check(!mergeButton.disabled, 'a failed entity merge leaves its confirm button retryable');
@@ -1085,7 +1087,7 @@ async function main() {
     setBusy: (control, busy) => { control.disabled = busy; },
     showError: (_item, message) => { shownError = message; },
   };
-  vm.runInNewContext(curation.slice(curationStart, curationEnd), curationContext);
+  runWithJournalCatalog(curation.slice(curationStart, curationEnd), curationContext);
   const curationButton = {disabled: true};
   const siblingControl = {disabled: false};
   const item = {querySelectorAll: () => [curationButton, siblingControl]};
@@ -1199,12 +1201,12 @@ async function main() {
     closeEntityDeleteDialog: () => {},
   };
   const scopeSource = `${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
-  vm.runInNewContext(scopeSource, context, {filename: 'entities-scope.js'});
+  runWithJournalCatalog(scopeSource, context, {filename: 'entities-scope.js'});
   // The list-state key builder lives in the paged-list region, outside both slices; the scope
   // harness only needs adoptJournalSummary to record a key, not to compute one.
   context.journalListStateKey = () => 'harness';
-  vm.runInNewContext(workspace.slice(metadataStart, metadataEnd), context, {filename: 'entities-metadata.js'});
-  vm.runInNewContext(`
+  runWithJournalCatalog(workspace.slice(metadataStart, metadataEnd), context, {filename: 'entities-metadata.js'});
+  runWithJournalCatalog(`
     window.__entities = {
       setRoster(value) { facetRoster = value; },
       setJournal(summary) { adoptJournalSummary(summary); },
@@ -1224,7 +1226,7 @@ async function main() {
     ENT_SCOPE_EMPTY_ACTION: 'show your whole journal',
     ENT_SCOPE_FACET_MISSING: "that facet isn't in your journal any more, so this is your whole journal.",
   };
-  vm.runInNewContext(`ENT_COPY = ${JSON.stringify(copy)};`, context, {filename: 'entities-copy.js'});
+  runWithJournalCatalog(`ENT_COPY = ${JSON.stringify(copy)};`, context, {filename: 'entities-copy.js'});
 
   entities.setRoster([
     {name: 'work', title: 'Work', color: '#2f6fdd'},
@@ -1325,7 +1327,7 @@ async function main() {
     workspace.slice(connMapStart, connMapEnd),
     workspace.slice(netStart, netEnd),
   ].join('\n');
-  vm.runInNewContext(connSource, connContext, { filename: 'entities-connections.js' });
+  runWithJournalCatalog(connSource, connContext, { filename: 'entities-connections.js' });
 
   function allDescendants(node) {
     const list = [node];
@@ -1585,7 +1587,7 @@ async function main() {
         },
       },
     };
-    vm.runInNewContext(`${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidyState = tidyState;`, context, {filename: 'entities-tidy.js'});
+    runWithJournalCatalog(`${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidyState = tidyState;`, context, {filename: 'entities-tidy.js'});
     context.tidyClock.sleep = async (ms) => { log.sleeps.push(ms); };
     context.renderTidyToast = () => {};
     context.renderIdsPanel = () => {};
@@ -1776,7 +1778,7 @@ async function main() {
       journalListStateKey: () => 'key', hideJournalListError: noop, entityErrorMessage: () => '',
       reportEntitiesReady: noop, loadEntityTypes: noop, loadEntities: noop, loadTidyGroups: noop,
     };
-    vm.runInNewContext(`
+    runWithJournalCatalog(`
       var ENT_COPY = {}, ATTENDANCE_KINDS = new Set(), journalSummary = null, journalSummaryKey = '',
         facetEntityCounts = {}, facetRoster = [], scopeMetadataDirty = true, entitiesInitialized = false,
         journalEntityPage = 0, journalEntityType = '', journalEntitySearch = '', journalFolder = '';
@@ -1784,7 +1786,7 @@ async function main() {
       function restoreEntityScopeFromLocation() { window.__restoredWith.push(ENT_COPY.mark || null); }
     `, initContext);
     initContext.window.__restoredWith = restoredWith;
-    vm.runInNewContext(workspace.slice(initStart, initEnd), initContext, {filename: 'entities-init.js'});
+    runWithJournalCatalog(workspace.slice(initStart, initEnd), initContext, {filename: 'entities-init.js'});
     const started = initContext.initEntities();
     await new Promise((resolve) => setImmediate(resolve));
     check(asked.includes('/app/entities/api/state'), 'the state read goes out at once');
@@ -1801,7 +1803,7 @@ async function main() {
   }
 
   await entityDeleteCases(workspace);
-  const entitiesCopy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
+  const entitiesCopy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   await detectedHideCases(workspace, entitiesCopy);
   await selectLandingCases(manifestDir);
   // Entities on the view contract: the real fragment mounted in a page.

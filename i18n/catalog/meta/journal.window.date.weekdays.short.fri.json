@@ -1,0 +1,16 @@
+{
+  "description": "Calendar name for weekdays short in the journal's date view.",
+  "context": "Journal window, date view. Calendar name for weekdays short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "676411146dcdb299bac93ed8a04aa8323d167a312e7f5398d6379a684f6e2d75",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

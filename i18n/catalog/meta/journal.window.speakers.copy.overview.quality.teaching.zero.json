@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality teaching zero in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality teaching zero.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7776936a3abcc8f9d86268a596dae0b2d88ad5709d3507a04ed7ed66338f7a6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

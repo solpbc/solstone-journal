@@ -1,0 +1,16 @@
+{
+  "description": "Shelf candidates in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Shelf candidates.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cacf49083a880eb3e5cfb60a0d23e664850c55189e91df81c6b08059e7c4b1eb",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

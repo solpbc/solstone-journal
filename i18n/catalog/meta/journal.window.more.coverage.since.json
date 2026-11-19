@@ -1,0 +1,28 @@
+{
+  "description": "Coverage since in the journal's more view.",
+  "context": "Journal window, more view. Coverage since.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d332f5f5c52f9b4059c17220c0e9e057d1db098e304a834ce914a3bb63789e4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

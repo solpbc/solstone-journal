@@ -1,0 +1,16 @@
+{
+  "description": "Play from here label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Play from here label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97f7044faeb4e24ba5315f5d4b3b3b217ba7adf1889f2595b7b1afe6da74970f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

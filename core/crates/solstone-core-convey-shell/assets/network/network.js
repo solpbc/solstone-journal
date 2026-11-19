@@ -215,8 +215,8 @@
       elements.qr.innerHTML = qr.createSvgTag({
         cellSize: 8,
         margin: 2,
-        title: 'pair QR',
-        alt: 'pair QR',
+        title: global.JournalI18n.render('journal.window.network.title.pair.qr'),
+        alt: global.JournalI18n.render('journal.window.network.delivery.pair.image'),
       });
       elements.qr.querySelector('svg')?.setAttribute('data-module-count', qr.getModuleCount());
     }
@@ -602,7 +602,7 @@
       try {
         copied = Boolean(await options.clipboardWriteText?.(value));
       } catch (error) {
-        global.logError?.(error, { context: 'link: pairing-link clipboard write failed' });
+        global.logError?.(error, { context: global.JournalI18n.render('journal.window.network.window.explanation.link.pairing.link.clipboard.write.failed') });
       }
       options.showToast?.(copy(copied ? 'PAIR_LINK_COPY_SUCCESS_TOAST' : 'PAIR_LINK_COPY_FAIL_TOAST'));
     }
@@ -685,12 +685,12 @@
   // is what the owner is asking about; the heartbeat is a secondary line.
   const DELIVERY_GROUP_ORDER = ['failing', 'adding', 'recent', 'quiet', 'never', 'unknown'];
   const DELIVERY_GROUP_LABELS = {
-    failing: 'not adding right now',
-    adding: 'adding to your journal now',
-    recent: 'added recently',
-    quiet: 'quiet for a while',
-    never: 'nothing added yet',
-    unknown: 'delivery unavailable',
+    failing: global.JournalI18n.render('journal.window.network.delivery.group.labels.failing.not.adding.right.now'),
+    adding: global.JournalI18n.render('journal.window.network.delivery.group.labels.adding.adding.to.your.journal.now'),
+    recent: global.JournalI18n.render('journal.window.network.delivery.group.labels.recent.added.recently'),
+    quiet: global.JournalI18n.render('journal.window.network.delivery.group.labels.quiet.quiet.for.a.while'),
+    never: global.JournalI18n.render('journal.window.network.delivery.group.labels.never.nothing.added.yet'),
+    unknown: global.JournalI18n.render('journal.window.network.delivery.group.labels.unknown.delivery.unavailable'),
   };
   const DELIVERY_GROUP_CHIP_CLASS = {
     failing: 'stale',
@@ -701,9 +701,9 @@
     unknown: 'neutral',
   };
   const CONNECTION_LINE_LABELS = {
-    connected: 'connected now',
-    stale: 'connection not reporting',
-    disconnected: 'not connected right now',
+    connected: global.JournalI18n.render('journal.window.network.connection.line.labels.connected.connected.now'),
+    stale: global.JournalI18n.render('journal.window.network.connection.line.labels.stale.connection.not.reporting'),
+    disconnected: global.JournalI18n.render('journal.window.network.connection.line.labels.disconnected.not.connected.right.now'),
   };
 
   function deliveryGroupFor(client) {
@@ -728,17 +728,17 @@
 
   function deliveryChipLabel(client, nowMs) {
     const group = deliveryGroupFor(client);
-    if (group === 'failing') return 'delivery problem';
-    if (group === 'adding') return 'adding now';
-    if (group === 'never') return 'nothing added yet';
-    if (group === 'unknown') return 'delivery unavailable';
+    if (group === 'failing') return global.JournalI18n.render('journal.window.network.delivery.failing');
+    if (group === 'adding') return global.JournalI18n.render('journal.window.network.delivery.adding');
+    if (group === 'never') return global.JournalI18n.render('journal.window.network.delivery.never');
+    if (group === 'unknown') return global.JournalI18n.render('journal.window.network.delivery.unknown');
     const elapsed = elapsedSince(client.last_accepted_ingest_at, nowMs);
-    return elapsed === null ? 'added earlier' : `added ${global.relativeTime(elapsed)} ago`;
+    return elapsed === null ? global.JournalI18n.render('journal.window.network.delivery.earlier') : global.JournalI18n.render('journal.window.network.delivery.visible.text.added.value1.ago', [['value1', String(global.relativeTime(elapsed))]]);
   }
 
   function connectionLineLabel(client) {
-    if (!client || typeof client !== 'object') return 'connection unavailable';
-    return CONNECTION_LINE_LABELS[client.state] || 'connection unavailable';
+    if (!client || typeof client !== 'object') return global.JournalI18n.render('journal.window.network.delivery.connection.unavailable');
+    return CONNECTION_LINE_LABELS[client.state] || global.JournalI18n.render('journal.window.network.delivery.connection.unavailable');
   }
 
   function checkInLabel(client, nowMs) {
@@ -775,7 +775,7 @@
     const currentYear = global.JournalClock?.today
       ? Number(global.JournalClock.today().slice(0, 4))
       : new Date().getFullYear();
-    const readable = moment.toLocaleString(undefined, {
+    const readable = moment.toLocaleString(global.JournalI18n.formatLocale, {
       timeZone: 'UTC',
       year: year === currentYear ? undefined : 'numeric',
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
@@ -848,7 +848,7 @@
       if (!state || state.pending) return;
       const label = clear ? null : state.draft.trim() || null;
       if (label !== null && (new TextEncoder().encode(label).length > 80 || /[\p{Cc}]/u.test(label))) {
-        state.message = 'use a shorter name without control characters.'; changed(cid); return;
+        state.message = global.JournalI18n.render('journal.window.network.window.explanation.use.a.shorter.name.without.control'); changed(cid); return;
       }
       state.pending = true; state.message = 'saving…'; changed(cid);
       try {
@@ -871,8 +871,8 @@
         if (error?.status === 404) {
           editors.delete(cid); changed(cid); return;
         }
-        state.message = error?.status === 400 ? 'use a shorter name without control characters.'
-          : "couldn't confirm the save. check the current name before trying again.";
+        state.message = error?.status === 400 ? global.JournalI18n.render('journal.window.network.window.explanation.use.a.shorter.name.without.control')
+          : global.JournalI18n.render('journal.window.network.window.explanation.couldn.t.confirm.the.save.check');
         state.dirty = true;
       } finally {
         if (editors.get(cid) === state) { state.pending = false; changed(cid); }

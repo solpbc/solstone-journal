@@ -1,0 +1,16 @@
+{
+  "description": "Body display import progress stopped in the journal's body view.",
+  "context": "Journal window, body view. Body display import progress stopped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c423f2fcab4c8464e93f120fdad1e25bac1a4d631a956e7352814200960572c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

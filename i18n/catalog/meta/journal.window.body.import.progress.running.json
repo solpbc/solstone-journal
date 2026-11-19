@@ -1,0 +1,16 @@
+{
+  "description": "Body display import progress running in the journal's body view.",
+  "context": "Journal window, body view. Body display import progress running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b9ed18c9a956d1faddd1164be43d2e9fc176e45e194694388f95d2eda687286",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

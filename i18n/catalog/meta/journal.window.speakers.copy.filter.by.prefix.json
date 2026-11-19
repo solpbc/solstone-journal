@@ -1,0 +1,16 @@
+{
+  "description": "Filter by prefix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Filter by prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2760b72639bf7695bda36cacf54b13321efc94974b37da21ba46c48432b0dbfc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

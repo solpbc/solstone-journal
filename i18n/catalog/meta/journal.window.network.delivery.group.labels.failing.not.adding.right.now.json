@@ -1,0 +1,16 @@
+{
+  "description": "Delivery group labels failing in the journal's network view.",
+  "context": "Journal window, network view. Delivery group labels failing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11442f1c56ffa7edbeb90a872ba1af930d987ef29f8d044b67e2895e3c1a2d05",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach home address unusable.",
+  "context": "Network view copy, reach home address unusable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 90,
+  "source_revision": "b2c7513995be5f777609d536b3beb1d6def49a5a029b8d3136be3686e3783eb5",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's body view.",
+  "context": "Journal window, body view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0ce375206eea0560da4a40ab04a51cb100df48cf0498bc85c6c8512622816f9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

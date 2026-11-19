@@ -1,0 +1,16 @@
+{
+  "description": "Journal source link absent in the journal's link view.",
+  "context": "Journal window, link view. Journal source link absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b80b97506dd6fe89bc2e9184818eec948945ad22fc09add69cbd94001f42042",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

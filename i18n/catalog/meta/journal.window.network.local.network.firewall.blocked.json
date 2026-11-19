@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, local network firewall blocked.",
+  "context": "Network view copy, local network firewall blocked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 142,
+  "source_revision": "e0c45a3156cfa1b47992b26f64b1005a9f83ac2f085eaad9ca9378519220ecea",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

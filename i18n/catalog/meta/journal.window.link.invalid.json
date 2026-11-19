@@ -1,0 +1,16 @@
+{
+  "description": "Journal source link invalid in the journal's link view.",
+  "context": "Journal window, link view. Journal source link invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0f1dcfd9101dc10d72c51009216f7971107a491e6110300a0527e1aa85685b4",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

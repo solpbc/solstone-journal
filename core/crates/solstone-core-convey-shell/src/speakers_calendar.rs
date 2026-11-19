@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,18 +39,26 @@ pub(crate) struct Segment {
 
 type DayCounts = BTreeMap<String, usize>;
 
-pub async fn index(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn index(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(root): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     spawn_blocking_response(
         OwnerReadRole::SpeakersIndex,
         move || match speaker_segment_counts(&root.0, None) {
             Ok(counts) => Json(date_nav_index(&counts)).into_response(),
-            Err(error) => catalog_failure(error),
+            Err(error) => catalog_failure(locale, error),
         },
     )
     .await
 }
 
-pub async fn grid(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn grid(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(root): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     spawn_blocking_response(
         OwnerReadRole::SpeakersGrid,
         move || match speaker_grid_counts(&root.0) {
@@ -62,43 +72,56 @@ pub async fn grid(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                 ))
                 .into_response()
             }
-            Err(error) => catalog_failure(error),
+            Err(error) => catalog_failure(locale, error),
         },
     )
     .await
 }
 
 pub async fn stats(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath(month): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_month(&month) {
         return refusal(
             "invalid_month",
-            "that month couldn't be used.",
-            "Invalid month format, expected YYYYMM",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.error.that.month.couldn.t.be.used",
+            ),
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.error.invalid.month.format.expected.yyyymm",
+            ),
         );
     }
     spawn_blocking_response(
         OwnerReadRole::SpeakersMonthStats,
         move || match speaker_segment_counts(&root.0, Some(&month)) {
             Ok(counts) => Json(counts).into_response(),
-            Err(error) => catalog_failure(error),
+            Err(error) => catalog_failure(locale, error),
         },
     )
     .await
 }
 
 pub async fn segments(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath(day): RoutePath<String>,
     Query(query): Query<SegmentsQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return refusal(
             "invalid_day",
-            "that day couldn't be used.",
-            "Invalid day format",
+            &window_catalog::text(
+                locale,
+                "journal.window.speakers.error.that.day.couldn.t.be.used",
+            ),
+            &window_catalog::text(locale, "journal.window.speakers.error.invalid.day.format"),
         );
     }
     let limit = match parse_nonnegative(query.limit.as_deref(), 20) {
@@ -106,8 +129,14 @@ pub async fn segments(
         None => {
             return refusal(
                 "invalid_request_value",
-                "one of those values couldn't be used.",
-                "Invalid limit/offset parameter",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+                ),
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.invalid.limit.offset.parameter",
+                ),
             );
         }
     };
@@ -116,8 +145,14 @@ pub async fn segments(
         None => {
             return refusal(
                 "invalid_request_value",
-                "one of those values couldn't be used.",
-                "Invalid limit/offset parameter",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+                ),
+                &window_catalog::text(
+                    locale,
+                    "journal.window.speakers.error.invalid.limit.offset.parameter",
+                ),
             );
         }
     };
@@ -127,8 +162,14 @@ pub async fn segments(
             if value.is_empty() {
                 return refusal(
                     "invalid_request_value",
-                    "one of those values couldn't be used.",
-                    "Invalid speaker parameter",
+                    &window_catalog::text(
+                        locale,
+                        "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
+                    ),
+                    &window_catalog::text(
+                        locale,
+                        "journal.window.speakers.error.invalid.speaker.parameter",
+                    ),
                 );
             }
             Some(value)
@@ -152,7 +193,7 @@ pub async fn segments(
         });
         let mut rows = match scan_segment_embeddings(&root.0, &day) {
             Ok(rows) => rows,
-            Err(error) => return catalog_failure(error),
+            Err(error) => return catalog_failure(locale, error),
         };
         rows.sort_by(|left, right| left.key.cmp(&right.key));
         if let Some(speaker) = speaker.as_deref() {
@@ -189,10 +230,13 @@ fn refusal(reason_code: &str, message: &str, detail: &str) -> Response {
     error_envelope(reason_code, message, detail, StatusCode::BAD_REQUEST).into_response()
 }
 
-fn catalog_failure(error: CatalogBuildError) -> Response {
+fn catalog_failure(locale: &str, error: CatalogBuildError) -> Response {
     error_envelope(
         "speaker_command_failed",
-        "that speaker command didn't finish.",
+        window_catalog::text(
+            locale,
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+        ),
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )

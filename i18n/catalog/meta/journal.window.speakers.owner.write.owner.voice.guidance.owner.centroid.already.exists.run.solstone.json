@@ -1,0 +1,23 @@
+{
+  "description": "Owner voice guidance in the journal's speakers.owner.write view.",
+  "context": "Journal window, speakers.owner.write view. Owner voice guidance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da528edc778b95e5c106664c08e6264829eb82a6ec3608921d2f1a515e03644b",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "command",
+      "value": "solstone call speakers rebuild-owner"
+    }
+  ]
+}

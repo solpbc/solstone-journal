@@ -1,0 +1,16 @@
+{
+  "description": "Body display error hidden days empty in the journal's body view.",
+  "context": "Journal window, body view. Body display error hidden days empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a9399255e227f86b169eeadc58dedaea3118f11032b04e9d847997ed02e7d5d",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

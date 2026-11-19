@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy gone in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy gone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12bdad55434682ffa01e250c37b67758981985f99156a42df1cdc99cf50e4fa8",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

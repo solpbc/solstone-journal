@@ -1,0 +1,16 @@
+{
+  "description": "Connection line labels stale in the journal's network view.",
+  "context": "Journal window, network view. Connection line labels stale.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "768b65cb460913a64d94073a64bf248b96806b934d81e2de8f085d094b9b0b68",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

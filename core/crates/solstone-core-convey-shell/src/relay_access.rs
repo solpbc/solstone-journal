@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,14 +26,16 @@ fn now() -> i64 {
 }
 
 pub(crate) async fn get_relay_access(
+    locale: Option<axum::Extension<ResponseLocale>>,
     Extension(root): Extension<Arc<JournalRoot>>,
     basis: Option<Extension<AccessBasis>>,
     pair_windows: Option<Extension<Arc<PairWindowManager>>>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let Some(Extension(basis)) = basis else {
         return crate::network::refusal(
             "relay_access_forbidden",
-            "access basis required",
+            &window_catalog::text(locale, "journal.window.network.error.access.basis.required"),
             StatusCode::FORBIDDEN,
         );
     };
@@ -40,7 +44,10 @@ pub(crate) async fn get_relay_access(
         AccessBasis::Localhost | AccessBasis::PairingPeer { .. } => {
             return crate::network::refusal(
                 "relay_access_forbidden",
-                "linked device access required",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.network.error.linked.device.access.required",
+                ),
                 StatusCode::FORBIDDEN,
             );
         }
@@ -49,7 +56,10 @@ pub(crate) async fn get_relay_access(
     let Some(Extension(pair_windows)) = pair_windows else {
         return crate::network::refusal(
             "relay_access_unavailable",
-            "pair window manager unavailable",
+            &window_catalog::text(
+                locale,
+                "journal.window.network.error.pair.window.manager.unavailable",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         );
     };
@@ -65,7 +75,10 @@ pub(crate) async fn get_relay_access(
     if !is_authorized() {
         return crate::network::refusal(
             "relay_access_forbidden",
-            "linked device revoked or unlisted",
+            &window_catalog::text(
+                locale,
+                "journal.window.network.error.linked.device.revoked.or.unlisted",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -83,7 +96,10 @@ pub(crate) async fn get_relay_access(
     if !is_authorized {
         return crate::network::refusal(
             "relay_access_forbidden",
-            "linked device revoked or unlisted",
+            &window_catalog::text(
+                locale,
+                "journal.window.network.error.linked.device.revoked.or.unlisted",
+            ),
             StatusCode::FORBIDDEN,
         );
     }
@@ -97,7 +113,10 @@ pub(crate) async fn get_relay_access(
         .unwrap_or_else(|| {
             crate::network::refusal(
                 "relay_access_unavailable",
-                "relay service configuration changed",
+                &window_catalog::text(
+                    locale,
+                    "journal.window.network.error.relay.service.configuration.changed",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             )
         }),
@@ -106,7 +125,10 @@ pub(crate) async fn get_relay_access(
         }
         Err(RelayAccessError::Unavailable(_)) => crate::network::refusal(
             "relay_access_unavailable",
-            "relay access is unavailable",
+            &window_catalog::text(
+                locale,
+                "journal.window.network.error.relay.access.is.unavailable",
+            ),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     }

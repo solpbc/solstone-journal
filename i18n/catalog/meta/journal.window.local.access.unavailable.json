@@ -1,0 +1,16 @@
+{
+  "description": "Unavailable in the journal's local.access view.",
+  "context": "Journal window, local.access view. Unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f7400688ebd9f6bd2de39d1f6b67898d12a44c83932039fc9f9d4be4690b5e6",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

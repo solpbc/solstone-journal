@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy own many in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy own many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c7bb82766f55d27b104e113e0fea6f415559d13c56861c6aa437a6c7c39f46f",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

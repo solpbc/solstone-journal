@@ -1,0 +1,28 @@
+{
+  "description": "Notice in the journal's thinking view.",
+  "context": "Journal window, thinking view. Notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a8b8b12ec3fedeb65b322efa44de2bf1a05136feef66172fa356eacc37ba5098",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

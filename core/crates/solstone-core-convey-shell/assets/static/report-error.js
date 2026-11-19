@@ -11,10 +11,6 @@
   let currentModal = null;
   let keydownHandler = null;
 
-  function copyText(key, fallback) {
-    return window.CONVEY_COPY?.[key] || fallback;
-  }
-
   // Closing gives focus back: the modal layer returns it to a dialog under
   // the review, or to what had focus before it opened, and if neither is
   // left it goes to the workspace rather than the page. A close made by a
@@ -130,31 +126,28 @@
 
     const title = document.createElement('h2');
     title.id = 'report-error-title';
-    title.textContent = copyText('REPORT_TITLE', 'review this report');
+    title.textContent = window.CONVEY_COPY.REPORT_TITLE;
     content.appendChild(title);
 
     const note = document.createElement('p');
-    note.textContent = copyText(
-      'REPORT_PRIVACY_NOTE',
-      'nothing leaves this journal until you send the form on the support website.'
-    );
+    note.textContent = window.CONVEY_COPY.REPORT_PRIVACY_NOTE;
     content.appendChild(note);
 
     const review = document.createElement('dl');
     review.className = 'report-error-review';
     review.append(
-      row('your versions', fields.about || `journal ${fields.version}`),
-      row(copyText('REPORT_APP_LABEL', 'app'), fields.app),
-      row(copyText('REPORT_ROUTE_LABEL', 'route'), fields.route)
+      row(window.JournalI18n.render('journal.window.shared.report.error.status.text.your.versions'), fields.about || window.JournalI18n.render('journal.window.shared.report.error.status.text.journal.value1', [['value1', String(fields.version)]])),
+      row(window.CONVEY_COPY.REPORT_APP_LABEL, fields.app),
+      row(window.CONVEY_COPY.REPORT_ROUTE_LABEL, fields.route)
     );
     if (fields.errorCode) {
-      review.append(row(copyText('REPORT_ERROR_CODE_LABEL', 'error code'), fields.errorCode));
+      review.append(row(window.CONVEY_COPY.REPORT_ERROR_CODE_LABEL, fields.errorCode));
     }
     content.appendChild(review);
 
     const recentLabel = document.createElement('label');
     recentLabel.setAttribute('for', 'report-error-recent');
-    recentLabel.textContent = copyText('REPORT_RECENT_LABEL', 'recent error lines');
+    recentLabel.textContent = window.CONVEY_COPY.REPORT_RECENT_LABEL;
     const recent = document.createElement('textarea');
     recent.id = 'report-error-recent';
     recent.className = 'report-error-detail';
@@ -166,9 +159,9 @@
     actions.className = 'report-error-actions';
     const cancel = document.createElement('button');
     cancel.type = 'button';
-    cancel.textContent = copyText('REPORT_ACTION_CANCEL', 'cancel');
+    cancel.textContent = window.CONVEY_COPY.REPORT_ACTION_CANCEL;
     const send = document.createElement('a');
-    send.textContent = copyText('REPORT_ACTION_SEND', 'continue to support');
+    send.textContent = window.CONVEY_COPY.REPORT_ACTION_SEND;
     send.href = destination(fields, recent.value.trim());
     send.target = '_blank';
     send.rel = 'noopener noreferrer';

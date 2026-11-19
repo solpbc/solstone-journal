@@ -1,0 +1,16 @@
+{
+  "description": "Plural day content unit in the journal's view.map view.",
+  "context": "Journal window, view.map view. Plural day content unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f032de5d92893f192646e0bce8a8e96fb21e9b456ec7db7f9f2a2c2cf05bc06",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

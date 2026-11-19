@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_TRUST_MERGE_CONFIRM_ACTION in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_TRUST_MERGE_CONFIRM_ACTION.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b32befad5ac1a53bd9336c7f58fb552e398eaaa7ef2abd0074a81ddf910f6f59",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

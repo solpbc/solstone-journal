@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SOURCE_BOX in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SOURCE_BOX.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ad41628f2a08dc6f1993555b74ede86544d17e061395c323a7774ad2aeb3eaa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

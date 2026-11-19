@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.report.error view.",
+  "context": "Journal window, shared.report.error view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ced70d3c9f4603d27c5dcb76e5e6b194c7baa4ae34e633965268cbbdca9f5ebc",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

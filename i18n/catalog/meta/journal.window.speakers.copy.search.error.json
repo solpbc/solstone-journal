@@ -1,0 +1,16 @@
+{
+  "description": "Search error in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Search error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b16447f46530524d8fdf700467ba8d809682427960c1f482b66197d67649d6c3",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

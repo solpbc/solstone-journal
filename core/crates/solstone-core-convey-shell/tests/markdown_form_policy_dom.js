@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -52,7 +53,7 @@ function harness() {
       return html;
     },
   };
-  const context = vm.createContext({
+  const context = journalContext({
     window, document, DOMPurify, marked, URL, NodeFilter: { SHOW_TEXT: 4 },
     localStorage: { getItem() { return null; }, setItem() {} },
     navigator: {}, console, Map, Set, Date, JSON, Promise,

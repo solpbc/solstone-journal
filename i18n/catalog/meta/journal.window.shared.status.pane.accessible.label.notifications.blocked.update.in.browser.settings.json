@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's shared.status.pane view.",
+  "context": "Journal window, shared.status.pane view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "390ccd536650a2c721215d7de998d32af72db5f316eff63da2dd6a4bf4f57185",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

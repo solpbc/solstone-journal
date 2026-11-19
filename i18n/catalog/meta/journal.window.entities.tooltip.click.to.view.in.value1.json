@@ -1,0 +1,28 @@
+{
+  "description": "Tooltip in the journal's entities view.",
+  "context": "Journal window, entities view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1180b090aac81357e9ffbda8180c2506c9a1226cc5bbb95f46a1ecb7457abd12",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

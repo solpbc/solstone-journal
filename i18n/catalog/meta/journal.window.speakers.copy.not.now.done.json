@@ -1,0 +1,16 @@
+{
+  "description": "Not now done in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Not now done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b091d41b52d3a9591db90b409a97670a610c436c9f0114a780f78c139763d6a6",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

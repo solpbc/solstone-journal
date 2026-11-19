@@ -1,0 +1,16 @@
+{
+  "description": "Grid activity other in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Grid activity other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9c920eecfb273fba3b9843ff8c2ca64eee68b19f4d03470bc9e4b6c80bcd64e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

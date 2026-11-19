@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_LABEL_FALLBACKS spoke-with in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_LABEL_FALLBACKS spoke-with.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef22c29f9c6161637dbef144667819defe340c2762b6631b28ff1ddae6e7401d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

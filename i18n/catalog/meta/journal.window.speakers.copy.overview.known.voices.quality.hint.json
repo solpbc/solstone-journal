@@ -1,0 +1,16 @@
+{
+  "description": "Overview known voices quality hint in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview known voices quality hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5235781bd58a47e43c6308d95aec479439c1fe87313d37a905d963efb2b7818d",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

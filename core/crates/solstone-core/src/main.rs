@@ -5374,7 +5374,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                 println!("Read scope: {scope_str}");
                                 let kinds = read.categories.iter().map(|word| {
                                     solstone_core_format::content::AdmittedCategory::from_stored_word(word)
-                                        .map_or(word.as_str(), |category| category.kind_spec().label)
+                                        .map_or_else(|| word.clone(), |category| solstone_core_cli::permission_kind_label(category.kind_spec()))
                                 }).collect::<Vec<_>>();
                                 println!("Categories: {}", kinds.join(", "));
                             }

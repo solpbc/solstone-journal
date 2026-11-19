@@ -71,8 +71,8 @@ window.SurfaceState = (() => {
   // A wait past ten seconds says it is still working. The line is in place
   // from the start and shown by the stylesheet at ten seconds; until then it
   // is hidden from assistive technology as well as from sight.
-  const STILL_WORKING_HTML = '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>';
-  const STILL_WORKING_QUIET_HTML = '<span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>';
+  const STILL_WORKING_HTML = `<span class="surface-state-still" data-role="still-working">${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.still.working')}</span>`;
+  const STILL_WORKING_QUIET_HTML = `<span class="surface-state-still" data-role="still-working" aria-hidden="true">${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.still.working')}</span>`;
   const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
   const ERROR_ICON = window.ConveyIcons.svg('triangle-alert');
   // X-19 turned the em-dash that used to introduce this tail into a period or
@@ -143,31 +143,31 @@ window.SurfaceState = (() => {
       ? detail.rawDetail
       : (hasValue(detail.serverMessage) ? detail.serverMessage : serverMessage);
     if (hasValue(reason)) {
-      lines.push(`<div>Server reason: ${escapeHtml(reason)}</div>`);
+      lines.push(`<div>${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.server.reason')} ${escapeHtml(reason)}</div>`);
     }
 
     const timestamp = formatDetailTimestamp(detail.timestamp);
     if (timestamp) {
-      lines.push(`<div>time: ${escapeHtml(timestamp)}</div>`);
+      lines.push(`<div>${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.time')} ${escapeHtml(timestamp)}</div>`);
     }
 
     if (hasValue(detail.correlationId)) {
       const correlationId = String(detail.correlationId);
       lines.push(
-        `<div>reference: <button type="button" class="surface-state-copy-reference" data-copy-value="${escapeHtml(correlationId)}">`
-        + `${escapeHtml(correlationId)} <span class="surface-state-copy-affordance">(click to copy)</span>`
+        `<div>${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.reference')} <button type="button" class="surface-state-copy-reference" data-copy-value="${escapeHtml(correlationId)}">`
+        + `${escapeHtml(correlationId)} <span class="surface-state-copy-affordance">${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.click.to.copy')}</span>`
         + `</button></div>`
       );
     }
 
     if (hasValue(detail.reasonCode)) {
-      lines.push(`<div>reason code: ${escapeHtml(detail.reasonCode)}</div>`);
+      lines.push(`<div>${window.JournalI18n.renderHtml('journal.window.shared.app.visible.text.reason.code')} ${escapeHtml(detail.reasonCode)}</div>`);
     }
 
     if (!lines.length) {
       return '';
     }
-    return `<details class="surface-state-detail"><summary>show details</summary>${lines.join('')}</details>`;
+    return `<details class="surface-state-detail"><summary>${window.JournalI18n.renderHtml('journal.window.shared.app.disclosure.label.show.details')}</summary>${lines.join('')}</details>`;
   }
 
   document.addEventListener('click', event => {
@@ -183,7 +183,7 @@ window.SurfaceState = (() => {
     copyToClipboard(value).then(() => {
       const affordance = trigger.querySelector('.surface-state-copy-affordance');
       if (affordance) {
-        affordance.textContent = '(copied)';
+        affordance.textContent = window.JournalI18n.render('journal.window.shared.app.visible.text.copied');
       }
     }).catch(error => {
       if (window.logError) {
@@ -283,8 +283,8 @@ window.SurfaceState = (() => {
     },
 
     error({
-      heading = 'couldn\'t load this section',
-      desc = window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
+      heading = window.JournalI18n.render('journal.window.shared.app.window.explanation.couldn.t.load.this.section'),
+      desc = window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.shared.app.window.explanation.reload.to.try.again'),
       serverMessage = '',
       retry = false,
       retryLabel = 'try again',
@@ -358,7 +358,7 @@ window.SurfaceState = (() => {
  */
 function toOwnerFacingTaskError(message) {
   if (/failed to fetch|networkerror|load failed|err_/i.test(String(message || ''))) {
-    return "couldn't reach your journal. some background updates are paused.";
+    return window.JournalI18n.render('journal.window.shared.app.window.explanation.couldn.t.reach.your.journal.some');
   }
   return message;
 }
@@ -735,7 +735,7 @@ window.AppServices = {
         }
         return result;
       } catch (error) {
-        const message = error?.message || 'Request failed';
+        const message = error?.message || window.JournalI18n.render('journal.window.shared.app.request.failed');
         health.lastError = message;
 
         if (error instanceof window.ApiError && error.status === 403) {
@@ -761,13 +761,13 @@ window.AppServices = {
           health.failing = true;
           this.notifications.show({
             app: 'system',
-            title: `${String(appName).toLowerCase()} background task`,
+            title: window.JournalI18n.render('journal.window.shared.app.title.value1.background.task', [['value1', String(String(appName).toLowerCase())]]),
             message: toOwnerFacingTaskError(message),
             dismissible: true,
             autoDismiss: false,
             buttons: [
               {
-                label: 'Try now',
+                label: window.JournalI18n.render('journal.window.shared.app.label.try.now'),
                 onClick: () => runNow(),
                 dismiss: false
               },
@@ -931,7 +931,7 @@ window.AppServices = {
         id: this._nextId++,
         app: options.app || 'system',
         icon: normalizedIcon,
-        title: options.title || 'Notification',
+        title: options.title || window.JournalI18n.render('journal.window.shared.app.notification.title'),
         message: options.message || '',
         action,
         dismissible: options.dismissible !== false,
@@ -1710,16 +1710,16 @@ window.AppServices = {
 // (on, paused or unreachable); unticked unless the trash setting ticks it.
 window.BackupErase = {
   COPY: {
-    labelOne: 'also remove it from your backups',
-    labelMany: 'also remove them from your backups',
-    hintOne: "then restoring your journal from a backup can't bring it back. your backups stay, with everything else in them.",
-    hintMany: "then restoring your journal from a backup can't bring them back. your backups stay, with everything else in them.",
-    paused: 'backup is paused, so this happens once you resume it.',
-    nextOne: 'removing it from your backups next.',
-    nextMany: 'removing them from your backups next.',
-    pausedOne: 'removing it from your backups once you resume backup.',
-    pausedMany: 'removing them from your backups once you resume backup.',
-    unchecked: "your journal couldn't check your backups just now, so this leaves them as they are.",
+    labelOne: window.JournalI18n.render('journal.window.shared.app.window.explanation.also.remove.it.from.your.backups'),
+    labelMany: window.JournalI18n.render('journal.window.shared.app.window.explanation.also.remove.them.from.your.backups'),
+    hintOne: window.JournalI18n.render('journal.window.shared.app.window.explanation.then.restoring.your.journal.from.a'),
+    hintMany: window.JournalI18n.render('journal.window.shared.app.window.explanation.then.restoring.your.journal.from.a.variant2'),
+    paused: window.JournalI18n.render('journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens'),
+    nextOne: window.JournalI18n.render('journal.window.shared.app.window.explanation.removing.it.from.your.backups.next'),
+    nextMany: window.JournalI18n.render('journal.window.shared.app.window.explanation.removing.them.from.your.backups.next'),
+    pausedOne: window.JournalI18n.render('journal.window.shared.app.window.explanation.removing.it.from.your.backups.once'),
+    pausedMany: window.JournalI18n.render('journal.window.shared.app.window.explanation.removing.them.from.your.backups.once'),
+    unchecked: window.JournalI18n.render('journal.window.shared.app.window.explanation.your.journal.couldn.t.check.your'),
   },
   _state: null,
   _at: 0,

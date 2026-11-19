@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy move to trash in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy move to trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6a70a12fb99e453a3114672c921d9e1cc3fecc56bc3e9b191403925a03aff45",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

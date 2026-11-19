@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link disable success closed.",
+  "context": "Network view copy, private link disable success closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 234,
+  "source_revision": "d379a37ca237b3950d4391333e39c5878c06afbfbc2f2a06c123566998c1f321",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

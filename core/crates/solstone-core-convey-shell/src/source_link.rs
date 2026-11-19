@@ -13,7 +13,8 @@ use axum::response::Response;
 use axum::routing::get;
 use jiff::Timestamp;
 use serde_json::Value;
-use solstone_core_convey_http::cant_open_response;
+use solstone_core_convey_http::cant_open::cant_open_response_for;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_facets::{
     FacetIdResolveError, RetiredFacetState, RetiredFacets, is_well_formed_facet_id,
     read_retired_facets, resolve_facet_id, retired_facets_path,
@@ -25,6 +26,7 @@ use solstone_core_journal_io::path_lexists;
 use solstone_core_transcripts_web::{DaySegmentRef, day_segment_list};
 
 use crate::session_gate;
+use crate::window_catalog::{response_locale, text};
 
 pub trait SourceReads: Send + Sync {
     fn path_exists(&self, path: &Path) -> Result<bool, String>;
@@ -99,52 +101,62 @@ async fn handle_source_link(
     Query(query): Query<BTreeMap<String, String>>,
     Extension(journal): Extension<Arc<PathBuf>>,
     Extension(reads): Extension<Arc<dyn SourceReads + Send + Sync>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SourceLink,
         move || {
             let Some(raw_ref) = query.get("ref").filter(|s| !s.trim().is_empty()) else {
-                return cant_open_response(
+                return cant_open_response_for(
+                    locale,
                     StatusCode::BAD_REQUEST,
-                    "your journal won't follow this link.",
+                    &text(locale, "journal.window.link.invalid"),
                 );
             };
 
             let classified = match parse_and_validate_reference(raw_ref) {
                 Ok(c) => c,
                 Err(RefusalKind::WontFollow) => {
-                    return cant_open_response(
+                    return cant_open_response_for(
+                        locale,
                         StatusCode::BAD_REQUEST,
-                        "your journal won't follow this link.",
+                        &text(locale, "journal.window.link.invalid"),
                     );
                 }
                 Err(RefusalKind::CantShow) => {
-                    return cant_open_response(
+                    return cant_open_response_for(
+                        locale,
                         StatusCode::NOT_FOUND,
-                        "your journal can't show this kind of source.",
+                        &text(locale, "journal.window.link.unsupported"),
                     );
                 }
             };
 
             let now = Timestamp::now();
             match resolve_landing(&journal, &classified, reads.as_ref(), now) {
-                Ok(LandingOutcome::Redirect(location)) => redirect_response(&location),
-                Ok(LandingOutcome::Absence) => {
-                    cant_open_response(StatusCode::NOT_FOUND, "it isn't in your journal.")
-                }
-                Ok(LandingOutcome::CantShow) => cant_open_response(
+                Ok(LandingOutcome::Redirect(location)) => redirect_response(&location, locale),
+                Ok(LandingOutcome::Absence) => cant_open_response_for(
+                    locale,
                     StatusCode::NOT_FOUND,
-                    "your journal can't show this kind of source.",
+                    &text(locale, "journal.window.link.absent"),
                 ),
-                Ok(LandingOutcome::WontFollow) => cant_open_response(
+                Ok(LandingOutcome::CantShow) => cant_open_response_for(
+                    locale,
+                    StatusCode::NOT_FOUND,
+                    &text(locale, "journal.window.link.unsupported"),
+                ),
+                Ok(LandingOutcome::WontFollow) => cant_open_response_for(
+                    locale,
                     StatusCode::BAD_REQUEST,
-                    "your journal won't follow this link.",
+                    &text(locale, "journal.window.link.invalid"),
                 ),
                 Err(err) => {
                     log::error!("source_link: couldn't check: {err}");
-                    cant_open_response(
+                    cant_open_response_for(
+                        locale,
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "your journal couldn't check this source.",
+                        &text(locale, "journal.window.link.read.error"),
                     )
                 }
             }
@@ -750,13 +762,13 @@ pub(crate) fn is_safe_location(loc: &str) -> bool {
     loc.starts_with('/') && !loc.starts_with("//") && !loc.starts_with("/\\")
 }
 
-pub(crate) fn redirect_response(location: &str) -> Response {
+pub(crate) fn redirect_response(location: &str, locale: &str) -> Response {
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .body(axum::body::Body::from(session_gate::redirect_body(
-            location,
+            location, locale,
         )))
         .expect("redirect response builds")
 }

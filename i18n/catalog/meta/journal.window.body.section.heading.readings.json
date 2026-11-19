@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's body view.",
+  "context": "Journal window, body view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "adbd821aae5d10706a5d602601f662ebb80a6538bf7ba58efa0830bd6aec5e52",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

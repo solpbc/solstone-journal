@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach host address clear label.",
+  "context": "Network view copy, reach host address clear label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "d657a30cde477ea44030fc411196ce245d0abec6343dc87fe44032c77f31dba5",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Type labels tool in the journal's year view.",
+  "context": "Journal window, year view. Type labels tool.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2b9bfdf07d22bc9bdc8f76d9a61da62bfa611a5fc3369d37f7255d555f903b6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

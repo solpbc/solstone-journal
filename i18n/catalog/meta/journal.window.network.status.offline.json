@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, offline.",
+  "context": "Network view copy, offline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 70,
+  "source_revision": "abb8a9a5c76a47112be2afd3ce2444d6633c7d0bf23e3f9ef0a98dc7d57e0e2b",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

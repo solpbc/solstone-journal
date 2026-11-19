@@ -1,0 +1,16 @@
+{
+  "description": "Copy threads in the journal's year view.",
+  "context": "Journal window, year view. Copy threads.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12400b636012e0b2bbe0d3c6c998d4fdbee4cb932f2aaf8d52513a42afd89868",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

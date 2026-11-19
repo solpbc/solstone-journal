@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link portal cta.",
+  "context": "Network view copy, private link portal cta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "0dab37e913adbae717d3987b4ce60c233b569b7d3b5e4fb1596c5e24a8ad8599",
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

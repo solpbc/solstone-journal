@@ -10,13 +10,14 @@
 //! workout goes with the day it started: when the owner hid that day, the
 //! days after it leave it out too.
 
+use solstone_core_convey_http::window_catalog::{strings, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::day_of;
 
-use crate::fmt::{clock, grouped_decimal, number};
+use crate::fmt::{clock, grouped_decimal, number, short_day};
 
 const STREAM: &str = "import.strava";
 
@@ -27,6 +28,7 @@ pub(crate) fn workouts_on(
     journal: &Path,
     day: &str,
     hidden: &BTreeSet<String>,
+    locale: &str,
 ) -> (Vec<Value>, BTreeSet<String>) {
     let mut took = BTreeSet::new();
     let dir = journal.join("chronicle").join(day).join(STREAM);
@@ -79,7 +81,7 @@ pub(crate) fn workouts_on(
     }
     let mut items = by_workout
         .into_iter()
-        .map(|(activity_id, workout)| item(activity_id, &workout, day))
+        .map(|(activity_id, workout)| item(activity_id, &workout, day, locale))
         .collect::<Vec<_>>();
     items.sort_by(|a, b| a["sort"].as_str().cmp(&b["sort"].as_str()));
     for item in &mut items {
@@ -90,73 +92,119 @@ pub(crate) fn workouts_on(
     (items, took)
 }
 
-fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
+fn item(activity_id: u64, workout: &Value, day: &str, locale: &str) -> Value {
     let field = |key: &str| workout.get(key).and_then(Value::as_f64);
     let name = workout
         .get("name")
         .and_then(Value::as_str)
         .filter(|name| !name.trim().is_empty())
         .or_else(|| workout.get("type").and_then(Value::as_str))
-        .unwrap_or("workout")
-        .to_owned();
+        .map(str::to_owned)
+        .unwrap_or_else(|| text(locale, "journal.window.body.strava.workout"));
     let start = workout
         .get("start")
         .and_then(Value::as_str)
         .and_then(|start| solstone_core_time::parse_rfc3339(start).ok());
     let start_label = start.as_ref().map(|start| {
         let local = start.datetime();
-        let label = clock(local);
+        let label = clock(local, locale);
         if solstone_core_time::day_key(local.date()) == day {
             label
         } else {
-            format!(
-                "{}, {label}",
-                local.strftime("%b %-d").to_string().to_lowercase()
+            strings(
+                locale,
+                "journal.window.body.date.time.before",
+                [
+                    (
+                        "date",
+                        &short_day(&solstone_core_time::day_key(local.date()), locale)
+                            .unwrap_or_default()
+                            .to_lowercase(),
+                    ),
+                    ("time", &label),
+                ],
             )
         }
     });
-    let duration = field("elapsed_seconds").map(duration_label);
+    let duration = field("elapsed_seconds").map(|seconds| duration_label(seconds, locale));
     let mut details = Vec::new();
     if let Some(moving) = field("moving_seconds") {
-        details.push(format!("moving {}", duration_label(moving)));
+        details.push(strings(
+            locale,
+            "journal.window.body.strava.moving",
+            [("duration", &duration_label(moving, locale))],
+        ));
     }
     if let Some(metres) = field("distance_m") {
-        details.push(format!("{} km", grouped_decimal(metres / 1000.0, 1)));
+        details.push(strings(
+            locale,
+            "journal.window.body.strava.distance",
+            [("distance", &grouped_decimal(metres / 1000.0, 1))],
+        ));
     }
     if let Some(gain) = field("elevation_gain_m") {
-        details.push(format!("elevation gain {} m", number(gain)));
+        details.push(strings(
+            locale,
+            "journal.window.body.strava.elevation",
+            [("metres", &number(gain))],
+        ));
     }
     match (field("heart_rate_avg_bpm"), field("heart_rate_max_bpm")) {
-        (Some(avg), Some(max)) => details.push(format!(
-            "heart rate avg {}, max {} bpm",
-            number(avg),
-            number(max)
+        (Some(avg), Some(max)) => details.push(strings(
+            locale,
+            "journal.window.body.strava.heart",
+            [("average", &number(avg)), ("maximum", &number(max))],
         )),
-        (Some(avg), None) => details.push(format!("heart rate avg {} bpm", number(avg))),
-        (None, Some(max)) => details.push(format!("heart rate max {} bpm", number(max))),
+        (Some(avg), None) => details.push(strings(
+            locale,
+            "journal.window.body.strava.heart.average",
+            [("value", &number(avg))],
+        )),
+        (None, Some(max)) => details.push(strings(
+            locale,
+            "journal.window.body.strava.heart.maximum",
+            [("value", &number(max))],
+        )),
         (None, None) => {}
     }
     match (field("power_avg_w"), field("power_weighted_w")) {
-        (Some(avg), Some(weighted)) => details.push(format!(
-            "power avg {} W, weighted {} W",
-            number(avg),
-            number(weighted)
+        (Some(avg), Some(weighted)) => details.push(strings(
+            locale,
+            "journal.window.body.strava.power",
+            [("average", &number(avg)), ("weighted", &number(weighted))],
         )),
-        (Some(avg), None) => details.push(format!("power avg {} W", number(avg))),
-        (None, Some(weighted)) => details.push(format!("power weighted {} W", number(weighted))),
+        (Some(avg), None) => details.push(strings(
+            locale,
+            "journal.window.body.strava.power.average",
+            [("value", &number(avg))],
+        )),
+        (None, Some(weighted)) => details.push(strings(
+            locale,
+            "journal.window.body.strava.power.weighted",
+            [("value", &number(weighted))],
+        )),
         (None, None) => {}
     }
     if let Some(kcal) = field("calories_kcal") {
-        details.push(format!("{} kcal", number(kcal)));
+        details.push(strings(
+            locale,
+            "journal.window.body.strava.energy",
+            [("value", &number(kcal))],
+        ));
     }
     if workout.get("commute").and_then(Value::as_bool) == Some(true) {
-        details.push("commute".to_owned());
+        details.push(text(locale, "journal.window.body.strava.commute"));
     }
     if workout.get("entered_by_hand").and_then(Value::as_bool) == Some(true) {
-        details.push("entered by hand".to_owned());
+        details.push(text(locale, "journal.window.body.strava.manual"));
     }
-    let distance_label =
-        field("distance_m").map(|m| format!("{} km", grouped_decimal(m / 1000.0, 1)));
+    let distance_label = field("distance_m").map(|m| {
+        strings(
+            locale,
+            "journal.window.body.strava.distance",
+            [("distance", &grouped_decimal(m / 1000.0, 1))],
+        )
+    });
     // Every other column Strava exported for the workout, as Strava labelled it
     // and with its value as written.
     let more_from_strava = workout
@@ -187,20 +235,36 @@ fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
     })
 }
 
-fn duration_label(seconds: f64) -> String {
+fn duration_label(seconds: f64, locale: &str) -> String {
     let minutes = (seconds / 60.0).round() as i64;
     if minutes < 60 {
-        format!("{minutes} min")
+        strings(
+            locale,
+            "journal.window.body.strava.duration.minutes",
+            [("minutes", &minutes.to_string())],
+        )
     } else if minutes % 60 == 0 {
-        format!("{} h", minutes / 60)
+        strings(
+            locale,
+            "journal.window.body.strava.duration.hours",
+            [("hours", &(minutes / 60).to_string())],
+        )
     } else {
-        format!("{} h {} min", minutes / 60, minutes % 60)
+        strings(
+            locale,
+            "journal.window.body.strava.duration.time",
+            [
+                ("hours", &(minutes / 60).to_string()),
+                ("minutes", &(minutes % 60).to_string()),
+            ],
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_convey_http::window_catalog::ENGLISH;
 
     fn piece(root: &Path, day: &str, key: &str, activity: u64, workout: Value) {
         let dir = root.join("chronicle").join(day).join(STREAM).join(key);
@@ -229,7 +293,7 @@ mod tests {
         piece(root.path(), "20261004", "070700_300", 9, run);
 
         let none = BTreeSet::new();
-        let (items, took) = workouts_on(root.path(), "20261004", &none);
+        let (items, took) = workouts_on(root.path(), "20261004", &none, ENGLISH);
         assert!(took.is_empty());
         assert_eq!(items.len(), 2);
         assert_eq!(items[0]["name"], "Night Ride");
@@ -254,19 +318,26 @@ mod tests {
             ])
         );
         assert_eq!(items[0]["more_from_strava"], json!([]));
-        assert_eq!(workouts_on(root.path(), "20261003", &none).0.len(), 1);
-        assert!(workouts_on(root.path(), "20261005", &none).0.is_empty());
+        assert_eq!(
+            workouts_on(root.path(), "20261003", &none, ENGLISH).0.len(),
+            1,
+        );
+        assert!(
+            workouts_on(root.path(), "20261005", &none, ENGLISH)
+                .0
+                .is_empty()
+        );
 
         // The night ride started on a day the owner hid: the next day leaves it
         // out and says which day took it, and keeps its own morning run.
         let hidden = BTreeSet::from(["20261003".to_owned()]);
-        let (items, took) = workouts_on(root.path(), "20261004", &hidden);
+        let (items, took) = workouts_on(root.path(), "20261004", &hidden, ENGLISH);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["name"], "Morning Run");
         assert_eq!(took, hidden);
         // Hiding the next day instead leaves the ride on the day it started.
         let next = BTreeSet::from(["20261004".to_owned()]);
-        let (items, took) = workouts_on(root.path(), "20261003", &next);
+        let (items, took) = workouts_on(root.path(), "20261003", &next, ENGLISH);
         assert_eq!(items.len(), 1);
         assert!(took.is_empty());
     }

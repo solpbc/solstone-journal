@@ -9,10 +9,12 @@
 //! answer says when the span lies on a hidden day, so a reader can tell hidden
 //! from empty.
 
+use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
@@ -21,6 +23,7 @@ use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::{Offset, TimeZone};
 use jiff::{SignedDuration, ZonedDateTime};
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::read_hidden_days;
 use solstone_core_format::content::body_records::{
@@ -40,37 +43,50 @@ pub(crate) const MAX_WINDOW_DAYS: i64 = 7;
 /// The most rows a span lists; counts are always whole.
 const MAX_ROWS: usize = 2000;
 
-const INVALID_BOUNDS: &str = "Window requires valid from and to ISO timestamps.";
-const END_BEFORE_START: &str = "Window end must be after window start.";
-
 pub(crate) async fn window_route(
     State(root): State<Arc<PathBuf>>,
     RawQuery(raw_query): RawQuery,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let params = decoded_query_params(raw_query.as_deref().unwrap_or_default());
     let Some(window_start) = parse_window_bound(params.get("from").map(String::as_str)) else {
-        return invalid_window_response(INVALID_BOUNDS);
+        return invalid_window_response(
+            locale,
+            text(locale, "journal.window.body.error.window.bounds"),
+        );
     };
     let Some(window_end) = parse_window_bound(params.get("to").map(String::as_str)) else {
-        return invalid_window_response(INVALID_BOUNDS);
+        return invalid_window_response(
+            locale,
+            text(locale, "journal.window.body.error.window.bounds"),
+        );
     };
     if window_end <= window_start {
-        return invalid_window_response(END_BEFORE_START);
+        return invalid_window_response(
+            locale,
+            text(locale, "journal.window.body.error.window.order"),
+        );
     }
     if window_end.timestamp() - window_start.timestamp()
         > SignedDuration::from_hours(24 * MAX_WINDOW_DAYS)
     {
-        return invalid_window_response(&format!(
-            "Window span must be {MAX_WINDOW_DAYS} days or less."
-        ));
+        return invalid_window_response(
+            locale,
+            strings(
+                locale,
+                "journal.window.body.error.window.length",
+                [("days", &MAX_WINDOW_DAYS.to_string())],
+            ),
+        );
     }
-    Json(build_window(&root, &window_start, &window_end)).into_response()
+    Json(build_window(&root, &window_start, &window_end, locale)).into_response()
 }
 
-fn invalid_window_response(detail: &str) -> Response {
+fn invalid_window_response(locale: &str, detail: String) -> Response {
     error_envelope(
         "invalid_request_value",
-        "one of those values couldn't be used.",
+        text(locale, "journal.window.body.error.invalid.request"),
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -332,15 +348,30 @@ fn iso(time: &ZonedDateTime) -> String {
 }
 
 /// Counts of what the span holds, kind by kind: the only thing the panel states.
-fn signals(rows: &[Found]) -> Vec<Value> {
+fn signals(rows: &[Found], locale: &str) -> Vec<Value> {
     let mut counts = BTreeMap::<(String, &'static str, &'static str), u64>::new();
     for item in rows {
         let (one, many) = match item.row.kind {
-            RowKind::Reading => ("reading", "readings"),
-            RowKind::Count => ("entry", "entries"),
-            RowKind::Logged => ("entry", "entries"),
-            RowKind::Stage => ("interval", "intervals"),
-            RowKind::Dated => ("entry", "entries"),
+            RowKind::Reading => (
+                "journal.window.body.count.reading.one",
+                "journal.window.body.count.reading.other",
+            ),
+            RowKind::Count => (
+                "journal.window.body.count.entry.one",
+                "journal.window.body.count.entry.other",
+            ),
+            RowKind::Logged => (
+                "journal.window.body.count.entry.one",
+                "journal.window.body.count.entry.other",
+            ),
+            RowKind::Stage => (
+                "journal.window.body.count.interval.one",
+                "journal.window.body.count.interval.other",
+            ),
+            RowKind::Dated => (
+                "journal.window.body.count.entry.one",
+                "journal.window.body.count.entry.other",
+            ),
             RowKind::Experience | RowKind::ExperienceTile | RowKind::Event | RowKind::Moved => {
                 continue;
             }
@@ -357,14 +388,14 @@ fn signals(rows: &[Found]) -> Vec<Value> {
     items
         .into_iter()
         .map(|((label, one, many), count)| {
-            json!({"label": label, "count": count, "count_label": count_noun(count, one, many)})
+            json!({"label": label, "count": count, "count_label": count_noun(count, one, many, locale)})
         })
         .collect()
 }
 
 /// What happened in the span: each experience (or the part of one that runs
 /// into it) once, with its source's own times.
-fn events(rows: &[Found]) -> Vec<Value> {
+fn events(rows: &[Found], locale: &str) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let mut events = Vec::new();
     for item in rows {
@@ -379,21 +410,21 @@ fn events(rows: &[Found]) -> Vec<Value> {
         let kind = row
             .experience
             .clone()
-            .unwrap_or_else(|| "experience".to_owned());
+            .unwrap_or_else(|| text(locale, "journal.window.body.experience.fallback"));
         events.push(json!({
             "kind": kind,
             "label": row.label,
             "source": source_words(&item.source),
             "start": iso(&item.start),
             "end": iso(&item.end),
-            "start_label": clock(item.start.datetime()),
-            "end_label": clock(item.end.datetime()),
+            "start_label": clock(item.start.datetime(), locale),
+            "end_label": clock(item.end.datetime(), locale),
         }));
     }
     events
 }
 
-fn sources(rows: &[Found]) -> Value {
+fn sources(rows: &[Found], locale: &str) -> Value {
     let mut counts = BTreeMap::<&str, u64>::new();
     for item in rows.iter().filter(|item| is_entry(item)) {
         *counts.entry(source_words(&item.source)).or_default() += 1;
@@ -401,7 +432,7 @@ fn sources(rows: &[Found]) -> Value {
     let chips = counts
         .iter()
         .map(|(name, count)| {
-            json!({"name": name, "count": count, "count_label": count_noun(*count, "entry", "entries")})
+            json!({"name": name, "count": count, "count_label": count_noun(*count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale)})
         })
         .collect::<Vec<_>>();
     json!({"names": counts.keys().collect::<Vec<_>>(), "chips": chips})
@@ -431,7 +462,7 @@ fn rows_listing(rows: &[Found]) -> Vec<Value> {
 
 /// One bucket per hour of the span on the request's own clock, with how many
 /// entries begin in it. A count, never a value.
-fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<Value> {
+fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime, locale: &str) -> Vec<Value> {
     let offset = from.offset();
     let from_local = from.datetime();
     let mut bucket_start = from_local.date().at(from_local.hour(), 0, 0, 0);
@@ -456,8 +487,8 @@ fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<Value
         items.push(json!({
             "start": iso(&start),
             "end": iso(&end),
-            "label": clock(bucket_start),
-            "range_label": format!("{}–{}", clock(bucket_start), clock(bucket_end)),
+            "label": clock(bucket_start, locale),
+            "range_label": format!("{}–{}", clock(bucket_start, locale), clock(bucket_end, locale)),
             "has_data": count > 0,
             "entry_total": count,
             "entry_total_label": grouped(count),
@@ -468,7 +499,12 @@ fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime) -> Vec<Value
     items
 }
 
-pub(crate) fn build_window(root: &Path, from: &ZonedDateTime, to: &ZonedDateTime) -> Value {
+pub(crate) fn build_window(
+    root: &Path,
+    from: &ZonedDateTime,
+    to: &ZonedDateTime,
+    locale: &str,
+) -> Value {
     let hidden = read_hidden_days(root).days().cloned().unwrap_or_default();
     let rows = collect_rows(root, from, to, &hidden);
     let on_hidden_day = !hidden.is_disjoint(&span_days(from, to));
@@ -483,10 +519,10 @@ pub(crate) fn build_window(root: &Path, from: &ZonedDateTime, to: &ZonedDateTime
         "has_data": entry_total > 0,
         "entry_total": entry_total,
         "entry_total_label": grouped(entry_total),
-        "signals": signals(&rows),
-        "events": events(&rows),
-        "sources": sources(&rows),
-        "hourly": hourly(&rows, from, to),
+        "signals": signals(&rows, locale),
+        "events": events(&rows, locale),
+        "sources": sources(&rows, locale),
+        "hourly": hourly(&rows, from, to, locale),
         "rows": rows_listing(&rows),
         "rows_truncated": rows.len() > MAX_ROWS,
     })

@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy grid foot in the journal's body view.",
+  "context": "Journal window, body view. Hide copy grid foot.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f7d0c984682226c3eb2ea4b6efa396ab32d272ea284b3d9581b3ff465fec2e53",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Preview body fresh in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Preview body fresh.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55c214335ae039326aafeafcfa7f2fff41fc154d8a530a0cc98f064f432d22c1",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_NONE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_NONE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bfac6868f05c91caa6aa5d3b4cce2bef1ae6420ac09c63d5e5fc965cb73408b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

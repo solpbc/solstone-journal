@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's entities view.",
+  "context": "Journal window, entities view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de15489cb9fde87fc8afae4d8f580954a68cd39383c3e83485793feb696149d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Shelf no evidence in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Shelf no evidence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea5982d7a3fe479cbbb82d0c092335f4572f62a7096b537dfb200052697cf1d4",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

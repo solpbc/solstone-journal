@@ -1,0 +1,16 @@
+{
+  "description": "Home address hostname unsupported in the journal's network.address view.",
+  "context": "Journal window, network.address view. Home address hostname unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3050182e579eda2a124bca34a2b55a2f4554095eb5f9b52e13ad652bbc5fe27d",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

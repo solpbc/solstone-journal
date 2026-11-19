@@ -1,0 +1,16 @@
+{
+  "description": "Copy title in the journal's year view.",
+  "context": "Journal window, year view. Copy title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a091964da791f4ebb5c72ea8db2972a43dc278b85041d45640fdd7c233d3a7e4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

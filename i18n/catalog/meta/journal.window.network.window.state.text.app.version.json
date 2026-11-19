@@ -1,0 +1,16 @@
+{
+  "description": "Window state text in the journal's network view.",
+  "context": "Journal window, network view. Window state text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3698fae74b71c712c6790f1ab881784949206cf851521f21ba56d1b915164a7d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

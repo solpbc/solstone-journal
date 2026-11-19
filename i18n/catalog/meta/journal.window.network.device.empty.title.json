@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, device empty title.",
+  "context": "Network view copy, device empty title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "2f36e67e88d3d829d1f5d238785a17814fc0f643f92927bab09721074e73d760",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

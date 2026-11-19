@@ -9,6 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -405,6 +406,7 @@ function makePage({ manifestDir, searchHtml, dateFormatSource }, address = '/app
   });
   context.self = window;
   const shell = path.resolve(manifestDir, '../solstone-core-convey-shell/assets/static');
+  loadWindowCatalog(context);
   vm.runInContext(dateFormatSource, context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);

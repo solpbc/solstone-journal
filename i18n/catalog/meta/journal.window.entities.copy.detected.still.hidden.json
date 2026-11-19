@@ -1,0 +1,28 @@
+{
+  "description": "Entities display table ENT_DETECTED_STILL_HIDDEN in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_STILL_HIDDEN.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98f70940e01d45406fdcf4274696179a721ed45bd7890cf5586e1c83548ed838",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{entity}"
+    }
+  ]
+}

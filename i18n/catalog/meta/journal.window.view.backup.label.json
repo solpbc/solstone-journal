@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.backup view.",
+  "context": "Journal window, view.backup view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

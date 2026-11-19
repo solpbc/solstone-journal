@@ -1,0 +1,16 @@
+{
+  "description": "Keep separate confirm in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Keep separate confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6221f9d57517c51210cfd98523732f1e40174b924cb3c555dae1709c9e14767f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

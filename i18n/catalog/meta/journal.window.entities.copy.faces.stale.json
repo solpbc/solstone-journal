@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_STALE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_STALE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44386751c2f4e98cbb93b25d7088232c7c7f00fea953baeb03798245b8e7329e",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

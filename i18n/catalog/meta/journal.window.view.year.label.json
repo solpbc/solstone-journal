@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.year view.",
+  "context": "Journal window, view.year view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a091964da791f4ebb5c72ea8db2972a43dc278b85041d45640fdd7c233d3a7e4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

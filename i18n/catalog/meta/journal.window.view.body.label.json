@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.body view.",
+  "context": "Journal window, view.body view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "702afdf25e49ffe5c937a2f981869a3d292696eb23f1865bce89b98f9b427769",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

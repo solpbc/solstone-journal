@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for places in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for places.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9413cd2390adff6a0dcce07b9c9fea6815aa7d264d6e1853ecf3ef1ae682ed4",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

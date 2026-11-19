@@ -5,6 +5,7 @@ const nodeAssert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { runWithJournalCatalog } = require('./journal_catalog_dom.js');
 
 let executedCases = 0;
 let passedCases = 0;
@@ -692,11 +693,11 @@ async function main() {
     requestAnimationFrame: (callback) => callback(),
     clearTimeout,
   };
-  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
-  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
-  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
+  runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
+  runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
+  runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
   // The shell's focus helpers, as its boot part carries them.
-  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8'), context);
+  runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8'), context);
   // The view contract, as far as these cases need it: the registered mount,
   // and a ctx over this harness's own stand-ins. The contract itself is
   // thinking_contract_dom.js's, through the real shell.
@@ -719,7 +720,7 @@ async function main() {
     ready() {},
     onDispose() {},
   };
-  vm.runInNewContext(source, context, {filename: 'thinking.js'});
+  runWithJournalCatalog(source, context, {filename: 'thinking.js'});
   assert(registered, 'thinking registers a view');
   registered.mount(ctx);
   const format = window.JournalFormat;

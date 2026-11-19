@@ -1,0 +1,16 @@
+{
+  "description": "Year invalid in the journal's year view.",
+  "context": "Journal window, year view. Year invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "249aeeec433201fdae91e85b1a60d2c64ad2e00c5f1ffd5609bce367d0e5f1db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

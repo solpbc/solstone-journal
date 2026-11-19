@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_OBS_LOAD_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_OBS_LOAD_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fead91d4c1842e4bd0a0073e42fe6ac6545b44b7b323d7c41db81c7e39bcf5c",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner status error in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner status error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d510463327f558f2bd83f3ae7aad3a4ecd11b051a56e96c8f8508073f5ba0cee",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

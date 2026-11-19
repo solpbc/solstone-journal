@@ -3,6 +3,7 @@
 
 use jiff::Timestamp;
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use crate::fixture::local_contract;
 use crate::inspect::BrainInspection;
@@ -27,6 +28,14 @@ pub struct BrainPresentation {
 
 /// Render the stable owner-facing words for an inspected brain state.
 pub fn present_brain_inspection(inspection: &BrainInspection, now: Timestamp) -> BrainPresentation {
+    present_brain_inspection_in(inspection, now, ENGLISH)
+}
+
+pub fn present_brain_inspection_in(
+    inspection: &BrainInspection,
+    now: Timestamp,
+    locale: &str,
+) -> BrainPresentation {
     let projection = &inspection.projection;
     let reason = projection.reason_code.as_deref();
     // A local model still downloading or starting is setup under way, not a fault.
@@ -39,13 +48,18 @@ pub fn present_brain_inspection(inspection: &BrainInspection, now: Timestamp) ->
     if failing_component.is_none() {
         failing_component = component_for_reason(reason);
     }
-    let (age_seconds, age_text) = brain_age(now, observed_at.as_deref());
+    let (age_seconds, age_text) = brain_age(now, observed_at.as_deref(), locale);
     BrainPresentation {
-        headline: headline(&projection.aggregate_state, reason, progressing).to_owned(),
+        headline: text(
+            locale,
+            headline_message(&projection.aggregate_state, reason, progressing),
+        ),
         progressing,
         reason_text: match (reason, refused_register(inspection.record.as_ref())) {
-            (Some("attestation_rejected"), Some(register)) => refused_register_text(register),
-            _ => brain_reason_text(reason),
+            (Some("attestation_rejected"), Some(register)) => {
+                refused_register_text(register, locale)
+            }
+            _ => brain_reason_text_in(reason, locale),
         },
         failing_component,
         evidence: BrainEvidencePresentation {
@@ -59,48 +73,59 @@ pub fn present_brain_inspection(inspection: &BrainInspection, now: Timestamp) ->
 /// Confidential processing can't verify the service on a platform with no
 /// hardware check, so it isn't offered there. Windows is the only shipped
 /// journal without one, so the words name it.
-const NOT_ON_PLATFORM: &str = "confidential processing isn't on windows yet";
+const NOT_ON_PLATFORM: &str = "journal.window.thinking.brain.unsupported";
 
 /// Local thinking needs hardware this computer doesn't have. Checking again
 /// won't change it, so the words say so plainly rather than asking for setup.
-const CANT_RUN_LOCAL: &str = "your journal's computer can't run local thinking";
+const CANT_RUN_LOCAL: &str = "journal.window.thinking.brain.cant.run.local";
 
 /// The owner headline for a brain state. Some `blocked` reasons have nothing
 /// for the owner to set up: the work waits for the service, or for something
 /// already under way, so the headline says so instead. Two confidential
 /// hardware-check failures read like the other failed checks.
-fn headline(state: &str, reason: Option<&str>, progressing: bool) -> &'static str {
+fn headline_message(state: &str, reason: Option<&str>, progressing: bool) -> &'static str {
     match (state, reason) {
         ("blocked", Some("attestation_not_verified")) => {
-            "can't reach confidential processing right now"
+            "journal.window.thinking.thinking.brain.headline.can.t.reach.confidential.processing.right"
         }
         ("blocked", Some("local_runtime_not_ready" | "local_artifact_not_ready"))
             if progressing =>
         {
-            "setting up local thinking"
+            "journal.window.thinking.thinking.brain.headline.setting.up.local.thinking"
         }
         // A local model that has stopped was set up once; it is not a first-run step.
-        ("blocked", Some("local_runtime_not_ready")) => "local thinking isn't running",
+        ("blocked", Some("local_runtime_not_ready")) => {
+            "journal.window.thinking.thinking.brain.headline.local.thinking.isn.t.running"
+        }
         ("blocked", Some("nvattest_platform_unsupported")) => NOT_ON_PLATFORM,
         ("blocked", Some("gpu_unavailable")) => CANT_RUN_LOCAL,
-        ("blocked", Some("nvattest_unavailable")) => "thinking needs attention",
-        ("blocked", Some("confidential_access_ended")) => {
-            "confidential processing isn't active for this sign-in"
+        ("blocked", Some("nvattest_unavailable")) => {
+            "journal.window.thinking.thinking.brain.headline.thinking.needs.attention"
         }
-        ("ready", _) => "thinking is ready",
-        ("checking", _) => "checking on thinking",
-        ("blocked", _) => "thinking isn't set up yet",
-        ("unhealthy", _) => "thinking needs attention",
-        _ => "thinking status unavailable",
+        ("blocked", Some("confidential_access_ended")) => {
+            "journal.window.thinking.thinking.brain.headline.confidential.processing.isn.t.active.for"
+        }
+        ("ready", _) => "journal.window.thinking.thinking.brain.headline.thinking.is.ready",
+        ("checking", _) => "journal.window.thinking.thinking.brain.headline.checking.on.thinking",
+        ("blocked", _) => {
+            "journal.window.thinking.thinking.brain.headline.thinking.isn.t.set.up.yet"
+        }
+        ("unhealthy", _) => {
+            "journal.window.thinking.thinking.brain.headline.thinking.needs.attention"
+        }
+        _ => "journal.window.thinking.thinking.brain.headline.thinking.status.unavailable",
     }
 }
 
-pub fn processing_headline_for_reason(reason: &str) -> Option<&'static str> {
+pub fn processing_headline_for_reason(reason: &str) -> Option<String> {
     let aggregate = local_contract()
         .brain_state
         .reason_to_aggregate
         .get(reason)?;
-    Some(headline(aggregate, Some(reason), false))
+    Some(text(
+        ENGLISH,
+        headline_message(aggregate, Some(reason), false),
+    ))
 }
 
 /// Owner words for an active lane id, the same names the web pages use.
@@ -129,67 +154,174 @@ pub fn provider_model_text(provider: &str, model: &str) -> String {
 
 /// Owner words for a brain reason code.
 pub fn brain_reason_text(reason: Option<&str>) -> String {
+    brain_reason_text_in(reason, ENGLISH)
+}
+
+pub fn brain_reason_text_in(reason: Option<&str>, locale: &str) -> String {
     match reason {
-        None => "ok".to_owned(),
-        Some("thinking_engine_not_chosen") => "nothing chosen yet".to_owned(),
-        Some("local_artifact_not_ready") => "the local model isn't installed yet".to_owned(),
-        Some("local_runtime_not_ready") => "the local model isn't running".to_owned(),
-        Some("gpu_unavailable") => "it needs supported hardware".to_owned(),
-        Some("provider_key_missing") => "no key added yet".to_owned(),
-        Some("endpoint_configuration_incomplete") => {
-            "your endpoint isn't fully set up yet".to_owned()
-        }
-        Some("configuration_invalid") => "the thinking settings need fixing".to_owned(),
-        Some("stale_expected_fingerprint" | "brain_record_stale" | "brain_config_changed") => {
-            "the last check is out of date".to_owned()
-        }
-        Some("lost_fence" | "brain_run_superseded") => "the check was cut short".to_owned(),
-        Some("busy") => "a check is already running".to_owned(),
-        Some("brain_record_missing") => "not checked yet".to_owned(),
+        None => text(locale, "journal.window.thinking.thinking.brain.reason.ok"),
+        Some("thinking_engine_not_chosen") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.nothing.chosen.yet",
+        ),
+        Some("local_artifact_not_ready") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.isn.t.installed",
+        ),
+        Some("local_runtime_not_ready") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.isn.t.running",
+        ),
+        Some("gpu_unavailable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.it.needs.supported.hardware",
+        ),
+        Some("provider_key_missing") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.no.key.added.yet",
+        ),
+        Some("endpoint_configuration_incomplete") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.your.endpoint.isn.t.fully.set",
+        ),
+        Some("configuration_invalid") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.thinking.settings.need.fixing",
+        ),
+        Some("stale_expected_fingerprint" | "brain_record_stale" | "brain_config_changed") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.last.check.is.out.of",
+        ),
+        Some("lost_fence" | "brain_run_superseded") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.check.was.cut.short",
+        ),
+        Some("busy") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.a.check.is.already.running",
+        ),
+        Some("brain_record_missing") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.not.checked.yet",
+        ),
         Some(
             "brain_record_invalid" | "brain_record_unavailable" | "fingerprint_key_unavailable",
-        ) => "the last check can't be read".to_owned(),
-        Some("brain_check_interrupted") => "the last check was interrupted".to_owned(),
-        Some("brain_refresh_timeout") => "the last check didn't finish".to_owned(),
-        Some("probe_internal_error") => "the check couldn't finish".to_owned(),
-        Some("probe_output_starved") => "the model didn't answer the check".to_owned(),
-        Some("attestation_expired") => "your journal needs to verify the service again".to_owned(),
-        Some("brain_check_in_progress") => "checking now".to_owned(),
-        Some("attestation_rejected") => "the service didn't pass verification".to_owned(),
-        Some("endpoint_unreachable") => "couldn't connect to the model".to_owned(),
-        Some("endpoint_contract_failed") => "the model didn't answer the way it should".to_owned(),
-        Some("network_unreachable") => "couldn't connect to the provider".to_owned(),
-        Some("model_not_found") => "the model wasn't found".to_owned(),
-        Some("provider_key_invalid") => "the key was refused".to_owned(),
-        Some("provider_quota_exceeded") => "the provider's usage limit was reached".to_owned(),
-        Some("provider_request_rejected") => "the request was turned down".to_owned(),
-        Some("provider_response_invalid") => "the answer couldn't be read".to_owned(),
-        Some("provider_unavailable") => "the model isn't available right now".to_owned(),
-        Some("local_server_unhealthy") => "the local model stopped responding".to_owned(),
-        Some("local_runtime_fingerprint_mismatch") => {
-            "the local model changed since it was checked".to_owned()
-        }
-        Some("local_runtime_state_invalid" | "local_runtime_state_unavailable") => {
-            "the local model's status can't be read".to_owned()
-        }
-        Some("local_runtime_state_stale") => "the local model's status is out of date".to_owned(),
-        Some("attestation_not_verified" | "online_check_unreachable") => {
-            "couldn't reach the service to verify it".to_owned()
-        }
-        Some("nvattest_platform_unsupported") => NOT_ON_PLATFORM.to_owned(),
-        Some("nvattest_unavailable") => "hardware verification is unavailable".to_owned(),
+        ) => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.last.check.can.t.be",
+        ),
+        Some("brain_check_interrupted") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.last.check.was.interrupted",
+        ),
+        Some("brain_refresh_timeout") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.last.check.didn.t.finish",
+        ),
+        Some("probe_internal_error") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.check.couldn.t.finish",
+        ),
+        Some("probe_output_starved") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.model.didn.t.answer.the",
+        ),
+        Some("attestation_expired") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.your.journal.needs.to.verify.the",
+        ),
+        Some("brain_check_in_progress") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.checking.now",
+        ),
+        Some("attestation_rejected") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.service.didn.t.pass.verification",
+        ),
+        Some("endpoint_unreachable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.couldn.t.connect.to.the.model",
+        ),
+        Some("endpoint_contract_failed") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.model.didn.t.answer.the.variant2",
+        ),
+        Some("network_unreachable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.couldn.t.connect.to.the.provider",
+        ),
+        Some("model_not_found") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.model.wasn.t.found",
+        ),
+        Some("provider_key_invalid") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.key.was.refused",
+        ),
+        Some("provider_quota_exceeded") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.provider.s.usage.limit.was",
+        ),
+        Some("provider_request_rejected") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.request.was.turned.down",
+        ),
+        Some("provider_response_invalid") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.answer.couldn.t.be.read",
+        ),
+        Some("provider_unavailable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.model.isn.t.available.right",
+        ),
+        Some("local_server_unhealthy") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.stopped.responding",
+        ),
+        Some("local_runtime_fingerprint_mismatch") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.changed.since.it",
+        ),
+        Some("local_runtime_state_invalid" | "local_runtime_state_unavailable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.s.status.can",
+        ),
+        Some("local_runtime_state_stale") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.the.local.model.s.status.is",
+        ),
+        Some("attestation_not_verified" | "online_check_unreachable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.couldn.t.reach.the.service.to",
+        ),
+        Some("nvattest_platform_unsupported") => text(locale, NOT_ON_PLATFORM),
+        Some("nvattest_unavailable") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.hardware.verification.is.unavailable",
+        ),
         Some("nvattest_integrity_failed") => {
             solstone_core_installed_payload::guidance::PACKAGE_MISMATCH.to_owned()
         }
-        Some("chatgpt_not_eligible") => "this ChatGPT account isn't eligible".to_owned(),
-        Some("chatgpt_sign_in_required") => "signed out of ChatGPT".to_owned(),
-        Some("chatgpt_usage_limit") => "ChatGPT usage limit reached".to_owned(),
-        Some("confidential_access_ended") => {
-            "confidential processing isn't active for this sign-in".to_owned()
-        }
-        Some("nvattest_install_failed" | "nvattest_install_in_progress") => {
-            "hardware verification is unavailable".to_owned()
-        }
+        Some("chatgpt_not_eligible") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.this.chatgpt.account.isn.t.eligible",
+        ),
+        Some("chatgpt_sign_in_required") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.signed.out.of.chatgpt",
+        ),
+        Some("chatgpt_usage_limit") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.chatgpt.usage.limit.reached",
+        ),
+        Some("confidential_access_ended") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.confidential.processing.isn.t.active.for",
+        ),
+        Some("nvattest_install_failed" | "nvattest_install_in_progress") => text(
+            locale,
+            "journal.window.thinking.thinking.brain.reason.hardware.verification.is.unavailable",
+        ),
         Some(reason) => reason.replace('_', " "),
     }
 }
@@ -207,8 +339,12 @@ fn refused_register(record: Option<&Value>) -> Option<&str> {
 
 /// Owner words for a service refused on one register: what the journal
 /// checked, nothing more.
-fn refused_register_text(register: &str) -> String {
-    format!("the service's measurement {register} doesn't match its published value")
+fn refused_register_text(register: &str, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.thinking.brain.register.mismatch",
+        [("register", register)],
+    )
 }
 
 fn evidence_view(record: Option<&Value>) -> (Option<String>, Option<String>) {
@@ -251,7 +387,11 @@ fn component_for_reason(reason: Option<&str>) -> Option<String> {
         })
 }
 
-fn brain_age(now: Timestamp, observed_at: Option<&str>) -> (Option<i64>, Option<String>) {
+fn brain_age(
+    now: Timestamp,
+    observed_at: Option<&str>,
+    locale: &str,
+) -> (Option<i64>, Option<String>) {
     let Some(observed) = observed_at
         .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
         .map(|value| value.timestamp())
@@ -260,13 +400,29 @@ fn brain_age(now: Timestamp, observed_at: Option<&str>) -> (Option<i64>, Option<
     };
     let seconds = now.duration_since(observed).as_secs().max(0);
     let text = if seconds < 60 {
-        format!("{seconds}s")
+        strings(
+            locale,
+            "journal.window.thinking.brain.age.s",
+            [("age", &(seconds).to_string())],
+        )
     } else if seconds < 3_600 {
-        format!("{}m", seconds / 60)
+        strings(
+            locale,
+            "journal.window.thinking.brain.age.m",
+            [("age", &(seconds / 60).to_string())],
+        )
     } else if seconds < 172_800 {
-        format!("{}h", seconds / 3_600)
+        strings(
+            locale,
+            "journal.window.thinking.brain.age.h",
+            [("age", &(seconds / 3_600).to_string())],
+        )
     } else {
-        format!("{}d", seconds / 86_400)
+        strings(
+            locale,
+            "journal.window.thinking.brain.age.d",
+            [("age", &(seconds / 86_400).to_string())],
+        )
     };
     (Some(seconds), Some(text))
 }
@@ -279,6 +435,7 @@ mod tests {
 
     use super::{brain_age, present_brain_inspection};
     use crate::{BrainInspection, BrainProjection, InspectionStatus};
+    use solstone_core_window_catalog::ENGLISH;
 
     #[test]
     fn projects_python_headline_reason_component_and_age_words() {
@@ -401,11 +558,14 @@ mod tests {
     #[test]
     fn a_platform_with_no_hardware_check_says_so_on_every_brain_surface() {
         let view = view_of("blocked", "nvattest_platform_unsupported", false);
-        assert_eq!(view.headline, super::NOT_ON_PLATFORM);
+        assert_eq!(
+            view.headline,
+            "confidential processing isn't on windows yet"
+        );
         assert_eq!(view.reason_text, view.headline);
         assert!(!view.progressing);
         assert_eq!(
-            super::processing_headline_for_reason("nvattest_platform_unsupported"),
+            super::processing_headline_for_reason("nvattest_platform_unsupported").as_deref(),
             Some(view.headline.as_str())
         );
         assert_ne!(
@@ -432,12 +592,16 @@ mod tests {
             (72 * 3_600, "3d"),
         ] {
             let observed = now - SignedDuration::from_secs(seconds);
-            let (_, text) = brain_age(now, Some(&solstone_core_time::utc_rfc3339(observed)));
+            let (_, text) = brain_age(
+                now,
+                Some(&solstone_core_time::utc_rfc3339(observed)),
+                ENGLISH,
+            );
             assert_eq!(text.as_deref(), Some(expected));
         }
         let future = now + SignedDuration::from_secs(30);
         assert_eq!(
-            brain_age(now, Some(&solstone_core_time::utc_rfc3339(future))),
+            brain_age(now, Some(&solstone_core_time::utc_rfc3339(future)), ENGLISH),
             (Some(0), Some("0s".to_owned()))
         );
     }

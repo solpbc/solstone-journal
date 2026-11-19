@@ -20,6 +20,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const [bundlePath, restPath, staticDir, isolationPath, splitBootPath, splitRestPath] = process.argv.slice(2);
 const bundle = fs.readFileSync(bundlePath, 'utf8');
@@ -49,7 +50,7 @@ function segmentTable(text) {
 // are then properties of the global object; a let, const or class name is a
 // global binding that never initialised, so even `typeof` on it throws.
 function declaredNames(source, filename) {
-  const context = vm.createContext({});
+  const context = journalContext({});
   const before = new Set(Object.getOwnPropertyNames(context));
   try {
     vm.runInContext('throw 0;\n' + source, context, { filename });
@@ -130,7 +131,7 @@ const isolation = fs.readFileSync(isolationPath, 'utf8');
 function runIsolation() {
   const reported = [];
   const src = 'http://journal.test/static/0123456789abcdef/shell.js';
-  const context = vm.createContext({
+  const context = journalContext({
     document: { currentScript: { src } },
     setTimeout,
     reportError: (error) => reported.push(error),
@@ -193,7 +194,7 @@ function runSplit(order) {
   const bootUrl = 'http://journal.test/static/0123456789abcdef/shell.js';
   const restUrl = 'http://journal.test/static/0123456789abcdef/shell-rest.js';
   const currentScript = { src: bootUrl };
-  const context = vm.createContext({
+  const context = journalContext({
     document: { currentScript },
     setTimeout,
     reportError: (error) => reported.push(error),
@@ -225,7 +226,7 @@ check('an error in the rest file names its own file, whichever file ran first', 
 });
 
 function host() {
-  const sandbox = vm.createContext({
+  const sandbox = journalContext({
     console: { error() {}, debug() {} },
     setTimeout,
     clearTimeout,
@@ -265,7 +266,7 @@ check('a view that is not ready by three seconds still gets the rest file', () =
       return name === 'data-src' ? restSrc : null;
     },
   };
-  const sandbox = vm.createContext({
+  const sandbox = journalContext({
     console: { warn() {}, error() {}, debug() {} },
     setTimeout(fn, ms) {
       timers.push({ fn, ms });

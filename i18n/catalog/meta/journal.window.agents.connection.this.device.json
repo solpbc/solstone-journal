@@ -1,0 +1,16 @@
+{
+  "description": "Connection this device in the journal's agents view.",
+  "context": "Journal window, agents view. Connection this device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef905899d3249effbaf2510b848de07805daa0284d6d80c3d0466e6702fd4125",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

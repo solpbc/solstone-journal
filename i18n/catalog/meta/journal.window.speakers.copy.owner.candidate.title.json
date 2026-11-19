@@ -1,0 +1,16 @@
+{
+  "description": "Owner candidate title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner candidate title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "125530818c107f3f98f70fed1c382a61dac5157e284cd8d76954b32bc68cece8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

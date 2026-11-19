@@ -1,0 +1,23 @@
+{
+  "description": "Unsupported request media detail in the journal's shell view.",
+  "context": "Journal window, shell view. Unsupported request media detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45e67bc8611159bfc37c547ecc09013cb8c1639d95fa799b60c3728cb17d2d27",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "application/json"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Network view copy, computer linux note.",
+  "context": "Network view copy, computer linux note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 130,
+  "source_revision": "f7da7f5be2d0799352d1735a08f7be46354451b184b80c3917bd7e5997bf003c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "filename",
+      "kind": "accepted-input",
+      "value": "pairing-link.txt"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for facets in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1300d0ad2c2523662291d026eb844213bda93fccf514024044450fe5e4f60bba",
+  "max_length": 188,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

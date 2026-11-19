@@ -1,0 +1,16 @@
+{
+  "description": "Day without matching content in the journal's view.body view.",
+  "context": "Journal window, view.body view. Day without matching content.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60e4a6858b7360a827d0ab63ef9639f6d1fef95506d4f389e9e0eeaf1a1cdd8a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

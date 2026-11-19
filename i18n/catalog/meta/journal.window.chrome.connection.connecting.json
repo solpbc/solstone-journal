@@ -1,0 +1,16 @@
+{
+  "description": "Status pane headline before the journal event stream connects.",
+  "context": "Status pane headline before the journal event stream connects.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 96,
+  "source_revision": "33171e5be120a0e923e8bac91e88bd2c567f94d7fc08bac62050dfe6836c23a9",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Move byo detail in the journal's agents view.",
+  "context": "Journal window, agents view. Move byo detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6256d62a05dfc9bcffc75ec3eba8cd32ff2ce5d539f1ce3a09573350f01df2f2",
+  "max_length": 276,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    },
+    {
+      "name": "slot2",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

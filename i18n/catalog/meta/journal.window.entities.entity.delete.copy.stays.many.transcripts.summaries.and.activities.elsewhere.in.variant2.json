@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy stays many in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy stays many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f060bf402bcaec544f1149a7063d0f0057ddb0938f5825d3e9faa2421970ced5",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

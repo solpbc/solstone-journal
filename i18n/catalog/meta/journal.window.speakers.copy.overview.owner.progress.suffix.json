@@ -1,0 +1,16 @@
+{
+  "description": "Overview owner progress suffix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview owner progress suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06b8294900059e33ea5b0c2741569a588e147ec750103c902db3fded96cd03b7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

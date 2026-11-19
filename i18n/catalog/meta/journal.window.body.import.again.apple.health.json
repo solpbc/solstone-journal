@@ -1,0 +1,16 @@
+{
+  "description": "Body display import again apple health in the journal's body view.",
+  "context": "Journal window, body view. Body display import again apple health.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "101a6a62facbf6814171acb1e24f80bf6193f9347668be48ea7185550d0c7ba1",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

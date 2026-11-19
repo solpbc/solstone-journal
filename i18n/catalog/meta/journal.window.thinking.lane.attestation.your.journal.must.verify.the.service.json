@@ -1,0 +1,16 @@
+{
+  "description": "Thinking lane attestation in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane attestation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd1589c3a0cc5f228c7769beeb6414c9f76150d2846d34f671a35db03908c051",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

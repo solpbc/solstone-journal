@@ -22,6 +22,8 @@
 //! since. A row is appended once its run has finished, so a file last modified
 //! before the window holds no row inside it and is never opened.
 
+use crate::window_catalog;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
@@ -539,14 +541,24 @@ fn now_seconds() -> i64 {
         .map_or(0, |duration| duration.as_secs() as i64)
 }
 
-pub(crate) async fn api_pace(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+pub(crate) async fn api_pace(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let root = journal.0.clone();
     match tokio::task::spawn_blocking(move || read_pace(&root, now_seconds())).await {
         Ok(pace) => Json(pace).into_response(),
         Err(_) => error_envelope(
             "pace_unavailable",
-            "thoughts per hour couldn't be read.",
-            "the pace read stopped before it finished",
+            window_catalog::text(
+                locale,
+                "journal.window.thinking.error.thoughts.per.hour.couldn.t.be.read",
+            ),
+            window_catalog::text(
+                locale,
+                "journal.window.thinking.error.the.pace.read.stopped.before.it.finished",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response(),

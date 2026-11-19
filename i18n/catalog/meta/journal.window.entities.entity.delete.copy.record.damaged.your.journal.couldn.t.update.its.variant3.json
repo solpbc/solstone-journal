@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy record_damaged in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy record_damaged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e066e93ffb0ce75423d26d658b479306944f4b781f536bb881cf28cbb3a67dbb",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

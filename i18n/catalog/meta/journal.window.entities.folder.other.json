@@ -1,0 +1,16 @@
+{
+  "description": "Folder other in the journal's entities view.",
+  "context": "Journal window, entities view. Folder other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1e8f895567afadcecdb303690d34433f5d9f63fdaa3dddf78b79a50c28383be",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

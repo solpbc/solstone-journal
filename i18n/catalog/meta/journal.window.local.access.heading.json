@@ -1,0 +1,16 @@
+{
+  "description": "Blocked browser landing heading in the journal's local.access view.",
+  "context": "Journal window, local.access view. Blocked browser landing heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

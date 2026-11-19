@@ -1,0 +1,16 @@
+{
+  "description": "Status offline in the journal's agents view.",
+  "context": "Journal window, agents view. Status offline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26c08223707237777e26074e31b245efb7421c2db12eedce46ec68e1784ab3b4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

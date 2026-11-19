@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETACH_FIND_ACTION in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETACH_FIND_ACTION.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "808dbb2fc6bdc484b896ab467c9d8369d26e1ee21fdfee39f7666715aca818c5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

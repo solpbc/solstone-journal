@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link needs repair.",
+  "context": "Network view copy, private link needs repair.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 88,
+  "source_revision": "34d94ee01f32be73723ab2fe489c3418a456ecbab59f4100260099fde1d9b310",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

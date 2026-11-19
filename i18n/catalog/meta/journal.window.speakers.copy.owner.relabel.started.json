@@ -1,0 +1,16 @@
+{
+  "description": "Owner relabel started in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner relabel started.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d297f918f0384576da4b23f9e850926db028ced5e5a544226ca8cfc94d57b96",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

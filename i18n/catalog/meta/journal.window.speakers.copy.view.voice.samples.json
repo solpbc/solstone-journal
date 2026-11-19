@@ -1,0 +1,16 @@
+{
+  "description": "View voice samples in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. View voice samples.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e03039643b2914cdac6a84a58af5cc39312aa4d2a5d3da5293472a7e7c023b01",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

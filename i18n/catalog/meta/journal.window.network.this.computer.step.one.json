@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, this computer step 1.",
+  "context": "Network view copy, this computer step 1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 144,
+  "source_revision": "c73d2b658e828de18359facc138ef79503a5869f344c7a5b726d366e5c4bbab7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

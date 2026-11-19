@@ -6,6 +6,7 @@
 //! This reads an import's summary and how far it got, and a bundle's manifest:
 //! never a window.
 
+use solstone_core_convey_http::window_catalog::{strings, text};
 use std::fs;
 use std::path::Path;
 
@@ -53,41 +54,64 @@ fn import_state(root: &Path, import: &NewImport) -> &'static str {
 
 /// How far a running or stopped import got, from `body-progress.json`, in the
 /// owner's words. Never names a stage or a window.
-pub(crate) fn progress_line(progress: &Value, running: bool) -> String {
+pub(crate) fn progress_line(progress: &Value, running: bool, locale: &str) -> String {
     let lead = if running {
-        "still running"
+        text(locale, "journal.window.body.import.progress.running")
     } else {
-        "stopped partway"
+        text(locale, "journal.window.body.import.progress.stopped")
     };
     let days_done = progress.get("days_done").and_then(Value::as_u64);
     let days_total = progress.get("days_total").and_then(Value::as_u64);
     let rows_scanned = progress.get("rows_scanned").and_then(Value::as_u64);
     match (days_done, days_total, rows_scanned) {
-        (Some(done), Some(total), _) if total > 0 => {
-            format!("{lead}: {done} of {total} days done.")
-        }
-        (_, _, Some(rows)) if rows > 0 => {
-            format!(
-                "{lead}: {} read so far.",
-                count_noun(rows, "entry", "entries")
-            )
-        }
-        _ => format!("{lead}, with nothing saved yet."),
+        (Some(done), Some(total), _) if total > 0 => strings(
+            locale,
+            "journal.window.body.import.progress.days",
+            [
+                ("lead", &lead),
+                ("done", &done.to_string()),
+                ("total", &total.to_string()),
+            ],
+        ),
+        (_, _, Some(rows)) if rows > 0 => strings(
+            locale,
+            "journal.window.body.import.progress.entries",
+            [
+                ("lead", &lead),
+                (
+                    "entries",
+                    &count_noun(
+                        rows,
+                        "journal.window.body.count.entry.one",
+                        "journal.window.body.count.entry.other",
+                        locale,
+                    ),
+                ),
+            ],
+        ),
+        _ => strings(
+            locale,
+            "journal.window.body.import.progress.empty",
+            [("lead", &lead)],
+        ),
     }
 }
 
-fn when_label(id: &str) -> Option<String> {
+fn when_label(id: &str, locale: &str) -> Option<String> {
     let at = jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", id).ok()?;
-    Some(format!(
-        "{} {}, {}, {}",
-        month_abbr(at.month()),
-        at.day(),
-        at.year(),
-        clock(at)
+    Some(strings(
+        locale,
+        "journal.window.body.date.with.clock",
+        [
+            ("month", &month_abbr(at.month(), locale)),
+            ("day", &at.day().to_string()),
+            ("year", &at.year().to_string()),
+            ("time", &clock(at, locale)),
+        ],
     ))
 }
 
-fn new_import_item(root: &Path, import: &NewImport) -> Value {
+fn new_import_item(root: &Path, import: &NewImport, locale: &str) -> Value {
     let dir = root.join("imports").join(&import.id);
     let state = import_state(root, import);
     let summary = (state == "finished")
@@ -98,12 +122,12 @@ fn new_import_item(root: &Path, import: &NewImport) -> Value {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .unwrap_or(Value::Null);
-        progress_line(&progress, state == "running")
+        progress_line(&progress, state == "running", locale)
     });
     json!({
         "id": import.id,
         "source": import.source.words(),
-        "when": when_label(&import.id),
+        "when": when_label(&import.id, locale),
         "state": state,
         "summary": summary,
         "progress": progress,
@@ -111,15 +135,18 @@ fn new_import_item(root: &Path, import: &NewImport) -> Value {
 }
 
 /// New-path imports, newest first, and old bundles.
-pub(crate) fn imports_section(root: &Path) -> Value {
+pub(crate) fn imports_section(root: &Path, locale: &str) -> Value {
     let mut new_imports = read_new_imports(root);
     new_imports.reverse();
     let new_items = new_imports
         .iter()
-        .map(|import| new_import_item(root, import))
+        .map(|import| new_import_item(root, import, locale))
         .collect::<Vec<_>>();
     let old = read_old_bundles(root);
-    let old_items = old.iter().map(listing_item).collect::<Vec<_>>();
+    let old_items = old
+        .iter()
+        .map(|bundle| listing_item(bundle, locale))
+        .collect::<Vec<_>>();
     json!({
         "new": new_items,
         "old": old_items,

@@ -12,6 +12,7 @@ const { answerQuestion } = require('./question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -691,7 +692,7 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
   };
   let arrivalMode = arrival;
 
-  const context = vm.createContext({
+  const context = journalContext({
     window, document: doc, location, history: window.history,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, Map, Set, Promise, TextEncoder,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Uint8Array, Symbol,
@@ -750,7 +751,7 @@ const GONE = ['LinkCopy', 'linkPairingCeremony', 'loadClients', 'unpairClient', 
   'clientLabels', 'clientsEpoch', 'landOnDevices', 'forgetDevice', 'initClients', 'initLinkWorkspace', 'showToast'];
 
 // Run from network_pairing_dom.js: answers with the number of cases.
-module.exports = async function networkContractCases(manifestDir) {
+module.exports = async function networkContractCases(manifestDir, copy) {
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/network/workspace.html'), 'utf8');
   const scriptStart = workspace.indexOf('<script>\n(function () {\n  function mountNetwork(ctx) {');
   assert.ok(scriptStart > 0, 'the fragment has its one inline mount');
@@ -760,7 +761,6 @@ module.exports = async function networkContractCases(manifestDir) {
     .replace(/<style>[\s\S]*?<\/style>/g, '')
     .replace(/<script[^>]*><\/script>/g, '')
     .replace(/<link[^>]*>/g, '');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
   const env = { manifestDir, script, markup, copy };
 
   await test('the fragment is a contract view with its two first reads, and no handler in it names a global', async () => {

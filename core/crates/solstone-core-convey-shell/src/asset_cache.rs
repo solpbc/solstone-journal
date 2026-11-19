@@ -34,6 +34,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use tower::ServiceExt;
 
 use crate::assets::{self, AssetKind, AssetRecord};
@@ -124,7 +125,7 @@ pub(crate) async fn refuse_unknown_hash(request: Request, next: Next) -> Respons
 
 /// The layer that applies the rule. It sits outside every dashboard route, so
 /// its header is the only `Cache-Control` a dashboard response carries.
-pub(crate) async fn apply(request: Request, next: Next) -> Response {
+pub(crate) async fn apply(mut request: Request, next: Next) -> Response {
     let readable = matches!(*request.method(), Method::GET | Method::HEAD);
     let head = *request.method() == Method::HEAD;
     let path = request.uri().path().to_owned();
@@ -138,6 +139,7 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
         preferred_encoding(request.headers(), has_brotli)
     };
     let locale = window_catalog::request_locale(request.headers());
+    request.extensions_mut().insert(ResponseLocale(locale));
     let localized = locale != window_catalog::ENGLISH;
     let mut response = next.run(request).await;
     if localized

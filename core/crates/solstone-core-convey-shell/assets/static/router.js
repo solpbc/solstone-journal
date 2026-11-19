@@ -325,7 +325,7 @@
   }
 
   function stillWorkingWords() {
-    return window.CONVEY_COPY?.STILL_WORKING || 'still working…';
+    return window.CONVEY_COPY.STILL_WORKING;
   }
 
   // A view's first load says it is still working once it runs past ten
@@ -505,7 +505,7 @@
     }
     if (controller.signal.aborted) return true;
     window.solShellChrome?.markCurrent?.(name);
-    document.title = `${app.label} - journal`;
+    document.title = window.JournalI18n.render('journal.window.shared.router.tooltip.value1.journal', [['value1', String(app.label)]]);
     settleAfterMove(mode, app.label);
     return true;
   }

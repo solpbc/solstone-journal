@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair start paired device body.",
+  "context": "Network view copy, pair start paired device body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 110,
+  "source_revision": "970aee99a7ad9b26c4536babbea378aa2736f1d3f615855be6eb19334ec11b1c",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

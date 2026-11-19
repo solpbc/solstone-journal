@@ -1,0 +1,16 @@
+{
+  "description": "Journal response error or detail in the journal's speakers view.",
+  "context": "Journal window, speakers view. Journal response error or detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69d90a0b0dd7b2760ada123226f9e51fd258a9330953739da91f41f2c1486ac7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

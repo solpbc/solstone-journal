@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's network view.",
+  "context": "Journal window, network view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2143f60f8c88b538d2e4794a73ba6ad205953e55c9b7b64542262c0ba64bcae3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

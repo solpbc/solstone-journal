@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality unlabeled label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality unlabeled label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9aca7721810b29a9a1507a72c99c2cef8ea695f508f5392014541ed64a9ec4f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

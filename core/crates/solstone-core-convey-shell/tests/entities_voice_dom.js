@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+const { readCopyTable } = require('./journal_catalog_dom.js');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +11,7 @@ module.exports = async function(manifestDir) {
   let cases = 0;
   const check = (ok, message) => { cases += 1; assert.ok(ok, message); };
   const workspace = fs.readFileSync(path.join(manifestDir,'assets/entities/workspace.html'),'utf8');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir,'../solstone-core-entities/src/data/entities_copy.json'),'utf8'));
+  const copy = readCopyTable(path.join(manifestDir,'../solstone-core-entities/src/data/entities_copy.json'));
   const section = new Node(null,'section');
   const previewPanel = new Node(null,'div');
   const doc = { createElement: tag => new Node(doc,tag), getElementById: id => id === 'journal-detail-voice-samples' ? section : id === 'journal-detail-merge-preview' ? previewPanel : null };

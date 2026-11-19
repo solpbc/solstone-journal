@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy again many in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy again many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6113cf44339af6b29f2064fcd865666fa9825d9f59e61cef15d1de1c1b568b38",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

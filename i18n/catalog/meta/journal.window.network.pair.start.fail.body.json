@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair start fail body.",
+  "context": "Network view copy, pair start fail body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 68,
+  "source_revision": "2dc6d5da264b94eec5f7db59d592269d44d558e5fccc204df64833a9806471dd",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Loopback request refusal in the journal's shell view.",
+  "context": "Journal window, shell view. Loopback request refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f44fb8dcf480c353cba17f8604d5b5f80db50152d384438808abf2330cfd186d",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "localhost"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "127.0.0.1"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "[::1]"
+    }
+  ]
+}

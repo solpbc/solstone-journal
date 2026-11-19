@@ -1,0 +1,16 @@
+{
+  "description": "Message in the journal's shared.websocket view.",
+  "context": "Journal window, shared.websocket view. Message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d59de576fa2671a0717e10a44bb3d9c2beeed27d237614eb2c5fbcf40bfdda1",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

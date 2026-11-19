@@ -1,0 +1,16 @@
+{
+  "description": "Owner redo refused in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner redo refused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8cbf8d03db463048554646dded81e5d09fb302542f3d43e3c7f4bb8a65ddc18",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

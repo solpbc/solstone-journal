@@ -1,0 +1,16 @@
+{
+  "description": "This is me guidance in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. This is me guidance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8bb871a9101c354ca4da7f5f88484feb33066e7c484e623219dc5c40781d4f1",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

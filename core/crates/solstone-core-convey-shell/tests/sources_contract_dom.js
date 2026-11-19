@@ -13,6 +13,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const CLIENTS = '/app/network/api/clients';
@@ -246,7 +247,7 @@ function makePage(env, { wide = true, withApi = false } = {}) {
   shellMain.setAttribute('tabindex', '-1');
   doc.body.appendChild(shellMain);
 
-  const context = vm.createContext({
+  const context = journalContext({
     window, document: doc, location: window.location,
     URL, AbortController, AbortSignal, DOMException, Map, Set, Promise, WeakMap,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Symbol,

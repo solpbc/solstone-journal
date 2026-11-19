@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's entities view.",
+  "context": "Journal window, entities view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "adde2dcab801c55922d4b4236b9978b556ecb5185ed888a930d77a7e05630eac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

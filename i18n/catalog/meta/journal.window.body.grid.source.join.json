@@ -1,0 +1,28 @@
+{
+  "description": "Body display grid source join in the journal's body view.",
+  "context": "Journal window, body view. Body display grid source join.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a8c7421d71ba71042703df89121631ea40711fad10b9a8b0f08bebe3fd44a62",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

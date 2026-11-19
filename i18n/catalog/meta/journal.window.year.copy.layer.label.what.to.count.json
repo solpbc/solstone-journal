@@ -1,0 +1,16 @@
+{
+  "description": "Copy layer label in the journal's year view.",
+  "context": "Journal window, year view. Copy layer label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3f9d54ffcabb546832161dfb44f5cb0f69ddcf4a0beb1c5ef1551a044dadb25",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

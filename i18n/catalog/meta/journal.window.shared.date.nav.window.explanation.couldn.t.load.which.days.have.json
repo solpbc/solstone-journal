@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.date.nav view.",
+  "context": "Journal window, shared.date.nav view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20c702a46cc12f515db9051112abc55f339d51887ad755424bb0c405f8de4b12",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

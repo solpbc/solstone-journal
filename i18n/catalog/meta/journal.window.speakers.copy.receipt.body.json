@@ -1,0 +1,23 @@
+{
+  "description": "Receipt body in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Receipt body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e920695a25d595b3b47021816e0346c0ace835cb754b0ee98f13080ffea825b3",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

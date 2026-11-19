@@ -1,0 +1,16 @@
+{
+  "description": "Notes none in the journal's entities view.",
+  "context": "Journal window, entities view. Notes none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16b38b28eba8e17d9775c9ae3765a0e443d9658383d6bc2c2098fcb013779e79",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Months label in the journal's shared.date.nav view.",
+  "context": "Journal window, shared.date.nav view. Months label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a85fb672c24c51d431d8c6861d087d0430894024f32083308b808c80b42549c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Spl private link already enabled detail in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl private link already enabled detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0294d9a2fd050673291834e123874b7972e77d6533af032b3afc46bd6d2be3ca",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's thinking view.",
+  "context": "Journal window, thinking view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f29fe43577df60319c869c3a7116f8a39b78942b21f3087a5d9e8105f55b5ec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

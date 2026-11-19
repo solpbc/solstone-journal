@@ -31,9 +31,7 @@ use axum::response::{IntoResponse, Response};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::identity::AccessBasis;
 
-const HOST_MESSAGE: &str = "your journal's web app can only be opened at localhost, 127.0.0.1 or [::1] on the computer it runs on.";
-const SITE_MESSAGE: &str =
-    "your journal's web app turned this request away because it came from another website.";
+use crate::window_catalog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Refusal {
@@ -43,11 +41,23 @@ enum Refusal {
 }
 
 impl Refusal {
-    fn into_response(self) -> Response {
+    fn into_response(self, locale: &str) -> Response {
         let (reason_code, message, detail) = match self {
-            Self::HostNotAllowed => ("host_not_allowed", HOST_MESSAGE, "host not allowed"),
-            Self::CrossSite => ("cross_origin_blocked", SITE_MESSAGE, "cross-site request"),
-            Self::CrossOrigin => ("cross_origin_blocked", SITE_MESSAGE, "cross-origin request"),
+            Self::HostNotAllowed => (
+                "host_not_allowed",
+                window_catalog::text(locale, "journal.window.shell.guard.host.denied"),
+                window_catalog::text(locale, "journal.window.shell.guard.host.detail"),
+            ),
+            Self::CrossSite => (
+                "cross_origin_blocked",
+                window_catalog::text(locale, "journal.window.shell.guard.site.denied"),
+                window_catalog::text(locale, "journal.window.shell.guard.site.detail"),
+            ),
+            Self::CrossOrigin => (
+                "cross_origin_blocked",
+                window_catalog::text(locale, "journal.window.shell.guard.site.denied"),
+                window_catalog::text(locale, "journal.window.shell.guard.origin.detail"),
+            ),
         };
         error_envelope(reason_code, message, detail, StatusCode::FORBIDDEN).into_response()
     }
@@ -68,7 +78,7 @@ async fn guard_loopback_origin(request: Request<Body>, next: Next) -> Response {
     if !device_door
         && let Some(refusal) = refuse(request.method(), request.uri(), request.headers())
     {
-        return refusal.into_response();
+        return refusal.into_response(window_catalog::request_locale(request.headers()));
     }
     next.run(request).await
 }

@@ -9,12 +9,12 @@ use serde::Serialize;
 pub struct AppDefinition {
     pub name: &'static str,
     pub icon: &'static str,
-    pub label: &'static str,
+    pub label_message: &'static str,
     pub lucide_icon: &'static str,
     pub pinnable: bool,
     pub focus: Option<Focus>,
-    pub description: &'static str,
-    pub source: &'static str,
+    pub description_message: &'static str,
+    pub source_message: &'static str,
     pub keywords: &'static [&'static str],
     pub rail_group: Option<RailGroup>,
     pub rail_rank: u8,
@@ -50,12 +50,12 @@ const fn focus(group: FocusGroup, rank: u8) -> Option<Focus> {
 const fn view(
     name: &'static str,
     icon: &'static str,
-    label: &'static str,
+    label_message: &'static str,
     lucide_icon: &'static str,
     pinnable: bool,
     focus: Option<Focus>,
-    description: &'static str,
-    source: &'static str,
+    description_message: &'static str,
+    source_message: &'static str,
     keywords: &'static [&'static str],
     rail_group: Option<RailGroup>,
     rail_rank: u8,
@@ -64,12 +64,12 @@ const fn view(
     AppDefinition {
         name,
         icon,
-        label,
+        label_message,
         lucide_icon,
         pinnable,
         focus,
-        description,
-        source,
+        description_message,
+        source_message,
         keywords,
         rail_group,
         rail_rank,
@@ -79,17 +79,17 @@ const fn view(
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct DateNav {
+pub struct DateNav<T = &'static str> {
     pub allow_future: bool,
     pub step: Option<&'static str>,
-    pub unit: DateNavUnit,
+    pub unit: DateNavUnit<T>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct DateNavUnit {
-    pub one: &'static str,
-    pub other: &'static str,
-    pub none: &'static str,
+pub struct DateNavUnit<T = &'static str> {
+    pub one: T,
+    pub other: T,
+    pub none: T,
 }
 
 const fn content_date_nav(one: &'static str, other: &'static str, none: &'static str) -> DateNav {
@@ -106,12 +106,12 @@ const fn content_date_nav(one: &'static str, other: &'static str, none: &'static
 pub static AGENTS_APP: AppDefinition = view(
     "agents",
     "🤖",
-    "agents",
+    "journal.window.view.agents.label",
     "bot",
     false,
     focus(FocusGroup::Runs, 4),
-    "connect an agent to read and search your journal, within what you choose",
-    "agents you connect",
+    "journal.window.view.agents.description",
+    "journal.window.view.agents.source",
     &["claude", "chatgpt", "mcp", "connect", "solstone.me"],
     Some(RailGroup::Management),
     4,
@@ -122,12 +122,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "activities",
         "📅",
-        "activities",
+        "journal.window.view.activities.label",
         "calendar-days",
         true,
         focus(FocusGroup::Keeps, 1),
-        "what you did each day, sorted by facet",
-        "written up by your journal from what you shared",
+        "journal.window.view.activities.description",
+        "journal.window.view.activities.source",
         &["day", "calendar", "facets", "did"],
         None,
         0,
@@ -135,21 +135,21 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
             allow_future: true,
             step: None,
             unit: DateNavUnit {
-                one: "activity",
-                other: "activities",
-                none: "no activities",
+                one: "journal.window.view.activities.date.one",
+                other: "journal.window.view.activities.date.other",
+                none: "journal.window.view.activities.date.none",
             },
         }),
     ),
     view(
         "backup",
         "🛡️",
-        "backup",
+        "journal.window.view.backup.label",
         "history",
         true,
         focus(FocusGroup::Runs, 5),
-        "an encrypted copy of your journal that only you can read",
-        "your own storage, or storage sol pbc operates",
+        "journal.window.view.backup.description",
+        "journal.window.view.backup.source",
         &["restore", "key", "encrypted", "copy"],
         None,
         0,
@@ -158,28 +158,32 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "body",
         "🫀",
-        "body",
+        "journal.window.view.body.label",
         "heart-pulse",
         true,
         focus(FocusGroup::Keeps, 4),
-        "sleep, workouts and heart readings",
-        "from what you import",
+        "journal.window.view.body.description",
+        "journal.window.view.body.source",
         &[
             "health", "sleep", "workout", "strava", "oura", "apple", "heart",
         ],
         None,
         0,
-        Some(content_date_nav("reading", "readings", "no readings")),
+        Some(content_date_nav(
+            "journal.window.view.body.date.one",
+            "journal.window.view.body.date.other",
+            "journal.window.view.body.date.none",
+        )),
     ),
     view(
         "curation",
         "✨",
-        "suggestions",
+        "journal.window.view.curation.label",
         "wand-sparkles",
         true,
         focus(FocusGroup::Shape, 2),
-        "changes your journal suggests, for you to accept or skip",
-        "suggested by your journal as it works",
+        "journal.window.view.curation.description",
+        "journal.window.view.curation.source",
         &["curation", "review", "suggestions", "duplicates"],
         None,
         0,
@@ -188,12 +192,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "entities",
         "📇",
-        "entities",
+        "journal.window.view.entities.label",
         "contact",
         true,
         focus(FocusGroup::Shape, 0),
-        "the people, companies, projects and tools your journal keeps, to edit, merge or hide",
-        "names your journal found in what it keeps",
+        "journal.window.view.entities.description",
+        "journal.window.view.entities.source",
         &[
             "people",
             "names",
@@ -209,12 +213,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "health",
         "🩺",
-        "health",
+        "journal.window.view.health.label",
         "stethoscope",
         true,
         focus(FocusGroup::Runs, 1),
-        "whether your journal is keeping up: processing, devices, errors",
-        "your journal's own checks",
+        "journal.window.view.health.description",
+        "journal.window.view.health.source",
         &["status", "errors", "processing", "working", "problem"],
         None,
         0,
@@ -223,12 +227,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "home",
         "🏠",
-        "home",
+        "journal.window.view.home.label",
         "house",
         false,
         focus(FocusGroup::Keeps, 0),
-        "today and yesterday, written up, and anything your journal needs from you",
-        "written by your journal from everything in it",
+        "journal.window.view.home.description",
+        "journal.window.view.home.source",
         &["today", "yesterday", "briefing", "week"],
         None,
         0,
@@ -237,12 +241,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "import",
         "📥",
-        "import",
+        "journal.window.view.import.label",
         "import",
         false,
         focus(FocusGroup::Runs, 6),
-        "bring in chats, calendars, notes, audio and workouts",
-        "files you bring in",
+        "journal.window.view.import.description",
+        "journal.window.view.import.source",
         &[
             "upload", "chatgpt", "claude", "gemini", "calendar", "notes", "strava", "file",
         ],
@@ -253,21 +257,25 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "map",
         "🗺️",
-        "map",
+        "journal.window.view.map.label",
         "map",
         true,
         focus(FocusGroup::Keeps, 3),
-        "where you were, day by day, and the places you name",
-        "from the solstone app on your phone, once location is on there",
+        "journal.window.view.map.description",
+        "journal.window.view.map.source",
         &["location", "places", "where", "gps"],
         None,
         0,
-        Some(content_date_nav("record", "records", "no location")),
+        Some(content_date_nav(
+            "journal.window.view.map.date.one",
+            "journal.window.view.map.date.other",
+            "journal.window.view.map.date.none",
+        )),
     ),
     view(
         "more",
         "⋯",
-        "more",
+        "journal.window.view.more.label",
         "ellipsis",
         false,
         None,
@@ -281,12 +289,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "network",
         "🔗",
-        "network",
+        "journal.window.view.network.label",
         "network",
         false,
         focus(FocusGroup::Runs, 2),
-        "pair a phone or computer, and how your devices reach your journal",
-        "your devices",
+        "journal.window.view.network.description",
+        "journal.window.view.network.source",
         &[
             "devices", "pair", "phone", "computer", "private", "link", "qr",
         ],
@@ -297,12 +305,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "search",
         "🔍",
-        "search",
+        "journal.window.view.search.label",
         "search",
         true,
         focus(FocusGroup::Keeps, 6),
-        "find words and phrases anywhere in your journal",
-        "everything your journal keeps",
+        "journal.window.view.search.description",
+        "journal.window.view.search.source",
         &["find", "look"],
         None,
         0,
@@ -311,11 +319,11 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "settings",
         "⚙️",
-        "settings",
+        "journal.window.view.settings.label",
         "settings",
         false,
         focus(FocusGroup::Runs, 8),
-        "your profile, keys, transcription, storage and facets",
+        "journal.window.view.settings.description",
         "",
         &[
             "profile",
@@ -332,12 +340,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "sources",
         "▦",
-        "sources",
+        "journal.window.view.sources.label",
         "layout-grid",
         false,
         focus(FocusGroup::Runs, 3),
-        "when your devices last added something to your journal.",
-        "your paired devices",
+        "journal.window.view.sources.description",
+        "journal.window.view.sources.source",
         &["sources", "devices", "audio", "screen", "added"],
         Some(RailGroup::Management),
         3,
@@ -346,26 +354,30 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "speakers",
         "🎙️",
-        "speakers",
+        "journal.window.view.speakers.label",
         "mic-vocal",
         true,
         focus(FocusGroup::Shape, 1),
-        "the voices in your audio: teach yours, name others, fix who said what",
-        "voices in the audio you shared",
+        "journal.window.view.speakers.description",
+        "journal.window.view.speakers.source",
         &["voice", "voices", "who", "said", "speaker"],
         None,
         0,
-        Some(content_date_nav("segment", "segments", "no segments")),
+        Some(content_date_nav(
+            "journal.window.view.speakers.date.one",
+            "journal.window.view.speakers.date.other",
+            "journal.window.view.speakers.date.none",
+        )),
     ),
     view(
         "stats",
         "📊",
-        "stats",
+        "journal.window.view.stats.label",
         "chart-column",
         true,
         focus(FocusGroup::Runs, 7),
-        "how much your journal holds, and how much processing it has done",
-        "your journal's own counts",
+        "journal.window.view.stats.description",
+        "journal.window.view.stats.source",
         &["usage", "tokens", "disk", "hours", "numbers"],
         None,
         0,
@@ -374,11 +386,11 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "support",
         "🛟",
-        "support",
+        "journal.window.view.support.label",
         "life-buoy",
         true,
         focus(FocusGroup::Runs, 9),
-        "make a report, or track one you made",
+        "journal.window.view.support.description",
         "",
         &["help", "report", "bug", "problem"],
         None,
@@ -388,12 +400,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "thinking",
         "🧠",
-        "thinking",
+        "journal.window.view.thinking.label",
         "brain",
         true,
         focus(FocusGroup::Runs, 0),
-        "where the thinking happens, and every run",
-        "on your journal's computer, on confidential processing operated by sol pbc, or with your own model",
+        "journal.window.view.thinking.description",
+        "journal.window.view.thinking.source",
         &[
             "model",
             "ai",
@@ -411,26 +423,30 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "transcripts",
         "📜",
-        "transcripts",
+        "journal.window.view.transcripts.label",
         "scroll-text",
         true,
         focus(FocusGroup::Keeps, 2),
-        "what was said and on screen, moment by moment, with the audio",
-        "from your mic and screen through the solstone app, and from imports",
+        "journal.window.view.transcripts.description",
+        "journal.window.view.transcripts.source",
         &["audio", "screen", "recording", "said", "heard", "listen"],
         None,
         0,
-        Some(content_date_nav("segment", "segments", "no segments")),
+        Some(content_date_nav(
+            "journal.window.view.transcripts.date.one",
+            "journal.window.view.transcripts.date.other",
+            "journal.window.view.transcripts.date.none",
+        )),
     ),
     view(
         "year",
         "🗓️",
-        "year",
+        "journal.window.view.year.label",
         "calendar-range",
         true,
         focus(FocusGroup::Keeps, 5),
-        "a whole year at once: each day, and each place and name by week",
-        "counted from what your journal keeps",
+        "journal.window.view.year.description",
+        "journal.window.view.year.source",
         &["years", "calendar", "places", "people", "names", "weeks"],
         None,
         0,
@@ -449,18 +465,18 @@ pub struct ShellPayload {
 pub struct ShellApp {
     pub app_bar: bool,
     pub background_url: Option<String>,
-    pub date_nav: Option<DateNav>,
-    pub description: &'static str,
+    pub date_nav: Option<DateNav<String>>,
+    pub description: String,
     pub focus: Option<Focus>,
     pub icon: &'static str,
     pub icon_svg: Option<String>,
     pub keywords: &'static [&'static str],
-    pub label: &'static str,
+    pub label: String,
     pub name: &'static str,
     pub pinnable: bool,
     pub rail_group: Option<RailGroup>,
     pub rail_rank: u8,
-    pub source: &'static str,
+    pub source: String,
     pub workspace_url: String,
 }
 
@@ -498,7 +514,11 @@ pub struct ShellRegistry {
 }
 
 pub fn shell_registry() -> ShellRegistry {
-    let payload = shell_payload_with_agents(true);
+    shell_registry_using(crate::english_window_message)
+}
+
+pub(crate) fn shell_registry_using(copy: fn(&str) -> String) -> ShellRegistry {
+    let payload = shell_payload_using(true, copy);
     ShellRegistry {
         apps: payload.apps,
         settings: payload.settings,
@@ -510,6 +530,17 @@ pub fn shell_payload() -> ShellPayload {
 }
 
 pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
+    shell_payload_using(include_agents, crate::english_window_message)
+}
+
+pub(crate) fn shell_payload_using(include_agents: bool, copy: fn(&str) -> String) -> ShellPayload {
+    let display = |id: &str| {
+        if id.is_empty() {
+            String::new()
+        } else {
+            copy(id)
+        }
+    };
     let icons: HashMap<String, String> =
         serde_json::from_str(include_str!("../assets/static/icons/lucide.json"))
             .expect("embedded lucide icon catalogue parses");
@@ -520,18 +551,26 @@ pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
                 background_url: app
                     .has_background
                     .then(|| format!("/app/{}/background", app.name)),
-                date_nav: app.date_nav,
-                description: app.description,
+                date_nav: app.date_nav.map(|nav| DateNav {
+                    allow_future: nav.allow_future,
+                    step: nav.step,
+                    unit: DateNavUnit {
+                        one: display(nav.unit.one),
+                        other: display(nav.unit.other),
+                        none: display(nav.unit.none),
+                    },
+                }),
+                description: display(app.description_message),
                 focus: app.focus,
                 icon: app.icon,
                 icon_svg: icons.get(app.lucide_icon).cloned(),
                 keywords: app.keywords,
-                label: app.label,
+                label: display(app.label_message),
                 name: app.name,
                 pinnable: app.pinnable,
                 rail_group: app.rail_group,
                 rail_rank: app.rail_rank,
-                source: app.source,
+                source: display(app.source_message),
                 workspace_url: format!("/app/{}/workspace", app.name),
             })
             .collect(),
@@ -649,7 +688,6 @@ mod tests {
     #[test]
     fn more_app_is_served_and_chat_news_devices_stay_absent() {
         let more = known_app("more").expect("more is served");
-        assert_eq!(more.label, "more");
         assert!(!more.pinnable);
         assert!(more.focus.is_none());
         assert!(more.rail_group.is_none());
@@ -757,9 +795,12 @@ mod tests {
     #[test]
     fn shell_payload_omits_chat_app_and_chat_bar() {
         let payload = shell_payload();
-        assert!(!payload.apps.iter().any(|app| {
-            app.name == "chat" || app.label == "chat" || app.workspace_url.contains("chat")
-        }));
+        assert!(
+            !payload
+                .apps
+                .iter()
+                .any(|app| { app.name == "chat" || app.workspace_url.contains("chat") })
+        );
         let encoded = serde_json::to_value(&payload).expect("shell payload serializes");
         assert!(encoded.get("chat_bar").is_none());
     }
@@ -767,9 +808,12 @@ mod tests {
     #[test]
     fn shell_payload_omits_devices_entirely() {
         let payload = shell_payload();
-        assert!(!payload.apps.iter().any(|app| {
-            app.name == "devices" || app.label == "devices" || app.workspace_url.contains("devices")
-        }));
+        assert!(
+            !payload
+                .apps
+                .iter()
+                .any(|app| { app.name == "devices" || app.workspace_url.contains("devices") })
+        );
     }
 
     #[test]
@@ -792,9 +836,12 @@ mod tests {
             .collect();
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].workspace_url, "/app/stats/workspace");
-        assert!(!payload.apps.iter().any(|app| {
-            app.name == "tokens" || app.label == "tokens" || app.workspace_url.contains("tokens")
-        }));
+        assert!(
+            !payload
+                .apps
+                .iter()
+                .any(|app| { app.name == "tokens" || app.workspace_url.contains("tokens") })
+        );
     }
 
     #[test]
@@ -816,9 +863,12 @@ mod tests {
             .filter(|app| app.name == "thinking")
             .collect();
         assert_eq!(thinking.len(), 1);
-        assert!(!payload.apps.iter().any(|app| {
-            app.name == "sol" || app.label == "sol" || app.workspace_url.contains("sol")
-        }));
+        assert!(
+            !payload
+                .apps
+                .iter()
+                .any(|app| { app.name == "sol" || app.workspace_url.contains("sol") })
+        );
     }
 
     #[tokio::test]

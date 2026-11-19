@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach mine label in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach mine label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d86015a671ed84aedeeda0eac47e6c59d273df4d04339fdaa252f950d595f63",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

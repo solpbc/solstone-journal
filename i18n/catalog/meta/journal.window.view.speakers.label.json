@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.speakers view.",
+  "context": "Journal window, view.speakers view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2defaf086e1ec40164c18f5ca9c1c8a8f82bf35fe410b0d8083cbe1cd054b90c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

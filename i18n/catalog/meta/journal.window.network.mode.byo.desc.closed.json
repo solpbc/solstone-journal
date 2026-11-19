@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, mode byo desc closed.",
+  "context": "Network view copy, mode byo desc closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 214,
+  "source_revision": "cf95f32121739d9a175a1590c1ad28511d7e93b40a7ae5a4a1f67557ef001180",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Service operation already busy in the journal's network view.",
+  "context": "Journal window, network view. Service operation already busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fecc40ddd4c3dccb38e902de592e38919a43dcf06709d8eb84eb20f6399e0df8",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

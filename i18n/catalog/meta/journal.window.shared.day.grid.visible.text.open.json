@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.day.grid view.",
+  "context": "Journal window, shared.day.grid view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca294fde6655c9de26181a9df949773b8385a38b8d725dbf57e045888c5d8f3b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

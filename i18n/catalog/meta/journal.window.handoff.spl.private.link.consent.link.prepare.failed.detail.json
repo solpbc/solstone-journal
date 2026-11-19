@@ -1,0 +1,16 @@
+{
+  "description": "Spl private link consent link prepare failed detail in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl private link consent link prepare failed detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6da11b9b2ea650a114e7b4adec72984090ed919cba88f4051bd5cd9d4dc78cd",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

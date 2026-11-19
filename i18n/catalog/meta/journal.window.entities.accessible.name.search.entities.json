@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's entities view.",
+  "context": "Journal window, entities view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffb3b24d93df87cdafefd3a7e7c3050f7920d478b1787b0b59df1a9daf66a8e6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

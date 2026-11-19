@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, success remove label.",
+  "context": "Network view copy, success remove label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "b54afe5dd44cb339516496f47347aa83aa0d5078682dcdbf255a0756ad5b9e9f",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

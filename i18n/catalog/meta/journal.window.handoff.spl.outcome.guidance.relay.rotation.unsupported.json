@@ -1,0 +1,16 @@
+{
+  "description": "Spl outcome guidance relay rotation unsupported in the journal's handoff view.",
+  "context": "Journal window, handoff view. Spl outcome guidance relay rotation unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8ea4a80cce74c5f891aa3dd58a3b52924c62d88f72f141ebc4c1d0862407780",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

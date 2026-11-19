@@ -1,0 +1,16 @@
+{
+  "description": "Status shown while the import journal route loads on first paint.",
+  "context": "Status shown while the import journal route loads on first paint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "57473729fd376d297cceb36d84ac659540841da0a28f27c6f81e9f8b331dae83",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Field placeholder in the journal's more view.",
+  "context": "Journal window, more view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6154aa4aa1eb07abbd7935d82401beb5802ec8a5e42d4c778b2bfbee812a3c15",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

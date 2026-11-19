@@ -1,0 +1,16 @@
+{
+  "description": "Copy error in the journal's year view.",
+  "context": "Journal window, year view. Copy error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d5148e846781e4024b5422916ad279e20516bd12d59c29433ccdb04b887cc4a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

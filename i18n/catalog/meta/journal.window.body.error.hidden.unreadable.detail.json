@@ -1,0 +1,16 @@
+{
+  "description": "Body display error hidden unreadable detail in the journal's body view.",
+  "context": "Journal window, body view. Body display error hidden unreadable detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56a90eb60b97942aea5eb11babbc7c3ef3cfce99beefe973b4bba0cfa49229e9",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

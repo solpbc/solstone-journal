@@ -1,0 +1,16 @@
+{
+  "description": "Overview your voice learning in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview your voice learning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b01882c74afc43e2c2a2a31a16b44991fda8ba7111f75882d0293d68b80ec45",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

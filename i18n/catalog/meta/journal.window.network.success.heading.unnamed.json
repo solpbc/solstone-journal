@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, success heading unnamed.",
+  "context": "Network view copy, success heading unnamed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 78,
+  "source_revision": "e351d55d83f591e5bfd43b94bd8411ce61f35898660f10945c1f80a1050c4150",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

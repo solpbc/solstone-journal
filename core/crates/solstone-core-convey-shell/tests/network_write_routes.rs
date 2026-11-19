@@ -377,15 +377,7 @@ async fn host_address_refusals_and_identical_write_are_exact() {
 #[tokio::test]
 async fn host_address_rejects_malformed_input_and_substitutes_port_copy() {
     let root = journal();
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let config_bytes = fs::read(manifest_dir.join("assets/pairing_config.json"))
-        .expect("load pairing_config.json");
-    let config_json: Value =
-        serde_json::from_slice(&config_bytes).expect("parse pairing_config.json");
-    let template = config_json["HOME_ADDRESS_INVALID"]
-        .as_str()
-        .expect("HOME_ADDRESS_INVALID string");
-    assert!(!template.is_empty());
+    let template = "use the address your journal is reachable at, with port {port}: either one on your own network, like 192.168.1.44:{port}, or a public address you've exported.";
     assert!(template.contains("{port}"));
 
     let expected_7657 = template.replace("{port}", "7657");

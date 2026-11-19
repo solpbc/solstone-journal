@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_DETECTED_EMPTY in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_DETECTED_EMPTY.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64314e15e56773b599925a586eb985407738b5c8aeeb36998452a7df364c4639",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

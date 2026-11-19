@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for profile.pics in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for profile.pics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "074d31ecf5ca738ed1f76b94763e62ff6be6c4fc41e384a1246837df9e8ce1f7",
+  "max_length": 90,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

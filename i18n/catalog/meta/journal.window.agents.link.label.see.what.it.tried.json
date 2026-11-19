@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's agents view.",
+  "context": "Journal window, agents view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "472a38e80231e669dbcf6ed1a1dba1f70b8159342fead98f87754937e246853b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

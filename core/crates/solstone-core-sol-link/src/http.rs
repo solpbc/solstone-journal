@@ -24,7 +24,7 @@ use solstone_core_journal_config_write::{
     ConfigMutationError, JournalConfigMutation, mutate_journal_config,
 };
 use solstone_core_thinking_copy::{
-    CONFIDENTIAL_LANE_DETAIL, ConfidentialLaneDetail, LANES, Lane, SetupCatalogFacts,
+    ConfidentialLaneDetail, Lane, SetupCatalogFacts, confidential_lane_detail, lanes,
     thinking_copy_payload,
 };
 
@@ -663,9 +663,11 @@ async fn build_setup_state(
             retention_mode
         },
         retention_days: nested_value(config, "retention", "raw_media_days").unwrap_or(Value::Null),
-        lanes: LANES,
+        lanes: lanes(solstone_core_convey_http::window_catalog::ENGLISH),
         confidential: ConfidentialResponse {
-            lane_detail: CONFIDENTIAL_LANE_DETAIL,
+            lane_detail: confidential_lane_detail(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+            ),
         },
         mark,
         thinking,

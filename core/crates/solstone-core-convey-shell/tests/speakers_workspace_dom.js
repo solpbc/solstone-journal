@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext, readCopyTable, runWithJournalCatalog } = require('./journal_catalog_dom.js');
 
 let cases = 0;
 function check(condition, message) {
@@ -225,7 +226,7 @@ async function teachingReachesPastDays(workspace) {
     items: Array.from({ length: 40 }, (_, id) => ({ day: dayKey, id })),
     failed_count: 0,
   }));
-  vm.createContext(context);
+  journalContext(context);
   for (const name of ['recentDayKeys', 'ownerTeachPoolCounts', 'collectOwnerTeachReviews']) {
     vm.runInContext(functionSource(workspace, name), context);
   }
@@ -258,7 +259,7 @@ async function overviewFailuresStayUnavailable(workspace) {
     pollRelabel: () => calls.push(['poll']),
     renderQuality: () => calls.push(['quality']),
   };
-  vm.createContext(context);
+  journalContext(context);
   for (const name of ['loadOwner', 'loadQuality']) {
     vm.runInContext(functionSource(workspace, name), context);
   }
@@ -279,7 +280,7 @@ async function statementHandoffResolvesFromThePageContext(workspace) {
     apiJson: async (url) => { requested.push(url); return { status: 'miss' }; },
     URLSearchParams,
   };
-  vm.createContext(page);
+  journalContext(page);
   for (const name of ['decodeSegmentLayout', 'speakersContext', 'resolveStatementHandoff']) {
     vm.runInContext(functionSource(workspace, name), page);
   }
@@ -301,7 +302,7 @@ async function statementHandoffResolvesFromThePageContext(workspace) {
 // with the stream names behind each label kept in its title.
 async function voiceStreamsReadAsLabels(workspace) {
   const format = {};
-  vm.runInNewContext(
+  runWithJournalCatalog(
     fs.readFileSync(path.join(__dirname, '../assets/static/date_format.js'), 'utf8'),
     { window: format },
   );
@@ -323,7 +324,7 @@ async function voiceStreamsReadAsLabels(workspace) {
     absoluteDate: () => '',
     ownerUndoAsk: () => {},
   };
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(functionSource(workspace, 'ownerConfirmed'), context);
   vm.runInContext(`ownerConfirmed(${JSON.stringify({ centroid_metadata: { streams: ['macos_screen', 'macos_audio', 'ios_audio'] } })})`, context);
   const spans = [...ownerPanel.innerHTML.matchAll(/<span title="([^"]*)">([^<]*)<\/span>/g)];
@@ -338,13 +339,13 @@ function sampleFallsBackToTheLabel() {
   const source = fs.readFileSync(path.join(__dirname, '../assets/speakers/who_is_this.js'), 'utf8');
   const method = functionSource(source.replace('    sampleLabel(sample) {', '    function sampleLabel(sample) {'), 'sampleLabel');
   const format = {};
-  vm.runInNewContext(
+  runWithJournalCatalog(
     fs.readFileSync(path.join(__dirname, '../assets/static/date_format.js'), 'utf8'),
     { window: format },
   );
   format.JournalFormat.installStreamLabels({ status: 'complete', labels: { device_9e92ab54: 'LABEL-ONE' } });
   const context = { window: format };
-  vm.createContext(context);
+  journalContext(context);
   vm.runInContext(method, context);
   const self = { formatDateShort: () => 'DAY' };
   const label = (sample) => vm.runInContext('sampleLabel', context).call(self, sample);
@@ -415,7 +416,7 @@ async function selectLandingCases(manifestDir) {
     .replace(/<script[^>]*><\/script>/g, '')
     .replace(/<link[^>]*>/g, '');
   const whoIsThis = fs.readFileSync(path.join(manifestDir, 'assets/speakers/who_is_this.js'), 'utf8');
-  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/speakers/copy.json'), 'utf8'));
+  const copy = readCopyTable(path.join(manifestDir, 'assets/speakers/copy.json'));
   const focusJs = fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8');
   const env = { manifestDir, script, markup, whoIsThis, copy };
   const sorts = copy.SPK_OVERVIEW_KNOWN_VOICES_SORTS;

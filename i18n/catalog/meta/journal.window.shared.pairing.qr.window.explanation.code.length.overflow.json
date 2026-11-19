@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's shared.pairing.qr view.",
+  "context": "Journal window, shared.pairing.qr view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7960c4fdb98fd8220195511484471f468fdee74aeb8675453fef4539a6d8f6c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -11,10 +11,12 @@
 //! a night or workout that started on a hidden day is left out, and the day
 //! says which hidden day took it.
 
+use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::response::{IntoResponse, Response};
@@ -22,6 +24,7 @@ use jiff::ZonedDateTime;
 use jiff::civil::{Date, DateTime};
 use jiff::tz::TimeZone;
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BodyRow, RowKind, parse_source_time, source_words, user_entered,
@@ -40,13 +43,15 @@ use crate::strava::workouts_on;
 pub(crate) async fn day_route(
     State(root): State<Arc<PathBuf>>,
     RoutePath(day): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if parse_day(&day).is_none() {
-        return invalid_day_response();
+        return invalid_day_response(locale);
     }
-    match build_day(&root, &day) {
+    match build_day(&root, &day, locale) {
         Ok(payload) => Json(payload).into_response(),
-        Err(error) => crate::router::unreadable_response(error),
+        Err(error) => crate::router::unreadable_response(locale, error),
     }
 }
 
@@ -58,15 +63,29 @@ fn on_clock(time: &ZonedDateTime, zone: Option<&TimeZone>) -> DateTime {
 }
 
 /// A row's own time as the owner reads it: the date only when it isn't this day.
-fn time_words(text: Option<&str>, day: Date, zone: Option<&TimeZone>) -> Option<String> {
-    let local = on_clock(&parse_source_time(text?)?, zone);
-    let label = clock(local);
+fn time_words(
+    time: Option<&str>,
+    day: Date,
+    zone: Option<&TimeZone>,
+    locale: &str,
+) -> Option<String> {
+    let local = on_clock(&parse_source_time(time?)?, zone);
+    let label = clock(local, locale);
     if local.date() == day {
         Some(label)
     } else {
-        Some(format!(
-            "{}, {label}",
-            local.strftime("%b %-d").to_string().to_lowercase()
+        Some(strings(
+            locale,
+            "journal.window.body.date.time.before",
+            [
+                (
+                    "date",
+                    &short_day(&solstone_core_time::day_key(local.date()), locale)
+                        .unwrap_or_default()
+                        .to_lowercase(),
+                ),
+                ("time", &label),
+            ],
         ))
     }
 }
@@ -120,8 +139,13 @@ impl Tally {
         }
     }
 
-    fn time_labels(&self, zone: Option<&TimeZone>) -> (Option<String>, Option<String>) {
-        let label = |time: Option<&ZonedDateTime>| time.map(|time| clock(on_clock(time, zone)));
+    fn time_labels(
+        &self,
+        zone: Option<&TimeZone>,
+        locale: &str,
+    ) -> (Option<String>, Option<String>) {
+        let label =
+            |time: Option<&ZonedDateTime>| time.map(|time| clock(on_clock(time, zone), locale));
         (label(self.first.as_ref()), label(self.last.as_ref()))
     }
 }
@@ -141,8 +165,12 @@ fn experience_item(
     zone: Option<&TimeZone>,
     title: Option<&String>,
     continuing: bool,
+    locale: &str,
 ) -> Value {
-    let kind = row.experience.as_deref().unwrap_or("experience");
+    let kind = row
+        .experience
+        .clone()
+        .unwrap_or_else(|| text(locale, "journal.window.body.experience.fallback"));
     let distance = row
         .values
         .get(LINE_VALUE)
@@ -150,19 +178,23 @@ fn experience_item(
     json!({
         "kind": kind,
         "name": title.cloned().unwrap_or_else(|| row.label.clone()),
-        "start": time_words(row.start.as_deref(), day, zone),
-        "end": time_words(row.end.as_deref(), day, zone),
+        "start": time_words(row.start.as_deref(), day, zone, locale),
+        "end": time_words(row.end.as_deref(), day, zone, locale),
         "by": row.by,
         "distance": distance,
         "continuing": continuing,
     })
 }
 
-fn logged_who(row: &BodyRow) -> Option<String> {
+fn logged_who(row: &BodyRow, locale: &str) -> Option<String> {
     let by = row.by.as_deref().map(str::trim).filter(|by| !by.is_empty());
     match (user_entered(row), by) {
-        (true, Some(by)) => Some(format!("you, in {by}")),
-        (true, None) => Some("you".to_owned()),
+        (true, Some(by)) => Some(strings(
+            locale,
+            "journal.window.body.logged.who.by",
+            [("source", by)],
+        )),
+        (true, None) => Some(text(locale, "journal.window.body.logged.who.you")),
         (false, Some(by)) => Some(by.to_owned()),
         (false, None) => None,
     }
@@ -176,6 +208,7 @@ fn source_section(
     day: Date,
     zone: Option<&TimeZone>,
     titles: &BTreeMap<(String, String), String>,
+    locale: &str,
 ) -> Value {
     let starts_today: BTreeSet<&str> = rows
         .iter()
@@ -195,7 +228,7 @@ fn source_section(
                 let title = titles.get(&(stream.to_owned(), row.id.clone()));
                 experiences.push((
                     row.begins().and_then(parse_source_time),
-                    experience_item(row, day, zone, title, false),
+                    experience_item(row, day, zone, title, false, locale),
                 ));
             }
             RowKind::ExperienceTile => {
@@ -204,7 +237,7 @@ fn source_section(
                     let title = titles.get(&(stream.to_owned(), of.to_owned()));
                     continuing.push((
                         row.begins().and_then(parse_source_time),
-                        experience_item(row, day, zone, title, true),
+                        experience_item(row, day, zone, title, true, locale),
                     ));
                 }
             }
@@ -216,7 +249,14 @@ fn source_section(
             }
             RowKind::Stage => {
                 readings
-                    .entry((format!("sleep stage {}", row.label), row.by.clone()))
+                    .entry((
+                        strings(
+                            locale,
+                            "journal.window.body.sleep.stage",
+                            [("stage", &row.label)],
+                        ),
+                        row.by.clone(),
+                    ))
                     .or_default()
                     .add(row);
             }
@@ -239,7 +279,7 @@ fn source_section(
             }
             RowKind::Logged => {
                 logged
-                    .entry((row.label.clone(), logged_who(row)))
+                    .entry((row.label.clone(), logged_who(row, locale)))
                     .or_default()
                     .add(row);
             }
@@ -259,11 +299,11 @@ fn source_section(
     let readings = readings
         .iter()
         .map(|((name, by), tally)| {
-            let (first, last) = tally.time_labels(zone);
+            let (first, last) = tally.time_labels(zone, locale);
             json!({
                 "name": name,
                 "count": tally.count,
-                "count_label": count_noun(tally.count, "reading", "readings"),
+                "count_label": count_noun(tally.count, "journal.window.body.count.reading.one", "journal.window.body.count.reading.other", locale),
                 "first": first,
                 "last": last,
                 "by": by,
@@ -279,7 +319,7 @@ fn source_section(
                     .total
                     .map(|total| display_value(&sum.record_type, total, sum.unit.as_deref())),
                 "count": sum.count,
-                "count_label": count_noun(sum.count, "entry", "entries"),
+                "count_label": count_noun(sum.count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale),
                 "by": sum.by,
             })
         })
@@ -287,11 +327,11 @@ fn source_section(
     let logged = logged
         .iter()
         .map(|((name, who), tally)| {
-            let (first, last) = tally.time_labels(zone);
+            let (first, last) = tally.time_labels(zone, locale);
             json!({
                 "name": name,
                 "count": tally.count,
-                "count_label": count_noun(tally.count, "entry", "entries"),
+                "count_label": count_noun(tally.count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale),
                 "first": first,
                 "last": last,
                 "who": who,
@@ -309,18 +349,18 @@ fn source_section(
     })
 }
 
-fn nearest(days: &DaySources, day: &str) -> Value {
+fn nearest(days: &DaySources, day: &str, locale: &str) -> Value {
     let prev = days.keys().rev().find(|key| key.as_str() < day);
     let next = days.keys().find(|key| key.as_str() > day);
     json!({
         "prev": prev,
-        "prev_label": prev.and_then(|value| short_day(value)),
+        "prev_label": prev.and_then(|value| short_day(value, locale)),
         "next": next,
-        "next_label": next.and_then(|value| short_day(value)),
+        "next_label": next.and_then(|value| short_day(value, locale)),
     })
 }
 
-pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
+pub(crate) fn build_day(root: &Path, day: &str, locale: &str) -> Result<Value, String> {
     let date = parse_day(day).ok_or_else(|| "invalid day".to_owned())?;
     let store = read_hidden_days(root);
     let hidden_unreadable = store == HiddenDays::Unreadable;
@@ -329,12 +369,12 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
     if hidden.contains(day) {
         return Ok(json!({
             "day": day,
-            "day_label": long_day(date),
+            "day_label": long_day(date, locale),
             "hidden": true,
             "hidden_unreadable": false,
             "hidden_with": [],
             "has_data": false,
-            "nearest": nearest(&days, day),
+            "nearest": nearest(&days, day, locale),
         }));
     }
     let (mut by_source, unreadable) = day_rows(root, day);
@@ -343,7 +383,7 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
         drop_hidden_rows(root, source, day, rows, &hidden, &mut took);
     }
     by_source.retain(|_, rows| !rows.is_empty());
-    let (strava, strava_took) = workouts_on(root, day, &hidden);
+    let (strava, strava_took) = workouts_on(root, day, &hidden, locale);
     took.extend(strava_took);
     let titles = owner_titles(root, day);
     let entry_total = by_source
@@ -364,17 +404,18 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
                 date,
                 zone.as_ref(),
                 &titles,
+                locale,
             ))
         })
         .collect::<Vec<_>>();
     let has_data = !sources.is_empty() || !strava.is_empty() || unreadable > 0;
     let hidden_with = took
         .iter()
-        .map(|day| json!({"day": day, "label": short_day_year(day)}))
+        .map(|day| json!({"day": day, "label": short_day_year(day, locale)}))
         .collect::<Vec<_>>();
     Ok(json!({
         "day": day,
-        "day_label": long_day(date),
+        "day_label": long_day(date, locale),
         "hidden": false,
         "hidden_unreadable": hidden_unreadable,
         "hidden_with": hidden_with,
@@ -384,7 +425,7 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
         "sources": sources,
         "strava": strava,
         "unreadable_windows": unreadable,
-        "earlier_imports": day_lines(root, day),
-        "nearest": nearest(&days, day),
+        "earlier_imports": day_lines(root, day, locale),
+        "nearest": nearest(&days, day, locale),
     }))
 }

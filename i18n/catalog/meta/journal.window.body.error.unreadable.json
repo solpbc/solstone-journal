@@ -1,0 +1,16 @@
+{
+  "description": "Body display error unreadable in the journal's body view.",
+  "context": "Journal window, body view. Body display error unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5fe09a510119d3064410a7ee8177a68d3551b1a3ff4673c4e283c078415354f",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

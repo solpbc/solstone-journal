@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair type prompt.",
+  "context": "Network view copy, pair type prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "73fa5bcb0382600a58bcfebb3035109f0b7d875719d7b5eb5183d009f0ce1cdc",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

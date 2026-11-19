@@ -1,0 +1,16 @@
+{
+  "description": "Overview quality prebootstrap in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview quality prebootstrap.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a866ace5e28ddfc66d36516f7e1c5496695609e93c11439e83843d03c30a0ee4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

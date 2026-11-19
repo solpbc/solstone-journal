@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach empty in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ee7769ac39f55325dde1832e8c72dfa09ded58c709a353ee64a58c4e7e7d0b1",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

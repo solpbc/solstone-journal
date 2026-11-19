@@ -1,0 +1,16 @@
+{
+  "description": "More card description in the journal's view.speakers view.",
+  "context": "Journal window, view.speakers view. More card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e428de051bc0c20f6847098bc783612f9637eb4d17a11d0e9ebc1b57918b8bd6",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

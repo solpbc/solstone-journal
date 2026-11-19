@@ -1,0 +1,16 @@
+{
+  "description": "Filter no segments today in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Filter no segments today.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "873e930f5067211c07a0391b0dc41e048201dc2232a644fb5cb348c9bda0596c",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

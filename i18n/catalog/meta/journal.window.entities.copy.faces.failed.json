@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dd7698d230f71739562a54446f7682fbbc6f56c838da568ff2bfac5cee0b2e31",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

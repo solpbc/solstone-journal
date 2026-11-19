@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, pair link addresses line.",
+  "context": "Network view copy, pair link addresses line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "16deeb7cc09073ac3772ceb65453779ae6096f45a670ae86a4ed25584febcd72",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

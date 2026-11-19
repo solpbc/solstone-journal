@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_CONN_LOAD_FAILED in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_CONN_LOAD_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "059f02d20693ba267a5373ba17b07590c1c3278cad10c968c5f94b569cbcfd27",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

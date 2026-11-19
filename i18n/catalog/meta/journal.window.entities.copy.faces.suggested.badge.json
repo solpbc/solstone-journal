@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_SUGGESTED_BADGE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_SUGGESTED_BADGE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29f58b60ef720264abae0a2d6b054bce9fc751ff3f6845c4f328a042a0e53052",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

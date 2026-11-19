@@ -237,6 +237,7 @@ pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
             solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
         ) {
             return crate::speakers_owner_write::owner_voice_error(
+                crate::window_catalog::ENGLISH,
                 solstone_core_speaker_resolve::owner_voice::OwnerVoiceError::IdentityInvalid,
             );
         }
@@ -249,7 +250,9 @@ pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     };
     match solstone_core_speaker_resolve::owner_voice::reject_owner_candidate(&root.0, version) {
         Ok(value) => Json(value).into_response(),
-        Err(error) => crate::speakers_owner_write::owner_voice_error(error),
+        Err(error) => {
+            crate::speakers_owner_write::owner_voice_error(crate::window_catalog::ENGLISH, error)
+        }
     }
 }
 

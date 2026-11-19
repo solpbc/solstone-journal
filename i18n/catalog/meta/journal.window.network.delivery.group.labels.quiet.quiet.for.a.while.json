@@ -1,0 +1,16 @@
+{
+  "description": "Delivery group labels quiet in the journal's network view.",
+  "context": "Journal window, network view. Delivery group labels quiet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b1912cee4d15d9b99f935a6458a5b1bca3923f355302530b84d7f58bbd8abb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

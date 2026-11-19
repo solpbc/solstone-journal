@@ -17,10 +17,6 @@
   let drawerBound = false;
   let drawerOpener = null;
 
-  function copyText(key, fallback) {
-    return window.CONVEY_COPY?.[key] || fallback || key;
-  }
-
   function reportingEnabled() {
     return !(window.CONVEY_SETTINGS && window.CONVEY_SETTINGS.reportingEnabled === false);
   }
@@ -127,7 +123,7 @@
       ts,
       severity: normalizeSeverity(entry?.severity || entry?.category),
       source,
-      summary: String(entry?.summary || copyText('CONSOLE_HEADING', 'system messages')),
+      summary: String(entry?.summary || window.CONVEY_COPY.CONSOLE_HEADING),
       detail: safeContext(entry?.detail || {})
     };
   }
@@ -273,19 +269,19 @@
   function renderApiDetail(apiError) {
     const lines = [];
     if (apiError.status || apiError.statusText || apiError.url) {
-      lines.push(`<div>${escapeHtml(apiError.method || 'GET')} · HTTP ${escapeHtml(apiError.status || '')} ${escapeHtml(apiError.statusText || '')} · ${escapeHtml(apiError.url || '')}</div>`);
+      lines.push(`<div>${escapeHtml(apiError.method || 'GET')} ${window.JournalI18n.renderHtml('journal.window.shared.diagnostic.console.visible.text.http')} ${escapeHtml(apiError.status || '')} ${escapeHtml(apiError.statusText || '')} · ${escapeHtml(apiError.url || '')}</div>`);
     }
-    lines.push(detailRow('Server reason', apiError.rawDetail || apiError.serverMessage));
+    lines.push(detailRow(window.JournalI18n.render('journal.window.shared.diagnostic.console.server.reason'), apiError.rawDetail || apiError.serverMessage));
     lines.push(detailRow('time', formatDateTime(apiError.timestamp)));
     lines.push(detailRow('reference', apiError.correlationId));
-    lines.push(detailRow('reason code', apiError.reasonCode));
+    lines.push(detailRow(window.JournalI18n.render('journal.window.shared.diagnostic.console.reason.code'), apiError.reasonCode));
     return lines.filter(Boolean).join('');
   }
 
   function renderJsDetail(detail) {
-    const messageLabel = copyText('CONSOLE_DETAIL_MESSAGE_LABEL', 'message');
-    const stackLabel = copyText('CONSOLE_DETAIL_STACK_LABEL', 'stack');
-    const locationLabel = copyText('CONSOLE_DETAIL_LOCATION_LABEL', 'location');
+    const messageLabel = window.CONVEY_COPY.CONSOLE_DETAIL_MESSAGE_LABEL;
+    const stackLabel = window.CONVEY_COPY.CONSOLE_DETAIL_STACK_LABEL;
+    const locationLabel = window.CONVEY_COPY.CONSOLE_DETAIL_LOCATION_LABEL;
     const lines = [];
     lines.push(detailRow(messageLabel, detail.message));
     if (detail.filename || detail.lineno || detail.colno) {
@@ -313,7 +309,7 @@
 
   function renderEntry(entry) {
     const sendButton = reportingEnabled()
-      ? `<button type="button" data-diagnostic-send="${escapeHtml(entry.id)}">${escapeHtml(copyText('CONSOLE_ACTION_SEND', 'Send'))}</button>`
+      ? `<button type="button" data-diagnostic-send="${escapeHtml(entry.id)}">${escapeHtml(window.CONVEY_COPY.CONSOLE_ACTION_SEND)}</button>`
       : '';
     return `<details class="diagnostic-console-entry" data-entry-id="${escapeHtml(entry.id)}">
       <summary>
@@ -321,7 +317,7 @@
         <span class="diagnostic-console-entry-icon diagnostic-console-entry-icon--${escapeHtml(entry.severity)}">${escapeHtml(severityIcon(entry.severity))}</span>
         <span class="diagnostic-console-entry-source">${escapeHtml(entry.source)}</span>
         <span class="diagnostic-console-entry-summary">${escapeHtml(entry.summary)}</span>
-        <span class="diagnostic-console-entry-toggle">${escapeHtml(copyText('CONSOLE_ACTION_SHOW_DETAILS', 'show details'))}</span>
+        <span class="diagnostic-console-entry-toggle">${escapeHtml(window.CONVEY_COPY.CONSOLE_ACTION_SHOW_DETAILS)}</span>
         ${sendButton}
       </summary>
       <div class="diagnostic-console-entry-detail">${renderEntryDetail(entry)}</div>
@@ -429,7 +425,7 @@
     }
     const currentEntries = visibleEntries().map(cloneEntry);
     const newestEntry = currentEntries[currentEntries.length - 1];
-    const template = copyText('CONSOLE_SNAPSHOT_HEADING', 'snapshot of {count} system messages');
+    const template = window.CONVEY_COPY.CONSOLE_SNAPSHOT_HEADING;
     window.convey.reportError({
       source: 'manual',
       heading: template.replace('{count}', String(currentEntries.length)),

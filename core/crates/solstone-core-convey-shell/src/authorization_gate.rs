@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::window_catalog;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -76,10 +77,10 @@ pub(crate) const PAIR_PATHS: &[&str] = &[spl_core::PAIR_PATH, "/app/link/pair"];
 
 #[derive(Serialize)]
 struct AuthorizationRefusal {
-    error: &'static str,
+    error: String,
     reason: &'static str,
     reason_code: &'static str,
-    detail: &'static str,
+    detail: String,
 }
 
 /// A router deliberately prepared for the paired-device door.
@@ -252,41 +253,49 @@ fn posture_refusal(posture: &AuthorizedClientsRead, cid: &LinkedDeviceCid) -> Op
     }
 }
 
-fn refusal_response(refusal: GateRefusal) -> Response {
+fn refusal_response(refusal: GateRefusal, locale: &str) -> Response {
     match refusal {
-        GateRefusal::Revoked => pl_revoked_response(),
-        GateRefusal::Unavailable => authorization_unavailable_response(),
+        GateRefusal::Revoked => pl_revoked_response(locale),
+        GateRefusal::Unavailable => authorization_unavailable_response(locale),
     }
 }
 
 /// A mac has no `journal` on its PATH, so there the owner runs it from the journal
 /// app's admin terminal.
 #[cfg(target_os = "macos")]
-const AUTHORIZATION_UNAVAILABLE_ERROR: &str = "your journal couldn't check which devices are paired with it. if this keeps happening, open the admin terminal from the journal app's journal menu on the mac your journal runs on, and run `solstone journal doctor --verbose`.";
+const AUTHORIZATION_UNAVAILABLE_MESSAGE: &str =
+    "journal.window.shell.guard.authorization.unavailable.mac";
 #[cfg(not(target_os = "macos"))]
-const AUTHORIZATION_UNAVAILABLE_ERROR: &str = "your journal couldn't check which devices are paired with it. if this keeps happening, run `solstone journal doctor --verbose` on the computer your journal runs on.";
+const AUTHORIZATION_UNAVAILABLE_MESSAGE: &str =
+    "journal.window.shell.guard.authorization.unavailable.other";
 
-fn authorization_unavailable_response() -> Response {
+fn authorization_unavailable_response(locale: &str) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(AuthorizationRefusal {
-            error: AUTHORIZATION_UNAVAILABLE_ERROR,
+            error: window_catalog::text(locale, AUTHORIZATION_UNAVAILABLE_MESSAGE),
             reason: "service_busy",
             reason_code: "service_busy",
-            detail: "paired device authorization unavailable",
+            detail: window_catalog::text(
+                locale,
+                "journal.window.shell.guard.authorization.unavailable.detail",
+            ),
         }),
     )
         .into_response()
 }
 
-fn pl_revoked_response() -> Response {
+fn pl_revoked_response(locale: &str) -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(AuthorizationRefusal {
-            error: "that paired device couldn't be used because it was revoked.",
+            error: window_catalog::text(locale, "journal.window.shell.guard.authorization.revoked"),
             reason: "pl_revoked",
             reason_code: "pl_revoked",
-            detail: "paired device revoked",
+            detail: window_catalog::text(
+                locale,
+                "journal.window.shell.guard.authorization.revoked.detail",
+            ),
         }),
     )
         .into_response()
@@ -297,11 +306,12 @@ async fn require_authorization(
     request: Request<Body>,
     next: Next,
 ) -> Response {
+    let locale = window_catalog::request_locale(request.headers());
     if is_exempt(request.uri().path()) {
         return next.run(request).await;
     }
     let Some(basis) = request.extensions().get::<AccessBasis>() else {
-        return pl_revoked_response();
+        return pl_revoked_response(locale);
     };
     // `PairingPeer` intentionally falls through here: the door-only
     // confinement layer refuses it before this authorization gate is reached.
@@ -324,15 +334,15 @@ async fn require_authorization(
         Ok(Ok(posture)) => posture,
         Err(_) => {
             log::warn!("paired-device authorization read timed out after 1000 ms");
-            return authorization_unavailable_response();
+            return authorization_unavailable_response(locale);
         }
         Ok(Err(error)) => {
             log::warn!("paired-device authorization read task failed: {error}");
-            return authorization_unavailable_response();
+            return authorization_unavailable_response(locale);
         }
     };
     if let Some(refusal) = posture_refusal(&posture, cid) {
-        return refusal_response(refusal);
+        return refusal_response(refusal, locale);
     }
     next.run(request).await
 }

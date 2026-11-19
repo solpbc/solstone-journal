@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, reach host address apply label.",
+  "context": "Network view copy, reach host address apply label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "8e8285056c013d5364efc209b845c14bdb88578817370e7a024b6df70b579c5f",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

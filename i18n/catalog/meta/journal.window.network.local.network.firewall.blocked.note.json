@@ -1,0 +1,28 @@
+{
+  "description": "Network view copy, local network firewall blocked note.",
+  "context": "Network view copy, local network firewall blocked note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 636,
+  "source_revision": "34f8b0a65c9d64cdcc5e924f49db3fcff3f84df22f0da5373c64aec513a1314e",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "executable",
+      "kind": "accepted-input",
+      "value": "solstone-core.exe"
+    },
+    {
+      "name": "windowsRules",
+      "kind": "accepted-input",
+      "value": "Windows Defender Firewall with Advanced Security › Inbound Rules"
+    }
+  ]
+}

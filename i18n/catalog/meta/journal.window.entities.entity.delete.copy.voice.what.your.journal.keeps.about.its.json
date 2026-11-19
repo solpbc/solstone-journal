@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy voice in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy voice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "276f565f398387b20cc758bdd22696e233b89648cc81e9f8d426b593340bfcbb",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

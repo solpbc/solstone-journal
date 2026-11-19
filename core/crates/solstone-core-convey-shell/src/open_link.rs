@@ -24,6 +24,7 @@ use axum::response::Response;
 use axum::routing::get;
 use jiff::Timestamp;
 use solstone_core_convey_http::cant_open::{LinkPageAction, link_cant_open_response};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_facets::{
     FacetIdResolveError, RetiredFacets, activity_value_truthy, get_activity_record,
     list_activity_day_stems, list_declared_facet_names, load_activity_records, read_retired_facets,
@@ -38,6 +39,7 @@ use solstone_core_segment::{OwnerDeletionState, owner_deletion_state};
 use solstone_core_transcripts_web::day_segment_list;
 
 use crate::source_link::{encode_path_component, is_safe_location, redirect_response};
+use crate::window_catalog::{response_locale, text};
 
 /// How far a chain of merges and renames is followed before giving up.
 const SUCCESSOR_HOPS: usize = 16;
@@ -54,15 +56,17 @@ pub fn open_link_router(journal: PathBuf) -> Router {
 async fn handle_open_link(
     RoutePath(link): RoutePath<String>,
     Extension(LinkJournal(journal)): Extension<LinkJournal>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SourceLink,
-        move || open_link(&journal, &link, Timestamp::now()),
+        move || open_link(&journal, &link, Timestamp::now(), locale),
     )
     .await
 }
 
-fn open_link(journal: &Path, link: &str, now: Timestamp) -> Response {
+fn open_link(journal: &Path, link: &str, now: Timestamp, locale: &str) -> Response {
     // Base64url has no `~`, so the last one, if any, starts the moment.
     let (sealed, moment) = match link.rsplit_once('~') {
         Some((sealed, moment)) => (sealed, parse_moment(moment)),
@@ -74,45 +78,49 @@ fn open_link(journal: &Path, link: &str, now: Timestamp) -> Response {
         // link can't be told apart, and the page doesn't pretend to.
         Err(OpenError::NotOpenedHere) => {
             return link_cant_open_response(
+                locale,
                 StatusCode::NOT_FOUND,
-                "this link can't be opened here.",
-                Some("it may be for another journal, or the link may have changed."),
+                &text(locale, "journal.window.link.wrong.journal.heading"),
+                Some(&text(locale, "journal.window.link.wrong.journal.detail")),
                 LinkPageAction::OpenJournal,
             );
         }
-        Err(OpenError::UnknownPlace) => return cant_show(),
+        Err(OpenError::UnknownPlace) => return cant_show(locale),
         Err(OpenError::KeyUnusable) => {
             log::error!("open_link: the journal's link key couldn't be read");
-            return couldnt_check(sealed, moment);
+            return couldnt_check(sealed, moment, locale);
         }
     };
     match resolve_place(journal, &place, moment, now) {
-        Ok(Landing::Redirect(location)) => redirect_response(&location),
+        Ok(Landing::Redirect(location)) => redirect_response(&location, locale),
         // Absent, deleted and hidden read the same, and say nothing of the
         // place.
         Ok(Landing::Absent) => link_cant_open_response(
+            locale,
             StatusCode::NOT_FOUND,
-            "it isn't in your journal.",
+            &text(locale, "journal.window.link.absent"),
             None,
             LinkPageAction::OpenJournal,
         ),
         Ok(Landing::WontFollow) => link_cant_open_response(
+            locale,
             StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
+            &text(locale, "journal.window.link.invalid"),
             None,
             LinkPageAction::OpenJournal,
         ),
         Err(error) => {
             log::error!("open_link: couldn't check: {error}");
-            couldnt_check(sealed, moment)
+            couldnt_check(sealed, moment, locale)
         }
     }
 }
 
-fn cant_show() -> Response {
+fn cant_show(locale: &str) -> Response {
     link_cant_open_response(
+        locale,
         StatusCode::NOT_FOUND,
-        "your journal can't show this kind of source.",
+        &text(locale, "journal.window.link.unsupported"),
         None,
         LinkPageAction::OpenJournal,
     )
@@ -120,15 +128,16 @@ fn cant_show() -> Response {
 
 /// "try again" repeats the link, rebuilt from what was checked: the sealed
 /// text reached the key only as base64url, and the moment is six digits.
-fn couldnt_check(sealed: &str, moment: Option<Moment>) -> Response {
+fn couldnt_check(sealed: &str, moment: Option<Moment>, locale: &str) -> Response {
     let mut again = format!("/app/open/{sealed}");
     if let Some(moment) = moment {
         again.push('~');
         again.push_str(&moment.digits());
     }
     link_cant_open_response(
+        locale,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "your journal couldn't check this source.",
+        &text(locale, "journal.window.link.read.error"),
         None,
         LinkPageAction::TryAgain(&again),
     )

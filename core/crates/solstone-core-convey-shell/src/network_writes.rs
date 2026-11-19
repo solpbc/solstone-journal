@@ -20,6 +20,7 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_sol_link::ledger::{
@@ -39,11 +40,10 @@ use crate::network::{refusal, unpair_mutation_refusal};
 use crate::network_status::private_link_body;
 use crate::pair_window_manager::{PairWindowManager, unix_seconds};
 use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
+use crate::window_catalog::{self, response_locale};
 
 const SERVICE: &str = "spl";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
-const BUSY_ERROR: &str = "The service operation is already running. Try again in a moment.";
-const BUSY_DETAIL: &str = "operation already running";
 /// How long a turn-on keeps waiting once the portal says a subscription is
 /// needed. The portal keeps the consent open for the same hour.
 const SUBSCRIBE_WAIT: Duration = Duration::from_secs(60 * 60);
@@ -195,8 +195,10 @@ pub fn router(prefix: &str) -> axum::Router {
 
 async fn set_home_address(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     let object = serde_json::from_slice::<Value>(&body)
         .ok()
         .and_then(|value| value.as_object().cloned())
@@ -210,13 +212,16 @@ async fn set_home_address(
         Err(_) => {
             return refusal(
                 "service_operation_failed",
-                "couldn't save your journal's address",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.service.operation.failed.couldn.t.save.your.journal",
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
     };
     let address = match requested {
-        Some(value) => match validate_home_address(value, expected_port) {
+        Some(value) => match validate_home_address(value, expected_port, locale) {
             Ok(value) => Some(value),
             Err(detail) => {
                 return refusal("invalid_config_value", &detail, StatusCode::BAD_REQUEST);
@@ -238,7 +243,10 @@ async fn set_home_address(
     if result.is_err() {
         return refusal(
             "service_operation_failed",
-            "couldn't save your journal's address",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.service.operation.failed.couldn.t.save.your.journal",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         );
     }
@@ -261,9 +269,13 @@ async fn private_link_enable(
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Extension(runtime): Extension<SplRuntime>,
     pair_windows: Option<Extension<Arc<PairWindowManager>>>,
-    override_runtime: Option<Extension<SplRuntimeOverride>>,
-    override_operations: Option<Extension<NetworkOperationsOverride>>,
+    (override_runtime, override_operations): (
+        Option<Extension<SplRuntimeOverride>>,
+        Option<Extension<NetworkOperationsOverride>>,
+    ),
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let handoffs =
         ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
     let journal = JournalRoot(handoffs.root().canonical_path().to_owned());
@@ -289,7 +301,7 @@ async fn private_link_enable(
     if enabled {
         return refusal(
             "invalid_operation_for_state",
-            &copy("SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL"),
+            &copy(locale, "SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL"),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -328,11 +340,14 @@ async fn private_link_enable(
         })
         .await;
     let handle = match start {
-        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(),
+        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(locale),
         Err(crate::service_handoffs::StartRefused::Stopped) => {
             return refusal(
                 "service_operation_failed",
-                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                &copy(
+                    locale,
+                    "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL",
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -350,7 +365,10 @@ async fn private_link_enable(
             .into_response(),
         Err(_) => refusal(
             "service_operation_failed",
-            &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+            &copy(
+                locale,
+                "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -362,7 +380,9 @@ async fn private_link_disable(
     pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     override_operations: Option<Extension<NetworkOperationsOverride>>,
     forced_failure: Option<Extension<SplDisableFailureOverride>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
@@ -395,7 +415,10 @@ async fn private_link_disable(
             }
             let mut status = serde_json::to_value(private_link_body(
                 &journal.0,
-                Some(operations.operation_raw(SERVICE)),
+                Some(window_catalog::localize_handoff(
+                    operations.operation_raw(SERVICE),
+                    locale,
+                )),
             ))
             .expect("status serializes");
             status
@@ -415,14 +438,14 @@ async fn private_link_disable(
     }
 }
 
-fn busy_refusal() -> Response {
+fn busy_refusal(locale: &str) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({
             "reason_code": "service_busy",
             "reason": "service_busy",
-            "error": BUSY_ERROR,
-            "detail": BUSY_DETAIL,
+            "error": window_catalog::text(locale, "journal.window.network.offered.busy"),
+            "detail": window_catalog::text(locale, "journal.window.network.operation.busy"),
         })),
     )
         .into_response()
@@ -612,7 +635,7 @@ fn outcome_with_status(
 ) -> HandoffResult {
     HandoffResult {
         phase,
-        guidance: guidance(code, relay_status),
+        guidance: window_catalog::handoff_guidance("SPL_OUTCOME_GUIDANCE", code, relay_status),
         retryable: matches!(
             code,
             "expired" | "network_error" | "local_error" | "relay_unavailable" | "relay_rejected"
@@ -620,55 +643,42 @@ fn outcome_with_status(
         subscribe_url,
     }
 }
-fn guidance(code: &str, relay_status: Option<u16>) -> Option<String> {
-    serde_json::from_str::<Value>(assets::spl_outcome_strings_json())
-        .ok()?
-        .get("SPL_OUTCOME_GUIDANCE")?
-        .get(code)?
-        .as_str()
-        .map(|value| {
-            if code == "relay_rejected" {
-                value.replace("{code}", &relay_status.unwrap_or_default().to_string())
-            } else {
-                value.to_owned()
-            }
-        })
-}
-fn copy(name: &str) -> String {
+fn copy(locale: &str, name: &str) -> String {
+    let copy = assets::copy_tables(locale);
     let source = if name.starts_with("HOME_ADDRESS") {
-        assets::home_address_strings_json()
+        copy.home_address
     } else {
-        assets::spl_outcome_strings_json()
+        copy.outcomes
     };
     serde_json::from_str::<Value>(source)
         .ok()
         .and_then(|value| value.get(name).and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_default()
 }
-fn validate_home_address(value: &str, expected_port: u16) -> Result<String, String> {
+fn validate_home_address(value: &str, expected_port: u16, locale: &str) -> Result<String, String> {
     let invalid_copy =
-        || copy("HOME_ADDRESS_INVALID").replace("{port}", &expected_port.to_string());
+        || copy(locale, "HOME_ADDRESS_INVALID").replace("{port}", &expected_port.to_string());
     let cleaned = value.trim();
     if cleaned.is_empty() || cleaned.contains("://") || cleaned.contains('/') {
         return Err(invalid_copy());
     }
     let Some((host, port)) = cleaned.rsplit_once(':') else {
         return Err(if looks_hostname(cleaned) {
-            copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
+            copy(locale, "HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
             invalid_copy()
         });
     };
     if host.is_empty() || port.is_empty() {
         return Err(if looks_hostname(cleaned) {
-            copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
+            copy(locale, "HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
             invalid_copy()
         });
     }
     let ipv4 = host.parse::<Ipv4Addr>().map_err(|_| {
         if looks_hostname(host) {
-            copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
+            copy(locale, "HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
             invalid_copy()
         }
@@ -765,26 +775,26 @@ fn has_ever_delivered(activity: Option<&ClientActivity>) -> bool {
     })
 }
 
-fn ledger_refusal(read: &AuthorizedClientsRead) -> Option<Response> {
+fn ledger_refusal(read: &AuthorizedClientsRead, locale: &str) -> Option<Response> {
     let (reason_code, detail) = match read {
         AuthorizedClientsRead::Unreadable => (
             "authorization_ledger_unreadable",
-            "authorized-client ledger could not be read",
+            "journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not",
         ),
         AuthorizedClientsRead::Malformed => (
             "authorization_ledger_malformed",
-            "authorized-client ledger is invalid",
+            "journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid",
         ),
         AuthorizedClientsRead::DuplicateCid => (
             "authorization_ledger_duplicate_cid",
-            "authorized-client ledger contains a duplicate client identifier",
+            "journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a",
         ),
         _ => return None,
     };
     log::warn!("network forget could not read the authorization ledger: {reason_code}");
     Some(refusal(
         reason_code,
-        detail,
+        &crate::window_catalog::text(locale, detail),
         StatusCode::SERVICE_UNAVAILABLE,
     ))
 }
@@ -794,12 +804,17 @@ async fn forget_device(
     Extension(host_label): Extension<HostLabel>,
     host_override: Option<Extension<HostLabelOverride>>,
     Path(fingerprint): Path<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = crate::window_catalog::response_locale(locale);
     let fingerprint = fingerprint.trim().to_owned();
     if fingerprint.is_empty() {
         return refusal(
             "missing_required_field",
-            "that device couldn't be identified.",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.missing.required.field.that.device.couldn.t.be",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -808,7 +823,7 @@ async fn forget_device(
         .unwrap_or(host_label.0);
 
     let read = read_authorized_clients(&journal.0.join("link/authorized_clients.json"));
-    if let Some(response) = ledger_refusal(&read) {
+    if let Some(response) = ledger_refusal(&read, locale) {
         return response;
     }
     let entries = match read {
@@ -823,17 +838,23 @@ async fn forget_device(
         return match crate::paired_device::remove_paired_device(&journal.0, &fingerprint) {
             Ok(_) => refusal(
                 "paired_device_not_found",
-                "paired device not found",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.paired.device.not.found.paired.device.not.found",
+                ),
                 StatusCode::NOT_FOUND,
             ),
-            Err(error) => unpair_mutation_refusal(error),
+            Err(error) => unpair_mutation_refusal(error, locale),
         };
     };
 
     if is_this_host(&entry, &host_label) {
         return refusal(
             "device_is_this_host",
-            "this is the computer your journal lives on. it can't be forgotten from here.",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.device.is.this.host.this.is.the.computer.your",
+            ),
             StatusCode::CONFLICT,
         );
     }
@@ -847,7 +868,10 @@ async fn forget_device(
             log::warn!("network forget could not read device activity metadata");
             return refusal(
                 "device_activity_unavailable",
-                "the delivery record for this device couldn't be read, so it can't be forgotten right now.",
+                &crate::window_catalog::text(
+                    locale,
+                    "journal.window.network.error.device.activity.unavailable.the.delivery.record.for.this",
+                ),
                 StatusCode::SERVICE_UNAVAILABLE,
             );
         }
@@ -855,7 +879,10 @@ async fn forget_device(
     if has_ever_delivered(activity.as_ref().and_then(|map| map.get(&fingerprint))) {
         return refusal(
             "device_has_delivered",
-            "this device has added material to your journal, so it can't be forgotten from here. unpair it from its device details instead.",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.device.has.delivered.this.device.has.added.material",
+            ),
             StatusCode::CONFLICT,
         );
     }
@@ -876,10 +903,13 @@ async fn forget_device(
         .into_response(),
         Ok(_) => refusal(
             "paired_device_not_found",
-            "paired device not found",
+            &crate::window_catalog::text(
+                locale,
+                "journal.window.network.error.paired.device.not.found.paired.device.not.found",
+            ),
             StatusCode::NOT_FOUND,
         ),
-        Err(error) => unpair_mutation_refusal(error),
+        Err(error) => unpair_mutation_refusal(error, locale),
     }
 }
 

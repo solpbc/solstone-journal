@@ -1,0 +1,16 @@
+{
+  "description": "Already used or expired opening link in the journal's local.access view.",
+  "context": "Journal window, local.access view. Already used or expired opening link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5a8dd251b429de1d8f5feab348f6468c0529b4a2de2b57b58d067d67c206ad3",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

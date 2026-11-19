@@ -1,0 +1,16 @@
+{
+  "description": "Owner not ready needs more in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner not ready needs more.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e463b8bf556ca0fca934d334433fbcab9725f7791408aff327df5602975a8c2",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Entities kept in the journal's more view.",
+  "context": "Journal window, more view. Entities kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed068c3f8e9c8fe67e16c6476a00558d6247a9a71955a85a83c3fd9ec91bc44f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

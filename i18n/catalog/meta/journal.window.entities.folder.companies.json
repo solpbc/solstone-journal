@@ -1,0 +1,16 @@
+{
+  "description": "Folder companies in the journal's entities view.",
+  "context": "Journal window, entities view. Folder companies.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7c20c3a4e028430cb0ad3a974e528221ccfb68336ca8ad6763559ae936de440",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

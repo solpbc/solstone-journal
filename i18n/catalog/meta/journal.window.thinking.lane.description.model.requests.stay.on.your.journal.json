@@ -1,0 +1,16 @@
+{
+  "description": "Thinking lane description in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2fb1b59a77e8104968ba298db3fff8fd96163258c659989da79e1e613e4db86d",
+  "max_length": 77,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

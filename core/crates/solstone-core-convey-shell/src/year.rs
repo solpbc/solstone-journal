@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -47,13 +48,15 @@ async fn static_file(axum::extract::Path(rest): axum::extract::Path<String>) -> 
 async fn view_route(
     State(root): State<Arc<PathBuf>>,
     Query(query): Query<BTreeMap<String, String>>,
+    headers: HeaderMap,
 ) -> Response {
+    let locale = crate::window_catalog::request_locale(&headers);
     let year = query.get("year").cloned();
     if year.as_deref().is_some_and(|year| !is_year(year)) {
         return error_envelope(
             "invalid_year",
-            "that year couldn't be used.",
-            "Invalid year, expected YYYY",
+            crate::window_catalog::text(locale, "journal.window.year.year.invalid"),
+            crate::window_catalog::text(locale, "journal.window.year.year.invalid.detail"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();

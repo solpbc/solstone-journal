@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach not me response in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach not me response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "367a5e248fe8b32654ae0aa2c130f5940adcd72fd0a71a91bd05e7b74812225b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

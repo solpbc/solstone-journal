@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('./journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -62,7 +63,7 @@ function websocketHarness(options = {}) {
     AppServices: { sameOriginPath: appHarness().AppServices.sameOriginPath, notifications: { show() {} } },
   };
   window.window = window;
-  const context = vm.createContext({
+  const context = journalContext({
     window,
     document,
     EventSource: FakeEventSource,
@@ -104,7 +105,7 @@ function appHarness() {
     selectFacet() { throw new Error('notification card must not select a global facet'); },
   };
   window.window = window;
-  const context = vm.createContext({
+  const context = journalContext({
     window,
     document,
     URL,
@@ -168,7 +169,7 @@ function testStatusHistoryAction() {
     },
   };
   window.window = window;
-  const context = vm.createContext({ window, document, Date, console });
+  const context = journalContext({ window, document, Date, console });
   vm.runInContext('let statusPaneOpen = true; let _lastHistoryLen = -1;', context);
   vm.runInContext(functionSource(staticSource('status_pane.js'), 'updateNotificationHistory'), context);
   vm.runInContext('updateNotificationHistory()', context);
@@ -232,7 +233,7 @@ function testDegradedDeviceDetail() {
     createElement: () => element(),
   };
   const window = { JournalFormat: { sinceDay: (ms) => `day:${ms}` } };
-  const context = vm.createContext({ window, document, Date, console });
+  const context = journalContext({ window, document, Date, console });
   vm.runInContext([
     'const sinceDay = ms => window.JournalFormat.sinceDay(ms);',
     "const relativeTime = () => '5 minutes';",

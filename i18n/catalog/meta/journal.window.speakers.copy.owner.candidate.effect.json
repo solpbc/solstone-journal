@@ -1,0 +1,16 @@
+{
+  "description": "Owner candidate effect in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner candidate effect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d00eb81a113fd041f6d56ca471d8386a33fa233d1346b2fc9aa59e65785ef39b",
+  "max_length": 208,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Hide copy mark head in the journal's body view.",
+  "context": "Journal window, body view. Hide copy mark head.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "473d6c2670ba3efc8ea0e97eb34f2d7e8afa072342b792eaa5d201c3365196ce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

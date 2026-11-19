@@ -1,0 +1,23 @@
+{
+  "description": "How to open your journal on other in the journal's local.access view.",
+  "context": "Journal window, local.access view. How to open your journal on other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6e36fc607768ca746a2395c281216d737871fd268b9268ef959e9b0e25a7eb9",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{command}"
+    }
+  ]
+}

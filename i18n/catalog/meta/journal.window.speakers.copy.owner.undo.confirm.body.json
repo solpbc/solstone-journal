@@ -1,0 +1,16 @@
+{
+  "description": "Owner undo confirm body in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner undo confirm body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a129f4cd4b2919f5c9dbd42ab9598ec00248326f0360996936f58af9a622d8e3",
+  "max_length": 325,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

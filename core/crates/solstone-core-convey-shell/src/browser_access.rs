@@ -64,9 +64,9 @@ const MAX_PATH_BYTES: usize = 2048;
 const CLOSED_PROGRAM_MESSAGE: &str = "this journal only opens for the account it belongs to. if it's yours and this program runs another way, as a service or inside WSL, you can open local access in your journal's settings.";
 #[cfg(not(windows))]
 const CLOSED_PROGRAM_MESSAGE: &str = "programs on this computer can no longer open this journal here. if it's yours, run solstone journal open to open it in a browser, or update this program.";
-const CONSENT_NEEDED: &str = "opening local access lets any account on this computer, and any program running here, open your journal without asking. confirm to turn it on.";
-const UNAVAILABLE: &str = "this choice needs your journal's private connection on this computer, which isn't running right now. local access stays open until it is.";
-const SAVE_FAILED: &str = "your choice could not be saved. please try again.";
+const CONSENT_NEEDED: &str = "!journal.window.local.access.consent.needed";
+const UNAVAILABLE: &str = "journal.window.local.access.unavailable";
+const SAVE_FAILED: &str = "journal.window.local.access.save.failed";
 
 /// Live browser-authorization state for one running journal.
 pub(crate) struct BrowserAccess {
@@ -193,13 +193,13 @@ impl BrowserAccess {
         .expect("cookie is ASCII")
     }
 
-    fn snapshot(&self) -> Value {
+    fn snapshot(&self, locale: &str) -> Value {
         let open = self.open.load(Ordering::SeqCst);
         json!({
             "available": self.socket_live(),
             "open": open,
             "closed_now": self.closed(),
-            "message": (!self.socket_live()).then_some(UNAVAILABLE),
+            "message": (!self.socket_live()).then(|| crate::window_catalog::text(locale, UNAVAILABLE)),
             "account_check": cfg!(windows),
         })
     }
@@ -334,17 +334,18 @@ pub(crate) async fn gate(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let locale = crate::window_catalog::request_locale(request.headers());
     let connection = connection_of(&request);
     if let Some(token) = auth_token(&request).map(str::to_owned) {
         let admitted = access.admitted(request.headers()) || owner_account(connection).await;
-        return bootstrap(&access, admitted, &token);
+        return bootstrap(&access, admitted, &token, locale);
     }
     if !access.closed() || access.admitted(request.headers()) || owner_account(connection).await {
         request.extensions_mut().insert(AccessBasis::Localhost);
         return next.run(request).await;
     }
     if is_navigation(&request) {
-        return landing(false);
+        return landing(false, locale);
     }
     let (status, body) = error_envelope(
         "local_access_closed",
@@ -357,11 +358,11 @@ pub(crate) async fn gate(
     response
 }
 
-fn bootstrap(access: &BrowserAccess, admitted: bool, token: &str) -> Response {
+fn bootstrap(access: &BrowserAccess, admitted: bool, token: &str, locale: &str) -> Response {
     let spent = access.spend(token, Instant::now());
     let (path, session) = match spent {
         Some(path) => (path, access.new_session()),
-        None if access.closed() && !admitted => return landing(true),
+        None if access.closed() && !admitted => return landing(true, locale),
         // Open, or a browser that already has access (a link it queued past
         // its lifetime, or one reopened from history): a spent link goes home.
         None => ("/".to_owned(), None),
@@ -385,28 +386,40 @@ fn no_store(headers: &mut HeaderMap) {
     headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
 }
 
-fn landing(link_refused: bool) -> Response {
+fn landing(link_refused: bool, locale: &str) -> Response {
+    use crate::window_catalog::{html, language_tag};
     let refused = if link_refused {
-        "<p>this link has already been used or has expired.</p>"
+        format!(
+            "<p>{}</p>",
+            html(locale, "journal.window.local.access.link.expired")
+        )
     } else {
-        ""
+        String::new()
     };
-    let html = format!("{LANDING_HEAD}{refused}{LANDING_TAIL}");
+    let title = html(locale, "journal.window.shell.title");
+    let heading = html(locale, "journal.window.local.access.heading");
+    let detail =
+        html(locale, LANDING_DETAIL).replace("{command}", "<code>solstone journal open</code>");
+    let lang = language_tag(locale);
+    let page = format!(
+        "<!doctype html><html lang=\"{lang}\"><head>{LANDING_HEAD}<title>{title}</title>{LANDING_STYLE}</head><body><h1>{heading}</h1>{refused}<p>{detail}</p></body></html>"
+    );
     let mut response = (
         StatusCode::FORBIDDEN,
         [(CONTENT_TYPE, "text/html; charset=utf-8")],
-        html,
+        page,
     )
         .into_response();
     no_store(response.headers_mut());
     response
 }
 
-const LANDING_HEAD: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>journal</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;line-height:1.5;color:#222;background:#fafaf8}code{background:#eee;padding:.1rem .3rem;border-radius:.2rem}@media(prefers-color-scheme:dark){body{color:#ddd;background:#1b1b1a}code{background:#333}}</style></head><body><h1>open your journal</h1>";
+const LANDING_HEAD: &str = "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\">";
+const LANDING_STYLE: &str = "<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;line-height:1.5;color:#222;background:#fafaf8}code{background:#eee;padding:.1rem .3rem;border-radius:.2rem}@media(prefers-color-scheme:dark){body{color:#ddd;background:#1b1b1a}code{background:#333}}</style>";
 #[cfg(windows)]
-const LANDING_TAIL: &str = "<p>if this journal is yours, open it from the journal app, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
+const LANDING_DETAIL: &str = "journal.window.local.access.detail.windows";
 #[cfg(not(windows))]
-const LANDING_TAIL: &str = "<p>open your journal from the journal app on a mac, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
+const LANDING_DETAIL: &str = "journal.window.local.access.detail.other";
 
 /// Routes only the owner socket serves.
 pub(crate) fn socket_routes(access: Arc<BrowserAccess>) -> Router {
@@ -439,9 +452,10 @@ pub(crate) fn setting_routes(access: Arc<BrowserAccess>) -> Router {
     let read = access.clone();
     Router::new().route(
         SETTING_ROUTE,
-        get(move || {
+        get(move |headers: HeaderMap| {
+            let locale = crate::window_catalog::request_locale(&headers);
             let access = read.clone();
-            async move { ([(CACHE_CONTROL, "no-store")], Json(access.snapshot())) }
+            async move { ([(CACHE_CONTROL, "no-store")], Json(access.snapshot(locale))) }
         })
         .put(move |headers: HeaderMap, Json(body): Json<Value>| {
             let access = access.clone();
@@ -451,21 +465,27 @@ pub(crate) fn setting_routes(access: Arc<BrowserAccess>) -> Router {
 }
 
 async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) -> Response {
+    use crate::window_catalog::{request_locale, text};
+    let locale = request_locale(headers);
     let Some(open) = body.get("open").and_then(Value::as_bool) else {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "say whether local access is open: {\"open\": true} or {\"open\": false}."})),
+            Json(json!({"error": text(locale, "journal.window.local.access.invalid.open")})),
         )
             .into_response();
     };
     if !access.socket_live() {
-        return (StatusCode::CONFLICT, Json(json!({"error": UNAVAILABLE}))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": text(locale, UNAVAILABLE)})),
+        )
+            .into_response();
     }
     let currently_open = access.open.load(Ordering::SeqCst);
     if open && !currently_open && body.get("consent").and_then(Value::as_bool) != Some(true) {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": CONSENT_NEEDED, "consent_required": true})),
+            Json(json!({"error": text(locale, CONSENT_NEEDED), "consent_required": true})),
         )
             .into_response();
     }
@@ -477,7 +497,7 @@ async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) ->
         }
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": SAVE_FAILED})),
+            Json(json!({"error": text(locale, SAVE_FAILED)})),
         )
             .into_response();
     }
@@ -493,7 +513,7 @@ async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) ->
             .flatten()
     };
     access.open.store(open, Ordering::SeqCst);
-    let mut response = Json(access.snapshot()).into_response();
+    let mut response = Json(access.snapshot(locale)).into_response();
     if let Some(session) = session {
         response
             .headers_mut()

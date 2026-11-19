@@ -1,0 +1,28 @@
+{
+  "description": "Copy week of in the journal's year view.",
+  "context": "Journal window, year view. Copy week of.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1e98114f678f64eda6e0b80e1d082c653a7effe5f473794dbe40925c9c24a07",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{from}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{to}"
+    }
+  ]
+}

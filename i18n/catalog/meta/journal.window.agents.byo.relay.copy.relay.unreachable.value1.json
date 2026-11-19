@@ -1,0 +1,16 @@
+{
+  "description": "Byo relay copy relay_unreachable in the journal's agents view.",
+  "context": "Journal window, agents view. Byo relay copy relay_unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "061d52f34a0f6a0168790a714876c9314c46f85d7c47259cee50444bab88519d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Network view copy, private link setup failed.",
+  "context": "Network view copy, private link setup failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 96,
+  "source_revision": "c2144b955ffda417cb910e838dfbdfdec489f37d7bb5c96bcaa4517e44267ef4",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

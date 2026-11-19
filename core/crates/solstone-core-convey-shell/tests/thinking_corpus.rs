@@ -236,7 +236,9 @@ fn corpus() -> Value {
                 {
                     states.insert(
                         "not_on_platform".into(),
-                        json!(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM),
+                        json!(
+                            "confidential processing isn't available yet where your journal lives."
+                        ),
                     );
                 }
                 projected = true;

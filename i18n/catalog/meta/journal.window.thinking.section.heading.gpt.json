@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's thinking view.",
+  "context": "Journal window, thinking view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "354f87190e98f584958730a53e1154c51ab589807f277fc524624894b99cc6fb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

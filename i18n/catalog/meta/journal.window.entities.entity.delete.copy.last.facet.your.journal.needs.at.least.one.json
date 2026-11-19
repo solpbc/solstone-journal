@@ -1,0 +1,16 @@
+{
+  "description": "Entity delete copy last_facet in the journal's entities view.",
+  "context": "Journal window, entities view. Entity delete copy last_facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d341706f9744c1382d4abbaf744e2aed1cc385a4c5acaa801e74fc2412b47ce8",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

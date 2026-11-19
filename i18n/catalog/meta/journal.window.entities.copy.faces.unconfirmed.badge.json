@@ -1,0 +1,16 @@
+{
+  "description": "Entities display table ENT_FACES_UNCONFIRMED_BADGE in the journal's entities view.",
+  "context": "Journal window, entities view. Entities display table ENT_FACES_UNCONFIRMED_BADGE.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa6f271fb46925968175398fa4ebec014fb1974b39f6a6bcef1c0c205156f340",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

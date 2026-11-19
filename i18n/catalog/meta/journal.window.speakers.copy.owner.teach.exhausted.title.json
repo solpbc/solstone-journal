@@ -1,0 +1,16 @@
+{
+  "description": "Owner teach exhausted title in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Owner teach exhausted title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8efc5d06e0f31911709530f73fff64b94f1e74ea9aa2a86063a45e8cd401d8ee",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

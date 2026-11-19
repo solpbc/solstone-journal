@@ -1,0 +1,28 @@
+{
+  "description": "Elapsed minute count (other) in the journal's time.duration view.",
+  "context": "Journal window, time.duration view. Elapsed minute count (other).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c63c1dbccf2c1d857da4e0935b4af95d43555817264712489a9b6205c5598c87",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

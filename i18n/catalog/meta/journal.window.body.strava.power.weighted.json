@@ -1,0 +1,33 @@
+{
+  "description": "Body display strava power weighted in the journal's body view.",
+  "context": "Journal window, body view. Body display strava power weighted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67203289b27baeec088699e07ae787dacf972edacbc54cdc17bb7e3c383c2541",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

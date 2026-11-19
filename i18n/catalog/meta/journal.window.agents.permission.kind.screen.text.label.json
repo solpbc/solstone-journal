@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for screen.text in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for screen.text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caede4992ff3eeb196fc4dfc2182259abc20e481b99fb2b18b4158e82f4cc610",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

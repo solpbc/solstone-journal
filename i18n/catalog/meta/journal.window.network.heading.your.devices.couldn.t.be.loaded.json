@@ -1,0 +1,16 @@
+{
+  "description": "Heading in the journal's network view.",
+  "context": "Journal window, network view. Heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "432187ec0091bd0fff99d30929fd74a7819494c04c3f3bff0a9dd1d20e4d5bb2",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

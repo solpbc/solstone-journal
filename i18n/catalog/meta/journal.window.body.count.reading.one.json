@@ -1,0 +1,16 @@
+{
+  "description": "Body display count reading one in the journal's body view.",
+  "context": "Journal window, body view. Body display count reading one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a26a3ffad936792e4004ced824b2bd7d9c8ec58d947a1bec4b314da46a105777",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

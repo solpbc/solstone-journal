@@ -1,0 +1,16 @@
+{
+  "description": "Byo outside copy outside_not_ready in the journal's agents view.",
+  "context": "Journal window, agents view. Byo outside copy outside_not_ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a64f4f5062543a20239ff4519850f51eb0cc403d76e4fe7e150eb48a9c74263a",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

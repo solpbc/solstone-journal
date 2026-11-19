@@ -15,7 +15,7 @@ use serde_json::Value;
 use tower::ServiceExt;
 
 use crate::assets::{self, AssetKind};
-use crate::registry::{served_apps, shell_payload_with_agents, shell_registry};
+use crate::registry::{served_apps, shell_payload_using, shell_registry, shell_registry_using};
 
 mod bundle {
     include!("../../../build-support/convey_shell_bundle.rs");
@@ -458,10 +458,13 @@ async fn the_shipped_app_table_and_the_served_names_match_each_router() {
         + "globalThis.SOL_SHELL_REGISTRY = ".len();
     let end = start + script[start..].find(";\n").unwrap();
     let table: Value = serde_json::from_str(&script[start..end]).unwrap();
-    assert_eq!(table, serde_json::to_value(shell_registry()).unwrap());
+    assert_eq!(
+        table,
+        serde_json::to_value(shell_registry_using(str::to_owned)).unwrap()
+    );
     for include_agents in [false, true] {
         let expected =
-            serde_json::to_value(shell_payload_with_agents(include_agents).apps).unwrap();
+            serde_json::to_value(shell_payload_using(include_agents, str::to_owned).apps).unwrap();
         let names: Vec<&str> = served_apps(include_agents).map(|app| app.name).collect();
         let joined: Vec<Value> = names
             .iter()
@@ -553,8 +556,10 @@ async fn every_precompressed_answer_is_the_plain_answer_with_its_validators() {
         assert_eq!(headers[header::CONTENT_ENCODING], "gzip", "{path}");
         assert_eq!(gunzip(&packed), plain, "{path}");
         assert_eq!(
-            headers[header::CONTENT_LENGTH],
-            packed.len().to_string().as_str(),
+            headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|length| length.to_str().ok()),
+            Some(packed.len().to_string().as_str()),
             "{path}"
         );
         assert_eq!(headers[header::VARY], "accept-encoding", "{path}");

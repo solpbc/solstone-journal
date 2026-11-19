@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's shared.diagnostic.console view.",
+  "context": "Journal window, shared.diagnostic.console view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb4605c7dc6c7ae95eb493bf453331f2043cb2ff5aed2758385a37411903e5b7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

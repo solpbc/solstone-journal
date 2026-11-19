@@ -1,0 +1,16 @@
+{
+  "description": "Heading in the journal's entities view.",
+  "context": "Journal window, entities view. Heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84ba939c406d4e34c2f3e1e93a2571a2d25553f6f286149fc6f9bbdd271057bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Copy empty in the journal's sources view.",
+  "context": "Journal window, sources view. Copy empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52f3c485cd5e9743728b0723d562ee7ff124103d735e5b4795ab6d3c1708468a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

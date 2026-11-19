@@ -1,0 +1,23 @@
+{
+  "description": "Thinking lane description in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking lane description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92f3f5582016f063a841da865e69f249643c2f5c5b47b7a9e4cfe2c28fe01e40",
+  "max_length": 74,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

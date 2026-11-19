@@ -1,0 +1,16 @@
+{
+  "description": "Navigation label in the journal's view.support view.",
+  "context": "Journal window, view.support view. Navigation label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "77b1a29c175801489d5fccdf2b3abd156fa7cfab442ce64534433b7c872e4ae6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

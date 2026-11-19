@@ -1,0 +1,16 @@
+{
+  "description": "Not person done in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Not person done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9232e97d817b985026fedba7862af0142518651d146354e719958c6fa3971f0",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

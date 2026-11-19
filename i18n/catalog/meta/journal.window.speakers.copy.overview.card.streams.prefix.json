@@ -1,0 +1,16 @@
+{
+  "description": "Overview card streams prefix in the journal's speakers.copy view.",
+  "context": "Journal window, speakers.copy view. Overview card streams prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9f26f2b9a58fa8617739569dff6f63cd3f7b41e048a484dfd3f7f42ef6966c6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
