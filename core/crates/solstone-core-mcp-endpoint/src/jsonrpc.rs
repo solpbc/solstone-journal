@@ -295,10 +295,10 @@ pub(crate) fn literal_tool_result(value: Value, empty_note: Option<&str>) -> Val
 pub(crate) fn image_tool_result(
     value: Value,
     empty_note: Option<&str>,
-    jpeg: Option<&[u8]>,
+    images: &[Vec<u8>],
 ) -> Value {
     let mut result = literal_tool_result(value, empty_note);
-    if let Some(jpeg) = jpeg {
+    for jpeg in images {
         use base64::Engine;
         result["content"]
             .as_array_mut()
@@ -517,9 +517,9 @@ mod image_tests {
     #[test]
     fn text_results_keep_structured_content_and_mixed_results_keep_the_image_visible() {
         let value = serde_json::json!({"photo":{"state":"confirmed"}});
-        let text = super::image_tool_result(value.clone(), None, None);
+        let text = super::image_tool_result(value.clone(), None, &[]);
         assert_eq!(text["structuredContent"], value);
-        let mixed = super::image_tool_result(value, None, Some(b"test"));
+        let mixed = super::image_tool_result(value, None, &[b"test".to_vec()]);
         assert!(mixed.get("structuredContent").is_some());
         assert_eq!(mixed["content"][0]["type"], "text");
         assert_eq!(

@@ -921,11 +921,7 @@ fn execute_tool_call(
     ) {
         Ok(output) => JsonRpcResponse::success(
             request.id.as_ref(),
-            image_tool_result(
-                output.value,
-                output.empty_note.as_deref(),
-                output.image.as_deref(),
-            ),
+            image_tool_result(output.value, output.empty_note.as_deref(), &output.images),
         ),
         Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_arguments(
             request.id.as_ref(),
@@ -2106,7 +2102,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .find(|tool| tool["name"] == "search")
-                .unwrap()["inputSchema"]["properties"]["category"]["enum"],
+                .unwrap()["inputSchema"]["properties"]["kind"]["anyOf"][0]["enum"],
             json!(["transcripts"])
         );
         // ⛔ Discovery still carries no journal content: identifiers, not titles.

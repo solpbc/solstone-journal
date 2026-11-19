@@ -11,6 +11,8 @@ use super::{
 
 pub(crate) struct ValidatedListTranscripts {
     pub(crate) day: Option<String>,
+    pub(crate) day_from: Option<String>,
+    pub(crate) day_to: Option<String>,
     pub(crate) facet_id: Option<String>,
     pub(crate) limit: usize,
     pub(crate) cursor: Option<String>,
@@ -30,6 +32,10 @@ pub(crate) struct ValidatedGetTranscript {
 struct ListParams {
     #[serde(default)]
     day: Option<String>,
+    #[serde(default, alias = "from")]
+    day_from: Option<String>,
+    #[serde(default, alias = "to")]
+    day_to: Option<String>,
     #[serde(default)]
     facet: Option<String>,
     #[serde(default = "default_limit")]
@@ -42,8 +48,8 @@ struct ListParams {
     time_to: Option<String>,
     #[serde(default)]
     source: Option<String>,
-    #[serde(default)]
-    kind: Option<String>,
+    #[serde(default, alias = "kind")]
+    entry_kind: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -94,17 +100,24 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         return Err(ToolError::InvalidInput);
     }
     if !optional_string_within_limit(&params.source, MAX_FACET_BYTES)
-        || !optional_string_within_limit(&params.kind, MAX_FACET_BYTES)
+        || !optional_string_within_limit(&params.entry_kind, MAX_FACET_BYTES)
         || params
-            .kind
+            .entry_kind
             .as_deref()
             .is_some_and(|kind| kind.trim().is_empty())
     {
         return Err(ToolError::InvalidInput);
     }
     let normalized_day = super::normalize_day(params.day)?;
+    let day_from = super::normalize_day(params.day_from)?;
+    let day_to = super::normalize_day(params.day_to)?;
+    if (normalized_day.is_some() && (day_from.is_some() || day_to.is_some()))
+        || matches!((&day_from, &day_to), (Some(from), Some(to)) if to < from)
+    {
+        return Err(ToolError::ActivityDayArguments);
+    }
     if (params.source.is_some() && (normalized_day.is_none() || params.facet.is_some()))
-        || (params.kind.is_some() && params.source.is_none())
+        || (params.entry_kind.is_some() && params.source.is_none())
     {
         return Err(ToolError::SourceArguments);
     }
@@ -129,13 +142,15 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
     }
     Ok(ValidatedListTranscripts {
         day: normalized_day,
+        day_from,
+        day_to,
         facet_id: params.facet,
         limit: params.limit,
         cursor: params.cursor,
         time_from: params.time_from,
         time_to: params.time_to,
         source: params.source,
-        kind: params.kind,
+        kind: params.entry_kind,
     })
 }
 

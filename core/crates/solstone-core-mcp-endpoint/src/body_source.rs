@@ -31,7 +31,7 @@ use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
     DispatchError, DispatchPrincipal, Prepared, boundary, codec, live_allows,
-    segment_assignment_probe_path, source_labels,
+    segment_assignment_probe_path, source_label, source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::references::{
@@ -385,6 +385,222 @@ fn windows_in_scope(
         (left.start_seconds, left.name.as_str()).cmp(&(right.start_seconds, right.name.as_str()))
     });
     Ok(windows)
+}
+
+/// Daily movement totals and sleep from the same windows the transcript reader
+/// can serve. Keep totals from different recorders separate.
+pub(crate) fn week_totals(
+    journal: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    days: &[String],
+) -> Result<(BTreeMap<String, Value>, Vec<String>), DispatchError> {
+    let mut summaries = BTreeMap::new();
+    let mut targets = Vec::new();
+    let hides = BodyHides::read(journal);
+    let labels = source_labels(journal);
+    for stream in BODY_RECORD_STREAMS {
+        let mut nights = BTreeMap::new();
+        let mut stages = BTreeMap::<String, Vec<(i64, i64)>>::new();
+        let mut seen = BTreeSet::new();
+        for day in days {
+            let mut movement = BTreeMap::<Option<String>, Movement>::new();
+            let mut windows = readable_windows(journal, snapshot, &hides, day, stream)?;
+            windows.sort_by_key(|window| {
+                (
+                    solstone_core_format::content::body_records::copy_rank(&window.name),
+                    window.name.clone(),
+                )
+            });
+            for window in windows {
+                let segment_path = format!("{day}/{stream}/{}", window.name);
+                let path = format!("chronicle/{segment_path}/{BODY_RECORDS_FILE}");
+                let Some(bytes) = crate::activity_admit::read_contained_source(journal, &path)
+                else {
+                    continue;
+                };
+                let text = std::str::from_utf8(&bytes)
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+                if !crate::source_release::check_indexed_source_release(journal, &path) {
+                    continue;
+                }
+                let mut used = false;
+                for row in text
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<BodyRow>(line).ok())
+                {
+                    if row.kind == RowKind::Moved
+                        || window.left_out.contains(&row.id)
+                        || !seen.insert(row.id.clone())
+                    {
+                        continue;
+                    }
+                    match row.kind {
+                        RowKind::Count
+                            if matches!(
+                                row.label.as_str(),
+                                "step count" | "distance walking running"
+                            ) =>
+                        {
+                            movement.entry(row.by.clone()).or_default().add_count(&row);
+                        }
+                        RowKind::Dated if row.record_type == "daily_activity" => {
+                            if let Some(steps) = row.fields.get("steps").and_then(Value::as_f64) {
+                                movement
+                                    .entry(row.by.clone())
+                                    .or_default()
+                                    .steps
+                                    .add(steps, None);
+                            }
+                        }
+                        RowKind::Experience if row.experience.as_deref() == Some("sleep") => {
+                            nights.insert(row.id.clone(), row);
+                        }
+                        RowKind::Stage
+                            if row.label.starts_with("asleep")
+                                && let (Some(parent), Some(interval)) =
+                                    (&row.of, row_interval(&row)) =>
+                        {
+                            stages.entry(parent.clone()).or_default().push(interval);
+                        }
+                        _ => continue,
+                    }
+                    used = true;
+                }
+                if used {
+                    targets.push(segment_path);
+                }
+            }
+            for (recorder, movement) in movement {
+                let steps = movement.steps.total();
+                let distance_m = movement.distance_m.total();
+                if steps.is_some() || distance_m.is_some() {
+                    let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
+                    let list = entry
+                        .as_object_mut()
+                        .expect("body summary object")
+                        .entry("movement")
+                        .or_insert_with(|| json!([]));
+                    list.as_array_mut().expect("movement array").push(json!({
+                        "source": source_label(&labels, stream), "recorded_by": recorder,
+                        "steps": steps, "distance_m": distance_m,
+                    }));
+                }
+            }
+        }
+        for (id, row) in nights {
+            let Some(wake) = row.end.as_deref().and_then(parse_source_time) else {
+                continue;
+            };
+            let zone = source_zone(journal, stream);
+            let day = solstone_core_time::day_key(
+                zone.map_or_else(|| wake.date(), |zone| wake.with_time_zone(zone).date()),
+            );
+            if !days.contains(&day) || hides.day_hidden(&day) {
+                continue;
+            }
+            let asleep_seconds = stages.remove(&id).map(covered_seconds).or_else(|| {
+                row.fields
+                    .get("total_sleep_duration")
+                    .and_then(Value::as_u64)
+            });
+            let entry = summaries.entry(day).or_insert_with(|| json!({}));
+            let list = entry
+                .as_object_mut()
+                .expect("body summary object")
+                .entry("nights")
+                .or_insert_with(|| json!([]));
+            list.as_array_mut().expect("nights array").push(json!({
+                "source": source_label(&labels, stream), "to_bed": row.start, "waking": row.end,
+                "asleep_seconds": asleep_seconds,
+            }));
+        }
+    }
+    Ok((summaries, targets))
+}
+
+#[derive(Default)]
+struct Movement {
+    steps: Counts,
+    distance_m: Counts,
+}
+
+impl Movement {
+    fn add_count(&mut self, row: &BodyRow) {
+        let Some(value) = row
+            .value
+            .as_deref()
+            .and_then(|value| value.parse::<f64>().ok())
+        else {
+            return;
+        };
+        let interval = row_interval(row);
+        match (row.label.as_str(), row.unit.as_deref()) {
+            ("step count", Some("count") | None) => self.steps.add(value, interval),
+            ("distance walking running", Some("km")) => {
+                self.distance_m.add(value * 1000.0, interval)
+            }
+            ("distance walking running", Some("m")) => self.distance_m.add(value, interval),
+            ("distance walking running", Some("mi")) => {
+                self.distance_m.add(value * 1609.344, interval)
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Overlapping observations aren't additive. A total is shown only when the
+/// stored rows for this recorder partition the reported time.
+#[derive(Default)]
+struct Counts(Vec<(f64, Option<(i64, i64)>)>);
+
+impl Counts {
+    fn add(&mut self, value: f64, interval: Option<(i64, i64)>) {
+        if value.is_finite() && value >= 0.0 {
+            self.0.push((value, interval));
+        }
+    }
+
+    fn total(mut self) -> Option<f64> {
+        self.0.sort_by_key(|(_, interval)| *interval);
+        if self.0.is_empty()
+            || self.0.windows(2).any(|pair| match (pair[0].1, pair[1].1) {
+                (Some((_, end)), Some((start, _))) => start < end,
+                _ => true,
+            })
+        {
+            return None;
+        }
+        Some(self.0.iter().map(|(value, _)| value).sum())
+    }
+}
+
+fn row_interval(row: &BodyRow) -> Option<(i64, i64)> {
+    let start = row
+        .start
+        .as_deref()
+        .and_then(parse_source_time)?
+        .timestamp()
+        .as_second();
+    let end = row
+        .end
+        .as_deref()
+        .and_then(parse_source_time)?
+        .timestamp()
+        .as_second();
+    (end > start).then_some((start, end))
+}
+
+fn covered_seconds(mut spans: Vec<(i64, i64)>) -> u64 {
+    spans.sort_unstable();
+    let mut end = i64::MIN;
+    let mut seconds = 0;
+    for (start, stop) in spans {
+        if stop > end {
+            seconds += (stop - start.max(end)).unsigned_abs();
+            end = stop;
+        }
+    }
+    seconds
 }
 
 /// Whether this connection may read a body window, by day, stream and name: the
@@ -1049,6 +1265,8 @@ pub(crate) fn list_source(
         Some(mint(ReferenceTarget::TranscriptList(
             TranscriptListCursor {
                 day: request.day.clone(),
+                day_from: None,
+                day_to: None,
                 time_from: request.time_from.clone(),
                 time_to: request.time_to.clone(),
                 facet: None,

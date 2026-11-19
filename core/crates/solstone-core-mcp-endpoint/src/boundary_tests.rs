@@ -16347,13 +16347,13 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
         seed(faces[..count].to_vec());
         let output = get();
         assert_eq!(output.value["photo"]["state"], state);
-        assert_eq!(output.image.is_some(), count == 5);
+        assert_eq!(!output.images.is_empty(), count == 5);
         let rendered =
-            crate::jsonrpc::image_tool_result(output.value.clone(), None, output.image.as_deref());
+            crate::jsonrpc::image_tool_result(output.value.clone(), None, &output.images);
         if count == 5 {
             assert_eq!(rendered["content"][1]["type"], "image");
             assert_eq!(rendered["structuredContent"], output.value);
-            let image = image::load_from_memory(output.image.as_ref().unwrap()).unwrap();
+            let image = image::load_from_memory(output.images.first().unwrap()).unwrap();
             assert!(image.width() <= 256 && image.height() <= 256);
         } else {
             assert_eq!(rendered["structuredContent"], output.value);
@@ -16362,7 +16362,7 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
     fp::choose(root, "entity-primary", &faces[4].metadata.key).unwrap();
     let output = get();
     assert_eq!(output.value["photo"]["state"], "confirmed");
-    assert!(output.image.is_some());
+    assert!(!output.images.is_empty());
     assert!(
         dispatch_output(&journal, "list_entities", json!({})).value["entities"]
             .as_array()
@@ -16382,7 +16382,7 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
         .unwrap();
     let output = get();
     assert!(output.value.get("photo").is_none());
-    assert!(output.image.is_none());
+    assert!(output.images.is_empty());
     assert!(
         dispatch_output(&journal, "list_entities", json!({})).value["entities"]
             .as_array()
@@ -16399,7 +16399,7 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
             },
         )
         .unwrap();
-    assert!(get().image.is_some());
+    assert!(!get().images.is_empty());
     // The same entity linked from another granted facet must not expose alpha's photo.
     fs::create_dir_all(root.join("facets/beta/entities/primary")).unwrap();
     fs::write(
@@ -16431,7 +16431,7 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
         json!({"reference":row["reference"]}),
     );
     assert_eq!(output.value["photo"]["state"], "confirmed");
-    assert!(output.image.is_none());
+    assert!(output.images.is_empty());
     fp::dismiss(root, "entity-primary").unwrap();
     assert_eq!(
         dispatch_output(
@@ -16448,8 +16448,8 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
             "get_entity",
             json!({"reference":row["reference"]})
         )
-        .image
-        .is_none()
+        .images
+        .is_empty()
     );
     fs::write(
         root.join("config/journal.json"),
@@ -16462,8 +16462,8 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
         json!({"reference":row["reference"]}),
     );
     assert!(output.value.get("photo").is_none());
-    assert!(output.image.is_none());
-    let rendered = crate::jsonrpc::image_tool_result(output.value.clone(), None, None);
+    assert!(output.images.is_empty());
+    let rendered = crate::jsonrpc::image_tool_result(output.value.clone(), None, &[]);
     assert_eq!(rendered["structuredContent"], output.value);
     assert!(!output.value.to_string().contains("embedding"));
 }
@@ -16723,22 +16723,21 @@ fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
     assert_eq!(output.value["picture"]["state"], "attached");
     assert_eq!(output.value["picture"]["width"], 1024);
     assert_eq!(output.value["picture"]["height"], 512);
-    let picture = image::load_from_memory(output.image.as_ref().unwrap()).unwrap();
+    let picture = image::load_from_memory(output.images.first().unwrap()).unwrap();
     assert_eq!((picture.width(), picture.height()), (1024, 512));
-    let rendered =
-        crate::jsonrpc::image_tool_result(output.value.clone(), None, output.image.as_deref());
+    let rendered = crate::jsonrpc::image_tool_result(output.value.clone(), None, &output.images);
     assert_eq!(rendered["content"][1]["type"], "image");
     assert_eq!(rendered["content"][1]["mimeType"], "image/jpeg");
 
     // A photo whose picture is no longer kept still reads, and says so.
     let output = fetched("gonephotoneedle");
     assert_eq!(output.value["picture"]["state"], "not_kept");
-    assert!(output.image.is_none());
+    assert!(output.images.is_empty());
 
     // A screenshot is screen: its description reads, its picture never rides here.
     let output = fetched("shotneedle");
     assert!(output.value.get("picture").is_none());
-    assert!(output.image.is_none());
+    assert!(output.images.is_empty());
 
     // Without photos, neither the description nor the picture is found.
     grant(&["screen_text"]);
@@ -16747,5 +16746,295 @@ fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    let day = "20260308";
+    for (path, text) in [
+        (
+            "import.image/130000_300/image_transcript.md",
+            "a plum tree in bloom",
+        ),
+        (
+            "import.image/140000_300/screenshot_transcript.md",
+            "screen only",
+        ),
+        (
+            "import.text/150000_300/note_transcript.md",
+            "# Orchard inventory\n\nFour trees.",
+        ),
+    ] {
+        let file = root.join("chronicle").join(day).join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, text).unwrap();
+    }
+    let location = root.join("chronicle/20260308/phone_mobile-segment/070000_300");
+    fs::create_dir_all(&location).unwrap();
+    fs::write(
+        location.join("location.jsonl"),
+        concat!(
+            r#"{"accuracy":"full","fix_count":0,"gap":false,"kind":"location","platform":"ios","schema":"solstone.location.segment/1","source":"location","tier":"full"}"#,
+            "\n",
+            r#"{"arrival":"2026-03-08T11:00:00Z","departure":"2026-03-08T12:00:00Z","h_acc":40,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#,
+            "\n"
+        ),
+    ).unwrap();
+    solstone_core_location::reconcile_journal(
+        root,
+        &mut solstone_core_location::Reconciler::default(),
+    )
+    .unwrap();
+    let mut row = BodyRow::new(
+        RowKind::Count,
+        "steps1".to_owned(),
+        "apple_health",
+        "HKQuantityTypeIdentifierStepCount",
+        "step count".to_owned(),
+    );
+    row.start = Some("2026-03-08 07:00:00 -0400".to_owned());
+    row.end = Some("2026-03-08 07:15:00 -0400".to_owned());
+    row.unit = Some("count".to_owned());
+    row.value = Some("432".to_owned());
+    let body_file = root.join("chronicle/20260308/import.apple_health/070000_3600/body.jsonl");
+    let mut body_text = fs::read_to_string(&body_file).unwrap();
+    let mut moved = row.clone();
+    moved.kind = RowKind::Moved;
+    let earlier = root.join("chronicle/20260308/import.apple_health/060000_300");
+    fs::create_dir_all(&earlier).unwrap();
+    fs::write(earlier.join("stream.json"), "{}\n").unwrap();
+    let mut reading = row.clone();
+    reading.id = "heart-rate".into();
+    reading.kind = RowKind::Reading;
+    reading.label = "heart rate".into();
+    fs::write(earlier.join("body.jsonl"), encode_rows(&[reading, moved])).unwrap();
+    body_text.push_str(&encode_rows(&[row]));
+    fs::write(body_file, body_text).unwrap();
+    let photo_original = root.join("chronicle/20260308/import.image/130000_300/original.png");
+    image::RgbImage::new(8, 8).save(photo_original).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    let grant = |words: &[&str], scope| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|word| (*word).to_owned()).collect(),
+                    scope,
+                },
+            )
+            .unwrap();
+    };
+    let week_args =
+        json!({"week": day, "include": ["body", "places", "photos", "notes", "entities"]});
+    let all = [
+        "facets",
+        "transcripts",
+        "body",
+        "places",
+        "photos",
+        "notes",
+        "entities",
+    ];
+    grant(&all, ReadScope::WholeJournal);
+    let week = probe(&journal, "get_week", week_args.clone()).unwrap();
+    assert!(week["said"].as_array().unwrap().is_empty());
+    assert_eq!(week["days"].as_array().unwrap().len(), 7);
+    let summary = &week["days"][0]["summary"];
+    assert_eq!(summary["body"]["movement"][0]["steps"], 432.0, "{week}");
+    assert!(
+        summary["places"]["items"].to_string().contains("Denver"),
+        "{summary}"
+    );
+    let place_rows = probe(&journal, "search", json!({"day": day, "kind":"places"})).unwrap();
+    assert!(
+        !place_rows["results"].as_array().unwrap().is_empty(),
+        "{place_rows}"
+    );
+    let place_reference = place_rows["results"][0]["reference"].clone();
+    assert!(probe(&journal, "fetch", json!({"reference": place_reference})).is_ok());
+    fs::remove_file(location.join("location.jsonl")).unwrap();
+    let stale = probe(&journal, "search", json!({"day": day, "kind":"places"})).unwrap();
+    assert_eq!(stale["results"], json!([]), "{stale}");
+    let stale_fetch = probe(&journal, "fetch", json!({"references": [place_reference]})).unwrap();
+    assert_eq!(stale_fetch["items"][0]["error"]["code"], "not_found");
+    let current = probe(&journal, "get_week", week_args.clone()).unwrap();
+    assert_eq!(current["days"][0]["summary"]["places"]["items"], json!([]));
+    assert_eq!(summary["photos"]["count"], 1, "{summary}");
+    assert_eq!(
+        summary["notes"]["items"][0]["title"], "Orchard inventory",
+        "{summary}"
+    );
+
+    let mut photos = Vec::new();
+    for (tool, field) in [
+        ("search", "results"),
+        ("list_transcripts", "transcripts"),
+        ("list_activities", "activities"),
+    ] {
+        let page = probe(
+            &journal,
+            tool,
+            json!({
+                "day_from": "2026-03-08", "day_to": "20260314", "kind": "photos"
+            }),
+        )
+        .unwrap();
+        let rows = page[field].as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{tool}: {page}");
+        assert!(
+            rows[0]["description"]
+                .as_str()
+                .unwrap()
+                .contains("plum tree")
+        );
+        photos.push(rows[0]["reference"].clone());
+    }
+    let by_kind = probe(&journal, "search", json!({"kind":"photos"})).unwrap();
+    assert_eq!(by_kind["results"].as_array().unwrap().len(), 1, "{by_kind}");
+    let fetched = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"references": [
+            photos[0], "missing", photos[1],
+        ]}),
+    );
+    assert_eq!(
+        fetched.value["items"][0]["result"]["picture"]["state"],
+        "attached"
+    );
+    assert_eq!(fetched.value["items"][1]["error"]["code"], "not_found");
+    assert_eq!(fetched.value["items"][2]["image_content_index"], 2);
+    assert_eq!(fetched.images.len(), 2);
+
+    for denied in ["body", "places", "photos", "notes", "entities"] {
+        let without: Vec<_> = all.into_iter().filter(|kind| *kind != denied).collect();
+        grant(&without, ReadScope::WholeJournal);
+        let week = probe(&journal, "get_week", week_args.clone()).unwrap();
+        for day in week["days"].as_array().unwrap() {
+            let refused = day["summary"][denied].as_object().unwrap();
+            assert_eq!(refused.len(), 1, "{denied}: {refused:?}");
+            assert!(refused["note"].is_string());
+        }
+        for tool in ["search", "list_transcripts", "list_activities"] {
+            assert_eq!(
+                probe(&journal, tool, json!({"day": day, "kind": denied})),
+                Err(McpProbeError::PermissionDenied),
+            );
+        }
+    }
+    grant(
+        &all,
+        ReadScope::Facets {
+            ids: vec![FACET_B.into()],
+        },
+    );
+    assert_eq!(
+        probe(&journal, "get_week", week_args),
+        Err(McpProbeError::PermissionDenied),
+    );
+    let listed = probe(
+        &journal,
+        "search",
+        json!({
+            "day": day, "kind": ["places", "photos", "notes"]
+        }),
+    )
+    .unwrap();
+    assert_eq!(listed["results"], json!([]));
+    let fetched = probe(&journal, "fetch", json!({"references": [photos[0]]})).unwrap();
+    assert_eq!(fetched["items"][0]["error"]["code"], "not_found");
+}
+
+#[test]
+fn batched_reference_reads_match_single_pages_and_keep_individual_failures() {
+    let journal = body_record_journal(true);
+    let day = "20260308";
+    let segment = journal.path().join("chronicle/20260308/default/090000_300");
+    fs::create_dir_all(segment.join("talents")).unwrap();
+    fs::write(
+        segment.join("meeting_transcript.md"),
+        "a morning conversation",
+    )
+    .unwrap();
+    fs::write(segment.join("talents/facets.json"), r#"[{"facet":"beta"}]"#).unwrap();
+    let native = probe(&journal, "list_activities", json!({"from": day, "to": day})).unwrap();
+    let row = native["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["title"] == "Beta work")
+        .unwrap();
+    let pairs =
+        [
+            ("get_activity_sources", row["reference"].clone()),
+            (
+                "get_transcript",
+                probe(&journal, "list_transcripts", json!({"day": day})).unwrap()["transcripts"][0]
+                    ["reference"]
+                    .clone(),
+            ),
+        ];
+    for (tool, reference) in &pairs {
+        assert!(reference.is_string(), "{tool}");
+        let single = probe(&journal, tool, json!({"reference":reference})).unwrap();
+        let batch = probe(&journal, tool, json!({"references":[reference, "missing"]})).unwrap();
+        assert_eq!(
+            crate::dispatch::canonical_content(&batch["items"][0]["result"]),
+            crate::dispatch::canonical_content(&single),
+            "{tool}",
+        );
+        assert_eq!(batch["items"][1]["error"]["code"], "not_found");
+        assert_eq!(
+            probe(
+                &journal,
+                tool,
+                json!({"reference":reference,"references":[reference]})
+            ),
+            Err(McpProbeError::InvalidInput),
+        );
+        assert_eq!(
+            probe(&journal, tool, json!({"references":vec!["missing"; 13]})),
+            Err(McpProbeError::InvalidInput),
+        );
+    }
+    let alpha = journal.path().join("chronicle/20260308/desk/093000_300");
+    fs::create_dir_all(alpha.join("talents")).unwrap();
+    fs::write(alpha.join("meeting_transcript.md"), "a second conversation").unwrap();
+    fs::write(alpha.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "facets".into(), "body".into()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.into()],
+                },
+            },
+        )
+        .unwrap();
+    let list = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();
+    let allowed = &list["transcripts"][0]["reference"];
+    let denied = &pairs[1].1;
+    assert!(allowed.as_str().unwrap().contains("/093000_300/"), "{list}");
+    assert!(
+        denied.as_str().unwrap().contains("/090000_300/"),
+        "{denied}"
+    );
+    let mixed = probe(
+        &journal,
+        "get_transcript",
+        json!({"references": [denied, allowed]}),
+    )
+    .unwrap();
+    assert_eq!(mixed["items"][0]["error"]["code"], "not_found");
+    assert!(
+        mixed["items"][1]["result"]["entries"]
+            .to_string()
+            .contains("second conversation")
     );
 }

@@ -86,7 +86,7 @@ fn screen_text_only_advertises_search_and_fetch_not_transcripts() {
         .find(|t| t["name"] == "search")
         .unwrap();
     assert_eq!(
-        search_tool["inputSchema"]["properties"]["category"]["enum"],
+        search_tool["inputSchema"]["properties"]["kind"]["anyOf"][0]["enum"],
         json!(["screen_text"])
     );
 }

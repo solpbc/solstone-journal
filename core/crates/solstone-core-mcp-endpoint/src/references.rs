@@ -143,6 +143,10 @@ pub(crate) struct TranscriptListCursor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub day: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_to: Option<String>,

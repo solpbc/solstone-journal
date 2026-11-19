@@ -19,6 +19,7 @@ pub(crate) use search::ValidatedSearch;
 pub(crate) use transcripts::{ValidatedGetTranscript, ValidatedListTranscripts};
 pub(crate) use week::ValidatedGetWeek;
 
+pub(crate) const MAX_BATCH_REFERENCES: usize = 12;
 pub(crate) const MAX_OPAQUE_REFERENCE_BYTES: usize = 2_048;
 pub(crate) const MAX_DAY_BYTES: usize = 32;
 pub(crate) const MAX_FACET_BYTES: usize = 256;
@@ -60,7 +61,9 @@ pub(crate) fn optional_string_within_limit(value: &Option<String>, maximum: usiz
 pub(crate) enum ValidatedTool {
     ListFacets(ValidatedListFacets),
     Search(ValidatedSearch),
+    Find(crate::jsonrpc::ToolName, ValidatedSearch),
     Fetch(ValidatedFetch),
+    ReadBatch(crate::jsonrpc::ToolName, Vec<String>),
     ListTranscripts(ValidatedListTranscripts),
     GetTranscript(ValidatedGetTranscript),
     ListEntities(ValidatedListEntities),
@@ -126,7 +129,7 @@ impl ToolError {
                 "the reference or cursor did not resolve to anything this connection may read; pass one unchanged from a fresh result"
             }
             Self::SourceArguments => {
-                "source needs a day and can't be combined with facet, and kind needs a body source"
+                "source needs a day and can't be combined with facet, and entry_kind needs a body source"
             }
             Self::ActivityDayArguments => {
                 "day can't be combined with day_from or day_to: send one day or a range, and day_to can't be before day_from"

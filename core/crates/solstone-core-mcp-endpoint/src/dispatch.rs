@@ -42,9 +42,9 @@ use crate::references::{
 use crate::registry::{ToolEntry, category_token, find_tool, requirement_refusal};
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
 use crate::tools::{
-    ToolError, ValidatedFetch, ValidatedGetEntity, ValidatedGetTranscript, ValidatedGetWeek,
-    ValidatedListEntities, ValidatedListFacets, ValidatedListTranscripts, ValidatedSearch,
-    ValidatedTool, execute_after_audit,
+    ToolError, ValidatedFetch, ValidatedGetActivitySources, ValidatedGetEntity,
+    ValidatedGetTranscript, ValidatedGetWeek, ValidatedListEntities, ValidatedListFacets,
+    ValidatedListTranscripts, ValidatedSearch, ValidatedTool, execute_after_audit,
 };
 
 /// Upper bound on indexed rows examined to fill one search page after live drops.
@@ -101,7 +101,7 @@ activity's sources. This is a complete answer, not an error: asking again return
 /// the owner's log carries exactly those. One prepared value, two audiences.
 pub(crate) struct Prepared {
     value: Value,
-    image: Option<Vec<u8>>,
+    images: Vec<Vec<u8>>,
     count: usize,
     targets: Vec<String>,
     empty_note: Option<String>,
@@ -112,7 +112,7 @@ impl Prepared {
     pub(crate) fn new(value: Value, count: usize, targets: Vec<String>) -> Self {
         Self {
             value,
-            image: None,
+            images: Vec::new(),
             count,
             targets,
             empty_note: None,
@@ -146,7 +146,7 @@ impl Prepared {
 /// a skill-file rule did not stop it). The response itself is the lever, so a
 /// valid zero says so in words beside the typed empty array.
 pub(crate) struct ToolOutput {
-    pub(crate) image: Option<Vec<u8>>,
+    pub(crate) images: Vec<Vec<u8>>,
     pub(crate) value: Value,
     pub(crate) empty_note: Option<String>,
 }
@@ -326,10 +326,18 @@ pub(crate) fn dispatch_authenticated_tool_call(
     let shape = result_shape(
         prepared.count,
         prepared.targets,
-        if let Some(image) = &prepared.image {
+        if prepared.images.len() == 1 && prepared.value.get("items").is_none() {
+            let image = &prepared.images[0];
             content_digest(
                 &json!({"value": prepared.value, "image_sha256": format!("{:x}", Sha256::digest(image))}),
             )
+        } else if !prepared.images.is_empty() {
+            let digests: Vec<_> = prepared
+                .images
+                .iter()
+                .map(|image| format!("{:x}", Sha256::digest(image)))
+                .collect();
+            content_digest(&json!({"value": prepared.value, "image_sha256": digests}))
         } else {
             content_digest(&prepared.value)
         },
@@ -346,7 +354,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
         .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))?;
 
     Ok(ToolOutput {
-        image: prepared.image,
+        images: prepared.images,
         value: prepared.value,
         empty_note: prepared.empty_note,
     })
@@ -419,11 +427,22 @@ fn scope_refusal(
     request: &ValidatedTool,
 ) -> Option<(String, Option<AdmittedCategory>)> {
     let named = match request {
-        ValidatedTool::Search(request) => request
+        ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => request
             .category
-            .filter(|category| !snapshot.categories.contains(category)),
+            .into_iter()
+            .chain(request.content_kinds.iter().flatten().copied())
+            .find(|category| !snapshot.categories.contains(category)),
         _ => fetch_target_missing_kind(journal_root, principal, snapshot, request),
     };
+    let named = named.or_else(|| match request {
+        ValidatedTool::Search(request) | ValidatedTool::Find(_, request)
+            if request.place.is_some()
+                && !snapshot.categories.contains(&AdmittedCategory::Places) =>
+        {
+            Some(AdmittedCategory::Places)
+        }
+        _ => None,
+    });
     if let Some(kind) = named {
         return Some((kind_refusal(kind), Some(kind)));
     }
@@ -580,19 +599,39 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
         }
-        ValidatedTool::Search(request) => {
+        ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => {
             arguments.insert("query".to_owned(), request.query.clone().into());
             arguments.insert("limit".to_owned(), request.limit.into());
             insert_present(&mut arguments, "day", request.day.as_deref());
             insert_present(&mut arguments, "day_from", request.day_from.as_deref());
             insert_present(&mut arguments, "day_to", request.day_to.as_deref());
             insert_present(&mut arguments, "facet", request.facet_id.as_deref());
+            insert_present(&mut arguments, "person", request.person.as_deref());
+            insert_present(&mut arguments, "place", request.place.as_deref());
+            insert_present(&mut arguments, "activity", request.activity.as_deref());
+            if let Some(kinds) = &request.content_kinds {
+                arguments.insert(
+                    "kind".into(),
+                    json!(kinds.iter().map(category_token).collect::<Vec<_>>()),
+                );
+            }
             if let Some(category) = request.category {
                 arguments.insert("category".to_owned(), category_token(&category).into());
             }
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
+        }
+        ValidatedTool::ReadBatch(_, references) => {
+            arguments.insert(
+                "references".to_owned(),
+                json!(
+                    references
+                        .iter()
+                        .map(|reference| reference_fingerprint(reference))
+                        .collect::<Vec<_>>()
+                ),
+            );
         }
         ValidatedTool::Fetch(request) => {
             arguments.insert(
@@ -603,11 +642,13 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
         ValidatedTool::ListTranscripts(request) => {
             arguments.insert("limit".to_owned(), request.limit.into());
             insert_present(&mut arguments, "day", request.day.as_deref());
+            insert_present(&mut arguments, "day_from", request.day_from.as_deref());
+            insert_present(&mut arguments, "day_to", request.day_to.as_deref());
             insert_present(&mut arguments, "facet", request.facet_id.as_deref());
             insert_present(&mut arguments, "time_from", request.time_from.as_deref());
             insert_present(&mut arguments, "time_to", request.time_to.as_deref());
             insert_present(&mut arguments, "source", request.source.as_deref());
-            insert_present(&mut arguments, "kind", request.kind.as_deref());
+            insert_present(&mut arguments, "entry_kind", request.kind.as_deref());
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
@@ -636,6 +677,18 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
         }
         ValidatedTool::GetWeek(request) => {
             insert_present(&mut arguments, "week", request.week.as_deref());
+            if !request.include.is_empty() {
+                arguments.insert(
+                    "include".into(),
+                    json!(
+                        request
+                            .include
+                            .iter()
+                            .map(category_token)
+                            .collect::<Vec<_>>()
+                    ),
+                );
+            }
         }
         ValidatedTool::ListActivities(request) => {
             arguments.insert("limit".to_owned(), request.limit.into());
@@ -703,6 +756,74 @@ fn validate(
     entry: &ToolEntry,
     arguments: Option<&Value>,
 ) -> Result<ValidatedTool, DispatchError> {
+    if matches!(
+        entry.tool_name,
+        crate::jsonrpc::ToolName::Fetch
+            | crate::jsonrpc::ToolName::GetTranscript
+            | crate::jsonrpc::ToolName::GetActivitySources
+    ) && let Some(object) = arguments.and_then(Value::as_object)
+        && let Some(references) = object.get("references")
+    {
+        let Some(references) = references.as_array() else {
+            return Err(DispatchError::InvalidInput);
+        };
+        if object.len() != 1
+            || !(1..=crate::tools::MAX_BATCH_REFERENCES).contains(&references.len())
+        {
+            return Err(DispatchError::InvalidInput);
+        }
+        let references = references
+            .iter()
+            .map(|reference| {
+                reference
+                    .as_str()
+                    .filter(|value| {
+                        !value.is_empty() && value.len() <= crate::tools::MAX_OPAQUE_REFERENCE_BYTES
+                    })
+                    .map(str::to_owned)
+                    .ok_or(DispatchError::InvalidInput)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(ValidatedTool::ReadBatch(entry.tool_name, references));
+    }
+    use crate::jsonrpc::ToolName;
+    if matches!(
+        entry.tool_name,
+        ToolName::ListActivities | ToolName::ListTranscripts
+    ) && let Some(object) = arguments.and_then(Value::as_object)
+        && (["person", "place", "activity"]
+            .iter()
+            .any(|key| object.contains_key(*key))
+            || (object.contains_key("kind")
+                && !(entry.tool_name == ToolName::ListTranscripts
+                    && object.contains_key("source")
+                    && object.get("kind").is_some_and(Value::is_string))))
+    {
+        if object.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "day"
+                    | "day_from"
+                    | "day_to"
+                    | "from"
+                    | "to"
+                    | "facet"
+                    | "limit"
+                    | "cursor"
+                    | "kind"
+                    | "person"
+                    | "place"
+                    | "activity"
+            )
+        }) {
+            return Err(DispatchError::InvalidInput);
+        }
+        let request = crate::tools::search::validate(arguments).map_err(|error| match error {
+            ToolError::InvalidInput => DispatchError::InvalidInput,
+            error => DispatchError::Tool(error),
+        })?;
+        return Ok(ValidatedTool::Find(entry.tool_name, request));
+    }
     let validated = match entry.tool_name {
         crate::jsonrpc::ToolName::ListFacets => {
             crate::tools::facets::validate(arguments).map(ValidatedTool::ListFacets)
@@ -802,11 +923,81 @@ fn get_week(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetWeek,
 ) -> Result<Prepared, DispatchError> {
-    let read =
-        crate::tools::week::read_week(journal_root, request.week.as_deref(), principal, snapshot)
-            .map_err(DispatchError::Tool)?;
-    // A said entry's `uri` locates its source; it is not prose.
-    Ok(Prepared::new(read.value, read.count, read.targets).served_as_is(&["uri"]))
+    let read = crate::tools::week::read_week(journal_root, &request, principal, snapshot)
+        .map_err(DispatchError::Tool)?;
+    // A said entry's uri and the already-literal preview snippets keep their bytes.
+    Ok(
+        Prepared::new(read.value, read.count, read.targets).served_as_is(&[
+            "uri",
+            "snippet",
+            "description",
+        ]),
+    )
+}
+
+/// The same admitted rows that a kind-filtered search returns. Return the
+/// audit coordinates alongside the compact preview.
+pub(crate) fn week_kind_summary(
+    journal: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    kind: AdmittedCategory,
+) -> (Value, Vec<String>) {
+    let request = ValidatedSearch {
+        query: String::new(),
+        limit: 100,
+        cursor: None,
+        day: Some(day.to_owned()),
+        day_from: None,
+        day_to: None,
+        category: None,
+        content_kinds: Some(BTreeSet::from([kind])),
+        facet_id: None,
+        person: None,
+        place: None,
+        activity: None,
+    };
+    let result = match search(journal, principal, snapshot, request) {
+        Ok(result) => result,
+        Err(DispatchError::Tool(error)) => {
+            return (json!({"note": error.agent_message()}), Vec::new());
+        }
+        Err(_) => {
+            return (
+                json!({"note": "this day's entries could not be read"}),
+                Vec::new(),
+            );
+        }
+    };
+    let rows = result.value["results"].as_array().expect("search rows");
+    let mut items = Vec::new();
+    let limit = if kind == AdmittedCategory::Notes {
+        8
+    } else {
+        3
+    };
+    for row in rows.iter().take(limit) {
+        let mut item = json!({"title": row["title"]});
+        for field in ["reference", "link"] {
+            if let Some(value) = row.get(field) {
+                item[field] = value.clone();
+            }
+        }
+        if kind == AdmittedCategory::Photos {
+            item["description"] = row["description"].clone();
+        }
+        items.push(item);
+    }
+    let mut summary = json!({"count": rows.len(), "items": items});
+    if !result.value["next_cursor"].is_null()
+        || result.value["coverage"]["live_examination_complete"] != true
+        || result.value["coverage"]["index_classification_complete"] != true
+        || result.value["degraded"] == true
+    {
+        summary["count_is_lower_bound"] = json!(true);
+    }
+    (summary, result.targets)
 }
 
 fn execute_validated(
@@ -831,7 +1022,29 @@ fn execute_validated(
             )
         }
         ValidatedTool::Search(request) => search(journal_root, principal, snapshot, request),
+        ValidatedTool::Find(tool, request) => {
+            let mut found = search(journal_root, principal, snapshot, request)?;
+            let rows_key = match tool {
+                crate::jsonrpc::ToolName::ListActivities => "activities",
+                crate::jsonrpc::ToolName::ListTranscripts => "transcripts",
+                _ => unreachable!("only list tools use the find projection"),
+            };
+            found.value[rows_key] = found
+                .value
+                .as_object_mut()
+                .expect("search result object")
+                .remove("results")
+                .expect("search rows");
+            Ok(found)
+        }
         ValidatedTool::Fetch(request) => fetch(journal_root, principal, snapshot, request),
+        ValidatedTool::ReadBatch(tool, references) => Ok(read_batch(
+            journal_root,
+            principal,
+            snapshot,
+            tool,
+            references,
+        )),
         ValidatedTool::ListTranscripts(request) => {
             list_transcripts(journal_root, principal, snapshot, request)
         }
@@ -853,9 +1066,101 @@ fn execute_validated(
     }
 }
 
+/// Batch one page per reference through the existing readers. The outer
+/// dispatch still admits and releases the entire response under one grant.
+fn read_batch(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    tool: crate::jsonrpc::ToolName,
+    references: Vec<String>,
+) -> Prepared {
+    use crate::jsonrpc::ToolName;
+
+    const MAX_ITEM_TEXT_BYTES: usize = 192 * 1024;
+    const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
+    let mut items = Vec::with_capacity(references.len());
+    let mut batch = Prepared::new(Value::Null, 0, Vec::new());
+    let mut text_bytes = 0;
+    let mut image_bytes = 0;
+    for (index, reference) in references.into_iter().enumerate() {
+        let read = match tool {
+            ToolName::Fetch => fetch(
+                journal_root,
+                principal,
+                snapshot,
+                ValidatedFetch { reference },
+            ),
+            ToolName::GetTranscript => get_transcript(
+                journal_root,
+                principal,
+                snapshot,
+                ValidatedGetTranscript {
+                    reference,
+                    cursor: None,
+                },
+            ),
+            ToolName::GetActivitySources => crate::tools::activities::execute_get_sources(
+                journal_root,
+                principal,
+                snapshot,
+                ValidatedGetActivitySources {
+                    reference,
+                    cursor: None,
+                },
+            ),
+            _ => unreachable!("only reference readers are batchable"),
+        };
+        let mut item = match read {
+            Ok(item) => item,
+            Err(error) => {
+                let error = match error {
+                    DispatchError::Tool(error) => error,
+                    _ => ToolError::ReferenceNotFound,
+                };
+                items.push(json!({
+                    "index": index,
+                    "error": {"code": error.reason(), "message": error.agent_message()},
+                }));
+                continue;
+            }
+        };
+        literal_journal_values(&mut item.value, item.served_as_is);
+        let result = crate::jsonrpc::with_note(item.value, item.empty_note.as_deref());
+        let mut row = json!({"index": index, "result": result});
+        if !item.images.is_empty() {
+            // The text result is content[0], followed by the images.
+            row["image_content_index"] = json!(batch.images.len() + 1);
+        }
+        let bytes = row.to_string().len();
+        let image_size: usize = item.images.iter().map(Vec::len).sum();
+        if text_bytes + bytes > MAX_ITEM_TEXT_BYTES || image_bytes + image_size > MAX_IMAGE_BYTES {
+            items.push(json!({
+                "index": index,
+                "error": {
+                    "code": "batch_size_limit",
+                    "message": "read this reference separately or in a smaller batch",
+                },
+            }));
+            continue;
+        }
+        items.push(row);
+        text_bytes += bytes;
+        image_bytes += image_size;
+        batch.count += item.count;
+        batch.targets.extend(item.targets);
+        batch.images.extend(item.images);
+    }
+    batch.value = json!({"items": items});
+    // Each successful item was made literal with its own reader's rules.
+    batch.served_as_is(&["result"])
+}
+
 fn arguments_within_scope(snapshot: &ConnectionReadSnapshot, request: &ValidatedTool) -> bool {
     let requested_facet = match request {
-        ValidatedTool::Search(request) => request.facet_id.as_deref(),
+        ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => {
+            request.facet_id.as_deref()
+        }
         ValidatedTool::ListTranscripts(request) => request.facet_id.as_deref(),
         ValidatedTool::ListEntities(request) => request.facet_id.as_deref(),
         _ => None,
@@ -1386,10 +1691,31 @@ fn search(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
-    request: ValidatedSearch,
+    mut request: ValidatedSearch,
 ) -> Result<Prepared, DispatchError> {
+    let filtered = request.content_kinds.is_some()
+        || request.activity.is_some()
+        || request.person.is_some()
+        || request.place.is_some();
+    if filtered
+        && request.query.trim().is_empty()
+        && request.day.is_none()
+        && request.day_from.is_none()
+        && request.day_to.is_none()
+    {
+        request.day_to = Some(solstone_core_time::day_key(
+            Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+                .date(),
+        ));
+    }
     let boundary =
         boundary(snapshot, None, request.facet_id.as_deref()).filtered_to(request.category);
+    let boundary = if let Some(kinds) = &request.content_kinds {
+        boundary.with_kind_filter(Some(kinds.clone()))
+    } else {
+        boundary
+    };
     let resolution =
         resolve_search_entities(journal_root, principal, snapshot, &boundary, &request);
     let resolution_status_str = match resolution.status {
@@ -1410,7 +1736,7 @@ fn search(
             })
         })
         .collect::<Vec<_>>();
-    let query_hash = digest_json(&json!({
+    let mut query_identity = json!({
         "query": request.query,
         "effective_query": resolution.effective_query,
         "day": request.day,
@@ -1422,7 +1748,21 @@ fn search(
             "status": resolution_status_str,
             "identities": resolution_identities_val,
         },
-    }));
+    });
+    if let Some(kinds) = &request.content_kinds {
+        query_identity["content_kind"] =
+            json!(kinds.iter().map(category_token).collect::<Vec<_>>());
+    }
+    for (key, value) in [
+        ("person", &request.person),
+        ("place", &request.place),
+        ("activity", &request.activity),
+    ] {
+        if let Some(value) = value {
+            query_identity[key] = json!(value);
+        }
+    }
+    let query_hash = digest_json(&query_identity);
     let mut start_after = request
         .cursor
         .as_deref()
@@ -1437,6 +1777,10 @@ fn search(
             )
         })
         .transpose()?;
+    let mut locations = BTreeMap::new();
+    let mut location_documents = BTreeMap::new();
+    let may_read_locations = snapshot.categories.contains(&AdmittedCategory::Places)
+        && matches!(snapshot.scope, ConnectionScope::WholeJournal);
     let mut results = Vec::new();
     let mut owner_links = crate::journal_links::Recordings::default();
     let mut screen_text_checks = std::collections::BTreeMap::new();
@@ -1510,15 +1854,23 @@ fn search(
                 activity_proof: None,
                 omit_cursor: false,
             });
-            if !live_allows(
-                journal_root,
-                &boundary,
-                &hit.metadata.path,
-                Some(&hit.metadata.stream),
-            ) {
+            let Some(classification) = FacetDeclarationSet::from_journal(journal_root)
+                .ok()
+                .map(|declarations| {
+                    classify_source(
+                        journal_root,
+                        &hit.metadata.path,
+                        Some(&hit.metadata.stream),
+                        &declarations,
+                    )
+                })
+                .filter(|classification| {
+                    boundary.allows_classification(journal_root, classification)
+                })
+            else {
                 live_dropped = true;
                 continue;
-            }
+            };
             let (served_text, activity_proof, hidden, record, record_identity) =
                 match admit_activity(
                     journal_root,
@@ -1596,6 +1948,117 @@ fn search(
             } else {
                 served_text
             };
+            let photo = crate::photo_picture::is_photo_description(&hit.metadata.path);
+            let category = solstone_core_format::content::kinds::indexed_permission(
+                Some(journal_root),
+                &hit.metadata.path,
+                classification
+                    .category
+                    .and_then(AdmittedCategory::from_stored_word)
+                    .unwrap_or(AdmittedCategory::Transcripts),
+            );
+            if request.query.trim().is_empty()
+                && request.content_kinds.is_some()
+                && match category {
+                    AdmittedCategory::Photos => !photo || hit.metadata.idx != 0,
+                    AdmittedCategory::Notes => hit.metadata.idx != 0,
+                    _ => false,
+                }
+            {
+                continue;
+            }
+            if !matches_find_filters(&request, record.as_ref(), category) {
+                continue;
+            }
+            let mut activity_source = None;
+            if filtered
+                && let (Some(record), Some(id), Some((facet, day))) = (
+                    &record,
+                    record_identity.as_deref(),
+                    crate::body_source::activity_file_place(&hit.metadata.path),
+                )
+            {
+                let Some(seen) =
+                    crate::may_see::activity_at(journal_root, snapshot, &facet, &day, id, None)
+                else {
+                    continue;
+                };
+                let shown = match &seen.record {
+                    crate::may_see::SeenRecord::Activity(row)
+                    | crate::may_see::SeenRecord::Body(row) => row,
+                };
+                if shown != record {
+                    live_dropped = true;
+                    continue;
+                }
+                activity_source = Some(activity_reference(
+                    principal,
+                    snapshot,
+                    ActivityReference {
+                        facet_id: seen.place.facet_id,
+                        facet_dir: seen.place.facet_dir,
+                        day,
+                        record_identity: id.to_owned(),
+                        file_digest: seen.file_digest,
+                        unit_index: None,
+                        source_binding: None,
+                    },
+                )?);
+            }
+            if category == AdmittedCategory::Places
+                && let Some(day) = location_file_day(&hit.metadata.path)
+            {
+                let live = location_documents
+                    .entry(day.to_owned())
+                    .or_insert_with(|| current_location_document(journal_root, day));
+                if !verified_markdown_document(
+                    journal_root,
+                    &hit.metadata.path,
+                    hit.metadata.idx,
+                    &served_text,
+                )
+                .is_some_and(|text| {
+                    live.as_ref()
+                        .is_none_or(|current| current.as_deref() == Some(&text))
+                }) {
+                    live_dropped = true;
+                    continue;
+                }
+            }
+            if let Some(place) = &request.place {
+                if !may_read_locations {
+                    continue;
+                }
+                let place = fold_literal(place);
+                let matched = if category == AdmittedCategory::Places {
+                    fold_literal(&served_text).contains(&place)
+                } else {
+                    record
+                        .as_ref()
+                        .and_then(|record| {
+                            let span = solstone_core_facets::activity_span(record)?;
+                            let stream = record.get("stream").and_then(Value::as_str);
+                            locations
+                                .entry(hit.metadata.day.clone())
+                                .or_insert_with(|| {
+                                    crate::tools::week::activity_locations(
+                                        journal_root,
+                                        &hit.metadata.day,
+                                    )
+                                })
+                                .as_ref()
+                                .and_then(|(store, day)| {
+                                    solstone_core_location::location_beside(
+                                        day, store, span, stream,
+                                    )
+                                })
+                        })
+                        .is_some_and(|location| fold_literal(&location.words).contains(&place))
+                };
+                if !matched {
+                    continue;
+                }
+            }
             let memory_origin = if hit.metadata.stream.starts_with("agent-memory-") {
                 let Some(origin) =
                     memory_hit_origin(journal_root, &hit.metadata.path, &hit.metadata.stream)
@@ -1701,6 +2164,44 @@ fn search(
                 &hit.metadata.path,
                 hit_activity_id.as_deref(),
             );
+            if let Some(kind) = request.content_kinds.as_ref().and_then(|kinds| {
+                if kinds.contains(&category) {
+                    Some(category)
+                } else {
+                    solstone_core_format::content::kinds::additional_indexed_permission(
+                        &hit.metadata.path,
+                    )
+                    .filter(|extra| kinds.contains(extra))
+                }
+            }) {
+                value["content_kind"] = json!(kind.as_str());
+            }
+            if let Some(reference) = activity_source {
+                value["activity_reference"] = json!(reference);
+            }
+            if let Some(record) = &record {
+                if request.activity.is_some() || request.content_kinds.is_some() {
+                    value["title"] = json!(crate::tools::activities::activity_title(record));
+                }
+            } else if photo || category == AdmittedCategory::Notes {
+                if let Some(title) = material_title(&served_text) {
+                    value["title"] = json!(title);
+                }
+                if photo {
+                    value["description"] = value["snippet"].clone();
+                }
+                if value.get("link").is_none()
+                    && solstone_core_journal_io::is_day_key(&hit.metadata.day)
+                {
+                    crate::journal_links::attach(
+                        journal_root,
+                        &mut value,
+                        solstone_core_journal_link::Place::Day {
+                            day: hit.metadata.day.clone(),
+                        },
+                    );
+                }
+            }
             if is_possible_name {
                 // Tentative: the journal's guess at who or what was meant.
                 value["possible_name"] = Value::Bool(true);
@@ -1836,13 +2337,17 @@ fn search(
     // A connection without the body permission is told when its search would
     // have found body data with it. Once, on the first page.
     let body_withheld = request.cursor.is_none()
+        && request.content_kinds.is_none()
         && search_withheld_body(journal_root, snapshot, &boundary, &resolution, &request)?;
     if body_withheld {
         response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
     }
     // Each snippet is made literal where it is cut.
-    let mut prepared =
-        Prepared::new(response_val, count, targets).served_as_is(&["snippet", "query"]);
+    let mut prepared = Prepared::new(response_val, count, targets).served_as_is(&[
+        "snippet",
+        "query",
+        "description",
+    ]);
     if count == 0 && body_withheld {
         prepared = prepared.when_empty(crate::body_source::BODY_NOT_GRANTED);
     } else if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
@@ -1853,6 +2358,53 @@ fn search(
         });
     }
     Ok(prepared)
+}
+
+/// Prefer a heading from the material itself, whenever one exists.
+fn material_title(text: &str) -> Option<String> {
+    let line = text.lines().find(|line| !line.trim().is_empty())?.trim();
+    let heading = line.trim_start_matches('#').strip_prefix(' ')?;
+    Some(heading.chars().take(160).collect())
+}
+
+fn matches_find_filters(
+    request: &ValidatedSearch,
+    record: Option<&Map<String, Value>>,
+    category: AdmittedCategory,
+) -> bool {
+    use crate::tools::activities::{activity_kind, activity_people_across};
+    if request.activity.as_deref().is_some_and(|wanted| {
+        // A mixed-kind find leaves selected original material in the answer.
+        // With no other kind selected the activity predicate is exclusive.
+        if category != AdmittedCategory::Facets {
+            return request
+                .content_kinds
+                .as_ref()
+                .is_none_or(|kinds| !kinds.contains(&category));
+        }
+        !record
+            .and_then(activity_kind)
+            .is_some_and(|kind| kind.eq_ignore_ascii_case(wanted))
+    }) {
+        return false;
+    }
+    if request.person.as_deref().is_some_and(|name| {
+        let name = fold_literal(name);
+        !record
+            .map(|record| activity_people_across(std::iter::once(record)))
+            .is_some_and(|people| {
+                people
+                    .participants
+                    .iter()
+                    .chain(&people.heard)
+                    .chain(&people.mentioned)
+                    .chain(&people.on_screen)
+                    .any(|person| fold_literal(person).contains(&name))
+            })
+    }) {
+        return false;
+    }
+    true
 }
 
 /// Whether this search would have found body data had the connection held the
@@ -2057,6 +2609,20 @@ fn markdown_fetch(
         return Ok(MarkdownFetch::IndexedChunk);
     }
     Ok(MarkdownFetch::Reject)
+}
+
+fn location_file_day(path: &str) -> Option<&str> {
+    path.strip_prefix("chronicle/")
+        .unwrap_or(path)
+        .strip_suffix("/location.md")
+        .filter(|day| solstone_core_journal_io::is_day_key(day))
+}
+
+/// Current projection of a day the location writer has built. Older
+/// standalone documents still have to match their contained indexed bytes.
+fn current_location_document(journal: &Path, day: &str) -> Option<Option<String>> {
+    solstone_core_location::projection::read_build_record(journal, day)?;
+    Some(crate::tools::week::location_document(journal, day))
 }
 
 fn verified_markdown_document(
@@ -2264,6 +2830,17 @@ fn fetch(
                         .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
                     (crate::possible_names::matched_text(&live), None, None)
                 }
+                ActivityAdmit::NotActivity(content) if location_file_day(&entry.path).is_some() => {
+                    let day = location_file_day(&entry.path).expect("location document day");
+                    let text =
+                        verified_markdown_document(journal_root, &entry.path, entry.idx, &content)
+                            .filter(|text| {
+                                current_location_document(journal_root, day)
+                                    .is_none_or(|live| live.as_ref() == Some(text))
+                            })
+                            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    (text, None, None)
+                }
                 ActivityAdmit::NotActivity(content) => {
                     let text = match markdown_fetch(
                         journal_root,
@@ -2354,7 +2931,7 @@ fn fetch(
             }
             let target = format!("{}#{}", entry.path, entry.idx);
             let mut prepared = Prepared::new(value, 1, vec![target]).served_as_is(served_as_is);
-            prepared.image = picture;
+            prepared.images.extend(picture);
             Ok(prepared)
         }
         ReferenceTarget::Activity(act_ref) => {
@@ -2955,7 +3532,7 @@ pub(crate) fn read_entity(
         image = photo.jpeg.map(|bytes| bounded_photo(&bytes)).transpose()?;
     }
     let mut prepared = Prepared::new(value, 1, targets);
-    prepared.image = image;
+    prepared.images.extend(image);
     Ok(prepared)
 }
 
@@ -3008,6 +3585,8 @@ fn list_transcripts(
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             };
             if cursor.day != request.day
+                || cursor.day_from != request.day_from
+                || cursor.day_to != request.day_to
                 || cursor.time_from != request.time_from
                 || cursor.time_to != request.time_to
                 || cursor.facet != request.facet_id
@@ -3073,7 +3652,13 @@ fn list_transcripts(
             Vec::new()
         }
     } else {
-        let mut keys: Vec<String> = day_map.into_keys().collect();
+        let mut keys: Vec<String> = day_map
+            .into_keys()
+            .filter(|day| {
+                request.day_from.as_ref().is_none_or(|from| day >= from)
+                    && request.day_to.as_ref().is_none_or(|to| day <= to)
+            })
+            .collect();
         keys.sort_unstable_by(|a, b| b.cmp(a));
         keys
     };
@@ -3353,6 +3938,8 @@ fn list_transcripts(
                         snapshot.generation,
                         ReferenceTarget::TranscriptList(TranscriptListCursor {
                             day: request.day.clone(),
+                            day_from: request.day_from.clone(),
+                            day_to: request.day_to.clone(),
                             time_from: request.time_from.clone(),
                             time_to: request.time_to.clone(),
                             facet: request.facet_id.clone(),
@@ -3863,6 +4450,7 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                     !matches!(
                         *key,
                         "reference"
+                            | "activity_reference"
                             | "link"
                             | "next_cursor"
                             | "span_reference"

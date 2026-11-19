@@ -44,7 +44,7 @@ pub enum ConnectionScope {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConnectionBoundary {
     categories: BTreeSet<AdmittedCategory>,
-    category_filter: Option<AdmittedCategory>,
+    kind_filter: Option<BTreeSet<AdmittedCategory>>,
     scope: ConnectionScope,
 }
 
@@ -73,7 +73,7 @@ impl ConnectionBoundary {
         }
         Ok(Self {
             categories,
-            category_filter: None,
+            kind_filter: None,
             scope,
         })
     }
@@ -82,13 +82,20 @@ impl ConnectionBoundary {
         &self.categories
     }
 
-    pub fn filtered_to(mut self, category: Option<AdmittedCategory>) -> Self {
-        self.category_filter = category;
+    pub fn filtered_to(self, category: Option<AdmittedCategory>) -> Self {
+        self.with_kind_filter(category.map(|kind| BTreeSet::from([kind])))
+    }
+
+    /// The search selects these kinds using the connection's full grant.
+    pub fn with_kind_filter(mut self, kinds: Option<BTreeSet<AdmittedCategory>>) -> Self {
+        self.kind_filter = kinds;
         self
     }
 
-    pub fn category_filter(&self) -> Option<AdmittedCategory> {
-        self.category_filter
+    pub fn selects_kind(&self, kind: AdmittedCategory) -> bool {
+        self.kind_filter
+            .as_ref()
+            .is_none_or(|kinds| kinds.contains(&kind))
     }
 
     pub fn scope(&self) -> &ConnectionScope {
@@ -118,9 +125,7 @@ impl ConnectionBoundary {
         let category =
             solstone_core_format::content::kinds::indexed_permission(Some(journal), path, stored);
         if !self.categories.contains(&category)
-            || self
-                .category_filter
-                .is_some_and(|filter| filter != category)
+            || !self.selects_kind(category)
             || solstone_core_format::content::kinds::additional_indexed_permission(path)
                 .is_some_and(|required| !self.categories.contains(&required))
         {

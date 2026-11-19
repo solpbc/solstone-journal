@@ -14,6 +14,7 @@ use solstone_core_home::weekly::{
     Said, WeekJudgment, checked_neighbors, format_week_intro, judge, resolve_day_cell_state,
     week_day,
 };
+use solstone_core_indexer_query::AdmittedCategory;
 
 use super::ToolError;
 use crate::dispatch::{DispatchPrincipal, available_facets};
@@ -24,18 +25,34 @@ use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidatedGetWeek {
     pub(crate) week: Option<String>,
+    pub(crate) include: BTreeSet<AdmittedCategory>,
 }
+
+pub(crate) const SUMMARY_KINDS: &[AdmittedCategory] = &[
+    AdmittedCategory::Body,
+    AdmittedCategory::Places,
+    AdmittedCategory::Photos,
+    AdmittedCategory::Notes,
+    AdmittedCategory::Entities,
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WeekParams {
     #[serde(default)]
     week: Option<Value>,
+    #[serde(default)]
+    include: Vec<String>,
 }
 
 pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolError> {
     let params = match params {
-        None | Some(Value::Null) => return Ok(ValidatedGetWeek { week: None }),
+        None | Some(Value::Null) => {
+            return Ok(ValidatedGetWeek {
+                week: None,
+                include: BTreeSet::new(),
+            });
+        }
         Some(val) => val,
     };
     let params = serde_json::from_value::<WeekParams>(params.clone())
@@ -59,7 +76,19 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolE
         Some(_) => return Err(ToolError::InvalidInput),
     };
 
-    Ok(ValidatedGetWeek { week })
+    if params.include.len() > SUMMARY_KINDS.len() {
+        return Err(ToolError::InvalidInput);
+    }
+    let include = params
+        .include
+        .iter()
+        .map(|word| {
+            AdmittedCategory::from_stored_word(word)
+                .filter(|kind| SUMMARY_KINDS.contains(kind))
+                .ok_or(ToolError::InvalidInput)
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(ValidatedGetWeek { week, include })
 }
 
 pub(crate) struct WeekRead {
@@ -70,11 +99,11 @@ pub(crate) struct WeekRead {
 
 pub(crate) fn read_week(
     journal: &Path,
-    week: Option<&str>,
+    request: &ValidatedGetWeek,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
 ) -> Result<WeekRead, ToolError> {
-    let sunday_date = if let Some(day) = week {
+    let sunday_date = if let Some(day) = request.week.as_deref() {
         let Some(date) = week_day(day) else {
             return Err(ToolError::InvalidInput);
         };
@@ -87,7 +116,7 @@ pub(crate) fn read_week(
         today - Span::new().days(days_from_sun)
     };
 
-    project_sunday(journal, sunday_date, principal, snapshot)
+    project_sunday(journal, sunday_date, principal, snapshot, &request.include)
 }
 
 fn project_sunday(
@@ -95,6 +124,7 @@ fn project_sunday(
     sunday: Date,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
+    include: &BTreeSet<AdmittedCategory>,
 ) -> Result<WeekRead, ToolError> {
     let start_day = solstone_core_time::day_key(sunday);
     // A week ending past the last representable day is not one that can be read.
@@ -316,6 +346,20 @@ fn project_sunday(
         primary
     })
     .collect();
+    let mut people_by_day = BTreeMap::<String, BTreeSet<String>>::new();
+    if include.contains(&AdmittedCategory::Entities)
+        && snapshot.categories.contains(&AdmittedCategory::Entities)
+    {
+        for row in &collected {
+            let people = crate::tools::activities::activity_people_across(
+                std::iter::once(&row.record).chain(row.copies.iter()),
+            );
+            people_by_day
+                .entry(row.day.clone())
+                .or_default()
+                .extend(people.participants.into_iter().chain(people.heard));
+        }
+    }
     let activities_total = collected.len();
     let mut groups: BTreeMap<String, Vec<Collected>> = BTreeMap::new();
     for item in collected {
@@ -576,6 +620,108 @@ fn project_sunday(
         }
     }
 
+    if !include.is_empty() {
+        let today = solstone_core_time::day_key(now.date());
+        let mut day_keys: Vec<_> = week_dates
+            .iter()
+            .map(|date| solstone_core_time::day_key(*date))
+            .filter(|day| day <= &today)
+            .collect();
+        let mut body_days = BTreeMap::new();
+        let mut body_summary_note = None;
+        if !day_keys.is_empty()
+            && include.contains(&AdmittedCategory::Body)
+            && snapshot.categories.contains(&AdmittedCategory::Body)
+        {
+            if let Ok(previous) = sunday.yesterday() {
+                day_keys.insert(0, solstone_core_time::day_key(previous));
+            }
+            match crate::body_source::week_totals(journal, snapshot, &day_keys) {
+                Ok((totals, targets)) => {
+                    body_days = totals;
+                    windows.extend(targets);
+                }
+                Err(_) => body_summary_note = Some(ToolError::FileUnreadable.agent_message()),
+            }
+        }
+        let mut places = BTreeMap::new();
+        let mut places_note = None;
+        if include.contains(&AdmittedCategory::Places)
+            && snapshot.categories.contains(&AdmittedCategory::Places)
+        {
+            match location_documents(journal, &day_keys) {
+                Some(documents) => places = documents,
+                None => places_note = Some(ToolError::FileUnreadable.agent_message()),
+            }
+        }
+        let mut cells: BTreeMap<_, _> = days
+            .into_iter()
+            .filter_map(|cell| Some((cell["day"].as_str()?.to_owned(), cell)))
+            .collect();
+        for key in day_keys.into_iter().filter(|day| day >= &start_day) {
+            let cell = cells.entry(key.clone()).or_insert_with(|| {
+                let mut cell = json!({"day": key});
+                crate::journal_links::attach(
+                    journal,
+                    &mut cell,
+                    solstone_core_journal_link::Place::Day { day: key.clone() },
+                );
+                cell
+            });
+            let mut summary = Map::new();
+            for &kind in include {
+                let value = if !snapshot.categories.contains(&kind) {
+                    json!({"note": if kind == AdmittedCategory::Body {
+                        crate::body_source::BODY_NOT_GRANTED.to_owned()
+                    } else {
+                        crate::dispatch::kind_refusal(kind)
+                    }})
+                } else {
+                    match kind {
+                        AdmittedCategory::Body => {
+                            if let Some(note) = body_summary_note {
+                                json!({"note": note})
+                            } else {
+                                body_days.remove(&key).unwrap_or_else(|| json!({}))
+                            }
+                        }
+                        AdmittedCategory::Places => {
+                            if let Some(note) = places_note {
+                                json!({"note": note})
+                            } else if let Some(document) = places.remove(&key) {
+                                windows.push(format!("location:{key}"));
+                                let mut rows =
+                                    document.lines().filter_map(|line| line.strip_prefix("- "));
+                                let entries: Vec<String> = rows
+                                    .by_ref()
+                                    .take(4)
+                                    .map(|line| line.chars().take(240).collect())
+                                    .collect();
+                                json!({"items": entries, "more": rows.next().is_some()})
+                            } else {
+                                json!({"items": []})
+                            }
+                        }
+                        AdmittedCategory::Entities => {
+                            let people = people_by_day.remove(&key).unwrap_or_default();
+                            json!({"count": people.len(), "people": people.into_iter().take(12).collect::<Vec<_>>()})
+                        }
+                        _ => {
+                            let (value, targets) = crate::dispatch::week_kind_summary(
+                                journal, principal, snapshot, &key, kind,
+                            );
+                            windows.extend(targets);
+                            value
+                        }
+                    }
+                };
+                summary.insert(kind.as_str().to_owned(), value);
+            }
+            cell["summary"] = Value::Object(summary);
+        }
+        days = cells.into_values().collect();
+    }
+
     let memory_days = memories
         .iter()
         .filter_map(|memory| memory["day"].as_str())
@@ -635,6 +781,80 @@ fn project_sunday(
             .chain(windows)
             .collect(),
     })
+}
+
+/// Apply the map's live hide rules rather than serving a stale indexed place.
+fn admitted_locations(
+    journal: &Path,
+    dates: &[String],
+) -> Option<(
+    solstone_core_location::places::PlaceStore,
+    Vec<solstone_core_location::day::DayLocation>,
+)> {
+    use solstone_core_location::{day::Layout, places::PlaceStore};
+    let store = PlaceStore::read_strict(journal).ok()?;
+    let mut days = solstone_core_location::read_journal_days(journal, dates).ok()?;
+    let mut admitted = BTreeMap::new();
+    for day in &mut days {
+        day.entries.retain(|entry| {
+            let sources = entry.sources();
+            !sources.is_empty()
+                && sources.iter().all(|source| {
+                    let key = (
+                        source.day.clone(),
+                        source.stream.clone(),
+                        source.segment.clone(),
+                    );
+                    *admitted.entry(key).or_insert_with(|| {
+                        let path = match source.layout {
+                            Layout::Direct => format!(
+                                "chronicle/{}/{}/location.jsonl",
+                                source.day, source.segment
+                            ),
+                            Layout::Named => format!(
+                                "chronicle/{}/{}/{}/location.jsonl",
+                                source.day, source.stream, source.segment
+                            ),
+                        };
+                        crate::source_release::check_segment_transcript_release(
+                            journal,
+                            &source.day,
+                            &source.stream,
+                            &source.segment,
+                        ) && crate::activity_admit::read_contained_source(journal, &path).is_some()
+                    })
+                })
+        });
+    }
+    days.retain(|day| !day.entries.is_empty());
+    Some((store, days))
+}
+
+fn location_documents(journal: &Path, days: &[String]) -> Option<BTreeMap<String, String>> {
+    let (store, days) = admitted_locations(journal, days)?;
+    Some(
+        days.into_iter()
+            .map(|day| {
+                let text = solstone_core_location::projection::render_day_document(&day, &store);
+                (day.day, text)
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn location_document(journal: &Path, day: &str) -> Option<String> {
+    location_documents(journal, &[day.to_owned()])?.remove(day)
+}
+
+pub(crate) fn activity_locations(
+    journal: &Path,
+    day: &str,
+) -> Option<(
+    solstone_core_location::places::PlaceStore,
+    solstone_core_location::day::DayLocation,
+)> {
+    let (store, mut views) = admitted_locations(journal, &[day.to_owned()])?;
+    Some((store, views.pop()?))
 }
 
 /// A week's rows are keyed on the name each activity is shown under, so the

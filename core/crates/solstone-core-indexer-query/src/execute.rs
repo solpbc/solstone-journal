@@ -548,11 +548,7 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     let categories: Vec<_> = boundary
         .categories()
         .iter()
-        .filter(|category| {
-            boundary
-                .category_filter()
-                .is_none_or(|filter| filter == **category)
-        })
+        .filter(|category| boundary.selects_kind(**category))
         .map(|category| category.as_str().to_owned())
         .collect();
     if categories.is_empty() {

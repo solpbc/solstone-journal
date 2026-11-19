@@ -9,6 +9,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
+- your agents can read several journal entries, transcripts or activities in one call.
+- an agent can ask for daily summaries of body, places, photos, notes and people when it reads a week.
+- your agents can filter journal searches by date range, kind, facet, person, place or activity. photo and note results can include a preview and a link into your journal.
 - agents you allow to see photos now receive a smaller copy of each photo, without location or camera details, along with what your journal described in it.
 - profile pics is a new choice under entities for each agent you connect. it starts on, and agents you connected before keep receiving profile pics until you turn it off on the agents page.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
