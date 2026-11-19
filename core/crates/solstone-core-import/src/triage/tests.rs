@@ -485,6 +485,7 @@ fn camera_exif_takes_precedence_over_the_screenshot_name() {
     png.extend(b"eXIf");
     png.extend(tiff);
     png.extend([0u8; 4]);
+    add_png_chunk(&mut png, b"tEXt", b"Software\0gnome-screenshot");
     expected(
         "Screenshot_20250407-123123.png",
         png,
@@ -839,4 +840,334 @@ fn generic_turn_and_script_boundary_samples() {
     ] {
         expect_review_file(name, &text, kind, reason);
     }
+}
+
+#[test]
+fn export_headers_and_dominant_turns_keep_the_transcript() {
+    let header = "# Dock meeting\n**Date:** Oct 6 | **Duration:** 8m | **Participants:** Eleni, Lian\n## Overview\n";
+    let turns = "\n## Transcript\n**[00:01] Eleni:** The parcel is waiting by the ramp.\n**[00:04] Lian:** Could we move it inside before the rain?\n**[00:07] Eleni:** I will ask June to unlock the shed.\n";
+    assert_eq!(
+        classify(
+            format!("{header}Parcel delivery.{turns}").as_bytes(),
+            "entry.md",
+            Path::new("inbox"),
+            None,
+            None
+        )
+        .reasons[0],
+        "meeting_export_turns"
+    );
+    expected(
+        "entry.md",
+        format!(
+            "{header}### Route changes\n{}{turns}",
+            "The delivery route has been reviewed by the committee. ".repeat(180)
+        ),
+        Kind::Notes,
+        &["meeting_summary_note"],
+    );
+    expected(
+        "entry.md",
+        format!(
+            "# Dock meeting\nDate: Oct 6\nI pasted only the exchange that went into this note.\n{turns}"
+        ),
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "entry.txt",
+        "=== TRANSCRIPCIÓN DE CONVERSACIÓN ===\n[00:01] Tana: El barco sale al mediodía.\n[00:04] Ivo: Tengo los boletos.\n[00:07] Tana: Vamos al muelle.\n",
+        Kind::Transcripts,
+        &["meeting_export_turns", "bracketed_speaker"],
+    );
+    expected(
+        "turns.txt",
+        "Team report\n2026-10-06\nParticipants: Lian, Eleni\nLian: Is the kit dry?\nEleni: It needs another hour.\nLian: I'll open the window.\nEleni: Thanks for checking.\nLian: Is the spare ready?\nEleni: Yes, it is in the hall.\n",
+        Kind::Transcripts,
+        &["meeting_export_turns", "bare_speaker"],
+    );
+}
+
+#[test]
+fn labelled_exports_admit_annotations_emoji_and_exporter_namespaces() {
+    for (text, rule) in [
+        (
+            "11:03:20\t From Bela (she/her) : Did the ferry leave?\n11:03:42\t From Oren (Dock Co) : It leaves at noon.\n",
+            "zoom_chat",
+        ),
+        (
+            "19:14  * pilot calls over\n19:15 <@fen> Are you on the pier?\n19:16 <+tei> I'm at the far end.\n19:17 <@fen> I see you now.\n",
+            "irc_angle_nick",
+        ),
+        (
+            "> <external>:U123 [U123] @ 09/03/2025 18:00:00 Z:\nReady?\n| > Neri [U456] @ 09/03/2025 18:00:24 Z:\n| Yes.\n",
+            "slack_text",
+        ),
+        (
+            "2026/10/04, 12:04 - 🤓: We arrived.\n2026/10/04, 12:05 - Bela: I see your bag.\n",
+            "whatsapp_dash",
+        ),
+    ] {
+        assert_eq!(
+            classify(text.as_bytes(), "entry.txt", Path::new("inbox"), None, None).reasons[0],
+            rule
+        );
+    }
+}
+
+#[test]
+fn one_speaker_needs_an_exporter_mark() {
+    let whatsapp = "[4/10/2569 BE, 9:01:22] Neri: The ferry is late.\n[4/10/2569 BE, 9:02:10] Neri added you\n[4/10/2569 BE, 9:04:02] Neri: We just boarded.\n";
+    let notice =
+        "[4/10/2569 BE, 8:00:00] Messages and calls are end-to-end encrypted. Tap to learn more.\n";
+    expected(
+        "entry.txt",
+        format!("{notice}{whatsapp}"),
+        Kind::Transcripts,
+        &["whatsapp_bracketed"],
+    );
+    expected("entry.txt", whatsapp, Kind::Notes, &["note_default"]);
+    expected("entry.txt", notice, Kind::Notes, &["note_default"]);
+
+    let dutch = "01-10-2026 7:05 - Berichten en oproepen worden end-to-end versleuteld. Tik voor meer informatie.\n01-10-2026 7:06 - Sen: Goedemorgen.\n01-10-2026 7:07 - Sen: Tot straks.\n";
+    expected("entry.txt", dutch, Kind::Transcripts, &["whatsapp_dash"]);
+    let localized = "١٨\u{200f}/٣\u{200f}/٢٠٢٢، ٢:٥٦:٠٠ م";
+    let arabic = format!(
+        "[{localized}] الرسائل والمكالمات مشفرة تمامًا بين الطرفين.\n[{localized}] Sen: Ready.\n[{localized}] Sen: Let's leave.\n"
+    );
+    expected(
+        "entry.txt",
+        arabic,
+        Kind::Transcripts,
+        &["whatsapp_bracketed"],
+    );
+
+    let stacked = "Unknown Speaker  0:04\nThe wind is picking up.\nUnknown Speaker  2:13\nThe smaller boats have tied up.\n";
+    let footer = "Transcribed by https://otter.ai\n";
+    expected(
+        "entry.txt",
+        format!("{stacked}{footer}"),
+        Kind::Transcripts,
+        &["otter_export"],
+    );
+    expected("entry.txt", stacked, Kind::Notes, &["note_default"]);
+    expected(
+        "entry.txt",
+        format!("I meant to find this later.\n{footer}"),
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "entry.txt",
+        "Speaker 1 (00:06):\nI brought a rope for the dinghy.\nSpeaker 1 (01:26):\nIt is tied where the ramp meets the pier.\n",
+        Kind::Transcripts,
+        &["rev_numbered_speaker_clock"],
+    );
+    expected(
+        "entry.txt",
+        "Bela (00:06):\nI brought a rope for the dinghy.\nBela (01:26):\nIt is tied where the ramp meets the pier.\n",
+        Kind::Notes,
+        &["note_default"],
+    );
+    expected(
+        "entry.txt",
+        "[9:01] Bela: A strong wind.\n[9:02] Bela: One lantern out.\n[9:03] Bela: Lights come back.\n[9:04] Bela: The door shuts.\n[9:05] Bela: Clear skies now.\n",
+        Kind::Notes,
+        &["note_default"],
+    );
+}
+
+#[test]
+fn markdown_chat_exporter_signatures_require_both_roles() {
+    let claude = "# Ferry times\n\n# Human — May 18, 2026, 10:13 AM\nWhen is the next ferry?\n# Claude — May 18, 2026, 10:14 AM\nAt noon.\n";
+    expected(
+        "entry.md",
+        claude,
+        Kind::Transcripts,
+        &["ai_chat_markdown_export"],
+    );
+    expected(
+        "entry.md",
+        format!("# My notes\nI kept the exchange for my own reference.\n{claude}"),
+        Kind::Notes,
+        &["note_default"],
+    );
+    let chatgpt = "# Ferry times\n#### You:\nWhen is the next ferry?\n#### ChatGPT:\nAt noon.\n#### You:\n#### ChatGPT:\nThe next one after that is at three.\n";
+    expected(
+        "entry.md",
+        chatgpt,
+        Kind::Transcripts,
+        &["ai_chat_markdown_export"],
+    );
+    let exporter = "---\nauthor: chatgpt\ncount: 2\nexporter: 3.0.0\n---\n# Ferry times\n## chat-1\n> When is the next ferry?\nAt noon.\n## chat-2\n> And the next one?\nAt three.\n";
+    expected(
+        "entry.md",
+        exporter,
+        Kind::Transcripts,
+        &["ai_chat_markdown_export"],
+    );
+    expected(
+        "entry.md",
+        exporter.split("## chat-2").next().unwrap(),
+        Kind::Notes,
+        &["note_default"],
+    );
+}
+
+#[test]
+fn bare_flashcards_stay_notes_and_identified_interviews_keep_their_kind() {
+    for deck in [
+        "Front: Ancient clock\nBack: A sundial\nFront: Ocean clock\nBack: A tide gauge\nFront: Kitchen clock\nBack: A timer\n",
+        "# Navigation\nQ: When does the ferry leave?\nA: At noon.\nQ: Where is the rope?\nA: In the shed.\nQ: Who has the key?\nA: The harbor master.\n",
+    ] {
+        expected("entry.md", deck, Kind::Notes, &["note_default"]);
+    }
+    let interview = "# Interview with Eleni\nQ: When did you start?\nA: In May.\nQ: Who had the key?\nA: Lian had it.\n";
+    expected("entry.md", interview, Kind::Transcripts, &["role_labels"]);
+}
+
+fn add_png_chunk(png: &mut Vec<u8>, kind: &[u8; 4], value: &[u8]) {
+    png.extend(u32::try_from(value.len()).unwrap().to_be_bytes());
+    png.extend(kind);
+    png.extend(value);
+    // The minimal PNGs in these tests exercise metadata only.
+    png.extend([0; 4]);
+}
+
+#[test]
+fn screenshot_metadata_is_field_specific() {
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:e="http://ns.adobe.com/exif/1.0/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:RDF><rdf:Description><e:UserComment><rdf:Alt><rdf:li xml:lang="x-default">Screenshot</rdf:li></rdf:Alt></e:UserComment></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let png = |kind, data: &[u8]| {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        add_png_chunk(&mut bytes, kind, data);
+        bytes
+    };
+    let xmp_png = |xml: &str| {
+        let data = [b"XML:com.adobe.xmp\0\0\0\0\0".as_slice(), xml.as_bytes()].concat();
+        png(b"iTXt", &data)
+    };
+    expected(
+        "neutral.png",
+        xmp_png(xmp),
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+    expected(
+        "neutral.png",
+        xmp_png(&xmp.replace("Screenshot", " Screenshot ")),
+        Kind::Photos,
+        &["image_default"],
+    );
+
+    let jpeg_segment = [b"http://ns.adobe.com/xap/1.0/\0".as_slice(), xmp.as_bytes()].concat();
+    let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
+    jpeg.extend(u16::try_from(jpeg_segment.len() + 2).unwrap().to_be_bytes());
+    jpeg.extend(jpeg_segment);
+    jpeg.extend([0xff, 0xd9]);
+    expected(
+        "neutral.jpg",
+        jpeg,
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+
+    let mut webp = b"RIFF".to_vec();
+    webp.extend(
+        u32::try_from(20 + xmp.len() + xmp.len() % 2)
+            .unwrap()
+            .to_le_bytes(),
+    );
+    webp.extend(b"WEBPVP8 \0\0\0\0XMP ");
+    webp.extend(u32::try_from(xmp.len()).unwrap().to_le_bytes());
+    webp.extend(xmp.as_bytes());
+    webp.resize(webp.len() + xmp.len() % 2, 0);
+    expected(
+        "neutral.webp",
+        webp,
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+
+    expected(
+        "neutral.png",
+        xmp_png(&xmp.replace("Screenshot", "Screenshot copy")),
+        Kind::Photos,
+        &["image_default"],
+    );
+    expected(
+        "neutral.png",
+        xmp_png(&xmp.replace("UserComment", "Description")),
+        Kind::Photos,
+        &["image_default"],
+    );
+    expected(
+        "neutral.png",
+        xmp_png(&xmp.replace("http://ns.adobe.com/exif/1.0/", "urn:unrelated")),
+        Kind::Photos,
+        &["image_default"],
+    );
+    expected(
+        "neutral.png",
+        png(b"tEXt", b"Software\0gnome-screenshot"),
+        Kind::Screen,
+        &["gnome_screenshot_software"],
+    );
+    expected(
+        "neutral.png",
+        png(b"iTXt", b"Software\0\0\0\0\0gnome-screenshot"),
+        Kind::Screen,
+        &["gnome_screenshot_software"],
+    );
+    expected(
+        "neutral.png",
+        png(b"tEXt", b"Description\0gnome-screenshot"),
+        Kind::Photos,
+        &["image_default"],
+    );
+    expected(
+        "neutral.png",
+        png(b"tEXt", b"Software\0gnome-screenshot copy"),
+        Kind::Photos,
+        &["image_default"],
+    );
+    let mut truncated = png(b"tEXt", b"Software\0gnome-screenshot");
+    truncated.pop();
+    expected("neutral.png", truncated, Kind::Photos, &["image_default"]);
+
+    let mut tiff = b"II*\0\x08\0\0\0\x01\0".to_vec();
+    tiff.extend(b"\x69\x87\x04\0\x01\0\0\0\x1a\0\0\0\0\0\0\0");
+    tiff.extend(b"\x01\0\x86\x92\x07\0\x12\0\0\0\x2c\0\0\0\0\0\0\0");
+    tiff.extend(b"ASCII\0\0\0Screenshot");
+    expected(
+        "neutral.png",
+        png(b"eXIf", &tiff),
+        Kind::Screen,
+        &["screenshot_user_comment"],
+    );
+
+    let clean_android = png(b"tEXt", b"Software\0Android QQ7A.8");
+    expected(
+        "neutral.png",
+        &clean_android,
+        Kind::Screen,
+        &["android_screenshot_software"],
+    );
+    expected(
+        "neutral.png",
+        png(b"tEXt", b"Software\0Android "),
+        Kind::Photos,
+        &["image_default"],
+    );
+    let mut camera_make_only = clean_android;
+    add_png_chunk(
+        &mut camera_make_only,
+        b"eXIf",
+        b"II*\0\x08\0\0\0\x01\0\x0f\x01\x02\0\x04\0\0\0ABC\0\0\0\0\0",
+    );
+    expected(
+        "neutral.png",
+        camera_make_only,
+        Kind::Photos,
+        &["image_default"],
+    );
 }
