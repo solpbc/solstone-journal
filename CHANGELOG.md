@@ -78,6 +78,8 @@ on windows, 2.0.84 is the first update since 2.0.82, so it also brings everythin
 
 ## [2.0.83] - 2026-11-18
 
+2.0.83 isn't available on windows. on windows, your journal stays on 2.0.82 and gets these changes in 2.0.84.
+
 ### Added
 
 - for demos, add `#today=2025-10-22T15:30` to the address of your journal's home page to show the today and yesterday summaries for an earlier date and time. the time uses your journal's time zone.
