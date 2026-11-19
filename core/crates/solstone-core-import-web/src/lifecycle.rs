@@ -2729,6 +2729,30 @@ fn inprocess_producer_request<'a>(
     }
 }
 
+fn expected_inprocess_preview_timestamp<'a>(
+    metadata: &'a ImportMetadata,
+    import_id: &'a str,
+) -> &'a str {
+    match metadata.get("owner_timestamp").and_then(Value::as_str) {
+        Some(owner_ts) => owner_ts,
+        None => {
+            let planned = metadata
+                .get("preview")
+                .and_then(|value| value.get("options"))
+                .and_then(|value| value.get("timestamp"))
+                .and_then(Value::as_str);
+            if planned == Some(import_id) {
+                import_id
+            } else {
+                metadata
+                    .get("source_timestamp")
+                    .and_then(Value::as_str)
+                    .unwrap_or(import_id)
+            }
+        }
+    }
+}
+
 fn run_inprocess_import(
     root: &Path,
     source_path: &Path,
@@ -2744,6 +2768,7 @@ fn run_inprocess_import(
             return;
         }
     };
+    let expected_preview_timestamp = expected_inprocess_preview_timestamp(&metadata, import_id);
     if let Some(token) = metadata
         .get("preview")
         .and_then(|value| value.get("token"))
@@ -2752,10 +2777,7 @@ fn run_inprocess_import(
             root,
             source_path,
             token,
-            metadata
-                .get("source_timestamp")
-                .and_then(Value::as_str)
-                .unwrap_or(import_id),
+            expected_preview_timestamp,
             force,
             metadata.get("setting").and_then(Value::as_str),
             source_hint(&metadata).as_deref(),
@@ -4841,6 +4863,100 @@ mod tests {
         assert_eq!(stored["capture_utc_offset_seconds"], 32400);
         assert_eq!(stored["caption"], "sunset from the porch");
         assert_eq!(stored["captured_at"], "2026-11-12T08:30:00+09:00");
+    }
+
+    #[tokio::test]
+    async fn same_second_burst_photo_verifies_preview_with_bumped_staging_id() {
+        let root = TempDir::new().unwrap();
+        let app = crate::routes(root.path().to_path_buf());
+        let save_photo = |cid: &str, bytes: &[u8]| {
+            let (boundary, upload) = multipart_upload_bytes(cid, "burst.jpg", "image/jpeg", bytes);
+            let mut body = Vec::new();
+            write!(
+                &mut body,
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"captured_at\"\r\n\r\n2026-11-12T08:30:00+09:00\r\n"
+            )
+            .unwrap();
+            body.extend_from_slice(&upload);
+            Request::post("/app/import/api/save")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap()
+        };
+
+        let (s1, first) = response_json(
+            app.clone()
+                .oneshot(save_photo("burst-1", b"\xff\xd8\xff\xfe\x00\x04aa\xff\xd9"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(s1, StatusCode::OK, "{first}");
+        assert_eq!(first["timestamp"], "20261112_083000");
+
+        let (s2, second) = response_json(
+            app.clone()
+                .oneshot(save_photo("burst-2", b"\xff\xd8\xff\xfe\x00\x04bb\xff\xd9"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(s2, StatusCode::OK, "{second}");
+        let bumped_id = second["timestamp"].as_str().unwrap();
+        assert_eq!(bumped_id, "20261112_083001");
+        let second_path = second["path"].as_str().unwrap();
+
+        let produced = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(PathBuf, String)>::new()));
+        let produced_ref = std::sync::Arc::clone(&produced);
+        let plan = crate::preview::PreviewPlan::Stub(std::sync::Arc::new(
+            move |_path, _options, _meta| {
+                Box::pin(async move {
+                    Ok(json!({"schema": "solstone.import.size.v1", "recordings": 1}))
+                })
+            },
+        ));
+        let seams = StartSeams {
+            produce: Some(std::sync::Arc::new(std::sync::Mutex::new(Box::new(
+                move |_r, src: PathBuf, id: String, _src_type, _force, _gen| {
+                    produced_ref.lock().unwrap().push((src, id));
+                },
+            )))),
+            ..Default::default()
+        };
+        let start_res = run_start(
+            root.path(),
+            json!({"path": second_path, "timestamp": bumped_id}),
+            plan,
+            seams,
+        )
+        .await;
+        let (sp, started) = response_json(start_res).await;
+        assert_eq!(sp, StatusCode::OK, "{started}");
+        assert_eq!(produced.lock().unwrap().len(), 1);
+        let (produced_src, produced_id) = produced.lock().unwrap()[0].clone();
+        assert_eq!(produced_id, bumped_id);
+
+        let stored = read_import_metadata(root.path(), bumped_id).unwrap();
+        assert_eq!(stored["source_timestamp"], "20261112_083000");
+        assert!(stored.get("owner_timestamp").is_none());
+        assert_eq!(stored["capture_utc_offset_seconds"], 32400);
+        let token = stored["preview"]["token"].as_str().unwrap();
+
+        let expected = super::expected_inprocess_preview_timestamp(&stored, bumped_id);
+        assert_eq!(expected, bumped_id);
+        solstone_core_import::snapshot::verify_preview(
+            root.path(),
+            &produced_src,
+            token,
+            expected,
+            false,
+            None,
+            None,
+        )
+        .expect("collision-bumped staging id must verify its own preview cleanly");
     }
 
     fn strava_card_upload(client_item_id: &str, bytes: &[u8]) -> (String, Vec<u8>) {
