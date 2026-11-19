@@ -255,8 +255,15 @@ fn history_qualification(held_output: Option<&'static str>) {
         None,
     )
     .unwrap();
-    let source = root.parent().unwrap().join("synthetic-garden-note.txt");
-    std::fs::write(&source,"This declared synthetic garden note discusses basil seeds and a blue notebook. It is local test input for native activity history reconciliation, with no assertion about a real person's activity.\n").unwrap();
+    let source = root
+        .parent()
+        .unwrap()
+        .join("synthetic-garden-transcript.txt");
+    std::fs::write(
+        &source,
+        "WEBVTT\n\n00:00:00.000 --> 00:00:07.000\nThis declared synthetic garden note discusses basil seeds and a blue notebook. It is local test input for native activity history reconciliation, with no assertion about a real person's activity.\n",
+    )
+    .unwrap();
     let imported = solstone_core_import::process_transcript_with_wire(
         &source,
         &root.join("chronicle").join(DAY),
