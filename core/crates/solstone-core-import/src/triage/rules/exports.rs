@@ -499,3 +499,45 @@ fn role_export(lines: &[&str], matcher: &Regex) -> bool {
     }
     roles_with_body.len() == 2
 }
+
+pub(super) fn signal_dated(lines: &[&str]) -> bool {
+    static TURN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2},? [0-9]{2}:[0-9]{2}(?::[0-9]{2})?\]\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)",
+        )
+        .unwrap()
+    });
+    let mut speakers = HashSet::new();
+    let mut matched = 0usize;
+    let mut unmatched = 0usize;
+    let mut annotations = 0usize;
+    for line in nonblank(lines) {
+        if let Some(speaker) = TURN
+            .captures(line)
+            .and_then(|c| c.name("speaker"))
+            .and_then(|m| speaker_label(m.as_str()))
+        {
+            speakers.insert(speaker.to_lowercase());
+            matched += 1;
+        } else if matched == 0 {
+            if is_export_notice(line) {
+                continue;
+            }
+            return false;
+        } else if is_signal_annotation(line) {
+            annotations += 1;
+        } else if !is_export_notice(line) {
+            unmatched += 1;
+        }
+    }
+    speakers.len() >= 2 && matched >= 2 && unmatched <= matched && annotations <= matched * 3
+}
+
+fn is_signal_annotation(line: &str) -> bool {
+    // signal-export renders reactions as `(- Name: emoji -)` (optionally
+    // followed by a Markdown attachment link) and quoted replies with `> `.
+    let reaction = line.starts_with("(- ") && line.contains(" -)");
+    let quote = line.starts_with("> ");
+    let attachment = line.starts_with("![") && line.contains("](") && line.ends_with(')');
+    reaction || quote || attachment
+}

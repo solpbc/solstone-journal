@@ -302,9 +302,10 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule!(
             53,
             "signal_dated",
-            "signal-export models: bracketed ISO date and time",
-            ExportTimed,
-            r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2},? [0-9]{2}:[0-9]{2}(?::[0-9]{2})?\]\s+(?P<speaker>[^:：]{1,60})[:：](?:\s|$)",
+            Turns,
+            Transcripts,
+            "signal-export models: bracketed ISO date and time, reactions and quotes",
+            |e| exports::signal_dated(e.lines),
             true
         ),
         rule!(
@@ -768,6 +769,7 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         exports::Header::default()
     };
     let mut has_title = header.rows > 0;
+    let mut allow_underline = false;
     let mut turn_words = 0;
     let interview = nonblank(lines).next().is_some_and(exports::interview_title);
     // Only the first five distinct pairs matter. Clocks and Markdown
@@ -809,6 +811,14 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
             }
         } else if !in_turn {
             if is_export_notice(line) {
+                allow_underline = false;
+                continue;
+            }
+            if allow_underline
+                && line.len() >= 3
+                && (line.bytes().all(|b| b == b'=') || line.bytes().all(|b| b == b'-'))
+            {
+                allow_underline = false;
                 continue;
             }
             let existing_heading = matches!(shape, Block | RoleBlock) && line.starts_with("# ");
@@ -816,6 +826,7 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) && short_title(line);
             if !has_title && (existing_heading || short_heading) {
                 has_title = true;
+                allow_underline = short_heading && markdown_title(line).is_none();
                 continue;
             }
             // Generic and exporter-specific turn rules do not promote a pasted
@@ -1036,9 +1047,12 @@ fn is_export_notice(line: &str) -> bool {
     let tab_event = line.split_once('\t').is_some_and(|(stamp, body)| {
         stamp.len() >= 19
             && stamp.as_bytes()[10] == b' '
-            && body
-                .split_once('\t')
-                .is_some_and(|(nick, _)| matches!(nick.trim(), "-->" | "<--" | "--" | "*"))
+            && body.split_once('\t').is_some_and(|(nick, _)| {
+                matches!(
+                    nick.trim(),
+                    "-->" | "<--" | "--" | "*" | "◥" | "◣" | "→" | "←"
+                )
+            })
     });
     irc_event
         || tab_event
@@ -1075,7 +1089,8 @@ pub(super) fn subtitle(lines: &[&str], vtt: bool) -> bool {
     } else {
         lines
     };
-    let mut cues = 0;
+    let mut cues = 0usize;
+    let mut malformed_cues = 0usize;
     for block in lines
         .split(|line| line.trim().is_empty())
         .filter(|block| !block.is_empty())
@@ -1090,11 +1105,22 @@ pub(super) fn subtitle(lines: &[&str], vtt: bool) -> bool {
             return false;
         }
         if block.len() <= index + 1 || !timing.is_match(block[index]) {
+            if vtt
+                && (block[0].contains("-->")
+                    || block.get(1).is_some_and(|line| line.contains("-->")))
+            {
+                malformed_cues += 1;
+                continue;
+            }
             return false;
         }
         cues += 1;
     }
-    cues >= if vtt { 1 } else { 2 }
+    if vtt {
+        cues >= 1 && (malformed_cues == 0 || cues >= 4 && malformed_cues * 4 <= cues)
+    } else {
+        cues >= 2
+    }
 }
 
 fn whisper_tsv(lines: &[&str]) -> bool {
@@ -1202,14 +1228,30 @@ fn imessage(lines: &[&str]) -> bool {
     static HEADER: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^[A-Z][a-z]{2} [0-9]{1,2}, [0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2} [AP]M(?: \(.+\))?$").unwrap()
     });
+    static EVENT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(concat!(
+            r"^[A-Z][a-z]{2} [0-9]{1,2}, [0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2} [AP]M\s+",
+            r".+\s+(?:named the conversation\s+\S|removed the name from the conversation|changed the group photo|removed the group photo|left the conversation|(?:added|removed)\s+.+\s+(?:to|from) the conversation)"
+        ))
+        .unwrap()
+    });
     let lines: Vec<_> = nonblank(lines).collect();
-    if !lines.first().is_some_and(|line| HEADER.is_match(line)) {
+    // Allow leading imessage-exporter conversation events, but require the first
+    // non-event line to be a timestamped message header (no prose preamble).
+    if !lines
+        .iter()
+        .find(|line| !EVENT.is_match(line))
+        .is_some_and(|line| HEADER.is_match(line))
+    {
         return false;
     }
     lines
         .windows(3)
         .filter(|block| {
-            HEADER.is_match(block[0]) && name_label(block[1]) && !HEADER.is_match(block[2])
+            HEADER.is_match(block[0])
+                && name_label(block[1])
+                && !HEADER.is_match(block[2])
+                && !EVENT.is_match(block[2])
         })
         .count()
         >= 2

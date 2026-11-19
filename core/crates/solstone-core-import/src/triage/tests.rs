@@ -1115,6 +1115,255 @@ fn bare_flashcards_stay_notes_and_identified_interviews_keep_their_kind() {
     expected("entry.md", interview, Kind::Transcripts, &["role_labels"]);
 }
 
+#[test]
+fn video_chapters_and_leading_time_notes_stay_notes() {
+    let bare_chapters = "Greenhouse tour\n\n0:00 Intro\n1:23 Pricing\n4:10 Demo\n7:45 Q&A\n";
+    let bracketed_chapters = "# Greenhouse tour\n\n[00:00:00] Intro\n[00:01:23] Pricing\n[00:04:10] Demo\n[00:07:45] Q&A\n";
+    let transcript_titled_chapters = "# Greenhouse tour — Transcript\n\n[00:00:00] Intro and overview\n[00:01:23] Pricing tiers and annual billing\n[00:04:10] Live demo of the new workflow\n[00:07:45] Questions from the audience\n";
+    let sentence_chapters = "# Greenhouse tour — Transcript\n\n[00:00:00] Welcome to the show and a brief look at what we will cover today.\n[00:01:23] Walking through the updated pricing tiers and how annual discounts work.\n[00:04:10] A short walkthrough of the import flow and what changed this month.\n[00:07:45] Answering viewer questions about exports and closing out the episode.\n";
+    let bulleted_chapters = "# Greenhouse tour — Transcript\n\n- [00:00:00] The cedar greenhouse on Ridge Road opened its glass roof after three winters under canvas tarps, and volunteers replaced every brass latch.\n- [00:01:00] The municipal water line still needs a pressure valve inspection, and the county clerk said the paperwork takes six weeks.\n- [00:02:00] Meanwhile the head botanist fills watering cans from the rainwater cistern whenever warm winds dry out the fern beds.\n";
+    let editing_notes = "# Greenhouse tour — Transcript notes\n\n[00:00:00] Trim the opening silence and check spelling of Ridge Road in the opening narration paragraph before publishing the final audio cut.\n[00:01:00] Fix the slight audio dip right before the valve section and lower the sprinkler background noise across the whole middle passage.\n[00:02:00] Verify whether the botanist still waters from the west cistern and add credits before the fade out.\n";
+    let leading_times_narration = "Workshop Notes: the pottery kiln\n\n0:00 Welcome to Workshop Notes. Today we inspect the brick kiln behind the east studio.\n0:14 - It was built in 1924 to fire stoneware pitchers through autumn markets.\n0:31: The firebrick arch is intact and still carries bands of wood ash.\n1:45 Today the guild stores glaze buckets and spare pyrometer cones inside.\n2:10\nNobody remembers which mason signed the keystone above the door.\n";
+    let leading_times_edit_notes = "Workshop Notes: rough cut edits\n\n0:00 Trim two seconds off the opening silence before the music comes in.\n0:14 - Color grade is too warm on the exterior shot of the brick arch.\n0:31: Lower the street traffic hum so the narration stays clear.\n1:45 Check whether we have permission to show the glaze shelf close-up.\n2:10\nAdd lower-third credits before fading to black.\n";
+    let prose_before_timed = "# Greenhouse tour — Transcript\n\nI saved this clip because I want to verify the dates before writing the article.\n\n[00:00:00] The cedar greenhouse on Ridge Road opened its glass roof after three winters under canvas tarps, and volunteers replaced every brass latch.\n\nThe timber frame spans forty feet and the [00:01:00] municipal water line still needs a valve inspection that takes six weeks to schedule.\n\nMeanwhile the head botanist [00:02:00] fills watering cans from the rainwater cistern when warm winds dry out the fern beds.\n";
+    let trailing_section = "# Greenhouse tour — Transcript\n\n[00:00:00] The cedar greenhouse on Ridge Road opened its glass roof after three winters under canvas tarps, and volunteers replaced every brass latch.\n\nThe timber frame spans forty feet and the [00:01:00] municipal water line still needs a valve inspection that takes six weeks to schedule.\n\nMeanwhile the head botanist [00:02:00] fills watering cans from the rainwater cistern when warm winds dry out the fern beds.\n\n## My takeaways\n\nFollow up with the county clerk next Tuesday.\n";
+
+    for (name, text) in [
+        ("chapters.txt", bare_chapters),
+        ("chapters.md", bracketed_chapters),
+        ("titled-chapters.md", transcript_titled_chapters),
+        ("sentence-chapters.md", sentence_chapters),
+        ("bulleted-chapters.md", bulleted_chapters),
+        ("editing-notes.md", editing_notes),
+        ("leading-times.txt", leading_times_narration),
+        ("edit-notes.txt", leading_times_edit_notes),
+        ("prose-before.md", prose_before_timed),
+        ("trailing-notes.md", trailing_section),
+    ] {
+        expected(name, text, Kind::Notes, &["note_default"]);
+    }
+}
+
+#[test]
+fn near_misses_for_transcript_expansions_stay_notes() {
+    let stacked_turns = "Nora  0:03\nDid the ferry dock on time?\n\nTarek  0:09\nFive minutes early because the tide helped.\n\nNora  0:18\nGood, then we can unload before noon.\n";
+    for (name, text) in [
+        ("note-prefix.txt", format!("Note: pasted from today\n\n{stacked_turns}")),
+        ("note-to-self.txt", format!("Note to self: check the schedule\n\n{stacked_turns}")),
+        ("my-notes.txt", format!("My notes: ferry call excerpt\n\n{stacked_turns}")),
+        ("meeting-notes.txt", format!("Meeting notes: harbor sync\n\n{stacked_turns}")),
+        ("summary-prefix.txt", format!("Summary: ferry arrival times\n\n{stacked_turns}")),
+        ("reminder-prefix.txt", format!("Reminder: call Tarek before noon\n\n{stacked_turns}")),
+        (
+            "range-schedule.txt",
+            "[00:00:00 - 00:05:00] Opening remarks\n[00:05:00 - 00:10:00] Live demo\n[00:10:00 - 00:15:00] Closing\n".to_string(),
+        ),
+        (
+            "clock-schedule.txt",
+            "[09:00 - 09:30] Design: review wireframes\n[09:30 - 10:00] Backend: inspect routes\n[10:00 - 10:30] Design: revise cards\n[10:30 - 11:00] Backend: run checks\n".to_string(),
+        ),
+        (
+            "range-log.txt",
+            "[00:00:00 - 00:00:05] INFO: booting worker\n[00:00:05 - 00:00:10] WARN: retrying socket\n[00:00:10 - 00:00:15] INFO: worker ready\n".to_string(),
+        ),
+        (
+            "range-one-speaker.txt",
+            "[00:00:00 - 00:00:06] Nora: First observation about the kiln.\n[00:00:06 - 00:00:12] Nora: Second observation about the glaze.\n[00:00:12 - 00:00:18] Nora: Third observation about the shelf.\n".to_string(),
+        ),
+        (
+            "dated-changelog.md",
+            "- 2026-08-05 01:00:05 **Auth**: Rotated signing key.\n- 2026-08-05 01:00:18 **Billing**: Synced invoice batch.\n- 2026-08-05 01:00:34 **Search**: Rebuilt index shard.\n- 2026-08-05 01:00:49 **Cache**: Flushed stale entries.\n".to_string(),
+        ),
+        (
+            "dated-log-levels.md",
+            "- 2026-08-05 01:00:05 **INFO**: Starting worker.\n- 2026-08-05 01:00:18 **WARN**: Retrying socket.\n- 2026-08-05 01:00:34 **INFO**: Ready for work.\n".to_string(),
+        ),
+        (
+            "stacked-roles.md",
+            "# Standup\n\n**Nora**\n*Design lead*\nKeep the annual plan clear.\n\n**Tarek**\n*Operations*\nTuesday works for me.\n".to_string(),
+        ),
+        (
+            "stacked-schedule.md",
+            "# Conference day\n\n**Keynote**\n*09:00*\nOpening remarks in the main hall.\n\n**Workshop**\n*10:30*\nHands-on session in room four.\n".to_string(),
+        ),
+        (
+            "stacked-three-sessions.md",
+            "# Conference day\n\n**Keynote**\n*09:00*\nOpening remarks in the main hall.\n\n**Workshop**\n*10:30*\nHands-on session in room four.\n\n**Closing**\n*12:00*\nWrap-up in the courtyard.\n".to_string(),
+        ),
+        (
+            "stacked-one-speaker.md",
+            "# Notes\n\n**Nora**\n*00:00*\nFirst thought on the dock.\n\n**Nora**\n*00:04*\nSecond thought on the dock.\n".to_string(),
+        ),
+        (
+            "stacked-prose-intro.md",
+            "# Notes\n\nI saved this excerpt from the morning call.\n\n**Nora**\n*00:00*\nKeep the annual plan clear.\n\n**Tarek**\n*00:04*\nTuesday works for me.\n".to_string(),
+        ),
+        (
+            "stacked-huge-clock.md",
+            "# Standup\n\n**Nora**\n*99999999999999999:00*\nCheck the sensor.\n\n**Tarek**\n*+0:04*\nDone.\n".to_string(),
+        ),
+        (
+            "daemon.log",
+            "09:00:01 auth: issued token for worker\n09:00:02 cache: cold miss on key\n09:00:03 auth: refreshed session\n".to_string(),
+        ),
+        (
+            "components.log",
+            "09:00:01 Auth: issued token for worker\n09:00:02 Cache: cold miss on key\n09:00:03 Queue: flushed batch\n".to_string(),
+        ),
+        (
+            "prose-before-meeting.txt",
+            "This is a sample call excerpt I kept for reference.\n\nMeeting: Harbor kickoff - 2026-05-10 10:00 AM\n\n00:00:01 Speaker 1 (Nora): Good morning everyone.\n00:00:15 Speaker 2 (Tarek): Glad to be here.\n00:00:25 Speaker 1 (Nora): Let us review the piers.\n".to_string(),
+        ),
+        (
+            "irc-prose-underline.log",
+            "I copied this log from yesterday\n========\n00:23 < nora> Ready for the test?\n00:24 < tarek> Almost there.\n00:25 < nora> Starting now.\n".to_string(),
+        ),
+        (
+            "weechat-notices-only.log",
+            "2026-05-10 06:44:16\t◥\tnora has joined #dock\n2026-05-10 06:44:16\t--\tTopic for #dock is Harbor tools\n2026-05-10 06:48:33\t◣\ttarek has quit\n2026-05-10 07:00:00\tnora\tAnyone here?\n".to_string(),
+        ),
+        (
+            "imessage-prose-intro.txt",
+            "Notes from our group chat:\n\nMay 17, 2025  5:29:42 PM You named the conversation Harbor Crew\n\nMay 17, 2025  5:34:00 PM\nNora\nBringing rope.\n\nMay 17, 2025  5:36:00 PM\nTarek\nSee you at the dock.\n".to_string(),
+        ),
+        (
+            "imessage-events-only.txt",
+            "May 17, 2025  5:29:42 PM You named the conversation Harbor Crew\n\nMay 17, 2025  5:30:00 PM Tarek named the conversation Dock Crew\n\nMay 17, 2025  5:34:00 PM\nNora\nBringing rope.\n".to_string(),
+        ),
+        (
+            "imessage-event-as-body.txt",
+            "May 17, 2025  5:34:00 PM\nNora\nMay 17, 2025  5:35:00 PM Tarek named the conversation Dock Crew\n\nMay 17, 2025  5:36:00 PM\nTarek\nSee you at the dock.\n".to_string(),
+        ),
+        (
+            "signal-prose-tail.md",
+            "[2025-08-17 09:00:00] Nora: nice photo!\n[2025-08-17 09:01:00] Tarek: thanks!\nHere is my commentary on what we should do next.\nFirst we need to call the harbor office.\nThen we should inspect the mooring lines.\nAfter that we update the logbook.\nFinally we lock the boathouse.\n".to_string(),
+        ),
+        (
+            "signal-huge-quote.md",
+            "[2025-08-17 09:00:00] Nora: read this\n[2025-08-17 09:01:00] Tarek: reading\n> line one\n> line two\n> line three\n> line four\n> line five\n> line six\n> line seven\n".to_string(),
+        ),
+        (
+            "whisper-owner-notes.md",
+            "# Transcription: Harbor Episode 4\n\nSource: https://example.invalid/ep4\nTranscription model: whisper-small\n\nMachine-generated transcript. Review speaker labels before quoting.\n\nMy own notes on this talk: the second section has the permit dates we need.\n\n**[00:00] Nora:** Welcome back to the harbor log.\n**[00:08] Nora:** Today we inspect the north quay.\n**[00:16] Nora:** The stone wall held through winter.\n".to_string(),
+        ),
+        (
+            "single-speaker-no-model.md",
+            "# Harbor Episode 4\n\nSource: https://example.invalid/ep4\nDate: 2026-06-01\n\n**[00:00] Nora:** Welcome back to the harbor log.\n**[00:08] Nora:** Today we inspect the north quay.\n**[00:16] Nora:** The stone wall held through winter.\n".to_string(),
+        ),
+        (
+            "single-speaker-untimed.md",
+            "# Transcription: Harbor Episode 4\n\nSource: https://example.invalid/ep4\nTranscription model: whisper-small\n\nNora: Welcome back to the harbor log.\nNora: Today we inspect the north quay.\nNora: The stone wall held through winter.\n".to_string(),
+        ),
+        (
+            "vtt-with-prose.vtt",
+            "WEBVTT\n\n00:01.000 --> 00:02.000\nWind rose.\n\n00:03.000 --> 00:04.000\nRain fell.\n\n00:05.000 --> 00:06.000\nTide turned.\n\n00:07.000 --> 00:08.000\nBoats swayed.\n\nHere are my own notes about how these captions looked.\n".to_string(),
+        ),
+        (
+            "vtt-mostly-bad.vtt",
+            "WEBVTT\n\n00:01.000 --> 00:02.000\nWind rose.\n\n00:03.000 --> 00:04.000\nRain fell.\n\n00:05.000 --> 00:0x.000\nbad cue\n".to_string(),
+        ),
+    ] {
+        expected(name, text, Kind::Notes, &["note_default"]);
+    }
+}
+
+#[test]
+fn real_two_person_conversations_survive_two_label_guards() {
+    for (name, text, rule) in [
+        (
+            "short-names.txt",
+            "Vi: Did the crate arrive?\nAn: Yes, by the back door.\nVi: Is the lid intact?\nAn: One corner is chipped.\nVi: I'll bring glue.\nAn: Thanks, see you soon.\n",
+            "bare_speaker",
+        ),
+        (
+            "initials.txt",
+            "JM: Did the crate arrive?\nKL: Yes, by the back door.\nJM: Is the lid intact?\nKL: One corner is chipped.\nJM: I'll bring glue.\nKL: Thanks, see you soon.\n",
+            "bare_speaker",
+        ),
+        (
+            "mixed-initials.txt",
+            "EN: Did the crate arrive?\nJM: Yes, by the back door.\nEN: Is the lid intact?\nJM: One corner is chipped.\nEN: I'll bring glue.\nJM: Thanks, see you soon.\n",
+            "bare_speaker",
+        ),
+        (
+            "timed-initials.log",
+            "[09:01] EN: Did the crate arrive?\n[09:02] FR: Yes, by the back door.\n[09:03] EN: I'll bring glue.\n",
+            "bracketed_speaker",
+        ),
+        (
+            "numeric-answers.txt",
+            "Nora: How many crates arrived?\nTarek: 12\nNora: How many had chipped lids?\nTarek: 3\nNora: What did the invoice come to?\nTarek: $240.50\n",
+            "bare_speaker",
+        ),
+    ] {
+        expected(name, text, Kind::Transcripts, &[rule]);
+    }
+}
+
+#[test]
+fn chat_and_subtitle_edge_layouts_classify_as_transcripts() {
+    let vtt_with_bad_cue = concat!(
+        "WEBVTT - Harbor captions\n",
+        "Kind: captions\n\n",
+        "NOTE\nCaption notes\n\n",
+        "STYLE\n::cue { color: white; }\n\n",
+        "part 1\n00:00:00.000 --> 00:00:02.000\nFirst line.\n\n",
+        "00:00:03.000 --> 00:00:05.000\nSecond line.\n\n",
+        "00:00:06.000 --> 00:00:08.000\nThird line.\n\n",
+        "00:00.000 --> 00:0x.000\nbad cue\n\n",
+        "00:00:09.000 --> 00:00:11.000\nFourth line.\n\n",
+        "00:00:12.000 --> 00:00:14.000\nFifth line.\n",
+    );
+    let imessage_with_renames = concat!(
+        "May 17, 2025  5:29:42 PM You named the conversation Harbor Crew\n\n",
+        "May 17, 2025  5:34:00 PM\nNora\nBringing rope.\n\n",
+        "May 17, 2025  5:35:00 PM Tarek named the conversation Dock Crew\n\n",
+        "May 17, 2025  5:36:00 PM (Read by you after 1 minute, 4 seconds)\nTarek\nSee you at the dock.\n",
+    );
+    let signal_with_reactions = concat!(
+        "[2025-08-17 09:00:00] Nora: nice photo!\n",
+        "(- Tarek: 👍, Sora: ❤️ -)\n",
+        "[2025-08-17 09:01:00] Tarek: line one\n",
+        "line two\n",
+        "(- Nora: 😂 -)\n",
+        "[2025-08-17 09:02:00] Sora: > original\n",
+        "> (- Milo -)\n\n",
+        "reply\n",
+        "[2025-08-17 09:03:00] Tarek: Look at the pier.\n",
+        "(- Nora: 🔥 -)![pier.jpg](./media/pier.jpg)\n",
+    );
+    let weechat_unicode = concat!(
+        "2026-05-10 06:44:16\t◥\tnora (~nora@host.invalid) has joined #dock\n",
+        "2026-05-10 06:44:16\t--\tTopic for #dock is Harbor tools\n",
+        "2026-05-10 06:48:33\t◣\tmilo (~milo@host.invalid) has quit\n",
+        "2026-05-10 07:29:38\tnora\tDid the pump finish draining?\n",
+        "2026-05-10 07:30:10\ttarek\tAlmost, give it five minutes.\n",
+        "2026-05-10 07:31:02\tnora\tThanks, I will lock the shed after.\n",
+    );
+    let irc_setext = concat!(
+        "Day 1\n",
+        "========\n\n",
+        "--- Day changed Fri May 10 2026\n",
+        "00:23 < nora> Ready for the early tide?\n",
+        "00:46 < tarek> Already on the pier.\n",
+        "00:48 < nora> Bringing the lantern now.\n",
+    );
+
+    for (name, text, rule) in [
+        ("captions.vtt", vtt_with_bad_cue, "webvtt_cues"),
+        (
+            "imessage-events.txt",
+            imessage_with_renames,
+            "dated_sender_blocks",
+        ),
+        ("signal-reactions.md", signal_with_reactions, "signal_dated"),
+        ("weechat-unicode.log", weechat_unicode, "dated_tab_nick"),
+        ("irc-setext.log", irc_setext, "irc_angle_nick"),
+    ] {
+        expected(name, text, Kind::Transcripts, &[rule]);
+    }
+}
+
 fn add_png_chunk(png: &mut Vec<u8>, kind: &[u8; 4], value: &[u8]) {
     png.extend(u32::try_from(value.len()).unwrap().to_be_bytes());
     png.extend(kind);
