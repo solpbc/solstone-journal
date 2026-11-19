@@ -32,8 +32,13 @@ pub const OURA_SYNC_REMEDY: &str =
 
 // `cli.py:549` skips the registry sweep for generic audio/text extensions.
 const DETECTION_SKIP_EXTENSIONS: &[&str] = &["m4a", "txt", "md"];
-// `cli.py:688` selects text streams only for these generic extensions.
-const TEXT_STREAM_EXTENSIONS: &[&str] = &["txt", "md"];
+const TEXT_STREAM_EXTENSIONS: &[&str] = &["txt", "md", "vtt", "srt", "log"];
+
+pub fn is_generic_text_extension(extension: &str) -> bool {
+    TEXT_STREAM_EXTENSIONS
+        .iter()
+        .any(|supported| extension.eq_ignore_ascii_case(supported))
+}
 
 /// A compiled-in file importer selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -262,6 +262,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn manual_imports_keep_index_and_segment_permissions_agreeing() {
+        use super::super::{ContentUnit, OfferedTo};
+        for (stream, file, permission) in [
+            ("import.text", "note_transcript.md", AdmittedCategory::Notes),
+            (
+                "import.text",
+                "document_transcript.md",
+                AdmittedCategory::Documents,
+            ),
+            (
+                "import.image",
+                "screenshot_transcript.md",
+                AdmittedCategory::ScreenText,
+            ),
+            (
+                "import.image",
+                "image_transcript.md",
+                AdmittedCategory::Photos,
+            ),
+        ] {
+            let path = format!("20260407/{stream}/123456_300/{file}");
+            let spec = file_spec(&path).unwrap();
+            assert_eq!(spec.unit, ContentUnit::Segment);
+            assert_eq!(spec.offered_to, OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS);
+            assert_eq!(
+                indexed_permission(None, &path, AdmittedCategory::Transcripts),
+                permission
+            );
+            assert_eq!(segment_file_permission(&path), permission);
+        }
+    }
+
+    #[test]
     fn every_kind_has_the_expected_stored_permission() {
         for spec in KINDS {
             assert_eq!(

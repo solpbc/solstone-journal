@@ -223,7 +223,7 @@ pub fn prepare(
         }
     }
     let import_facet = (name == "sense")
-        .then(|| crate::import_facet::chosen(&entry_sources, &context.journal))
+        .then(|| crate::import_facet::chosen(&entry_sources, &context.journal, &composed))
         .flatten();
     if composed
         .get("day")

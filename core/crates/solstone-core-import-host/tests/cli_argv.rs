@@ -362,7 +362,7 @@ fn a_strava_download_takes_a_facet_or_none_and_a_muted_one_is_refused() {
 }
 
 #[test]
-fn a_text_import_files_an_enabled_facet_in_its_transcript() {
+fn a_note_import_keeps_an_enabled_facet_in_its_provenance() {
     let journal = journal_with_facets();
     let note = journal.path().join("note.md");
     fs::write(&note, "a short imported note").unwrap();
@@ -377,14 +377,15 @@ fn a_text_import_files_an_enabled_facet_in_its_transcript() {
         ],
     );
     assert_eq!(result.exit_code, 0, "stderr={}", result.stderr);
-    let transcript = fs::read_to_string(
+    let metadata = fs::read_to_string(
         journal
             .path()
-            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl"),
+            .join("chronicle/20260818/import.text/062652_300/import_kind.json"),
     )
     .unwrap();
-    let header: Value = serde_json::from_str(transcript.lines().next().unwrap()).unwrap();
-    assert_eq!(header["imported"]["facet"], "desk-a");
+    let record: Value = serde_json::from_str(&metadata).unwrap();
+    assert_eq!(record["facet"], "desk-a");
+    assert_eq!(record["kind"], "notes");
 }
 
 #[test]
@@ -410,19 +411,15 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
         "stdout={}",
         result.stdout
     );
-    assert!(
-        result.stdout.contains("no turn times found in this file")
-            && result.stdout.contains(
-                "https://support.solstone.app/#report=v1&app=import&state=transcript%20times%20not%20recognized"
-            ),
-        "an untimed file says so and where to ask for its layout; stdout={}",
-        result.stdout
-    );
-    assert!(
-        journal
-            .path()
-            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl")
-            .is_file()
+    assert!(!result.stdout.contains("no turn times found in this file"));
+    assert_eq!(
+        fs::read_to_string(
+            journal
+                .path()
+                .join("chronicle/20260818/import.text/062652_300/note_transcript.md")
+        )
+        .unwrap(),
+        "a short imported note"
     );
     let marker: serde_json::Value = serde_json::from_slice(
         &fs::read(
@@ -536,7 +533,7 @@ fn generic_text_marker_failure_is_nonzero_and_retains_created_content() {
     assert!(
         journal
             .path()
-            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl")
+            .join("chronicle/20260818/import.text/062652_300/note_transcript.md")
             .is_file()
     );
 }
@@ -790,13 +787,13 @@ fn a_timestamp_with_its_offset_imports_the_second_occurrence_of_a_repeated_hour(
         );
         assert_eq!(run.exit_code, 0, "{timestamp}: {}", run.stderr);
         assert_eq!(import_id, "20251102_013000", "{timestamp}");
-        let transcript = fs::read_to_string(
+        let metadata = fs::read_to_string(
             journal
                 .path()
-                .join("chronicle/20251102/import.text/013000_300/conversation_transcript.jsonl"),
+                .join("chronicle/20251102/import.text/013000_300/import_kind.json"),
         )
         .unwrap();
-        let entry: Value = serde_json::from_str(transcript.lines().nth(1).unwrap()).unwrap();
+        let entry: Value = serde_json::from_str(&metadata).unwrap();
         assert_eq!(
             entry["source_ms"],
             solstone_core_time::parse_rfc3339(instant)
@@ -858,20 +855,13 @@ fn text_placements(journal: &Path) -> Vec<(String, String)> {
         return found;
     }
     for entry in fs::read_dir(&day).unwrap().flatten() {
-        let transcript = entry.path().join("conversation_transcript.jsonl");
-        if !transcript.is_file() {
+        let metadata = entry.path().join("import_kind.json");
+        if !metadata.is_file() {
             continue;
         }
-        let header: Value = serde_json::from_str(
-            fs::read_to_string(&transcript)
-                .unwrap()
-                .lines()
-                .next()
-                .unwrap(),
-        )
-        .unwrap();
+        let record: Value = serde_json::from_str(&fs::read_to_string(metadata).unwrap()).unwrap();
         let key = entry.file_name().to_string_lossy().into_owned();
-        let id = header["imported"]["id"].as_str().unwrap().to_owned();
+        let id = record["import_id"].as_str().unwrap().to_owned();
         found.push((key, id));
     }
     found.sort();

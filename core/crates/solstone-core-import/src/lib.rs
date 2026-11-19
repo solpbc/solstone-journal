@@ -50,6 +50,7 @@ pub mod text;
 pub mod thinking;
 pub mod timestamp;
 pub mod trash_kinds;
+pub mod triage;
 pub mod work_stop;
 
 pub use allocate::{
