@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
 - agents you allow to see photos now receive a smaller copy of each photo, without location or camera details, along with what your journal described in it.
 - profile pics is a new choice under entities for each agent you connect. it starts on, and agents you connected before keep receiving profile pics until you turn it off on the agents page.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
@@ -21,6 +22,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- photos you share or import now show their picture on the transcripts page, instead of text alone. click or tap a photo to open it larger.
+- photos now land on the day and time they were taken, in the time zone where they were taken, rather than the time you imported them or a date guessed from the filename. when a photo has no date inside it, your journal places it at import time and says so on the photo and its import page.
+- if you try to upload a HEIC or HEIF photo directly on the import page, your journal now tells you to add it through the solstone app on your phone or computer, or convert it to JPEG first.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
