@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_TAB_ERRORS.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_TAB_ERRORS.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "aad344616cbfc6f1eba5e0b93d4ec3b9f6f48ea6c0dd8a003fe44e7c10613dd7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_ACTION_SHOW_DETAILS.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_ACTION_SHOW_DETAILS.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "56994b1ec848b6b83b808e9071e35db573a2eb98ae62b0eeafb8b580d4415d0d",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

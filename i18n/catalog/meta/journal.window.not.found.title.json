@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab title for a missing journal page.",
+  "context": "Browser tab title for a missing journal page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "f4f25add24faf68a2deabef1a283ecaab9b18d05e8b01017f012facd5c0604ca",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

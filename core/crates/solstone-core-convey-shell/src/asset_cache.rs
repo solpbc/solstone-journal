@@ -37,6 +37,7 @@ use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 
 use crate::assets::{self, AssetKind, AssetRecord};
+use crate::window_catalog;
 
 mod refs {
     include!("../../../build-support/convey_asset_refs.rs");
@@ -136,7 +137,19 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     } else {
         preferred_encoding(request.headers(), has_brotli)
     };
-    let response = next.run(request).await;
+    let locale = window_catalog::request_locale(request.headers());
+    let localized = locale != window_catalog::ENGLISH;
+    let mut response = next.run(request).await;
+    if localized
+        && !head
+        && response
+            .extensions()
+            .get::<window_catalog::MissingPage>()
+            .is_some()
+    {
+        let (parts, _) = response.into_parts();
+        response = with_body(parts, Bytes::from(window_catalog::not_found(locale)));
+    }
     if !readable || response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
     }
@@ -144,8 +157,14 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
         let response = served(record, head, response).await;
         return precompressed(record, encoding, classed(response, CacheClass::Hashed));
     }
+    if localized && !head && (record.is_none() || path == "/static/shell.html") {
+        match shell_page(response, locale).await {
+            Ok((response, _)) => return classed(response, CacheClass::Personal),
+            Err(original) => response = original,
+        }
+    }
     let Some(record) = record else {
-        return match shell_page(response).await {
+        return match shell_page(response, window_catalog::ENGLISH).await {
             Ok((response, tag)) => {
                 let response = revalidated(response, tag, validators.as_ref());
                 match assets::record("/static/shell.html") {
@@ -348,7 +367,10 @@ fn classed(mut response: Response, class: CacheClass) -> Response {
 /// The shell page, which every view crate embeds and serves from its own page
 /// routes, is recognised by its exact bytes and served rewritten. Any other
 /// response comes back untouched.
-async fn shell_page(response: Response) -> Result<(Response, &'static str), Response> {
+async fn shell_page(
+    response: Response,
+    locale: &str,
+) -> Result<(Response, &'static str), Response> {
     let (Some(record), Some(source)) = (
         assets::record("/static/shell.html"),
         assets::lookup("/static/shell.html"),
@@ -364,6 +386,9 @@ async fn shell_page(response: Response) -> Result<(Response, &'static str), Resp
     };
     if bytes != source.bytes {
         return Err(with_body(parts, bytes));
+    }
+    if let Some((_, page)) = assets::localized_shell(locale) {
+        return Ok((with_body(parts, Bytes::from_static(page)), ""));
     }
     Ok((
         with_body(parts, refs::apply_edits(&bytes, record.edits)),

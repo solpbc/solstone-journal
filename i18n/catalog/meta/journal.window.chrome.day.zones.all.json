@@ -1,0 +1,21 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: DAY_ZONES_ALL.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: DAY_ZONES_ALL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "zones",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "794615c4d1b06190f4763f56f6f86de1dc9ab60160b7c4f4710edbd34b707525",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

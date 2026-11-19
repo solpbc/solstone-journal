@@ -1543,6 +1543,7 @@ ci-under-poison:
 	  node --check --input-type=module < core/crates/solstone-core-journal-app/ui/mark.js; \
 	fi
 	@$(MAKE) check-standalone-lockfiles
+	@$(MAKE) check-journal-window-catalog
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-ci-topology
 	@$(SOLSTONE_DISTRIBUTION) check-build-features
@@ -1701,3 +1702,20 @@ check-rust-i18n-catalog:
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo fmt --manifest-path tools/i18n/Cargo.toml -- --check
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo clippy --manifest-path tools/i18n/Cargo.toml --all-targets --locked --offline -- -D warnings
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo test --manifest-path tools/i18n/Cargo.toml --lib --locked --offline
+
+JOURNAL_WINDOW_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/catalog --channel production --target rust --target classic
+
+.PHONY: journal-window-catalog check-journal-window-catalog
+journal-window-catalog:
+	$(JOURNAL_WINDOW_CATALOG) --out i18n/generated/window
+
+check-journal-window-catalog:
+	@set -eu; \
+	mkdir -p "$(RUST_TARGET_DIR)"; \
+	check_dir=$$(mktemp -d "$(RUST_TARGET_DIR)/journal-catalog.XXXXXX"); \
+	trap 'rm -rf "$$check_dir"' 0 1 2 15; \
+	if ! $(JOURNAL_WINDOW_CATALOG) --out "$$check_dir/window" || \
+	   ! diff -qr i18n/generated/window "$$check_dir/window"; then \
+		echo "Journal window catalog is stale. Refresh source revisions if needed, then run make journal-window-catalog." >&2; \
+		exit 1; \
+	fi

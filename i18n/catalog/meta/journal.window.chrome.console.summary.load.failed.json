@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_SUMMARY_LOAD_FAILED.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_SUMMARY_LOAD_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "0cd93b32af97e06beed42771bf23473abc5f536fe827ca4c98f969601c4abbb7",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

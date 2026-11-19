@@ -443,6 +443,14 @@ The rules above govern *where* code lives. The rules below govern *how* code beh
 
 Generic software principles (DRY, KISS, YAGNI, single responsibility, small focused commits) apply; see `docs/coding-standards.md` for the full list.
 
+### Journal window strings
+
+Edit adopted shell copy in `i18n/catalog/source/en-US.ftl`. Give new messages
+stable IDs and sidecars in `i18n/catalog/meta/`, then register them with
+`i18n-catalog history i18n/catalog`. Follow the [catalog compiler
+guide](tools/i18n/README.md) to refresh source revisions. Run
+`make journal-window-catalog` and commit the generated resources.
+
 ## 9. File headers, naming, dependencies
 
 - **SPDX header** as above — mandatory on source code files.

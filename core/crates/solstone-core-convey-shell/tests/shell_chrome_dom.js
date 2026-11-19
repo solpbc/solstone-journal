@@ -668,6 +668,7 @@ function createHarness(options = {}) {
     vm.runInContext(read(name), context, { filename: name });
   }
   if (options.boot) {
+    vm.runInContext(fs.readFileSync(path.resolve(crateDir, '../../../i18n/generated/window/classic/journal-window/api.js'), 'utf8'), context);
     vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
   }
   const bootSource = read('shell_boot.js').replace(
@@ -764,7 +765,7 @@ testCase('launcher markup and wiring are gone', () => {
   const css = fs.readFileSync(path.join(crateDir, 'assets/static/app.css'), 'utf8');
   assert.ok(!html.includes('app-launcher'));
   assert.ok(!html.includes('journal apps'));
-  assert.ok(html.includes('aria-label="views"'));
+  assert.ok(html.includes('aria-label="{{journal.window.shell.views}}"'));
   assert.ok(!boot.includes('renderAppLauncher'));
   assert.ok(!boot.includes('data-app-launcher'));
   assert.ok(!boot.includes('presentation-mode:change'));

@@ -1,0 +1,16 @@
+{
+  "description": "Heading for a missing journal page.",
+  "context": "Heading for a missing journal page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "b3d8269f15631d4c95701b86600d8b6c3f80e0abb5db4791eefbb711efe3869a",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

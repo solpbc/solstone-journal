@@ -309,7 +309,7 @@
     const clock = parseSegmentClock(segment);
     if (!clock) return 'time unavailable';
     return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]), Number(clock[3]))
-      .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
+      .toLocaleString(globalThis.window?.JournalI18n?.formatLocale, { hour: 'numeric', minute: '2-digit' });
   }
 
   function formatTimestamp(timestamp) {
@@ -329,7 +329,7 @@
     if (window.JournalClock) {
       return window.JournalClock.formatInstant(d, options);
     }
-    return d.toLocaleString(undefined, options);
+    return d.toLocaleString(globalThis.window?.JournalI18n?.formatLocale, options);
   }
 
   // The time half of the absolute ladder, for a list that already knows which
@@ -342,7 +342,7 @@
     if (window.JournalClock) {
       return window.JournalClock.formatInstant(d, options);
     }
-    return d.toLocaleString(undefined, options);
+    return d.toLocaleString(globalThis.window?.JournalI18n?.formatLocale, options);
   }
 
   function formatDuration(seconds) {

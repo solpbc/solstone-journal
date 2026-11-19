@@ -1,0 +1,16 @@
+{
+  "description": "Fixed label in the shell document.",
+  "context": "Visible on first paint, before the shell scripts run. Placement: shell.uptime.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "595965ef5b1fb6523510fc5d5062f45773457db8d53e8a9948e7265ebaf0b6af",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

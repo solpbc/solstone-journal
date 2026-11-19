@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_TAB_WARNINGS.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: CONSOLE_TAB_WARNINGS.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "4dfdd529c3a045dc71d57f76079612a0a11262db572e60294daaa61ce8accc58",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

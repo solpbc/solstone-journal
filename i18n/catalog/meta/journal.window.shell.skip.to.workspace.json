@@ -1,0 +1,16 @@
+{
+  "description": "Fixed label in the shell document.",
+  "context": "Visible on first paint, before the shell scripts run. Placement: shell.skip.to.workspace.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "23163930ac06458906bed2f060601873bdafe0fa98ba4a2ae3e737bb837ab1e6",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

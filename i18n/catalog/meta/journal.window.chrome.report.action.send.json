@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ACTION_SEND.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ACTION_SEND.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "e393139b1d71692eb88489662d864c402c4a159ccb17b511715aeb951c273bfa",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: RELOAD_HINT.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: RELOAD_HINT.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "f605bf38cda3e3f7aa85f449258c1369496a06823962308fa8996248636cc814",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

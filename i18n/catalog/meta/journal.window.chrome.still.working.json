@@ -1,0 +1,16 @@
+{
+  "description": "Announced on a slow view load.",
+  "context": "Announced on a slow view load.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "86e106361b271f919447fca0396c3342b074c10d02c833673893ce1b0d0fbc24",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

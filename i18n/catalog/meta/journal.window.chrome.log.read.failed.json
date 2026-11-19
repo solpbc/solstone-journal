@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: LOG_READ_FAILED.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: LOG_READ_FAILED.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "f40922b62fe6eff932bdd22ade8ec29e8fbe7c9fd6f2ea5ec130f740e52b5056",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

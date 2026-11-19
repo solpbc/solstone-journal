@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: UNKNOWN_ERROR.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: UNKNOWN_ERROR.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "266bbe435f5cb51d11758bdb656824b56480c9151e2f36c1e6a8e32f2254b7a4",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

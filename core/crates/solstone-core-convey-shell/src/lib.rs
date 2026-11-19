@@ -92,6 +92,7 @@ mod browser_access;
     any(target_os = "linux", target_os = "macos", windows)
 ))]
 mod local_endpoint;
+mod window_catalog;
 
 #[cfg(feature = "host")]
 use std::path::Path as FsPath;
@@ -1958,9 +1959,8 @@ pub(crate) fn not_found_response() -> Response {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(
-            "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
-        ))
+        .extension(window_catalog::MissingPage)
+        .body(Body::from(window_catalog::english_not_found()))
         .expect("not found response builds")
 }
 

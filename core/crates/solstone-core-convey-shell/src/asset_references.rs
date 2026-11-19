@@ -75,6 +75,10 @@ const UNREWRITTEN_DOCUMENTS: &[(&str, &str)] = &[(
 /// Served files no page references, each with why it stays.
 const KEPT_UNREFERENCED: &[(&str, &str)] = &[
     (
+        "/static/LICENSE.fluent",
+        "license of Fluent distributed in the compiled journal catalog script",
+    ),
+    (
         "/init",
         "the setup page, reached by navigation and the session gate",
     ),

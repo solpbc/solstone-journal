@@ -88,7 +88,10 @@ function checkBundle(label, text, minSegments) {
   check(`every file in ${label} parses on its own`, () => {
     assert(table.length >= minSegments, `${label} has only ${table.length} segments`);
     for (const [, name] of table) {
-      const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
+      const sourcePath = name === 'static/journal-catalog.js'
+        ? path.resolve(staticDir, '../../../../../i18n/generated/window/classic/journal-window/api.js')
+        : path.join(staticDir, name.replace(/^static\//, ''));
+      const source = fs.readFileSync(sourcePath, 'utf8');
       try {
         new vm.Script(source, { filename: '/' + name });
       } catch (error) {
@@ -107,7 +110,10 @@ check('each file hands over exactly the names it declares at its top level', () 
   for (const [text, table] of [[bundle, bootTable], [restBundle, restTable]]) {
     const lines = text.split('\n');
     for (const [line, name] of table) {
-      const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
+      const sourcePath = name === 'static/journal-catalog.js'
+        ? path.resolve(staticDir, '../../../../../i18n/generated/window/classic/journal-window/api.js')
+        : path.join(staticDir, name.replace(/^static\//, ''));
+      const source = fs.readFileSync(sourcePath, 'utf8');
       const header = lines[line - 2];
       assert(header.startsWith('try { (function () {'), `/${name}'s wrapper`);
       const exported = exportedNames(header);

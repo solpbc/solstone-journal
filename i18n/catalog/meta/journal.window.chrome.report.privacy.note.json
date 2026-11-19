@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_PRIVACY_NOTE.",
+  "context": "Review text shown before opening the support form. Keep source English until translation review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 150,
+  "source_revision": "ced70d3c9f4603d27c5dcb76e5e6b194c7baa4ae34e633965268cbbdca9f5ebc",
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

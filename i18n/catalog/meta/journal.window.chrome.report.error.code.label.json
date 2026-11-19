@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ERROR_CODE_LABEL.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ERROR_CODE_LABEL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "1496e2439bd01d7a9a96f868fb6498ff778b3cf14d028341a1847156f8450ed3",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

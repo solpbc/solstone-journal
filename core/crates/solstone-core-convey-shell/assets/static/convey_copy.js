@@ -2,48 +2,32 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
-  window.CONVEY_COPY = Object.freeze({
-    ZONE_TIME: "{label} time",
-    DAY_ZONES_PART: "some of this day's times are on {zones}",
-    DAY_ZONES_ALL: "this day's times are on {zones}",
-    RELOAD_HINT: "reload to try again.",
-    UNKNOWN_ERROR: "something went wrong. reload to try again.",
-    LOG_READ_FAILED: "that log couldn't be read. reload to try again.",
-    ACTION_RECONNECT: "reconnect",
-    ACTION_RESTART: "restart",
-    CONSOLE_HEADING: "system messages",
-    CONSOLE_EMPTY: "no system messages this session.",
-    CONSOLE_TAB_ALL: "all",
-    CONSOLE_TAB_ERRORS: "errors",
-    CONSOLE_TAB_WARNINGS: "warnings",
-    CONSOLE_TAB_INFO: "info",
-    CONSOLE_LINK_LABEL: "system messages",
-    CONSOLE_ACTION_SEND: "send",
-    CONSOLE_ACTION_SEND_ALL: "send to support",
-    CONSOLE_ACTION_CLEAR: "clear",
-    CONSOLE_ACTION_SHOW_DETAILS: "show details",
-    CONSOLE_ACTION_CLOSE: "close",
-    CONSOLE_REPORTING_OFF: "sending reports is off.",
-    CONSOLE_SNAPSHOT_HEADING: "snapshot of {count} system messages",
-    CONSOLE_REPORT_HEADING: "Last {count} console entries:",
-    CONSOLE_TRUNCATED: "[older entries truncated]",
-    CONSOLE_SUMMARY_LOAD_FAILED: "couldn't load part of this page.",
-    CONSOLE_SUMMARY_UNEXPECTED: "something on this page didn't work.",
-    CONSOLE_SUMMARY_REQUEST_FAILED: "couldn't finish that request.",
-    CONSOLE_DETAIL_MESSAGE_LABEL: "message",
-    CONSOLE_DETAIL_STACK_LABEL: "stack",
-    CONSOLE_DETAIL_LOCATION_LABEL: "location",
-    REPORT_TITLE: "review this report",
-    REPORT_DEFAULT_SUBJECT: "convey error",
-    REPORT_PRIVACY_NOTE: "nothing leaves this journal until you send the form on the support website.",
-    REPORT_VERSION_LABEL: "journal version",
-    REPORT_PLATFORM_LABEL: "operating system",
-    REPORT_APP_LABEL: "app",
-    REPORT_ROUTE_LABEL: "route",
-    REPORT_ERROR_CODE_LABEL: "error code",
-    REPORT_RECENT_LABEL: "recent error lines",
-    REPORT_ACTION_SEND: "continue to support",
-    REPORT_ACTION_CANCEL: "cancel",
-    REPORT_BUTTON_LABEL: "report this",
+  const bundle = globalThis.SolstoneI18nBundles['journal-window'];
+  const sourceLocale = 'en-US';
+  const locale = globalThis.document?.documentElement?.lang;
+  const language = locale && locale !== 'en' ? locale : sourceLocale;
+  const prefix = 'journal.window.chrome.';
+  const argumentsByKey = {
+    'zone.time': [['label', '{label}']],
+    'day.zones.part': [['zones', '{zones}']],
+    'day.zones.all': [['zones', '{zones}']],
+    'console.snapshot.heading': [['count', '{count}']],
+  };
+
+  function render(id, args = []) {
+    const selected = id === prefix + 'report.privacy.note' ? sourceLocale : language;
+    return bundle.render(selected, id, args, { useIsolating: selected !== sourceLocale });
+  }
+
+  window.JournalI18n = Object.freeze({
+    render,
+    locale: language,
+    formatLocale: language === sourceLocale ? undefined : language,
   });
+  window.CONVEY_COPY = Object.freeze(Object.fromEntries(
+    bundle.messageIds.filter(id => id.startsWith(prefix)).map(id => {
+      const key = id.slice(prefix.length);
+      return [key.replaceAll('.', '_').toUpperCase(), render(id, argumentsByKey[key])];
+    }),
+  ));
 })();

@@ -300,7 +300,7 @@
     }
     // toLocaleString, not a bare DateTimeFormat: with no date or time fields
     // asked for it renders both, as the pages did before they took a zone.
-    return d.toLocaleString(undefined, opts);
+    return d.toLocaleString(globalThis.window?.JournalI18n?.formatLocale, opts);
   }
 
   function differs() {

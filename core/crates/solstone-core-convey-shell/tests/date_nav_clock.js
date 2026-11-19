@@ -543,6 +543,7 @@ async function run() {
   };
 
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.resolve(crateDir, '../../../i18n/generated/window/classic/journal-window/api.js'), 'utf8'), context);
   vm.runInContext(copySrc, context, { filename: 'convey_copy.js' });
   vm.runInContext(clockSrc, context, { filename: 'journal_clock.js' });
   vm.runInContext(dateFormatSrc, context, { filename: 'date_format.js' });

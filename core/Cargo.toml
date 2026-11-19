@@ -157,6 +157,7 @@ license = "AGPL-3.0-only"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
+fluent-bundle = "=0.16.0"
 solstone-core-local-endpoint = { path = "crates/solstone-core-local-endpoint" }
 solstone-core-about = { path = "crates/solstone-core-about" }
 # Windows journal installer callbacks; no automatic apply or owner runtime dependency.

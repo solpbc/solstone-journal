@@ -1,0 +1,16 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ROUTE_LABEL.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: REPORT_ROUTE_LABEL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "08df17a34059a00b2b05dec5dde94a6285cea1e190dcdf622aa45d6fd548278b",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

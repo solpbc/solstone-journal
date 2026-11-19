@@ -1,0 +1,21 @@
+{
+  "description": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: ZONE_TIME.",
+  "context": "Label or message shared by dashboard shell scripts. Identifier in the shell copy table: ZONE_TIME.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "8c068ac8885e5ec94ed937d63faa1a358a0d455bb1a0f3ca41edfab488e1dbd1",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

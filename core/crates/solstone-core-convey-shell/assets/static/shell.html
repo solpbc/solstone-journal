@@ -128,7 +128,7 @@
   </script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>journal</title>
+  <title>{{journal.window.shell.title}}</title>
   <!-- In the page, not only in the stylesheet. A new page can be revealed
        after that sheet is parsed and before it is active, and the browser
        then rejects the transition with no object for the page to catch. -->
@@ -141,6 +141,7 @@
   <script src="/static/error-handler.js" defer data-shell-part="boot"></script>
   <script src="/static/sunarc.js" defer data-shell-part="rest"></script>
   <script src="/static/relative-time.js" defer data-shell-part="boot"></script>
+  <script src="/static/journal-catalog.js" defer data-shell-part="boot"></script>
   <script src="/static/convey_copy.js" defer data-shell-part="boot"></script>
   <script src="/static/journal_clock.js" defer data-shell-part="boot"></script>
   <script src="/static/convey_icons.js" defer data-shell-part="boot"></script>
@@ -192,48 +193,48 @@
   })();
 </script>
 <div id="sunarc" class="sunarc" aria-hidden="true"></div>
-<a href="#main-content" class="skip-link">skip to workspace</a>
+<a href="#main-content" class="skip-link">{{journal.window.shell.skip.to.workspace}}</a>
 
-<nav id="app-rail" class="app-rail" aria-label="views"></nav>
-<nav id="app-dock" class="app-dock" aria-label="views"></nav>
+<nav id="app-rail" class="app-rail" aria-label="{{journal.window.shell.views}}"></nav>
+<nav id="app-dock" class="app-dock" aria-label="{{journal.window.shell.views}}"></nav>
 <div id="status-instrument"></div>
 
-<section id="status-pane" class="health-system-status" aria-label="journal status details" hidden>
+<section id="status-pane" class="health-system-status" aria-label="{{journal.window.shell.status.details}}" hidden>
   <div class="status-pane-content">
-    <h3 id="status-sentence">connecting&hellip;</h3>
+    <h3 id="status-sentence">{{journal.window.shell.connecting}}</h3>
     <div class="status-pane-detail" style="display: flex; flex-direction: column; gap: 4px;">
       <span id="status-detail"></span>
     </div>
     <details class="status-pane-technical" style="margin-top: 12px;">
-      <summary style="cursor: pointer; user-select: none; min-height: 44px; padding: 10px 0;">technical details</summary>
+      <summary style="cursor: pointer; user-select: none; min-height: 44px; padding: 10px 0;">{{journal.window.shell.technical.details}}</summary>
       <div class="status-pane-technical" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;">
-        <div><strong>state:</strong> <span id="ws-status-raw">connecting</span></div>
-        <div><strong>uptime:</strong> <span id="ws-uptime-raw">-</span></div>
-        <div><strong>last message:</strong> <span id="ws-last-message-raw">-</span></div>
+        <div><strong>{{journal.window.shell.state}}</strong> <span id="ws-status-raw">connecting</span></div>
+        <div><strong>{{journal.window.shell.uptime}}</strong> <span id="ws-uptime-raw">-</span></div>
+        <div><strong>{{journal.window.shell.last.message}}</strong> <span id="ws-last-message-raw">-</span></div>
       </div>
     </details>
     <div id="capture-status-section" style="margin-top: 12px; display: none;">
-      <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600;">status</h4>
+      <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600;">{{journal.window.shell.status}}</h4>
       <span id="capture-status-text" style="font-size: 13px;"></span>
     </div>
     <div id="version-section" style="margin-top: 12px;">
-      <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600;">version</h4>
+      <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600;">{{journal.window.shell.version}}</h4>
       <span id="version-text" style="font-size: 13px; color: var(--ink-faint);">vunknown</span>
-      <a href="https://solstone.app/install#updating" target="_blank" rel="noreferrer" referrerpolicy="no-referrer" style="margin-left: 8px; font-size: 13px;">how to update your journal</a>
+      <a href="https://solstone.app/install#updating" target="_blank" rel="noreferrer" referrerpolicy="no-referrer" style="margin-left: 8px; font-size: 13px;">{{journal.window.shell.update.link}}</a>
       <div id="security-text" style="margin-top: 4px; font-size: 13px; display: none;"></div>
       <div id="automatic-update-text" style="margin-top: 4px; font-size: 13px; display: none;"></div>
     </div>
     <div id="quiet-notifs-section" style="margin-top: 16px; scroll-margin-top: 72px;">
-      <h3 id="quiet-notifs-heading" style="margin-bottom: 4px;"><span id="quiet-notifs-label">quiet notifications</span></h3>
-      <p id="quiet-notifs-explainer" style="margin: 0 0 8px; font-size: 13px; color: var(--ink-faint-paper);">errors from background services that weren't shown as notifications.</p>
+      <h3 id="quiet-notifs-heading" style="margin-bottom: 4px;"><span id="quiet-notifs-label">{{journal.window.shell.notifications.quiet}}</span></h3>
+      <p id="quiet-notifs-explainer" style="margin: 0 0 8px; font-size: 13px; color: var(--ink-faint-paper);">{{journal.window.shell.notifications.quiet.explanation}}</p>
       <div id="quiet-notifs-list" style="display: flex; flex-direction: column; gap: 4px; font-size: 13px;"></div>
     </div>
-    <h3 id="recent-notifs-heading" style="margin-top: 16px;">recent notifications<button id="notif-bell" class="icon-slot" title="enable browser notifications" aria-label="enable browser notifications"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M10.268 21a2 2 0 0 0 3.464 0" /> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /> </svg></span></button></h3>
+    <h3 id="recent-notifs-heading" style="margin-top: 16px;">{{journal.window.shell.notifications.recent}}<button id="notif-bell" class="icon-slot" title="{{journal.window.shell.notifications.enable}}" aria-label="{{journal.window.shell.notifications.enable}}"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M10.268 21a2 2 0 0 0 3.464 0" /> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /> </svg></span></button></h3>
     <div id="notification-history" class="status-pane-history">
-      <span style="color: var(--ink-faint-paper);">no notifications yet</span>
+      <span style="color: var(--ink-faint-paper);">{{journal.window.shell.notifications.empty}}</span>
     </div>
     <div class="status-pane-footer">
-      <a href="#" id="status-pane-console-link" class="status-pane-footer-link" aria-label="system messages">system messages</a>
+      <a href="#" id="status-pane-console-link" class="status-pane-footer-link" aria-label="{{journal.window.chrome.console.heading}}">{{journal.window.chrome.console.heading}}</a>
     </div>
   </div>
 </section>
@@ -241,34 +242,34 @@
 <aside id="diagnostic-console" class="diagnostic-console" inert tabindex="-1" aria-hidden="true" aria-labelledby="diagnostic-console-title">
   <div class="diagnostic-console-content">
     <header class="diagnostic-console-header">
-      <h3 id="diagnostic-console-title">system messages</h3>
+      <h3 id="diagnostic-console-title">{{journal.window.chrome.console.heading}}</h3>
       <div class="diagnostic-console-actions">
-        <button type="button" data-diagnostic-action="clear" disabled>clear</button>
-        <button type="button" data-diagnostic-action="send-all" disabled>send to support</button>
-        <button type="button" class="diagnostic-console-close" data-diagnostic-action="close" aria-label="close">&times;</button>
+        <button type="button" data-diagnostic-action="clear" disabled>{{journal.window.chrome.console.action.clear}}</button>
+        <button type="button" data-diagnostic-action="send-all" disabled>{{journal.window.chrome.console.action.send.all}}</button>
+        <button type="button" class="diagnostic-console-close" data-diagnostic-action="close" aria-label="{{journal.window.chrome.console.action.close}}">&times;</button>
       </div>
     </header>
-    <p class="diagnostic-console-reporting-off" data-diagnostic-reporting-off hidden>sending reports is off.</p>
-    <div class="diagnostic-console-tabs" role="tablist" aria-label="system messages">
-      <button type="button" data-diagnostic-filter="all" aria-selected="true">all <span data-diagnostic-count="all">0</span></button>
-      <button type="button" data-diagnostic-filter="error" aria-selected="false">errors <span data-diagnostic-count="error">0</span></button>
-      <button type="button" data-diagnostic-filter="warning" aria-selected="false">warnings <span data-diagnostic-count="warning">0</span></button>
-      <button type="button" data-diagnostic-filter="info" aria-selected="false">info <span data-diagnostic-count="info">0</span></button>
+    <p class="diagnostic-console-reporting-off" data-diagnostic-reporting-off hidden>{{journal.window.chrome.console.reporting.off}}</p>
+    <div class="diagnostic-console-tabs" role="tablist" aria-label="{{journal.window.chrome.console.heading}}">
+      <button type="button" data-diagnostic-filter="all" aria-selected="true">{{journal.window.chrome.console.tab.all}} <span data-diagnostic-count="all">0</span></button>
+      <button type="button" data-diagnostic-filter="error" aria-selected="false">{{journal.window.chrome.console.tab.errors}} <span data-diagnostic-count="error">0</span></button>
+      <button type="button" data-diagnostic-filter="warning" aria-selected="false">{{journal.window.chrome.console.tab.warnings}} <span data-diagnostic-count="warning">0</span></button>
+      <button type="button" data-diagnostic-filter="info" aria-selected="false">{{journal.window.chrome.console.tab.info}} <span data-diagnostic-count="info">0</span></button>
     </div>
     <div id="diagnostic-console-list" class="diagnostic-console-list"></div>
-    <p id="diagnostic-console-empty" class="diagnostic-console-empty" hidden>no system messages this session.</p>
+    <p id="diagnostic-console-empty" class="diagnostic-console-empty" hidden>{{journal.window.chrome.console.empty}}</p>
   </div>
 </aside>
 
-<div class="notification-center" id="notification-center" role="log" aria-live="polite" aria-label="notifications"></div>
+<div class="notification-center" id="notification-center" role="log" aria-live="polite" aria-label="{{journal.window.shell.notifications.label}}"></div>
 <div id="view-announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
 
 <main id="main-content" class="workspace" tabindex="-1">
   <div class="surface-state surface-state--loading" role="status" aria-busy="true">
     <div class="surface-state-spinner" aria-hidden="true"></div>
-    <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading">loading&hellip;</span>
-    <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+    <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading">{{journal.window.shell.loading}}</span>
+    <span class="surface-state-still" data-role="still-working">{{journal.window.chrome.still.working}}</span>
   </div>
 </main>
 <script>
@@ -301,7 +302,7 @@
 
 <div id="errorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="errorMessage">
   <div class="modal-content">
-    <button class="close" aria-label="close">&times;</button>
+    <button class="close" aria-label="{{journal.window.chrome.console.action.close}}">&times;</button>
     <pre id="errorMessage"></pre>
   </div>
 </div>

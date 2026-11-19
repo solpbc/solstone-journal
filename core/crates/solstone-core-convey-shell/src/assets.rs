@@ -48,6 +48,13 @@ pub struct AssetRecord {
 
 include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
+pub(crate) fn localized_shell(requested: &str) -> Option<(&'static str, &'static [u8])> {
+    LOCALIZED_SHELL_PAGES
+        .iter()
+        .copied()
+        .find(|(locale, _)| locale.eq_ignore_ascii_case(requested))
+}
+
 pub fn lookup(path: &str) -> Option<&'static EmbeddedAsset> {
     GENERATED_ASSETS
         .binary_search_by_key(&path, |asset| asset.path)

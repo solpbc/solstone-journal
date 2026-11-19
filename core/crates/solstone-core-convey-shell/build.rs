@@ -19,6 +19,13 @@ include!("../../build-support/convey_entry_table.rs");
 #[path = "src/registry.rs"]
 mod registry;
 
+#[allow(clippy::all, dead_code)]
+mod window_catalog {
+    include!("../../../i18n/generated/window/rust/journal-window/api.rs");
+}
+
+const SOURCE_LOCALE: &str = "en-US";
+
 fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) {
     println!("cargo:rerun-if-changed={}", directory.display());
     let mut entries: Vec<_> = fs::read_dir(directory)
@@ -101,6 +108,9 @@ fn main() {
         .canonicalize()
         .expect("repository root resolves");
     let static_root = manifest.join("assets/static");
+    let window_catalog = root.join("i18n/generated/window");
+    let window_classic = window_catalog.join("classic/journal-window");
+    let window_rust = window_catalog.join("rust/journal-window");
     let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.json");
     let network_copy = manifest.join("assets/network_copy.json");
@@ -204,10 +214,18 @@ fn main() {
     assets.push(("/app/sources/static/sources.js".to_owned(), sources_static));
     assets.push(("/app/year/workspace".to_owned(), year_workspace));
     assets.push(("/app/year/static/year.js".to_owned(), year_static));
+    for (route, filename) in [
+        ("/static/journal-catalog.js", "api.js"),
+        ("/static/LICENSE.fluent", "LICENSE.fluent"),
+    ] {
+        let file = window_classic.join(filename);
+        println!("cargo:rerun-if-changed={}", file.display());
+        assets.push((route.to_owned(), file));
+    }
 
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
     let shell_page_path = static_root.join("shell.html");
-    let shell_tags = shell_bundles(&static_root, &shell_page_path, &output, &mut assets);
+    let shell_tags = shell_bundles(&shell_page_path, &output, &mut assets);
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
     let speakers = read_object(&speakers_copy);
@@ -236,7 +254,22 @@ fn main() {
         ));
     }
     generated.push_str("];\n");
-    generated.push_str(&inventory(&assets, &shell_tags, &output));
+    let mut window_resources = Vec::new();
+    collect_files(&window_rust, &mut window_resources);
+    let locales: Vec<_> = window_resources
+        .iter()
+        .filter(|path| path.extension().is_some_and(|suffix| suffix == "ftl"))
+        .map(|path| {
+            path.file_stem()
+                .and_then(|tag| tag.to_str())
+                .expect("locale tag")
+        })
+        .collect();
+    assert!(
+        locales.contains(&SOURCE_LOCALE),
+        "window catalog requires en-US"
+    );
+    generated.push_str(&inventory(&assets, &shell_tags, &output, &locales));
     generated.push_str("pub(super) static SHELL_BUNDLE_SEGMENTS: &[(&str, &str)] = &[\n");
     for tag in &shell_tags.styles {
         generated.push_str(&format!("    ({SHELL_STYLE_BUNDLE:?}, {:?}),\n", tag.path));
@@ -275,7 +308,6 @@ fn main() {
 /// to the shell's assets, and return the page's tags so the served page can
 /// name the bundles instead.
 fn shell_bundles(
-    static_root: &Path,
     page_path: &Path,
     output: &Path,
     assets: &mut Vec<(String, PathBuf)>,
@@ -283,12 +315,11 @@ fn shell_bundles(
     let page = fs::read_to_string(page_path).expect("shell page is readable");
     let tags = shell_page_tags(&page).unwrap_or_else(|error| panic!("{error}"));
     let read = |tag: &BundledTag| -> (BundledTag, String) {
-        let relative = tag
-            .path
-            .strip_prefix("/static/")
-            .expect("bundled files are shell files");
-        let file = static_root.join(relative);
-        let source = fs::read_to_string(&file)
+        let (_, file) = assets
+            .iter()
+            .find(|(route, _)| route == &tag.path)
+            .unwrap_or_else(|| panic!("{} is an embedded shell asset", tag.path));
+        let source = fs::read_to_string(file)
             .unwrap_or_else(|error| panic!("{} is readable: {error}", file.display()));
         (tag.clone(), source)
     };
@@ -591,7 +622,12 @@ fn entry_table_json(
 
 /// Hash every asset tree in dependency order, rewrite each reference to a tree
 /// file to its hashed path, and emit the inventory the shell serves from.
-fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Path) -> String {
+fn inventory(
+    own: &[(String, PathBuf)],
+    shell_tags: &ShellPageTags,
+    output: &Path,
+    locales: &[&str],
+) -> String {
     let mut sources: Vec<(Kind, String, String, PathBuf)> = own
         .iter()
         .map(|(route, path)| {
@@ -738,37 +774,40 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
     };
     // Every edit to a record's source, with each reference's hashed path. The
     // shell page also loads the bundles in place of the files they hold.
-    let edits_of =
-        |record: &Record, hashes: &BTreeMap<String, String>| -> Vec<(usize, usize, String)> {
-            let mut edits: Vec<(usize, usize, String)> = record
-                .edits
-                .iter()
-                .map(|(start, end, target)| (*start, *end, hashed_of(target, hashes)))
-                .collect();
-            if record.route == "/static/shell.html" {
-                let page = std::str::from_utf8(&record.bytes).expect("shell page is UTF-8");
-                let css = hashed_of(SHELL_STYLE_BUNDLE, hashes);
-                let js = hashed_of(SHELL_SCRIPT_BUNDLE, hashes);
-                let rest = hashed_of(SHELL_REST_BUNDLE, hashes);
-                let replaced = bundle_edits(page, shell_tags, &css, &js, &rest);
-                edits.retain(|(start, end, _)| {
-                    !replaced
-                        .iter()
-                        .any(|(from, to, _)| start < to && from < end)
-                });
-                edits.extend(replaced);
-                if let Some(table) = entry_table.get() {
-                    let at = page
-                        .find(ENTRY_TABLE_MARKER)
-                        .expect("the shell page has the entry table's marker");
-                    edits.push((at, at + ENTRY_TABLE_MARKER.len(), table.clone()));
-                }
-                edits.sort();
+    let edits_of = |record: &Record,
+                    hashes: &BTreeMap<String, String>,
+                    locale: &str|
+     -> Vec<(usize, usize, String)> {
+        let mut edits: Vec<(usize, usize, String)> = record
+            .edits
+            .iter()
+            .map(|(start, end, target)| (*start, *end, hashed_of(target, hashes)))
+            .collect();
+        if record.route == "/static/shell.html" {
+            let page = std::str::from_utf8(&record.bytes).expect("shell page is UTF-8");
+            let css = hashed_of(SHELL_STYLE_BUNDLE, hashes);
+            let js = hashed_of(SHELL_SCRIPT_BUNDLE, hashes);
+            let rest = hashed_of(SHELL_REST_BUNDLE, hashes);
+            let replaced = bundle_edits(page, shell_tags, &css, &js, &rest);
+            edits.retain(|(start, end, _)| {
+                !replaced
+                    .iter()
+                    .any(|(from, to, _)| start < to && from < end)
+            });
+            edits.extend(replaced);
+            if let Some(table) = entry_table.get() {
+                let at = page
+                    .find(ENTRY_TABLE_MARKER)
+                    .expect("the shell page has the entry table's marker");
+                edits.push((at, at + ENTRY_TABLE_MARKER.len(), table.clone()));
             }
-            edits
-        };
-    let served_of = |record: &Record, hashes: &BTreeMap<String, String>| -> Vec<u8> {
-        let edits = edits_of(record, hashes);
+            edits.extend(shell_message_edits(page, locale));
+            edits.sort();
+        }
+        edits
+    };
+    let served_of = |record: &Record, hashes: &BTreeMap<String, String>, locale: &str| -> Vec<u8> {
+        let edits = edits_of(record, hashes, locale);
         let borrowed: Vec<(usize, usize, &str)> =
             edits.iter().map(|(s, e, t)| (*s, *e, t.as_str())).collect();
         apply_edits(&record.bytes, &borrowed)
@@ -777,7 +816,12 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
         let served: Vec<(String, Vec<u8>)> = records
             .iter()
             .filter(|record| record.tree.as_deref() == Some(tree.as_str()))
-            .map(|record| (record.route.clone(), served_of(record, &hashes)))
+            .map(|record| {
+                (
+                    record.route.clone(),
+                    served_of(record, &hashes, SOURCE_LOCALE),
+                )
+            })
             .collect();
         let hash = tree_hash(
             tree,
@@ -815,7 +859,7 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
         let mut brotli_field = "&[]".to_owned();
         let etag = match record.kind {
             Kind::File => {
-                let served = served_of(record, &hashes);
+                let served = served_of(record, &hashes, SOURCE_LOCALE);
                 // Compressed once here, so no request spends a worker on it.
                 if compressible(&record.content_type) && served.len() >= GZIP_MIN_BYTES {
                     gzip_field = compressed_asset_field(
@@ -833,7 +877,7 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
             }
             Kind::Template | Kind::Dynamic => String::new(),
         };
-        let edits: Vec<String> = edits_of(record, &hashes)
+        let edits: Vec<String> = edits_of(record, &hashes, SOURCE_LOCALE)
             .iter()
             .map(|(start, end, text)| format!("({start}, {end}, {text:?})"))
             .collect();
@@ -865,5 +909,40 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
         generated.push_str(&format!("    ({tree:?}, {hash:?}),\n"));
     }
     generated.push_str("];\n");
+    generated.push_str("pub(super) static LOCALIZED_SHELL_PAGES: &[(&str, &[u8])] = &[\n");
+    let shell = &records[index["/static/shell.html"]];
+    for locale in locales.iter().filter(|locale| **locale != SOURCE_LOCALE) {
+        let file = output.join(format!("shell-{locale}.html"));
+        fs::write(&file, served_of(shell, &hashes, locale)).expect("localized shell writes");
+        generated.push_str(&format!("    ({locale:?}, include_bytes!({file:?})),\n"));
+    }
+    generated.push_str("];\n");
     generated
+}
+
+fn shell_message_edits(page: &str, locale: &str) -> Vec<(usize, usize, String)> {
+    let hint = "{{journal.window.";
+    let mut edits = Vec::new();
+    for (start, _) in page.match_indices(hint) {
+        let open = start + 2;
+        let end = open + page[open..].find("}}").expect("shell message is closed");
+        let id = &page[open..end];
+        let message =
+            window_catalog::render_dotted_with_options(locale, id, &[], locale != SOURCE_LOCALE)
+                .unwrap_or_else(|error| {
+                    panic!("shell catalog message {id} for {locale}: {error:?}")
+                });
+        let escaped = message
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('…', "&hellip;");
+        edits.push((start, end + 2, escaped));
+    }
+    if locale != SOURCE_LOCALE {
+        let start = page.find("<html lang=\"en\"").expect("shell language") + "<html lang=\"".len();
+        edits.push((start, start + "en".len(), locale.to_owned()));
+    }
+    edits
 }

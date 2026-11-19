@@ -1,0 +1,16 @@
+{
+  "description": "Instruction under the heading for a missing journal page.",
+  "context": "Instruction under the heading for a missing journal page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 240,
+  "source_revision": "9a174f8a12274477859e294685004078aa6ef2531bf3dc9b89a4929b5fa65b3d",
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
