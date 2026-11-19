@@ -268,8 +268,11 @@
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-min);
+  /* The touch target grows by padding that the margin takes back, so a link
+     that wraps to two lines keeps its own height in the row instead of
+     printing over the line below it. */
   margin: calc((var(--touch-min) - 1.4em) / -2) 0;
-  padding: 0;
+  padding: calc((var(--touch-min) - 1.4em) / 2) 0;
   border: 0;
   background: none;
   color: var(--orange-text-aa);

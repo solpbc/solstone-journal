@@ -18,17 +18,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - home can open sooner on a slow connection the first time it loads, because its files now arrive smaller.
+- on home, the time in each facet now shows hours and minutes, like 3h 46m, and "measured for 3 of 5 activities" appears only when some activities have no time measured.
 
 ### Fixed
 
 - security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build ran a linux kernel with a flaw in how it handles some incoming connection requests (CVE-2026-98432): anyone who could reach one of its machines could in principle have run their own code there and reached what it was processing. the published exploit relies on a network feature the service doesn't use. the previous build also let a request from any journal using confidential processing make the machine open a file on itself or fetch from its own internal services, by asking it to load an image or audio from a web link or file path instead of the request carrying it (CVE-2026-15974). the service keeps no record that could show whether either flaw was used. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another. if you use confidential processing, install this update.
+- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - a Strava or Apple Health export you upload is no longer included in your backups, even before its import starts.
 - photos of people could be missing in large journals after overnight processing. your journal now checks fewer activities to recover those photos.
 - the import page now shows when a file is uploading and asks you to keep the page open until it finishes.
 - a facet's color now updates when you choose a swatch and press "apply color".
+- when a summary on home was saved without a record of what it covers, the line under it now reads "what this summary covers wasn't saved with it."
+- on the map, a link that wraps onto a second line no longer runs into the line below it.
 - in thinking's runs tab, the dates under the day picker now say what they are: days thinking hasn't caught up with yet. they're also colored like thinking's other links, in light and dark mode.
 - when your thinking provider refuses a request because it can't be used right now, your journal stops asking it about the rest of a day's backlog. your journal tries again every few minutes and picks the rest of the day back up once the provider answers.
-- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.

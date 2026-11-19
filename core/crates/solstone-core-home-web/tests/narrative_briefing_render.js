@@ -279,9 +279,9 @@ const scopeBase = { narrative_content: 'current evidence', narrative_source: 'pu
 const scoped = renderNarrativeHtml({...scopeBase, narrative_window: {segments: 2, activities: 1, input_segments: 10, input_activities: 4, since_ms: null, gaps: ['<missing>']}});
 assert(scoped.includes('2 of 10') && scoped.includes('1 of 4'));
 assert(scoped.includes('&lt;missing&gt;') && !scoped.includes('<missing>'));
-assert(renderNarrativeHtml(scopeBase).includes('wasn\'t saved'));
-assert(renderNarrativeHtml({...scopeBase, narrative_window: {segments: -1}}).includes('wasn\'t saved'));
-assert(!renderNarrativeHtml({...scopeBase, narrative_source: 'flow'}).includes('wasn\'t saved'));
+assert(renderNarrativeHtml(scopeBase).includes('data-narrative-scope="unknown"'));
+assert(renderNarrativeHtml({...scopeBase, narrative_window: {segments: -1}}).includes('data-narrative-scope="unknown"'));
+assert(!renderNarrativeHtml({...scopeBase, narrative_source: 'flow'}).includes('data-narrative-scope'));
 
 const firstBatch = renderNarrativeHtml({...scopeBase, narrative_window: {segments: 1, activities: 0, input_segments: 1, input_activities: 0, since_ms: 0, gaps: []}});
 assert(!firstBatch.includes('processing window starts'));

@@ -1000,7 +1000,7 @@
       const scope = pulse.narrative_window;
       const keys = ['segments', 'activities', 'input_segments', 'input_activities'];
       if (!scope || !keys.every(key => Number.isSafeInteger(scope[key]) && scope[key] >= 0)) {
-        return '<p class="pulse-narrative-meta">the input scope wasn\'t saved with this summary.</p>';
+        return '<p class="pulse-narrative-meta" data-narrative-scope="unknown">what this summary covers wasn\'t saved with it.</p>';
       }
       let text = 'based on ' + scope.segments + ' of ' + scope.input_segments + ' processed segments and '
         + scope.activities + ' of ' + scope.input_activities + ' activity entries in this batch. entries may overlap; this isn\'t a whole-day summary.';
@@ -1086,6 +1086,14 @@
       return names;
     }
 
+    // 226 reads as "3h 46m"; under an hour stays "45m".
+    function hoursAndMinutes(minutes) {
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      if (!hours) return rest + 'm';
+      return rest ? hours + 'h ' + rest + 'm' : hours + 'h';
+    }
+
     function facetChipRows(pulse, activities) {
       const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
       const names = Object.keys(measuredFacets);
@@ -1099,7 +1107,7 @@
         const minutes = isPlainObject(data) ? (parseInt(data.minutes || 0, 10) || 0) : 0;
         // No `count` here on purpose: facet_data counts the whole day, and the
         // label beside these chips counts the window the card shows.
-        return { name: name, text: isPlainObject(data) ? minutes + 'm' : 'no time measured' };
+        return { name: name, text: isPlainObject(data) ? hoursAndMinutes(minutes) : 'no time measured' };
       });
     }
 
@@ -1162,9 +1170,10 @@
             return isPlainObject(measuredFacets[facet]);
           });
         }).length;
-        const chipLabel = activities.length
-          ? 'time by facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')
-          : 'time by facet';
+        // Only a partial measure needs its count: "5 of 5" says nothing.
+        const chipLabel = activities.length && measured < activities.length
+          ? 'time in each facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')
+          : 'time in each facet';
         html += '<div class="pulse-activities-label">' + esc(chipLabel) + '</div><div class="pulse-facet-dist">';
         facetChips.forEach(function (chip) {
           html += '<span class="pulse-facet-chip">' + esc(chip.name) + ' · ' + esc(chip.text) + '</span>';
