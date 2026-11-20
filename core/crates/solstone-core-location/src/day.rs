@@ -16,6 +16,7 @@
 //!   of leaving, so a day also looks at the next day for it.
 //! - **notes** say what could not be read.
 
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -116,6 +117,20 @@ pub struct Device {
     pub unreadable_files: usize,
     pub first: Option<LocalTime>,
     pub last: Option<LocalTime>,
+}
+
+impl Device {
+    pub fn word_in(&self, locale: &str) -> String {
+        let id = match self.word {
+            "watch" => "journal.window.sources.source.or.date.unit.label.watch",
+            "android tablet" => "journal.window.map.device.android.tablet",
+            "android phone" => "journal.window.map.device.android.phone",
+            "tablet" => "journal.window.map.device.tablet",
+            "phone" => "journal.window.map.device.phone",
+            word => return word.to_owned(),
+        };
+        text(locale, id)
+    }
 }
 
 /// An instant with the wall-clock reading the device was keeping.
@@ -241,15 +256,28 @@ impl DayLocation {
     /// The device phrase for a sentence: "your iphone", or "your iphone (work)"
     /// when two devices of the same kind sent location that day.
     pub fn device_phrase(&self, index: usize) -> String {
+        self.device_phrase_in(index, ENGLISH)
+    }
+
+    pub fn device_phrase_in(&self, index: usize, locale: &str) -> String {
         let device = &self.devices[index];
         let twins = self
             .devices
             .iter()
             .filter(|other| other.word == device.word)
             .count();
+        let word = device.word_in(locale);
         match (&device.name, twins > 1) {
-            (Some(name), true) => format!("your {} ({name})", device.word),
-            _ => format!("your {}", device.word),
+            (Some(name), true) => strings(
+                locale,
+                "journal.window.map.device.possessive.named",
+                [("device", &word), ("name", name)],
+            ),
+            _ => strings(
+                locale,
+                "journal.window.map.device.possessive",
+                [("device", &word)],
+            ),
         }
     }
 }

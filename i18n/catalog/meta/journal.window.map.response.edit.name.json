@@ -1,0 +1,28 @@
+{
+  "description": "place validation details in the journal's map view.",
+  "context": "Journal window, map view. place validation details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0aff517568bd918887c2d13a2cdc3d0407ce45c8101637905f146a7a7f48ab4c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "name"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "null"
+    }
+  ]
+}

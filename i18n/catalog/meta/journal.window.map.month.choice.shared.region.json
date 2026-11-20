@@ -1,0 +1,28 @@
+{
+  "description": "month choice shared region in the journal's map view.",
+  "context": "Journal window, map view. month choice shared region.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "region",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f3bf2e58d97715fa5cdc41b6217daae48193ad8269177fde0e6ae4c3cf16fcf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

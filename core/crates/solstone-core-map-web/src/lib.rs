@@ -15,10 +15,12 @@ use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::{response_locale, text};
 use solstone_core_location::accuracy::{StopWords, margin_m};
 use solstone_core_location::day::{Device, LocalTime, Point};
 use solstone_core_location::places::PlaceStore;
@@ -180,11 +182,11 @@ pub(crate) fn valid_day(day: &str) -> bool {
         && solstone_core_time::parse_day(day).is_some()
 }
 
-pub(crate) fn invalid_day() -> Response {
+pub(crate) fn invalid_day(locale: &str) -> Response {
     error_envelope(
         "invalid_day",
-        "that day couldn't be used.",
-        "Day not found",
+        text(locale, "journal.window.map.response.day.invalid"),
+        text(locale, "journal.window.map.response.day.invalid.detail"),
         StatusCode::NOT_FOUND,
     )
     .into_response()
@@ -196,11 +198,11 @@ pub(crate) fn valid_month(month: &str) -> bool {
         && solstone_core_time::parse_day(&format!("{month}01")).is_some()
 }
 
-pub(crate) fn invalid_month(status: StatusCode) -> Response {
+pub(crate) fn invalid_month(locale: &str, status: StatusCode) -> Response {
     error_envelope(
         "invalid_month",
-        "that month couldn't be used.",
-        "Month must be YYYYMM",
+        text(locale, "journal.window.map.response.month.invalid"),
+        text(locale, "journal.window.map.response.month.invalid.detail"),
         status,
     )
     .into_response()
@@ -249,9 +251,11 @@ async fn day_shell_static(State(state): State<Arc<AppState>>) -> Response {
 async fn place_shell(
     State(state): State<Arc<AppState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !places::valid_id(&id) {
-        return places::unknown_place();
+        return places::unknown_place(locale);
     }
     shell(&state)
 }
@@ -259,9 +263,11 @@ async fn place_shell(
 async fn week_shell(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     shell(&state)
 }
@@ -269,9 +275,11 @@ async fn week_shell(
 async fn month_shell(
     State(state): State<Arc<AppState>>,
     RoutePath(month): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_month(&month) {
-        return invalid_month(StatusCode::NOT_FOUND);
+        return invalid_month(locale, StatusCode::NOT_FOUND);
     }
     shell(&state)
 }
@@ -279,9 +287,11 @@ async fn month_shell(
 async fn day_shell(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     shell(&state)
 }
@@ -313,9 +323,11 @@ async fn index(State(state): State<Arc<AppState>>) -> Response {
 async fn month_stats(
     State(state): State<Arc<AppState>>,
     RoutePath(month): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_month(&month) {
-        return invalid_month(StatusCode::BAD_REQUEST);
+        return invalid_month(locale, StatusCode::BAD_REQUEST);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapMonthStats, move || {
@@ -331,40 +343,30 @@ async fn month_stats(
 async fn day_view(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapDay, move || {
         let view = match solstone_core_location::read_journal_day(&journal_root, &day) {
             Ok(view) => view,
             Err(error) => {
-                return error_envelope(
-                    "area_names_unavailable",
-                    "the place names that come with your journal couldn't be read.",
-                    error.to_string(),
-                    StatusCode::SERVICE_UNAVAILABLE,
-                )
-                .into_response();
+                return places::names_unavailable(locale, error.to_string());
             }
         };
         let tier = match solstone_core_location::area_tier() {
             Ok(tier) => tier,
             Err(error) => {
-                return error_envelope(
-                    "area_names_unavailable",
-                    "the place names that come with your journal couldn't be read.",
-                    error.to_string(),
-                    StatusCode::SERVICE_UNAVAILABLE,
-                )
-                .into_response();
+                return places::names_unavailable(locale, error.to_string());
             }
         };
         let days = solstone_core_location::list_location_days(&journal_root);
         let store = PlaceStore::read(&journal_root);
-        let mut payload = day_payload(&view, tier, &days, &store);
-        payload["accuracy"] = accuracy::status(&journal_root);
+        let mut payload = day_payload(&view, tier, &days, &store, locale);
+        payload["accuracy"] = accuracy::status(&journal_root, locale);
         Json(payload).into_response()
     })
     .await
@@ -403,9 +405,9 @@ pub(crate) fn sources_json(sources: &[SourceRef]) -> Value {
     )
 }
 
-pub(crate) fn area_json(area: &AreaName) -> Value {
+pub(crate) fn area_json(area: &AreaName, locale: &str) -> Value {
     json!({
-        "label": area.label(),
+        "label": area.label_in(locale),
         "words": area.words(),
         "town": area.town.as_ref().map(|town| town.name.clone()),
         "town_km": area.town.as_ref().map(|town| (town.distance_m / 100.0).round() / 10.0),
@@ -446,15 +448,15 @@ pub(crate) fn place_json(place: &StopWords) -> Value {
     })
 }
 
-fn device_json(view: &DayLocation, index: usize, device: &Device) -> Value {
+fn device_json(view: &DayLocation, index: usize, device: &Device, locale: &str) -> Value {
     let precision_reduced = view.entries.iter().any(|entry| {
         matches!(entry, Entry::Readings { device: owner, precision, .. }
             if *owner == index && *precision == solstone_core_location::record::Precision::Reduced)
     }) && device.platform == solstone_core_location::record::Platform::Ios;
     json!({
         "precision_reduced": precision_reduced,
-        "phrase": view.device_phrase(index),
-        "word": device.word,
+        "phrase": view.device_phrase_in(index, locale),
+        "word": device.word_in(locale),
         "platform": device.platform.as_str(),
         "tier": device.tier,
         "readings": device.readings,
@@ -469,21 +471,21 @@ fn device_json(view: &DayLocation, index: usize, device: &Device) -> Value {
 }
 
 /// The place a visit or stay belongs to, as the owner sees it.
-pub(crate) fn place_ref(store: &PlaceStore, point: &Point) -> Value {
+pub(crate) fn place_ref(store: &PlaceStore, point: &Point, locale: &str) -> Value {
     let Some(margin) = margin_m(point.accuracy_m) else {
         return Value::Null;
     };
     match store.place_for(point.latitude, point.longitude, margin) {
         Some(place) => json!({
             "id": place.id,
-            "owner_name": place.owner_name(),
+            "owner_name": place.owner_name_in(locale),
             "hidden": place.hidden,
         }),
         None => Value::Null,
     }
 }
 
-pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore) -> Value {
+pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore, locale: &str) -> Value {
     match entry {
         Entry::Readings {
             device,
@@ -496,7 +498,7 @@ pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore) -> Value {
         } => json!({
             "kind": "readings",
             "device": device,
-            "area": area_json(area),
+            "area": area_json(area, locale),
             "precision": precision.as_str(),
             "first": time_json(first),
             "last": time_json(last),
@@ -521,9 +523,9 @@ pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore) -> Value {
         } => json!({
             "kind": "visit",
             "device": device,
-            "area": area_json(area),
+            "area": area_json(area, locale),
             "place": place.as_ref().map(place_json),
-            "place_ref": place_ref(store, point),
+            "place_ref": place_ref(store, point, locale),
             "on_map": !store.hides(point.latitude, point.longitude),
             "arrival": arrival.as_ref().map(time_json),
             "departure": departure.as_ref().map(time_json),
@@ -542,9 +544,9 @@ pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore) -> Value {
         } => json!({
             "kind": "stay",
             "device": device,
-            "area": area_json(area),
+            "area": area_json(area, locale),
             "place": place.as_ref().map(place_json),
-            "place_ref": place_ref(store, point),
+            "place_ref": place_ref(store, point, locale),
             "on_map": !store.hides(point.latitude, point.longitude),
             "first": time_json(first),
             "last": time_json(last),
@@ -646,6 +648,7 @@ fn day_payload(
     tier: &AreaTier,
     days: &[(String, u64)],
     store: &PlaceStore,
+    locale: &str,
 ) -> Value {
     let records = record_bounds(view, store);
     let map = records.map(|records| {
@@ -673,9 +676,9 @@ fn day_payload(
             .devices
             .iter()
             .enumerate()
-            .map(|(index, device)| device_json(view, index, device))
+            .map(|(index, device)| device_json(view, index, device, locale))
             .collect::<Vec<_>>(),
-        "entries": view.entries.iter().map(|entry| entry_json(entry, store)).collect::<Vec<_>>(),
+        "entries": view.entries.iter().map(|entry| entry_json(entry, store, locale)).collect::<Vec<_>>(),
         "map": map,
         "journal_has_location": !days.is_empty() || !view.is_empty(),
         "nearby": {"previous": previous, "next": next},

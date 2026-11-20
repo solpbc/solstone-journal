@@ -1,0 +1,16 @@
+{
+  "description": "Label in the journal's map view.",
+  "context": "Journal window, map view. Label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c32fdfe295d5c2cd8b0a7d0ba66f449035230e0aafd8b6facb1de562ed85ddb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

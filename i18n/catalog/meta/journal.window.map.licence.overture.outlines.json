@@ -1,0 +1,16 @@
+{
+  "description": "licence overture outlines in the journal's map view.",
+  "context": "Journal window, map view. licence overture outlines.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9d18ffbe9d5b0501c920001b9bf716ed37d602de726e5af4f5fbe751cae1047",
+  "max_length": 60,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

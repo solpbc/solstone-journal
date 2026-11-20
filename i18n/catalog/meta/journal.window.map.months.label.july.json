@@ -1,0 +1,16 @@
+{
+  "description": "Months label in the journal's map view.",
+  "context": "Journal window, map view. Months label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b7ff87fd16642dd0634c2ca66e535d1c5b3d29e169ab575207a248b64fee486",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

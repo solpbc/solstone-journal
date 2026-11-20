@@ -1,0 +1,23 @@
+{
+  "description": "map presentation in the journal's map view.",
+  "context": "Journal window, map view. map presentation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0fa2fdda09be028f71dc073805d5e6f65d28f428f4da4ce4081d3970aed2d9f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

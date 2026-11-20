@@ -1,0 +1,16 @@
+{
+  "description": "leaflet zoom in in the journal's map view.",
+  "context": "Journal window, map view. leaflet zoom in.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f57468a011c84b2e4e5d432e3a8232d89332f32d173b5822e44ae4007616ba28",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

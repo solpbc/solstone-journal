@@ -73,6 +73,12 @@ fixed positions. Local writers (`archive`, `facet`, and `news`) are Rust.
 Fixed aliases provide `solstone journal up` and `solstone journal down`. There
 are no retained Python services.
 
+on windows, `solstone link join` can pair on the same computer while the
+journal's local network is closed and save no direct address. after a request
+through the bridge started by `solstone link serve` in direct mode, the bridge
+status reports `no-endpoint`. for a direct bridge, open the journal's local
+network before pairing and keep it open while the bridge runs.
+
 ### Adding a top-level public `solstone` command
 
 1. **Create `core/native-sol/think/native/<command>/authority.toml`** with the command

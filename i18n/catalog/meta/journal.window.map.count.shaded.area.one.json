@@ -1,0 +1,28 @@
+{
+  "description": "count of shaded areas in the journal's map view.",
+  "context": "Journal window, map view. count of shaded areas.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ed730319153c8418eae0133b6fb39a25b4e46efcf040a54fdb1a01e6cc135e3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

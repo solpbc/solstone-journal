@@ -1,0 +1,16 @@
+{
+  "description": "calendar stops here in the journal's map view.",
+  "context": "Journal window, map view. calendar stops here.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9f34dc64a090d1a1f7b0ec558a8d7ad3b9d754b4b50eac27e89b4ad39ca60df",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

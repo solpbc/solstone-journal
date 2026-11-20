@@ -1,0 +1,28 @@
+{
+  "description": "count of trips in the journal's map view.",
+  "context": "Journal window, map view. count of trips.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7f6c4b6eef7e67fdd90e6fad77c76e92d6ce6714001a62b500758d0da5c0685",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

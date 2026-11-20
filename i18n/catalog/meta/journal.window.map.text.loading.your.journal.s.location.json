@@ -1,0 +1,16 @@
+{
+  "description": "Text in the journal's map view.",
+  "context": "Journal window, map view. Text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef54d089575484aebaedc519fd5be01564a036653a1fac7b5514d73f33d94a4b",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

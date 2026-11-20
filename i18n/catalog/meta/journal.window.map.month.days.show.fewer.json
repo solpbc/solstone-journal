@@ -1,0 +1,16 @@
+{
+  "description": "month days show fewer in the journal's map view.",
+  "context": "Journal window, map view. month days show fewer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e58b75e5d23da929ff5ed55abee78edcb131d2285989398176363d3c9fa4c137",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

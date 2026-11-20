@@ -1,0 +1,16 @@
+{
+  "description": "calendar stops none in the journal's map view.",
+  "context": "Journal window, map view. calendar stops none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c41b473100507a2494f95b3f1359f88f84c5dcfcda042b7a61bdd032e4dc08d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

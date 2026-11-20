@@ -1,0 +1,16 @@
+{
+  "description": "month live areas all in the journal's map view.",
+  "context": "Journal window, map view. month live areas all.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9a2b2767f85c47e3f2723152d1d05c71320d926f24022bf2e241fa289c1384c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

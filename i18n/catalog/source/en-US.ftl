@@ -6699,6 +6699,692 @@ journal.window.local.access.save.failed = your choice could not be saved. please
 
 journal.window.local.access.unavailable = this choice needs your journal's private connection on this computer, which isn't running right now. local access stays open until it is.
 
+journal.window.map.accessible.name.edit.this.place = edit this place
+
+journal.window.map.accessible.name.from = from
+
+journal.window.map.accessible.name.location.accuracy = location accuracy
+
+journal.window.map.accessible.name.map = map
+
+journal.window.map.accessible.name.map.of.the.records.listed.here = map of the records listed here, with towns and borders
+
+journal.window.map.accessible.name.more.of.your.location = more of your location
+
+journal.window.map.accessible.name.other.weeks.and.this.month = other weeks and this month
+
+journal.window.map.accessible.name.the.day.in.order = the day, in order
+
+journal.window.map.accessible.name.the.stops.across.the.day.shown = the stops across the day, shown in the list below
+
+journal.window.map.accessible.name.visits.and.stays.across.the.day = visits and stays across the day
+
+journal.window.map.accessible.name.zoom = zoom
+
+journal.window.map.accessible.name.zoom.in = zoom in
+
+journal.window.map.accessible.name.zoom.out = zoom out
+
+journal.window.map.accuracy.download.explanation = it's{ $slot1 }{ $size }{ $slot2 }from { $slot3 }, the same download for everyone, so getting it says nothing about where you've been. names are looked up on your computer.
+
+journal.window.map.accuracy.download.progress = downloading location accuracy:{ $slot1 }{ $received }{ $slot2 }of{ $slot3 }{ $total }. you can keep using your journal while it downloads.
+
+journal.window.map.accuracy.explanation.names = a visit your phone reports is named by the places within your phone's margin of error: "near { $slot1 }".
+
+journal.window.map.accuracy.explanation.outlines = a visit your phone reports is named by the building, park or campus it was in, and by the places within your phone's margin of error: "at { $slot1 }", "near { $slot2 }".
+
+journal.window.map.accuracy.status.verification.unavailable = installed accuracy packs could not be verified
+
+journal.window.map.area.label.at.place = at{ $slot1 }{ $name }
+
+journal.window.map.area.label.inside = in{ $slot1 }{ $place }
+
+journal.window.map.area.label.inside.qualified = in{ $slot1 }{ $place }{ $slot2 }{ $qualifier }
+
+journal.window.map.area.label.near = near{ $slot1 }{ $place }{ $slot2 }{ $qualifier }
+
+journal.window.map.area.label.near.place = near{ $slot1 }{ $name }
+
+journal.window.map.area.label.qualified = { $region }{ $slot1 }{ $country }
+
+journal.window.map.area.no.town = a place with no named town nearby
+
+journal.window.map.area.size = about{ $slot1 }{ $size }{ $slot2 }km
+
+journal.window.map.button.label.clear = clear
+
+journal.window.map.button.label.download = download
+
+journal.window.map.button.label.download.again = download again
+
+journal.window.map.button.label.fit = fit
+
+journal.window.map.button.label.remove.location.accuracy = remove location accuracy
+
+journal.window.map.button.label.save = save
+
+journal.window.map.button.label.show.on.the.map = show on the map
+
+journal.window.map.button.label.update = update
+
+journal.window.map.calendar.day.accessible.name = { $date },{ $slot1 }{ $state }{ $focus }
+
+journal.window.map.calendar.group.accessible.name = days of{ $slot1 }{ $month }. use the arrow keys to move between days.
+
+journal.window.map.calendar.location.kept = location kept
+
+journal.window.map.calendar.location.none = no location kept
+
+journal.window.map.calendar.stops.elsewhere = stops elsewhere
+
+journal.window.map.calendar.stops.elsewhere.list = stops elsewhere:{ $slot1 }{ $places }
+
+journal.window.map.calendar.stops.here = stops here
+
+journal.window.map.calendar.stops.none = no stops
+
+journal.window.map.compass.east = east
+
+journal.window.map.compass.north = north
+
+journal.window.map.compass.north.east = north-east
+
+journal.window.map.compass.north.west = north-west
+
+journal.window.map.compass.south = south
+
+journal.window.map.compass.south.east = south-east
+
+journal.window.map.compass.south.west = south-west
+
+journal.window.map.compass.west = west
+
+journal.window.map.count.area.one = { $count }{ $slot1 }area
+
+journal.window.map.count.area.other = { $count }{ $slot1 }areas
+
+journal.window.map.count.date.one = { $count }{ $slot1 }date
+
+journal.window.map.count.date.other = { $count }{ $slot1 }dates
+
+journal.window.map.count.day.one = { $count }{ $slot1 }day
+
+journal.window.map.count.day.other = { $count }{ $slot1 }days
+
+journal.window.map.count.line.one = { $count }{ $slot1 }line
+
+journal.window.map.count.line.other = { $count }{ $slot1 }lines
+
+journal.window.map.count.night.one = { $count }{ $slot1 }night
+
+journal.window.map.count.night.other = { $count }{ $slot1 }nights
+
+journal.window.map.count.reading.one = { $count }{ $slot1 }reading
+
+journal.window.map.count.reading.other = { $count }{ $slot1 }readings
+
+journal.window.map.count.record.one = { $count }{ $slot1 }record
+
+journal.window.map.count.record.other = { $count }{ $slot1 }records
+
+journal.window.map.count.shaded.area.one = { $count }{ $slot1 }shaded area
+
+journal.window.map.count.shaded.area.other = { $count }{ $slot1 }shaded areas
+
+journal.window.map.count.stop.one = { $count }{ $slot1 }stop
+
+journal.window.map.count.stop.other = { $count }{ $slot1 }stops
+
+journal.window.map.count.trip.one = { $count }{ $slot1 }trip
+
+journal.window.map.count.trip.other = { $count }{ $slot1 }trips
+
+journal.window.map.count.visit.one = { $count }{ $slot1 }visit
+
+journal.window.map.count.visit.other = { $count }{ $slot1 }visits
+
+journal.window.map.date.long = { $weekday },{ $slot1 }{ $month }{ $slot2 }{ $day }
+
+journal.window.map.date.short = { $month }{ $slot1 }{ $day }
+
+journal.window.map.date.short.weekday = { $weekday }{ $slot1 }{ $date }
+
+journal.window.map.date.short.weekday.comma = { $weekday },{ $slot1 }{ $date }
+
+journal.window.map.date.time = { $day }{ $slot1 }{ $clock }
+
+journal.window.map.date.time.range = { $first }{ $slot1 }to{ $slot2 }{ $last }
+
+journal.window.map.device.android.phone = { $slot1 } phone
+
+journal.window.map.device.android.tablet = { $slot1 } tablet
+
+journal.window.map.device.from = from{ $slot1 }{ $device }
+
+journal.window.map.device.phone = phone
+
+journal.window.map.device.possessive = your{ $slot1 }{ $device }
+
+journal.window.map.device.possessive.named = your{ $slot1 }{ $device }{ $slot2 }({ $name })
+
+journal.window.map.device.tablet = tablet
+
+journal.window.map.device.tier.balanced = places + comings and goings
+
+journal.window.map.device.tier.full = the complete picture
+
+journal.window.map.device.tier.light = places only
+
+journal.window.map.disclosure.label.how.places.are.worked.out = how places are worked out
+
+journal.window.map.disclosure.label.how.the.month.is.drawn = how the month is drawn
+
+journal.window.map.disclosure.label.how.this.is.drawn = how this is drawn
+
+journal.window.map.disclosure.label.licences = licences
+
+journal.window.map.disclosure.label.open.in.transcripts = open in transcripts:
+
+journal.window.map.disclosure.label.segments = segments
+
+journal.window.map.disclosure.label.why.these.words = why these words
+
+journal.window.map.entry.near.reason = { $name }{ $category }{ $slot1 }is{ $slot2 }{ $distance }{ $slot3 }m away;{ $slot4 }{ $margin }.
+
+journal.window.map.entry.precision.approximate = approximate
+
+journal.window.map.entry.reported.visit = a visit{ $slot1 }{ $device }{ $slot2 }reported
+
+journal.window.map.entry.time.arrival = arrived{ $slot1 }{ $time }
+
+journal.window.map.entry.time.departure = left{ $slot1 }{ $time }
+
+journal.window.map.entry.time.missing.arrival = arrival not known
+
+journal.window.map.entry.time.missing.departure = no departure reported
+
+journal.window.map.field.label.call.it = call it
+
+journal.window.map.field.label.hide.this.place = hide this place
+
+journal.window.map.field.label.name = name
+
+journal.window.map.heading.couldn.t.open.this.day.s = couldn't open this day's location.
+
+journal.window.map.heading.no.location.in.your.journal.yet = no location in your journal yet
+
+journal.window.map.heading.no.location.kept.for.this.day = no location kept for this day
+
+journal.window.map.interruption.many = { $count }{ $slot1 }times
+
+journal.window.map.interruption.once = once
+
+journal.window.map.interruption.twice = twice
+
+journal.window.map.label.about.km = about 1 km
+
+journal.window.map.leaflet.zoom.in = Zoom in
+
+journal.window.map.leaflet.zoom.out = Zoom out
+
+journal.window.map.licence.overture.outlines = places and outlines from
+
+journal.window.map.licence.overture.places = places from
+
+journal.window.map.link.label.cc.by = CC BY 4.0
+
+journal.window.map.link.label.geonames = GeoNames
+
+journal.window.map.link.label.go.to = go to
+
+journal.window.map.link.label.next.month = next month
+
+journal.window.map.link.label.open.in.transcripts = open in transcripts
+
+journal.window.map.link.label.open.the.day = open the day
+
+journal.window.map.link.label.overture.maps = Overture Maps
+
+journal.window.map.link.label.place = place
+
+journal.window.map.link.label.places = places
+
+journal.window.map.link.label.previous.month = previous month
+
+journal.window.map.link.label.the.day = the day
+
+journal.window.map.link.label.the.week.after = the week after
+
+journal.window.map.link.label.the.week.before = the week before
+
+journal.window.map.link.label.this.month = this month
+
+journal.window.map.link.label.this.week = this week
+
+journal.window.map.list.conjunction = { $leading }{ $slot1 }and{ $slot2 }{ $last }
+
+journal.window.map.month.area.around = around{ $slot1 }{ $name }
+
+journal.window.map.month.area.distance = { $distance }{ $slot1 }km{ $slot2 }{ $direction }{ $slot3 }of{ $slot4 }{ $reference }
+
+journal.window.map.month.busiest.area = the busiest area
+
+journal.window.map.month.choice.shared.region = , all in{ $slot1 }{ $region }
+
+journal.window.map.month.choice.trip = on the{ $slot1 }{ $date }{ $slot2 }trip
+
+journal.window.map.month.day.location.none = your journal has no location from{ $slot1 }{ $date }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
+
+journal.window.map.month.day.readings.undrawn = not drawn:{ $slot1 }{ $readings }.
+
+journal.window.map.month.day.stay.explanation = a stay your journal worked out from{ $slot1 }{ $count }{ $slot2 }of your phone's readings
+
+journal.window.map.month.days.show.all = show all{ $slot1 }{ $count }{ $slot2 }days
+
+journal.window.map.month.days.show.fewer = show fewer days
+
+journal.window.map.month.explanation.midnight = only time inside{ $slot1 }{ $month }{ $slot2 }counts. a visit that began on{ $slot3 }{ $previous }{ $slot4 }{ $day }{ $slot5 }counts from midnight.
+
+journal.window.map.month.heading = { $month }{ $slot1 }{ $year }
+
+journal.window.map.month.hidden.places = { $count }{ $slot1 }places you hid
+
+journal.window.map.month.live.areas.all = showing every area
+
+journal.window.map.month.live.choice.days = { $name },{ $slot1 }{ $days }{ $slot2 }this month
+
+journal.window.map.month.live.choice.none = nothing chosen
+
+journal.window.map.month.live.fit = map fitted
+
+journal.window.map.month.live.showing.choice = showing{ $slot1 }{ $name }
+
+journal.window.map.month.live.zoom.amount = zoomed{ $slot1 }{ $zoom }
+
+journal.window.map.month.live.zoom.areas = zoomed in on{ $slot1 }{ $areas }
+
+journal.window.map.month.map.nothing.drawn = nothing drawn here
+
+journal.window.map.month.map.outlined = { $areas }{ $slot1 }outlined
+
+journal.window.map.month.strip.visits.and.stays = filled bars are visits your phone reported; outlined bars are stays your journal worked out.
+
+journal.window.map.month.time.all.day = all day
+
+journal.window.map.month.time.from = from{ $slot1 }{ $time }
+
+journal.window.map.month.time.until = until{ $slot1 }{ $time }
+
+journal.window.map.month.zoom.suffix = { $slot1 }zoomed in.
+
+journal.window.map.months.label.april = April
+
+journal.window.map.months.label.august = August
+
+journal.window.map.months.label.december = December
+
+journal.window.map.months.label.february = February
+
+journal.window.map.months.label.january = January
+
+journal.window.map.months.label.july = July
+
+journal.window.map.months.label.june = June
+
+journal.window.map.months.label.march = March
+
+journal.window.map.months.label.may = May
+
+journal.window.map.months.label.november = November
+
+journal.window.map.months.label.october = October
+
+journal.window.map.months.label.september = September
+
+journal.window.map.option.label.home = home
+
+journal.window.map.option.label.nothing = nothing
+
+journal.window.map.option.label.work = work
+
+journal.window.map.place.date.range = ,{ $slot1 }{ $first }{ $slot2 }to{ $slot3 }{ $last }
+
+journal.window.map.place.date.single = ,{ $slot1 }{ $date }
+
+journal.window.map.place.hidden.suffix = { $slot1 }· hidden
+
+journal.window.map.place.named.link = a place you named "{ $name }"
+
+journal.window.map.place.named.reason = you named this place "{ $name }".
+
+journal.window.map.response.accuracy.busy = location accuracy is already downloading.
+
+journal.window.map.response.accuracy.busy.detail = A download is running
+
+journal.window.map.response.accuracy.download.failed = location accuracy couldn't be downloaded.
+
+journal.window.map.response.accuracy.not.offered = this version of your journal has no location accuracy download.
+
+journal.window.map.response.accuracy.not.offered.detail = Nothing offered
+
+journal.window.map.response.accuracy.remove.failed = location accuracy couldn't be removed.
+
+journal.window.map.response.area.unavailable = the place names that come with your journal couldn't be read.
+
+journal.window.map.response.day.invalid = that day couldn't be used.
+
+journal.window.map.response.day.invalid.detail = Day not found
+
+journal.window.map.response.edit.alias = { $slot1 } must be { $slot2 }, { $slot3 } or { $slot4 }
+
+journal.window.map.response.edit.body = Body must be a { $slot1 } object
+
+journal.window.map.response.edit.failed = that change couldn't be saved.
+
+journal.window.map.response.edit.hidden = { $slot1 } must be { $slot2 } or { $slot3 }
+
+journal.window.map.response.edit.invalid = that change couldn't be used.
+
+journal.window.map.response.edit.name = { $slot1 } must be a string or { $slot2 }
+
+journal.window.map.response.month.invalid = that month couldn't be used.
+
+journal.window.map.response.month.invalid.detail = Month must be { $slot1 }
+
+journal.window.map.response.place.unknown = that place isn't in your journal.
+
+journal.window.map.response.place.unknown.detail = Place not found
+
+journal.window.map.section.heading.areas.this.month = areas this month
+
+journal.window.map.section.heading.day.by.day = day by day
+
+journal.window.map.section.heading.deleting.any.of.this = deleting any of this
+
+journal.window.map.section.heading.edit.this.place = edit this place
+
+journal.window.map.section.heading.location.accuracy = location accuracy
+
+journal.window.map.section.heading.the.day.in.order = the day, in order
+
+journal.window.map.section.heading.the.map = the map
+
+journal.window.map.section.heading.the.month.at.a.glance = the month at a glance
+
+journal.window.map.section.heading.visits.and.stays.here = visits and stays here
+
+journal.window.map.status.text.couldn.t.open.this.month.s = couldn't open this month's location.
+
+journal.window.map.text.loading = loading…
+
+journal.window.map.text.loading.this.day.s.location = loading this day's location…
+
+journal.window.map.text.loading.your.journal.s.location = loading your journal's location…
+
+journal.window.map.visible.text.a.hidden.place.is.off.the = a hidden place is off the map, and what your journal writes about where you were each day leaves it out: in search, for connected agents and in activities. new daily briefings leave it out too.
+
+journal.window.map.visible.text.a.night.counts.in.an.area = a night counts in an area when a visit there covers at least two hours between 22:00 and 06:00.
+
+journal.window.map.visible.text.a.place.is.a.spot.your = a place is a spot your phone reported a visit at, or stayed at, on two different dates, close enough to be one spot. approximate location never makes a place.
+
+journal.window.map.visible.text.a.place.lasts.as.long.as = a place lasts as long as a segment it came from does. delete those segments in transcripts and the place, and its name, go too.
+
+journal.window.map.visible.text.a.place.starts.from.visits.or = a place starts from visits or stays on two or more dates, all within 50 m of each other and more than 100 m from any other place. later ones within 50 m of it join it. a stay or visit with a margin of error over 50 m never makes or joins one.
+
+journal.window.map.visible.text.a.place.you.hid.isn.t = a place you hid isn't drawn. its visits still show in each day's list.
+
+journal.window.map.visible.text.a.stay.is.worked.out.from = a stay is worked out from precise readings, none more than five minutes apart, that stayed within 100 m of the first of them for at least five minutes. approximate readings never make a stay. its times are its first and last reading.
+
+journal.window.map.visible.text.a.stop.at.one.of.your = a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop whose margin of error wasn't reported, or is over 500 m, isn't drawn, and neither is the time between stops.
+
+journal.window.map.visible.text.across = across ·
+
+journal.window.map.visible.text.also.in.this.area = also in this area
+
+journal.window.map.visible.text.an.area = an area
+
+journal.window.map.visible.text.borders.from.natural.earth = ) · borders from Natural Earth
+
+journal.window.map.visible.text.checking.location.accuracy.before.using.it = checking location accuracy before using it. you can keep using your journal.
+
+journal.window.map.visible.text.days.here = days here
+
+journal.window.map.visible.text.days.with.a.stop = days with a stop
+
+journal.window.map.visible.text.detail.level.in.the.solstone.app = detail level in the solstone app:
+
+journal.window.map.visible.text.each.area.is.about.km.across = each area is about 1 km across and holds the stops in it: the visits your phone reported, and any stays your journal worked out.
+
+journal.window.map.visible.text.every.record.above.opens.in.transcripts = every record above opens in transcripts, where you delete its segments the same way as any other. a deleted segment leaves this view and search.
+
+journal.window.map.visible.text.filled.bars.are.visits.your.phone = filled bars are visits your phone reported; outlined bars are stays your journal worked out. every reading is on each day's page.
+
+journal.window.map.visible.text.for.readings.the.times.are.the = for readings, the times are the first and last reading in the row. they don't say how long you were anywhere.
+
+journal.window.map.visible.text.frees = frees
+
+journal.window.map.visible.text.from = from
+
+journal.window.map.visible.text.hidden = hidden
+
+journal.window.map.visible.text.hours.are.shown.for.one.area = hours are shown for one area at a time, and only for time with both ends known. they aren't added up across areas, because two reports can place the same hour in two areas.
+
+journal.window.map.visible.text.hours.with.both.ends.known = hours with both ends known
+
+journal.window.map.visible.text.location.accuracy.is.on = location accuracy is on.
+
+journal.window.map.visible.text.location.accuracy.is.on.a.newer = location accuracy is on. a newer download is ready from updates.solstone.app:
+
+journal.window.map.visible.text.location.accuracy.is.unavailable = location accuracy is unavailable.
+
+journal.window.map.visible.text.location.may.have.been.paused.or = location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
+
+journal.window.map.visible.text.location.was.kept.this.day.but = location was kept this day, but no stops.
+
+journal.window.map.visible.text.named.features.only.streets.not.shown = named features only; streets not shown.
+
+journal.window.map.visible.text.names.go.back.to.the.nearby = ; names go back to the nearby town.
+
+journal.window.map.visible.text.nights = nights
+
+journal.window.map.visible.text.no.location.kept.for.this.day = no location kept for this day.
+
+journal.window.map.visible.text.no.location.kept.for.this.month = no location kept for this month.
+
+journal.window.map.visible.text.no.places.yet = no places yet.
+
+journal.window.map.visible.text.no.stops.to.draw.this.month = no stops to draw this month.
+
+journal.window.map.visible.text.not.drawn.here = not drawn here:
+
+journal.window.map.visible.text.nothing.drawn.here = · nothing drawn here
+
+journal.window.map.visible.text.of = of
+
+journal.window.map.visible.text.on.the.map.a.run.of = on the map, a run of precise readings shows as one dot at its middle reading, so a day doesn't read as a route. the list counts every reading.
+
+journal.window.map.visible.text.saved = saved.
+
+journal.window.map.visible.text.shades.run.from.day.lightest.through = shades run from 1 day, lightest, through 2 to 3, 4 to 7 and 8 to 14, to 15 or more days, darkest.
+
+journal.window.map.visible.text.show.all.value1.areas = show all{ $slot1 }{ $value1 }{ $slot2 }areas
+
+journal.window.map.visible.text.show.fewer = show fewer
+
+journal.window.map.visible.text.stops = stops
+
+journal.window.map.visible.text.stops.in.order = stops, in order
+
+journal.window.map.visible.text.that.change.couldn.t.be.saved = that change couldn't be saved.
+
+journal.window.map.visible.text.the.shade.counts.days.not.hours = the shade counts days, not hours. a day counts once in an area, however many reports it has, and a visit counts for its day even when its arrival or departure isn't known.
+
+journal.window.map.visible.text.the.stops.your.journal.holds.for = the stops your journal holds for this month. each area is shaded by how many days have a stop in it.
+
+journal.window.map.visible.text.there.s.no.street.map.a = there's no street map. a street map is loaded piece by piece from a map service, and asking for the right piece tells that service where you were.
+
+journal.window.map.visible.text.there.s.no.street.map.the = there's no street map. the names are the ones that came with your journal or that you downloaded, and no map service is asked for anything.
+
+journal.window.map.visible.text.this.month = this month
+
+journal.window.map.visible.text.to.remove.a.visit.or.stay = to remove a visit or stay, open its day and delete its segments in transcripts. a place lasts as long as a segment it came from does.
+
+journal.window.map.visible.text.towns.from = towns from
+
+journal.window.map.visible.text.value1.of.value2.days.have.stops = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops
+
+journal.window.map.visible.text.value1.outside.the.map.show.all = { $value1 }{ $slot1 }outside the map · show all
+
+journal.window.map.visible.text.value1.value2.value3.most.days.first = { $value1 }{ $slot1 }{ $value2 }{ $value3 }, most days first.
+
+journal.window.map.visible.text.what.you.call.a.place.a = what you call a place, a name or home or work, is used in search and by your journal's own thinking, and an agent that may see transcripts across your whole journal can read it.
+
+journal.window.map.visible.text.where = where
+
+journal.window.map.visible.text.where.starts.around.the.area.with = "where" starts around the area with the most days: every stop within 50 km of it. any run of days with a stop farther away is a trip, named by its dates.
+
+journal.window.map.visible.text.with.location.accuracy = with location accuracy,
+
+journal.window.map.visible.text.with.location.accuracy.a.visit.can = with location accuracy, a visit can say "near" the places within your phone's margin of error. every record says why it reads the way it does.
+
+journal.window.map.visible.text.with.location.accuracy.a.visit.can.variant2 = with location accuracy, a visit can say "at" a place when your phone's whole margin of error is inside its outline, and "near" the places within that margin. "in" means the whole margin is inside a larger outline, a neighbourhood or a town. every record says why it reads the way it does.
+
+journal.window.map.visible.text.without.it.a.visit.is.named = without it, a visit is named by the nearby town.
+
+journal.window.map.visible.text.without.location.accuracy.each.reading.is = without location accuracy, each reading is named after the town that best stands for its area, which isn't always the town you were in. that's why it says "near".
+
+journal.window.map.visible.text.you.can.name.a.place.call = you can name a place, call it home or work, or hide it. hiding keeps everything within 50 m of it off the map, and what your journal writes about where you were each day leaves it out. the day's list here still shows it.
+
+journal.window.map.visible.text.your.journal.couldn.t.read.the = your journal couldn't read the location kept for this day.
+
+journal.window.map.visible.text.your.journal.draws.this.from.the = your journal draws this from the readings your phone sent it, and the names that came with your journal or that you downloaded. no map service is asked for anything.
+
+journal.window.map.visible.text.your.phone.often.reports.an.arrival = your phone often reports an arrival first and the whole visit later. the two reports are one visit.
+
+journal.window.map.week.heading = the week of{ $slot1 }{ $date }
+
+journal.window.map.window.explanation.a.fading.bar.is.missing.its = { $slot1 }a fading bar is missing its arrival or departure.
+
+journal.window.map.window.explanation.a.place.in.your.journal = a place in your journal
+
+journal.window.map.window.explanation.a.place.you.hid = a place you hid
+
+journal.window.map.window.explanation.a.segment.your.journal.couldn.t = a segment your journal couldn't read
+
+journal.window.map.window.explanation.a.stay.your.journal.worked.out = a stay your journal worked out
+
+journal.window.map.window.explanation.a.stay.your.journal.worked.out.variant2 = a stay your journal worked out from readings from{ $slot1 }{ $value1 }
+
+journal.window.map.window.explanation.a.visit.your.phone.reported = a visit your phone reported
+
+journal.window.map.window.explanation.and.value1.more.than.km.away = , and{ $slot1 }{ $value1 }{ $slot2 }more than 50 km away
+
+journal.window.map.window.explanation.approximate.location.each.reading.is.only = approximate location: each reading is only good to within a few kilometres, which is enough to name the town, not the building.
+
+journal.window.map.window.explanation.choose.a.day.in.the.calendar = choose a day in the calendar.
+
+journal.window.map.window.explanation.choose.an.area.on.the.map = choose an area on the map or in the list, or a day in the calendar.
+
+journal.window.map.window.explanation.each.bar.is.a.visit.your = each bar is a visit your phone reported.
+
+journal.window.map.window.explanation.every.reading.here.with.its.margin = every reading here, with its margin of error, is inside{ $slot1 }{ $value1 }.
+
+journal.window.map.window.explanation.from.value1.no.departure.reported = from{ $slot1 }{ $value1 }, no departure reported
+
+journal.window.map.window.explanation.has.a.stop.in.the.chosen = , has a stop in the chosen area
+
+journal.window.map.window.explanation.hidden.from.the.map = hidden from the map
+
+journal.window.map.window.explanation.in.the.chosen.area = in the chosen area
+
+journal.window.map.window.explanation.location.accuracy.couldn.t.be.downloaded = location accuracy couldn't be downloaded. try again in a while.
+
+journal.window.map.window.explanation.location.accuracy.couldn.t.be.saved = location accuracy couldn't be saved in your journal's folder.
+
+journal.window.map.window.explanation.location.accuracy.failed.its.file.check = location accuracy failed its file check. download it again before using it.
+
+journal.window.map.window.explanation.location.comes.from.the.solstone.app = location comes from the solstone app on your phone, once you turn it on there. whatever it takes in goes into your journal and shows up here, day by day.
+
+journal.window.map.window.explanation.location.couldn.t.be.read = location couldn't be read
+
+journal.window.map.window.explanation.map.fitted.to.these.areas = map fitted to these areas
+
+journal.window.map.window.explanation.map.of.value1.value2.each.value3 = map of{ $slot1 }{ $value1 }:{ $slot2 }{ $value2 }, each{ $slot3 }{ $value3 }{ $slot4 }across. the same areas are listed under areas this month.{ $value4 }
+
+journal.window.map.window.explanation.map.of.value1.value2.each.value3.variant2 = map of{ $slot1 }{ $value1 }:{ $slot2 }{ $value2 }, each{ $slot3 }{ $value3 }{ $slot4 }across, holding the{ $slot5 }{ $value4 }{ $slot6 }listed under areas this month.{ $value5 }
+
+journal.window.map.window.explanation.margin.of.error.over.m.or = margin of error over 500 m or not reported
+
+journal.window.map.window.explanation.no.location.was.kept.on.value1 = { $slot1 }no location was kept on{ $slot2 }{ $value1 }.
+
+journal.window.map.window.explanation.no.named.town.nearby = no named town nearby
+
+journal.window.map.window.explanation.on.value1.a.visit.or.stay = on{ $slot1 }{ $value1 }, a visit or stay here covers at least two hours between 22:00 and 06:00.
+
+journal.window.map.window.explanation.only.the.part.inside.value1.counts = only the part inside{ $slot1 }{ $value1 }{ $slot2 }counts.
+
+journal.window.map.window.explanation.open.it.in.transcripts.to.see = open it in transcripts to see or delete it
+
+journal.window.map.window.explanation.precise.location.is.off.for.solstone = precise location is off for solstone on your{ $slot1 }{ $value1 }, so its readings name the town, not the building.
+
+journal.window.map.window.explanation.that.whole.area.is.inside.value1 = that whole area is inside{ $slot1 }{ $value1 }.
+
+journal.window.map.window.explanation.the.area.with.the.most.days = the area with the most days
+
+journal.window.map.window.explanation.the.first.area.listed = the first area listed
+
+journal.window.map.window.explanation.there.isn.t.enough.free.space = there isn't enough free space: location accuracy needs{ $slot1 }{ $value1 }{ $slot2 }free, plus some room to spare.
+
+journal.window.map.window.explanation.these.readings.with.their.margins.all = these readings, with their margins, all fall inside{ $slot1 }{ $value1 }.
+
+journal.window.map.window.explanation.these.readings.with.their.margins.all.variant2 = these readings, with their margins, all fall within{ $slot1 }{ $value1 }{ $slot2 }m of their centre
+
+journal.window.map.window.explanation.this.trip.s.busiest.area = this trip's busiest area
+
+journal.window.map.window.explanation.this.version.of.your.journal.has = this version of your journal has no location accuracy download.
+
+journal.window.map.window.explanation.tied.for.the.most.days = tied for the most days
+
+journal.window.map.window.explanation.until.value1.arrival.not.known = until{ $slot1 }{ $value1 }, arrival not known
+
+journal.window.map.window.explanation.value1.and.all.of.that.is = { $value1 }, and all of that is inside{ $slot1 }{ $value2 }.
+
+journal.window.map.window.explanation.value1.is.the.town.that.best = { $value1 }{ $slot1 }is the town that best stands for this area,{ $slot2 }{ $value2 }{ $slot3 }km away.
+
+journal.window.map.window.explanation.value1.no.visits.or.stays = { $value1 }, no visits or stays
+
+journal.window.map.window.explanation.value1.of.value2.days.have.stops = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops.{ $value3 }
+
+journal.window.map.window.explanation.value1.of.value2.days.have.stops.variant2 = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops:{ $slot4 }{ $value3 }{ $slot5 }{ $value4 }{ $value5 }.{ $value6 }
+
+journal.window.map.window.explanation.value1.visits.are.missing.an.arrival = { $value1 }{ $slot1 }visits are missing an arrival or departure, so their time isn't in the hours or the nights. their days still count.
+
+journal.window.map.window.explanation.value1.with.a.margin.of.error = { $value1 }{ $slot1 }with a margin of error over 500 m or none reported
+
+journal.window.map.window.explanation.value1.your.journal.couldn.t.read = { $value1 }{ $slot1 }your journal couldn't read
+
+journal.window.map.window.explanation.visit.is.missing.its.arrival.or = 1 visit is missing its arrival or departure, so its time isn't in the hours or the nights. its day still counts.
+
+journal.window.map.window.explanation.visits.or.stays.here.on.value1 = visits or stays here on{ $slot1 }{ $value1 }{ $value2 }.
+
+journal.window.map.window.explanation.where.two.reports.cover.the.same = where two reports cover the same time, the hours count that time once.
+
+journal.window.map.window.explanation.your.journal.couldn.t.read.part = your journal couldn't read part of this day's location.
+
+journal.window.map.window.explanation.your.journal.has.no.location.from = your journal has no location from{ $slot1 }{ $value1 }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
+
+journal.window.map.window.explanation.your.journal.worked.this.stay.out = your journal worked this stay out from{ $slot1 }{ $value1 }{ $slot2 }precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
+
+journal.window.map.window.explanation.your.phone.placed.you.within.value1 = your phone placed you within{ $slot1 }{ $value1 }{ $slot2 }m
+
+journal.window.map.window.explanation.your.phone.placed.you.within.value1.variant2 = your phone placed you within{ $slot1 }{ $value1 }{ $slot2 }m, too wide to name a building or the places nearby.
+
+journal.window.map.window.explanation.your.phone.s.position.with.its = your phone's position, with its margin of error, is inside{ $slot1 }{ $value1 }.
+
+journal.window.map.window.explanation.your.value1.said.location.was.interrupted = your{ $slot1 }{ $value1 }{ $slot2 }said location was interrupted{ $slot3 }{ $value2 }{ $slot4 }this day.
+
+journal.window.map.window.explanation.your.watch.gives.only.approximate.location = your watch gives only approximate location, so its readings name the town, not the building.
+
 journal.window.more.agents.connected = { $count }{ $slot1 }connected
 
 journal.window.more.coverage.since = since{ $slot1 }{ $date }
@@ -8390,6 +9076,14 @@ journal.window.speakers.window.state.text.you.confirmed = you confirmed
 journal.window.speakers.window.state.text.you.corrected = you corrected
 
 journal.window.speakers.window.state.text.you.identified = you identified
+
+journal.window.support.report.automatic.disclosure = the journal does not send a report or register you with support on its own.
+
+journal.window.support.report.open = make a report
+
+journal.window.support.report.review.disclosure = make a report here, or use "report this" beside any error. you'll review everything before the journal opens the support website.
+
+journal.window.support.requests.link = track requests
 
 journal.window.system.health.backlog.age.day.many = { $n }{ $slot1 }days
 

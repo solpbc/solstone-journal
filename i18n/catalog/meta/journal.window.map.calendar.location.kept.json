@@ -1,0 +1,16 @@
+{
+  "description": "calendar location kept in the journal's map view.",
+  "context": "Journal window, map view. calendar location kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b40076bcc9cb471b85d26a28d8460954fb45754f6ecf86e1533898298221580f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "entry time missing departure in the journal's map view.",
+  "context": "Journal window, map view. entry time missing departure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e86ccce0a1d8f12459460e93525383dabc34e62c4f3436ffb5c0b1795bf92c8c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

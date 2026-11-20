@@ -447,10 +447,12 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 
 Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
 `solstone-core-backup-web`, `solstone-core-facets-web`,
-`solstone-core-health-web` and `solstone-core-home-web`. This includes Entities
-window responses from `solstone-core-entities` and `solstone-core-entity`,
-status copy from `solstone-core-system-health` and `solstone-core-system`,
-and Home window responses from `solstone-core-home` and `solstone-core-location`.
+`solstone-core-health-web`, `solstone-core-home-web`, `solstone-core-map-web` and
+`solstone-core-support-web`.
+This includes Entities window responses from `solstone-core-entities` and
+`solstone-core-entity`, status copy from `solstone-core-system-health` and
+`solstone-core-system`, Home window responses from `solstone-core-home`, and
+Home and Map display copy from `solstone-core-location`.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
 For localized copy, use `JournalI18n.render` for JavaScript text and
 `JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages

@@ -1,0 +1,23 @@
+{
+  "description": "month zoom suffix in the journal's map view.",
+  "context": "Journal window, map view. month zoom suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f7d6c97c71a5311bf6e50e9a5485bb837461a69c6db95f68143f4c09f83a0e06",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "report button in the journal's support view.",
+  "context": "Journal window, support view. report button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04418ab80509185e09757d8c3b760529110a8dab33c498a70f74dc3da7801c7b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

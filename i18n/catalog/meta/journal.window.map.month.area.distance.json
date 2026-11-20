@@ -1,0 +1,51 @@
+{
+  "description": "month area distance in the journal's map view.",
+  "context": "Journal window, map view. month area distance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "distance",
+      "type": "string"
+    },
+    {
+      "name": "direction",
+      "type": "string"
+    },
+    {
+      "name": "reference",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1eabce5a0887700bd4ca9f8202a4977700dd6cbb38248baff2a93eb12b0c93c6",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

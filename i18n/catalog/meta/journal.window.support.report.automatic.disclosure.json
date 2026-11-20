@@ -1,0 +1,16 @@
+{
+  "description": "report submission and registration disclosure in the journal's support view.",
+  "context": "Journal window, support view. report submission and registration disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a026a82e57130a3f06990a1157386f476181e596d97259da0cccbfecce53f0e",
+  "max_length": 105,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

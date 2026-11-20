@@ -1,0 +1,16 @@
+{
+  "description": "month live fit in the journal's map view.",
+  "context": "Journal window, map view. month live fit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4d1bf383426fc9d55e93a0ac051cf70da8d11ca139174029562a80425533e54",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

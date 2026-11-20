@@ -1,0 +1,16 @@
+{
+  "description": "calendar stops elsewhere in the journal's map view.",
+  "context": "Journal window, map view. calendar stops elsewhere.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d669e9c62d919c5e2cea96da91ed626a4e736c361f48c462798d26676fcf92e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

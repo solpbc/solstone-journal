@@ -1,0 +1,28 @@
+{
+  "description": "count of readings in the journal's map view.",
+  "context": "Journal window, map view. count of readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "98148e1aa9c7ba12bf60c18fbe8584ac25a60e84d93d64ad1843c5307886bdd4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

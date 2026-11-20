@@ -1,0 +1,23 @@
+{
+  "description": "accuracy explanation names in the journal's map view.",
+  "context": "Journal window, map view. accuracy explanation names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a49ef71ac44996d18f8a940e999ab8c9e807e9736d63115b0e7f4ad6845185d",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Blue Bottle Coffee"
+    }
+  ]
+}

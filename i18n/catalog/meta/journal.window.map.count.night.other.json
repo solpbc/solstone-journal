@@ -1,0 +1,28 @@
+{
+  "description": "count of nights in the journal's map view.",
+  "context": "Journal window, map view. count of nights.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "45e98d58510d2ec267a49f6f2213da13de5fe7f3661eff093a5e5788ca427b9f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

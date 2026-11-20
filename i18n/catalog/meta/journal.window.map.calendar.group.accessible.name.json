@@ -1,0 +1,28 @@
+{
+  "description": "calendar group accessible name in the journal's map view.",
+  "context": "Journal window, map view. calendar group accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03699fadb8561ff29764265097480b412cd24a9bce9c5b2727d373f8a3380bb5",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

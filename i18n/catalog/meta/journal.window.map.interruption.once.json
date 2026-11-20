@@ -1,0 +1,16 @@
+{
+  "description": "number of interruptions in the journal's map view.",
+  "context": "Journal window, map view. number of interruptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5da751028255c7ca1d38d76a27fd14e88a25995034a3d1b5c63509ab3a875d85",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

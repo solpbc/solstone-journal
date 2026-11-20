@@ -12,12 +12,12 @@
   </style>
 <div class="support-workspace">
   <section class="support-page">
-    <h1>support</h1>
-    <p>make a report here, or use "report this" beside any error. you'll review everything before the journal opens the support website.</p>
-    <p>the journal does not send a report or register you with support on its own.</p>
+    <h1>{{journal.window.view.support.label}}</h1>
+    <p>{{!journal.window.support.report.review.disclosure}}</p>
+    <p>{{!journal.window.support.report.automatic.disclosure}}</p>
     <div class="actions">
-      <button type="button" id="make-report">make a report</button>
-      <a href="https://services.solstone.app/support" target="_blank" rel="noopener noreferrer">track requests</a>
+      <button type="button" id="make-report">{{journal.window.support.report.open}}</button>
+      <a href="https://services.solstone.app/support" target="_blank" rel="noopener noreferrer">{{journal.window.support.requests.link}}</a>
     </div>
   </section>
   <script src="/app/support/static/support.js"></script>

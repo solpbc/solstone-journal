@@ -35,6 +35,7 @@ pub mod stay;
 
 pub use fingerprint::daily_location_fingerprint;
 
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -201,20 +202,32 @@ pub struct PlaceView {
 impl PlaceView {
     /// The name to show: the owner's, else the best words for the spot.
     pub fn label(&self) -> String {
-        if let Some(name) = self.place.owner_name() {
+        self.label_in(ENGLISH)
+    }
+
+    pub fn label_in(&self, locale: &str) -> String {
+        if let Some(name) = self.place.owner_name_in(locale) {
             return name;
         }
         if let Some(words) = &self.words {
             if let Some(at) = &words.at {
-                return format!("at {}", at.name);
+                return strings(
+                    locale,
+                    "journal.window.map.area.label.at.place",
+                    [("name", &at.name)],
+                );
             }
             if let Some(near) = words.near.first() {
-                return format!("near {}", near.name);
+                return strings(
+                    locale,
+                    "journal.window.map.area.label.near.place",
+                    [("name", &near.name)],
+                );
             }
         }
         self.area
-            .label()
-            .unwrap_or_else(|| "a place with no named town nearby".to_owned())
+            .label_in(locale)
+            .unwrap_or_else(|| text(locale, "journal.window.map.area.no.town"))
     }
 }
 

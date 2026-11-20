@@ -1,0 +1,16 @@
+{
+  "description": "compass east in the journal's map view.",
+  "context": "Journal window, map view. compass east.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b2e2666ace82bbeef0608e3b5e9677f6e74ef1d0a28e598942a2dd9cb5d97b1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

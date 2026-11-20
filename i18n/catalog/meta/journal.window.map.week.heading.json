@@ -1,0 +1,28 @@
+{
+  "description": "week heading in the journal's map view.",
+  "context": "Journal window, map view. week heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc97386b1f38929d98b0c935a5afd1ef65b83063e70e25d0e9bc79b1b2aad5ce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's map view.",
+  "context": "Journal window, map view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f7ac76aa550db1c3c32f8fe89b2fc1c1ee00f048edcdc9ebf7ac5fe8a77a393",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "month time until in the journal's map view.",
+  "context": "Journal window, map view. month time until.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ab4382b214c15bec103b69d2b8a2f414d9bbcd59ef6f8ade6737dccd9363dd1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}
