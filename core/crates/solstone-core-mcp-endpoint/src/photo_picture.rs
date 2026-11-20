@@ -49,6 +49,42 @@ pub(crate) fn is_photo_description(path: &str) -> bool {
     photo_folder(path).is_some()
 }
 
+/// Undo the importer's literal encoding inside its model block. Fetch will
+/// escape the whole value at release, including the header, caption and block
+/// markers. Leaving the model text encoded at that point would escape it twice.
+pub(crate) fn decode_model_text(text: &str) -> Option<String> {
+    const MARKER: &str = "\n> [image description — model-derived]\n";
+    let (header, tail) = text.rsplit_once(MARKER)?;
+    let mut decoded = String::with_capacity(text.len());
+    decoded.push_str(header);
+    decoded.push_str(MARKER);
+    let mut in_model = true;
+    for line in tail.split_inclusive('\n') {
+        if in_model && let Some(body) = line.strip_prefix("> ") {
+            decoded.push_str("> ");
+            let mut chars = body.chars().peekable();
+            let mut plain = String::with_capacity(body.len());
+            while let Some(ch) = chars.next() {
+                if ch == '\\' && chars.peek().is_some_and(char::is_ascii_punctuation) {
+                    plain.push(chars.next().expect("escaped punctuation"));
+                } else {
+                    plain.push(ch);
+                }
+            }
+            decoded.push_str(
+                &plain
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&"),
+            );
+        } else {
+            in_model &= line == ">\n";
+            decoded.push_str(line);
+        }
+    }
+    Some(decoded)
+}
+
 /// The `picture` field a photo's fetch carries, and the picture when it is kept.
 pub(crate) fn photo_picture(
     journal_root: &Path,
