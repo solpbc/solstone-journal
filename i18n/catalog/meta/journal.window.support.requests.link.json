@@ -1,0 +1,16 @@
+{
+  "description": "link to existing requests in the journal's support view.",
+  "context": "Journal window, support view. link to existing requests.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5eba550f49887461c6debe4ccff2cf3fcaa40b6f9a367abdcd7795b1c2c8ac2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

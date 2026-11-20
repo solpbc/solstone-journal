@@ -9073,6 +9073,14 @@ journal.window.speakers.window.state.text.you.corrected = you corrected
 
 journal.window.speakers.window.state.text.you.identified = you identified
 
+journal.window.support.report.automatic.disclosure = the journal does not send a report or register you with support on its own.
+
+journal.window.support.report.open = make a report
+
+journal.window.support.report.review.disclosure = make a report here, or use "report this" beside any error. you'll review everything before the journal opens the support website.
+
+journal.window.support.requests.link = track requests
+
 journal.window.system.health.backlog.age.day.many = { $n }{ $slot1 }days
 
 journal.window.system.health.backlog.age.day.one = 1 day
