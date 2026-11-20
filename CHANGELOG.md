@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. in apps that let a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.

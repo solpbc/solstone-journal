@@ -169,7 +169,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
         title: "read a journal entry",
-        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo or screenshot can include a smaller copy when allowed and available. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
+        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo or screenshot can include a smaller copy when allowed and available. to show pictures in a page you build, where that page can use this connector, have it call fetch for each one when it opens, one or two at a time, and retry one that fails. fetch returns the picture itself as image content, not as a file, and the journal makes no public link for it. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
         input_schema: fetch_input_schema,
         requires: FETCH,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
