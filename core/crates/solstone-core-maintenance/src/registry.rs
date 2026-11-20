@@ -32,13 +32,13 @@ pub struct RoutineDescriptor {
 const ROUTINES: [RoutineDescriptor; 17] = [
     RoutineDescriptor {
         id: "faces:backfill",
-        description: "refresh photo suggestions from meetings, including past meetings.",
+        description: "refresh profile pic suggestions from meetings, including past meetings.",
         cadence: Cadence::Hourly,
         max_runtime: Some("40m"),
     },
     RoutineDescriptor {
         id: "faces:reconcile",
-        description: "refresh photo suggestions from meetings, including past meetings.",
+        description: "refresh profile pic suggestions from meetings, including past meetings.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },

@@ -295,8 +295,8 @@ window.whenShellReady(() => {
 		      };
 
 		      if (!degraded.length) {
-		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.needs.attention'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.weight'));
-		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.size.px'));
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.needs.attention'), 'color: var(--danger); font-weight: 600;');
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your'), 'color: var(--danger); font-size: 12px;');
 		        appendHealthLink();
 		        return;
 		      }
@@ -309,7 +309,7 @@ window.whenShellReady(() => {
 		      const latestMs = typeof rej.latest === 'string' ? Date.parse(rej.latest) : NaN;
 		      const hasFirstTs = Number.isFinite(firstMs);
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
-		      appendLine(title, window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.weight'));
+		      appendLine(title, 'color: var(--danger); font-weight: 600;');
 
 		      // X-02: health's sentence is the source for this state. The pane
 		      // echoes it, says what the device adds rather than what it senses,
@@ -324,9 +324,9 @@ window.whenShellReady(() => {
 		      } else {
 			        consequence = window.JournalI18n.render('journal.window.shared.status.pane.window.explanation.what.it.adds.isn.t.reaching');
 		      }
-		      appendLine(consequence, window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.danger.font.size.px'));
+		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
 
-		      appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.update.or.restart.it.on.that'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size'));
+		      appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.update.or.restart.it.on.that'), 'color: var(--ink-soft); font-size: 12px;');
 
 		      const parts = [];
 		      if (rej.reason_code) parts.push('reason: ' + rej.reason_code);
@@ -334,12 +334,12 @@ window.whenShellReady(() => {
 		        parts.push(window.JournalI18n.render('journal.window.shared.status.pane.visible.text.last.rejected.value1.ago', [['value1', String(relativeTime(Date.now() - latestMs))]]));
 		      }
 		      if (parts.length) {
-		        appendLine(parts.join(' · '), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant2'));
+		        appendLine(parts.join(' · '), 'color: var(--ink-soft); font-size: 11px;');
 		      }
 
 		      appendHealthLink();
 		      if (degraded.length > 1) {
-		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.and') + (degraded.length - 1) + window.JournalI18n.render('journal.window.shared.status.pane.status.text.more.need.attention'), window.JournalI18n.render('journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant3'));
+		        appendLine(window.JournalI18n.render('journal.window.shared.status.pane.status.text.and') + (degraded.length - 1) + window.JournalI18n.render('journal.window.shared.status.pane.status.text.more.need.attention'), 'color: var(--ink-soft); font-size: 12px; margin-top: 2px;');
 		      }
 		      return;
 	    } else if (status === 'offline' || status === 'stale') {

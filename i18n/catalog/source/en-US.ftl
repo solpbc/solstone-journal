@@ -4777,9 +4777,9 @@ journal.window.entities.response.photo.face.not.found = that photo is no longer 
 
 journal.window.entities.response.photo.faces.busy = face data is busy. try again shortly.
 
-journal.window.entities.response.photo.faces.disabled = turn on photo suggestions before choosing a photo.
+journal.window.entities.response.photo.faces.disabled = turn on profile pic suggestions before changing a profile pic.
 
-journal.window.entities.response.photo.faces.enabled = turn off photo suggestions before clearing face data.
+journal.window.entities.response.photo.faces.enabled = turn off profile pic suggestions before erasing face data.
 
 journal.window.entities.response.photo.faces.read.failed = those photos couldn't be read. try again.
 
@@ -8745,16 +8745,6 @@ journal.window.shared.status.pane.status.text.a.device.needs.attention = a devic
 
 journal.window.shared.status.pane.status.text.and = and{ $slot1 }
 
-journal.window.shared.status.pane.status.text.color.var.danger.font.size.px = color: var(--danger); font-size: 12px;
-
-journal.window.shared.status.pane.status.text.color.var.danger.font.weight = color: var(--danger); font-weight: 600;
-
-journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size = color: var(--ink-soft); font-size: 12px;
-
-journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant2 = color: var(--ink-soft); font-size: 11px;
-
-journal.window.shared.status.pane.status.text.color.var.ink.soft.font.size.variant3 = color: var(--ink-soft); font-size: 12px; margin-top: 2px;
-
 journal.window.shared.status.pane.status.text.more.need.attention = { $slot1 }more need attention
 
 journal.window.shared.status.pane.status.text.update.or.restart.it.on.that = update or restart it on that device, then a valid upload clears this.
@@ -12087,7 +12077,7 @@ journal.window.settings.config.detail.no.section.specified = No section specifie
 
 journal.window.settings.config.detail.owner.name.must.not.be.a = owner name must not be a path
 
-journal.window.settings.config.detail.photo.suggestions.run.only.in.a = photo suggestions run only in a journal on a computer
+journal.window.settings.config.detail.photo.suggestions.run.only.in.a = profile pic suggestions run only in a journal on a computer
 
 journal.window.settings.config.detail.providers.byo.thinking.budget.must.be = providers.byo_thinking_budget must be one of: 0, 8192, 16384, 32768
 
