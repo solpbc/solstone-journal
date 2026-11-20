@@ -1,0 +1,33 @@
+{
+  "description": "month days show all in the journal's map view.",
+  "context": "Journal window, map view. month days show all.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8cf699b30a8f2f537a832584e2fac12ae28a679290fb066fc19903e45dee88f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

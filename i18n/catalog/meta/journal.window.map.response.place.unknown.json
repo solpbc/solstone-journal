@@ -1,0 +1,16 @@
+{
+  "description": "map response message in the journal's map view.",
+  "context": "Journal window, map view. map response message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6d9b5fd2c441f58e7028a7586d7d2d962b4a143bb4b6dfb0f905a8bc1b5213a",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

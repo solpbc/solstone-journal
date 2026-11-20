@@ -1,0 +1,16 @@
+{
+  "description": "leaflet zoom out in the journal's map view.",
+  "context": "Journal window, map view. leaflet zoom out.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "236285007b036e0c3935d661670cbfd82c955695742557f6dea7de3b9480465d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

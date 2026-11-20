@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's map view.",
+  "context": "Journal window, map view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9ef75fe9ef9bc51fb545416ba39ac8bfc186f4727c0d4e2f12a1f539cfec468",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

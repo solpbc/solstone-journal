@@ -1,0 +1,33 @@
+{
+  "description": "month day stay explanation in the journal's map view.",
+  "context": "Journal window, map view. month day stay explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "725adc6845b89d51ad863aa236e8087d256f8dda31e89a6793bdcc42134de38a",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

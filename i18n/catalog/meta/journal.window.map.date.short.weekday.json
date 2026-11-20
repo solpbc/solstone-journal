@@ -1,0 +1,32 @@
+{
+  "description": "date short weekday in the journal's map view.",
+  "context": "Journal window, map view. date short weekday.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a988ff0c84b2981de229ccf5b981f0c0f32f136b22e7511b5d23e67d59a240e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

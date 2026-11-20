@@ -1,0 +1,16 @@
+{
+  "description": "month strip visits and stays in the journal's map view.",
+  "context": "Journal window, map view. month strip visits and stays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3aeac4dada4fe98e9e6a8548a4171997cc5f05d9337c413f46aa41c7a1c3ab8d",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

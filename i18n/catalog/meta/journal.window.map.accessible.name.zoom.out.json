@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's map view.",
+  "context": "Journal window, map view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5ecf48910891b20b1a412d214e324f54e3db35f7f8e1d425193763118ab5032",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

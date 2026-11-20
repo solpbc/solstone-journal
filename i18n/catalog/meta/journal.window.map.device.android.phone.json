@@ -1,0 +1,23 @@
+{
+  "description": "location projection in the journal's map view.",
+  "context": "Journal window, map view. location projection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cec7f5d926bed38962bbc14f8c9d44022db3c0b0ae05d9034286269750144077",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "android"
+    }
+  ]
+}

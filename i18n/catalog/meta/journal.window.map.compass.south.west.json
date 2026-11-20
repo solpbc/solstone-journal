@@ -1,0 +1,16 @@
+{
+  "description": "compass south west in the journal's map view.",
+  "context": "Journal window, map view. compass south west.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8323ae098d3a23cf3920acfb1ee4d99fe663cdc72e95d0c4bd0b1f74e29c0648",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

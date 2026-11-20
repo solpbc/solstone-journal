@@ -1,0 +1,16 @@
+{
+  "description": "map presentation in the journal's map view.",
+  "context": "Journal window, map view. map presentation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3101fe31fcdc553d9c2f58c24c03957f975c9dcaaf548f4a3b692dcb9b4f3366",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

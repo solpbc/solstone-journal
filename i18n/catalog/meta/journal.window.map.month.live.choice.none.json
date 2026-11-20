@@ -1,0 +1,16 @@
+{
+  "description": "month live choice none in the journal's map view.",
+  "context": "Journal window, map view. month live choice none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aff4df5158c1876894e3fe0f54c2091ccf58689e2cbeb187974d2cc647e0204f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

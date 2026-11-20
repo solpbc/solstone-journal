@@ -1,0 +1,42 @@
+{
+  "description": "Window explanation in the journal's map view.",
+  "context": "Journal window, map view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    },
+    {
+      "name": "value2",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7673c756210bad8c9166e937bcce6732e147782a4996c7daefbd596c43c79ff",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

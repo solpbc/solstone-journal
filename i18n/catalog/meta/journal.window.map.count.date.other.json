@@ -1,0 +1,28 @@
+{
+  "description": "count of dates in the journal's map view.",
+  "context": "Journal window, map view. count of dates.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e0e7671de8e012218e3577cb0defd2a5f58eb1b606b872ab4d551bc80da41c5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

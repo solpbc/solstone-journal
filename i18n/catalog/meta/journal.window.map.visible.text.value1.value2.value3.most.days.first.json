@@ -1,0 +1,36 @@
+{
+  "description": "Visible text in the journal's map view.",
+  "context": "Journal window, map view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    },
+    {
+      "name": "value2",
+      "type": "string"
+    },
+    {
+      "name": "value3",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a80ed1f524d73d7fa758e7c997d83bbd979f6f31d19d53a822a3a9f64b91a6d",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

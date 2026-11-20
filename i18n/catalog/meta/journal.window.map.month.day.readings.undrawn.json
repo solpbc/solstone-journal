@@ -1,0 +1,28 @@
+{
+  "description": "month day readings undrawn in the journal's map view.",
+  "context": "Journal window, map view. month day readings undrawn.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "readings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7bffa7536dcc83e9ae95a71e90405fedbcb5f6ff5e1513415bbd63b6761772a6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

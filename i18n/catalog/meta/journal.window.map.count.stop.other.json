@@ -1,0 +1,28 @@
+{
+  "description": "count of stops in the journal's map view.",
+  "context": "Journal window, map view. count of stops.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "81d0844d015031f6808f54e1f1e2beac5d6a79cc77e3d798ee3f5aff9cd89df4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

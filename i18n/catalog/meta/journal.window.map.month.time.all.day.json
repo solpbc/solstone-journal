@@ -1,0 +1,16 @@
+{
+  "description": "month time all day in the journal's map view.",
+  "context": "Journal window, map view. month time all day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1684ed450e906f54c75042fb1f6cd92d0a6a70f2bc2d9045df5800bf2cade36f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

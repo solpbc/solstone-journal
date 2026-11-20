@@ -582,13 +582,44 @@ button.map-month-row:hover { background: var(--cream); }
   let shell = null;
   let root = null;
   let gate = null;
-  const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
-    "August", "September", "October", "November", "December"];
-  const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTHS = [window.JournalI18n.render('journal.window.map.months.label.january'), window.JournalI18n.render('journal.window.map.months.label.february'), window.JournalI18n.render('journal.window.map.months.label.march'), window.JournalI18n.render('journal.window.map.months.label.april'), window.JournalI18n.render('journal.window.map.months.label.may'), window.JournalI18n.render('journal.window.map.months.label.june'), window.JournalI18n.render('journal.window.map.months.label.july'),
+    window.JournalI18n.render('journal.window.map.months.label.august'), window.JournalI18n.render('journal.window.map.months.label.september'), window.JournalI18n.render('journal.window.map.months.label.october'), window.JournalI18n.render('journal.window.map.months.label.november'), window.JournalI18n.render('journal.window.map.months.label.december')];
+  const WEEKDAYS = [
+    window.JournalI18n.render('journal.window.date.weekdays.sunday'),
+    window.JournalI18n.render('journal.window.date.weekdays.monday'),
+    window.JournalI18n.render('journal.window.date.weekdays.tuesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.wednesday'),
+    window.JournalI18n.render('journal.window.date.weekdays.thursday'),
+    window.JournalI18n.render('journal.window.date.weekdays.friday'),
+    window.JournalI18n.render('journal.window.date.weekdays.saturday')
+  ];
+  const SHORT_WEEKDAYS = [
+    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  ];
+  const SHORT_MONTHS = [
+    window.JournalI18n.render('journal.window.date.months.short.jan'),
+    window.JournalI18n.render('journal.window.date.months.short.feb'),
+    window.JournalI18n.render('journal.window.date.months.short.mar'),
+    window.JournalI18n.render('journal.window.date.months.short.apr'),
+    window.JournalI18n.render('journal.window.date.months.short.may'),
+    window.JournalI18n.render('journal.window.date.months.short.jun'),
+    window.JournalI18n.render('journal.window.date.months.short.jul'),
+    window.JournalI18n.render('journal.window.date.months.short.aug'),
+    window.JournalI18n.render('journal.window.date.months.short.sep'),
+    window.JournalI18n.render('journal.window.date.months.short.oct'),
+    window.JournalI18n.render('journal.window.date.months.short.nov'),
+    window.JournalI18n.render('journal.window.date.months.short.dec')
+  ];
   const TIER_NAMES = {
-    light: "places only",
-    balanced: "places + comings and goings",
-    full: "the complete picture",
+    light: window.JournalI18n.render('journal.window.map.device.tier.light'),
+    balanced: window.JournalI18n.render('journal.window.map.device.tier.balanced'),
+    full: window.JournalI18n.render('journal.window.map.device.tier.full'),
   };
   let mapState = null;
   let ctx = null;
@@ -702,23 +733,24 @@ button.map-month-row:hover { background: var(--cream); }
 
   function longDay(day) {
     const date = dayDate(day);
-    return date ? `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}` : "";
+    return date ? window.JournalI18n.render('journal.window.map.date.long', [['weekday', String(WEEKDAYS[date.getDay()])], ['month', String(MONTHS[date.getMonth()])], ['day', String(date.getDate())]]) : "";
   }
 
   function shortDay(day) {
     const date = dayDate(day);
-    return date ? `${MONTHS[date.getMonth()].slice(0, 3)} ${date.getDate()}` : "";
+    return date ? window.JournalI18n.render('journal.window.map.date.short', [['month', String(SHORT_MONTHS[date.getMonth()])], ['day', String(date.getDate())]]) : "";
   }
 
-  function plural(count, one, many) {
-    return `${count} ${count === 1 ? one : many}`;
+  function plural(count, kind) {
+    const number = count === 1 ? "one" : "other";
+    return window.JournalI18n.render(`journal.window.map.count.${kind}.${number}`, [["count", String(count)]]);
   }
 
   // A time on the day being shown reads as its clock; one on another day
   // carries that day, so a visit begun the evening before says so.
   function moment(time, day) {
     if (!time) return "";
-    return time.day === day ? time.clock : `${shortDay(time.day)} ${time.clock}`;
+    return time.day === day ? time.clock : window.JournalI18n.render('journal.window.map.date.time', [['day', String(shortDay(time.day))], ['clock', String(time.clock)]]);
   }
 
   function pieceTime(segment) {
@@ -734,7 +766,7 @@ button.map-month-row:hover { background: var(--cream); }
 
   function listed(names) {
     if (names.length <= 1) return names.join("");
-    return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return window.JournalI18n.render('journal.window.map.list.conjunction', [['leading', String(names.slice(0, -1).join(", "))], ['last', String(names[names.length - 1])]]);
   }
 
   function nearNames(place) {
@@ -760,15 +792,10 @@ button.map-month-row:hover { background: var(--cream); }
     return {};
   }
 
-  function shortDate(day) {
-    const date = dayDate(day);
-    return date ? `${MONTHS[date.getMonth()].slice(0, 3)} ${date.getDate()}` : "";
-  }
-
   function placeLink(ref) {
     if (!ref || !ref.id) return "";
-    const name = ref.owner_name ? `a place you named "${escapeHtml(ref.owner_name)}"` : "a place in your journal";
-    const hidden = ref.hidden ? " · hidden" : "";
+    const name = ref.owner_name ? window.JournalI18n.renderHtml('journal.window.map.place.named.link', [['name', String(ref.owner_name)]]) : window.JournalI18n.renderHtml('journal.window.map.window.explanation.a.place.in.your.journal');
+    const hidden = ref.hidden ? window.JournalI18n.renderHtml('journal.window.map.place.hidden.suffix') : "";
     return `<p class="map-muted"><a class="map-link" href="/app/map/place/${encodeURIComponent(ref.id)}">${name}</a>${hidden}</p>`;
   }
 
@@ -785,10 +812,10 @@ button.map-month-row:hover { background: var(--cream); }
     root.hidden = false;
   }
 
-  function showError(err, retry, heading) {
-    if (window.logError) window.logError(err, { context: heading?.includes("month") ? "map:month" : "map:day" });
+  function showError(err, retry, heading, context = "map:day") {
+    if (window.logError) window.logError(err, { context: context });
     setGate(window.SurfaceState.error({
-      heading: heading || "couldn't open this day's location.",
+      heading: heading || window.JournalI18n.render('journal.window.map.heading.couldn.t.open.this.day.s'),
       desc: window.CONVEY_COPY?.RELOAD_HINT,
       serverMessage: err?.serverMessage,
       detail: err,
@@ -805,8 +832,8 @@ button.map-month-row:hover { background: var(--cream); }
     shell.setAttribute("data-map-empty", "");
     setGate(window.SurfaceState.empty({
       icon: window.ConveyIcons?.svg("map-pin"),
-      heading: "no location in your journal yet",
-      desc: "location comes from the solstone app on your phone, once you turn it on there. whatever it takes in goes into your journal and shows up here, day by day.",
+      heading: window.JournalI18n.render('journal.window.map.heading.no.location.in.your.journal.yet'),
+      desc: window.JournalI18n.render('journal.window.map.window.explanation.location.comes.from.the.solstone.app'),
     }));
   }
 
@@ -814,12 +841,12 @@ button.map-month-row:hover { background: var(--cream); }
     const nearby = data.nearby || {};
     const links = [nearby.previous, nearby.next]
       .filter((value) => DAY_RE.test(String(value || "")))
-      .map((value) => `<a href="/app/map/${escapeHtml(value)}">go to ${escapeHtml(longDay(value))}</a>`)
+      .map((value) => `<a href="/app/map/${escapeHtml(value)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.go.to')} ${escapeHtml(longDay(value))}</a>`)
       .join("");
     setGate(window.SurfaceState.empty({
       icon: window.ConveyIcons?.svg("map-pin"),
-      heading: "no location kept for this day",
-      desc: `your journal has no location from ${longDay(day)}. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.`,
+      heading: window.JournalI18n.render('journal.window.map.heading.no.location.kept.for.this.day'),
+      desc: window.JournalI18n.render('journal.window.map.window.explanation.your.journal.has.no.location.from', [['value1', String(longDay(day))]]),
     }));
     if (links) {
       const actions = document.createElement("div");
@@ -829,52 +856,58 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
+  function interruptionCount(count, distinguishTwice = false) {
+    if (count === 1) return window.JournalI18n.render('journal.window.map.interruption.once');
+    if (distinguishTwice && count === 2) return window.JournalI18n.render('journal.window.map.interruption.twice');
+    return window.JournalI18n.render('journal.window.map.interruption.many', [['count', String(count)]]);
+  }
+
   function deviceNotes(device) {
     const notes = [];
     const word = device.word;
     const tier = TIER_NAMES[device.tier];
     if (device.platform === "android") {
-      notes.push("approximate location: each reading is only good to within a few kilometres, which is enough to name the town, not the building.");
+      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.approximate.location.each.reading.is.only'));
     } else if (device.platform === "watchos") {
-      notes.push("your watch gives only approximate location, so its readings name the town, not the building.");
+      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.your.watch.gives.only.approximate.location'));
     } else if (tier) {
-      notes.push(`detail level in the solstone app: <strong>${escapeHtml(tier)}</strong>.`);
+      notes.push(`${window.JournalI18n.renderHtml('journal.window.map.visible.text.detail.level.in.the.solstone.app')} <strong>${escapeHtml(tier)}</strong>.`);
     }
     if (device.precision_reduced) {
-      notes.push(`precise location is off for solstone on your ${escapeHtml(word)}, so its readings name the town, not the building.`);
+      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.precise.location.is.off.for.solstone', [['value1', String(word)]]));
     }
     if (device.interrupted_segments > 0) {
-      notes.push(`your ${escapeHtml(word)} said location was interrupted ${device.interrupted_segments === 1 ? "once" : `${device.interrupted_segments} times`} this day.`);
+      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(word)], ['value2', String(interruptionCount(device.interrupted_segments))]]));
     }
     return notes;
   }
 
   function renderDevice(device, day) {
     const counts = [];
-    if (device.readings) counts.push(plural(device.readings, "reading", "readings"));
-    if (device.visits) counts.push(plural(device.visits, "visit", "visits"));
+    if (device.readings) counts.push(plural(device.readings, "reading"));
+    if (device.visits) counts.push(plural(device.visits, "visit"));
     if (device.first && device.last && device.readings > 1) {
-      counts.push(`${moment(device.first, day)} to ${moment(device.last, day)}`);
+      counts.push(window.JournalI18n.render('journal.window.map.date.time.range', [['first', String(moment(device.first, day))], ['last', String(moment(device.last, day))]]));
     }
     const notes = deviceNotes(device).map((note) => `<p class="map-muted">${note}</p>`).join("");
-    return `<section class="map-card" aria-label="from ${escapeHtml(device.phrase)}">
-      <div class="map-device-head"><strong>from ${escapeHtml(device.phrase)}</strong>
+    return `<section class="map-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.from')} ${escapeHtml(device.phrase)}">
+      <div class="map-device-head"><strong>${window.JournalI18n.renderHtml('journal.window.map.visible.text.from')} ${escapeHtml(device.phrase)}</strong>
       <span class="map-device-count">${escapeHtml(counts.join(" · "))}</span></div>${notes}</section>`;
   }
 
   function entryTitle(entry) {
     if (entry.kind === "unreadable") {
       return entry.whole_file
-        ? "a segment your journal couldn't read"
-        : `${plural(entry.lines, "line", "lines")} your journal couldn't read`;
+        ? window.JournalI18n.render('journal.window.map.window.explanation.a.segment.your.journal.couldn.t')
+        : window.JournalI18n.render('journal.window.map.window.explanation.value1.your.journal.couldn.t.read', [['value1', String(plural(entry.lines, "line"))]]);
     }
     if ((entry.kind === "visit" || entry.kind === "stay") && entry.place_ref?.owner_name) {
-      return `at ${entry.place_ref.owner_name}`;
+      return window.JournalI18n.render('journal.window.map.area.label.at.place', [['name', String(entry.place_ref.owner_name)]]);
     }
     const place = entry.kind === "visit" || entry.kind === "stay" ? entry.place : null;
-    if (place?.at) return `at ${place.at.name}`;
-    if (asArray(place?.near).length) return `near ${nearNames(place)}`;
-    return entry.area?.label || "no named town nearby";
+    if (place?.at) return window.JournalI18n.render('journal.window.map.area.label.at.place', [['name', String(place.at.name)]]);
+    if (asArray(place?.near).length) return window.JournalI18n.render('journal.window.map.area.label.near.place', [['name', String(nearNames(place))]]);
+    return entry.area?.label || window.JournalI18n.render('journal.window.map.window.explanation.no.named.town.nearby');
   }
 
   // Under a visit named by the download: where it was, then what was near.
@@ -883,11 +916,11 @@ button.map-month-row:hover { background: var(--cream); }
     const named = entry.place_ref?.owner_name;
     if (!place) return named && entry.area?.label ? [entry.area.label] : [];
     const lines = [];
-    if (named && place.at) lines.push(`at ${place.at.name}`);
-    if (place.at?.inside) lines.push(`in ${place.at.inside}`);
+    if (named && place.at) lines.push(window.JournalI18n.render('journal.window.map.area.label.at.place', [['name', String(place.at.name)]]));
+    if (place.at?.inside) lines.push(window.JournalI18n.render('journal.window.map.area.label.inside', [['place', String(place.at.inside)]]));
     if (entry.area?.label) lines.push(entry.area.label);
     const where = [lines.join(" · ")];
-    if ((place.at || named) && asArray(place.near).length) where.push(`near ${nearNames(place)}`);
+    if ((place.at || named) && asArray(place.near).length) where.push(window.JournalI18n.render('journal.window.map.area.label.near.place', [['name', String(nearNames(place))]]));
     return where.filter(Boolean);
   }
 
@@ -898,38 +931,38 @@ button.map-month-row:hover { background: var(--cream); }
     const place = entry.kind === "visit" || entry.kind === "stay" ? entry.place : null;
     const margin = place?.margin_m;
     if (entry.place_ref?.owner_name) {
-      reasons.push(`you named this place "${entry.place_ref.owner_name}".`);
+      reasons.push(window.JournalI18n.render('journal.window.map.place.named.reason', [['name', String(entry.place_ref.owner_name)]]));
     }
     if (entry.kind === "stay") {
-      reasons.push(`your journal worked this stay out from ${entry.count} precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.`);
+      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.worked.this.stay.out', [['value1', String(entry.count)]]));
     }
     // A stay's margin is the journal's circle around its readings, not one
     // the phone reported.
     const placed = entry.kind === "stay"
-      ? `these readings, with their margins, all fall within ${margin} m of their centre`
-      : `your phone placed you within ${margin} m`;
+      ? window.JournalI18n.render('journal.window.map.window.explanation.these.readings.with.their.margins.all.variant2', [['value1', String(margin)]])
+      : window.JournalI18n.render('journal.window.map.window.explanation.your.phone.placed.you.within.value1', [['value1', String(margin)]]);
     if (place?.at) {
-      reasons.push(`${placed}, and all of that is inside ${place.at.name}.`);
+      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.value1.and.all.of.that.is', [['value1', String(placed)], ['value2', String(place.at.name)]]));
     }
     asArray(place?.near).forEach((near) => {
       const what = near.category ? ` (${near.category})` : "";
-      reasons.push(`${near.name}${what} is ${near.distance_m} m away; ${placed}.`);
+      reasons.push(window.JournalI18n.render('journal.window.map.entry.near.reason', [['name', String(near.name)], ['category', String(what)], ['distance', String(near.distance_m)], ['margin', String(placed)]]));
     });
     const within = withinName(entry.area?.within);
     if (within) {
       reasons.push(margin
-        ? `that whole area is inside ${within}.`
+        ? window.JournalI18n.render('journal.window.map.window.explanation.that.whole.area.is.inside.value1', [['value1', String(within)]])
         : entry.kind === "readings"
-          ? `every reading here, with its margin of error, is inside ${within}.`
+          ? window.JournalI18n.render('journal.window.map.window.explanation.every.reading.here.with.its.margin', [['value1', String(within)]])
           : entry.kind === "stay"
-            ? `these readings, with their margins, all fall inside ${within}.`
-            : `your phone's position, with its margin of error, is inside ${within}.`);
+            ? window.JournalI18n.render('journal.window.map.window.explanation.these.readings.with.their.margins.all', [['value1', String(within)]])
+            : window.JournalI18n.render('journal.window.map.window.explanation.your.phone.s.position.with.its', [['value1', String(within)]]));
     } else if (entry.area?.town && entry.kind !== "unreadable") {
-      reasons.push(`${entry.area.town} is the town that best stands for this area, ${entry.area.town_km} km away.`);
+      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.value1.is.the.town.that.best', [['value1', String(entry.area.town)], ['value2', String(entry.area.town_km)]]));
     }
     const accuracy = entry.kind === "visit" ? entry.point?.[2] : null;
     if (entry.kind === "visit" && !place && data.accuracy?.installed && Number.isFinite(accuracy) && accuracy > 100) {
-      reasons.push(`your phone placed you within ${accuracy} m, too wide to name a building or the places nearby.`);
+      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.your.phone.placed.you.within.value1.variant2', [['value1', String(accuracy)]]));
     }
     return reasons;
   }
@@ -954,19 +987,19 @@ button.map-month-row:hover { background: var(--cream); }
     const many = asArray(data.devices).length > 1;
     const parts = [];
     if (entry.kind === "readings") {
-      parts.push(plural(entry.count, "reading", "readings"));
-      if (entry.precision === "approximate" || entry.precision === "reduced") parts.push("approximate");
-      if (many) parts.push(`from ${device.phrase}`);
+      parts.push(plural(entry.count, "reading"));
+      if (entry.precision === "approximate" || entry.precision === "reduced") parts.push(window.JournalI18n.render('journal.window.map.entry.precision.approximate'));
+      if (many) parts.push(window.JournalI18n.render('journal.window.map.device.from', [['device', String(device.phrase)]]));
     } else if (entry.kind === "stay") {
-      parts.push(`a stay your journal worked out from readings from ${device.phrase}`);
-      parts.push(plural(entry.count, "reading", "readings"));
+      parts.push(window.JournalI18n.render('journal.window.map.window.explanation.a.stay.your.journal.worked.out.variant2', [['value1', String(device.phrase)]]));
+      parts.push(plural(entry.count, "reading"));
     } else if (entry.kind === "visit") {
-      parts.push(`a visit ${device.phrase} reported`);
-      parts.push(entry.arrival ? `arrived ${moment(entry.arrival, data.day)}` : "arrival not known");
-      parts.push(entry.departure ? `left ${moment(entry.departure, data.day)}` : "no departure reported");
+      parts.push(window.JournalI18n.render('journal.window.map.entry.reported.visit', [['device', String(device.phrase)]]));
+      parts.push(entry.arrival ? window.JournalI18n.render('journal.window.map.entry.time.arrival', [['time', String(moment(entry.arrival, data.day))]]) : window.JournalI18n.render('journal.window.map.entry.time.missing.arrival'));
+      parts.push(entry.departure ? window.JournalI18n.render('journal.window.map.entry.time.departure', [['time', String(moment(entry.departure, data.day))]]) : window.JournalI18n.render('journal.window.map.entry.time.missing.departure'));
     } else {
-      parts.push(`from ${device.phrase}`);
-      parts.push("open it in transcripts to see or delete it");
+      parts.push(window.JournalI18n.render('journal.window.map.device.from', [['device', String(device.phrase)]]));
+      parts.push(window.JournalI18n.render('journal.window.map.window.explanation.open.it.in.transcripts.to.see'));
     }
     return parts.join(" · ");
   }
@@ -978,17 +1011,17 @@ button.map-month-row:hover { background: var(--cream); }
       ? asArray(entry.map_points ?? entry.points).length > 0
       : entry.on_map !== false;
     if (entry.kind !== "unreadable" && drawn) {
-      actions.push(`<button type="button" data-map-show="${index}">show on the map</button>`);
+      actions.push(`<button type="button" data-map-show="${index}">${window.JournalI18n.renderHtml('journal.window.map.button.label.show.on.the.map')}</button>`);
     }
     if (segments.length === 1) {
-      actions.push(`<a class="map-link" href="${escapeHtml(segments[0].url)}">open in transcripts</a>`);
+      actions.push(`<a class="map-link" href="${escapeHtml(segments[0].url)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.open.in.transcripts')}</a>`);
     }
     let pieces = "";
     if (segments.length > 1) {
       const items = segments
         .map((segment) => `<li><a class="map-link" href="${escapeHtml(segment.url)}">${escapeHtml(pieceTime(segment.segment))}</a></li>`)
         .join("");
-      pieces = `<details class="map-pieces"><summary>open in transcripts: ${segments.length} segments</summary><ul>${items}</ul></details>`;
+      pieces = `<details class="map-pieces"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.open.in.transcripts')} ${segments.length} ${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.segments')}</summary><ul>${items}</ul></details>`;
     }
     return `<div class="map-row-actions">${actions.join("")}</div>${pieces}`;
   }
@@ -1004,7 +1037,7 @@ button.map-month-row:hover { background: var(--cream); }
     const where = entryWhere(entry).map((line) => `<p class="map-row-where">${escapeHtml(line)}</p>`).join("");
     const reasons = entryWhy(entry, data);
     const why = reasons.length
-      ? `<details class="map-why"><summary>why these words</summary><ul>${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul></details>`
+      ? `<details class="map-why"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.why.these.words')}</summary><ul>${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul></details>`
       : "";
     return `<li class="map-row" data-map-entry="${index}">
       <span class="map-row-time">${escapeHtml(entryTime(entry, data.day))}</span>
@@ -1021,42 +1054,42 @@ button.map-month-row:hover { background: var(--cream); }
     if (!offered && !installed) return "";
     const outlines = asArray(offered?.files).includes("containment.slpk") || installed?.containment;
     const what = outlines
-      ? "a visit your phone reports is named by the building, park or campus it was in, and by the places within your phone's margin of error: \"at Union Station\", \"near Blue Bottle Coffee\"."
-      : "a visit your phone reports is named by the places within your phone's margin of error: \"near Blue Bottle Coffee\".";
+      ? window.JournalI18n.render('journal.window.map.accuracy.explanation.outlines')
+      : window.JournalI18n.render('journal.window.map.accuracy.explanation.names');
     let body;
     let actions = "";
     if (job.state === "verifying") {
-      body = `<p role="status">checking location accuracy before using it. you can keep using your journal.</p>`;
+      body = `<p role="status">${window.JournalI18n.renderHtml('journal.window.map.visible.text.checking.location.accuracy.before.using.it')}</p>`;
     } else if (job.state === "downloading") {
-      body = `<p>downloading location accuracy: ${escapeHtml(bytes(job.received))} of ${escapeHtml(bytes(job.total))}. you can keep using your journal while it downloads.</p>
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.accuracy.download.progress', [['received', String(bytes(job.received))], ['total', String(bytes(job.total))]])}</p>
         <progress max="${Number(job.total) || 1}" value="${Number(job.received) || 0}"></progress>`;
-      if (installed && job.source === "automatic") actions = `<button type="button" data-accuracy="remove">remove location accuracy</button>`;
+      if (installed && job.source === "automatic") actions = `<button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else if (installed && status.current) {
-      body = `<p>location accuracy is on. ${escapeHtml(what)}</p>`;
-      actions = `<button type="button" data-accuracy="remove">remove location accuracy</button>
-        <span class="map-muted">frees ${escapeHtml(bytes(installed.size_bytes))}; names go back to the nearby town.</span>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on')} ${escapeHtml(what)}</p>`;
+      actions = `<button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>
+        <span class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.frees')} ${escapeHtml(bytes(installed.size_bytes))}${window.JournalI18n.renderHtml('journal.window.map.visible.text.names.go.back.to.the.nearby')}</span>`;
     } else if (installed && job.state === "failed" && !(installed.venues && installed.containment)) {
-      body = `<p>location accuracy is unavailable.</p>`;
-      actions = `${offered ? `<button type="button" data-accuracy="download">download again</button>` : ""}
-        <button type="button" data-accuracy="remove">remove location accuracy</button>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.unavailable')}</p>`;
+      actions = `${offered ? `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.download.again')}</button>` : ""}
+        <button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else if (installed && offered) {
-      body = `<p>location accuracy is on. a newer download is ready from updates.solstone.app: ${escapeHtml(bytes(offered.size_bytes))}.</p>`;
-      actions = `<button type="button" data-accuracy="download">update</button>
-        <button type="button" data-accuracy="remove">remove location accuracy</button>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on.a.newer')} ${escapeHtml(bytes(offered.size_bytes))}.</p>`;
+      actions = `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.update')}</button>
+        <button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else if (installed) {
-      body = `<p>location accuracy is on.</p>`;
-      actions = `<button type="button" data-accuracy="remove">remove location accuracy</button>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on')}</p>`;
+      actions = `<button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else {
-      body = `<p>with location accuracy, ${escapeHtml(what)} without it, a visit is named by the nearby town.</p>
-        <p class="map-muted">it's ${escapeHtml(bytes(offered.size_bytes))} from updates.solstone.app, the same download for everyone, so getting it says nothing about where you've been. names are looked up on your computer.</p>`;
-      actions = `<button type="button" data-accuracy="download">download ${escapeHtml(bytes(offered.size_bytes))}</button>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.with.location.accuracy')} ${escapeHtml(what)} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.without.it.a.visit.is.named')}</p>
+        <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.accuracy.download.explanation', [['size', String(bytes(offered.size_bytes))]])}</p>`;
+      actions = `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.download')} ${escapeHtml(bytes(offered.size_bytes))}</button>`;
     }
     const failures = {
-      not_enough_space: `there isn't enough free space: location accuracy needs ${bytes(offered?.size_bytes)} free, plus some room to spare.`,
-      integrity_failed: "location accuracy failed its file check. download it again before using it.",
-      download_failed: "location accuracy couldn't be downloaded. try again in a while.",
-      write_failed: "location accuracy couldn't be saved in your journal's folder.",
-      nothing_offered: "this version of your journal has no location accuracy download.",
+      not_enough_space: window.JournalI18n.render('journal.window.map.window.explanation.there.isn.t.enough.free.space', [['value1', String(bytes(offered?.size_bytes))]]),
+      integrity_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.failed.its.file.check'),
+      download_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.couldn.t.be.downloaded'),
+      write_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.couldn.t.be.saved'),
+      nothing_offered: window.JournalI18n.render('journal.window.map.window.explanation.this.version.of.your.journal.has'),
     };
     const failed = job.state === "failed"
       ? `<p class="map-muted" role="status">${escapeHtml(failures[job.reason_code] || failures.download_failed)}</p>`
@@ -1064,10 +1097,10 @@ button.map-month-row:hover { background: var(--cream); }
     const notices = asArray(status.notices);
     const credits = asArray(status.attributions).map((text) => `<p class="map-muted">${escapeHtml(text)}</p>`).join("")
       + (notices.length
-        ? `<details class="map-why"><summary>licences</summary>${notices.map((text) => `<p class="map-muted" style="white-space: pre-line">${escapeHtml(text)}</p>`).join("")}</details>`
+        ? `<details class="map-why"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.licences')}</summary>${notices.map((text) => `<p class="map-muted" style="white-space: pre-line">${escapeHtml(text)}</p>`).join("")}</details>`
         : "");
-    return `<section class="map-card map-accuracy" aria-label="location accuracy" data-accuracy-card>
-      <h2>location accuracy</h2>${body}${failed}
+    return `<section class="map-card map-accuracy" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.location.accuracy')}" data-accuracy-card>
+      <h2>${window.JournalI18n.renderHtml('journal.window.map.section.heading.location.accuracy')}</h2>${body}${failed}
       ${actions ? `<div class="map-accuracy-actions">${actions}</div>` : ""}${credits}</section>`;
   }
 
@@ -1075,9 +1108,9 @@ button.map-month-row:hover { background: var(--cream); }
     const installed = status?.installed;
     if (!installed) return "";
     if (installed.containment) {
-      return `<p>with location accuracy, a visit can say "at" a place when your phone's whole margin of error is inside its outline, and "near" the places within that margin. "in" means the whole margin is inside a larger outline, a neighbourhood or a town. every record says why it reads the way it does.</p>`;
+      return `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.with.location.accuracy.a.visit.can.variant2')}</p>`;
     }
-    return `<p>with location accuracy, a visit can say "near" the places within your phone's margin of error. every record says why it reads the way it does.</p>`;
+    return `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.with.location.accuracy.a.visit.can')}</p>`;
   }
 
   async function accuracyAction(action, data) {
@@ -1132,35 +1165,35 @@ button.map-month-row:hover { background: var(--cream); }
     const devices = asArray(data.devices);
     const list = entries.map((entry, index) => renderEntry(entry, index, data)).join("");
     const mapCard = data.map
-      ? `<section class="map-card map-figure-card" aria-label="map">
-          <div class="map-canvas" id="map-canvas" role="region" aria-label="map of the records listed here, with towns and borders"></div>
-          <p class="map-muted">named features only; streets not shown.</p>
-          <p class="map-muted">towns from <a class="map-link" href="https://www.geonames.org/" rel="noopener noreferrer">GeoNames</a> (<a class="map-link" href="https://creativecommons.org/licenses/by/4.0/" rel="noopener noreferrer">CC BY 4.0</a>) · borders from Natural Earth${data.accuracy?.installed ? ` · ${data.accuracy.installed.containment ? "places and outlines" : "places"} from <a class="map-link" href="https://docs.overturemaps.org/attribution/" rel="noopener noreferrer">Overture Maps</a>` : ""}</p>
+      ? `<section class="map-card map-figure-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.map')}">
+          <div class="map-canvas" id="map-canvas" role="region" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.map.of.the.records.listed.here')}"></div>
+          <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.named.features.only.streets.not.shown')}</p>
+          <p class="map-muted">${window.JournalI18n.renderEnglishHtml('journal.window.map.visible.text.towns.from')} <a class="map-link" href="https://www.geonames.org/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.geonames')}</a> (<a class="map-link" href="https://creativecommons.org/licenses/by/4.0/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.cc.by')}</a>${window.JournalI18n.renderEnglishHtml('journal.window.map.visible.text.borders.from.natural.earth')}${data.accuracy?.installed ? ` · ${data.accuracy.installed.containment ? window.JournalI18n.renderEnglishHtml('journal.window.map.licence.overture.outlines') : window.JournalI18n.renderEnglishHtml('journal.window.map.licence.overture.places')} <a class="map-link" href="https://docs.overturemaps.org/attribution/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.overture.maps')}</a>` : ""}</p>
         </section>`
       : "";
     const accuracy = accuracyCard(data.accuracy) || "<div data-accuracy-card hidden></div>";
-    reveal(`<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/week/${escapeHtml(data.day)}">this week</a><a class="map-link" href="/app/map/month/${escapeHtml(String(data.day || '').slice(0, 6))}">this month</a><a class="map-link" href="/app/map/places">places</a></nav>
+    reveal(`<nav class="map-page-nav" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.more.of.your.location')}"><a class="map-link" href="/app/map/week/${escapeHtml(data.day)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.this.week')}</a><a class="map-link" href="/app/map/month/${escapeHtml(String(data.day || '').slice(0, 6))}">${window.JournalI18n.renderHtml('journal.window.map.link.label.this.month')}</a><a class="map-link" href="/app/map/places">${window.JournalI18n.renderHtml('journal.window.map.link.label.places')}</a></nav>
       ${devices.map((device) => renderDevice(device, data.day)).join("")}
       <div class="map-columns">
-        <section class="map-card" aria-label="the day, in order">
-          <div class="map-list-head"><h2>the day, in order</h2>
-          <span class="map-muted">${escapeHtml(plural(entries.length, "record", "records"))}</span></div>
+        <section class="map-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.the.day.in.order')}">
+          <div class="map-list-head"><h2>${window.JournalI18n.renderHtml('journal.window.map.section.heading.the.day.in.order')}</h2>
+          <span class="map-muted">${escapeHtml(plural(entries.length, "record"))}</span></div>
           <ol class="map-list">${list}</ol>
         </section>
         ${mapCard}
       </div>
       ${accuracy}
-      <section class="map-card"><details class="map-details"><summary>how this is drawn</summary>
-        <p>your journal draws this from the readings your phone sent it, and the names that came with your journal or that you downloaded. no map service is asked for anything.</p>
-        <p>there's no street map. a street map is loaded piece by piece from a map service, and asking for the right piece tells that service where you were.</p>
-        <p>without location accuracy, each reading is named after the town that best stands for its area, which isn't always the town you were in. that's why it says "near".</p>
+      <section class="map-card"><details class="map-details"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.how.this.is.drawn')}</summary>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.your.journal.draws.this.from.the')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.there.s.no.street.map.a')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.without.location.accuracy.each.reading.is')}</p>
         ${accuracyDrawn(data.accuracy)}
-        <p>for readings, the times are the first and last reading in the row. they don't say how long you were anywhere.</p>
-        <p>a stay is worked out from precise readings, none more than five minutes apart, that stayed within 100 m of the first of them for at least five minutes. approximate readings never make a stay. its times are its first and last reading.</p>
-        <p>on the map, a run of precise readings shows as one dot at its middle reading, so a day doesn't read as a route. the list counts every reading.</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.for.readings.the.times.are.the')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.stay.is.worked.out.from')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.on.the.map.a.run.of')}</p>
       </details></section>
-      <section class="map-card"><h2>deleting any of this</h2>
-        <p class="map-muted">every record above opens in transcripts, where you delete its segments the same way as any other. a deleted segment leaves this view and search.</p>
+      <section class="map-card"><h2>${window.JournalI18n.renderHtml('journal.window.map.section.heading.deleting.any.of.this')}</h2>
+        <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.every.record.above.opens.in.transcripts')}</p>
       </section>`);
     root.querySelectorAll("[data-map-show]").forEach((button) => {
       button.addEventListener("click", () => focusEntry(Number(button.getAttribute("data-map-show")), true));
@@ -1197,7 +1230,11 @@ button.map-month-row:hover { background: var(--cream); }
     if (!L || !element || !data.map) return;
     const ink = cssColor("--ink-soft", "#5B5246");
     const orange = cssColor("--orange", "#e8913a");
-    const map = L.map(element, { attributionControl: false, zoomSnap: 0.5, worldCopyJump: false });
+    const map = L.map(element, { attributionControl: false, zoomControl: false, zoomSnap: 0.5, worldCopyJump: false });
+    L.control.zoom({
+      zoomInTitle: window.JournalI18n.render('journal.window.map.leaflet.zoom.in'),
+      zoomOutTitle: window.JournalI18n.render('journal.window.map.leaflet.zoom.out'),
+    }).addTo(map);
     const [west, south, east, north] = data.map.bounds;
     map.fitBounds([[south, west], [north, east]], { padding: [28, 28], maxZoom: 14 });
     L.control.scale({ imperial: false }).addTo(map);
@@ -1279,7 +1316,7 @@ button.map-month-row:hover { background: var(--cream); }
     const mine = beginPage();
     showDayChrome();
     if (refocus) focusNode(document.getElementById("main-content"));
-    setGate(window.SurfaceState.loading({ text: "loading this day's location…" }));
+    setGate(window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.map.text.loading.this.day.s.location') }));
     try {
       const data = await readJson(`/app/map/api/day/${day}`);
       if (data === STALE || mine !== epoch || !alive()) return;
@@ -1304,7 +1341,7 @@ button.map-month-row:hover { background: var(--cream); }
   function pageShell(title, body, nav) {
     shell?.removeAttribute("data-map-empty");
     shell.setAttribute("data-map-page", "");
-    const navMarkup = nav || '<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a></nav>';
+    const navMarkup = nav || `<nav class="map-page-nav" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.more.of.your.location')}"><a class="map-link" href="/app/map/">${window.JournalI18n.renderHtml('journal.window.map.link.label.the.day')}</a><a class="map-link" href="/app/map/places">${window.JournalI18n.renderHtml('journal.window.map.link.label.places')}</a></nav>`;
     const titleMarkup = title ? `<h1 class="map-page-title">${escapeHtml(title)}</h1>` : "";
     reveal(`${navMarkup}
       ${titleMarkup}${body}`);
@@ -1312,11 +1349,11 @@ button.map-month-row:hover { background: var(--cream); }
 
   function recorded(place) {
     const span = place.first && place.last && place.first !== place.last
-      ? `, ${shortDate(place.first)} to ${shortDate(place.last)}`
-      : place.first ? `, ${shortDate(place.first)}` : "";
-    const lines = [`visits or stays here on ${plural(place.dates, "date", "dates")}${span}.`];
+      ? window.JournalI18n.render('journal.window.map.place.date.range', [['first', String(shortDay(place.first))], ['last', String(shortDay(place.last))]])
+      : place.first ? window.JournalI18n.render('journal.window.map.place.date.single', [['date', String(shortDay(place.first))]]) : "";
+    const lines = [window.JournalI18n.render('journal.window.map.window.explanation.visits.or.stays.here.on.value1', [['value1', String(plural(place.dates, "date"))], ['value2', String(span)]])];
     if (place.night_dates) {
-      lines.push(`on ${plural(place.night_dates, "night", "nights")}, a visit or stay here covers at least two hours between 22:00 and 06:00.`);
+      lines.push(window.JournalI18n.render('journal.window.map.window.explanation.on.value1.a.visit.or.stay', [['value1', String(plural(place.night_dates, "night"))]]));
     }
     return lines;
   }
@@ -1327,15 +1364,15 @@ button.map-month-row:hover { background: var(--cream); }
         <p class="map-row-title"><a class="map-link" href="/app/map/place/${encodeURIComponent(place.id)}">${escapeHtml(place.label)}</a></p>
         ${place.owner_name && place.area?.label ? `<p class="map-row-where">${escapeHtml(place.area.label)}</p>` : ""}
         ${recorded(place).map((line) => `<p class="map-muted">${escapeHtml(line)}</p>`).join("")}
-        ${place.hidden ? '<p class="map-muted">hidden</p>' : ""}</li>`).join("");
+        ${place.hidden ? `<p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.hidden')}</p>` : ""}</li>`).join("");
     const body = places.length
       ? `<section class="map-card"><ol class="map-places">${items}</ol></section>`
-      : `<section class="map-card"><p>no places yet.</p><p class="map-muted">a place is a spot your phone reported a visit at, or stayed at, on two different dates, close enough to be one spot. approximate location never makes a place.</p></section>`;
-    pageShell("places", `${body}
-      <section class="map-card"><details class="map-details"><summary>how places are worked out</summary>
-        <p>a place starts from visits or stays on two or more dates, all within 50 m of each other and more than 100 m from any other place. later ones within 50 m of it join it. a stay or visit with a margin of error over 50 m never makes or joins one.</p>
-        <p>you can name a place, call it home or work, or hide it. hiding keeps everything within 50 m of it off the map, and what your journal writes about where you were each day leaves it out. the day's list here still shows it.</p>
-        <p>a place lasts as long as a segment it came from does. delete those segments in transcripts and the place, and its name, go too.</p>
+      : `<section class="map-card"><p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.no.places.yet')}</p><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.place.is.a.spot.your')}</p></section>`;
+    pageShell(window.JournalI18n.render('journal.window.map.link.label.places'), `${body}
+      <section class="map-card"><details class="map-details"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.how.places.are.worked.out')}</summary>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.place.starts.from.visits.or')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.you.can.name.a.place.call')}</p>
+        <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.place.lasts.as.long.as')}</p>
       </details></section>`);
   }
 
@@ -1343,33 +1380,33 @@ button.map-month-row:hover { background: var(--cream); }
     const stays = asArray(place.stays).slice().reverse();
     const visits = stays.map((stay) => {
       const clock = (value) => value || "…";
-      const how = stay.kind === "worked" ? "a stay your journal worked out" : "a visit your phone reported";
+      const how = stay.kind === "worked" ? window.JournalI18n.render('journal.window.map.window.explanation.a.stay.your.journal.worked.out') : window.JournalI18n.render('journal.window.map.window.explanation.a.visit.your.phone.reported');
       const date = dayDate(stay.day);
-      const label = date ? `${WEEKDAYS[date.getDay()].slice(0, 3)} ${shortDate(stay.day)}` : stay.day;
+      const label = date ? window.JournalI18n.render('journal.window.map.date.short.weekday', [['weekday', String(SHORT_WEEKDAYS[date.getDay()])], ['date', String(shortDay(stay.day))]]) : stay.day;
       return `<li><span class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(stay.day)}">${escapeHtml(label)}</a></span>
         <span>${escapeHtml(`${clock(stay.start)}–${clock(stay.end)}`)} · ${escapeHtml(how)}</span></li>`;
     }).join("");
-    const where = [place.owner_name ? place.area?.label : null, place.words?.at && place.owner_name ? `at ${place.words.at.name}` : null]
+    const where = [place.owner_name ? place.area?.label : null, place.words?.at && place.owner_name ? window.JournalI18n.render('journal.window.map.area.label.at.place', [['name', String(place.words.at.name)]]) : null]
       .filter(Boolean).map((line) => `<p class="map-row-where">${escapeHtml(line)}</p>`).join("");
     const alias = place.alias || "";
     pageShell(place.label, `${where}
       <section class="map-card">${recorded(place).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-        ${place.hidden ? '<p class="map-muted">hidden</p>' : ""}</section>
-      <section class="map-card" aria-label="edit this place"><h2>edit this place</h2>
+        ${place.hidden ? `<p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.hidden')}</p>` : ""}</section>
+      <section class="map-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.edit.this.place')}"><h2>${window.JournalI18n.renderHtml('journal.window.map.section.heading.edit.this.place')}</h2>
         <form class="map-edit" data-place-form>
-          <label>name<input type="text" name="name" maxlength="80" value="${escapeHtml(place.name || "")}" placeholder="${escapeHtml(place.label)}"></label>
-          <label>call it<select name="alias">
-            <option value=""${alias ? "" : " selected"}>nothing</option>
-            <option value="home"${alias === "home" ? " selected" : ""}>home</option>
-            <option value="work"${alias === "work" ? " selected" : ""}>work</option>
+          <label>${window.JournalI18n.renderHtml('journal.window.map.field.label.name')}<input type="text" name="name" maxlength="80" value="${escapeHtml(place.name || "")}" placeholder="${escapeHtml(place.label)}"></label>
+          <label>${window.JournalI18n.renderHtml('journal.window.map.field.label.call.it')}<select name="alias">
+            <option value=""${alias ? "" : " selected"}>${window.JournalI18n.renderHtml('journal.window.map.option.label.nothing')}</option>
+            <option value="home"${alias === "home" ? " selected" : ""}>${window.JournalI18n.renderHtml('journal.window.map.option.label.home')}</option>
+            <option value="work"${alias === "work" ? " selected" : ""}>${window.JournalI18n.renderHtml('journal.window.map.option.label.work')}</option>
           </select></label>
-          <p class="map-muted">what you call a place, a name or home or work, is used in search and by your journal's own thinking, and an agent that may see transcripts across your whole journal can read it.</p>
-          <label class="map-check"><input type="checkbox" name="hidden"${place.hidden ? " checked" : ""}> hide this place</label>
-          <p class="map-muted">a hidden place is off the map, and what your journal writes about where you were each day leaves it out: in search, for connected agents and in activities. new daily briefings leave it out too.</p>
-          <div class="map-accuracy-actions"><button type="submit">save</button><span class="map-muted" role="status" data-place-status></span></div>
+          <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.what.you.call.a.place.a')}</p>
+          <label class="map-check"><input type="checkbox" name="hidden"${place.hidden ? " checked" : ""}> ${window.JournalI18n.renderHtml('journal.window.map.field.label.hide.this.place')}</label>
+          <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.hidden.place.is.off.the')}</p>
+          <div class="map-accuracy-actions"><button type="submit">${window.JournalI18n.renderHtml('journal.window.map.button.label.save')}</button><span class="map-muted" role="status" data-place-status></span></div>
         </form></section>
-      <section class="map-card"><h2>visits and stays here</h2><ul class="map-week-items">${visits}</ul></section>
-      <section class="map-card"><p class="map-muted">to remove a visit or stay, open its day and delete its segments in transcripts. a place lasts as long as a segment it came from does.</p></section>`);
+      <section class="map-card"><h2>${window.JournalI18n.renderHtml('journal.window.map.section.heading.visits.and.stays.here')}</h2><ul class="map-week-items">${visits}</ul></section>
+      <section class="map-card"><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.to.remove.a.visit.or.stay')}</p></section>`);
     const form = root.querySelector("[data-place-form]");
     // A phone's late blur as the menu closes goes back to the select.
     const aliasSelect = form?.elements.alias;
@@ -1396,11 +1433,11 @@ button.map-month-row:hover { background: var(--cream); }
         if (mine !== epoch || !alive() || here.page !== "place" || here.id !== placeId) return;
         renderPlace(next);
         const saved = root.querySelector("[data-place-status]");
-        if (saved) saved.textContent = "saved.";
+        if (saved) saved.textContent = window.JournalI18n.render('journal.window.map.visible.text.saved');
       } catch (err) {
         if (mine !== epoch || !alive()) return;
         if (window.logError) window.logError(err, { context: "map:place" });
-        if (status && status.isConnected) status.textContent = "that change couldn't be saved.";
+        if (status && status.isConnected) status.textContent = window.JournalI18n.render('journal.window.map.visible.text.that.change.couldn.t.be.saved');
       }
     });
   }
@@ -1424,28 +1461,28 @@ button.map-month-row:hover { background: var(--cream); }
         return `<span data-kind="${escapeHtml(item.kind)}" style="left:${(from / 14.4).toFixed(2)}%;width:${((to - from) / 14.4).toFixed(2)}%"></span>`;
       }).join("");
       const rows = items.map((item) => `<li><span class="map-muted">${escapeHtml(entryTime(item, day.day))}</span>
-        <span>${escapeHtml(entryTitle(item))}${item.place_ref?.id ? ` · <a class="map-link" href="/app/map/place/${encodeURIComponent(item.place_ref.id)}">place</a>` : ""}</span></li>`).join("");
+        <span>${escapeHtml(entryTitle(item))}${item.place_ref?.id ? ` · <a class="map-link" href="/app/map/place/${encodeURIComponent(item.place_ref.id)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.place')}</a>` : ""}</span></li>`).join("");
       const quiet = day.readings
-        ? `${plural(day.readings, "reading", "readings")}, no visits or stays`
-        : "no location kept";
+        ? window.JournalI18n.render('journal.window.map.window.explanation.value1.no.visits.or.stays', [['value1', String(plural(day.readings, "reading"))]])
+        : window.JournalI18n.render('journal.window.map.calendar.location.none');
       return `<section class="map-week-day" aria-label="${escapeHtml(longDay(day.day))}">
         <p class="map-row-title"><a class="map-link" href="/app/map/${escapeHtml(day.day)}">${escapeHtml(longDay(day.day))}</a></p>
-        ${items.length ? `<div class="map-strip" role="img" aria-label="visits and stays across the day">${blocks}</div><ul class="map-week-items">${rows}</ul>` : `<p class="map-muted">${escapeHtml(quiet)}</p>`}
+        ${items.length ? `<div class="map-strip" role="img" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.visits.and.stays.across.the.day')}">${blocks}</div><ul class="map-week-items">${rows}</ul>` : `<p class="map-muted">${escapeHtml(quiet)}</p>`}
       </section>`;
     }).join("");
-    pageShell(`the week of ${longDay(data.start)}`, `<nav class="map-page-nav" aria-label="other weeks and this month">
-        <a class="map-link" href="/app/map/week/${escapeHtml(data.previous)}">the week before</a>
-        <a class="map-link" href="/app/map/week/${escapeHtml(data.next)}">the week after</a>
-        <a class="map-link" href="/app/map/month/${escapeHtml(String(data.start || '').slice(0, 6))}">this month</a></nav>
+    pageShell(window.JournalI18n.render('journal.window.map.week.heading', [['date', String(longDay(data.start))]]), `<nav class="map-page-nav" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.other.weeks.and.this.month')}">
+        <a class="map-link" href="/app/map/week/${escapeHtml(data.previous)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.the.week.before')}</a>
+        <a class="map-link" href="/app/map/week/${escapeHtml(data.next)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.the.week.after')}</a>
+        <a class="map-link" href="/app/map/month/${escapeHtml(String(data.start || '').slice(0, 6))}">${window.JournalI18n.renderHtml('journal.window.map.link.label.this.month')}</a></nav>
       <section class="map-card">${sections}</section>
-      <section class="map-card"><p class="map-muted">filled bars are visits your phone reported; outlined bars are stays your journal worked out. every reading is on each day's page.</p></section>`);
+      <section class="map-card"><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.filled.bars.are.visits.your.phone')}</p></section>`);
   }
 
   async function loadPage(view) {
     if (!alive() || !view) return;
     const mine = beginPage();
     const still = () => mine === epoch && alive();
-    setGate(window.SurfaceState.loading({ text: "loading…" }));
+    setGate(window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.map.text.loading') }));
     try {
       let hasContent;
       if (view.page === "places") {
@@ -1475,22 +1512,33 @@ button.map-month-row:hover { background: var(--cream); }
       reportMapReady(hasContent ? 'content' : 'empty');
     } catch (err) {
       if (!still()) return;
-      showError(err, () => loadPage(view), view.page === "month" ? "couldn't open this month's location." : undefined);
+      const month = view.page === "month";
+      const heading = month ? window.JournalI18n.render('journal.window.map.status.text.couldn.t.open.this.month.s') : undefined;
+      showError(err, () => loadPage(view), heading, month ? "map:month" : "map:day");
       reportMapReady('error');
     }
   }
 
   const H3_RES = 8;
-  const SIZE = { label: "about 1 km" };
+  const SIZE = { label: window.JournalI18n.render('journal.window.map.label.about.km') };
   // Resolution 8 cells are about 1 km across. The ring is the cell's own
   // boundary, projected with the stops, so a pentagon keeps five corners.
   // When a resolution 8 ring would draw under MIN_RING_PX, the month draws
   // the areas' fixed parent cells instead, at the finest resolution that
   // reaches it. DRAWN_SIZE is each resolution's average width, corner to corner.
   const MIN_RING_PX = 8;
-  const DRAWN_SIZE = ["about 2,600 km", "about 1,000 km", "about 370 km", "about 140 km", "about 50 km", "about 20 km", "about 7 km", "about 3 km", SIZE.label];
-  const WORDS = ["no", "once", "twice"];
-  const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
+  const DRAWN_SIZE = [...["2,600", "1,000", "370", "140", "50", "20", "7", "3"].map((size) =>
+    window.JournalI18n.render('journal.window.map.area.size', [['size', String(size)]])), SIZE.label];
+  const COMPASS = [
+    window.JournalI18n.render('journal.window.map.compass.east'),
+    window.JournalI18n.render('journal.window.map.compass.north.east'),
+    window.JournalI18n.render('journal.window.map.compass.north'),
+    window.JournalI18n.render('journal.window.map.compass.north.west'),
+    window.JournalI18n.render('journal.window.map.compass.west'),
+    window.JournalI18n.render('journal.window.map.compass.south.west'),
+    window.JournalI18n.render('journal.window.map.compass.south'),
+    window.JournalI18n.render('journal.window.map.compass.south.east')
+  ];
 
   function locationGrid() {
     const grid = window.h3;
@@ -1593,11 +1641,11 @@ button.map-month-row:hover { background: var(--cream); }
   function fromBusiest(c, list, isTrip) {
     const a = list[0];
     const tie = list.length > 1 && list[1].dayCount === a.dayCount;
-    if (c === a) return tie ? "tied for the most days" : isTrip ? "this trip's busiest area" : "the area with the most days";
-    const ref = tie ? "the first area listed" : isTrip ? "this trip's busiest area" : "the busiest area";
+    if (c === a) return tie ? window.JournalI18n.render('journal.window.map.window.explanation.tied.for.the.most.days') : isTrip ? window.JournalI18n.render('journal.window.map.window.explanation.this.trip.s.busiest.area') : window.JournalI18n.render('journal.window.map.window.explanation.the.area.with.the.most.days');
+    const ref = tie ? window.JournalI18n.render('journal.window.map.window.explanation.the.first.area.listed') : isTrip ? window.JournalI18n.render('journal.window.map.window.explanation.this.trip.s.busiest.area') : window.JournalI18n.render('journal.window.map.month.busiest.area');
     const dx = c.cx - a.cx, dy = c.cy - a.cy, km = Math.hypot(dx, dy) / 1000;
     const dir = COMPASS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-    return `${km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km)} km ${dir} of ${ref}`;
+    return window.JournalI18n.render('journal.window.map.month.area.distance', [['distance', String(km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km))], ['direction', String(dir)], ['reference', String(ref)]]);
   }
 
   function spanText(s, d) {
@@ -1625,14 +1673,14 @@ button.map-month-row:hover { background: var(--cream); }
       return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
     };
     const parts = mergedIntervals.map(([a, b]) => {
-      if (a === lo && b === hi) return "all day";
-      if (a === lo) return `until ${clockStr(b)}`;
-      if (b === hi) return `from ${clockStr(a)}`;
+      if (a === lo && b === hi) return window.JournalI18n.render('journal.window.map.month.time.all.day');
+      if (a === lo) return window.JournalI18n.render('journal.window.map.month.time.until', [['time', String(clockStr(b))]]);
+      if (b === hi) return window.JournalI18n.render('journal.window.map.month.time.from', [['time', String(clockStr(a))]]);
       return `${clockStr(a)}–${clockStr(b)}`;
     });
     for (const s of es) {
-      if (s.end == null && s.start != null) parts.push(`from ${clockStr(s.start)}, no departure reported`);
-      else if (s.start == null && s.end != null) parts.push(`until ${clockStr(s.end)}, arrival not known`);
+      if (s.end == null && s.start != null) parts.push(window.JournalI18n.render('journal.window.map.window.explanation.from.value1.no.departure.reported', [['value1', String(clockStr(s.start))]]));
+      else if (s.start == null && s.end != null) parts.push(window.JournalI18n.render('journal.window.map.window.explanation.until.value1.arrival.not.known', [['value1', String(clockStr(s.end))]]));
     }
     return parts.join(" · ");
   }
@@ -1648,9 +1696,9 @@ button.map-month-row:hover { background: var(--cream); }
       const open = a == null ? " open from-end" : b == null ? " open" : "";
       return `<span class="${escapeHtml(s.kind)}${open}" style="left:${((start - lo) / 14.4).toFixed(2)}%;width:${((end - start) / 14.4).toFixed(2)}%"></span>`;
     }).join("");
-    return `<div class="map-month-strip" role="img" aria-label="the stops across the day, shown in the list below">${bars}</div>
+    return `<div class="map-month-strip" role="img" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.the.stops.across.the.day.shown')}">${bars}</div>
       <div class="map-month-strip-scale" aria-hidden="true"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-      <p class="map-month-strip-key">${es.some((s) => s.kind === "stay") ? "filled bars are visits your phone reported; outlined bars are stays your journal worked out." : "each bar is a visit your phone reported."}${es.some((s) => s.openEnded) ? " a fading bar is missing its arrival or departure." : ""}</p>`;
+      <p class="map-month-strip-key">${es.some((s) => s.kind === "stay") ? window.JournalI18n.renderHtml('journal.window.map.month.strip.visits.and.stays') : window.JournalI18n.renderHtml('journal.window.map.window.explanation.each.bar.is.a.visit.your')}${es.some((s) => s.openEnded) ? window.JournalI18n.renderHtml('journal.window.map.window.explanation.a.fading.bar.is.missing.its') : ""}</p>`;
   }
 
   function monthModel(data, today) {
@@ -1818,9 +1866,13 @@ button.map-month-row:hover { background: var(--cream); }
       const [x, y] = it.point ? project(it.point[0], it.point[1]) : [null, null];
 
       const ownerNamed = !!it.place_ref?.owner_name;
-      let words = "a place in your journal";
+      const label = it.area?.label || null;
+      // The area's catalogue patterns keep the comma separator. Remove the
+      // formatter's isolates before comparing or trimming that qualifier.
+      const areaWords = window.JournalI18n.formatLocale ? label?.replace(/[\u2066-\u2069]/g, "") : label;
+      let words = window.JournalI18n.render('journal.window.map.window.explanation.a.place.in.your.journal');
       if (ownerNamed) words = it.place_ref.owner_name;
-      else if (it.area?.label) words = it.area.label;
+      else if (areaWords) words = areaWords;
       else if (it.area?.town) words = it.area.town;
 
       return {
@@ -1834,7 +1886,7 @@ button.map-month-row:hover { background: var(--cream); }
         placeId,
         words,
         town: it.area?.town || null,
-        label: it.area?.label || null,
+        label: areaWords,
         ownerNamed,
         drawable,
         x,
@@ -2061,11 +2113,11 @@ button.map-month-row:hover { background: var(--cream); }
       const anchorStops = drawableStops.filter((s) => s.cellId === anchorId);
       anchorStops.sort((a, b) => b.days.length - a.days.length || stops.indexOf(a) - stops.indexOf(b));
       const topAnchorStop = anchorStops[0];
-      const homePlaceName = topAnchorStop?.town || cutComma(topAnchorStop?.label) || "a place in your journal";
+      const homePlaceName = topAnchorStop?.town || cutComma(topAnchorStop?.label) || window.JournalI18n.render('journal.window.map.window.explanation.a.place.in.your.journal');
       const homeChoice = {
         id: "home",
         trip: false,
-        name: `around ${homePlaceName}`,
+        name: window.JournalI18n.render('journal.window.map.month.area.around', [['name', String(homePlaceName)]]),
         dateLabel: null,
         days: homeDays,
         areas: homeAreas,
@@ -2101,7 +2153,7 @@ button.map-month-row:hover { background: var(--cream); }
 
         const topTripArea = tripAreas[0];
         const topTripStop = topTripArea ? [...topTripArea.entries].sort((a, b) => b.days.length - a.days.length || stops.indexOf(a) - stops.indexOf(b))[0] : null;
-        const tripPlaceName = topTripStop?.town || cutComma(topTripStop?.label) || "a place in your journal";
+        const tripPlaceName = topTripStop?.town || cutComma(topTripStop?.label) || window.JournalI18n.render('journal.window.map.window.explanation.a.place.in.your.journal');
         const dateLabel = r.days.length === 1 ? shortDay(r.days[0]) : `${shortDay(r.days[0])}–${parseInt(r.days[r.days.length - 1].slice(6, 8), 10)}`;
 
         choices.push({
@@ -2191,7 +2243,7 @@ button.map-month-row:hover { background: var(--cream); }
 
   async function renderMonth(data) {
     const m = monthModel(data, data.today);
-    const monthNav = `<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a>${m.previous ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.previous)}">previous month</a>` : ""}${m.next && String(m.next) <= String(m.today || "").slice(0, 6) ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.next)}">next month</a>` : ""}</nav>`;
+    const monthNav = `<nav class="map-page-nav" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.more.of.your.location')}"><a class="map-link" href="/app/map/">${window.JournalI18n.renderHtml('journal.window.map.link.label.the.day')}</a><a class="map-link" href="/app/map/places">${window.JournalI18n.renderHtml('journal.window.map.link.label.places')}</a>${m.previous ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.previous)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.previous.month')}</a>` : ""}${m.next && String(m.next) <= String(m.today || "").slice(0, 6) ? `<a class="map-link" href="/app/map/month/${escapeHtml(m.next)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.next.month')}</a>` : ""}</nav>`;
 
     if (!m.journalHasLocation) {
       renderJournalEmpty();
@@ -2216,13 +2268,13 @@ button.map-month-row:hover { background: var(--cream); }
           const nearest = mKeys[0];
           const nYear = parseInt(nearest.slice(0, 4), 10);
           const nMo = parseInt(nearest.slice(4, 6), 10);
-          nearestLink = `<p class="map-empty-actions" data-map-month-nearest><a href="/app/map/month/${escapeHtml(nearest)}">go to ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
+          nearestLink = `<p class="map-empty-actions" data-map-month-nearest><a href="/app/map/month/${escapeHtml(nearest)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.go.to')} ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
         }
       } catch (_) {}
-      pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
+      pageShell(window.JournalI18n.render('journal.window.map.month.heading', [['month', String(m.monthName)], ['year', String(m.year)]]), `<div class="map-month">
         <div class="map-month-panel map-month-pad" data-map-month-empty>
-          <p>no location kept for this month.</p>
-          <p class="map-muted">location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.</p>
+          <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.no.location.kept.for.this.month')}</p>
+          <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.may.have.been.paused.or')}</p>
           ${nearestLink}
         </div>
       </div>`, monthNav);
@@ -2287,66 +2339,66 @@ button.map-month-row:hover { background: var(--cream); }
     const bin = (n) => n >= 15 ? 5 : n >= 8 ? 4 : n >= 4 ? 3 : n >= 2 ? 2 : 1;
 
     const prevLastDayNum = parseInt(m.previousMonthLastDay.slice(6, 8), 10);
-    const explainerMarkup = `<p>each area is about 1 km across and holds the stops in it: the visits your phone reported, and any stays your journal worked out.</p>
-      <p>the shade counts days, not hours. a day counts once in an area, however many reports it has, and a visit counts for its day even when its arrival or departure isn't known.</p>
-      <p>your phone often reports an arrival first and the whole visit later. the two reports are one visit.</p>
-      <p>"where" starts around the area with the most days: every stop within 50 km of it. any run of days with a stop farther away is a trip, named by its dates.</p>
-      <p>a night counts in an area when a visit there covers at least two hours between 22:00 and 06:00.</p>
-      <p>hours are shown for one area at a time, and only for time with both ends known. they aren't added up across areas, because two reports can place the same hour in two areas.</p>
-      <p>only time inside ${escapeHtml(m.monthName)} counts. a visit that began on ${escapeHtml(m.previousMonthName)} ${prevLastDayNum} counts from midnight.</p>
-      <p>a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop whose margin of error wasn't reported, or is over 500 m, isn't drawn, and neither is the time between stops.</p>
-      <p>a place you hid isn't drawn. its visits still show in each day's list.</p>
-      <p>there's no street map. the names are the ones that came with your journal or that you downloaded, and no map service is asked for anything.</p>`;
+    const explainerMarkup = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.each.area.is.about.km.across')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.the.shade.counts.days.not.hours')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.your.phone.often.reports.an.arrival')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.where.starts.around.the.area.with')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.night.counts.in.an.area')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.hours.are.shown.for.one.area')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.month.explanation.midnight', [['month', String(m.monthName)], ['previous', String(m.previousMonthName)], ['day', String(prevLastDayNum)]])}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.stop.at.one.of.your')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.a.place.you.hid.isn.t')}</p>
+      <p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.there.s.no.street.map.the')}</p>`;
 
-    pageShell(`${m.monthName} ${m.year}`, `<div class="map-month">
+    pageShell(window.JournalI18n.render('journal.window.map.month.heading', [['month', String(m.monthName)], ['year', String(m.year)]]), `<div class="map-month">
       <header class="map-month-head">
-        <p class="map-month-lede">the stops your journal holds for this month. each area is shaded by how many days have a stop in it.</p>
+        <p class="map-month-lede">${window.JournalI18n.renderHtml('journal.window.map.visible.text.the.stops.your.journal.holds.for')}</p>
       </header>
       <div class="map-month-layout">
         <section class="map-month-panel" aria-labelledby="map-month-h">
-          <h2 id="map-month-h" class="visually-hidden">the map</h2>
+          <h2 id="map-month-h" class="visually-hidden">${window.JournalI18n.renderHtml('journal.window.map.section.heading.the.map')}</h2>
           <div class="map-month-controls" data-map-month-where ${m.anchorId ? "" : "hidden"}>
             <fieldset class="map-month-choice">
-              <legend>where</legend>
+              <legend>${window.JournalI18n.renderHtml('journal.window.map.visible.text.where')}</legend>
               <div class="map-month-seg" data-map-month-choices></div>
             </fieldset>
           </div>
           <div class="map-month-wrap" data-map-month-map>
             <div data-map-month-svg></div>
             <button type="button" class="map-month-outside" data-map-month-outside hidden></button>
-            <div class="map-month-zoom" role="group" aria-label="zoom">
-              <button type="button" data-map-month-zoom="in" aria-label="zoom in">+</button>
-              <button type="button" data-map-month-zoom="out" aria-label="zoom out">−</button>
-              <button type="button" data-map-month-zoom="fit" class="fit">fit</button>
+            <div class="map-month-zoom" role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.zoom')}">
+              <button type="button" data-map-month-zoom="in" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.zoom.in')}">+</button>
+              <button type="button" data-map-month-zoom="out" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.zoom.out')}">−</button>
+              <button type="button" data-map-month-zoom="fit" class="fit">${window.JournalI18n.renderHtml('journal.window.map.button.label.fit')}</button>
             </div>
           </div>
           <div class="map-month-foot">
             <p class="map-month-selcap" data-map-month-selcap aria-hidden="true"></p>
             <div class="map-month-legend">
-              <span>days with a stop</span>
+              <span>${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.with.a.stop')}</span>
               <span class="map-month-ramp" aria-hidden="true"><span><i style="background:var(--b1)"></i>1</span><span><i style="background:var(--b2)"></i>2–3</span><span><i style="background:var(--b3)"></i>4–7</span><span><i style="background:var(--b4)"></i>8–14</span><span><i style="background:var(--b5)"></i>15+</span></span>
-              <span class="visually-hidden">shades run from 1 day, lightest, through 2 to 3, 4 to 7 and 8 to 14, to 15 or more days, darkest.</span>
+              <span class="visually-hidden">${window.JournalI18n.renderHtml('journal.window.map.visible.text.shades.run.from.day.lightest.through')}</span>
             </div>
-            <p class="map-muted">named features only; streets not shown.</p>
+            <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.named.features.only.streets.not.shown')}</p>
             <div class="map-month-notdrawn" data-map-month-notdrawn></div>
           </div>
         </section>
         <div class="map-month-side">
           <section class="map-month-panel map-month-pad" aria-labelledby="map-month-cal-h">
-            <div class="map-month-cal-head"><h2 id="map-month-cal-h">day by day</h2><span class="map-muted" data-map-month-cal-sum></span></div>
-            <div class="map-month-cal" data-map-month-cal role="group" aria-label="days of ${escapeHtml(m.monthName)}. use the arrow keys to move between days."></div>
+            <div class="map-month-cal-head"><h2 id="map-month-cal-h">${window.JournalI18n.renderHtml('journal.window.map.section.heading.day.by.day')}</h2><span class="map-muted" data-map-month-cal-sum></span></div>
+            <div class="map-month-cal" data-map-month-cal role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.map.calendar.group.accessible.name', [['month', String(m.monthName)]])}"></div>
             <div class="map-month-cal-legend" data-map-month-cal-legend></div>
           </section>
           <section class="map-month-panel map-month-pad" data-map-month-detail aria-labelledby="map-month-detail-h" tabindex="-1"></section>
           <section class="map-month-panel map-month-pad" ${m.anchorId ? "" : "hidden"} aria-labelledby="map-month-areas-h">
-            <h2 id="map-month-areas-h">areas this month</h2>
+            <h2 id="map-month-areas-h">${window.JournalI18n.renderHtml('journal.window.map.section.heading.areas.this.month')}</h2>
             <p class="map-muted" data-map-month-areas-sum style="margin:-4px 0 10px"></p>
             <ul class="map-month-areas" data-map-month-areas></ul>
             <button class="map-month-btn more" type="button" data-map-month-areas-more aria-expanded="false" hidden></button>
           </section>
           <section class="map-month-panel map-month-pad">
             <details class="map-month-how">
-              <summary>how the month is drawn</summary>
+              <summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.how.the.month.is.drawn')}</summary>
               ${explainerMarkup}
             </details>
           </section>
@@ -2371,7 +2423,7 @@ button.map-month-row:hover { background: var(--cream); }
       segEl.innerHTML = m.choices.map((c) => {
         const checked = c === activeChoice ? "checked" : "";
         const label = c.trip ? c.dateLabel : c.name;
-        const count = c.trip ? c.name : plural(c.days.length, "day", "days");
+        const count = c.trip ? c.name : plural(c.days.length, "day");
         return `<label><input type="radio" name="map-month-choice" value="${c.id}" ${checked}><span>${escapeHtml(label)}<small><span class="visually-hidden">, </span>${escapeHtml(count)}</small></span></label>`;
       }).join("");
     }
@@ -2428,18 +2480,18 @@ button.map-month-row:hover { background: var(--cream); }
         const nd = m.notDrawn;
         const items = [];
         if (nd.hiddenPlaces > 0) {
-          items.push(["hidden", nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`]);
+          items.push(["hidden", nd.hiddenPlaces === 1 ? window.JournalI18n.render('journal.window.map.window.explanation.a.place.you.hid') : window.JournalI18n.render('journal.window.map.month.hidden.places', [['count', String(nd.hiddenPlaces)]])]);
         }
         if (nd.wide > 0) {
-          items.push(["wide", `${plural(nd.wide, "stop", "stops")} with a margin of error over 500 m or none reported`]);
+          items.push(["wide", window.JournalI18n.render('journal.window.map.window.explanation.value1.with.a.margin.of.error', [['value1', String(plural(nd.wide, "stop"))]])]);
         }
         const notDrawnHtml = items.length
-          ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>not drawn here:</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul></div>`
+          ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>${window.JournalI18n.renderHtml('journal.window.map.visible.text.not.drawn.here')}</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul></div>`
           : "";
-        wrap.innerHTML = `<p class="map-muted" style="padding: 16px;" data-map-month-nothing>no stops to draw this month.</p>${notDrawnHtml}`;
+        wrap.innerHTML = `<p class="map-muted" style="padding: 16px;" data-map-month-nothing>${window.JournalI18n.renderHtml('journal.window.map.visible.text.no.stops.to.draw.this.month')}</p>${notDrawnHtml}`;
         outBtn.hidden = true;
         if (activeDay) {
-          cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · nothing drawn here`;
+          cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> ${window.JournalI18n.renderHtml('journal.window.map.visible.text.nothing.drawn.here')}`;
         } else {
           cap.textContent = "";
         }
@@ -2461,14 +2513,14 @@ button.map-month-row:hover { background: var(--cream); }
         const cls = ["map-month-cell"];
         if (activeDay) cls.push(g.days.has(activeDay) ? "ring" : "dim");
         if (g.kids.some((c) => c.id === activeCell)) cls.push("sel");
-        const title = one ? `${one.label} · ${plural(d, "day", "days")}` : `${plural(g.kids.length, "area", "areas")} · ${plural(d, "day", "days")}`;
+        const title = one ? `${one.label} · ${plural(d, "day")}` : `${plural(g.kids.length, "area")} · ${plural(d, "day")}`;
         return `<polygon class="${cls.join(" ")}" data-parent="${g.id}" data-res="${res}"${one ? ` data-cell="${one.id}"` : ""} points="${screenOf(g.ring)}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(title)}</title></polygon>`;
       }) : list.map((c) => {
         const d = c.dayCount;
         const cls = ["map-month-cell"];
         if (activeDay) cls.push(c.days.includes(activeDay) ? "ring" : "dim");
         if (activeCell === c.id) cls.push("sel");
-        return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${screenOf(c.ring)}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${plural(d, "day", "days")}</title></polygon>`;
+        return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${screenOf(c.ring)}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${escapeHtml(plural(d, "day"))}</title></polygon>`;
       });
 
       const towns = m.towns.filter((t) => inView(t.x, t.y)).map((t) => {
@@ -2482,22 +2534,22 @@ button.map-month-row:hover { background: var(--cream); }
       const bl = nice * k;
       const scale = `<g class="map-month-scale" aria-hidden="true"><line x1="14" y1="${H - 16}" x2="${(14 + bl).toFixed(1)}" y2="${H - 16}"/><line x1="14" y1="${H - 21}" x2="14" y2="${H - 11}"/><line x1="${(14 + bl).toFixed(1)}" y1="${H - 21}" x2="${(14 + bl).toFixed(1)}" y2="${H - 11}"/><text x="14" y="${H - 25}">${nice >= 1000 ? `${nice / 1000} km` : `${nice} m`}</text></g>`;
 
-      const zoomed = view.z > 1 ? " zoomed in." : "";
-      const choiceLabel = activeChoice ? (activeChoice.trip ? activeChoice.name : activeChoice.name) : "";
+      const zoomed = view.z > 1 ? window.JournalI18n.render('journal.window.map.month.zoom.suffix') : "";
+      const choiceLabel = activeChoice?.name || "";
       const summary = groups
-        ? `map of ${choiceLabel}: ${plural(groups.length, "shaded area", "shaded areas")}, each ${DRAWN_SIZE[res]} across, holding the ${plural(list.length, "area", "areas")} listed under areas this month.${zoomed}`
-        : `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across. the same areas are listed under areas this month.${zoomed}`;
+        ? window.JournalI18n.render('journal.window.map.window.explanation.map.of.value1.value2.each.value3.variant2', [['value1', String(choiceLabel)], ['value2', String(plural(groups.length, "shaded.area"))], ['value3', String(DRAWN_SIZE[res])], ['value4', String(plural(list.length, "area"))], ['value5', String(zoomed)]])
+        : window.JournalI18n.render('journal.window.map.window.explanation.map.of.value1.value2.each.value3', [['value1', String(choiceLabel)], ['value2', String(plural(list.length, "shaded.area"))], ['value3', String(SIZE.label)], ['value4', String(zoomed)]]);
       const outside = list.filter((c) => !(px(c.cx) > 0 && px(c.cx) < W && py(c.cy) > 0 && py(c.cy) < H - 50)).length;
       outBtn.hidden = !outside;
-      outBtn.textContent = outside ? `${plural(outside, "area", "areas")} outside the map · show all` : "";
+      outBtn.textContent = outside ? window.JournalI18n.render('journal.window.map.visible.text.value1.outside.the.map.show.all', [['value1', String(plural(outside, "area"))]]) : "";
       wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${escapeHtml(summary)}">${polys.join("")}${towns.join("")}${scale}</svg>`;
 
       const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
       if (activeCell && activeCellObj) {
-        cap.innerHTML = `<strong>${escapeHtml(activeCellObj.label)}</strong> · ${plural(activeCellObj.dayCount, "day", "days")} this month`;
+        cap.innerHTML = `<strong>${escapeHtml(activeCellObj.label)}</strong> · ${escapeHtml(plural(activeCellObj.dayCount, "day"))} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.this.month')}`;
       } else if (activeDay) {
         const n = list.filter((c) => c.days.includes(activeDay)).length;
-        cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · ${n ? plural(n, "area", "areas") + " outlined" : "nothing drawn here"}`;
+        cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · ${n ? window.JournalI18n.renderHtml('journal.window.map.month.map.outlined', [['areas', String(plural(n, "area"))]]) : window.JournalI18n.renderHtml('journal.window.map.month.map.nothing.drawn')}`;
       } else {
         cap.textContent = "";
       }
@@ -2512,12 +2564,12 @@ button.map-month-row:hover { background: var(--cream); }
       const nd = activeChoice ? activeChoice.notDrawn : m.notDrawn;
       const items = [];
       if (nd.hiddenPlaces > 0) {
-        items.push(["hidden", nd.hiddenPlaces === 1 ? "a place you hid" : `${nd.hiddenPlaces} places you hid`]);
+        items.push(["hidden", nd.hiddenPlaces === 1 ? window.JournalI18n.render('journal.window.map.window.explanation.a.place.you.hid') : window.JournalI18n.render('journal.window.map.month.hidden.places', [['count', String(nd.hiddenPlaces)]])]);
       }
       if (nd.wide > 0) {
-        items.push(["wide", `${plural(nd.wide, "stop", "stops")} with a margin of error over 500 m or none reported`]);
+        items.push(["wide", window.JournalI18n.render('journal.window.map.window.explanation.value1.with.a.margin.of.error', [['value1', String(plural(nd.wide, "stop"))]])]);
       }
-      ndEl.innerHTML = items.length ? `<span>not drawn here:</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul>` : "";
+      ndEl.innerHTML = items.length ? `<span>${window.JournalI18n.renderHtml('journal.window.map.visible.text.not.drawn.here')}</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul>` : "";
     }
 
     function renderCalendar() {
@@ -2525,7 +2577,7 @@ button.map-month-row:hover { background: var(--cream); }
       const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
       const m1Date = new Date(m.year, parseInt(m.month.slice(4, 6), 10) - 1, 1);
       const lead = (m1Date.getDay() + 6) % 7;
-      const heads = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => `<span class="wd" aria-hidden="true">${w}</span>`).join("");
+      const heads = [...SHORT_WEEKDAYS.slice(1), SHORT_WEEKDAYS[0]].map((w) => `<span class="wd" aria-hidden="true">${escapeHtml(w)}</span>`).join("");
       const blanks = Array.from({ length: lead }, () => "<span></span>").join("");
       const btns = [];
 
@@ -2541,31 +2593,31 @@ button.map-month-row:hover { background: var(--cream); }
         }
         const inArea = activeCellObj && activeCellObj.days.includes(dObj.day);
         const words = {
-          stops: "stops",
-          elsewhere: `stops elsewhere: ${m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(", ")}`,
-          "no-stops": "no stops",
-          "no-location": "no location kept",
-          unreadable: "location couldn't be read",
-          kept: "location kept",
+          stops: window.JournalI18n.render('journal.window.map.visible.text.stops'),
+          elsewhere: window.JournalI18n.render('journal.window.map.calendar.stops.elsewhere.list', [['places', String(m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(", "))]]),
+          "no-stops": window.JournalI18n.render('journal.window.map.calendar.stops.none'),
+          "no-location": window.JournalI18n.render('journal.window.map.calendar.location.none'),
+          unreadable: window.JournalI18n.render('journal.window.map.window.explanation.location.couldn.t.be.read'),
+          kept: window.JournalI18n.render('journal.window.map.calendar.location.kept'),
         }[st] || st;
-        const label = `${longDay(dObj.day)}, ${words}${inArea ? ", has a stop in the chosen area" : ""}`;
+        const label = window.JournalI18n.render('journal.window.map.calendar.day.accessible.name', [['date', String(longDay(dObj.day))], ['state', String(words)], ['focus', String(inArea ? window.JournalI18n.render('journal.window.map.window.explanation.has.a.stop.in.the.chosen') : "")]]);
         btns.push(`<button type="button" class="map-month-day${inArea ? " in-area" : ""}" data-day="${dObj.day}" data-state="${st}" aria-pressed="${activeDay === dObj.day}" aria-label="${escapeHtml(label)}" tabindex="${dNum === calFocus ? 0 : -1}"><span aria-hidden="true">${dNum}</span></button>`);
       }
       calEl.innerHTML = heads + blanks + btns.join("");
 
       const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
-      root.querySelector("[data-map-month-cal-sum]").textContent = `${stopsDaysCount} of ${m.m} days have stops`;
+      root.querySelector("[data-map-month-cal-sum]").textContent = window.JournalI18n.render('journal.window.map.visible.text.value1.of.value2.days.have.stops', [['value1', String(stopsDaysCount)], ['value2', String(m.m)]]);
 
       const present = new Set(m.days.map((d) => d.state === "stops" && !(activeChoice ? activeChoice.days.includes(d.day) : true) ? "elsewhere" : d.state));
       const leg = [
-        ["", "stops here"],
-        ...(m.choices.length > 1 ? [["elsewhere", "stops elsewhere"]] : []),
-        ...(present.has("no-stops") || present.has("kept") ? [["no-stops", "no stops"]] : []),
-        ...(present.has("unreadable") ? [["unreadable", "location couldn't be read"]] : []),
-        ...(present.has("no-location") ? [["none", "no location kept"]] : []),
+        ["", window.JournalI18n.render('journal.window.map.calendar.stops.here')],
+        ...(m.choices.length > 1 ? [["elsewhere", window.JournalI18n.render('journal.window.map.calendar.stops.elsewhere')]] : []),
+        ...(present.has("no-stops") || present.has("kept") ? [["no-stops", window.JournalI18n.render('journal.window.map.calendar.stops.none')]] : []),
+        ...(present.has("unreadable") ? [["unreadable", window.JournalI18n.render('journal.window.map.window.explanation.location.couldn.t.be.read')]] : []),
+        ...(present.has("no-location") ? [["none", window.JournalI18n.render('journal.window.map.calendar.location.none')]] : []),
       ];
-      if (activeCellObj) leg.unshift(["in-area", "in the chosen area"]);
-      root.querySelector("[data-map-month-cal-legend]").innerHTML = leg.map(([c, t]) => `<span><i class="map-month-sw ${c}" aria-hidden="true"></i>${t}</span>`).join("");
+      if (activeCellObj) leg.unshift(["in-area", window.JournalI18n.render('journal.window.map.window.explanation.in.the.chosen.area')]);
+      root.querySelector("[data-map-month-cal-legend]").innerHTML = leg.map(([c, t]) => `<span><i class="map-month-sw ${c}" aria-hidden="true"></i>${escapeHtml(t)}</span>`).join("");
     }
 
     function renderDetail() {
@@ -2577,83 +2629,83 @@ button.map-month-row:hover { background: var(--cream); }
         const rows = [];
         for (const d of shownDays) {
           const es = activeCellObj.entries.filter((s) => s.days.includes(d));
-          rows.push(`<li><button class="map-month-row" type="button" data-day="${d}"><span class="when">${WEEKDAYS[dayDate(d).getDay()].slice(0, 3)}, ${escapeHtml(shortDay(d))}</span><span class="what tnum">${escapeHtml(dayInArea(es, d))}</span></button></li>`);
+          rows.push(`<li><button class="map-month-row" type="button" data-day="${d}"><span class="when">${window.JournalI18n.renderHtml('journal.window.map.date.short.weekday.comma', [['weekday', String(SHORT_WEEKDAYS[dayDate(d).getDay()])], ['date', String(shortDay(d))]])}</span><span class="what tnum">${escapeHtml(dayInArea(es, d))}</span></button></li>`);
         }
         const notes = [];
         if (activeCellObj.openEnded) {
           notes.push(activeCellObj.openEnded === 1
-            ? "1 visit is missing its arrival or departure, so its time isn't in the hours or the nights. its day still counts."
-            : `${activeCellObj.openEnded} visits are missing an arrival or departure, so their time isn't in the hours or the nights. their days still count.`);
+            ? window.JournalI18n.render('journal.window.map.window.explanation.visit.is.missing.its.arrival.or')
+            : window.JournalI18n.render('journal.window.map.window.explanation.value1.visits.are.missing.an.arrival', [['value1', String(activeCellObj.openEnded)]]));
         }
-        if (activeCellObj.overlap) notes.push("where two reports cover the same time, the hours count that time once.");
-        if (activeCellObj.clipped) notes.push(`only the part inside ${escapeHtml(m.monthName)} counts.`);
-        const others = activeCellObj.names.slice(1).map((p) => `<li>${escapeHtml(p.words)} · ${plural(p.days, "day", "days")}</li>`).join("");
+        if (activeCellObj.overlap) notes.push(window.JournalI18n.render('journal.window.map.window.explanation.where.two.reports.cover.the.same'));
+        if (activeCellObj.clipped) notes.push(window.JournalI18n.render('journal.window.map.window.explanation.only.the.part.inside.value1.counts', [['value1', String(m.monthName)]]));
+        const others = activeCellObj.names.slice(1).map((p) => `<li>${escapeHtml(p.words)} · ${escapeHtml(plural(p.days, "day"))}</li>`).join("");
 
-        detEl.innerHTML = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(activeCellObj.label)}</h2><p class="map-muted">an area ${escapeHtml(SIZE.label)} across · ${escapeHtml(fromBusiest(activeCellObj, activeChoice.areas, activeChoice.trip))}</p></div><button class="map-month-btn" type="button" data-map-month-clear>clear</button></div>
-          <dl class="map-month-facts"><dt>days with a stop</dt><dd>${activeCellObj.dayCount} of ${m.m}</dd>${activeCellObj.nights ? `<dt>nights</dt><dd>${activeCellObj.nights}</dd>` : ""}<dt>stops</dt><dd>${activeCellObj.stopCount}</dd><dt>hours with both ends known</dt><dd>${hoursText(activeCellObj.knownMinutes)}</dd></dl>
-          <div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${n}</p>`).join("")}</div>
-          ${others ? `<p class="map-month-subhead">also in this area</p><ul class="map-muted" style="margin:0;padding-left:18px">${others}</ul>` : ""}
-          <p class="map-month-subhead">days here</p><ul class="map-month-rows">${rows.join("")}</ul>
-          ${byDay.length > 6 ? `<button class="map-month-btn more" type="button" data-map-month-alldays aria-expanded="${showAllDaysInArea}">${showAllDaysInArea ? "show fewer days" : `show all ${byDay.length} days`}</button>` : ""}`;
+        detEl.innerHTML = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(activeCellObj.label)}</h2><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.an.area')} ${escapeHtml(SIZE.label)} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.across')} ${escapeHtml(fromBusiest(activeCellObj, activeChoice.areas, activeChoice.trip))}</p></div><button class="map-month-btn" type="button" data-map-month-clear>${window.JournalI18n.renderHtml('journal.window.map.button.label.clear')}</button></div>
+          <dl class="map-month-facts"><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.with.a.stop')}</dt><dd>${activeCellObj.dayCount} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.of')} ${m.m}</dd>${activeCellObj.nights ? `<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.nights')}</dt><dd>${activeCellObj.nights}</dd>` : ""}<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.stops')}</dt><dd>${activeCellObj.stopCount}</dd><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.hours.with.both.ends.known')}</dt><dd>${hoursText(activeCellObj.knownMinutes)}</dd></dl>
+          <div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${escapeHtml(n)}</p>`).join("")}</div>
+          ${others ? `<p class="map-month-subhead">${window.JournalI18n.renderHtml('journal.window.map.visible.text.also.in.this.area')}</p><ul class="map-muted" style="margin:0;padding-left:18px">${others}</ul>` : ""}
+          <p class="map-month-subhead">${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.here')}</p><ul class="map-month-rows">${rows.join("")}</ul>
+          ${byDay.length > 6 ? `<button class="map-month-btn more" type="button" data-map-month-alldays aria-expanded="${showAllDaysInArea}">${showAllDaysInArea ? window.JournalI18n.renderHtml('journal.window.map.month.days.show.fewer') : window.JournalI18n.renderHtml('journal.window.map.month.days.show.all', [['count', String(byDay.length)]])}</button>` : ""}`;
       } else if (activeDay) {
         const dayRecord = m.days.find((d) => d.day === activeDay);
-        const head = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(longDay(activeDay))}</h2><p class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(activeDay)}">open the day</a></p></div><button class="map-month-btn" type="button" data-map-month-clear>clear</button></div>`;
+        const head = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(longDay(activeDay))}</h2><p class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(activeDay)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.open.the.day')}</a></p></div><button class="map-month-btn" type="button" data-map-month-clear>${window.JournalI18n.renderHtml('journal.window.map.button.label.clear')}</button></div>`;
         const readingsCount = dayRecord.readings || 0;
-        const readingsLine = readingsCount > 0 ? `not drawn: ${plural(readingsCount, "reading", "readings")}.` : "";
+        const readingsLine = readingsCount > 0 ? window.JournalI18n.render('journal.window.map.month.day.readings.undrawn', [['readings', String(plural(readingsCount, "reading"))]]) : "";
 
         if (dayRecord.state === "no-location") {
-          detEl.innerHTML = `${head}<p style="margin-top:8px">no location kept for this day.</p><p class="map-muted" style="margin-top:6px">your journal has no location from ${escapeHtml(longDay(activeDay))}. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.</p>`;
+          detEl.innerHTML = `${head}<p style="margin-top:8px">${window.JournalI18n.renderHtml('journal.window.map.visible.text.no.location.kept.for.this.day')}</p><p class="map-muted" style="margin-top:6px">${window.JournalI18n.renderHtml('journal.window.map.month.day.location.none', [['date', String(longDay(activeDay))]])}</p>`;
         } else if (dayRecord.state === "unreadable") {
-          detEl.innerHTML = `${head}<p style="margin-top:8px">your journal couldn't read the location kept for this day.</p>`;
+          detEl.innerHTML = `${head}<p style="margin-top:8px">${window.JournalI18n.renderHtml('journal.window.map.visible.text.your.journal.couldn.t.read.the')}</p>`;
         } else if (dayRecord.state === "no-stops" || dayRecord.state === "kept") {
           const quiet = [];
           for (const dev of dayRecord.interruptions || []) {
-            quiet.push(`your ${escapeHtml(dev.word)} said location was interrupted ${dev.count === 1 ? "once" : dev.count === 2 ? "twice" : `${dev.count} times`} this day.`);
+            quiet.push(window.JournalI18n.render('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(dev.word)], ['value2', String(interruptionCount(dev.count, true))]]));
           }
-          if (dayRecord.unreadable) quiet.push("your journal couldn't read part of this day's location.");
-          if (readingsLine) quiet.push(escapeHtml(readingsLine));
-          detEl.innerHTML = `${head}<p style="margin-top:8px">location was kept this day, but no stops.</p>${quiet.map((n) => `<p class="map-muted" style="margin-top:6px">${n}</p>`).join("")}`;
+          if (dayRecord.unreadable) quiet.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.couldn.t.read.part'));
+          if (readingsLine) quiet.push(readingsLine);
+          detEl.innerHTML = `${head}<p style="margin-top:8px">${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.was.kept.this.day.but')}</p>${quiet.map((n) => `<p class="map-muted" style="margin-top:6px">${escapeHtml(n)}</p>`).join("")}`;
         } else {
           const es = m.stops.filter((s) => s.days.includes(activeDay));
           const rows = es.map((s) => {
             const choiceOfStop = m.choices.find((c) => c.test(s));
             const cellOfStop = choiceOfStop?.areas.find((a) => a.id === s.cellId);
             const bits = [
-              s.kind === "stay" ? `a stay your journal worked out from ${s.item.count} of your phone's readings` : "a visit your phone reported",
-              s.start == null ? "arrival not known" : s.end == null ? "no departure reported" : "",
+              s.kind === "stay" ? window.JournalI18n.render('journal.window.map.month.day.stay.explanation', [['count', String(s.item.count)]]) : window.JournalI18n.render('journal.window.map.window.explanation.a.visit.your.phone.reported'),
+              s.start == null ? window.JournalI18n.render('journal.window.map.entry.time.missing.arrival') : s.end == null ? window.JournalI18n.render('journal.window.map.entry.time.missing.departure') : "",
             ].filter(Boolean);
-            if (!s.onMap) bits.push("hidden from the map");
-            else if (!s.drawable) bits.push("margin of error over 500 m or not reported");
-            else if (choiceOfStop && choiceOfStop !== activeChoice) bits.push(choiceOfStop.trip ? `on the ${choiceOfStop.dateLabel} trip` : choiceOfStop.name);
+            if (!s.onMap) bits.push(window.JournalI18n.render('journal.window.map.window.explanation.hidden.from.the.map'));
+            else if (!s.drawable) bits.push(window.JournalI18n.render('journal.window.map.window.explanation.margin.of.error.over.m.or'));
+            else if (choiceOfStop && choiceOfStop !== activeChoice) bits.push(choiceOfStop.trip ? window.JournalI18n.render('journal.window.map.month.choice.trip', [['date', String(choiceOfStop.dateLabel)]]) : choiceOfStop.name);
             const inner = `<span class="when">${escapeHtml(spanText(s, activeDay))}</span><span class="what">${escapeHtml(s.words)}</span><span class="meta">${escapeHtml(bits.join(" · "))}</span>`;
             return cellOfStop ? `<li><button class="map-month-row" type="button" data-cell="${cellOfStop.id}" data-choice="${choiceOfStop.id}">${inner}</button></li>` : `<li><div class="map-month-row">${inner}</div></li>`;
           });
           const notes = [];
           for (const dev of dayRecord.interruptions || []) {
-            notes.push(`your ${escapeHtml(dev.word)} said location was interrupted ${dev.count === 1 ? "once" : dev.count === 2 ? "twice" : `${dev.count} times`} this day.`);
+            notes.push(window.JournalI18n.render('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(dev.word)], ['value2', String(interruptionCount(dev.count, true))]]));
           }
           if (dayRecord.unreadable) {
-            notes.push("your journal couldn't read part of this day's location.");
+            notes.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.couldn.t.read.part'));
           }
           if (readingsLine) {
             notes.push(readingsLine);
           }
-          detEl.innerHTML = `${head}${stripMonthDay(activeDay, es)}<p class="map-month-subhead">stops, in order</p><ul class="map-month-rows">${rows.join("")}</ul><div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${n}</p>`).join("")}</div>`;
+          detEl.innerHTML = `${head}${stripMonthDay(activeDay, es)}<p class="map-month-subhead">${window.JournalI18n.renderHtml('journal.window.map.visible.text.stops.in.order')}</p><ul class="map-month-rows">${rows.join("")}</ul><div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${escapeHtml(n)}</p>`).join("")}</div>`;
         }
       } else {
         const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
-        const gaps = m.noLocation ? ` no location was kept on ${plural(m.noLocation, "day", "days")}.` : "";
+        const gaps = m.noLocation ? window.JournalI18n.render('journal.window.map.window.explanation.no.location.was.kept.on.value1', [['value1', String(plural(m.noLocation, "day"))]]) : "";
         let glanceText = "";
         if (m.anchorId) {
           const trips = m.choices.filter((c) => c.trip).length;
-          const tripClause = trips ? `, and ${plural(trips, "trip", "trips")} more than 50 km away` : "";
-          glanceText = `${stopsDaysCount} of ${m.m} days have stops: ${m.choices[0].days.length} ${m.choices[0].name}${tripClause}.${gaps}`;
+          const tripClause = trips ? window.JournalI18n.render('journal.window.map.window.explanation.and.value1.more.than.km.away', [['value1', String(plural(trips, "trip"))]]) : "";
+          glanceText = window.JournalI18n.render('journal.window.map.window.explanation.value1.of.value2.days.have.stops.variant2', [['value1', String(stopsDaysCount)], ['value2', String(m.m)], ['value3', String(m.choices[0].days.length)], ['value4', String(m.choices[0].name)], ['value5', String(tripClause)], ['value6', String(gaps)]]);
         } else {
-          glanceText = `${stopsDaysCount} of ${m.m} days have stops.${gaps}`;
+          glanceText = window.JournalI18n.render('journal.window.map.window.explanation.value1.of.value2.days.have.stops', [['value1', String(stopsDaysCount)], ['value2', String(m.m)], ['value3', String(gaps)]]);
         }
-        detEl.innerHTML = `<h2 id="map-month-detail-h">the month at a glance</h2>
+        detEl.innerHTML = `<h2 id="map-month-detail-h">${window.JournalI18n.renderHtml('journal.window.map.section.heading.the.month.at.a.glance')}</h2>
           <p style="margin-top:6px">${escapeHtml(glanceText)}</p>
-          <p class="map-muted" style="margin-top:8px">${m.anchorId ? "choose an area on the map or in the list, or a day in the calendar." : "choose a day in the calendar."}</p>`;
+          <p class="map-muted" style="margin-top:8px">${m.anchorId ? window.JournalI18n.renderHtml('journal.window.map.window.explanation.choose.an.area.on.the.map') : window.JournalI18n.renderHtml('journal.window.map.window.explanation.choose.a.day.in.the.calendar')}</p>`;
       }
     }
 
@@ -2664,14 +2716,14 @@ button.map-month-row:hover { background: var(--cream); }
       const list = activeChoice ? activeChoice.areas : [];
       const shown = showAllAreas ? list : list.slice(0, 8);
       const shared = activeChoice?.sharedRegion;
-      const choiceLabel = activeChoice ? (activeChoice.trip ? `on the ${activeChoice.dateLabel} trip` : activeChoice.name) : "";
-      sumEl.textContent = `${plural(list.length, "area", "areas")} ${choiceLabel}${shared ? `, all in ${shared}` : ""}, most days first.`;
+      const choiceLabel = activeChoice ? (activeChoice.trip ? window.JournalI18n.render('journal.window.map.month.choice.trip', [['date', String(activeChoice.dateLabel)]]) : activeChoice.name) : "";
+      sumEl.textContent = window.JournalI18n.render('journal.window.map.visible.text.value1.value2.value3.most.days.first', [['value1', String(plural(list.length, "area"))], ['value2', String(choiceLabel)], ['value3', String(shared ? window.JournalI18n.render('journal.window.map.month.choice.shared.region', [['region', String(shared)]]) : "")]]);
       areasEl.innerHTML = shown.map((c) => `<li><button class="map-month-area" type="button" data-cell="${c.id}" aria-pressed="${activeCell === c.id}">
         <i class="map-month-sw" style="background:var(--b${bin(c.dayCount)})" aria-hidden="true"></i>
-        <span class="name">${escapeHtml(c.listLabel)}<span class="town">${escapeHtml(fromBusiest(c, list, activeChoice.trip))}${c.nights ? ` · ${plural(c.nights, "night", "nights")}` : ""}</span></span>
-        <span class="n">${plural(c.dayCount, "day", "days")}</span></button></li>`).join("");
+        <span class="name">${escapeHtml(c.listLabel)}<span class="town">${escapeHtml(fromBusiest(c, list, activeChoice.trip))}${c.nights ? ` · ${escapeHtml(plural(c.nights, "night"))}` : ""}</span></span>
+        <span class="n">${escapeHtml(plural(c.dayCount, "day"))}</span></button></li>`).join("");
       moreBtn.hidden = list.length <= 8;
-      moreBtn.textContent = showAllAreas ? "show fewer" : `show all ${list.length} areas`;
+      moreBtn.textContent = showAllAreas ? window.JournalI18n.render('journal.window.map.visible.text.show.fewer') : window.JournalI18n.render('journal.window.map.visible.text.show.all.value1.areas', [['value1', String(list.length)]]);
       moreBtn.setAttribute("aria-expanded", String(showAllAreas));
     }
 
@@ -2693,7 +2745,7 @@ button.map-month-row:hover { background: var(--cream); }
         view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
         renderChoices();
         renderAll();
-        live(`showing ${ch.name}`);
+        live(window.JournalI18n.render('journal.window.map.month.live.showing.choice', [['name', String(ch.name)]]));
       }
     });
 
@@ -2705,7 +2757,7 @@ button.map-month-row:hover { background: var(--cream); }
         if (!g) return;
         if (zoomToParent(g)) {
           renderMapSvg();
-          live(`zoomed in on ${plural(g.kids.length, "area", "areas")}`);
+          live(window.JournalI18n.render('journal.window.map.month.live.zoom.areas', [['areas', String(plural(g.kids.length, "area"))]]));
           return;
         }
         // At the zoom limit, choose the parent's area with the most days.
@@ -2716,7 +2768,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeDay = null;
         renderAll();
         const c = activeChoice?.areas.find((a) => a.id === activeCell);
-        live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+        live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
       }
     });
 
@@ -2752,7 +2804,7 @@ button.map-month-row:hover { background: var(--cream); }
     root.querySelector("[data-map-month-outside]").addEventListener("click", () => {
       view.z = 1; view.dx = 0; view.dy = 0; view.all = true;
       renderMapSvg();
-      live("showing every area");
+      live(window.JournalI18n.render('journal.window.map.month.live.areas.all'));
     });
 
     root.querySelector(".map-month-zoom").addEventListener("click", (ev) => {
@@ -2762,7 +2814,7 @@ button.map-month-row:hover { background: var(--cream); }
       if (z === "fit") {
         view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
         renderMapSvg();
-        live("map fitted");
+        live(window.JournalI18n.render('journal.window.map.month.live.fit'));
         return;
       }
       const f = z === "in" ? 1.6 : 1 / 1.6;
@@ -2780,7 +2832,7 @@ button.map-month-row:hover { background: var(--cream); }
       if (nz === 1) { view.dx = 0; view.dy = 0; }
       view.z = nz;
       renderMapSvg();
-      live(nz === 1 ? "map fitted to these areas" : `zoomed ${z}`);
+      live(nz === 1 ? window.JournalI18n.render('journal.window.map.window.explanation.map.fitted.to.these.areas') : window.JournalI18n.render('journal.window.map.month.live.zoom.amount', [['zoom', String(z)]]));
     });
 
     root.querySelector("[data-map-month-areas]").addEventListener("click", (ev) => {
@@ -2791,7 +2843,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeDay = null;
         renderAll();
         const c = activeChoice?.areas.find((a) => a.id === activeCell);
-        live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+        live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
       }
     });
 
@@ -2863,7 +2915,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeCell = null;
         activeDay = null;
         renderAll();
-        live("nothing chosen");
+        live(window.JournalI18n.render('journal.window.map.month.live.choice.none'));
         return;
       }
       if (ev.target.closest("[data-map-month-alldays]")) {
@@ -2900,7 +2952,7 @@ button.map-month-row:hover { background: var(--cream); }
           activeDay = null;
           renderAll();
           const c = activeChoice?.areas.find((a) => a.id === activeCell);
-          live(c ? `${c.label}, ${plural(c.dayCount, "day", "days")} this month` : "nothing chosen");
+          live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
           root.querySelector("[data-map-month-detail]").focus();
         }
       }
@@ -2911,7 +2963,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeCell = null;
         activeDay = null;
         renderAll();
-        live("nothing chosen");
+        live(window.JournalI18n.render('journal.window.map.month.live.choice.none'));
       }
     }));
 
@@ -2943,7 +2995,7 @@ button.map-month-row:hover { background: var(--cream); }
 
   async function openUndated() {
     const mine = beginPage();
-    setGate(window.SurfaceState.loading({ text: "loading your journal's location…" }));
+    setGate(window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.map.text.loading.your.journal.s.location') }));
     try {
       const index = await readJson("/app/map/api/index");
       if (index === STALE || mine !== epoch || !alive()) return;

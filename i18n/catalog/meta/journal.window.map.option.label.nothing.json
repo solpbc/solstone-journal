@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's map view.",
+  "context": "Journal window, map view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f52d1c4620d62bf84c05dda3154b37689022a882166e251678900824b3c00b9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

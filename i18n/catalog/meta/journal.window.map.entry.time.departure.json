@@ -1,0 +1,28 @@
+{
+  "description": "entry time departure in the journal's map view.",
+  "context": "Journal window, map view. entry time departure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e017793c2b07922dd409e53d96729558909dbd71ac3adb0eaad8841a00bedc33",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

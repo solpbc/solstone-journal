@@ -1,0 +1,38 @@
+{
+  "description": "accuracy download explanation in the journal's map view.",
+  "context": "Journal window, map view. accuracy download explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "110bf210ef466672781b4d2730f48e2416f2d1eef5dcd222ef294330dc80123e",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "updates.solstone.app"
+    }
+  ]
+}

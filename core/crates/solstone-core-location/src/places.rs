@@ -25,6 +25,7 @@
 //! `solstone/apps/map/places.json` beside the places themselves, written only
 //! here.
 
+use solstone_core_window_catalog::{ENGLISH, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -136,9 +137,19 @@ impl Place {
 
     /// What the owner calls it, if anything: their name, else their alias.
     pub fn owner_name(&self) -> Option<String> {
-        self.name
-            .clone()
-            .or_else(|| self.alias.map(|alias| alias.as_str().to_owned()))
+        self.owner_name_in(ENGLISH)
+    }
+
+    pub fn owner_name_in(&self, locale: &str) -> Option<String> {
+        self.name.clone().or_else(|| {
+            self.alias.map(|alias| {
+                let id = match alias {
+                    Alias::Home => "journal.window.map.option.label.home",
+                    Alias::Work => "journal.window.map.option.label.work",
+                };
+                text(locale, id)
+            })
+        })
     }
 }
 

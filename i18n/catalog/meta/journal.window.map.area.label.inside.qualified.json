@@ -1,0 +1,37 @@
+{
+  "description": "location projection in the journal's map view.",
+  "context": "Journal window, map view. location projection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "place",
+      "type": "string"
+    },
+    {
+      "name": "qualifier",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb68b1602d16e9fcfa7296b75388dfc5dec7a387e4961da120335225db8980bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": ", "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's map view.",
+  "context": "Journal window, map view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04d03b3c1f06cb5f5ee580e091f6980932105db9e6a2971a7873ddfbdd14b861",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

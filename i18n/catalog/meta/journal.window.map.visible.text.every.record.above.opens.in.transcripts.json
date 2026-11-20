@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's map view.",
+  "context": "Journal window, map view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2171e4fe2be5b5e5456b5ceb9435c5cff000fc750fdc0c12bb383393e95d0af",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "month day location none in the journal's map view.",
+  "context": "Journal window, map view. month day location none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "857df9ba9e61d3eb6be7b8c678edf64c79406440e891bb3c86f351c7d507b590",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

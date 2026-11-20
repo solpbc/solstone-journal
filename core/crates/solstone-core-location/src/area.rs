@@ -6,6 +6,7 @@
 //! journal. Naming a reading is a lookup in memory; nothing is asked of any
 //! service. `scripts/build_location_area_tier.py` documents the file format.
 
+use solstone_core_window_catalog::{ENGLISH, strings};
 use std::fmt;
 use std::path::Path;
 
@@ -136,15 +137,29 @@ impl AreaName {
     /// reading whose whole margin lies inside a neighbourhood or town
     /// boundary is "in" it: "in Montmartre, Paris".
     pub fn label(&self) -> Option<String> {
+        self.label_in(ENGLISH)
+    }
+
+    pub fn label_in(&self, locale: &str) -> Option<String> {
         if let Some(within) = &self.within {
             let qualifier = self.qualifier();
             let named = match (&within.neighbourhood, &within.locality) {
-                (Some(neighbourhood), Some(locality)) => {
-                    Some(format!("in {neighbourhood}, {locality}"))
-                }
+                (Some(neighbourhood), Some(locality)) => Some(strings(
+                    locale,
+                    "journal.window.map.area.label.inside.qualified",
+                    [("place", neighbourhood), ("qualifier", locality)],
+                )),
                 (None, Some(place)) | (Some(place), None) => Some(match qualifier {
-                    Some(qualifier) if qualifier != place => format!("in {place}, {qualifier}"),
-                    _ => format!("in {place}"),
+                    Some(qualifier) if qualifier != place => strings(
+                        locale,
+                        "journal.window.map.area.label.inside.qualified",
+                        [("place", place), ("qualifier", qualifier)],
+                    ),
+                    _ => strings(
+                        locale,
+                        "journal.window.map.area.label.inside",
+                        [("place", place)],
+                    ),
                 }),
                 (None, None) => None,
             };
@@ -157,12 +172,18 @@ impl AreaName {
                 Some(region) if region != &town.name => region.as_str(),
                 _ => town.country.as_str(),
             };
-            return Some(format!("near {}, {qualifier}", town.name));
+            return Some(strings(
+                locale,
+                "journal.window.map.area.label.near",
+                [("place", &town.name), ("qualifier", qualifier)],
+            ));
         }
         match (&self.region, &self.country) {
-            (Some(region), Some(country)) if region != country => {
-                Some(format!("{region}, {country}"))
-            }
+            (Some(region), Some(country)) if region != country => Some(strings(
+                locale,
+                "journal.window.map.area.label.qualified",
+                [("region", region), ("country", country)],
+            )),
             (Some(region), _) => Some(region.clone()),
             (None, Some(country)) => Some(country.clone()),
             (None, None) => None,

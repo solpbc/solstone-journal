@@ -6,17 +6,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 use jiff::Span;
 use jiff::civil::Date;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::{response_locale, text};
 use solstone_core_location::places::{Alias, PlaceStore, clean_name};
 use solstone_core_location::{Entry, PlaceView};
 use solstone_core_time::day_key;
@@ -33,38 +35,38 @@ pub(crate) fn valid_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-pub(crate) fn unknown_place() -> Response {
+pub(crate) fn unknown_place(locale: &str) -> Response {
     error_envelope(
         "unknown_place",
-        "that place isn't in your journal.",
-        "Place not found",
+        text(locale, "journal.window.map.response.place.unknown"),
+        text(locale, "journal.window.map.response.place.unknown.detail"),
         StatusCode::NOT_FOUND,
     )
     .into_response()
 }
 
-fn names_unavailable(detail: String) -> Response {
+pub(super) fn names_unavailable(locale: &str, detail: String) -> Response {
     error_envelope(
         "area_names_unavailable",
-        "the place names that come with your journal couldn't be read.",
+        text(locale, "journal.window.map.response.area.unavailable"),
         detail,
         StatusCode::SERVICE_UNAVAILABLE,
     )
     .into_response()
 }
 
-fn view_json(view: &PlaceView, with_stays: bool) -> Value {
+fn view_json(view: &PlaceView, with_stays: bool, locale: &str) -> Value {
     let place = &view.place;
     let mut value = json!({
         "id": place.id,
-        "label": view.label(),
-        "owner_name": place.owner_name(),
+        "label": view.label_in(locale),
+        "owner_name": place.owner_name_in(locale),
         "name": place.name,
         "alias": place.alias.map(Alias::as_str),
         "hidden": place.hidden,
         "lat": round(place.latitude),
         "lon": round(place.longitude),
-        "area": area_json(&view.area),
+        "area": area_json(&view.area, locale),
         "words": view.words.as_ref().map(place_json),
         "dates": view.description.dates,
         "first": view.description.first,
@@ -90,15 +92,19 @@ fn view_json(view: &PlaceView, with_stays: bool) -> Value {
     value
 }
 
-pub(crate) async fn list(State(state): State<Arc<AppState>>) -> Response {
+pub(crate) async fn list(
+    State(state): State<Arc<AppState>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = response_locale(locale);
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapPlaces, move || {
         match solstone_core_location::read_places(&journal_root) {
             Ok(views) => Json(json!({
-                "places": views.iter().map(|view| view_json(view, false)).collect::<Vec<_>>(),
+                "places": views.iter().map(|view| view_json(view, false, locale)).collect::<Vec<_>>(),
             }))
             .into_response(),
-            Err(error) => names_unavailable(error.to_string()),
+            Err(error) => names_unavailable(locale, error.to_string()),
         }
     })
     .await
@@ -107,28 +113,30 @@ pub(crate) async fn list(State(state): State<Arc<AppState>>) -> Response {
 pub(crate) async fn show(
     State(state): State<Arc<AppState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_id(&id) {
-        return unknown_place();
+        return unknown_place(locale);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapPlace, move || {
         match solstone_core_location::read_places(&journal_root) {
             Ok(views) => match views.iter().find(|view| view.place.id == id) {
-                Some(view) => Json(view_json(view, true)).into_response(),
-                None => unknown_place(),
+                Some(view) => Json(view_json(view, true, locale)).into_response(),
+                None => unknown_place(locale),
             },
-            Err(error) => names_unavailable(error.to_string()),
+            Err(error) => names_unavailable(locale, error.to_string()),
         }
     })
     .await
 }
 
-fn invalid_edit(detail: &str) -> Response {
+fn invalid_edit(locale: &str, detail_id: &str) -> Response {
     error_envelope(
         "invalid_place_edit",
-        "that change couldn't be used.",
-        detail,
+        text(locale, "journal.window.map.response.edit.invalid"),
+        text(locale, detail_id),
         StatusCode::BAD_REQUEST,
     )
     .into_response()
@@ -139,31 +147,33 @@ fn invalid_edit(detail: &str) -> Response {
 pub(crate) async fn edit(
     State(state): State<Arc<AppState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_id(&id) {
-        return unknown_place();
+        return unknown_place(locale);
     }
     let Ok(Value::Object(fields)) = serde_json::from_slice::<Value>(&body) else {
-        return invalid_edit("Body must be a JSON object");
+        return invalid_edit(locale, "journal.window.map.response.edit.body");
     };
     let name = match fields.get("name") {
         None => None,
         Some(Value::Null) => Some(None),
         Some(Value::String(name)) => Some(clean_name(name)),
-        Some(_) => return invalid_edit("name must be a string or null"),
+        Some(_) => return invalid_edit(locale, "journal.window.map.response.edit.name"),
     };
     let alias = match fields.get("alias") {
         None => None,
         Some(Value::Null) => Some(None),
         Some(Value::String(alias)) if alias == "home" => Some(Some(Alias::Home)),
         Some(Value::String(alias)) if alias == "work" => Some(Some(Alias::Work)),
-        Some(_) => return invalid_edit("alias must be home, work or null"),
+        Some(_) => return invalid_edit(locale, "journal.window.map.response.edit.alias"),
     };
     let hidden = match fields.get("hidden") {
         None => None,
         Some(Value::Bool(hidden)) => Some(*hidden),
-        Some(_) => return invalid_edit("hidden must be true or false"),
+        Some(_) => return invalid_edit(locale, "journal.window.map.response.edit.hidden"),
     };
     let journal_root = state.journal_root.clone();
     let found = PlaceStore::update(&journal_root, |store| {
@@ -187,11 +197,11 @@ pub(crate) async fn edit(
     });
     match found {
         Ok(true) => {}
-        Ok(false) => return unknown_place(),
+        Ok(false) => return unknown_place(locale),
         Err(error) => {
             return error_envelope(
                 "place_edit_failed",
-                "that change couldn't be saved.",
+                text(locale, "journal.window.map.response.edit.failed"),
                 error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
@@ -200,10 +210,10 @@ pub(crate) async fn edit(
     }
     match solstone_core_location::read_places(&journal_root) {
         Ok(views) => match views.iter().find(|view| view.place.id == id) {
-            Some(view) => Json(view_json(view, true)).into_response(),
-            None => unknown_place(),
+            Some(view) => Json(view_json(view, true, locale)).into_response(),
+            None => unknown_place(locale),
         },
-        Err(error) => names_unavailable(error.to_string()),
+        Err(error) => names_unavailable(locale, error.to_string()),
     }
 }
 
@@ -211,18 +221,20 @@ pub(crate) async fn edit(
 pub(crate) async fn week(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapWeek, move || {
         let Some(date) = solstone_core_time::parse_day(&day) else {
-            return invalid_day();
+            return invalid_day(locale);
         };
         let Some(monday) = days_after(date, -i64::from(date.weekday().to_monday_zero_offset()))
         else {
-            return invalid_day();
+            return invalid_day(locale);
         };
         // The week and the weeks either side, or none when they leave the
         // calendar's range.
@@ -230,18 +242,18 @@ pub(crate) async fn week(
             .map(|offset| days_after(monday, offset).map(day_key))
             .collect::<Option<Vec<String>>>()
         else {
-            return invalid_day();
+            return invalid_day(locale);
         };
         let (Some(previous), Some(next)) = (
             days_after(monday, -7).map(day_key),
             days_after(monday, 7).map(day_key),
         ) else {
-            return invalid_day();
+            return invalid_day(locale);
         };
         let store = PlaceStore::read(&journal_root);
         let views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
             Ok(views) => views,
-            Err(error) => return names_unavailable(error.to_string()),
+            Err(error) => return names_unavailable(locale, error.to_string()),
         };
         let mut days = Vec::new();
         for (key, view) in keys.into_iter().zip(views) {
@@ -249,12 +261,12 @@ pub(crate) async fn week(
                 .entries
                 .iter()
                 .filter(|entry| matches!(entry, Entry::Visit { .. } | Entry::Stay { .. }))
-                .map(|entry| entry_json(entry, &store))
+                .map(|entry| entry_json(entry, &store, locale))
                 .collect();
             days.push(json!({
                 "day": key,
                 "readings": view.readings(),
-                "devices": view.devices.iter().map(|device| device.word).collect::<Vec<_>>(),
+                "devices": view.devices.iter().map(|device| device.word_in(locale)).collect::<Vec<_>>(),
                 "items": items,
             }));
         }
@@ -273,13 +285,14 @@ fn device_month_payload(
     view: &solstone_core_location::DayLocation,
     index: usize,
     device: &solstone_core_location::day::Device,
+    locale: &str,
 ) -> Value {
     let hash = Sha256::digest(device.key.as_bytes());
     let hex_key = format!("{hash:064x}")[..8].to_string();
     json!({
         "key": hex_key,
-        "word": device.word,
-        "phrase": view.device_phrase(index),
+        "word": device.word_in(locale),
+        "phrase": view.device_phrase_in(index, locale),
         "platform": device.platform.as_str(),
         "readings": device.readings,
         "interrupted_segments": device.interrupted_segments,
@@ -288,19 +301,23 @@ fn device_month_payload(
     })
 }
 
-fn day_items(view: &solstone_core_location::DayLocation, store: &PlaceStore) -> Vec<Value> {
+fn day_items(
+    view: &solstone_core_location::DayLocation,
+    store: &PlaceStore,
+    locale: &str,
+) -> Vec<Value> {
     view.entries
         .iter()
         .filter(|entry| matches!(entry, Entry::Visit { .. } | Entry::Stay { .. }))
-        .map(|entry| entry_json(entry, store))
+        .map(|entry| entry_json(entry, store, locale))
         .collect()
 }
 
-fn day_devices(view: &solstone_core_location::DayLocation) -> Vec<Value> {
+fn day_devices(view: &solstone_core_location::DayLocation, locale: &str) -> Vec<Value> {
     view.devices
         .iter()
         .enumerate()
-        .map(|(index, device)| device_month_payload(view, index, device))
+        .map(|(index, device)| device_month_payload(view, index, device, locale))
         .collect()
 }
 
@@ -308,29 +325,31 @@ fn day_devices(view: &solstone_core_location::DayLocation) -> Vec<Value> {
 pub(crate) async fn month(
     State(state): State<Arc<AppState>>,
     RoutePath(month): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !valid_month(&month) {
-        return invalid_month(StatusCode::BAD_REQUEST);
+        return invalid_month(locale, StatusCode::BAD_REQUEST);
     }
     let journal_root = state.journal_root.clone();
     spawn_blocking_response(OwnerReadRole::MapMonth, move || {
         let year: i16 = match month[..4].parse() {
             Ok(y) => y,
-            Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
+            Err(_) => return invalid_month(locale, StatusCode::BAD_REQUEST),
         };
         let month_num: i8 = match month[4..6].parse() {
             Ok(m) => m,
-            Err(_) => return invalid_month(StatusCode::BAD_REQUEST),
+            Err(_) => return invalid_month(locale, StatusCode::BAD_REQUEST),
         };
         let Ok(first_date) = Date::new(year, month_num, 1) else {
-            return invalid_month(StatusCode::BAD_REQUEST);
+            return invalid_month(locale, StatusCode::BAD_REQUEST);
         };
         // The days either side, or none when they leave the calendar's range.
         let (Some(before_date), Some(next_date)) = (
             days_after(first_date, -1),
             days_after(first_date, i64::from(first_date.days_in_month())),
         ) else {
-            return invalid_month(StatusCode::BAD_REQUEST);
+            return invalid_month(locale, StatusCode::BAD_REQUEST);
         };
         let before_day = day_key(before_date);
         let previous = month_key(before_date);
@@ -342,7 +361,7 @@ pub(crate) async fn month(
 
         let tier = match solstone_core_location::area_tier() {
             Ok(tier) => tier,
-            Err(error) => return names_unavailable(error.to_string()),
+            Err(error) => return names_unavailable(locale, error.to_string()),
         };
         let store = PlaceStore::read(&journal_root);
 
@@ -357,24 +376,24 @@ pub(crate) async fn month(
         keys.push(after_day);
         let mut views = match solstone_core_location::read_journal_days(&journal_root, &keys) {
             Ok(views) => views,
-            Err(e) => return names_unavailable(e.to_string()),
+            Err(e) => return names_unavailable(locale, e.to_string()),
         };
         let after_view = views.pop().unwrap_or_default();
         let before_view = views.remove(0);
         keys.pop();
         keys.remove(0);
-        let before_items = day_items(&before_view, &store);
-        let before_devices = day_devices(&before_view);
-        let after_items = day_items(&after_view, &store);
-        let after_devices = day_devices(&after_view);
+        let before_items = day_items(&before_view, &store, locale);
+        let before_devices = day_devices(&before_view, locale);
+        let after_items = day_items(&after_view, &store, locale);
+        let after_devices = day_devices(&after_view, locale);
 
         let mut days = Vec::with_capacity(days_in_month as usize);
         let mut day_views = Vec::with_capacity(days_in_month as usize);
         let mut day_items_list = Vec::with_capacity(days_in_month as usize);
 
         for (day_key, view) in keys.into_iter().zip(views) {
-            let items = day_items(&view, &store);
-            let devices = day_devices(&view);
+            let items = day_items(&view, &store, locale);
+            let devices = day_devices(&view, locale);
             let has_location = !view.entries.is_empty();
 
             days.push(json!({

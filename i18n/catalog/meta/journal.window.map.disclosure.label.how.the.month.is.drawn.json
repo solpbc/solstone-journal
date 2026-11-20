@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's map view.",
+  "context": "Journal window, map view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bae6e7b02fa34d1e242aad217f405b714bab8f680be23aa67422513f4267f5ea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

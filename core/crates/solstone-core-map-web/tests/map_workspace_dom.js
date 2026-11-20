@@ -9,6 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -422,7 +423,7 @@ function leafletRecorder() {
         remove() { calls.removed += 1; },
       };
     },
-    control: { scale() { return { addTo() {} }; } },
+    control: { scale() { return { addTo() {} }; }, zoom() { return { addTo() {} }; } },
     polyline(points, style) { calls.polyline.push(points); return layer('polyline', [points, style]); },
     circleMarker(point, style) { calls.circleMarker.push(point); return layer('circleMarker', [point, style]); },
     circle(point, style) { calls.circle.push(point); return layer('circle', [point, style]); },
@@ -601,6 +602,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true, 
     setTimeout,
     clearTimeout,
   });
+  loadWindowCatalog(context);
   vm.runInContext(source, context);
   const registered = window.SolViews.registered;
   assert.ok(registered && registered.name === 'map' && typeof registered.mount === 'function', 'map registers a mount');

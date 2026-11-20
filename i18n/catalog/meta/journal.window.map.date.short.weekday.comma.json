@@ -1,0 +1,32 @@
+{
+  "description": "date short weekday comma in the journal's map view.",
+  "context": "Journal window, map view. date short weekday comma.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a64484a756630dbe7f83e652937af1e95f12c6219d35d0706994ba2fdd7baa5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

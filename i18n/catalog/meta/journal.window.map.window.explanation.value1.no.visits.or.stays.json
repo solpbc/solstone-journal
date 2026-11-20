@@ -1,0 +1,21 @@
+{
+  "description": "Window explanation in the journal's map view.",
+  "context": "Journal window, map view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e3b5c3017e81d33df0b69d9ef29012fd2fcab1d93e480e7d4cafbd2f849c7ac6",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

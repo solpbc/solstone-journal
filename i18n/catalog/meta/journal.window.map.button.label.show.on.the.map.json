@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's map view.",
+  "context": "Journal window, map view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03540535528a85b2ab35f6314a1f1965b5ea9da8c4f289f659ad63d9c891860f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

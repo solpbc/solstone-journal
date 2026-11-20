@@ -1,0 +1,33 @@
+{
+  "description": "area size in the journal's map view.",
+  "context": "Journal window, map view. area size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67107b734394681b53df5b37ad18336ed610f17e3b9127fe300543754f96e5c6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "map response message in the journal's map view.",
+  "context": "Journal window, map view. map response message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a4055286503131ac05cd97f4b5b7d3e85ad34975311db9ab67f4ec9e3738612",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "YYYYMM"
+    }
+  ]
+}

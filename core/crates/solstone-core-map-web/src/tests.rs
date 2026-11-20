@@ -9,6 +9,8 @@ use axum::http::{Request, StatusCode, header};
 use serde_json::Value;
 use tower::ServiceExt;
 
+use solstone_core_convey_http::window_catalog::ENGLISH;
+
 use super::*;
 
 const IPHONE_HEADER: &str = r#"{"accuracy":"full","fix_count":2,"gap":false,"kind":"location","platform":"ios","schema":"solstone.location.segment/1","source":"location","tier":"full"}"#;
@@ -330,7 +332,8 @@ async fn accuracy_status_current_and_pack_load_states() {
     )
     .unwrap();
 
-    let accuracy = crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()));
+    let accuracy =
+        crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()), ENGLISH);
     assert_eq!(accuracy["current"], true);
     assert_eq!(accuracy["installed"]["venues"], true);
     assert_eq!(accuracy["installed"]["containment"], true);
@@ -340,7 +343,8 @@ async fn accuracy_status_current_and_pack_load_states() {
     fs::write(acc_dir.join("containment.slpk"), b"corrupt").unwrap();
     solstone_core_location::accuracy::release_loaded();
 
-    let accuracy = crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()));
+    let accuracy =
+        crate::accuracy::status_with_offered(journal.path(), Some(offered.clone()), ENGLISH);
     assert_eq!(accuracy["current"], false);
     assert_eq!(accuracy["installed"]["venues"], false);
     assert_eq!(accuracy["installed"]["containment"], false);
@@ -413,15 +417,16 @@ async fn installed_accuracy_can_be_removed_while_an_automatic_worker_is_active()
 #[test]
 fn failed_download_spawn_reports_failure_and_releases_the_reservation_for_retry() {
     let journal = location_only_journal();
-    let response = crate::accuracy::start_download(journal.path(), |path, _reservation| {
-        assert_eq!(
-            solstone_core_location::install::accuracy_job(&path)
-                .unwrap()
-                .state,
-            "downloading"
-        );
-        Err(std::io::Error::other("injected thread refusal"))
-    });
+    let response =
+        crate::accuracy::start_download(journal.path(), ENGLISH, |path, _reservation| {
+            assert_eq!(
+                solstone_core_location::install::accuracy_job(&path)
+                    .unwrap()
+                    .state,
+                "downloading"
+            );
+            Err(std::io::Error::other("injected thread refusal"))
+        });
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(solstone_core_location::install::accuracy_job(journal.path()).is_none());
     let _retry = solstone_core_location::install::reserve_install(journal.path()).unwrap();

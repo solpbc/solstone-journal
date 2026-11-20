@@ -1,0 +1,16 @@
+{
+  "description": "entry precision approximate in the journal's map view.",
+  "context": "Journal window, map view. entry precision approximate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e60004af67314ae17623510e7918e05ba0a98e18655e175c9f6b654e552de4a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

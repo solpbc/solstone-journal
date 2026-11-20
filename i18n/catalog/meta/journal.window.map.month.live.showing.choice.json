@@ -1,0 +1,28 @@
+{
+  "description": "month live showing choice in the journal's map view.",
+  "context": "Journal window, map view. month live showing choice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d5f24328ee05ea543ccbd9f20b981b8c917cf380dd2257f5ab68faa35a008aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

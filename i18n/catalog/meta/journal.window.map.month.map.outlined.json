@@ -1,0 +1,28 @@
+{
+  "description": "month map outlined in the journal's map view.",
+  "context": "Journal window, map view. month map outlined.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "areas",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05e6034a3bd7c7c5e1eb69a93ab5865bb0956220ad170a7042e137c530f8f754",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

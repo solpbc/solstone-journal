@@ -1,0 +1,28 @@
+{
+  "description": "count of lines in the journal's map view.",
+  "context": "Journal window, map view. count of lines.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb4f0f6729d73818398be3e1f7e5192cfdeb008545b79c932113bc873a3a58c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

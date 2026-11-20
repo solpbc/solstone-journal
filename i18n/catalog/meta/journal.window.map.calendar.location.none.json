@@ -1,0 +1,16 @@
+{
+  "description": "calendar location none in the journal's map view.",
+  "context": "Journal window, map view. calendar location none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c74bf380503ac2801671583d3e1aefc9683c7fe46ded8d20e6f57cd00d44220e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

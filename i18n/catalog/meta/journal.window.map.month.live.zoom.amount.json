@@ -1,0 +1,28 @@
+{
+  "description": "month live zoom amount in the journal's map view.",
+  "context": "Journal window, map view. month live zoom amount.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "zoom",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7120ff884c581d276d612787a603ab2b2180d7bd86c8fdff89517eea53a6a040",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

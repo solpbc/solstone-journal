@@ -1,0 +1,32 @@
+{
+  "description": "map presentation in the journal's map view.",
+  "context": "Journal window, map view. map presentation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "clock",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce538eac5b46270ae62cf1d00d7dfe11221ff8b6ad5ba200c01114e507d5ed10",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

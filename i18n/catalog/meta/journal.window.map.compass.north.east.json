@@ -1,0 +1,16 @@
+{
+  "description": "compass north east in the journal's map view.",
+  "context": "Journal window, map view. compass north east.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf89a628ac588b55f52846c7a52e7251e813c27363b12c2acc8fd7637c0e9e42",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

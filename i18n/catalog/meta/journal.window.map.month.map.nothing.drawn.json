@@ -1,0 +1,16 @@
+{
+  "description": "month map nothing drawn in the journal's map view.",
+  "context": "Journal window, map view. month map nothing drawn.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff5cbb998f15f5ad5c20f2aa5bff4d9c8e9e6e38506d7336fa2c795ed680bfe6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

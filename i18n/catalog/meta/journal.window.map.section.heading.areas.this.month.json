@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's map view.",
+  "context": "Journal window, map view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0a2164d0b9f655bf61a0df9505cfb12b576cb6389ef2703584ff0a5bae9a77f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
