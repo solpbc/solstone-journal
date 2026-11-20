@@ -1,0 +1,46 @@
+{
+  "description": "heatmap cell in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap cell.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "hour",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a697f223407c3c24550047af087815522880f6355ea462dccaf6ec49b7f8a089",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

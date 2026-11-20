@@ -1,0 +1,16 @@
+{
+  "description": "backlog repair fallback in the journal's stats view.",
+  "context": "Journal window, stats view. backlog repair fallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d732e78d169a6a9732fd0ce61a706ad5a168cc172a6387ed8de89d6073eb8bdd",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

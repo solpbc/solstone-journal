@@ -1,0 +1,16 @@
+{
+  "description": "repair heading in the journal's stats view.",
+  "context": "Journal window, stats view. repair heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cae06b58b5e78c0a6980dee2f0d96fa39313a6ffd17b5bc393ca4760827ecbd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

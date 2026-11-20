@@ -1,0 +1,23 @@
+{
+  "description": "schema regenerate end in the journal's stats view.",
+  "context": "Journal window, stats view. schema regenerate end.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98b76558761e90249865aebd4ea755e039a7472bce90834d62f6a412b6c96ee4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

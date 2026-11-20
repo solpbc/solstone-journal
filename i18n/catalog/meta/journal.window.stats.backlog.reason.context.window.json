@@ -1,0 +1,16 @@
+{
+  "description": "backlog reason context window in the journal's stats view.",
+  "context": "Journal window, stats view. backlog reason context window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fcefc2a36ed51828dedddc6b46700fcc7c35cd44ed0bd0bee7c751a2962202c0",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

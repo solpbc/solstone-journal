@@ -1,0 +1,16 @@
+{
+  "description": "facets accessible in the journal's stats view.",
+  "context": "Journal window, stats view. facets accessible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76cc436bfb2e4b37e5a134aa28669ac4cf93ada66c7319947d0def5f9651dd02",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

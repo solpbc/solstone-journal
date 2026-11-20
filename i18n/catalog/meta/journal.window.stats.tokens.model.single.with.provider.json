@@ -1,0 +1,37 @@
+{
+  "description": "tokens model single with provider in the journal's stats view.",
+  "context": "Journal window, stats view. tokens model single with provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "provider",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19cbcb49df4f595d3eb8da23a4a4d28b0422dae2902840fe7f7c072a5f7c9d26",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

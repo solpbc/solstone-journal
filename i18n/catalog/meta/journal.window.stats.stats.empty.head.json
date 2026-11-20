@@ -1,0 +1,23 @@
+{
+  "description": "stats empty head in the journal's stats view.",
+  "context": "Journal window, stats view. stats empty head.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be41b14be830b4275f4440e18ad711891d3ea017bd7cee619aa1fb1df79cdd50",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

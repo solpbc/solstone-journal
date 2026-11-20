@@ -1,0 +1,16 @@
+{
+  "description": "backlog redo confirm in the journal's stats view.",
+  "context": "Journal window, stats view. backlog redo confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b8690a994da491ee9cd7c9710e2422ba5d554765c82452aa9bc0d16638c2af5",
+  "max_length": 120,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

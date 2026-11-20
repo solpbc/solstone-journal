@@ -1,0 +1,23 @@
+{
+  "description": "Response detail in the journal's stats view.",
+  "context": "Journal window, stats view. Response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34e41fa7509d90244072506dcf066add0be7ab86e76c87cb8bb00842af36a206",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "YYYYMM"
+    }
+  ]
+}

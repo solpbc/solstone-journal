@@ -1,0 +1,16 @@
+{
+  "description": "totals disk unit in the journal's stats view.",
+  "context": "Journal window, stats view. totals disk unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5dd5fe078e1e712597829380ae1b99e9dd0755d1841a54c1aa7fd0c262a8d77e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

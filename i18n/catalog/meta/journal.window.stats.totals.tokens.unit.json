@@ -1,0 +1,16 @@
+{
+  "description": "totals tokens unit in the journal's stats view.",
+  "context": "Journal window, stats view. totals tokens unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c90d3159eb7535de75bd08364983e52d7d3a6925bb73a8a4ee0651ff4095361",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

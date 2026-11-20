@@ -1,0 +1,16 @@
+{
+  "description": "chart empty in the journal's stats view.",
+  "context": "Journal window, stats view. chart empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95ca730fbf42db07f7d82e0223c2693e8aa486757f0e4f8b034641bc9ae1706c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

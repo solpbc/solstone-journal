@@ -1,0 +1,16 @@
+{
+  "description": "pending stats in the journal's stats view.",
+  "context": "Journal window, stats view. pending stats.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44f16b555ef5311767b48075b3ed9201f9a6660ca484b414ece44db49f255c0b",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

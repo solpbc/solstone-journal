@@ -1,0 +1,16 @@
+{
+  "description": "tokens kind cogitate in the journal's stats view.",
+  "context": "Journal window, stats view. tokens kind cogitate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "229137067525f9cf90ab1a87b69401335503a035e6fad772379812de70862156",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "totals hours unit in the journal's stats view.",
+  "context": "Journal window, stats view. totals hours unit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc1b5cec7dd91990b3012eadc1f32ff6f7ce58b3c40b502dbed29e7e0982bcdb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

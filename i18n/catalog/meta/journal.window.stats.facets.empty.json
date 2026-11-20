@@ -1,0 +1,16 @@
+{
+  "description": "facets empty in the journal's stats view.",
+  "context": "Journal window, stats view. facets empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3c92f002f3b2fc1ee082e37d96b87ca483bac1550f4658e8b32631f6c87f892",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

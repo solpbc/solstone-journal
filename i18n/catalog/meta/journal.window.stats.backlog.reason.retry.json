@@ -1,0 +1,16 @@
+{
+  "description": "backlog reason retry in the journal's stats view.",
+  "context": "Journal window, stats view. backlog reason retry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64c1c414a4bfa563941c9e9d24f08e6e78077ef025916931b193abc83b893dc2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "heatmap empty in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4cb81f4fff214a098f38c243670217f0116318d9d5ea8d015677177377ea512",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

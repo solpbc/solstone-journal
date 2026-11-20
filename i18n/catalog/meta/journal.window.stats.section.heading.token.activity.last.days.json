@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's stats view.",
+  "context": "Journal window, stats view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af3a125160854c4f347e63920cb7540d595ece43c70400c6621e88b111d2e9c7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

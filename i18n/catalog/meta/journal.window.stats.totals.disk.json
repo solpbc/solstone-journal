@@ -1,0 +1,16 @@
+{
+  "description": "totals disk in the journal's stats view.",
+  "context": "Journal window, stats view. totals disk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91ee76a529f0100f90b14842b48e9cf1b08039f676c21c9c35f42c8b23ea8c2c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

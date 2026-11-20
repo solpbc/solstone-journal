@@ -1,0 +1,23 @@
+{
+  "description": "stats empty detail in the journal's stats view.",
+  "context": "Journal window, stats view. stats empty detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1cf7f018933d80f3cffd77d309b90d1fcac774bb85222b81dd7d751f76f6c3f3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

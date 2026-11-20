@@ -1,0 +1,33 @@
+{
+  "description": "heatmap narrow weekend in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap narrow weekend.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dfc0e8bc7638300355a44511ca6bd968bebeb764f0d5ade8393406b75fa16e4c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

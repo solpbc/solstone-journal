@@ -1,0 +1,16 @@
+{
+  "description": "tokens models empty in the journal's stats view.",
+  "context": "Journal window, stats view. tokens models empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a09554e3474b2966e813fac3229bc2731245c6884627f454f4fff44b12430bc8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "description": "chart hours day in the journal's stats view.",
+  "context": "Journal window, stats view. chart hours day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "audio",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "disk",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b18f5930581e1d6bdbd01818c774990e0ec3957961a772744e73103ae8ab4ce",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

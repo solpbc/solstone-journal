@@ -1,0 +1,16 @@
+{
+  "description": "progress audio in the journal's stats view.",
+  "context": "Journal window, stats view. progress audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6367d4a20a8c23106ddb4a5136ed5353e0699fad8cb40be4753aa06d4e65bbd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

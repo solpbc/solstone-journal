@@ -1,0 +1,16 @@
+{
+  "description": "chart hours empty detail in the journal's stats view.",
+  "context": "Journal window, stats view. chart hours empty detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3eb80b7760d683ed951dbc048237b6dbe3f81efa46a1088db1ba8e5fbb33cb4",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Response error in the journal's stats view.",
+  "context": "Journal window, stats view. Response error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "518fd3b0d2ff2456222ed74d76b4688445365c6dd7993c13f98f99a5f0ca3be3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

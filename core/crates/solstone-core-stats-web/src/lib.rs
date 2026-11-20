@@ -3,10 +3,16 @@
 
 //! Native stats workspace and its read-only token-usage APIs.
 
-use axum::{Json, Router, extract::Query, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Extension, Json, Router, extract::Query, http::StatusCode, response::IntoResponse, routing::get,
+};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    owner_read::{OwnerReadRole, spawn_blocking_response},
+    window_catalog::{response_locale, text},
+};
 use std::path::{Path, PathBuf};
 
 mod assets;
@@ -38,8 +44,9 @@ pub fn routes_with_talent_roots(
         .route("/app/stats/background", get(assets::background))
         .route(
             "/app/stats/api/stats",
-            get(move || {
+            get(move |locale: Option<Extension<ResponseLocale>>| {
                 stats_data(
+                    response_locale(locale),
                     stats_root.clone(),
                     stats_clock.clone(),
                     talent_roots.clone(),
@@ -48,15 +55,28 @@ pub fn routes_with_talent_roots(
         )
         .route(
             "/app/stats/api/usage",
-            get(move |query| usage(usage_root.clone(), usage_clock.clone(), query)),
+            get(move |query, locale: Option<Extension<ResponseLocale>>| {
+                usage(
+                    response_locale(locale),
+                    usage_root.clone(),
+                    usage_clock.clone(),
+                    query,
+                )
+            }),
         )
         .route(
             "/app/stats/api/index",
-            get(move || index(index_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                index(response_locale(locale), index_root.clone())
+            }),
         )
         .route(
             "/app/stats/api/stats/{month}",
-            get(move |axum::extract::Path(month)| month_stats(month_root.clone(), month)),
+            get(
+                move |axum::extract::Path(month), locale: Option<Extension<ResponseLocale>>| {
+                    month_stats(response_locale(locale), month_root.clone(), month)
+                },
+            ),
         )
 }
 
@@ -66,6 +86,7 @@ struct UsageQuery {
 }
 
 async fn usage(
+    locale: &'static str,
     root: PathBuf,
     clock: Clock,
     Query(query): Query<UsageQuery>,
@@ -76,27 +97,17 @@ async fn usage(
         format!("{:04}{:02}{:02}", local.year(), local.month(), local.day())
     });
     if !digits(&day, 8) {
-        return api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_day",
-            "that day couldn't be used.",
-            "Invalid day format",
-        );
+        return StatsError::InvalidDay.response(locale);
     }
     spawn_blocking_response(OwnerReadRole::StatsUsage, move || {
         match tokens::aggregate(&root, &day) {
             Ok(value) => (StatusCode::OK, Json(value)).into_response(),
-            Err(_) => api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "file_read_failed",
-                "that file couldn't be read.",
-                "Failed to read token data",
-            ),
+            Err(_) => StatsError::TokenRead.response(locale),
         }
     })
     .await
 }
-async fn index(root: PathBuf) -> axum::response::Response {
+async fn index(locale: &'static str, root: PathBuf) -> axum::response::Response {
     spawn_blocking_response(
         OwnerReadRole::StatsIndex,
         move || match tokens::usage_stats(&root, None) {
@@ -119,41 +130,31 @@ async fn index(root: PathBuf) -> axum::response::Response {
                 )
                     .into_response()
             }
-            Err(_) => api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "file_read_failed",
-                "that file couldn't be read.",
-                "Failed to read token data",
-            ),
+            Err(_) => StatsError::TokenRead.response(locale),
         },
     )
     .await
 }
-async fn month_stats(root: PathBuf, month: String) -> axum::response::Response {
+async fn month_stats(
+    locale: &'static str,
+    root: PathBuf,
+    month: String,
+) -> axum::response::Response {
     if !digits(&month, 6) {
-        return api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_month",
-            "that month couldn't be used.",
-            "Invalid month format, expected YYYYMM",
-        );
+        return StatsError::InvalidMonth.response(locale);
     }
     spawn_blocking_response(
         OwnerReadRole::StatsMonthStats,
         move || match tokens::usage_stats(&root, Some(&month)) {
             Ok(value) => (StatusCode::OK, Json(value)).into_response(),
-            Err(_) => api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "file_read_failed",
-                "that file couldn't be read.",
-                "Failed to read token data",
-            ),
+            Err(_) => StatsError::TokenRead.response(locale),
         },
     )
     .await
 }
 
 async fn stats_data(
+    locale: &'static str,
     root: PathBuf,
     clock: Clock,
     talent_roots: Option<(PathBuf, PathBuf)>,
@@ -164,35 +165,20 @@ async fn stats_data(
         let path = match solstone_core_journal_io::resolve_journal_path(&root, "stats.json") {
             Ok(path) => path,
             Err(_) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "file_read_failed",
-                    "that file couldn't be read.",
-                    "Failed to read stats data",
-                );
+                return StatsError::StatsRead.response(locale);
             }
         };
         if path.is_file() {
             let text = match solstone_core_journal_io::read_text(&path, String::new()) {
                 Ok(text) => text,
                 Err(_) => {
-                    return api_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "file_read_failed",
-                        "that file couldn't be read.",
-                        "Failed to read stats data",
-                    );
+                    return StatsError::StatsRead.response(locale);
                 }
             };
             let stats = match serde_json::from_str::<Value>(&text) {
                 Ok(value) => value,
                 Err(_) => {
-                    return api_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "file_read_failed",
-                        "that file couldn't be read.",
-                        "Failed to read stats data",
-                    );
+                    return StatsError::StatsRead.response(locale);
                 }
             };
             if let Ok(mtime) = std::fs::metadata(&path)
@@ -216,8 +202,8 @@ async fn stats_data(
         let owner_local = utc_now.to_zoned_datetime(zone).datetime();
         let not_yet = solstone_core_system_health::summary_not_yet(&root, owner_local);
         let eval = match not_yet {
-            Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
-            None => solstone_core_system_health::evaluate_backlog_status(bl_obj, gen_at, utc_now),
+            Some(not_yet) => solstone_core_system_health::not_yet_evaluation_in(not_yet, locale),
+            None => solstone_core_system_health::evaluate_backlog_status_in(bl_obj, gen_at, utc_now, locale),
         };
         if let Some(stats_map) = response.get_mut("stats").and_then(Value::as_object_mut) {
             stats_map.insert(
@@ -230,9 +216,9 @@ async fn stats_data(
                     "oldest_pending_day": eval.oldest_pending_day,
                     "unfinished_activities": eval.unfinished_activities,
                     "copy": {
-                        "unfinished_template_one": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_ONE_ID),
-                        "unfinished_template_many_one_day": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID),
-                        "unfinished_template_many_days": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS_ID),
+                        "unfinished_template_one": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_ONE_ID),
+                        "unfinished_template_many_one_day": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID),
+                        "unfinished_template_many_days": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS_ID),
                     },
                 }),
             );
@@ -246,7 +232,7 @@ async fn stats_data(
             .and_then(Value::as_array_mut)
         {
             for day in days.iter_mut().filter_map(Value::as_object_mut) {
-                let copy = solstone_core_system_health::backlog_day_reason_copy(day);
+                let copy = solstone_core_system_health::backlog_day_reason_copy_in(day, locale);
                 day.insert("reason_copy".to_owned(), json!(copy));
             }
         }
@@ -270,12 +256,7 @@ async fn stats_data(
                 })
                 .map(|root| (root.join("solstone/talent"), root.join("solstone/apps")))
         }) else {
-            return api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "file_read_failed",
-                "that file couldn't be read.",
-                "Failed to read stats data",
-            );
+            return StatsError::StatsRead.response(locale);
         };
         let overrides = solstone_core_talent_config::read_talent_overrides(&root)
             .ok()
@@ -292,12 +273,7 @@ async fn stats_data(
         ) {
             Ok(configs) => configs,
             Err(_) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "file_read_failed",
-                    "that file couldn't be read.",
-                    "Failed to read stats data",
-                );
+                return StatsError::StatsRead.response(locale);
             }
         };
         let generators = configs
@@ -327,17 +303,51 @@ fn facet_titles(root: &Path) -> Value {
 fn digits(value: &str, len: usize) -> bool {
     value.len() == len && value.bytes().all(|byte| byte.is_ascii_digit())
 }
-fn api_error(
-    status: StatusCode,
-    reason_code: &str,
-    error: &str,
-    detail: &str,
-) -> axum::response::Response {
-    (
-        status,
-        Json(json!({"error":error,"reason_code":reason_code,"detail":detail})),
-    )
-        .into_response()
+enum StatsError {
+    InvalidDay,
+    InvalidMonth,
+    StatsRead,
+    TokenRead,
+}
+
+impl StatsError {
+    fn response(self, locale: &str) -> axum::response::Response {
+        let (status, reason_code, error, detail) = match self {
+            Self::InvalidDay => (
+                StatusCode::BAD_REQUEST,
+                "invalid_day",
+                "journal.window.stats.response.invalid.day.error",
+                "journal.window.stats.response.invalid.day.detail",
+            ),
+            Self::InvalidMonth => (
+                StatusCode::BAD_REQUEST,
+                "invalid_month",
+                "journal.window.stats.response.invalid.month.error",
+                "journal.window.stats.response.invalid.month.detail",
+            ),
+            Self::StatsRead => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "file_read_failed",
+                "journal.window.stats.response.read.failed.error",
+                "journal.window.stats.response.read.stats.detail",
+            ),
+            Self::TokenRead => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "file_read_failed",
+                "journal.window.stats.response.read.failed.error",
+                "journal.window.stats.response.read.token.detail",
+            ),
+        };
+        (
+            status,
+            Json(json!({
+                "error": text(locale, error),
+                "reason_code": reason_code,
+                "detail": text(locale, detail),
+            })),
+        )
+            .into_response()
+    }
 }
 
 #[cfg(test)]

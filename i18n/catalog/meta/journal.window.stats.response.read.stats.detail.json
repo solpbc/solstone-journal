@@ -1,0 +1,16 @@
+{
+  "description": "Response detail in the journal's stats view.",
+  "context": "Journal window, stats view. Response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc996fc4aa3105c56427631437019872e7fd3a8fd435e3253af5cb3c2309ac61",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

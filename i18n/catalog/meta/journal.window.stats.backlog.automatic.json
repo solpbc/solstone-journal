@@ -1,0 +1,16 @@
+{
+  "description": "backlog automatic in the journal's stats view.",
+  "context": "Journal window, stats view. backlog automatic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f551c79da1918f088f39cab327fe50562e178b7c81444da3ab8a5952dd8ef662",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

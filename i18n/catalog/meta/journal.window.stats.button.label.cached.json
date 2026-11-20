@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's stats view.",
+  "context": "Journal window, stats view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07a9002ba695debbff40be289b93a5ed4eed04955c22674c2656368d81cb50b0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

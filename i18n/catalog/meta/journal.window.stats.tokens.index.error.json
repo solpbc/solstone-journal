@@ -1,0 +1,16 @@
+{
+  "description": "tokens index error in the journal's stats view.",
+  "context": "Journal window, stats view. tokens index error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b38108ad96e592e81415adb8269d68e421365ed8016d0fbe671b2a0140dc8f76",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

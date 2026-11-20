@@ -1,0 +1,16 @@
+{
+  "description": "backlog work remaining in the journal's stats view.",
+  "context": "Journal window, stats view. backlog work remaining.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d7151c6edace2cbb89b1e911f3c4df5c6ea4c3e2983bb0d09ef8316dcf5166d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

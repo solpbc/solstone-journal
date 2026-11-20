@@ -31,7 +31,7 @@ pub async fn static_asset(
 }
 
 pub fn not_found() -> Response<Body> {
-    Response::builder().status(axum::http::StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "text/html; charset=utf-8").body(Body::from("<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n")).expect("stats 404 response")
+    solstone_core_convey_http::window_catalog::not_found_response()
 }
 fn asset_response(bytes: &'static [u8], content_type: &'static str) -> Response<Body> {
     Response::builder()

@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -286,6 +287,7 @@ function createEnvironment() {
     Math,
   });
 
+  loadWindowCatalog(context);
   const glue = `
     function el(tag, attrs = {}, children = []) {
       const elem = document.createElement(tag);

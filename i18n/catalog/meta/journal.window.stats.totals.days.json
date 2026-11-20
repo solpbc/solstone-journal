@@ -1,0 +1,16 @@
+{
+  "description": "totals days in the journal's stats view.",
+  "context": "Journal window, stats view. totals days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a43e6567df9adb0f6ba5141979c9afa242044987bdc185e0f62b3255a136ae18",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

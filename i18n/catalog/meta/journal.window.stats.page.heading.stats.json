@@ -1,0 +1,16 @@
+{
+  "description": "Page heading in the journal's stats view.",
+  "context": "Journal window, stats view. Page heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1819b2e4f7a10beabc8224e89679d0476af7934f79536e43e162fcc877bb0a54",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "heatmap accessible in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap accessible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be3e9337727058cb769992e571fdd568c8629a9fbdce5a27563d3b0b080a3fde",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's stats view.",
+  "context": "Journal window, stats view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8b93d05c67121a21d542e30d6c5201e15a111cac279df938c99445318b9429f",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

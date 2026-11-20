@@ -1,0 +1,16 @@
+{
+  "description": "tokens provider single unnamed in the journal's stats view.",
+  "context": "Journal window, stats view. tokens provider single unnamed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bbf69c1a5f14a41e30af7d78ba460c6251e9140ccc6fc703b1b966a7ad818e0",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -81,7 +81,9 @@
 
   function requestCount(value) {
     const count = Number(value || 0);
-    return `${number(count)} ${count === 1 ? 'request' : 'requests'}`;
+    return count === 1
+      ? window.JournalI18n.render('journal.window.stats.tokens.requests.one', [['count', String(number(count))]])
+      : window.JournalI18n.render('journal.window.stats.tokens.requests.many', [['count', String(number(count))]]);
   }
 
   function dayLabel(day) {
@@ -90,7 +92,12 @@
     // shared relative labels ("Today", "Yesterday", "Tomorrow") are
     // capitalized for contexts stats doesn't own, so lowercase them here
     // rather than editing the shared helper.
-    return ['Today', 'Yesterday', 'Tomorrow'].includes(label) ? label.toLowerCase() : label;
+    const relativeDays = [
+      window.JournalI18n.render('journal.window.date.today'),
+      window.JournalI18n.render('journal.window.date.yesterday'),
+      window.JournalI18n.render('journal.window.date.tomorrow')
+    ];
+    return relativeDays.includes(label) ? label.toLowerCase() : label;
   }
 
   // A handful of local models self-report a raw wire id that differs from
@@ -100,12 +107,12 @@
   // (G2-31). Unrecognized ids fall back to the raw id itself — this never
   // invents a name.
   const MODEL_LABELS = {
-    'local/qwen3.5-4b': 'Qwen 3.5 4B (local)'
+    'local/qwen3.5-4b': 'journal.window.thinking.window.explanation.qwen.b.local'
   };
 
-  function readableModelLabel(id) {
+  function readableModelLabel(id, render = window.JournalI18n.render) {
     const key = String(id || '').toLowerCase();
-    return Object.hasOwn(MODEL_LABELS, key) ? MODEL_LABELS[key] : id;
+    return Object.hasOwn(MODEL_LABELS, key) ? render(MODEL_LABELS[key]) : id;
   }
 
   // The provider column names the provider and the model column names the
@@ -117,7 +124,7 @@
     anthropic: 'Anthropic',
     google: 'Google',
     openai: 'OpenAI',
-    spp: 'confidential processing',
+
   };
 
   // 'unknown' is the internal sentinel for a row that arrived with no provider
@@ -129,9 +136,10 @@
     return Boolean(value) && value !== UNKNOWN_PROVIDER;
   }
 
-  function providerLabel(value) {
-    if (!namedProvider(value)) return 'no provider named';
+  function providerLabel(value, render = window.JournalI18n.render) {
+    if (!namedProvider(value)) return render('journal.window.stats.tokens.provider.unnamed');
     const key = String(value).toLowerCase();
+    if (key === 'spp') return render('journal.window.shared.date.format.lane.spp');
     return Object.hasOwn(PROVIDER_LABELS, key) ? PROVIDER_LABELS[key] : value;
   }
 
@@ -162,11 +170,10 @@
   }
 
   // The model and provider columns show a readable label, not the raw id
-  // stored on the row. Sort on the same value the reader sees, so the
-  // order the column header promises is the order the rows land in.
+  // stored on the row. Use the English labels as stable sort keys.
   function sortValue(item, key) {
-    if (key === 'model') return readableModelLabel(item.model);
-    if (key === 'provider') return providerLabel(item.provider);
+    if (key === 'model') return readableModelLabel(item.model, window.JournalI18n.renderEnglish);
+    if (key === 'provider') return providerLabel(item.provider, window.JournalI18n.renderEnglish);
     return item[key];
   }
 
@@ -180,7 +187,7 @@
   }
 
   function share(value) {
-    return `${Number(value || 0).toFixed(1)}% of the day's tokens`;
+    return window.JournalI18n.render('journal.window.stats.tokens.share', [['percent', String(Number(value || 0).toFixed(1))]]);
   }
 
   // One provider and one model is the shipped default, and it is the case
@@ -198,24 +205,24 @@
     // there is one rendering rule and no absent case to branch on (F-28).
     const parts = [
       requestCount(item.requests),
-      `${number(item.tokens)} tokens`,
-      `${number(item.cached_tokens)} cached`,
+      window.JournalI18n.render('journal.window.stats.tokens.count', [['count', String(number(item.tokens))]]),
+      window.JournalI18n.render('journal.window.stats.tokens.cached', [['count', String(number(item.cached_tokens))]]),
       share(item.percent),
     ];
     detail.textContent = parts.join(' · ');
     if (name === 'providers') {
       label.textContent = namedProvider(item.provider)
-        ? `one provider this day: ${providerLabel(item.provider)}.`
-        : 'one provider this day, no name given.';
+        ? window.JournalI18n.render('journal.window.stats.tokens.provider.single', [['provider', String(providerLabel(item.provider))]])
+        : window.JournalI18n.render('journal.window.stats.tokens.provider.single.unnamed');
       host.append(label, detail);
       return;
     }
     if (!item.model) {
-      label.textContent = 'one model this day, no name given.';
+      label.textContent = window.JournalI18n.render('journal.window.stats.tokens.model.single.unnamed');
     } else if (namedProvider(item.provider)) {
-      label.textContent = `one model this day: ${readableModelLabel(item.model)}, through ${providerLabel(item.provider)}.`;
+      label.textContent = window.JournalI18n.render('journal.window.stats.tokens.model.single.with.provider', [['model', String(readableModelLabel(item.model))], ['provider', String(providerLabel(item.provider))]]);
     } else {
-      label.textContent = `one model this day: ${readableModelLabel(item.model)}.`;
+      label.textContent = window.JournalI18n.render('journal.window.stats.tokens.model.single', [['model', String(readableModelLabel(item.model))]]);
     }
     host.append(label, detail);
     // The exact wire ids stay behind a disclosure, exactly as the model
@@ -225,7 +232,7 @@
       : [item.model];
     const details = document.createElement('details');
     const summaryLine = document.createElement('summary');
-    summaryLine.textContent = 'exact model ids';
+    summaryLine.textContent = window.JournalI18n.render('journal.window.stats.tokens.exact.ids');
     const idList = document.createElement('p');
     idList.className = 'token-model-ids';
     idList.textContent = ids.join(', ');
@@ -246,8 +253,8 @@
       note.hidden = rows.length !== 0;
       if (rows.length === 0) {
         note.textContent = name === 'providers'
-          ? 'no providers this day.'
-          : 'no models this day.';
+          ? window.JournalI18n.render('journal.window.stats.tokens.providers.empty')
+          : window.JournalI18n.render('journal.window.stats.tokens.models.empty');
       }
       if (rows.length === 1) {
         renderSingleRowSummary(name, rows[0]);
@@ -279,9 +286,11 @@
       const section = document.createElement('section');
       section.className = 'token-comparison-card';
       const title = document.createElement('h4');
-      title.textContent = kind;
+      title.textContent = kind === 'generate'
+        ? window.JournalI18n.render('journal.window.stats.tokens.kind.generate')
+        : window.JournalI18n.render('journal.window.stats.tokens.kind.cogitate');
       const detail = document.createElement('p');
-      detail.textContent = `${requestCount(data.requests)} · ${number(data.tokens)} tokens`;
+      detail.textContent = window.JournalI18n.render('journal.window.stats.tokens.requests.and.tokens', [['requests', String(requestCount(data.requests))], ['tokens', String(number(data.tokens))]]);
       section.append(title, detail);
       comparison.append(section);
     });
@@ -295,9 +304,9 @@
   function applyCardState() {
     if (lastUsageEmpty === null) return; // usage hasn't rendered yet
     if (coverageFailed) {
-      state('index-error', "30-day history isn't available. the selected day is still available.");
+      state('index-error', window.JournalI18n.render('journal.window.stats.tokens.index.error'));
     } else if (lastUsageEmpty) {
-      state('empty', 'no token activity this day.');
+      state('empty', window.JournalI18n.render('journal.window.stats.tokens.empty'));
     } else {
       state('ready', '');
     }
@@ -305,7 +314,7 @@
 
   function renderUsage(data) {
     heading.textContent = dayLabel(data.day);
-    summary.textContent = `${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
+    summary.textContent = window.JournalI18n.render('journal.window.stats.tokens.requests.and.tokens', [['requests', String(requestCount(data.total.requests))], ['tokens', String(number(data.total.tokens))]]);
     tableData.providers = data.by_provider || [];
     tableData.models = data.by_model || [];
     renderTable('providers');
@@ -343,7 +352,7 @@
       })
       .catch(() => {
         if (sequence === usageSequence) {
-          state('usage-error', "token activity isn't available for this day.");
+          state('usage-error', window.JournalI18n.render('journal.window.stats.tokens.day.error'));
         }
       });
   }
@@ -364,7 +373,7 @@
       button.type = 'button';
       button.className = 'token-rollup__bar';
       button.dataset.tokensDay = day;
-      button.setAttribute('aria-label', `${dayLabel(day)}: ${number(totals[day])} tokens`);
+      button.setAttribute('aria-label', window.JournalI18n.render('journal.window.stats.tokens.day.rollup', [['day', String(dayLabel(day))], ['tokens', String(number(totals[day]))]]));
       button.setAttribute('aria-pressed', String(day === selected));
       // The bar element itself stays full-height (a 44px+ hit target); only
       // the visible fill (--bar-fill, consumed by the CSS gradient) tracks
@@ -456,7 +465,7 @@
   // the card renders as soon as its own data is ready (X-07). The coverage
   // probe only ever narrows the state afterward (to "index-error"); it can't
   // undo a day that already rendered successfully.
-  state('loading', 'loading token activity…');
+  state('loading', window.JournalI18n.render('journal.window.stats.visible.text.loading.token.activity'));
   select(selected);
   ctx.fetch('/app/stats/api/index')
     .then(response => {

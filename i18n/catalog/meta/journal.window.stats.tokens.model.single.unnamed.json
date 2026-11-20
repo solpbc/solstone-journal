@@ -1,0 +1,16 @@
+{
+  "description": "tokens model single unnamed in the journal's stats view.",
+  "context": "Journal window, stats view. tokens model single unnamed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d8f52b916d1788667f3fe759e2f970cc539570c0f763100c92c2a5546f79149",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

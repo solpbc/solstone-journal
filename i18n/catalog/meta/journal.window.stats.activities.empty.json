@@ -1,0 +1,16 @@
+{
+  "description": "activities empty in the journal's stats view.",
+  "context": "Journal window, stats view. activities empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f8fe9577fd881df0524f0b42f4b19fb26204e50d98d1928feec1a819662036e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

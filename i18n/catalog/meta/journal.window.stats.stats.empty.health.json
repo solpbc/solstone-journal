@@ -1,0 +1,16 @@
+{
+  "description": "stats empty health in the journal's stats view.",
+  "context": "Journal window, stats view. stats empty health.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6af85f654b5d71c2d7b51b2ff48cd56c6cbc0ef59e28e23f801172d2d4ce49d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

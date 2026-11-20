@@ -1,0 +1,16 @@
+{
+  "description": "backlog scope in the journal's stats view.",
+  "context": "Journal window, stats view. backlog scope.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59111e7f3c6e2a719e74a67fe8c1c5c55d18f4ce8dee403062d83d213d3bd6dd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

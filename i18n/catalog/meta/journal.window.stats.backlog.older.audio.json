@@ -1,0 +1,28 @@
+{
+  "description": "backlog older audio in the journal's stats view.",
+  "context": "Journal window, stats view. backlog older audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbefb4ec9e7832093fa651796bfcf5afe9663b50099d02673a67f3466a911324",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

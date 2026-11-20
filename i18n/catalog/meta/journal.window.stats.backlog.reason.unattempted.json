@@ -1,0 +1,16 @@
+{
+  "description": "backlog reason unattempted in the journal's stats view.",
+  "context": "Journal window, stats view. backlog reason unattempted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e13a0b81c12029d1e46cf0c3005b16792d416114058d7a9ca7790e26839897aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

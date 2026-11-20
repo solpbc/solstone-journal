@@ -1,0 +1,16 @@
+{
+  "description": "tokens kind generate in the journal's stats view.",
+  "context": "Journal window, stats view. tokens kind generate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c71b93a4e397218f79b50d79a10e495230e4c9b145b65f7488580e67dabe3acb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -12,34 +12,24 @@
 
   // Owner copy for the backlog section.
   const BACKLOG_COPY = Object.freeze({
-    ACTION_PROCESS_NOW: "process now",
-    ACTION_REDO_SCRATCH: "redo from scratch",
-    CONFIRM_REDO_SCRATCH: "redo this whole day from scratch? this repeats completed processing, so it'll take longer.",
-    QUEUED_FEEDBACK: "queued, working on it now",
-    VERDICT_CAUGHT_UP: "your journal's all caught up.",
-    VERDICT_STUCK_ONLY_PLURAL: "caught up except {stuck_n} days that need a hand.",
-    VERDICT_STUCK_ONLY_SINGULAR: "caught up except 1 day that needs a hand.",
-    VERDICT_PENDING_ONLY_PLURAL: "{pending_n} days are still catching up.",
-    VERDICT_PENDING_ONLY_SINGULAR: "1 day is still catching up.",
-    VERDICT_MIXED_STUCK_PLURAL: "{stuck_n} days need a hand",
-    VERDICT_MIXED_STUCK_SINGULAR: "1 day needs a hand",
-    VERDICT_MIXED_PENDING_PLURAL: "{pending_n} more days are still catching up",
-    VERDICT_MIXED_PENDING_SINGULAR: "1 more day is still catching up",
-    VERDICT_CANT_TELL: "it's unclear whether your journal is caught up right now.",
-    BUCKET_HEADING: "days that need a hand",
-    BUCKET_DESCRIPTION: "some days retry automatically; others need your help. each day shows its current status.",
-    DAY_BADGE: "stuck",
-    REASON_FAILING_STEP: "a processing step keeps failing. try again",
-    WHY_NEVER_ATTEMPTED: "not looked at yet",
-    WHY_FAILED: "couldn't finish, will retry",
-    WHY_SENSED_NOT_THOUGHT: "taken in, not yet thought through",
-    CATCHING_UP_DAY: "catching up",
-    CATCHING_UP_AGGREGATE: "{pending_n} day(s) catching up",
-    CATCHING_UP_TAIL: "processing continues automatically, freshest day first.",
+    ACTION_PROCESS_NOW: window.JournalI18n.render('journal.window.stats.backlog.process.now'),
+    ACTION_REDO_SCRATCH: window.JournalI18n.render('journal.window.health.backlog.action.redo.scratch'),
+    CONFIRM_REDO_SCRATCH: window.JournalI18n.renderEnglish('journal.window.stats.backlog.redo.confirm'),
+    QUEUED_FEEDBACK: window.JournalI18n.render('journal.window.stats.backlog.queued'),
+    VERDICT_CAUGHT_UP: window.JournalI18n.render('journal.window.stats.backlog.caught.up'),
+    VERDICT_CANT_TELL: window.JournalI18n.render('journal.window.stats.backlog.unknown'),
+    BUCKET_HEADING: window.JournalI18n.render('journal.window.stats.backlog.stuck.heading'),
+    BUCKET_DESCRIPTION: window.JournalI18n.render('journal.window.stats.backlog.stuck.description'),
+    DAY_BADGE: window.JournalI18n.render('journal.window.stats.backlog.stuck.badge'),
+    REASON_FAILING_STEP: window.JournalI18n.render('journal.window.stats.backlog.repair.fallback'),
+    WHY_NEVER_ATTEMPTED: window.JournalI18n.render('journal.window.stats.backlog.reason.unattempted'),
+    WHY_FAILED: window.JournalI18n.render('journal.window.stats.backlog.reason.retry'),
+    WHY_SENSED_NOT_THOUGHT: window.JournalI18n.render('journal.window.stats.backlog.reason.sensed'),
+    CATCHING_UP_DAY: window.JournalI18n.render('journal.window.stats.backlog.catching.up'),
+    CATCHING_UP_TAIL: window.JournalI18n.render('journal.window.stats.backlog.automatic'),
   });
 
   const EXPECTED_SCHEMA_VERSION = 10;
-  const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
 
   // Activity slugs are lowercase storage words, but 'ai' is an initialism the
   // owner reads as AI, not as a word. Only tokens listed here are re-cased;
@@ -117,14 +107,29 @@
     return String(Math.round(value));
   }
 
+  const SHORT_MONTHS = [
+    window.JournalI18n.render('journal.window.date.months.short.jan'),
+    window.JournalI18n.render('journal.window.date.months.short.feb'),
+    window.JournalI18n.render('journal.window.date.months.short.mar'),
+    window.JournalI18n.render('journal.window.date.months.short.apr'),
+    window.JournalI18n.render('journal.window.date.months.short.may'),
+    window.JournalI18n.render('journal.window.date.months.short.jun'),
+    window.JournalI18n.render('journal.window.date.months.short.jul'),
+    window.JournalI18n.render('journal.window.date.months.short.aug'),
+    window.JournalI18n.render('journal.window.date.months.short.sep'),
+    window.JournalI18n.render('journal.window.date.months.short.oct'),
+    window.JournalI18n.render('journal.window.date.months.short.nov'),
+    window.JournalI18n.render('journal.window.date.months.short.dec'),
+  ];
+
   function fmtDay(raw) {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    if (raw.length === 8) {
-      // YYYYMMDD
-      return months[parseInt(raw.slice(4, 6), 10) - 1] + ' ' + parseInt(raw.slice(6, 8), 10);
-    }
-    // MM/DD
-    return months[parseInt(raw.slice(0, 2), 10) - 1] + ' ' + parseInt(raw.slice(3, 5), 10);
+    // YYYYMMDD or MM/DD.
+    const month = raw.length === 8 ? raw.slice(4, 6) : raw.slice(0, 2);
+    const day = raw.length === 8 ? raw.slice(6, 8) : raw.slice(3, 5);
+    return window.JournalI18n.render('journal.window.stats.chart.day', [
+      ['month', String(SHORT_MONTHS[parseInt(month, 10) - 1])],
+      ['day', String(parseInt(day, 10))]
+    ]);
   }
 
   function shouldLabel(i, len) {
@@ -136,7 +141,7 @@
     container.classList.add('chart-inspectable');
     chart.setAttribute('role', 'group');
     const bars = Array.from(chart.children);
-    const select = el('select', {'aria-label': 'day'});
+    const select = el('select', {'aria-label': window.JournalI18n.render('journal.window.stats.chart.inspection.label')});
     days.forEach((day, i) => select.appendChild(el('option', {value: String(i)}, [fmtDay(day)])));
     const readout = el('div', {className: 'chart-day-values', 'aria-live': 'polite', 'aria-atomic': 'true'});
     const inspect = index => {
@@ -165,7 +170,7 @@
       });
     });
     select.addEventListener('change', () => inspect(Number(select.value)));
-    container.appendChild(el('div', {className: 'chart-inspection'}, [el('label', {}, ['day ', select]), readout]));
+    container.appendChild(el('div', {className: 'chart-inspection'}, [el('label', {}, [window.JournalI18n.render('journal.window.stats.chart.inspection.caption'), select]), readout]));
     inspect(bars.length - 1);
   }
 
@@ -186,7 +191,7 @@
       el('h3', {}, [title]),
       // These are all-time totals, not the 30-day backlog window above —
       // scope the label so the two figures don't read as contradictory (G2-09).
-      el('p', {className: 'stat-subtitle'}, ['since your journal began']),
+      el('p', {className: 'stat-subtitle'}, [window.JournalI18n.render('journal.window.stats.visible.text.since.your.journal.began')]),
       el('div', {className: 'progress-bar'}, [
         el('div', {
           className: 'progress-fill',
@@ -194,159 +199,10 @@
         }, [`${pct}%`])
       ]),
       el('div', {className: 'progress-stats'}, [
-        el('span', {}, [`${processed.toLocaleString()} processed`]),
-        el('span', {}, [`${repairable.toLocaleString()} pending`])
+        el('span', {}, [window.JournalI18n.render('journal.window.stats.progress.processed', [['count', processed.toLocaleString()]])]),
+        el('span', {}, [window.JournalI18n.render('journal.window.stats.progress.pending', [['count', repairable.toLocaleString()]])])
       ])
     ]);
-  }
-
-  // Build stacked token chart
-  function buildTokenChart(container, tokenData, model) {
-    container.innerHTML = ''; // Clear existing content
-
-    if (!tokenData || !model) {
-      renderEmptyChart(container, {
-        icon: window.ConveyIcons.svg('chart-column'),
-        heading: 'select a model…',
-        desc: 'Choose a model above to view token usage'
-      });
-      return;
-    }
-
-    // Get last 30 days of data
-    const days = Object.keys(tokenData).sort().slice(-30);
-
-    if (!days.length) {
-      renderEmptyChart(container, {
-        icon: window.ConveyIcons.svg('chart-column'),
-        heading: 'No token data',
-        desc: 'no token usage for this model'
-      });
-      return;
-    }
-
-    // Calculate max total for scaling
-    let maxTotal = 0;
-    const chartData = days.map(day => {
-      let input = 0, reasoning = 0, output = 0;
-
-      if (model === 'total') {
-        // Sum all models for this day
-        const dayModels = tokenData[day] || {};
-        Object.values(dayModels).forEach(modelData => {
-          input += modelData.input_tokens || 0;
-          reasoning += modelData.reasoning_tokens || 0;
-          output += modelData.output_tokens || 0;
-        });
-      } else {
-        // Single model data
-        const dayData = tokenData[day][model] || {};
-        input = dayData.input_tokens || 0;
-        reasoning = dayData.reasoning_tokens || 0;
-        output = dayData.output_tokens || 0;
-      }
-
-      const total = input + reasoning + output;
-      maxTotal = Math.max(maxTotal, total);
-      return { day, input, reasoning, output, total };
-    });
-
-    if (maxTotal === 0) {
-      renderEmptyChart(container, {
-        icon: window.ConveyIcons.svg('chart-column'),
-        heading: 'No recent token usage',
-        desc: 'No tokens used for this model in the last 30 days'
-      });
-      return;
-    }
-
-    const chart = el('div', {className: 'bar-chart', role: 'img', 'aria-label': 'token activity bar chart showing usage over the last 30 days'});
-
-    chartData.forEach((d, i) => {
-      const height = (d.total / maxTotal) * 100;
-      const bar = el('div', {
-        className: 'bar',
-        style: {height: `${height}%`, background: 'transparent', overflow: 'visible'}
-      });
-
-      // Create stacked segments
-      const stackLabel = `${fmtDay(d.day)}: ${fmtTokens(d.total)} tokens (input: ${d.input}, reasoning: ${d.reasoning}, output: ${d.output})`;
-      const stack = el('div', {className: 'bar-stack', style: {height: '100%'}, 'aria-label': stackLabel});
-
-      // Calculate segment heights as percentages of the bar
-      if (d.total > 0) {
-        const inputPct = (d.input / d.total) * 100;
-        const reasoningPct = (d.reasoning / d.total) * 100;
-        const outputPct = (d.output / d.total) * 100;
-
-        if (d.output > 0) {
-          stack.appendChild(el('div', {
-            className: 'stack-segment output',
-            style: {height: `${outputPct}%`}
-          }));
-        }
-        if (d.reasoning > 0) {
-          stack.appendChild(el('div', {
-            className: 'stack-segment reasoning',
-            style: {height: `${reasoningPct}%`}
-          }));
-        }
-        if (d.input > 0) {
-          stack.appendChild(el('div', {
-            className: 'stack-segment input',
-            style: {height: `${inputPct}%`}
-          }));
-        }
-      }
-
-      bar.appendChild(stack);
-
-      if (d.total > 0) {
-        const formatted = fmtTokens(d.total);
-        bar.appendChild(el('div', {className: 'bar-value'}, [formatted]));
-        bar.dataset.tip = `${d.day.slice(4, 6)}/${d.day.slice(6, 8)} - Input: ${d.input}, Reasoning: ${d.reasoning}, Output: ${d.output}`;
-      }
-
-      if (shouldLabel(i, chartData.length)) {
-        bar.appendChild(el('div', {className: 'bar-label'}, [fmtDay(d.day)]));
-      }
-
-      chart.appendChild(bar);
-    });
-
-    container.appendChild(chart);
-
-    // Add legend
-    const legend = el('div', {className: 'token-legend'}, [
-      el('div', {className: 'legend-item'}, [
-        el('div', {className: 'legend-color', style: {background: WARM_INPUT_COLOR}, 'aria-hidden': 'true'}),
-        'input'
-      ]),
-      el('div', {className: 'legend-item'}, [
-        el('div', {
-          className: 'legend-color',
-          style: {
-            background: 'var(--orange)',
-            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, color-mix(in srgb, var(--paper) 30%, transparent) 3px, color-mix(in srgb, var(--paper) 30%, transparent) 6px)'
-          },
-          'aria-hidden': 'true'
-        }),
-        'reasoning'
-      ]),
-      el('div', {className: 'legend-item'}, [
-        el('div', {
-          className: 'legend-color',
-          style: {
-            background: 'var(--success)',
-            backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--paper) 30%, transparent) 1px, transparent 1px)',
-            backgroundSize: '6px 6px'
-          },
-          'aria-hidden': 'true'
-        }),
-        'output'
-      ])
-    ]);
-    container.appendChild(legend);
   }
 
   // Build stacked hours chart (audio + screen)
@@ -356,8 +212,8 @@
     if (!data || !data.length) {
       renderEmptyChart(container, {
         icon: window.ConveyIcons.svg('mic-vocal'),
-        heading: 'no activity yet',
-        desc: 'no audio or screen activity yet'
+        heading: window.JournalI18n.render('journal.window.stats.chart.hours.empty.heading'),
+        desc: window.JournalI18n.render('journal.window.stats.chart.hours.empty.detail')
       });
       return;
     }
@@ -365,7 +221,7 @@
     // Calculate max total for scaling
     const maxTotal = Math.max(...data.map(d => d.audio + d.screen)) || 1;
 
-    const chart = el('div', {className: 'bar-chart', role: 'img', 'aria-label': 'observation hours bar chart showing audio and screen time per day'});
+    const chart = el('div', {className: 'bar-chart', role: 'img', 'aria-label': window.JournalI18n.render('journal.window.stats.chart.hours.accessible')});
 
     data.forEach((d, i) => {
       const total = d.audio + d.screen;
@@ -376,7 +232,13 @@
       });
 
       // Create stacked segments
-      const stackLabel = `${fmtDay(d.day)}: ${total.toFixed(1)}h (audio: ${d.audio.toFixed(1)}h, screen: ${d.screen.toFixed(1)}h)${d.bytes ? `, disk: ${fmtBytes(d.bytes)}` : ''}`;
+      const disk = d.bytes
+        ? window.JournalI18n.render('journal.window.stats.chart.hours.disk', [['bytes', fmtBytes(d.bytes)]])
+        : '';
+      const stackLabel = window.JournalI18n.render('journal.window.stats.chart.hours.day', [
+        ['day', fmtDay(d.day)], ['total', total.toFixed(1)], ['audio', d.audio.toFixed(1)],
+        ['screen', d.screen.toFixed(1)], ['disk', disk]
+      ]);
       const stack = el('div', {className: 'bar-stack', style: {height: '100%'}, 'aria-label': stackLabel});
 
       // Calculate segment heights as percentages of the bar
@@ -405,8 +267,12 @@
       if (total > 0) {
         const formatted = total > 10 ? Math.round(total) : total.toFixed(1);
         bar.appendChild(el('div', {className: 'bar-value'}, [`${formatted}h`]));
-        const titleParts = [`${d.day} - Audio: ${d.audio.toFixed(1)}h, Screen: ${d.screen.toFixed(1)}h`];
-        if (d.bytes) titleParts.push(`Disk: ${fmtBytes(d.bytes)}`);
+        const titleParts = [window.JournalI18n.render('journal.window.stats.chart.hours.tooltip', [
+          ['day', d.day], ['audio', d.audio.toFixed(1)], ['screen', d.screen.toFixed(1)]
+        ])];
+        if (d.bytes) {
+          titleParts.push(window.JournalI18n.render('journal.window.stats.chart.hours.tooltip.disk', [['bytes', fmtBytes(d.bytes)]]));
+        }
         bar.dataset.tip = titleParts.join(', ');
       }
 
@@ -423,7 +289,7 @@
     const legend = el('div', {className: 'token-legend'}, [
       el('div', {className: 'legend-item'}, [
         el('div', {className: 'legend-color', style: {background: WARM_INPUT_COLOR}, 'aria-hidden': 'true'}),
-        'audio'
+        window.JournalI18n.render('journal.window.stats.chart.hours.audio')
       ]),
       el('div', {className: 'legend-item'}, [
         el('div', {
@@ -434,24 +300,32 @@
           },
           'aria-hidden': 'true'
         }),
-        'screen'
+        window.JournalI18n.render('journal.window.stats.chart.hours.screen')
       ])
     ]);
     container.appendChild(legend);
     addDailyInspection(container, chart, data.map(d => d.day));
   }
 
-  const HEATMAP_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const HEATMAP_DAYS = [
+    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sat'),
+    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
+  ];
 
   // The four anchors an owner reads a 24-column axis by. Every other column
   // stays a blank tick: 24 labels don't fit, and a bare 0-23 grid is the one
   // place on the page the owner has to translate a clock (G2-B14).
-  const HEATMAP_HOUR_LABELS = {0: '12 am', 6: '6 am', 12: '12 pm', 18: '6 pm'};
+  const HEATMAP_HOUR_LABELS = {0: window.JournalI18n.render('journal.window.stats.heatmap.midnight'), 6: window.JournalI18n.render('journal.window.stats.heatmap.six.am'), 12: window.JournalI18n.render('journal.window.stats.heatmap.noon'), 18: window.JournalI18n.render('journal.window.stats.heatmap.six.pm')};
 
   function heatmapHourSpoken(hour) {
-    if (hour === 0) return '12 am';
-    if (hour === 12) return '12 pm';
-    return hour < 12 ? `${hour} am` : `${hour - 12} pm`;
+    if (hour === 0) return window.JournalI18n.render('journal.window.stats.heatmap.midnight');
+    if (hour === 12) return window.JournalI18n.render('journal.window.stats.heatmap.noon');
+    return hour < 12 ? window.JournalI18n.render('journal.window.stats.heatmap.hour.am', [['hour', String(hour)]]) : window.JournalI18n.render('journal.window.stats.heatmap.hour.pm', [['hour', String(hour - 12)]]);
   }
 
   // One line of the same information the grid carries, for the widths where
@@ -473,12 +347,12 @@
     const weekday = peak([0, 1, 2, 3, 4]);
     const weekend = peak([5, 6]);
     if (weekday === null && weekend === null) {
-      return 'no activity to chart yet.';
+      return window.JournalI18n.render('journal.window.stats.heatmap.narrow.empty');
     }
     const parts = [];
-    if (weekday !== null) parts.push(`around ${heatmapHourSpoken(weekday)} on weekdays`);
-    if (weekend !== null) parts.push(`around ${heatmapHourSpoken(weekend)} on weekends`);
-    return `your busiest hour is ${parts.join(' and ')}. the hour by hour grid needs a wider screen.`;
+    if (weekday !== null) parts.push(window.JournalI18n.render('journal.window.stats.heatmap.narrow.weekday', [['hour', String(heatmapHourSpoken(weekday))]]));
+    if (weekend !== null) parts.push(window.JournalI18n.render('journal.window.stats.heatmap.narrow.weekend', [['hour', String(heatmapHourSpoken(weekend))]]));
+    return window.JournalI18n.render('journal.window.stats.heatmap.narrow.peak', [['hours', String(parts.join(window.JournalI18n.render('journal.window.stats.heatmap.narrow.join')))]]);
   }
 
   // Arrow-key roving across the 168 cells. Before this, every cell carried
@@ -520,7 +394,7 @@
     const days = HEATMAP_DAYS;
     const maxVal = Math.max(...data.flat()) || 1;
 
-    const heatmap = el('div', {className: 'heatmap', role: 'grid', 'aria-label': 'activity heatmap showing activity by day of week and hour'});
+    const heatmap = el('div', {className: 'heatmap', role: 'grid', 'aria-label': window.JournalI18n.render('journal.window.stats.heatmap.accessible')});
 
     // Hour headers, in their own row so the grid's rows are real elements
     const header = el('div', {className: 'heatmap-row heatmap-header', role: 'row'});
@@ -548,7 +422,12 @@
         // empty hour is not a duration, so it says so rather than reading
         // "0 sec" (S-8).
         const bucketMinutes = Number(data[d][h]) || 0;
-        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${bucketMinutes > 0 ? window.JournalFormat.duration(bucketMinutes * 60) : 'no activity'}`;
+        const activity = bucketMinutes > 0
+          ? window.JournalFormat.duration(bucketMinutes * 60)
+          : window.JournalI18n.render('journal.window.stats.heatmap.empty');
+        const cellTitle = window.JournalI18n.render('journal.window.stats.heatmap.cell', [
+          ['day', days[d]], ['hour', heatmapHourSpoken(h)], ['activity', activity]
+        ]);
         row.appendChild(el('div', {
           className: 'heatmap-cell',
           style: {background: `color-mix(in srgb, var(--orange) ${percent}%, transparent)`},
@@ -612,8 +491,8 @@
     if (!countsByDay || Object.keys(countsByDay).length === 0) {
       renderEmptyChart(container, {
         icon: meta.emptyIcon,
-        heading: 'No data available',
-        desc: meta.emptyText || 'No data available'
+        heading: window.JournalI18n.render('journal.window.stats.chart.empty'),
+        desc: meta.emptyText || window.JournalI18n.render('journal.window.stats.chart.empty')
       });
       return;
     }
@@ -623,8 +502,8 @@
     if (!days.length) {
       renderEmptyChart(container, {
         icon: meta.emptyIcon,
-        heading: 'No data available',
-        desc: meta.emptyText || 'No data available'
+        heading: window.JournalI18n.render('journal.window.stats.chart.empty'),
+        desc: meta.emptyText || window.JournalI18n.render('journal.window.stats.chart.empty')
       });
       return;
     }
@@ -639,8 +518,8 @@
     if (!categories.length) {
       renderEmptyChart(container, {
         icon: meta.emptyIcon,
-        heading: 'No data available',
-        desc: meta.emptyText || 'No data available'
+        heading: window.JournalI18n.render('journal.window.stats.chart.empty'),
+        desc: meta.emptyText || window.JournalI18n.render('journal.window.stats.chart.empty')
       });
       return;
     }
@@ -664,8 +543,8 @@
     if (maxTotal === 0) {
       renderEmptyChart(container, {
         icon: meta.emptyIcon,
-        heading: 'No data available',
-        desc: meta.emptyText || 'No data available'
+        heading: window.JournalI18n.render('journal.window.stats.chart.empty'),
+        desc: meta.emptyText || window.JournalI18n.render('journal.window.stats.chart.empty')
       });
       return;
     }
@@ -744,12 +623,6 @@
     return BACKLOG_COPY;
   }
 
-  function fmt(template, vals = {}) {
-    return String(template || '')
-      .replace(/\{stuck_n\}/g, String(vals.stuck ?? ''))
-      .replace(/\{pending_n\}/g, String(vals.pending ?? ''));
-  }
-
   function count(value) {
     const num = Number(value);
     return Number.isFinite(num) && num > 0 ? num : 0;
@@ -762,27 +635,6 @@
       pending: count(bl ? bl.pending_days : totals.backlog_pending_days),
       stuck: count(bl ? bl.stuck_days : totals.backlog_stuck_days)
     };
-  }
-
-  function backlogVerdict(stats) {
-    const C = backlogCopy();
-    const bl = stats.backlog;
-    const counts = backlogCounts(stats);
-    const p = counts.pending;
-    const s = counts.stuck;
-
-    if (!bl || bl.degraded === true) return C.VERDICT_CANT_TELL;
-    if (p === 0 && s === 0) return C.VERDICT_CAUGHT_UP;
-    if (s > 0 && p === 0) {
-      return fmt(s === 1 ? C.VERDICT_STUCK_ONLY_SINGULAR : C.VERDICT_STUCK_ONLY_PLURAL, {stuck: s});
-    }
-    if (s === 0 && p > 0) {
-      return fmt(p === 1 ? C.VERDICT_PENDING_ONLY_SINGULAR : C.VERDICT_PENDING_ONLY_PLURAL, {pending: p});
-    }
-
-    const stuckArm = fmt(s === 1 ? C.VERDICT_MIXED_STUCK_SINGULAR : C.VERDICT_MIXED_STUCK_PLURAL, {stuck: s});
-    const pendingArm = fmt(p === 1 ? C.VERDICT_MIXED_PENDING_SINGULAR : C.VERDICT_MIXED_PENDING_PLURAL, {pending: p});
-    return stuckArm + '. ' + pendingArm + '.';
   }
 
   function backlogDepth(day) {
@@ -800,7 +652,7 @@
   // text above. Falls back to whyLabel when the reason_code is missing or
   // unrecognized (G2-14).
   const UNIT_REASON_COPY = {
-    context_window_exceeded: "a summary was too long for the model to read at once",
+    context_window_exceeded: window.JournalI18n.render('journal.window.stats.backlog.reason.context.window'),
   };
 
   function unitReasonLabel(unit, C) {
@@ -873,14 +725,14 @@
     const children = [
       el('a', {className: 'backlog-row-link', href: dayHref(day)}, [
         el('div', {className: 'backlog-row-main'}, mainChildren),
-        depth > 0 ? el('span', {className: 'backlog-depth'}, [`${depth.toLocaleString()} steps left`]) : null
+        depth > 0 ? el('span', {className: 'backlog-depth'}, [window.JournalI18n.render('journal.window.stats.backlog.remaining', [['count', depth.toLocaleString()]])]) : null
       ])
     ];
 
     if (!options.expanded && whyLabels.length > 0) {
       children.push(
         el('details', {}, [
-          el('summary', {}, ['work remaining']),
+          el('summary', {}, [window.JournalI18n.render('journal.window.stats.backlog.work.remaining')]),
           el('ul', {className: 'backlog-why-list'}, whyLabels.map(label => el('li', {}, [label])))
         ])
       );
@@ -921,7 +773,7 @@
     const days = (Array.isArray(bl.days) ? bl.days : []).filter(day => catchingUpDay(day, bl));
     if (!days.length) return null;
 
-    const children = [el('summary', {}, ['processing details'])];
+    const children = [el('summary', {}, [window.JournalI18n.render('journal.window.stats.backlog.details')])];
     children.push(el('p', {className: 'backlog-routine-note'}, [C.CATCHING_UP_TAIL]));
     children.push(
       el('div', {className: 'backlog-rows'}, days.map(day => backlogRow(day, C, bl)))
@@ -930,6 +782,12 @@
   }
 
   function renderBacklog(stats) {
+    function lowercaseRelativeDay(label) {
+      const relative = ['today', 'yesterday', 'tomorrow'].some(day =>
+        label === window.JournalI18n.render(`journal.window.date.${day}`));
+      return relative ? label.toLowerCase() : label;
+    }
+
     const main = document.getElementById('mainContent');
     // The hero goes above the whole tile block, not between the block's
     // "since your journal began" kicker and the tiles it scopes (G2-B10).
@@ -949,7 +807,7 @@
       // The verdict below is scoped to the 30-day backlog window; label it
       // so it doesn't read as contradicting the all-time totals in the
       // tiles further down the page (G2-09).
-      el('p', {className: 'backlog-hero-scope'}, ['last 30 days']),
+      el('p', {className: 'backlog-hero-scope'}, [window.JournalI18n.render('journal.window.stats.backlog.scope')]),
       el('p', {className: 'backlog-hero-line'}, [verdict])
     ];
 
@@ -960,7 +818,7 @@
     if (activities > 0 && oldestDay) {
       const copy = journalStatus.copy || {};
       const label = window.JournalFormat ? window.JournalFormat.day(oldestDay) : oldestDay;
-      const formattedDay = label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase());
+      const formattedDay = lowercaseRelativeDay(label);
       let tmpl = '';
       if (activities === 1 && dayCount === 1) {
         tmpl = copy.unfinished_template_one || '';
@@ -991,7 +849,7 @@
     const olderQueued = count((stats.totals || {}).pending_segments);
     if (bl && bl.degraded !== true && counts.pending === 0 && counts.stuck === 0 && olderQueued > 0) {
       heroChildren.push(el('p', {className: 'backlog-hero-line backlog-hero-secondary'}, [
-        `${olderQueued.toLocaleString()} older audio segments from before the last 30 days are still waiting to be transcribed.`
+        window.JournalI18n.render('journal.window.stats.backlog.older.audio', [['count', olderQueued.toLocaleString()]])
       ]));
     }
     const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
@@ -1044,13 +902,13 @@
     if (stats.schema_version && stats.schema_version !== EXPECTED_SCHEMA_VERSION) {
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, data.admin_terminal ? [
-          'These stats were generated with an older format. Open the admin terminal from the journal app\'s journal menu on the mac your journal runs on and run ',
+          window.JournalI18n.render('journal.window.stats.schema.regenerate.macos'),
           el('code', {}, ['journal journal-stats']),
-          ' to regenerate.'
+          window.JournalI18n.render('journal.window.stats.schema.regenerate.end')
         ] : [
-          'These stats were generated with an older format. Run ',
+          window.JournalI18n.render('journal.window.stats.schema.regenerate'),
           el('code', {}, ['journal journal-stats']),
-          ' to regenerate.'
+          window.JournalI18n.render('journal.window.stats.schema.regenerate.end')
         ])
       );
     }
@@ -1069,7 +927,7 @@
       if ((stats.journal_status || {}).not_yet) return;
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
-          'your stats aren\'t ready yet. check back in a moment.'
+          window.JournalI18n.render('journal.window.stats.pending.stats')
         ])
       );
       return;
@@ -1086,9 +944,9 @@
       clearDashboardSections();
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
-          el('strong', {}, ['no statistics yet. ']),
-          'check processing status in ',
-          el('a', {href: '/app/health/'}, ['health']),
+          el('strong', {}, [window.JournalI18n.render('journal.window.stats.stats.empty.head')]),
+          window.JournalI18n.render('journal.window.stats.stats.empty.detail'),
+          el('a', {href: '/app/health/'}, [window.JournalI18n.render('journal.window.stats.stats.empty.health')]),
           '.'
         ])
       );
@@ -1111,17 +969,17 @@
     // Render stats cards
     const statsGrid = document.getElementById('statsGrid');
     statsGrid.innerHTML = ''; // Clear existing content
-    statsGrid.appendChild(statCard('total days', totalDays.toLocaleString(), 'days'));
-    statsGrid.appendChild(statCard('audio hours', totalAudioHours.toLocaleString(), 'hours'));
-    statsGrid.appendChild(statCard('screen hours', totalScreenHours.toLocaleString(), 'hours'));
-    statsGrid.appendChild(statCard('total tokens', fmtTokens(totalTokens), 'tokens'));
-    statsGrid.appendChild(statCard('disk usage', fmtBytes(totals.day_bytes || 0), 'on disk'));
+    statsGrid.appendChild(statCard(window.JournalI18n.render('journal.window.stats.totals.days'), totalDays.toLocaleString(), window.JournalI18n.render('journal.window.stats.totals.days.unit')));
+    statsGrid.appendChild(statCard(window.JournalI18n.render('journal.window.stats.totals.audio'), totalAudioHours.toLocaleString(), window.JournalI18n.render('journal.window.stats.totals.hours.unit')));
+    statsGrid.appendChild(statCard(window.JournalI18n.render('journal.window.stats.totals.screen'), totalScreenHours.toLocaleString(), window.JournalI18n.render('journal.window.stats.totals.hours.unit')));
+    statsGrid.appendChild(statCard(window.JournalI18n.render('journal.window.stats.totals.tokens'), fmtTokens(totalTokens), window.JournalI18n.render('journal.window.stats.totals.tokens.unit')));
+    statsGrid.appendChild(statCard(window.JournalI18n.render('journal.window.stats.totals.disk'), fmtBytes(totals.day_bytes || 0), window.JournalI18n.render('journal.window.stats.totals.disk.unit')));
 
     // Render progress cards
     const progressSection = document.getElementById('progressSection');
     progressSection.innerHTML = ''; // Clear existing content
     progressSection.appendChild(
-      progressCard('audio processing', totals.transcript_sessions || 0, totals.pending_segments || 0)
+      progressCard(window.JournalI18n.render('journal.window.stats.progress.audio'), totals.transcript_sessions || 0, totals.pending_segments || 0)
     );
 
     // Combined audio + screen chart data
@@ -1153,13 +1011,13 @@
     const facetCounts = foldReservedFacetKeys(stats.facets.counts_by_day || {});
     const facetMeta = {
       emptyIcon: window.ConveyIcons.svg('tag'),
-      emptyText: 'no facet data yet',
-      ariaLabel: 'facets bar chart showing facet distribution over the last 30 days'
+      emptyText: window.JournalI18n.render('journal.window.stats.facets.empty'),
+      ariaLabel: window.JournalI18n.render('journal.window.stats.facets.accessible')
     };
     Object.entries(facetTitles).forEach(([slug, title]) => {
       facetMeta[slug] = {title};
     });
-    facetMeta[UNASSIGNED_FACET_KEY] = {title: 'unassigned'};
+    facetMeta[UNASSIGNED_FACET_KEY] = {title: window.JournalI18n.render('journal.window.stats.facets.unassigned')};
     buildStackedCategoryChart(
       document.getElementById('facetsChart'),
       facetCounts,
@@ -1176,8 +1034,8 @@
     const activityCounts = stats.talents.counts_by_day || {};
     const activityMeta = {
       emptyIcon: window.ConveyIcons.svg('zap'),
-      emptyText: 'no activity data yet',
-      ariaLabel: 'activities bar chart showing activity counts over the last 30 days'
+      emptyText: window.JournalI18n.render('journal.window.stats.activities.empty'),
+      ariaLabel: window.JournalI18n.render('journal.window.stats.activities.accessible')
     };
     Object.values(activityCounts).forEach(dayCounts => {
       Object.keys(dayCounts || {}).forEach(activityId => {
@@ -1203,20 +1061,20 @@
 
     if (hasRepairs) {
       const alert = el('div', {className: 'chart-section alert-repair'}, [
-        el('h2', {}, ['items needing processing']),
+        el('h2', {}, [window.JournalI18n.render('journal.window.stats.repair.heading')]),
         // This tile counts every processing step (audio, screen, and
         // everything else waiting on the thinking pass), not just the
         // audio backlog named in the verdict above — the two are different
         // jobs, not two answers to the same question (G2-41).
         el('p', {className: 'repair-section-note'}, [
-          'this counts every step of processing, not just the audio backlog above.'
+          window.JournalI18n.render('journal.window.stats.repair.detail')
         ]),
         el('div', {className: 'stats-grid', id: 'repairGrid'})
       ]);
 
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
-        segments_pending_think: 'material waiting for the thinking pass'
+        segments_pending_think: window.JournalI18n.render('journal.window.stats.repair.thinking')
       };
       // Neutral (matches the rest of the page) once the 30-day verdict is
       // caught up; --danger only while it isn't (X-11).
@@ -1231,7 +1089,7 @@
           // These are all-time totals, distinct from the 30-day backlog
           // verdict above them (G2-09).
           repairGrid.appendChild(
-            statCard(repairLabels[key], repairCount.toLocaleString(), 'since your journal began', repairColor)
+            statCard(repairLabels[key], repairCount.toLocaleString(), window.JournalI18n.render('journal.window.stats.visible.text.since.your.journal.began'), repairColor)
           );
         }
       });
@@ -1245,12 +1103,12 @@
     const notice = document.getElementById('notice');
     const previous = document.getElementById('stats-read-error');
     if (previous) previous.remove();
-    const retry = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'try-again'}, ['try again']);
+    const retry = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'try-again'}, [window.JournalI18n.render('journal.window.stats.try.again')]);
     // Busy while its read is out, never disabled: focus stays on it. A
     // press while it is out shares that read.
     retry.addEventListener('click', () => retryAgain(retry));
     notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
-      "couldn't load statistics. try again to refresh this view. ", retry
+      window.JournalI18n.render('journal.window.stats.read.error'), retry
     ]));
     return retry;
   }
@@ -1316,7 +1174,7 @@
     freshnessText.className = 'stats-freshness-text';
     // Drawn into the freshness line by the first answer that has one, as the
     // page always has: not while it loads or when the read fails first.
-    const refreshButton = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'refresh'}, ['refresh']);
+    const refreshButton = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'refresh'}, [window.JournalI18n.render('journal.window.stats.refresh')]);
     freshnessEl.replaceChildren(freshnessText);
 
     let reported = false;
@@ -1340,7 +1198,7 @@
     const hooks = {
       freshness(generatedAt) {
         const text = generatedAt
-          ? 'updated ' + relativeTime(Date.now() - new Date(generatedAt).getTime()) + ' ago'
+          ? window.JournalI18n.render('journal.window.stats.freshness', [['age', String(relativeTime(Date.now() - new Date(generatedAt).getTime()))]])
           : '';
         if (freshnessText.textContent !== text) freshnessText.textContent = text;
         if (!refreshButton.isConnected) freshnessEl.append(refreshButton);
@@ -1396,7 +1254,7 @@
           if (window.logError) {
             window.logError(err, {context: 'stats: reprocess failed'});
           }
-          writes.set(day, {state: null, text: err && err.serverMessage ? err.serverMessage : 'try again'});
+          writes.set(day, {state: null, text: err && err.serverMessage ? err.serverMessage : window.JournalI18n.render('journal.window.stats.try.again')});
           applyWrite(day);
         });
     }

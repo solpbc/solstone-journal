@@ -1,0 +1,16 @@
+{
+  "description": "tokens exact ids in the journal's stats view.",
+  "context": "Journal window, stats view. tokens exact ids.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad65cd7a3aa97378c77b305d7b66608aedfba94c02f856aa401483894a885db6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

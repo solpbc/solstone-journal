@@ -1,0 +1,16 @@
+{
+  "description": "heatmap noon in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap noon.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5735057e46250e73126f85ee7fb3888f5712caa3a5720d149ad439cffef2ec95",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

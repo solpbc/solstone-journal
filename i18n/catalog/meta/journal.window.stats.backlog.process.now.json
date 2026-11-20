@@ -1,0 +1,16 @@
+{
+  "description": "backlog process now in the journal's stats view.",
+  "context": "Journal window, stats view. backlog process now.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73075e92d65c0eaa373351803ffe0caaff6c15881e98acaae47c1b8115c2f58f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

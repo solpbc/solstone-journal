@@ -1,0 +1,16 @@
+{
+  "description": "refresh in the journal's stats view.",
+  "context": "Journal window, stats view. refresh.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfb87c36f736baf9c628211f7bcb235af9ad7625ca72bcddfc74f9fc9f191b60",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

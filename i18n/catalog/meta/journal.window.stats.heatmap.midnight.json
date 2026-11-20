@@ -1,0 +1,16 @@
+{
+  "description": "heatmap midnight in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap midnight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5909bbdaf7bdd2bdb01dd9f5bdf7468f47f0ae134fc550033fe84a71fb426e2c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

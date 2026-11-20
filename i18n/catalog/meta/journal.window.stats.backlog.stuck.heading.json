@@ -1,0 +1,16 @@
+{
+  "description": "backlog stuck heading in the journal's stats view.",
+  "context": "Journal window, stats view. backlog stuck heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fb192204ff57de56ef75ab2204f5d8d8bf4a271ca0414873b491a5094843ad7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

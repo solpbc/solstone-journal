@@ -1,0 +1,16 @@
+{
+  "description": "totals audio in the journal's stats view.",
+  "context": "Journal window, stats view. totals audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c6c0234c25f6287de1797e36eed5da7203cb4b45fd2aaf72d2159bbcbb26618",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

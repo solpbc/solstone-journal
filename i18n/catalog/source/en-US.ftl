@@ -10946,3 +10946,265 @@ journal.window.year.type.labels.tool.tools = tools
 journal.window.year.year.invalid = that year couldn't be used.
 
 journal.window.year.year.invalid.detail = Invalid year, expected YYYY
+
+journal.window.stats.accessible.name.day.token.activity.rollup = 30-day token activity rollup
+
+journal.window.stats.accessible.name.generate.and.cogitate.comparison = generate and cogitate comparison
+
+journal.window.stats.accessible.name.model.token.activity.table = model token activity table
+
+journal.window.stats.accessible.name.provider.token.activity.table = provider token activity table
+
+journal.window.stats.accessible.name.selected.token.day = selected token day
+
+journal.window.stats.activities.accessible = activities bar chart showing activity counts over the last 30 days
+
+journal.window.stats.activities.empty = no activity data yet
+
+journal.window.stats.backlog.automatic = processing continues automatically, freshest day first.
+
+journal.window.stats.backlog.catching.up = catching up
+
+journal.window.stats.backlog.caught.up = your journal's all caught up.
+
+journal.window.stats.backlog.details = processing details
+
+journal.window.stats.backlog.older.audio = { $count }{ $slot1 }older audio segments from before the last 30 days are still waiting to be transcribed.
+
+journal.window.stats.backlog.process.now = process now
+
+journal.window.stats.backlog.queued = queued, working on it now
+
+journal.window.stats.backlog.reason.context.window = a summary was too long for the model to read at once
+
+journal.window.stats.backlog.reason.retry = couldn't finish, will retry
+
+journal.window.stats.backlog.reason.sensed = taken in, not yet thought through
+
+journal.window.stats.backlog.reason.unattempted = not looked at yet
+
+journal.window.stats.backlog.redo.confirm = redo this whole day from scratch? this repeats completed processing, so it'll take longer.
+
+journal.window.stats.backlog.remaining = { $count }{ $slot1 }steps left
+
+journal.window.stats.backlog.repair.fallback = a processing step keeps failing. try again
+
+journal.window.stats.backlog.scope = last 30 days
+
+journal.window.stats.backlog.stuck.badge = stuck
+
+journal.window.stats.backlog.stuck.description = some days retry automatically; others need your help. each day shows its current status.
+
+journal.window.stats.backlog.stuck.heading = days that need a hand
+
+journal.window.stats.backlog.unknown = it's unclear whether your journal is caught up right now.
+
+journal.window.stats.backlog.work.remaining = work remaining
+
+journal.window.stats.button.label.cached = cached
+
+journal.window.stats.button.label.model = model
+
+journal.window.stats.button.label.provider = provider
+
+journal.window.stats.button.label.requests = requests
+
+journal.window.stats.button.label.token.share = token share
+
+journal.window.stats.button.label.tokens = tokens
+
+journal.window.stats.chart.day = { $month }{ $slot1 }{ $day }
+
+journal.window.stats.chart.empty = No data available
+
+journal.window.stats.chart.hours.accessible = observation hours bar chart showing audio and screen time per day
+
+journal.window.stats.chart.hours.audio = audio
+
+journal.window.stats.chart.hours.day = { $day }:{ $slot1 }{ $total }h (audio:{ $slot2 }{ $audio }h, screen:{ $slot3 }{ $screen }h){ $disk }
+
+journal.window.stats.chart.hours.disk = , disk:{ $slot1 }{ $bytes }
+
+journal.window.stats.chart.hours.empty.detail = no audio or screen activity yet
+
+journal.window.stats.chart.hours.empty.heading = no activity yet
+
+journal.window.stats.chart.hours.screen = screen
+
+journal.window.stats.chart.hours.tooltip = { $day }{ $slot1 }- Audio:{ $slot2 }{ $audio }h, Screen:{ $slot3 }{ $screen }h
+
+journal.window.stats.chart.hours.tooltip.disk = Disk:{ $slot1 }{ $bytes }
+
+journal.window.stats.chart.inspection.caption = day{ $slot1 }
+
+journal.window.stats.chart.inspection.label = day
+
+journal.window.stats.facets.accessible = facets bar chart showing facet distribution over the last 30 days
+
+journal.window.stats.facets.empty = no facet data yet
+
+journal.window.stats.facets.unassigned = unassigned
+
+journal.window.stats.freshness = updated{ $slot1 }{ $age }{ $slot2 }ago
+
+journal.window.stats.heatmap.accessible = activity heatmap showing activity by day of week and hour
+
+journal.window.stats.heatmap.cell = { $day }{ $slot1 }{ $hour }{ $slot2 }·{ $slot3 }{ $activity }
+
+journal.window.stats.heatmap.empty = no activity
+
+journal.window.stats.heatmap.hour.am = { $hour }{ $slot1 }am
+
+journal.window.stats.heatmap.hour.pm = { $hour }{ $slot1 }pm
+
+journal.window.stats.heatmap.midnight = 12 am
+
+journal.window.stats.heatmap.narrow.empty = no activity to chart yet.
+
+journal.window.stats.heatmap.narrow.join = { $slot1 }and{ $slot2 }
+
+journal.window.stats.heatmap.narrow.peak = your busiest hour is{ $slot1 }{ $hours }. the hour by hour grid needs a wider screen.
+
+journal.window.stats.heatmap.narrow.weekday = around{ $slot1 }{ $hour }{ $slot2 }on weekdays
+
+journal.window.stats.heatmap.narrow.weekend = around{ $slot1 }{ $hour }{ $slot2 }on weekends
+
+journal.window.stats.heatmap.noon = 12 pm
+
+journal.window.stats.heatmap.six.am = 6 am
+
+journal.window.stats.heatmap.six.pm = 6 pm
+
+journal.window.stats.page.heading.stats = stats
+
+journal.window.stats.pending.stats = your stats aren't ready yet. check back in a moment.
+
+journal.window.stats.progress.audio = audio processing
+
+journal.window.stats.progress.pending = { $count }{ $slot1 }pending
+
+journal.window.stats.progress.processed = { $count }{ $slot1 }processed
+
+journal.window.stats.read.error = couldn't load statistics. try again to refresh this view.{ $slot1 }
+
+journal.window.stats.refresh = refresh
+
+journal.window.stats.repair.detail = this counts every step of processing, not just the audio backlog above.
+
+journal.window.stats.repair.heading = items needing processing
+
+journal.window.stats.repair.thinking = material waiting for the thinking pass
+
+journal.window.stats.response.invalid.day.detail = Invalid day format
+
+journal.window.stats.response.invalid.day.error = that day couldn't be used.
+
+journal.window.stats.response.invalid.month.detail = Invalid month format, expected { $slot1 }
+
+journal.window.stats.response.invalid.month.error = that month couldn't be used.
+
+journal.window.stats.response.read.failed.error = that file couldn't be read.
+
+journal.window.stats.response.read.stats.detail = Failed to read stats data
+
+journal.window.stats.response.read.token.detail = Failed to read token data
+
+journal.window.stats.schema.regenerate = These stats were generated with an older format. Run{ $slot1 }
+
+journal.window.stats.schema.regenerate.end = { $slot1 }to regenerate.
+
+journal.window.stats.schema.regenerate.macos = These stats were generated with an older format. Open the admin terminal from the journal app's journal menu on the mac your journal runs on and run{ $slot1 }
+
+journal.window.stats.section.heading.activities = activities
+
+journal.window.stats.section.heading.activity.heatmap.since.your.journal.began = activity heatmap (since your journal began)
+
+journal.window.stats.section.heading.audio.and.screen.hours.in.your = audio and screen hours in your journal, per day
+
+journal.window.stats.section.heading.facets = facets
+
+journal.window.stats.section.heading.selected.day = selected day
+
+journal.window.stats.section.heading.token.activity.last.days = token activity (last 30 days)
+
+journal.window.stats.stats.empty.detail = check processing status in{ $slot1 }
+
+journal.window.stats.stats.empty.head = no statistics yet.{ $slot1 }
+
+journal.window.stats.stats.empty.health = health
+
+journal.window.stats.tokens.cached = { $count }{ $slot1 }cached
+
+journal.window.stats.tokens.count = { $count }{ $slot1 }tokens
+
+journal.window.stats.tokens.day.error = token activity isn't available for this day.
+
+journal.window.stats.tokens.day.rollup = { $day }:{ $slot1 }{ $tokens }{ $slot2 }tokens
+
+journal.window.stats.tokens.empty = no token activity this day.
+
+journal.window.stats.tokens.exact.ids = exact model ids
+
+journal.window.stats.tokens.index.error = 30-day history isn't available. the selected day is still available.
+
+journal.window.stats.tokens.kind.cogitate = cogitate
+
+journal.window.stats.tokens.kind.generate = generate
+
+journal.window.stats.tokens.model.single = one model this day:{ $slot1 }{ $model }.
+
+journal.window.stats.tokens.model.single.unnamed = one model this day, no name given.
+
+journal.window.stats.tokens.model.single.with.provider = one model this day:{ $slot1 }{ $model }, through{ $slot2 }{ $provider }.
+
+journal.window.stats.tokens.models.empty = no models this day.
+
+journal.window.stats.tokens.provider.single = one provider this day:{ $slot1 }{ $provider }.
+
+journal.window.stats.tokens.provider.single.unnamed = one provider this day, no name given.
+
+journal.window.stats.tokens.provider.unnamed = no provider named
+
+journal.window.stats.tokens.providers.empty = no providers this day.
+
+journal.window.stats.tokens.requests.and.tokens = { $requests }{ $slot1 }·{ $slot2 }{ $tokens }{ $slot3 }tokens
+
+journal.window.stats.tokens.requests.many = { $count }{ $slot1 }requests
+
+journal.window.stats.tokens.requests.one = { $count }{ $slot1 }request
+
+journal.window.stats.tokens.share = { $percent }% of the day's tokens
+
+journal.window.stats.totals.audio = audio hours
+
+journal.window.stats.totals.days = total days
+
+journal.window.stats.totals.days.unit = days
+
+journal.window.stats.totals.disk = disk usage
+
+journal.window.stats.totals.disk.unit = on disk
+
+journal.window.stats.totals.hours.unit = hours
+
+journal.window.stats.totals.screen = screen hours
+
+journal.window.stats.totals.tokens = total tokens
+
+journal.window.stats.totals.tokens.unit = tokens
+
+journal.window.stats.try.again = try again
+
+journal.window.stats.visible.text.loading.dashboard.data = loading dashboard data…
+
+journal.window.stats.visible.text.loading.token.activity = loading token activity…
+
+journal.window.stats.visible.text.models = models
+
+journal.window.stats.visible.text.providers = providers
+
+journal.window.stats.visible.text.since.your.journal.began = since your journal began
+
+journal.window.stats.visible.text.the.chart.shows.the.daily.summary = the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.
+
+journal.window.stats.visible.text.the.last.days.split.two.ways = the last 30 days, split two ways: by facet below, then by activity.

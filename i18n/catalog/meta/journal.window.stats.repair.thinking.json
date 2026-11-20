@@ -1,0 +1,16 @@
+{
+  "description": "repair thinking in the journal's stats view.",
+  "context": "Journal window, stats view. repair thinking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "189d5253d6229e70693ab6071d37bbd88a63070aba950ffccccbb7e719dc80f9",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

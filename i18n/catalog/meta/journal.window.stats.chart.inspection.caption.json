@@ -1,0 +1,23 @@
+{
+  "description": "chart inspection caption in the journal's stats view.",
+  "context": "Journal window, stats view. chart inspection caption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1d6392a138ab248fce1a44a819178c1e8148556080598d1b93ee266edb3e140",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

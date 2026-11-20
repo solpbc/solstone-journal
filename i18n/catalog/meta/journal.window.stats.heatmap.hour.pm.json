@@ -1,0 +1,28 @@
+{
+  "description": "heatmap hour pm in the journal's stats view.",
+  "context": "Journal window, stats view. heatmap hour pm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7fa14c866c53376a5ffa8a2ce6ff4de7cbe76ebe027cddf63940508c3a149afb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

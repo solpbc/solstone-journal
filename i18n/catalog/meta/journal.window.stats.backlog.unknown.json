@@ -1,0 +1,16 @@
+{
+  "description": "backlog unknown in the journal's stats view.",
+  "context": "Journal window, stats view. backlog unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acbb3830efb8bb6a8011137d07e53fd965d241c1bc657d81e7f5b7f8855b490d",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

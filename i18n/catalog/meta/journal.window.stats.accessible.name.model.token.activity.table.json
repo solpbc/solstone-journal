@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's stats view.",
+  "context": "Journal window, stats view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf795ce7b99570fdb7a8556cc6b059a59de9d89422985b46b55fd43ec98d4ecb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

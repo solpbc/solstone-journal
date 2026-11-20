@@ -1,0 +1,28 @@
+{
+  "description": "progress processed in the journal's stats view.",
+  "context": "Journal window, stats view. progress processed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11497016282928efde102c3b6326fb1e5240117cb1a12dba2a8a420ae4c58af4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

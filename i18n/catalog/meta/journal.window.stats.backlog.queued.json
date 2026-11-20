@@ -1,0 +1,16 @@
+{
+  "description": "backlog queued in the journal's stats view.",
+  "context": "Journal window, stats view. backlog queued.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5380272e4029e39d79080c1c076d9998e143a9130b57fdb3b9fe155fc5d52ed",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

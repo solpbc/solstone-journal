@@ -1101,7 +1101,7 @@ h1 {
 </style>
 
 <div class="dashboard" data-stats-url="/app/stats/api/stats">
-  <h1>stats</h1>
+  <h1>{{journal.window.stats.page.heading.stats}}</h1>
 
   <p id="statsFreshness" class="stats-freshness"></p>
 
@@ -1109,49 +1109,49 @@ h1 {
 
   <div id="loading">
     <div class="spinner"></div>
-    <p>loading dashboard data…</p>
+    <p>{{journal.window.stats.visible.text.loading.dashboard.data}}</p>
   </div>
 
   <div id="mainContent" style="display: none;">
     <div id="statsGridBlock">
-      <p class="stats-grid-scope">since your journal began</p>
+      <p class="stats-grid-scope">{{journal.window.stats.visible.text.since.your.journal.began}}</p>
       <div id="statsGrid" class="stats-grid"></div>
     </div>
     <div id="progressSection" class="progress-section"></div>
     <div id="repairSection"></div>
 
     <section class="chart-section token-card" id="tokens" data-token-card-state="loading" aria-labelledby="tokenActivityHeading">
-      <h2 id="tokenActivityHeading">token activity (last 30 days)</h2>
-      <p class="token-source-note">the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.</p>
-      <div id="statsDateNav" aria-label="selected token day"></div>
-      <p id="tokenCardStatus" class="token-card-status" role="status">loading token activity…</p>
+      <h2 id="tokenActivityHeading">{{journal.window.stats.section.heading.token.activity.last.days}}</h2>
+      <p class="token-source-note">{{journal.window.stats.visible.text.the.chart.shows.the.daily.summary}}</p>
+      <div id="statsDateNav" aria-label="{{journal.window.stats.accessible.name.selected.token.day}}"></div>
+      <p id="tokenCardStatus" class="token-card-status" role="status">{{journal.window.stats.visible.text.loading.token.activity}}</p>
       <div class="token-scroll-fade">
-        <div class="token-rollup" id="tokenRollup" aria-label="30-day token activity rollup"></div>
+        <div class="token-rollup" id="tokenRollup" aria-label="{{journal.window.stats.accessible.name.day.token.activity.rollup}}"></div>
       </div>
       <section class="token-detail" aria-labelledby="tokenDayHeading">
-        <h3 id="tokenDayHeading" tabindex="-1" aria-live="polite">selected day</h3>
+        <h3 id="tokenDayHeading" tabindex="-1" aria-live="polite">{{journal.window.stats.section.heading.selected.day}}</h3>
         <p id="tokenSummary"></p>
-        <div class="token-comparison" id="tokenTypeComparison" aria-label="generate and cogitate comparison"></div>
+        <div class="token-comparison" id="tokenTypeComparison" aria-label="{{journal.window.stats.accessible.name.generate.and.cogitate.comparison}}"></div>
 
-        <h4>providers</h4>
+        <h4>{{journal.window.stats.visible.text.providers}}</h4>
         <p class="token-table-note" data-token-note="providers" hidden></p>
         <div class="token-table-summary" data-token-summary="providers" hidden></div>
         <div class="token-scroll-fade" data-token-table-host="providers">
-          <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
+          <div class="token-table-scroll" tabindex="0" aria-label="{{journal.window.stats.accessible.name.provider.token.activity.table}}">
             <table id="tokenProviderTable">
-              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">token share</button></th></tr></thead>
+              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">{{journal.window.stats.button.label.provider}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">{{journal.window.stats.button.label.requests}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">{{journal.window.stats.button.label.tokens}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">{{journal.window.stats.button.label.cached}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">{{journal.window.stats.button.label.token.share}}</button></th></tr></thead>
               <tbody id="tokenProviders"></tbody>
             </table>
           </div>
         </div>
 
-        <h4>models</h4>
+        <h4>{{journal.window.stats.visible.text.models}}</h4>
         <p class="token-table-note" data-token-note="models" hidden></p>
         <div class="token-table-summary" data-token-summary="models" hidden></div>
         <div class="token-scroll-fade" data-token-table-host="models">
-          <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
+          <div class="token-table-scroll" tabindex="0" aria-label="{{journal.window.stats.accessible.name.model.token.activity.table}}">
             <table id="tokenModelTable">
-              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">token share</button></th></tr></thead>
+              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">{{journal.window.stats.button.label.model}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">{{journal.window.stats.button.label.provider}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">{{journal.window.stats.button.label.requests}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">{{journal.window.stats.button.label.tokens}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">{{journal.window.stats.button.label.cached}}</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">{{journal.window.stats.button.label.token.share}}</button></th></tr></thead>
               <tbody id="tokenModels"></tbody>
             </table>
           </div>
@@ -1160,26 +1160,26 @@ h1 {
     </section>
 
     <div class="chart-section">
-      <h2>audio and screen hours in your journal, per day</h2>
+      <h2>{{journal.window.stats.section.heading.audio.and.screen.hours.in.your}}</h2>
       <div class="chart" id="audioChart"></div>
     </div>
 
     <div class="chart-section" id="heatmapSection">
-      <h2>activity heatmap (since your journal began)</h2>
+      <h2>{{journal.window.stats.section.heading.activity.heatmap.since.your.journal.began}}</h2>
       <p class="heatmap-narrow-note" id="heatmapNarrowNote"></p>
       <div id="heatmap"></div>
     </div>
 
     <section class="chart-pair">
-      <p class="chart-pair-lede">the last 30 days, split two ways: by facet below, then by activity.</p>
+      <p class="chart-pair-lede">{{journal.window.stats.visible.text.the.last.days.split.two.ways}}</p>
 
       <div class="chart-section">
-        <h2>facets</h2>
+        <h2>{{journal.window.stats.section.heading.facets}}</h2>
         <div class="chart" id="facetsChart"></div>
       </div>
 
       <div class="chart-section">
-        <h2>activities</h2>
+        <h2>{{journal.window.stats.section.heading.activities}}</h2>
         <div class="chart" id="activitiesChart"></div>
       </div>
     </section>

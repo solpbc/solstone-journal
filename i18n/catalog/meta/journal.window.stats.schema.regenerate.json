@@ -1,0 +1,23 @@
+{
+  "description": "schema regenerate in the journal's stats view.",
+  "context": "Journal window, stats view. schema regenerate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed61243e7d6142cbb3d508ed0cbb928e7099641abe45c24b7459ad3b0b5dddfd",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

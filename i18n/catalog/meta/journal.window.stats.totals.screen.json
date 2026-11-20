@@ -1,0 +1,16 @@
+{
+  "description": "totals screen in the journal's stats view.",
+  "context": "Journal window, stats view. totals screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91a2ae1f4cdb237bea2f731cb7475a667d0b70e3f4e7587f77a23891ce74c7a3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

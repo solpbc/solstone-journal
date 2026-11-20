@@ -1,0 +1,16 @@
+{
+  "description": "chart hours accessible in the journal's stats view.",
+  "context": "Journal window, stats view. chart hours accessible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb1fd5b36f4f8b1e462c58c0f9cd969375b54e27aedaf2a141d261ef5bd07c8f",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

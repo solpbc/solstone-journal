@@ -1,0 +1,16 @@
+{
+  "description": "backlog reason sensed in the journal's stats view.",
+  "context": "Journal window, stats view. backlog reason sensed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e517c0d44acb3ea3c5416cebc8cef67a153f1a04460058bc8828e9e899f82966",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

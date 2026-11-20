@@ -1,0 +1,21 @@
+{
+  "description": "tokens share in the journal's stats view.",
+  "context": "Journal window, stats view. tokens share.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "percent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e43c046acb1e75ccf5cf64cac02a1725128bbab011816bbcf3020bfd2c26cfe",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

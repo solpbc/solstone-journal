@@ -1,0 +1,42 @@
+{
+  "description": "tokens requests and tokens in the journal's stats view.",
+  "context": "Journal window, stats view. tokens requests and tokens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "requests",
+      "type": "string"
+    },
+    {
+      "name": "tokens",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ca5795d56f30a45e09285e51680b3e21370b45082878822ba8fbe3837bd933e",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "repair detail in the journal's stats view.",
+  "context": "Journal window, stats view. repair detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c9406bb43a9285ff72d0a325e95b6c69bc1fcd0e088c5099971c77d1789702f",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "freshness in the journal's stats view.",
+  "context": "Journal window, stats view. freshness.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "290d49d356fa0499f655b5ce43fa9085c72d89f21d301b345cdd5239b58e00df",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}
