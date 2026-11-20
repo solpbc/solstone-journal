@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm erase import count.",
+  "context": "Journal window. Settings window. trash confirm erase import count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dad55f54e84dab9c4d4685b53867ea9e85da5bc98c0ab40c7f7fdf7d95f3c526",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. storage mark blocked count.",
+  "context": "Journal window. Settings window. storage mark blocked count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cba2cdeb8c728147a65a9a4086bcca643045cfc522e45e5f3e5a9959da1e4381",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

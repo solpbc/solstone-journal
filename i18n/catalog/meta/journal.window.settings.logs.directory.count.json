@@ -1,0 +1,30 @@
+{
+  "description": "Journal window. Settings logs directory count.",
+  "context": "Journal window. Journal window. Settings logs directory count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c1374f73e60868c6765e0e85fc7da3289cc8afb107023f6898e863a37f6d1cba",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

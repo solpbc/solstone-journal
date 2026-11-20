@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash erase day.",
+  "context": "Journal window. Settings window. trash erase day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "erase_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c46c89fff91208624d5e4f5e24e5299b6c7cd4011d4a475bf2689ba9b8043e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

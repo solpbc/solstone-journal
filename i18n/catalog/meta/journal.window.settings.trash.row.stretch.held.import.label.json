@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash row stretch held import label.",
+  "context": "Journal window. Settings window. trash row stretch held import label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9000cb09f60a3930d978bff939505d66b14f20295ad10c14d2f5b18dc12cf25",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

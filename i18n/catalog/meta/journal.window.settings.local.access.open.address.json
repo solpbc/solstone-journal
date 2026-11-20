@@ -1,0 +1,28 @@
+{
+  "description": "Settings window. local access open address.",
+  "context": "Journal window. Settings window. local access open address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "journal_address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a7904d7c38e82bb37aa4d4c45c045f18344806373828754ce68cec177783508b",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

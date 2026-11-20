@@ -1,0 +1,16 @@
+{
+  "description": "Settings window. storage warning no automatic removal.",
+  "context": "Journal window. Settings window. storage warning no automatic removal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa17e50bdf008c1e8e7e1bf785d0f9f62705e1287a7e13ea9bcd57621734c987",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

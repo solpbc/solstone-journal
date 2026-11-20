@@ -1,0 +1,21 @@
+{
+  "description": "Settings Granola key instructions. Each named element contains the exact Granola label or key prefix.",
+  "context": "Journal window. Settings Granola key instructions. Each named element contains the exact Granola label or key prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "settings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5bcd3f0b33def8ea7755205ebfd7680a9c17dd1d6c3eb20c401f0af7c0eb7b8a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. removal history group detected entities count.",
+  "context": "Journal window. Settings window. removal history group detected entities count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6d92240383c1e9d1af4286aeec6a7042efaaed8398ee0977d30ee14cd2b7c509",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

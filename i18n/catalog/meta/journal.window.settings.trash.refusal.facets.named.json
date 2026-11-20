@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash refusal facets named.",
+  "context": "Journal window. Settings window. trash refusal facets named.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9e7c35127f462aef22b825d8cf044239d9d4ea91e25ffd847e448a568c8cc448",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

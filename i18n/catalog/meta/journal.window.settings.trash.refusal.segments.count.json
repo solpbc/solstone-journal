@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash refusal segments count.",
+  "context": "Journal window. Settings window. trash refusal segments count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c52f7ca19304492a3d99a0c4211df9fd6e77d2819497df4a185b4aeaa865b126",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

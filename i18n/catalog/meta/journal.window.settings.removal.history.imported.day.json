@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. removal history imported day.",
+  "context": "Journal window. Settings window. removal history imported day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "imported_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4c472b4ca5f3d4f3c2a877cf663e7b2b17f9bb02d3ba4f2c133d126c21a68d4d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

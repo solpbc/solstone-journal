@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. removal history group facet file count.",
+  "context": "Journal window. Settings window. removal history group facet file count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6b9f9e6ae742712c5ecfe09a5dd872f42a3d71797df8187b466a65d25fe46869",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

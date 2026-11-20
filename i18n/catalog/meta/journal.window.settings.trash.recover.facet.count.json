@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover facet count.",
+  "context": "Journal window. Settings window. trash recover facet count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dc1567a2cf3cfecb1b7c5ad839541870b7e0d6d8405dc2a46a3ac96eb0a109cf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

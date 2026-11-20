@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover entity count.",
+  "context": "Journal window. Settings window. trash recover entity count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9d4735ef7e1fdc00b6a627b7cfdc0f62e6cf697283e616305cbdfd5c2a0472c3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

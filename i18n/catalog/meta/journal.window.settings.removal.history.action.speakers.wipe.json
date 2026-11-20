@@ -1,0 +1,76 @@
+{
+  "description": "Settings window. removal history action speakers wipe.",
+  "context": "Journal window. Settings window. removal history action speakers wipe.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "presentation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "d83713ea5439cce6f1a63ec5e52da8db86c17994c69f1f55f829f6ac0ede5642",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "presentation",
+    "type": "string",
+    "enum_values": [
+      "none-plain",
+      "none-erasing",
+      "none-except",
+      "none-both",
+      "transcripts-plain",
+      "transcripts-erasing",
+      "transcripts-except",
+      "transcripts-both",
+      "body-plain",
+      "body-erasing",
+      "body-except",
+      "body-both",
+      "import-plain",
+      "import-erasing",
+      "import-except",
+      "import-both",
+      "entities-plain",
+      "entities-erasing",
+      "entities-except",
+      "entities-both",
+      "settings-plain",
+      "settings-erasing",
+      "settings-except",
+      "settings-both",
+      "home-plain",
+      "home-erasing",
+      "home-except",
+      "home-both",
+      "backup-plain",
+      "backup-erasing",
+      "backup-except",
+      "backup-both",
+      "agents-plain",
+      "agents-erasing",
+      "agents-except",
+      "agents-both",
+      "activities-plain",
+      "activities-erasing",
+      "activities-except",
+      "activities-both",
+      "speakers-plain",
+      "speakers-erasing",
+      "speakers-except",
+      "speakers-both",
+      "cli-plain",
+      "cli-erasing",
+      "cli-except",
+      "cli-both"
+    ],
+    "enum_default": "none-plain"
+  }
+}

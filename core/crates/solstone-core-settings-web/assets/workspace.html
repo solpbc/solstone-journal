@@ -2848,10 +2848,10 @@ button:focus:not(:focus-visible) {
               <p>{{journal.window.settings.visible.text.api.access.comes.with.granola.business}}</p>
               <ol>
                 <li>{{journal.window.settings.visible.text.open.the.granola.app.on.your}}</li>
-                <li>{{journal.window.settings.visible.text.click.your.workspace.name.at.the}} <strong>Settings</strong>.</li>
-                <li>{{journal.window.settings.visible.text.choose}} <strong>Connectors</strong>{{journal.window.settings.visible.text.then}} <strong>Personal API keys</strong> {{journal.window.settings.visible.text.under.api}}</li>
-                <li>{{journal.window.settings.visible.text.click}} <strong>Create new key</strong>{{journal.window.settings.visible.text.tick}} <strong>Personal notes</strong>{{journal.window.settings.visible.text.and.click}} <strong>Generate API Key</strong>.</li>
-                <li>{{journal.window.settings.visible.text.copy.the.key.which.starts.with}} <code>grn_</code>{{journal.window.settings.visible.text.and.paste.it.below}}</li>
+                <li data-granola-guide="journal.window.settings.granola.guide.settings"><strong data-inline="settings">Settings</strong></li>
+                <li data-granola-guide="journal.window.settings.granola.guide.connectors"><strong data-inline="connectors">Connectors</strong><strong data-inline="personal_keys">Personal API keys</strong></li>
+                <li data-granola-guide="journal.window.settings.granola.guide.create.key"><strong data-inline="create_key">Create new key</strong><strong data-inline="personal_notes">Personal notes</strong><strong data-inline="generate_key">Generate API Key</strong></li>
+                <li data-granola-guide="journal.window.settings.granola.guide.paste.key"><code data-inline="key_prefix">grn_</code></li>
               </ol>
               <p>{{!journal.window.settings.visible.text.personal.notes.covers.the.notes.you}}</p>
             </div>
@@ -2903,7 +2903,7 @@ button:focus:not(:focus-visible) {
         </div>
 
         <p id="plaudSyncTokenNote" style="display: none; color: var(--ink-faint); font-size: 0.85em; margin-top: 1em; padding: 0.75em; background: var(--cream-bright); border-radius: 4px;">
-          {{journal.window.settings.visible.text.configure.your.plaud.token.in}} <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-text-aa);">{{journal.window.settings.link.label.api.keys}}</a> {{journal.window.settings.visible.text.to.enable.sync}}
+          <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-text-aa);"></a>
         </p>
       </div>
 
@@ -3436,7 +3436,6 @@ button:focus:not(:focus-visible) {
   let settingsListHooks = null;
 
 const FACET_DELETE_COPY = {
-  noun: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.noun.facet'),
   button: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.button.delete.this.facet'),
   last: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.last.your.journal.needs.at.least.one'),
   move: {
@@ -3475,13 +3474,13 @@ const FACET_DELETE_COPY = {
     last_facet: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.last.facet.your.journal.needs.at.least.one'),
   },
   receipt: {
-    moved: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.erases.date.unless.you.recover.it') },
-    recovered: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.noun.recovered'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.back.in.your.journal') },
-    erased: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.noun.erased.from.your.journal') },
-    recoverFailed: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.the.trash') },
+    moved: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash') },
+    recovered: { title: window.JournalI18n.render('journal.window.settings.facet.receipt.recovered'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.back.in.your.journal') },
+    erased: { title: window.JournalI18n.render('journal.window.settings.facet.receipt.erased') },
+    recoverFailed: { title: window.JournalI18n.render('journal.window.settings.facet.receipt.recover.failed'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.the.trash') },
     moveRefused: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal') },
-    eraseRefused: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal') },
-    eraseFailed: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.in.the.trash.you') },
+    eraseRefused: { title: window.JournalI18n.render('journal.window.settings.facet.receipt.erase.failed'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal') },
+    eraseFailed: { title: window.JournalI18n.render('journal.window.settings.facet.receipt.erase.failed'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.s.in.the.trash.you') },
     noAnswerMove: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.in.the') },
     noAnswerErase: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload') },
     noAnswerRecover: { title: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in') },
@@ -3489,10 +3488,6 @@ const FACET_DELETE_COPY = {
 };
 
 const FACET_RECEIPT_LIFE = 10000;
-
-function facetDeleteFill(template, values = {}) {
-  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
-}
 
 // The erase date on the journal's own clock, worded as the trash page words it.
 function facetEraseDate(eraseAt) {
@@ -3509,17 +3504,16 @@ function facetEraseDate(eraseAt) {
     if (!window.solRouter?.navigate?.('/app/settings/#trash')) window.location.href = '/app/settings#trash';
   }
 
-function facetReceipt(copy, fill = {}, buttons = [], options = {}) {
+function facetReceipt(copy, buttons = [], options = {}) {
   if (!window.AppServices || !window.AppServices.notifications) return;
-  const put = text => facetDeleteFill(text, { noun: FACET_DELETE_COPY.noun, ...fill });
   const notice = {
     app: 'settings',
     icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
-    title: put(copy.title),
+    title: copy.title,
     dismissible: true,
     buttons,
   };
-  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+  const message = options.message !== undefined ? options.message : copy.message;
   if (message) notice.message = message;
   // A refused or failed card stays until the owner dismisses it.
   if (options.settled) notice.autoDismiss = FACET_RECEIPT_LIFE;
@@ -3538,17 +3532,17 @@ function showFacetReceipt(outcome, erase, clause = '') {
   switch (outcome.kind) {
     case 'moved': {
       const date = facetEraseDate(outcome.eraseAt);
-      facetReceipt(R.moved, { date }, [
+      facetReceipt(R.moved, [
         { label: FACET_DELETE_COPY.buttons.recover, onClick: () => recoverFacet(outcome.trashId) },
         facetOpenTrashButton(),
-      ], { settled: true, message: date ? undefined : '' });
+      ], { settled: true, message: date ? window.JournalI18n.render('journal.window.settings.facet.receipt.erase.date', [['erase_day', date]]) : '' });
       return;
     }
     case 'erased':
-      facetReceipt(R.erased, {}, [], clause ? { settled: true, message: clause } : { settled: true });
+      facetReceipt(R.erased, [], clause ? { settled: true, message: clause } : { settled: true });
       return;
     case 'eraseFailed':
-      facetReceipt(R.eraseFailed, {}, [facetOpenTrashButton()]);
+      facetReceipt(R.eraseFailed, [facetOpenTrashButton()]);
       return;
     case 'refused': {
       const fallback = erase ? R.eraseRefused : R.moveRefused;
@@ -3582,9 +3576,9 @@ async function recoverFacet(trashId) {
   }
   if (settingsListHooks) await settingsListHooks.reloadFacets();
   if (Array.isArray(data && data.done) && data.done.includes(trashId)) {
-    facetReceipt(R.recovered, {}, [], { settled: true, icon: 'undo-2' });
+    facetReceipt(R.recovered, [], { settled: true, icon: 'undo-2' });
   } else {
-    facetReceipt(R.recoverFailed, {}, [facetOpenTrashButton()]);
+    facetReceipt(R.recoverFailed, [facetOpenTrashButton()]);
   }
 }
   // ========== END FACET RECEIPT ==========
@@ -3620,6 +3614,20 @@ function settingsGoneAll(selector) {
 }
 function settingsGoneOne(selector) {
   return settingsGoneAll(selector)[0] || null;
+}
+
+for (const step of document.querySelectorAll('[data-granola-guide]')) {
+  const fixed = Object.fromEntries(Array.from(step.children, item => [item.dataset.inline, item]));
+  step.replaceChildren(...window.JournalI18n.renderMarkup(step.dataset.granolaGuide, [], { fixed }));
+}
+const plaudKeysLink = document.getElementById('plaudApiKeysLink');
+if (plaudKeysLink?.parentElement?.id === 'plaudSyncTokenNote') {
+  const note = plaudKeysLink.parentElement;
+  const beforeLink = note.firstChild;
+  const afterLink = note.lastChild;
+  note.replaceChildren(beforeLink, ...window.JournalI18n.renderMarkup(
+    'journal.window.settings.plaud.guide.token.link', [], { elements: { keys: plaudKeysLink } }
+  ), afterLink);
 }
 
 // Every timer is the mount's, and goes with it. A frame asked for while
@@ -5901,7 +5909,7 @@ function switchTranscribeBackend(backend, config) {
     const envKey = backendInfo.env_key;
     // Show warning if backend requires API key and it's not configured
     if (envKey && !transcribeApiKeys[backend]) {
-      warningText.textContent = window.JournalI18n.render('journal.window.settings.visible.text.value1.not.configured', [['value1', String(envKey)]]);
+      warningText.textContent = window.JournalI18n.render('journal.window.settings.credentials.environment.unconfigured', [['environment_variable', String(envKey)]]);
       warning.style.display = 'flex';
     } else {
       warning.style.display = 'none';
@@ -5989,9 +5997,7 @@ function renderOwnerVoice() {
   const count = document.getElementById('ownerVoiceCount');
   if (count && on && status && recordings > 0) {
     const duration = window.JournalFormat.duration(ownerVoice.today.left_out_s);
-    count.textContent = recordings === 1
-      ? window.JournalI18n.render('journal.window.settings.visible.text.speech.left.out.today.value1.across', [['value1', String(duration)]])
-      : window.JournalI18n.render('journal.window.settings.visible.text.speech.left.out.today.value1.across.variant2', [['value1', String(duration)], ['value2', String(recordings)]]);
+    count.textContent = window.JournalI18n.render('journal.window.settings.speech.left.out.recording.count', [['quantity', window.JournalI18n.cardinalQuantity(recordings)], ['duration', String(duration)], ['recordings', String(recordings)]]);
   }
   show('ownerVoiceCount', on && status && recordings > 0);
   show('ownerVoiceNone', on && status && ownerVoice.available && recordings === 0);
@@ -6409,20 +6415,17 @@ function granolaRelative(iso) {
   if (Number.isNaN(then.getTime())) return '';
   const minutes = Math.floor((Date.now() - then.getTime()) / 60000);
   if (minutes < 1) return window.JournalI18n.render('journal.window.settings.settings.description.just.now');
-  if (minutes < 60) return window.JournalI18n.render('journal.window.settings.settings.description.value1.min.ago', [['value1', String(minutes)]]);
+  if (minutes < 60) return window.JournalI18n.render('journal.window.settings.granola.clock.minutes.ago', [['quantity', window.JournalI18n.cardinalQuantity(minutes)], ['minutes', String(minutes)]]);
   const hours = Math.floor(minutes / 60);
   const today = new Date();
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(then, today) || hours < 12) return hours === 1 ? window.JournalI18n.render('journal.window.settings.settings.description.hour.ago') : window.JournalI18n.render('journal.window.settings.settings.description.value1.hours.ago', [['value1', String(hours)]]);
+  if (sameDay(then, today) || hours < 12) return window.JournalI18n.render('journal.window.settings.granola.clock.hours.ago', [['quantity', window.JournalI18n.cardinalQuantity(hours)], ['hours', String(hours)]]);
   if (sameDay(then, yesterday)) return 'yesterday';
   const month = then.toLocaleString('en-US', { month: 'long' }).toLowerCase();
   return then.getFullYear() === today.getFullYear()
     ? `${month} ${then.getDate()}`
     : `${month} ${then.getDate()}, ${then.getFullYear()}`;
-}
-function granolaMeetings(n) {
-  return n === 1 ? window.JournalI18n.render('journal.window.settings.settings.description.meeting') : `${n} meetings`;
 }
 function granolaMode(data) {
   if (!data.connected) return data.meetings > 0 ? 'off' : 'ready';
@@ -6487,7 +6490,7 @@ function renderGranola() {
   if (mode === 'setting-up') {
     granolaText(progress, data.syncing
       ? (data.meetings > 0
-        ? window.JournalI18n.render('journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola.variant2', [['value1', String(granolaMeetings(data.meetings))]])
+        ? window.JournalI18n.render('journal.window.settings.granola.progress.intro') + ' ' + window.JournalI18n.render('journal.window.settings.granola.progress.meeting.count', [['quantity', window.JournalI18n.cardinalQuantity(data.meetings)], ['meetings', String(data.meetings)]])
         : window.JournalI18n.render('journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola'))
       : window.JournalI18n.render('journal.window.settings.settings.feedback.your.journal.will.bring.in.your'));
   }
@@ -6496,7 +6499,7 @@ function renderGranola() {
   if (mode === 'attention') {
     granolaText(granolaEl('granolaAttentionReason'), data.attention);
     granolaText(granolaEl('granolaAttentionKept'), data.meetings > 0
-      ? window.JournalI18n.render('journal.window.settings.settings.feedback.the.value1.already.in.your.journal', [['value1', String(granolaMeetings(data.meetings))], ['value2', String(data.meetings === 1 ? window.JournalI18n.render('journal.window.settings.granola.stays.one') : window.JournalI18n.render('journal.window.settings.granola.stays.many'))]])
+      ? window.JournalI18n.render('journal.window.settings.granola.attention.meeting.count', [['quantity', window.JournalI18n.cardinalQuantity(data.meetings)], ['meetings', String(data.meetings)]])
       : window.JournalI18n.render('journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed'));
   }
 
@@ -6531,7 +6534,7 @@ function renderGranola() {
   const offKept = granolaEl('granolaOffKept');
   granolaHidden(offKept, mode !== 'off');
   if (mode === 'off') {
-    granolaText(offKept, window.JournalI18n.render('journal.window.settings.settings.feedback.disconnected.the.value1.from.granola.value2', [['value1', String(granolaMeetings(data.meetings))], ['value2', String(data.meetings === 1 ? window.JournalI18n.render('journal.window.settings.granola.stays.one') : window.JournalI18n.render('journal.window.settings.granola.stays.many'))]]));
+    granolaText(offKept, [window.JournalI18n.render('journal.window.settings.granola.disconnected.status'), window.JournalI18n.render('journal.window.settings.granola.disconnected.meeting.count', [['quantity', window.JournalI18n.cardinalQuantity(data.meetings)], ['meetings', String(data.meetings)]]), window.JournalI18n.render('journal.window.settings.granola.disconnected.reconnect')].join(' '));
   }
 
   // A refused key is the one fault whose fix is a new key, so the field opens for it.
@@ -7659,13 +7662,12 @@ function deriveRetention(daysValue, dontRetain, keepEmptyAudio) {
   }
   const n = parseInt(daysValue, 10);
   if (Number.isFinite(n) && n >= 1) {
-    const unit = n === 1 ? window.JournalI18n.render('journal.window.settings.storage.day') : window.JournalI18n.render('journal.window.settings.storage.days');
     return {
       mode: 'days',
       days: n,
       statusText: keepEmptyAudio
-        ? window.JournalI18n.render('journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant3', [['value1', String(n)], ['value2', String(unit)]])
-        : window.JournalI18n.render('journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant4', [['value1', String(n)], ['value2', String(unit)]]),
+        ? window.JournalI18n.render('journal.window.settings.retention.originals.after.days.except.silent.audio', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['days', String(n)]])
+        : window.JournalI18n.render('journal.window.settings.retention.originals.after.days.include.silent.audio', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['days', String(n)]]),
     };
   }
   return {
@@ -7765,7 +7767,12 @@ function populateStorageMeasurement(data) {
   document.getElementById('storageSummaryDerived').textContent = s.derived_human;
   document.getElementById('storageSummarySegments').textContent = Number(s.total_segments).toLocaleString();
   document.getElementById('storageSummaryDetail').textContent =
-    Number(s.segments_with_raw).toLocaleString() + window.JournalI18n.render('journal.window.settings.visible.text.with.raw.media') + Number(s.segments_purged).toLocaleString() + window.JournalI18n.render('journal.window.settings.visible.text.purged');
+    window.JournalI18n.render('journal.window.settings.storage.media.summary', [
+      ['quantity', window.JournalI18n.cardinalQuantity(Number(s.segments_with_raw))],
+      ['raw_segments', Number(s.segments_with_raw).toLocaleString()],
+      ['purged_quantity', window.JournalI18n.cardinalQuantity(Number(s.segments_purged))],
+      ['purged_segments', Number(s.segments_purged).toLocaleString()]
+    ]);
 
 }
 
@@ -7938,7 +7945,7 @@ function updateLogRetentionUI() {
   const days = parseInt(daysInput.value, 10);
   const validDays = Number.isFinite(days) && days >= 1;
   statusEl.textContent = enabled
-    ? window.JournalI18n.render('journal.window.settings.visible.text.currently.keep.operational.logs.value1.days', [['value1', String(validDays ? days : 30)]])
+    ? window.JournalI18n.render('journal.window.settings.retention.logs.keep.days', [['quantity', window.JournalI18n.cardinalQuantity(validDays ? days : 30)], ['days', String(validDays ? days : 30)]])
     : window.JournalI18n.render('journal.window.settings.visible.text.currently.keep.operational.logs.indefinitely');
   daysField.classList.toggle('is-disabled', !enabled);
   daysInput.disabled = !enabled;
@@ -8135,16 +8142,16 @@ async function runCleanupMark() {
     if (!marked.length && !held.length && !noMedia.length && !notEligible.length && !unreadableDays.length) {
       const standingTotal = result.standing_total || 0;
       previewText.textContent = standingTotal
-        ? window.JournalI18n.render('journal.window.settings.visible.text.nothing.new.to.add.to.the.variant2', [['value1', String(standingTotal)]])
+        ? window.JournalI18n.render('journal.window.settings.storage.mark.unchanged.total', [['listed_originals', String(standingTotal)]])
         : window.JournalI18n.render('journal.window.settings.visible.text.nothing.new.to.add.to.the');
     } else {
       const details = [
         window.JournalI18n.render('journal.window.settings.storage.mark.new', [['count', String(marked.length)]]),
         window.JournalI18n.render('journal.window.settings.storage.mark.total', [['count', String(result.standing_total || 0)]]),
       ];
-      if (held.length) details.push(held.length === 1 ? window.JournalI18n.render('journal.window.settings.storage.mark.blocked.one', [['count', String(held.length)]]) : window.JournalI18n.render('journal.window.settings.storage.mark.blocked.many', [['count', String(held.length)]]));
-      if (noMedia.length) details.push(noMedia.length === 1 ? window.JournalI18n.render('journal.window.settings.storage.mark.no.media.one', [['count', String(noMedia.length)]]) : window.JournalI18n.render('journal.window.settings.storage.mark.no.media.many', [['count', String(noMedia.length)]]));
-      if (notEligible.length) details.push(notEligible.length === 1 ? window.JournalI18n.render('journal.window.settings.storage.mark.not.ready.one', [['count', String(notEligible.length)]]) : window.JournalI18n.render('journal.window.settings.storage.mark.not.ready.many', [['count', String(notEligible.length)]]));
+      if (held.length) details.push(window.JournalI18n.render('journal.window.settings.storage.mark.blocked.count', [['quantity', window.JournalI18n.cardinalQuantity(held.length)], ['count', String(held.length)]]));
+      if (noMedia.length) details.push(window.JournalI18n.render('journal.window.settings.storage.mark.no.media.count', [['quantity', window.JournalI18n.cardinalQuantity(noMedia.length)], ['count', String(noMedia.length)]]));
+      if (notEligible.length) details.push(window.JournalI18n.render('journal.window.settings.storage.mark.not.ready.count', [['quantity', window.JournalI18n.cardinalQuantity(notEligible.length)], ['count', String(notEligible.length)]]));
       if (unreadableDays.length) details.push(window.JournalI18n.render('journal.window.settings.storage.mark.days', [['days', String(unreadableDays.join(', '))]]));
       previewText.textContent = details.join(' ');
     }
@@ -8202,10 +8209,10 @@ function logCleanupClassLabel(name) {
 
 function renderLogCleanupStats(stats, includeSkipped) {
   const parts = [];
-  if (stats.files_deleted) parts.push(window.JournalI18n.render('journal.window.settings.logs.files', [['count', String(stats.files_deleted)]]));
-  if (stats.dirs_deleted) parts.push(window.JournalI18n.render('journal.window.settings.logs.directories', [['count', String(stats.dirs_deleted)]]));
+  if (stats.files_deleted) parts.push(window.JournalI18n.render('journal.window.settings.logs.file.count', [['quantity', window.JournalI18n.cardinalQuantity(stats.files_deleted)], ['count', String(stats.files_deleted)]]));
+  if (stats.dirs_deleted) parts.push(window.JournalI18n.render('journal.window.settings.logs.directory.count', [['quantity', window.JournalI18n.cardinalQuantity(stats.dirs_deleted)], ['count', String(stats.dirs_deleted)]]));
   if (stats.bytes_freed) parts.push(stats.bytes_freed + ' B');
-  if (includeSkipped && stats.skipped) parts.push(window.JournalI18n.render('journal.window.settings.logs.skipped', [['count', String(stats.skipped)]]));
+  if (includeSkipped && stats.skipped) parts.push(window.JournalI18n.render('journal.window.settings.logs.skipped.count', [['quantity', window.JournalI18n.cardinalQuantity(stats.skipped)], ['count', String(stats.skipped)]]));
   return parts.length ? parts.join(', ') : window.JournalI18n.render('journal.window.settings.logs.no.deletions');
 }
 
@@ -8216,7 +8223,6 @@ function renderLogCleanupResult(result, phase) {
 
   const totalWork = logCleanupHasWork(result);
   const fileDirWork = ((result.files_deleted || 0) + (result.dirs_deleted || 0)) > 0;
-  const actionText = phase === 'preview' ? window.JournalI18n.renderHtml('journal.window.settings.settings.content.would.be.deleted') : window.JournalI18n.renderHtml('journal.window.settings.logs.deleted');
   const heading = phase === 'preview' ? window.JournalI18n.renderHtml('journal.window.settings.logs.preview') : window.JournalI18n.renderHtml('journal.window.settings.settings.content.cleanup.complete');
   let html = `<div style="font-weight: 600; margin-bottom: 0.5em;">${heading}</div>`;
 
@@ -8224,13 +8230,24 @@ function renderLogCleanupResult(result, phase) {
     html += `<p>${window.JournalI18n.renderHtml('journal.window.settings.visible.text.no.operational.logs.to.clean.up')}</p>`;
   } else if (fileDirWork) {
     const fileBytes = Object.values(result.by_class || {}).reduce((sum, stats) => sum + (stats.bytes_freed || 0), 0);
-    html += `<p>${result.files_deleted || 0} ${window.JournalI18n.renderHtml('journal.window.settings.visible.text.operational.log.file.s.and')} ${result.dirs_deleted || 0} ${window.JournalI18n.renderHtml('journal.window.settings.visible.text.cache.dir.s')}${fileBytes} B) ${actionText}.</p>`;
+    const id = phase === 'preview' ? 'journal.window.settings.logs.preview.file.and.directory.count' : 'journal.window.settings.logs.result.file.and.directory.count';
+    const files = result.files_deleted || 0;
+    const directories = result.dirs_deleted || 0;
+    html += `<p>${window.JournalI18n.renderHtml(id, [
+      ['quantity', window.JournalI18n.cardinalQuantity(files)],
+      ['directory_quantity', window.JournalI18n.cardinalQuantity(directories)],
+      ['files', String(files)], ['directories', String(directories)], ['bytes', String(fileBytes)]
+    ])}</p>`;
   }
 
   const retentionStats = result.retention_log || {};
   if (retentionStats.lines_removed) {
     const retentionBytes = retentionStats.bytes_freed || 0;
-    html += `<p>${retentionStats.lines_removed} ${window.JournalI18n.renderHtml('journal.window.settings.visible.text.retention.log.line.s')} ${phase === 'preview' ? window.JournalI18n.renderHtml('journal.window.settings.visible.text.would.be.compacted') : window.JournalI18n.renderHtml('journal.window.settings.visible.text.compacted')} (${retentionBytes} B).</p>`;
+    const id = phase === 'preview' ? 'journal.window.settings.logs.preview.retention.compacted.count' : 'journal.window.settings.logs.result.retention.compacted.count';
+    html += `<p>${window.JournalI18n.renderHtml(id, [
+      ['quantity', window.JournalI18n.cardinalQuantity(retentionStats.lines_removed)],
+      ['lines', String(retentionStats.lines_removed)], ['bytes', String(retentionBytes)]
+    ])}</p>`;
   }
 
   const classRows = Object.entries(result.by_class || {})
@@ -8483,7 +8500,7 @@ function renderLocalAccess(state) {
     document.getElementById('localAccessDesc').textContent = window.JournalI18n.render('journal.window.settings.visible.text.whether.other.accounts.and.programs.on.variant2');
   }
   document.getElementById('localAccessState').textContent = state.open
-    ? window.JournalI18n.renderEnglish('journal.window.settings.visible.text.open.anyone.using.this.computer.and', [['value1', String(window.location.host)]])
+    ? window.JournalI18n.renderEnglish('journal.window.settings.local.access.open.address', [['journal_address', String(window.location.host)]])
     : state.account_check
       ? window.JournalI18n.render('journal.window.settings.visible.text.closed.only.your.account.on.this')
       : window.JournalI18n.render('journal.window.settings.visible.text.closed.to.open.your.journal.in');
@@ -8519,7 +8536,7 @@ async function showCloseLocalAccess() {
     intro.textContent = window.JournalI18n.renderEnglish('journal.window.settings.visible.text.nothing.on.this.computer.has.reached');
   }
   const bookmarks = document.createElement('p');
-  bookmarks.textContent = window.JournalI18n.renderEnglish('journal.window.settings.visible.text.a.bookmark.to.value1.shows.a', [['value1', String(window.location.host)]]);
+  bookmarks.textContent = window.JournalI18n.renderEnglish('journal.window.settings.local.access.bookmark.address', [['journal_address', String(window.location.host)]]);
   detail.append(bookmarks, paired);
   showLocalAccessConfirm(window.JournalI18n.renderEnglish('journal.window.settings.consent.settings.feedback.close.local.access.to.this.computer'), window.JournalI18n.renderEnglish('journal.window.settings.consent.settings.feedback.close.local.access'), window.JournalI18n.renderEnglish('journal.window.settings.consent.settings.feedback.keep.it.open'), false);
 }
@@ -8608,35 +8625,39 @@ const REMOVAL_COPY = {
   error: window.JournalI18n.render('journal.window.settings.removal.copy.error.couldn.t.load.your.removal.history'),
   empty: window.JournalI18n.render('journal.window.settings.removal.copy.empty.nothing.has.been.removed.since.your'),
   footAll: window.JournalI18n.render('journal.window.settings.removal.copy.footall.anything.removed.before.your.journal.started'),
-  footSome: window.JournalI18n.render('journal.window.settings.removal.copy.footsome.showing.the.newest.shown.of.total'),
   nameNotKept: window.JournalI18n.render('journal.window.settings.removal.copy.namenotkept.its.name.isn.t.kept'),
-  mixed: window.JournalI18n.render('journal.window.settings.removal.copy.mixed.n.things'),
-  erasedOnItsDate: window.JournalI18n.render('journal.window.settings.removal.copy.erasedonitsdate.erased.on.its.date'),
-  // A recover's how-line, with what it erased in its way or couldn't put back.
-  foldErasing: window.JournalI18n.render('journal.window.settings.removal.copy.folderasing.how.erasing.what.was.in.the'),
-  foldExcept: window.JournalI18n.render('journal.window.settings.removal.copy.foldexcept.how.except.notes.in.facets.no'),
-  foldBoth: window.JournalI18n.render('journal.window.settings.removal.copy.foldboth.how.erasing.what.was.in.the'),
 };
 // A move into, out of or through the trash reads by what happened, not by why.
-const REMOVAL_EVENT = { trashed: window.JournalI18n.render('journal.window.settings.removal.event.trashed.moved.to.the.trash'), recovered: window.JournalI18n.render('journal.window.settings.removal.event.recovered.recovered'), erased: window.JournalI18n.render('journal.window.settings.removal.event.erased.erased') };
-const REMOVAL_KIND = {
-  segment: [window.JournalI18n.render('journal.window.settings.removal.kind.segment.segment'), window.JournalI18n.render('journal.window.settings.removal.kind.segment.segments')],
-  original: [window.JournalI18n.render('journal.window.settings.removal.kind.original.original.media'), window.JournalI18n.render('journal.window.settings.removal.kind.original.originals')],
-  originals: [window.JournalI18n.render('journal.window.settings.removal.kind.originals.original.media'), window.JournalI18n.render('journal.window.settings.removal.kind.originals.original.media')],
-  memory: [window.JournalI18n.render('journal.window.settings.removal.kind.memory.memory.an.agent.saved'), window.JournalI18n.render('journal.window.settings.removal.kind.memory.memories.agents.saved')],
-  workout: [window.JournalI18n.render('journal.window.settings.removal.kind.workout.workout'), window.JournalI18n.render('journal.window.settings.removal.kind.workout.workouts')],
-  import: [window.JournalI18n.render('journal.window.settings.removal.kind.import.import'), window.JournalI18n.render('journal.window.settings.removal.kind.import.imports')],
-  entity: [window.JournalI18n.render('journal.window.settings.removal.kind.entity.entity'), window.JournalI18n.render('journal.window.settings.removal.kind.entity.entities')],
-  facet: [window.JournalI18n.render('journal.window.settings.removal.kind.facet.facet'), window.JournalI18n.render('journal.window.settings.removal.kind.facet.facets')],
-  detected_entities: [window.JournalI18n.render('journal.window.settings.removal.kind.detected.entities.detected.entity'), window.JournalI18n.render('journal.window.settings.removal.kind.detected.entities.detected.entities')],
-  facet_file: [window.JournalI18n.render('journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge'), window.JournalI18n.render('journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge')],
-  speakers: [window.JournalI18n.render('journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices'), window.JournalI18n.render('journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices')],
-  backup: [window.JournalI18n.render('journal.window.settings.removal.kind.backup.backup.copies'), window.JournalI18n.render('journal.window.settings.removal.kind.backup.backup.copies')],
+const REMOVAL_KIND_LABEL = {
+  segment: 'journal.window.settings.removal.kind.segment.segment',
+  original: 'journal.window.settings.removal.kind.original.original.media',
+  originals: 'journal.window.settings.removal.kind.originals.original.media',
+  memory: 'journal.window.settings.removal.kind.memory.memory.an.agent.saved',
+  workout: 'journal.window.settings.removal.kind.workout.workout',
+  import: 'journal.window.settings.removal.kind.import.import',
+  entity: 'journal.window.settings.removal.kind.entity.entity',
+  facet: 'journal.window.settings.removal.kind.facet.facet',
+  detected_entities: 'journal.window.settings.removal.kind.detected.entities.detected.entity',
+  facet_file: 'journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge',
+  speakers: 'journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices',
+  backup: 'journal.window.settings.removal.kind.backup.backup.copies',
+  unknown: 'journal.window.settings.removal.kind.fallback.label.something.else',
 };
-const REMOVAL_KIND_FALLBACK = [window.JournalI18n.render('journal.window.settings.removal.kind.fallback.label.something.else'), window.JournalI18n.render('journal.window.settings.removal.kind.fallback.label.other.things')];
-// A group of a kind whose one item isn't one thing: an originals item is one
-// segment's originals, so "{n} originals" would count segments as files.
-const REMOVAL_KIND_GROUP = { originals: window.JournalI18n.render('journal.window.settings.removal.kind.group.originals.original.media.from.n.segments') };
+const REMOVAL_KIND_COUNT = {
+  segment: 'journal.window.settings.removal.history.group.segment.count',
+  original: 'journal.window.settings.removal.history.group.original.count',
+  originals: 'journal.window.settings.removal.history.group.originals.count',
+  memory: 'journal.window.settings.removal.history.group.memory.count',
+  workout: 'journal.window.settings.removal.history.group.workout.count',
+  import: 'journal.window.settings.removal.history.group.import.count',
+  entity: 'journal.window.settings.removal.history.group.entity.count',
+  facet: 'journal.window.settings.removal.history.group.facet.count',
+  detected_entities: 'journal.window.settings.removal.history.group.detected.entities.count',
+  facet_file: 'journal.window.settings.removal.history.group.facet.file.count',
+  speakers: 'journal.window.settings.removal.history.group.speakers.count',
+  backup: 'journal.window.settings.removal.history.group.backup.count',
+  unknown: 'journal.window.settings.removal.history.group.unknown.count',
+};
 const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
 // The Import page's own name for each source, for the trash page and this
 // history alike. A source not listed here shows no qualifier.
@@ -8647,53 +8668,48 @@ const REMOVAL_SOURCE = {
   strava: 'Strava', quick: window.JournalI18n.render('journal.window.settings.removal.source.quick.quick.import'), plaud: 'Plaud', audio: window.JournalI18n.render('journal.window.settings.removal.source.audio.audio'), text: window.JournalI18n.render('journal.window.settings.removal.source.text.text'),
   obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
 };
-const REMOVAL_IMPORTED = window.JournalI18n.render('journal.window.settings.removal.imported.label.imported.day');
 
 function removalSourceName(source) {
   return Object.prototype.hasOwnProperty.call(REMOVAL_SOURCE, source) ? REMOVAL_SOURCE[source] : '';
 }
 
+function removalImportedLabel(day) {
+  return window.JournalI18n.render('journal.window.settings.removal.history.imported.day', [['imported_day', removalDay(day)]]);
+}
+
 // An import's id is the moment it came in, YYYYMMDD_HHMMSS on the journal's clock.
 function removalImportedDay(id) {
   const day = /^(\d{8})_\d{6}/.exec(id || '');
-  return day ? REMOVAL_IMPORTED.replace('{day}', removalDay(day[1])) : null;
+  return day ? removalImportedLabel(day[1]) : null;
 }
 // ========== END SOURCE NAMES ==========
 const REMOVAL_BACKUP = { own: window.JournalI18n.render('journal.window.settings.removal.backup.own.your.own.storage'), operated: window.JournalI18n.render('journal.window.settings.removal.backup.operated.storage.sol.pbc.operates') };
-const REMOVAL_ACTION = {
-  segment_delete: window.JournalI18n.render('journal.window.settings.removal.action.segment.delete.deleted'), workout_delete: window.JournalI18n.render('journal.window.settings.removal.action.workout.delete.deleted'), import_delete: window.JournalI18n.render('journal.window.settings.removal.action.import.delete.deleted'),
-  entity_delete: window.JournalI18n.render('journal.window.settings.removal.action.entity.delete.deleted'), detected_entities_delete: window.JournalI18n.render('journal.window.settings.removal.action.detected.entities.delete.deleted'), facet_delete: window.JournalI18n.render('journal.window.settings.removal.action.facet.delete.deleted'),
-  memory_delete: window.JournalI18n.render('journal.window.settings.removal.action.memory.delete.deleted'),
-  facet_merge: window.JournalI18n.render('journal.window.settings.removal.action.facet.merge.merged.into.another.facet'),
-  speakers_wipe: window.JournalI18n.render('journal.window.settings.removal.action.speakers.wipe.cleared'),
-  originals_release: window.JournalI18n.render('journal.window.settings.removal.action.originals.release.removed.after.you.approved.it'),
-  voice_only_release: window.JournalI18n.render('journal.window.settings.removal.action.voice.only.release.removed.because.leave.out.other.voices'),
-  backup_off: window.JournalI18n.render('journal.window.settings.removal.action.backup.off.deleted.when.you.turned.off.backup'),
-  finish_stopped: window.JournalI18n.render('journal.window.settings.removal.action.finish.stopped.finished.deleting'),
-  stretch_delete: window.JournalI18n.render('journal.window.settings.removal.action.stretch.delete.deleted'),
-  backup_erase: window.JournalI18n.render('journal.window.settings.removal.action.backup.erase.removed.from.your.backups'),
-  backup_erase_shared: window.JournalI18n.render('journal.window.settings.removal.action.backup.erase.shared.removed.from.your.backups'),
-  backup_erase_stays: window.JournalI18n.render('journal.window.settings.removal.action.backup.erase.stays.removed.from.your.backups.but.copies'),
-  backup_erase_partly: window.JournalI18n.render('journal.window.settings.removal.action.backup.erase.partly.removed.from.your.backups.except.some'),
+const REMOVAL_EVENT_MESSAGE = {
+  trashed: 'journal.window.settings.removal.history.event.trashed',
+  recovered: 'journal.window.settings.removal.history.event.recovered',
+  erased: 'journal.window.settings.removal.history.event.erased',
 };
-// A note a row carries after its words.
-const REMOVAL_ACTION_NOTE = {
-  backup_erase_shared: window.JournalI18n.render('journal.window.settings.removal.action.note.backup.erase.shared.a.part.identical.to.something.you'),
+const REMOVAL_ACTION_MESSAGE = {
+  segment_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  workout_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  import_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  entity_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  detected_entities_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  facet_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  memory_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  facet_merge: 'journal.window.settings.removal.history.action.facet.merge',
+  speakers_wipe: 'journal.window.settings.removal.history.action.speakers.wipe',
+  originals_release: 'journal.window.settings.removal.history.action.originals.release',
+  voice_only_release: 'journal.window.settings.removal.history.action.voice.only.release',
+  backup_off: 'journal.window.settings.removal.history.action.backup.off',
+  finish_stopped: 'journal.window.settings.removal.history.action.finish.stopped',
+  stretch_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  backup_erase: 'journal.window.settings.removal.history.action.backup.erase',
+  backup_erase_shared: 'journal.window.settings.removal.history.action.backup.erase.shared',
+  backup_erase_stays: 'journal.window.settings.removal.history.action.backup.erase.stays',
+  backup_erase_partly: 'journal.window.settings.removal.history.action.backup.erase.partly',
 };
-const REMOVAL_ACTION_FALLBACK = window.JournalI18n.render('journal.window.settings.removal.action.fallback.label.removed');
-const REMOVAL_ACTION_NAMES_PLACE = {
-  backup_off: 'backup',
-  backup_erase: 'backup',
-  backup_erase_shared: 'backup',
-  backup_erase_stays: 'backup',
-  backup_erase_partly: 'backup',
-};
-const REMOVAL_SURFACE = {
-  transcripts: window.JournalI18n.render('journal.window.settings.removal.surface.transcripts.in.transcripts'), body: window.JournalI18n.render('journal.window.settings.removal.surface.body.in.body'), import: window.JournalI18n.render('journal.window.settings.removal.surface.import.in.import'), entities: window.JournalI18n.render('journal.window.settings.removal.surface.entities.in.entities'),
-  settings: window.JournalI18n.render('journal.window.settings.removal.surface.settings.in.settings'), home: window.JournalI18n.render('journal.window.settings.removal.surface.home.in.home'), backup: window.JournalI18n.render('journal.window.settings.removal.surface.backup.in.backup'), agents: window.JournalI18n.render('journal.window.settings.removal.surface.agents.in.agents'),
-  activities: window.JournalI18n.render('journal.window.settings.removal.surface.activities.in.activities'), speakers: window.JournalI18n.render('journal.window.settings.removal.surface.speakers.in.speakers'),
-  cli: window.JournalI18n.render('journal.window.settings.removal.surface.cli.from.the.command.line'),
-};
+const REMOVAL_HISTORY_SURFACES = new Set(['transcripts', 'body', 'import', 'entities', 'settings', 'home', 'backup', 'agents', 'activities', 'speakers', 'cli']);
 const REMOVAL_PAGE_SIZE = 25;
 
 function removalEl(tag, cls, text) {
@@ -8762,10 +8778,6 @@ function removalSurfaceKey(entry) {
   return entry.surface === 'web' ? entry.page : entry.surface;
 }
 
-function removalFill(template, unit) {
-  return template.replace('{source}', REMOVAL_SOURCE[unit.source] || '').trim();
-}
-
 function removalQualifiers(unit) {
   switch (unit.kind) {
     case 'segment': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
@@ -8782,26 +8794,22 @@ function removalQualifiers(unit) {
 
 function removalWhat(unit) {
   const line = removalEl('span', 'removal-line');
-  line.append(removalEl('span', 'removal-what', removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[0], unit)));
+  line.append(removalEl('span', 'removal-what', window.JournalI18n.render(Object.hasOwn(REMOVAL_KIND_LABEL, unit.kind)
+    ? REMOVAL_KIND_LABEL[unit.kind] : REMOVAL_KIND_LABEL.unknown)));
   removalQualifiers(unit).forEach(text => line.append(removalEl('span', 'removal-qual', text)));
   return line;
 }
 
-function removalHow(entry) {
-  const happened = REMOVAL_EVENT[entry.event];
-  if (happened) {
-    if (entry.event === 'erased' && entry.surface === 'policy' && entry.policy === 'trash') {
-      return REMOVAL_COPY.erasedOnItsDate;
-    }
-    const where = REMOVAL_SURFACE[removalSurfaceKey(entry)];
-    return where ? `${happened} ${where}` : happened;
-  }
-  const action = REMOVAL_ACTION[entry.action] || REMOVAL_ACTION_FALLBACK;
+function removalHow(entry, fold) {
+  const event = Object.hasOwn(REMOVAL_EVENT_MESSAGE, entry.event) ? REMOVAL_EVENT_MESSAGE[entry.event] : null;
+  const dated = entry.event === 'erased' && entry.surface === 'policy' && entry.policy === 'trash';
+  const id = dated ? 'journal.window.settings.removal.history.event.erased.on.date'
+    : event || (Object.hasOwn(REMOVAL_ACTION_MESSAGE, entry.action)
+      ? REMOVAL_ACTION_MESSAGE[entry.action] : 'journal.window.settings.removal.history.action.other');
   const surface = removalSurfaceKey(entry);
-  const place = REMOVAL_ACTION_NAMES_PLACE[entry.action] !== surface && REMOVAL_SURFACE[surface];
-  const said = place ? `${action} ${place}` : action;
-  const note = REMOVAL_ACTION_NOTE[entry.action];
-  return note ? `${said} · ${note}` : said;
+  const place = !dated && REMOVAL_HISTORY_SURFACES.has(surface) ? surface : 'none';
+  const detail = fold?.erasing && fold.except ? 'both' : fold?.erasing ? 'erasing' : fold?.except ? 'except' : 'plain';
+  return window.JournalI18n.render(id, [['presentation', `${place}-${detail}`]]);
 }
 
 function removalGroups(entries) {
@@ -8847,11 +8855,7 @@ function removalFold(group) {
 }
 
 function removalGroupHow(group) {
-  const how = removalHow(group.units[0]);
-  const fold = group.fold;
-  if (!fold || (!fold.erasing && !fold.except)) return how;
-  const template = fold.erasing && fold.except ? REMOVAL_COPY.foldBoth : fold.erasing ? REMOVAL_COPY.foldErasing : REMOVAL_COPY.foldExcept;
-  return template.replace('{how}', how);
+  return removalHow(group.units[0], group.fold);
 }
 
 function removalGroupWhat(group) {
@@ -8866,14 +8870,16 @@ function removalGroupWhat(group) {
   line.style.display = 'inline-flex';
   if (kinds.size === 1) {
     const unit = group.units[0].unit;
-    const grouped = REMOVAL_KIND_GROUP[unit.kind];
-    line.append(removalEl('span', 'removal-what', grouped
-      ? grouped.replace('{n}', count)
-      : `${count} ${removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[1], unit)}`));
+    const id = Object.hasOwn(REMOVAL_KIND_COUNT, unit.kind) ? REMOVAL_KIND_COUNT[unit.kind] : REMOVAL_KIND_COUNT.unknown;
+    line.append(removalEl('span', 'removal-what', window.JournalI18n.render(id, [
+      ['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]
+    ])));
     const days = new Set(group.units.map(entry => entry.unit.day).filter(Boolean));
     if (days.size === 1) line.append(removalEl('span', 'removal-qual', removalDay([...days][0])));
   } else {
-    line.append(removalEl('span', 'removal-what', REMOVAL_COPY.mixed.replace('{n}', count)));
+    line.append(removalEl('span', 'removal-what', window.JournalI18n.render('journal.window.settings.removal.history.group.mixed.count', [
+      ['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]
+    ])));
   }
   return line;
 }
@@ -8942,7 +8948,9 @@ function renderRemovalHistory(history) {
     }
     more.hidden = shown >= groups.length;
     foot.textContent = history.total > entries.length
-      ? REMOVAL_COPY.footSome.replace('{shown}', entries.length.toLocaleString()).replace('{total}', history.total.toLocaleString())
+      ? window.JournalI18n.render('journal.window.settings.removal.history.visible.count', [
+      ['shown', entries.length.toLocaleString()], ['total', history.total.toLocaleString()]
+    ])
       : REMOVAL_COPY.footAll;
     foot.hidden = shown < groups.length;
   };
@@ -8976,36 +8984,20 @@ const TRASH_COPY = {
       window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.settingmorelines.it.doesn.t.reach.a.place'),
       window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.settingmorelines.lines.your.journal.wrote.about.it'),
     ],
-    waitingOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitingone.erased.thing.is.waiting.to.be'),
-    waitingMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitingmany.n.erased.things.are.waiting.to'),
     waitPaused: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitpaused.backup.is.paused.so.this.happens'),
     backupLink: window.JournalI18n.render('journal.window.settings.consent.trash.copy.backuplink.backup'),
     waitOffline: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitoffline.your.journal.can.t.reach.your'),
     waitBusy: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitbusy.this.starts.when.the.backup.that'),
-    runningOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.runningone.removing.erased.thing.from.your.backups'),
-    running: window.JournalI18n.render('journal.window.settings.consent.trash.copy.running.removing.n.erased.things.from.your'),
     stopped: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups'),
-    failedOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.failedone.couldn.t.remove.erased.thing.from'),
-    failed: window.JournalI18n.render('journal.window.settings.trash.copy.failed.couldn.t.remove.n.erased.things'),
-    later: window.JournalI18n.render('journal.window.settings.consent.trash.copy.later.later'),
-    staysOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.staysone.no.backup.can.restore.erased.thing'),
-    staysMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.staysmany.no.backup.can.restore.n.erased'),
-    refusedOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.refusedone.no.backup.can.restore.erased.thing'),
-    refusedMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.refusedmany.no.backup.can.restore.n.erased'),
-    unknownOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.unknownone.no.backup.can.restore.erased.thing'),
-    unknownMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.unknownmany.no.backup.can.restore.n.erased'),
     why: window.JournalI18n.render('journal.window.settings.consent.trash.copy.why.why.and.what.you.can.do'),
     whyOnly: window.JournalI18n.render('journal.window.settings.consent.trash.copy.whyonly.why'),
     own: {
       versions: window.JournalI18n.render('journal.window.settings.consent.trash.copy.versions.your.storage.keeps.earlier.versions.of'),
       locks: window.JournalI18n.render('journal.window.settings.consent.trash.copy.locks.your.bucket.can.lock.files.against'),
       hidden_files: window.JournalI18n.render('journal.window.settings.consent.trash.copy.hidden.files.the.key.your.journal.uses.for'),
-      refused: window.JournalI18n.render('journal.window.settings.consent.trash.copy.refused.your.storage.said.no.or.said'),
       unknown: window.JournalI18n.render('journal.window.settings.consent.trash.copy.unknown.check.your.bucket.s.versioning.lifecycle'),
     },
     // Some backups can still restore it, so these never open with "no backup can restore".
-    partOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partone.erased.thing.is.removed.from.your'),
-    partMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partmany.n.erased.things.are.removed.from'),
     part: {
       legacy_archive: window.JournalI18n.render('journal.window.settings.consent.trash.copy.legacy.archive.media.your.journal.archived.before.it'),
       elsewhere: window.JournalI18n.render('journal.window.settings.consent.trash.copy.elsewhere.backups.your.journal.made.while.it'),
@@ -9016,25 +9008,21 @@ const TRASH_COPY = {
   error: window.JournalI18n.render('journal.window.settings.consent.trash.copy.error.couldn.t.load.your.trash.reload'),
   selectAll: window.JournalI18n.render('journal.window.settings.trash.copy.selectall.select.all'),
   emptyTrash: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.emptytrash.empty.trash'),
-  selected: window.JournalI18n.render('journal.window.settings.consent.trash.copy.selected.n.selected'),
+  selected: ({ n: selected }) => window.JournalI18n.render('journal.window.settings.trash.selection.count', [['quantity', window.JournalI18n.cardinalQuantity(selected)], ['selected', String(selected)]]),
   recover: window.JournalI18n.render('journal.window.settings.consent.trash.copy.recover.recover'),
   eraseNow: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.erasenow.erase.now'),
   cancel: window.JournalI18n.render('journal.window.settings.consent.trash.copy.cancel.cancel'),
-  erasesOn: window.JournalI18n.render('journal.window.settings.consent.trash.copy.eraseson.erases.date'),
+  erasesOn: ({ date: erase_day }) => window.JournalI18n.render('journal.window.settings.trash.erase.day', [['erase_day', String(erase_day)]]),
   erasingSoon: window.JournalI18n.render('journal.window.settings.consent.trash.copy.erasingsoon.erasing.soon'),
   returned: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.returned.the.same.segment.is.back.in'),
   returnedImport: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.returnedimport.some.of.what.it.brought.in'),
   returnedWorkout: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.returnedworkout.the.same.workout.is.back.in'),
-  bodySpan: window.JournalI18n.render('journal.window.settings.consent.trash.copy.bodyspan.first.to.last'),
-  segmentOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.segmentone.n.segment'),
-  segmentMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.segmentmany.n.segments'),
+  bodySpan: ({ first: first_day, last: last_day }) => window.JournalI18n.render('journal.window.settings.trash.body.span', [['first_day', String(first_day)], ['last_day', String(last_day)]]),
   range: window.JournalI18n.render('journal.window.settings.consent.trash.copy.range.choose.a.number.from.to'),
-  recovered: window.JournalI18n.render('journal.window.settings.consent.trash.copy.recovered.recovered.n.things'),
-  erased: window.JournalI18n.render('journal.window.settings.consent.trash.copy.erased.erased.n.things.from.your.journal'),
-  partialRecoverOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partialrecoverone.recovered.done.of.n.the.other'),
-  partialRecoverMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partialrecovermany.recovered.done.of.n.the.others'),
-  partialEraseOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partialeraseone.erased.done.of.n.the.other'),
-  partialEraseMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.partialerasemany.erased.done.of.n.the.others'),
+  partialRecoverOne: ({ done: recovered, n: selected }) => window.JournalI18n.render('journal.window.settings.trash.receipt.recovered.partial.one.left', [['quantity', window.JournalI18n.cardinalQuantity(recovered)], ['recovered', String(recovered)], ['selected', String(selected)], ['selected_quantity', window.JournalI18n.cardinalQuantity(selected)]]),
+  partialRecoverMany: ({ done: recovered, n: selected }) => window.JournalI18n.render('journal.window.settings.trash.receipt.recovered.partial.multiple.left', [['quantity', window.JournalI18n.cardinalQuantity(recovered)], ['recovered', String(recovered)], ['selected', String(selected)], ['selected_quantity', window.JournalI18n.cardinalQuantity(selected)]]),
+  partialEraseOne: ({ done: erased, n: selected }) => window.JournalI18n.render('journal.window.settings.trash.receipt.erased.partial.one.left', [['quantity', window.JournalI18n.cardinalQuantity(erased)], ['erased', String(erased)], ['selected', String(selected)], ['selected_quantity', window.JournalI18n.cardinalQuantity(selected)]]),
+  partialEraseMany: ({ done: erased, n: selected }) => window.JournalI18n.render('journal.window.settings.trash.receipt.erased.partial.multiple.left', [['quantity', window.JournalI18n.cardinalQuantity(erased)], ['erased', String(erased)], ['selected', String(selected)], ['selected_quantity', window.JournalI18n.cardinalQuantity(selected)]]),
   recoverFailedOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.recoverfailedone.couldn.t.recover.that.so.it'),
   recoverFailedMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.recoverfailedmany.couldn.t.recover.those.so.they'),
   // Every refusal one that won't change by trying again.
@@ -9043,16 +9031,13 @@ const TRASH_COPY = {
   eraseFailedOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.erasefailedone.couldn.t.erase.that.so.it'),
   eraseFailedMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.erasefailedmany.couldn.t.erase.those.so.they'),
   emptyFailed: window.JournalI18n.render('journal.window.settings.consent.trash.copy.emptyfailed.couldn.t.empty.the.trash.what'),
-  goneOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.goneone.that.s.no.longer.in.the'),
-  goneMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.gonemany.those.are.no.longer.in.the'),
-  goneMoreOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.gonemoreone.more.is.no.longer.in.the'),
-  goneMoreMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.gonemoremany.n.more.are.no.longer.in'),
-  confirmOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.confirmone.erase.this.thing.now'),
-  confirmMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.confirmmany.erase.n.things.now'),
+  goneOne: () => window.JournalI18n.render('journal.window.settings.consent.trash.copy.goneone.that.s.no.longer.in.the'),
+  goneMany: () => window.JournalI18n.render('journal.window.settings.consent.trash.copy.gonemany.those.are.no.longer.in.the'),
+  goneMoreOne: () => window.JournalI18n.render('journal.window.settings.consent.trash.copy.gonemoreone.more.is.no.longer.in.the'),
+  goneMoreMany: ({ n: gone }) => window.JournalI18n.render('journal.window.settings.trash.receipt.gone.additional', [['quantity', window.JournalI18n.cardinalQuantity(gone)], ['gone', String(gone)]]),
   confirmEmpty: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.confirmempty.empty.the.trash'),
   bodyOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.bodyone.it.can.t.be.recovered.after'),
   bodyMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.bodymany.they.can.t.be.recovered.after'),
-  bodyEmpty: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.bodyempty.n.things.can.t.be.recovered'),
   staysOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in'),
   staysMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in'),
   agentOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.agentone.anything.an.agent.already.read.stays'),
@@ -9063,18 +9048,16 @@ const TRASH_COPY = {
   mentionsMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.mentionsmany.anything.elsewhere.in.your.journal.that'),
   sortedOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.sortedone.segments.sorted.into.it.stay.in'),
   sortedMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.sortedmany.segments.sorted.into.them.stay.in'),
-  facetOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.facetone.in.facet'),
-  facetMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.facetmany.in.n.facets'),
-  cleared: window.JournalI18n.render('journal.window.settings.consent.trash.copy.cleared.cleared.day'),
-  mergedInto: window.JournalI18n.render('journal.window.settings.consent.trash.copy.mergedinto.merged.into.title'),
+  cleared: ({ day: cleared_day }) => window.JournalI18n.render('journal.window.settings.trash.row.cleared.day', [['cleared_day', String(cleared_day)]]),
+  mergedInto: ({ title: destination }) => window.JournalI18n.render('journal.window.settings.trash.row.merge.destination', [['destination', String(destination)]]),
   entitySameName: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.entitysamename.another.entity.with.this.name.is'),
   entityHidden: window.JournalI18n.render('journal.window.settings.consent.trash.copy.entityhidden.hidden'),
   entityHiddenBack: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.entityhiddenback.recovering.puts.it.back.hidden'),
   facetReplaces: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.facetreplaces.another.facet.with.this.name.is'),
   speakersReplaces: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back.what.was.cleared'),
   speakersKept: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.speakerskept.people.and.segments.that.were.in'),
-  mergeLive: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.mergelive.where.both.facets.had.a.file'),
-  mergeTrashed: window.JournalI18n.render('journal.window.settings.consent.trash.copy.mergetrashed.the.facet.these.were.merged.into'),
+  mergeLive: ({ title: destination }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.row.merge.destination.live', [['destination', String(destination)]]),
+  mergeTrashed: ({ title: destination }) => window.JournalI18n.render('journal.window.settings.trash.row.merge.destination.trashed', [['destination', String(destination)]]),
   mergeNoManifest: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.mergenomanifest.recovering.puts.these.back.where.the'),
   mergeGone: window.JournalI18n.render('journal.window.settings.consent.trash.copy.mergegone.the.facet.these.were.merged.into'),
   // An originals row, by where its segment stands.
@@ -9085,14 +9068,14 @@ const TRASH_COPY = {
   originalsStaysMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.originalsstaysmany.their.segments.and.everything.made.from'),
   // A segment row whose import, which holds the file it came from, isn't in
   // your journal now.
-  importTrashedLabel: window.JournalI18n.render('journal.window.settings.consent.trash.copy.importtrashedlabel.its.import.label.is.in.the'),
+  importTrashedLabel: ({ label: import_label }) => window.JournalI18n.render('journal.window.settings.trash.row.import.source.trashed', [['import_label', String(import_label)]]),
   importTrashed: window.JournalI18n.render('journal.window.settings.consent.trash.copy.importtrashed.its.import.is.in.the.trash'),
   importGone: window.JournalI18n.render('journal.window.settings.consent.trash.copy.importgone.its.import.is.no.longer.in'),
   // Erasing an import erases its segments waiting in the trash on their own.
-  waitingOwnOneOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownoneone.the.segment.from.it.that.waits'),
-  waitingOwnOneMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownonemany.the.w.segments.from.it.that'),
-  waitingOwnManyOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownmanyone.the.segment.from.them.that.waits'),
-  waitingOwnManyMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownmanymany.the.w.segments.from.them.that'),
+  waitingOwnOneOne: () => window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownoneone.the.segment.from.it.that.waits'),
+  waitingOwnOneMany: ({ w: segments }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.confirm.waiting.segments.one.import', [['quantity', window.JournalI18n.cardinalQuantity(segments)], ['segments', String(segments)]]),
+  waitingOwnManyOne: () => window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.waitingownmanyone.the.segment.from.them.that.waits'),
+  waitingOwnManyMany: ({ w: segments }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.confirm.waiting.segments.multiple.imports', [['quantity', window.JournalI18n.cardinalQuantity(segments)], ['segments', String(segments)]]),
   // Erasing a segment erases its original media waiting in the trash too.
   originalsGoOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.originalsgoone.its.original.media.in.the.trash'),
   originalsGoMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.originalsgomany.their.original.media.in.the.trash'),
@@ -9101,17 +9084,17 @@ const TRASH_COPY = {
     audio: window.JournalI18n.render('journal.window.settings.consent.trash.copy.audio.audio'), screen: window.JournalI18n.render('journal.window.settings.consent.trash.copy.screen.screen'), location: window.JournalI18n.render('journal.window.settings.consent.trash.copy.location.location'), body: window.JournalI18n.render('journal.window.settings.consent.trash.copy.body.body.data'),
     imported: window.JournalI18n.render('journal.window.settings.consent.trash.copy.imported.things.you.imported'), other: window.JournalI18n.render('journal.window.settings.consent.trash.copy.other.other.things.in.your.journal'),
   },
-  stretchHoldsLabel: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchholdslabel.it.holds.label.too.and.the'),
+  stretchHoldsLabel: ({ label: import_label }) => window.JournalI18n.render('journal.window.settings.trash.row.stretch.held.import.label', [['import_label', String(import_label)]]),
   stretchHoldsOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchholdsone.it.holds.an.import.too'),
-  stretchHoldsMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchholdsmany.it.holds.k.imports.too.and'),
-  stretchHoldsManyNone: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchholdsmanynone.it.holds.k.imports.too'),
-  stretchBlockedLabel: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchblockedlabel.part.of.it.comes.from.label'),
+  stretchHoldsMany: ({ k: imports }) => window.JournalI18n.render('journal.window.settings.trash.row.stretch.held.imports', [['quantity', window.JournalI18n.cardinalQuantity(imports)], ['imports', String(imports)]]),
+  stretchHoldsManyNone: ({ k: imports }) => window.JournalI18n.render('journal.window.settings.trash.row.stretch.held.imports.none.kept', [['quantity', window.JournalI18n.cardinalQuantity(imports)], ['imports', String(imports)]]),
+  stretchBlockedLabel: ({ label: import_label }) => window.JournalI18n.render('journal.window.settings.trash.row.stretch.blocked.by.import', [['import_label', String(import_label)]]),
   stretchBlocked: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchblocked.part.of.it.comes.from.an'),
   stretchFinishing: window.JournalI18n.render('journal.window.settings.consent.trash.copy.stretchfinishing.this.stopped.part.way.into.the'),
-  stretchErasesOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesone.the.import.it.holds.and.the'),
-  stretchErasesOneNone: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesonenone.the.import.it.holds.is.erased'),
-  stretchErasesMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesmany.the.k.imports.it.holds.and'),
-  stretchErasesManyNone: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesmanynone.the.k.imports.it.holds.are'),
+  stretchErasesOne: () => window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesone.the.import.it.holds.and.the'),
+  stretchErasesOneNone: () => window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.stretcherasesonenone.the.import.it.holds.is.erased'),
+  stretchErasesMany: ({ k: imports }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.confirm.stretch.held.imports', [['quantity', window.JournalI18n.cardinalQuantity(imports)], ['imports', String(imports)]]),
+  stretchErasesManyNone: ({ k: imports }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.confirm.stretch.held.imports.none.kept', [['quantity', window.JournalI18n.cardinalQuantity(imports)], ['imports', String(imports)]]),
   stopped: {
     detaching: window.JournalI18n.render('journal.window.settings.consent.trash.copy.detaching.this.stopped.part.way.into.the'),
     attaching: window.JournalI18n.render('journal.window.settings.consent.trash.copy.attaching.this.stopped.part.way.through.being'),
@@ -9119,21 +9102,17 @@ const TRASH_COPY = {
   replaceTitle: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.replacetitle.recover.and.replace'),
   replaceOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.replaceone.another.facet.with.this.name.is'),
   replaceSomeOne: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.replacesomeone.facet.you.picked.has.another.with'),
-  replaceSomeMany: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.replacesomemany.k.facets.you.picked.each.have'),
+  replaceSomeMany: ({ k: facets }) => window.JournalI18n.renderEnglish('journal.window.settings.trash.confirm.recover.over.existing.facets', [['quantity', window.JournalI18n.cardinalQuantity(facets)], ['facets', String(facets)]]),
   replaceConfirm: window.JournalI18n.renderEnglish('journal.window.settings.consent.trash.copy.replaceconfirm.recover.and.replace'),
   // A refused row's note, keyed by the journal's code; the words come from its detail.
   notes: {
-    waitsFacetNone: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsfacetnone.recover.title.from.the.trash.first'),
-    waitsFacetOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsfacetone.recover.title.and.other.from.the'),
-    waitsFacetMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsfacetmany.recover.title.and.n.others.from'),
-    waitsSegmentOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitssegmentone.recover.the.segment.it.cleared.voice'),
-    waitsSegmentMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitssegmentmany.recover.the.n.segments.it.cleared'),
-    waitsImportOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsimportone.recover.the.import.it.cleared.voice'),
-    waitsImportMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsimportmany.recover.the.n.imports.it.cleared'),
+    waitsFacetNone: ({ title: facet_name }) => window.JournalI18n.render('journal.window.settings.trash.refusal.facets.named', [['facet_name', String(facet_name)]]),
+    waitsFacetOne: ({ title: facet_name }) => window.JournalI18n.render('journal.window.settings.trash.refusal.facets.named.one.other', [['facet_name', String(facet_name)]]),
+    waitsFacetMany: ({ title: facet_name, n: other_facets }) => window.JournalI18n.render('journal.window.settings.trash.refusal.facets.named.multiple.others', [['quantity', window.JournalI18n.cardinalQuantity(other_facets)], ['facet_name', String(facet_name)], ['other_facets', String(other_facets)]]),
     waitsBoth: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitsboth.recover.the.segments.and.imports.it'),
-    waitsPersonNone: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitspersonnone.recover.name.from.the.trash.first'),
-    waitsPersonOne: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitspersonone.recover.name.and.other.from.the'),
-    waitsPersonMany: window.JournalI18n.render('journal.window.settings.consent.trash.copy.waitspersonmany.recover.name.and.n.others.from'),
+    waitsPersonNone: ({ name: person_name }) => window.JournalI18n.render('journal.window.settings.trash.refusal.people.named', [['person_name', String(person_name)]]),
+    waitsPersonOne: ({ name: person_name }) => window.JournalI18n.render('journal.window.settings.trash.refusal.people.named.one.other', [['person_name', String(person_name)]]),
+    waitsPersonMany: ({ name: person_name, n: other_people }) => window.JournalI18n.render('journal.window.settings.trash.refusal.people.named.multiple.others', [['quantity', window.JournalI18n.cardinalQuantity(other_people)], ['person_name', String(person_name)], ['other_people', String(other_people)]]),
     redirected: window.JournalI18n.render('journal.window.settings.consent.trash.copy.redirected.this.facet.s.name.now.leads'),
     taken: window.JournalI18n.render('journal.window.settings.consent.trash.copy.taken.this.can.t.be.recovered.because'),
     busy: window.JournalI18n.render('journal.window.settings.consent.trash.copy.busy.something.else.is.changing.this.right'),
@@ -9156,12 +9135,7 @@ const TRASH_KIND_LABEL = {
   originals: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.original.media'), originals_audio: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.audio.original.audio'), originals_screen: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.screen.original.screen.media'),
   stretch: window.JournalI18n.render('journal.window.settings.trash.kind.label.stretch.stretch.of.time'),
 };
-const TRASH_WORDS = {
-  segment: ['journal.window.settings.trash.words.segment.segment', 'journal.window.settings.trash.words.segment.segments'], memory: ['journal.window.settings.trash.words.memory.memory', 'journal.window.settings.trash.words.memory.memories'], import: ['journal.window.settings.trash.words.import.import', 'journal.window.settings.trash.words.import.imports'], workout: ['journal.window.settings.trash.words.workout.workout', 'journal.window.settings.trash.words.workout.workouts'],
-  entity: ['journal.window.settings.trash.words.entity.entity', 'journal.window.settings.trash.words.entity.entities'], facet: ['journal.window.settings.trash.words.facet.facet', 'journal.window.settings.trash.words.facet.facets'],
-  stretch: ['journal.window.settings.trash.words.stretch.stretch.of.time', 'journal.window.settings.trash.words.stretch.stretches.of.time'],
-  generic: ['journal.window.settings.trash.words.generic.one', 'journal.window.settings.trash.words.generic.many'],
-};
+const TRASH_MESSAGE_KINDS = new Set(['segment', 'memory', 'import', 'workout', 'entity', 'facet', 'stretch']);
 // Refusals that trying again won't change: the result line drops its "try again".
 const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken', 'import_in_trash', 'import_gone']);
 
@@ -9173,15 +9147,15 @@ const trashSelected = new Set();
 // The note a refused row carries after an act, by id.
 const trashNotes = new Map();
 
-function trashWord(items, count, render = window.JournalI18n.render) {
+function trashKindMessage(action, items, count) {
   const kinds = new Set(items.map(item => item.kind));
-  const pair = (kinds.size === 1 && TRASH_WORDS[[...kinds][0]]) || TRASH_WORDS.generic;
-  return render(pair[count === 1 ? 0 : 1]);
-}
-
-// Fills each {key}; a journal value is taken as it is, never as a pattern.
-function trashFill(template, values) {
-  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+  const first = items[0]?.kind;
+  const kind = kinds.size === 1 && TRASH_MESSAGE_KINDS.has(first) ? first : 'generic';
+  const id = `journal.window.settings.trash.${action}.${kind}.count`;
+  const args = [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]];
+  return action.startsWith('confirm.')
+    ? window.JournalI18n.renderEnglish(id, args)
+    : window.JournalI18n.render(id, args);
 }
 
 function trashSize(bytes) {
@@ -9198,7 +9172,7 @@ function trashEraseDate(eraseAt, now) {
   if (Number.isNaN(instant.getTime())) return { text: TRASH_COPY.erasingSoon, soon: true };
   if (instant <= now) return { text: TRASH_COPY.erasingSoon, soon: true };
   const day = removalDay(window.JournalClock.dayKey(instant));
-  return { text: trashFill(TRASH_COPY.erasesOn, { date: day }), soon: day === 'today' || day === 'tomorrow' };
+  return { text: TRASH_COPY.erasesOn({ date: day }), soon: day === 'today' || day === 'tomorrow' };
 }
 
 const TRASH_BODY_SOURCES = new Set(['strava', 'apple_health', 'oura']);
@@ -9208,7 +9182,7 @@ function trashSpan(days) {
   const [first, last] = Array.isArray(days) ? days : [];
   if (!first) return null;
   if (!last || first === last) return removalDay(first);
-  return trashFill(TRASH_COPY.bodySpan, { first: removalDay(first), last: removalDay(last) });
+  return TRASH_COPY.bodySpan({ first: removalDay(first), last: removalDay(last) });
 }
 
 // A workout's start, "HH:MM" on its own clock, as the page writes a time of day.
@@ -9248,7 +9222,7 @@ function trashRowBody(item, stoppedState) {
   let qualifiers;
   switch (item.kind) {
     case 'import':
-      qualifiers = [removalSourceName(item.source), bodyImport ? trashSpan(item.days) : item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))];
+      qualifiers = [removalSourceName(item.source), bodyImport ? trashSpan(item.days) : item.label, item.imported_day && removalImportedLabel(item.imported_day)];
       break;
     case 'workout':
       qualifiers = [item.day && removalDay(item.day), trashClock(item.start), removalSourceName(item.source)];
@@ -9263,7 +9237,7 @@ function trashRowBody(item, stoppedState) {
       qualifiers = [trashClearedDay(item.trashed_at)];
       break;
     case 'facet_file':
-      qualifiers = [!unfinished && item.dest_state !== 'gone' && item.dest_title ? trashFill(TRASH_COPY.mergedInto, { title: item.dest_title }) : null];
+      qualifiers = [!unfinished && item.dest_state !== 'gone' && item.dest_title ? TRASH_COPY.mergedInto({ title: item.dest_title }) : null];
       break;
     case 'stretch':
       qualifiers = [stretchBounds(item.from, item.to)];
@@ -9285,11 +9259,11 @@ function trashRowBody(item, stoppedState) {
   when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
   const extra = [];
   if (isImport && !bodyImport && Number.isInteger(item.segments)) {
-    extra.push(trashFill(item.segments === 1 ? TRASH_COPY.segmentOne : TRASH_COPY.segmentMany, { n: item.segments }));
+    extra.push(trashCountMessage('journal.window.settings.trash.row.segment.count', 'segments', item.segments));
   }
   if (item.kind === 'entity') {
     const facets = trashFacetCount(item.facets);
-    if (facets) extra.push(facets === 1 ? TRASH_COPY.facetOne : trashFill(TRASH_COPY.facetMany, { n: facets }));
+    if (facets) extra.push(trashCountMessage('journal.window.settings.trash.row.facets.count', 'facets', facets));
   }
   if (item.kind === 'stretch') {
     const order = ['audio', 'screen', 'location', 'body', 'imported', 'other'];
@@ -9335,9 +9309,9 @@ function trashRowLines(item) {
     case 'facet_file':
       switch (item.dest_state) {
         case 'none': return [TRASH_COPY.mergeNoManifest];
-        case 'trashed': return item.dest_title ? [trashFill(TRASH_COPY.mergeTrashed, { title: item.dest_title })] : [];
+        case 'trashed': return item.dest_title ? [TRASH_COPY.mergeTrashed({ title: item.dest_title })] : [];
         case 'gone': return [TRASH_COPY.mergeGone];
-        case 'live': return item.dest_title ? [trashFill(TRASH_COPY.mergeLive, { title: item.dest_title })] : [];
+        case 'live': return item.dest_title ? [TRASH_COPY.mergeLive({ title: item.dest_title })] : [];
         default: return [];
       }
     case 'originals':
@@ -9355,12 +9329,12 @@ function trashRowLines(item) {
       const kept = imports.filter(imp => imp.kept > 0);
       if (imports.length === 1) {
         const imp = imports[0];
-        lines.push(imp.kept > 0 && imp.label ? trashFill(TRASH_COPY.stretchHoldsLabel, { label: imp.label }) : TRASH_COPY.stretchHoldsOne);
+        lines.push(imp.kept > 0 && imp.label ? TRASH_COPY.stretchHoldsLabel({ label: imp.label }) : TRASH_COPY.stretchHoldsOne);
       } else if (imports.length > 1) {
-        lines.push(trashFill(kept.length ? TRASH_COPY.stretchHoldsMany : TRASH_COPY.stretchHoldsManyNone, { k: imports.length }));
+        lines.push((kept.length ? TRASH_COPY.stretchHoldsMany : TRASH_COPY.stretchHoldsManyNone)({ k: imports.length }));
       }
       if (item.blocked) {
-        lines.push(item.blocked.label ? trashFill(TRASH_COPY.stretchBlockedLabel, { label: item.blocked.label }) : TRASH_COPY.stretchBlocked);
+        lines.push(item.blocked.label ? TRASH_COPY.stretchBlockedLabel({ label: item.blocked.label }) : TRASH_COPY.stretchBlocked);
       }
       if (item.replaces) lines.push(TRASH_COPY.returned);
       return lines;
@@ -9369,7 +9343,7 @@ function trashRowLines(item) {
       // A segment its import's file still holds: where that import is now.
       const lines = [];
       if (item.import?.state === 'trashed') {
-        lines.push(item.import.label ? trashFill(TRASH_COPY.importTrashedLabel, { label: item.import.label }) : TRASH_COPY.importTrashed);
+        lines.push(item.import.label ? TRASH_COPY.importTrashedLabel({ label: item.import.label }) : TRASH_COPY.importTrashed);
       } else if (item.import?.state === 'gone') {
         lines.push(TRASH_COPY.importGone);
       }
@@ -9386,7 +9360,7 @@ function trashRowLines(item) {
 function trashClearedDay(trashedAt) {
   const instant = new Date(trashedAt);
   if (!trashedAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return null;
-  return trashFill(TRASH_COPY.cleared, { day: removalDay(window.JournalClock.dayKey(instant)) });
+  return TRASH_COPY.cleared({ day: removalDay(window.JournalClock.dayKey(instant)) });
 }
 
 function trashRow(item) {
@@ -9421,7 +9395,7 @@ function trashRowNote(entry) {
   const others = (title, n, none, one, many, key) => {
     if (!title) return null;
     const words = n === 0 ? none : n === 1 ? one : many;
-    return trashFill(words, { [key]: title, n });
+    return words({ [key]: title, n });
   };
   switch (entry && entry.reason) {
     case 'busy': return N.busy;
@@ -9439,8 +9413,8 @@ function trashRowNote(entry) {
       const segments = count(detail.segments);
       const imports = count(detail.imports);
       if (segments && imports) lines.push(N.waitsBoth);
-      else if (segments) lines.push(segments === 1 ? N.waitsSegmentOne : trashFill(N.waitsSegmentMany, { n: segments }));
-      else if (imports) lines.push(imports === 1 ? N.waitsImportOne : trashFill(N.waitsImportMany, { n: imports }));
+      else if (segments) lines.push(trashCountMessage('journal.window.settings.trash.refusal.segments.count', 'segments', segments));
+      else if (imports) lines.push(trashCountMessage('journal.window.settings.trash.refusal.imports.count', 'imports', imports));
       const people = count(detail.people);
       if (people) lines.push(others(detail.name, people - 1, N.waitsPersonNone, N.waitsPersonOne, N.waitsPersonMany, 'name'));
       return lines.filter(Boolean).join(' ') || null;
@@ -9454,7 +9428,7 @@ function paintTrashBar() {
   document.getElementById('trashBar').hidden = trashItems.length === 0;
   document.getElementById('trashBarIdle').hidden = count > 0;
   document.getElementById('trashBarSome').hidden = count === 0;
-  document.getElementById('trashCount').textContent = trashFill(TRASH_COPY.selected, { n: count });
+  document.getElementById('trashCount').textContent = TRASH_COPY.selected({ n: count });
   document.getElementById('trashSelectAll').checked = false;
 }
 
@@ -9514,12 +9488,19 @@ function renderTrashBackups(backups) {
   if (sentence) line.append(...sentence);
 }
 
-function trashBackupsWhen(at) {
-  const B = TRASH_COPY.backups;
+function trashCountMessage(id, name, count) {
+  return window.JournalI18n.render(id, [
+    ['quantity', window.JournalI18n.cardinalQuantity(count)], [name, String(count)]
+  ]);
+}
+
+function trashBackupRetry(at) {
   const instant = at ? new Date(at) : null;
-  if (!instant || Number.isNaN(instant.getTime())) return B.later;
+  if (!instant || Number.isNaN(instant.getTime())) {
+    return window.JournalI18n.render('journal.window.settings.trash.backup.retry.later');
+  }
   const time = instant.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-  return window.JournalI18n.render('journal.window.settings.trash.backups.when', [['time', time]]);
+  return window.JournalI18n.render('journal.window.settings.trash.backup.retry.clock', [['time', time]]);
 }
 
 function trashBackupsSentence(backups) {
@@ -9527,7 +9508,6 @@ function trashBackupsSentence(backups) {
   const B = TRASH_COPY.backups;
   const n = Number(backups.pending) || 0;
   const staying = Number(backups.staying) || 0;
-  const fill = (one, many, count) => trashFill(count === 1 ? one : many, { n: count });
   const text = (value) => document.createTextNode(value);
   const why = (body, summary = B.why) => {
     const details = removalEl('details', 'trash-backups-why');
@@ -9539,34 +9519,34 @@ function trashBackupsSentence(backups) {
       const count = staying || n || 1;
       const reason = backups.reason;
       if (reason === 'refused' || reason === 'residue') {
-        return [text(fill(B.refusedOne, B.refusedMany, count) + ' '), why(trashFill(B.own.refused, { when: trashBackupsWhen(backups.next_try) }))];
+        return [text(trashCountMessage('journal.window.settings.trash.backup.refused.count', 'remaining', count) + ' '), why(window.JournalI18n.render('journal.window.settings.trash.backup.storage.refused') + ' ' + trashBackupRetry(backups.next_try))];
       }
-      if (reason === 'unknown') return [text(fill(B.unknownOne, B.unknownMany, count) + ' '), why(B.own.unknown)];
+      if (reason === 'unknown') return [text(trashCountMessage('journal.window.settings.trash.backup.unknown.count', 'remaining', count) + ' '), why(B.own.unknown)];
       // Some backups can still restore it: never "no backup can restore".
       if (reason === 'legacy_archive' || reason === 'elsewhere') {
         // `partly` counts only what an older backup still holds; the rest of
         // `staying` is what the storage keeps (`keeps`), said in its own words.
         const partly = Number.isInteger(backups.partly) ? backups.partly : count;
-        const said = [text(fill(B.partOne, B.partMany, partly || count) + ' '), why(B.part[reason], B.whyOnly)];
+        const said = [text(trashCountMessage('journal.window.settings.trash.backup.partly.erased.count', 'erased', partly || count) + ' '), why(B.part[reason], B.whyOnly)];
         const rest = Number.isInteger(backups.partly) ? count - partly : 0;
-        if (rest > 0 && backups.keeps === 'unknown') said.push(text(fill(B.unknownOne, B.unknownMany, rest) + ' '), why(B.own.unknown));
-        else if (rest > 0 && B.own[backups.keeps]) said.push(text(fill(B.staysOne, B.staysMany, rest) + ' '), why(B.own[backups.keeps]));
+        if (rest > 0 && backups.keeps === 'unknown') said.push(text(trashCountMessage('journal.window.settings.trash.backup.unknown.count', 'remaining', rest) + ' '), why(B.own.unknown));
+        else if (rest > 0 && B.own[backups.keeps]) said.push(text(trashCountMessage('journal.window.settings.trash.backup.stays.count', 'remaining', rest) + ' '), why(B.own[backups.keeps]));
         return said;
       }
-      if (B.own[reason]) return [text(fill(B.staysOne, B.staysMany, count) + ' '), why(B.own[reason])];
-      return [text(fill(B.unknownOne, B.unknownMany, count))];
+      if (B.own[reason]) return [text(trashCountMessage('journal.window.settings.trash.backup.stays.count', 'remaining', count) + ' '), why(B.own[reason])];
+      return [text(trashCountMessage('journal.window.settings.trash.backup.unknown.count', 'remaining', count))];
     }
     case 'failed':
-      return [text(trashFill(n === 1 ? B.failedOne : B.failed, { n, when: trashBackupsWhen(backups.next_try) }))];
+      return [text(trashCountMessage('journal.window.settings.trash.backup.failed.count', 'erased', n) + ' ' + trashBackupRetry(backups.next_try))];
     case 'stopped':
       return [text(B.stopped)];
     case 'running':
-      return [text(n === 1 ? B.runningOne : trashFill(B.running, { n }))];
+      return [text(trashCountMessage('journal.window.settings.trash.backup.running.count', 'erased', n))];
     // Pending with no run yet reads as waiting, paused included.
     case 'idle':
     case 'waiting': {
       if (n === 0) return null;
-      const waiting = fill(B.waitingOne, B.waitingMany, n);
+      const waiting = trashCountMessage('journal.window.settings.trash.backup.waiting.count', 'waiting', n);
       if (backups.reason === 'paused' || backups.paused === true) {
         const link = removalEl('a', 'trash-backups-link', B.backupLink);
         link.href = '/app/backup';
@@ -9577,7 +9557,7 @@ function trashBackupsSentence(backups) {
       return [text(waiting)];
     }
     default:
-      return n > 0 ? [text(fill(B.waitingOne, B.waitingMany, n))] : null;
+      return n > 0 ? [text(trashCountMessage('journal.window.settings.trash.backup.waiting.count', 'waiting', n))] : null;
   }
 }
 
@@ -9603,10 +9583,10 @@ function trashResultLine(act, chosen, answer, listedIds) {
   const recovering = act === 'recover';
   const lines = [];
   if (done.length && !still.length) {
-    lines.push(trashFill(recovering ? TRASH_COPY.recovered : TRASH_COPY.erased, { n: done.length, things: trashWord(doneItems, done.length) }));
+    lines.push(trashKindMessage(recovering ? 'recover' : 'erase', doneItems, done.length));
   } else if (done.length) {
     const key = `${recovering ? 'partialRecover' : 'partialErase'}${still.length === 1 ? 'One' : 'Many'}`;
-    lines.push(trashFill(TRASH_COPY[key], { done: done.length, n }));
+    lines.push(TRASH_COPY[key]({ done: done.length, n }));
   } else if (still.length && act === 'empty') {
     lines.push(TRASH_COPY.emptyFailed);
   } else if (still.length) {
@@ -9615,7 +9595,7 @@ function trashResultLine(act, chosen, answer, listedIds) {
   }
   if (gone.length) {
     const key = `gone${lines.length ? 'More' : ''}${gone.length === 1 ? 'One' : 'Many'}`;
-    lines.push(trashFill(TRASH_COPY[key], { n: gone.length }));
+    lines.push(TRASH_COPY[key]({ n: gone.length }));
   }
   return lines.join(' ');
 }
@@ -9630,16 +9610,14 @@ function trashConfirmCopy(act, items) {
     // Recovering a facet over another of its name erases that one.
     const k = items.filter(trashReplacesFacet).length;
     title = TRASH_COPY.replaceTitle;
-    paragraphs.push(one ? TRASH_COPY.replaceOne : k === 1 ? TRASH_COPY.replaceSomeOne : trashFill(TRASH_COPY.replaceSomeMany, { k }));
+    paragraphs.push(one ? TRASH_COPY.replaceOne : k === 1 ? TRASH_COPY.replaceSomeOne : TRASH_COPY.replaceSomeMany({ k }));
     return { title, paragraphs, confirm: TRASH_COPY.replaceConfirm };
   }
   if (act === 'empty') {
     title = TRASH_COPY.confirmEmpty;
-    paragraphs.push(trashFill(TRASH_COPY.bodyEmpty, { n, things: trashWord(items, n, window.JournalI18n.renderEnglish) }));
+    paragraphs.push(trashKindMessage('confirm.empty', items, n));
   } else {
-    title = one
-      ? trashFill(TRASH_COPY.confirmOne, { thing: trashWord(items, 1, window.JournalI18n.renderEnglish) })
-      : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n, window.JournalI18n.renderEnglish) });
+    title = trashKindMessage('confirm.erase', items, n);
     paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
     // A segment erased now takes its original media waiting in the trash; a
     // selection holding that item already lists it.
@@ -9663,13 +9641,13 @@ function trashConfirmCopy(act, items) {
       const words = held.length === 1
         ? (anyKept ? TRASH_COPY.stretchErasesOne : TRASH_COPY.stretchErasesOneNone)
         : (anyKept ? TRASH_COPY.stretchErasesMany : TRASH_COPY.stretchErasesManyNone);
-      paragraphs.push(trashFill(words, { k: held.length }));
+      paragraphs.push(words({ k: held.length }));
     }
     const own = trashItems.filter(item => item.kind === 'segment' && !chosen.has(item.id) && imports.has(item.import?.id));
     const from = new Set(own.map(item => item.import.id)).size;
     if (own.length > 0) {
       const key = `waitingOwn${from === 1 ? 'One' : 'Many'}${own.length === 1 ? 'One' : 'Many'}`;
-      paragraphs.push(trashFill(TRASH_COPY[key], { w: own.length }));
+      paragraphs.push(TRASH_COPY[key]({ w: own.length }));
     }
   }
   // What stays: anything that mentions an entity or a facet, and a facet's

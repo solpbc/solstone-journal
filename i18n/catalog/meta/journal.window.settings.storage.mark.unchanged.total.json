@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. storage mark unchanged total.",
+  "context": "Journal window. Settings window. storage mark unchanged total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "listed_originals",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5a279674f4598c7baa3863d97b60b8480efe73a5ad2f460d7606366001aac2f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

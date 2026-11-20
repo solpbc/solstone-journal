@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash row merge destination trashed.",
+  "context": "Journal window. Settings window. trash row merge destination trashed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "552092a532daa12ba6a1f1daf5e10b112d8a969f5407b9375c871b989026d2cb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

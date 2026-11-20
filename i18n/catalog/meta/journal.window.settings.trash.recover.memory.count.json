@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover memory count.",
+  "context": "Journal window. Settings window. trash recover memory count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3543f1a1a21675b103a41be15b5d22a10f9e5c5a5a783f1042c4d21ba4d4ac7d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

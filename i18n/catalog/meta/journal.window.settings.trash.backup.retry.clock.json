@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash backup retry clock.",
+  "context": "Journal window. Settings window. trash backup retry clock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e7ffe9b0b7b5aec9ad7d83b520ba6dd3696ee16a31deb250ef65fe108166434",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

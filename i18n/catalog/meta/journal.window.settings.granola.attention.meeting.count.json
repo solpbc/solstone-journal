@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. granola attention meeting count.",
+  "context": "Journal window. Settings window. granola attention meeting count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "meetings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7a51ac8933138fe37bd047f79967e1f50b85a3e5eaff913c92184a89c6d7a902",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

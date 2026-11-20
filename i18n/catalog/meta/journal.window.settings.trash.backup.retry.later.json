@@ -1,0 +1,16 @@
+{
+  "description": "Settings window. trash backup retry later.",
+  "context": "Journal window. Settings window. trash backup retry later.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d8a6bf32b93892317118621bab099714a0364b5f1d300837d4437349f3c775a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

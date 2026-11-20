@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover generic count.",
+  "context": "Journal window. Settings window. trash recover generic count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6f0ff785ef37830534ac87c9d493f8948165dd04e10c259ffdc2b3546db7c1a4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. storage mark no media count.",
+  "context": "Journal window. Settings window. storage mark no media count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c064d7a341366a3de894ca5ad4aa9748c8dcd6324e7a8b3302588bc85af3811e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

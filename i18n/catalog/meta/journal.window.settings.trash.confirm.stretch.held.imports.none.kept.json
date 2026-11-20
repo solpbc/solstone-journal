@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm stretch held imports none kept.",
+  "context": "Journal window. Settings window. trash confirm stretch held imports none kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "imports",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6695b28a39a9a70fcb37052616acfdb3b2a4384aba127ba78896a2c23d39783c",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

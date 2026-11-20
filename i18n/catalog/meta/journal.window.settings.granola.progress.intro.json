@@ -1,0 +1,23 @@
+{
+  "description": "Settings window. granola progress intro.",
+  "context": "Journal window. Settings window. granola progress intro.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b265be42ac590bd48bdc7ca9cae3055f57030fdc853868521dfb2e5c2049e3a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "source",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

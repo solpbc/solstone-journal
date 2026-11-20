@@ -134,7 +134,10 @@ fn storage_warnings(
 ) -> Vec<Value> {
     let retention = retention.cloned().unwrap_or_default();
     let keep_mode = !policy_would_release(&policy_from_journal_config(config));
-    let nudge = text(locale, "journal.window.settings.storage.keep.nudge");
+    let nudge = text(
+        locale,
+        "journal.window.settings.storage.warning.no.automatic.removal",
+    );
     let mut warnings = Vec::new();
     let disk_threshold = retention
         .get("storage_warning_disk_percent")
@@ -157,6 +160,7 @@ fn storage_warnings(
             ],
         );
         if keep_mode {
+            message.push(' ');
             message.push_str(&nudge);
         }
         warnings.push(json!({"level": "warning", "type": "disk_percent", "message": message, "current": current, "threshold": threshold}));
@@ -176,6 +180,7 @@ fn storage_warnings(
                 ],
             );
             if keep_mode {
+                message.push(' ');
                 message.push_str(&nudge);
             }
             warnings.push(json!({"level": "warning", "type": "raw_media_gb", "message": message, "current": current, "threshold": threshold}));

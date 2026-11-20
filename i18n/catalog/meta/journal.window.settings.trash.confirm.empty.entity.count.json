@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm empty entity count.",
+  "context": "Journal window. Settings window. trash confirm empty entity count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7be458466ff035f39a153f15bb0515cc5238fadfb9fc05c5025048efb0a96848",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. removal history group original count.",
+  "context": "Journal window. Settings window. removal history group original count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "66cdcfa961c55ad444a495dc72dafe7b1547bd0fbe19a9297297ac08690ee040",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

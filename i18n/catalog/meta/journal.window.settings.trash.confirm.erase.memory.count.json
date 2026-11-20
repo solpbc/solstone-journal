@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm erase memory count.",
+  "context": "Journal window. Settings window. trash confirm erase memory count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4d95add2b45ce4fb7704692670af459caef631d8cb31c8e2c74a86013f5879fd",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

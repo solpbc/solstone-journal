@@ -1,0 +1,16 @@
+{
+  "description": "Settings window. trash backup storage refused.",
+  "context": "Journal window. Settings window. trash backup storage refused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b49d45378cd16c28dcf1f331ee5d1a9085d247eb7774269f3e27c590356be40",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

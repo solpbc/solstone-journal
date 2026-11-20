@@ -1,0 +1,39 @@
+{
+  "description": "Settings window. trash receipt recovered partial multiple left.",
+  "context": "Journal window. Settings window. trash receipt recovered partial multiple left.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "recovered",
+      "type": "string"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    },
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d6d55e59ad497af625a6eafc10b41c8a23dbdcc7c61a034f514813e2d13aad18",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

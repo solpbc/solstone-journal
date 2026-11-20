@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash backup running count.",
+  "context": "Journal window. Settings window. trash backup running count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "erased",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0f1eed59e8aded0fea687d409afdf19a0d29e750ac840dabe82609688a3ba1d7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm waiting segments one import.",
+  "context": "Journal window. Settings window. trash confirm waiting segments one import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "53649ad01745f02a0c7d720b6a5e9a98696aec2a80e0a857d4547484eff42737",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

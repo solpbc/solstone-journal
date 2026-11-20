@@ -1,0 +1,33 @@
+{
+  "description": "Settings window. local access bookmark address.",
+  "context": "Journal window. Settings window. local access bookmark address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "journal_address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "957811575166e1f5a54ef5cf279984de55544349275ae10b9b48050a79c8725b",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

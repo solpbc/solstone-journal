@@ -1,0 +1,16 @@
+{
+  "description": "Settings window. granola disconnected status.",
+  "context": "Journal window. Settings window. granola disconnected status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1bb53ee056adb6d5c8b0430d06f9c9597d93728afdf5c5ec5e2ecd94f4f4116",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

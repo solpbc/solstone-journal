@@ -1,0 +1,32 @@
+{
+  "description": "Settings Plaud sync token instructions, with an inline link to API keys.",
+  "context": "Journal window. Settings Plaud sync token instructions, with an inline link to API keys.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "keys_start",
+      "type": "string"
+    },
+    {
+      "name": "keys_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75801bde42320568f9ff74b5fc0079022f1f8a3663a2e9ea7fc11a2128a9e153",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

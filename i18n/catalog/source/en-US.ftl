@@ -1210,6 +1210,1396 @@ journal.window.not.found.heading = Not Found
 
 journal.window.not.found.title = 404 Not Found
 
+journal.window.settings.credentials.environment.unconfigured = { $environment_variable }{ $slot1 }not configured.
+
+journal.window.settings.facet.receipt.erase.date = erases { $erase_day } unless you recover it.
+
+journal.window.settings.facet.receipt.erase.failed = couldn't erase that facet
+
+journal.window.settings.facet.receipt.erased = facet erased from your journal
+
+journal.window.settings.facet.receipt.recover.failed = couldn't recover that facet
+
+journal.window.settings.facet.receipt.recovered = facet recovered
+
+journal.window.settings.granola.attention.meeting.count = { $quantity ->
+        [one] the 1 meeting already in your journal stays.
+       *[other] the { $meetings } meetings already in your journal stay.
+    }
+
+journal.window.settings.granola.clock.hours.ago = { $quantity ->
+        [one] 1 hour ago
+       *[other] { $hours } hours ago
+    }
+
+journal.window.settings.granola.clock.minutes.ago = { $quantity ->
+        [one] { $minutes } min ago
+       *[other] { $minutes } min ago
+    }
+
+journal.window.settings.granola.disconnected.meeting.count = { $quantity ->
+        [one] the 1 meeting from { $provider } stays in your journal.
+       *[other] the { $meetings } meetings from { $provider } stay in your journal.
+    }
+
+journal.window.settings.granola.disconnected.reconnect = connect again to keep them up to date; nothing comes in twice.
+
+journal.window.settings.granola.disconnected.status = disconnected.
+
+journal.window.settings.granola.guide.connectors = choose { $connectors }, then { $personal_keys } under API.
+
+journal.window.settings.granola.guide.create.key = click { $create_key }, tick { $personal_notes }, and click { $generate_key }.
+
+journal.window.settings.granola.guide.paste.key = copy the key, which starts with { $key_prefix }, and paste it below.
+
+journal.window.settings.granola.guide.settings = click your workspace name at the bottom left, then { $settings }.
+
+journal.window.settings.granola.progress.intro = bringing in your meetings from { $source }.
+
+journal.window.settings.granola.progress.meeting.count = { $quantity ->
+        [one] 1 meeting so far.
+       *[other] { $meetings } meetings so far.
+    }
+
+journal.window.settings.local.access.bookmark.address = a bookmark to{ $slot1 }{ $journal_address }{ $slot2 }shows a page asking you to open your journal from the journal app or with solstone journal open. this browser keeps access until your journal restarts; any other browser needs a new one-time link.
+
+journal.window.settings.local.access.open.address = open: anyone using this computer, and any program running on it, can open your journal at{ $slot1 }{ $journal_address }.
+
+journal.window.settings.logs.directory.count = { $quantity ->
+      [one] { $count } cache dir(s)
+     *[other] { $count } cache dir(s)
+    }
+
+journal.window.settings.logs.file.count = { $quantity ->
+      [one] { $count } file(s)
+     *[other] { $count } file(s)
+    }
+
+journal.window.settings.logs.preview.file.and.directory.count = { $quantity ->
+      [one] { $files } operational-log file(s) and { $directory_quantity ->
+      [one] { $directories } cache dir(s)
+     *[other] { $directories } cache dir(s)
+    } ({ $bytes } B) would be deleted.
+     *[other] { $files } operational-log file(s) and { $directory_quantity ->
+      [one] { $directories } cache dir(s)
+     *[other] { $directories } cache dir(s)
+    } ({ $bytes } B) would be deleted.
+    }
+
+journal.window.settings.logs.preview.retention.compacted.count = { $quantity ->
+      [one] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
+     *[other] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
+    }
+
+journal.window.settings.logs.result.file.and.directory.count = { $quantity ->
+      [one] { $files } operational-log file(s) and { $directory_quantity ->
+      [one] { $directories } cache dir(s)
+     *[other] { $directories } cache dir(s)
+    } ({ $bytes } B) deleted.
+     *[other] { $files } operational-log file(s) and { $directory_quantity ->
+      [one] { $directories } cache dir(s)
+     *[other] { $directories } cache dir(s)
+    } ({ $bytes } B) deleted.
+    }
+
+journal.window.settings.logs.result.retention.compacted.count = { $quantity ->
+      [one] { $lines } retention-log line(s) compacted ({ $bytes } B).
+     *[other] { $lines } retention-log line(s) compacted ({ $bytes } B).
+    }
+
+journal.window.settings.logs.skipped.count = { $quantity ->
+      [one] { $count } skipped
+     *[other] { $count } skipped
+    }
+
+journal.window.settings.plaud.guide.token.link = configure your { $provider } token in { $keys_start }API keys{ $keys_end } to enable sync.
+
+journal.window.settings.removal.history.action.backup.erase = { $presentation ->
+       *[none-plain] removed from your backups
+        [none-erasing] removed from your backups, erasing what was in the way
+        [none-except] removed from your backups, except notes in facets no longer in your journal
+        [none-both] removed from your backups, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed from your backups in transcripts
+        [transcripts-erasing] removed from your backups in transcripts, erasing what was in the way
+        [transcripts-except] removed from your backups in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed from your backups in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed from your backups in body
+        [body-erasing] removed from your backups in body, erasing what was in the way
+        [body-except] removed from your backups in body, except notes in facets no longer in your journal
+        [body-both] removed from your backups in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed from your backups in import
+        [import-erasing] removed from your backups in import, erasing what was in the way
+        [import-except] removed from your backups in import, except notes in facets no longer in your journal
+        [import-both] removed from your backups in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed from your backups in entities
+        [entities-erasing] removed from your backups in entities, erasing what was in the way
+        [entities-except] removed from your backups in entities, except notes in facets no longer in your journal
+        [entities-both] removed from your backups in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed from your backups in settings
+        [settings-erasing] removed from your backups in settings, erasing what was in the way
+        [settings-except] removed from your backups in settings, except notes in facets no longer in your journal
+        [settings-both] removed from your backups in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed from your backups in home
+        [home-erasing] removed from your backups in home, erasing what was in the way
+        [home-except] removed from your backups in home, except notes in facets no longer in your journal
+        [home-both] removed from your backups in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed from your backups
+        [backup-erasing] removed from your backups, erasing what was in the way
+        [backup-except] removed from your backups, except notes in facets no longer in your journal
+        [backup-both] removed from your backups, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed from your backups in agents
+        [agents-erasing] removed from your backups in agents, erasing what was in the way
+        [agents-except] removed from your backups in agents, except notes in facets no longer in your journal
+        [agents-both] removed from your backups in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed from your backups in activities
+        [activities-erasing] removed from your backups in activities, erasing what was in the way
+        [activities-except] removed from your backups in activities, except notes in facets no longer in your journal
+        [activities-both] removed from your backups in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed from your backups in speakers
+        [speakers-erasing] removed from your backups in speakers, erasing what was in the way
+        [speakers-except] removed from your backups in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed from your backups in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed from your backups from the command line
+        [cli-erasing] removed from your backups from the command line, erasing what was in the way
+        [cli-except] removed from your backups from the command line, except notes in facets no longer in your journal
+        [cli-both] removed from your backups from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.backup.erase.partly = { $presentation ->
+       *[none-plain] removed from your backups, except some older ones that still hold it
+        [none-erasing] removed from your backups, except some older ones that still hold it, erasing what was in the way
+        [none-except] removed from your backups, except some older ones that still hold it, except notes in facets no longer in your journal
+        [none-both] removed from your backups, except some older ones that still hold it, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed from your backups, except some older ones that still hold it in transcripts
+        [transcripts-erasing] removed from your backups, except some older ones that still hold it in transcripts, erasing what was in the way
+        [transcripts-except] removed from your backups, except some older ones that still hold it in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed from your backups, except some older ones that still hold it in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed from your backups, except some older ones that still hold it in body
+        [body-erasing] removed from your backups, except some older ones that still hold it in body, erasing what was in the way
+        [body-except] removed from your backups, except some older ones that still hold it in body, except notes in facets no longer in your journal
+        [body-both] removed from your backups, except some older ones that still hold it in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed from your backups, except some older ones that still hold it in import
+        [import-erasing] removed from your backups, except some older ones that still hold it in import, erasing what was in the way
+        [import-except] removed from your backups, except some older ones that still hold it in import, except notes in facets no longer in your journal
+        [import-both] removed from your backups, except some older ones that still hold it in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed from your backups, except some older ones that still hold it in entities
+        [entities-erasing] removed from your backups, except some older ones that still hold it in entities, erasing what was in the way
+        [entities-except] removed from your backups, except some older ones that still hold it in entities, except notes in facets no longer in your journal
+        [entities-both] removed from your backups, except some older ones that still hold it in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed from your backups, except some older ones that still hold it in settings
+        [settings-erasing] removed from your backups, except some older ones that still hold it in settings, erasing what was in the way
+        [settings-except] removed from your backups, except some older ones that still hold it in settings, except notes in facets no longer in your journal
+        [settings-both] removed from your backups, except some older ones that still hold it in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed from your backups, except some older ones that still hold it in home
+        [home-erasing] removed from your backups, except some older ones that still hold it in home, erasing what was in the way
+        [home-except] removed from your backups, except some older ones that still hold it in home, except notes in facets no longer in your journal
+        [home-both] removed from your backups, except some older ones that still hold it in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed from your backups, except some older ones that still hold it
+        [backup-erasing] removed from your backups, except some older ones that still hold it, erasing what was in the way
+        [backup-except] removed from your backups, except some older ones that still hold it, except notes in facets no longer in your journal
+        [backup-both] removed from your backups, except some older ones that still hold it, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed from your backups, except some older ones that still hold it in agents
+        [agents-erasing] removed from your backups, except some older ones that still hold it in agents, erasing what was in the way
+        [agents-except] removed from your backups, except some older ones that still hold it in agents, except notes in facets no longer in your journal
+        [agents-both] removed from your backups, except some older ones that still hold it in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed from your backups, except some older ones that still hold it in activities
+        [activities-erasing] removed from your backups, except some older ones that still hold it in activities, erasing what was in the way
+        [activities-except] removed from your backups, except some older ones that still hold it in activities, except notes in facets no longer in your journal
+        [activities-both] removed from your backups, except some older ones that still hold it in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed from your backups, except some older ones that still hold it in speakers
+        [speakers-erasing] removed from your backups, except some older ones that still hold it in speakers, erasing what was in the way
+        [speakers-except] removed from your backups, except some older ones that still hold it in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed from your backups, except some older ones that still hold it in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed from your backups, except some older ones that still hold it from the command line
+        [cli-erasing] removed from your backups, except some older ones that still hold it from the command line, erasing what was in the way
+        [cli-except] removed from your backups, except some older ones that still hold it from the command line, except notes in facets no longer in your journal
+        [cli-both] removed from your backups, except some older ones that still hold it from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.backup.erase.shared = { $presentation ->
+       *[none-plain] removed from your backups · a part identical to something you kept stays, as part of what you kept.
+        [none-erasing] removed from your backups · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [none-except] removed from your backups · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [none-both] removed from your backups · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed from your backups in transcripts · a part identical to something you kept stays, as part of what you kept.
+        [transcripts-erasing] removed from your backups in transcripts · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [transcripts-except] removed from your backups in transcripts · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [transcripts-both] removed from your backups in transcripts · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed from your backups in body · a part identical to something you kept stays, as part of what you kept.
+        [body-erasing] removed from your backups in body · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [body-except] removed from your backups in body · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [body-both] removed from your backups in body · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed from your backups in import · a part identical to something you kept stays, as part of what you kept.
+        [import-erasing] removed from your backups in import · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [import-except] removed from your backups in import · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [import-both] removed from your backups in import · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed from your backups in entities · a part identical to something you kept stays, as part of what you kept.
+        [entities-erasing] removed from your backups in entities · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [entities-except] removed from your backups in entities · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [entities-both] removed from your backups in entities · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed from your backups in settings · a part identical to something you kept stays, as part of what you kept.
+        [settings-erasing] removed from your backups in settings · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [settings-except] removed from your backups in settings · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [settings-both] removed from your backups in settings · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed from your backups in home · a part identical to something you kept stays, as part of what you kept.
+        [home-erasing] removed from your backups in home · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [home-except] removed from your backups in home · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [home-both] removed from your backups in home · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed from your backups · a part identical to something you kept stays, as part of what you kept.
+        [backup-erasing] removed from your backups · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [backup-except] removed from your backups · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [backup-both] removed from your backups · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed from your backups in agents · a part identical to something you kept stays, as part of what you kept.
+        [agents-erasing] removed from your backups in agents · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [agents-except] removed from your backups in agents · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [agents-both] removed from your backups in agents · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed from your backups in activities · a part identical to something you kept stays, as part of what you kept.
+        [activities-erasing] removed from your backups in activities · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [activities-except] removed from your backups in activities · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [activities-both] removed from your backups in activities · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed from your backups in speakers · a part identical to something you kept stays, as part of what you kept.
+        [speakers-erasing] removed from your backups in speakers · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [speakers-except] removed from your backups in speakers · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [speakers-both] removed from your backups in speakers · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed from your backups from the command line · a part identical to something you kept stays, as part of what you kept.
+        [cli-erasing] removed from your backups from the command line · a part identical to something you kept stays, as part of what you kept., erasing what was in the way
+        [cli-except] removed from your backups from the command line · a part identical to something you kept stays, as part of what you kept., except notes in facets no longer in your journal
+        [cli-both] removed from your backups from the command line · a part identical to something you kept stays, as part of what you kept., erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.backup.erase.stays = { $presentation ->
+       *[none-plain] removed from your backups, but copies may stay in storage
+        [none-erasing] removed from your backups, but copies may stay in storage, erasing what was in the way
+        [none-except] removed from your backups, but copies may stay in storage, except notes in facets no longer in your journal
+        [none-both] removed from your backups, but copies may stay in storage, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed from your backups, but copies may stay in storage in transcripts
+        [transcripts-erasing] removed from your backups, but copies may stay in storage in transcripts, erasing what was in the way
+        [transcripts-except] removed from your backups, but copies may stay in storage in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed from your backups, but copies may stay in storage in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed from your backups, but copies may stay in storage in body
+        [body-erasing] removed from your backups, but copies may stay in storage in body, erasing what was in the way
+        [body-except] removed from your backups, but copies may stay in storage in body, except notes in facets no longer in your journal
+        [body-both] removed from your backups, but copies may stay in storage in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed from your backups, but copies may stay in storage in import
+        [import-erasing] removed from your backups, but copies may stay in storage in import, erasing what was in the way
+        [import-except] removed from your backups, but copies may stay in storage in import, except notes in facets no longer in your journal
+        [import-both] removed from your backups, but copies may stay in storage in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed from your backups, but copies may stay in storage in entities
+        [entities-erasing] removed from your backups, but copies may stay in storage in entities, erasing what was in the way
+        [entities-except] removed from your backups, but copies may stay in storage in entities, except notes in facets no longer in your journal
+        [entities-both] removed from your backups, but copies may stay in storage in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed from your backups, but copies may stay in storage in settings
+        [settings-erasing] removed from your backups, but copies may stay in storage in settings, erasing what was in the way
+        [settings-except] removed from your backups, but copies may stay in storage in settings, except notes in facets no longer in your journal
+        [settings-both] removed from your backups, but copies may stay in storage in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed from your backups, but copies may stay in storage in home
+        [home-erasing] removed from your backups, but copies may stay in storage in home, erasing what was in the way
+        [home-except] removed from your backups, but copies may stay in storage in home, except notes in facets no longer in your journal
+        [home-both] removed from your backups, but copies may stay in storage in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed from your backups, but copies may stay in storage
+        [backup-erasing] removed from your backups, but copies may stay in storage, erasing what was in the way
+        [backup-except] removed from your backups, but copies may stay in storage, except notes in facets no longer in your journal
+        [backup-both] removed from your backups, but copies may stay in storage, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed from your backups, but copies may stay in storage in agents
+        [agents-erasing] removed from your backups, but copies may stay in storage in agents, erasing what was in the way
+        [agents-except] removed from your backups, but copies may stay in storage in agents, except notes in facets no longer in your journal
+        [agents-both] removed from your backups, but copies may stay in storage in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed from your backups, but copies may stay in storage in activities
+        [activities-erasing] removed from your backups, but copies may stay in storage in activities, erasing what was in the way
+        [activities-except] removed from your backups, but copies may stay in storage in activities, except notes in facets no longer in your journal
+        [activities-both] removed from your backups, but copies may stay in storage in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed from your backups, but copies may stay in storage in speakers
+        [speakers-erasing] removed from your backups, but copies may stay in storage in speakers, erasing what was in the way
+        [speakers-except] removed from your backups, but copies may stay in storage in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed from your backups, but copies may stay in storage in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed from your backups, but copies may stay in storage from the command line
+        [cli-erasing] removed from your backups, but copies may stay in storage from the command line, erasing what was in the way
+        [cli-except] removed from your backups, but copies may stay in storage from the command line, except notes in facets no longer in your journal
+        [cli-both] removed from your backups, but copies may stay in storage from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.backup.off = { $presentation ->
+       *[none-plain] deleted when you turned off backup
+        [none-erasing] deleted when you turned off backup, erasing what was in the way
+        [none-except] deleted when you turned off backup, except notes in facets no longer in your journal
+        [none-both] deleted when you turned off backup, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] deleted when you turned off backup in transcripts
+        [transcripts-erasing] deleted when you turned off backup in transcripts, erasing what was in the way
+        [transcripts-except] deleted when you turned off backup in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] deleted when you turned off backup in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] deleted when you turned off backup in body
+        [body-erasing] deleted when you turned off backup in body, erasing what was in the way
+        [body-except] deleted when you turned off backup in body, except notes in facets no longer in your journal
+        [body-both] deleted when you turned off backup in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] deleted when you turned off backup in import
+        [import-erasing] deleted when you turned off backup in import, erasing what was in the way
+        [import-except] deleted when you turned off backup in import, except notes in facets no longer in your journal
+        [import-both] deleted when you turned off backup in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] deleted when you turned off backup in entities
+        [entities-erasing] deleted when you turned off backup in entities, erasing what was in the way
+        [entities-except] deleted when you turned off backup in entities, except notes in facets no longer in your journal
+        [entities-both] deleted when you turned off backup in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] deleted when you turned off backup in settings
+        [settings-erasing] deleted when you turned off backup in settings, erasing what was in the way
+        [settings-except] deleted when you turned off backup in settings, except notes in facets no longer in your journal
+        [settings-both] deleted when you turned off backup in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] deleted when you turned off backup in home
+        [home-erasing] deleted when you turned off backup in home, erasing what was in the way
+        [home-except] deleted when you turned off backup in home, except notes in facets no longer in your journal
+        [home-both] deleted when you turned off backup in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] deleted when you turned off backup
+        [backup-erasing] deleted when you turned off backup, erasing what was in the way
+        [backup-except] deleted when you turned off backup, except notes in facets no longer in your journal
+        [backup-both] deleted when you turned off backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] deleted when you turned off backup in agents
+        [agents-erasing] deleted when you turned off backup in agents, erasing what was in the way
+        [agents-except] deleted when you turned off backup in agents, except notes in facets no longer in your journal
+        [agents-both] deleted when you turned off backup in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] deleted when you turned off backup in activities
+        [activities-erasing] deleted when you turned off backup in activities, erasing what was in the way
+        [activities-except] deleted when you turned off backup in activities, except notes in facets no longer in your journal
+        [activities-both] deleted when you turned off backup in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] deleted when you turned off backup in speakers
+        [speakers-erasing] deleted when you turned off backup in speakers, erasing what was in the way
+        [speakers-except] deleted when you turned off backup in speakers, except notes in facets no longer in your journal
+        [speakers-both] deleted when you turned off backup in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] deleted when you turned off backup from the command line
+        [cli-erasing] deleted when you turned off backup from the command line, erasing what was in the way
+        [cli-except] deleted when you turned off backup from the command line, except notes in facets no longer in your journal
+        [cli-both] deleted when you turned off backup from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.facet.merge = { $presentation ->
+       *[none-plain] merged into another facet
+        [none-erasing] merged into another facet, erasing what was in the way
+        [none-except] merged into another facet, except notes in facets no longer in your journal
+        [none-both] merged into another facet, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] merged into another facet in transcripts
+        [transcripts-erasing] merged into another facet in transcripts, erasing what was in the way
+        [transcripts-except] merged into another facet in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] merged into another facet in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] merged into another facet in body
+        [body-erasing] merged into another facet in body, erasing what was in the way
+        [body-except] merged into another facet in body, except notes in facets no longer in your journal
+        [body-both] merged into another facet in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] merged into another facet in import
+        [import-erasing] merged into another facet in import, erasing what was in the way
+        [import-except] merged into another facet in import, except notes in facets no longer in your journal
+        [import-both] merged into another facet in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] merged into another facet in entities
+        [entities-erasing] merged into another facet in entities, erasing what was in the way
+        [entities-except] merged into another facet in entities, except notes in facets no longer in your journal
+        [entities-both] merged into another facet in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] merged into another facet in settings
+        [settings-erasing] merged into another facet in settings, erasing what was in the way
+        [settings-except] merged into another facet in settings, except notes in facets no longer in your journal
+        [settings-both] merged into another facet in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] merged into another facet in home
+        [home-erasing] merged into another facet in home, erasing what was in the way
+        [home-except] merged into another facet in home, except notes in facets no longer in your journal
+        [home-both] merged into another facet in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] merged into another facet in backup
+        [backup-erasing] merged into another facet in backup, erasing what was in the way
+        [backup-except] merged into another facet in backup, except notes in facets no longer in your journal
+        [backup-both] merged into another facet in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] merged into another facet in agents
+        [agents-erasing] merged into another facet in agents, erasing what was in the way
+        [agents-except] merged into another facet in agents, except notes in facets no longer in your journal
+        [agents-both] merged into another facet in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] merged into another facet in activities
+        [activities-erasing] merged into another facet in activities, erasing what was in the way
+        [activities-except] merged into another facet in activities, except notes in facets no longer in your journal
+        [activities-both] merged into another facet in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] merged into another facet in speakers
+        [speakers-erasing] merged into another facet in speakers, erasing what was in the way
+        [speakers-except] merged into another facet in speakers, except notes in facets no longer in your journal
+        [speakers-both] merged into another facet in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] merged into another facet from the command line
+        [cli-erasing] merged into another facet from the command line, erasing what was in the way
+        [cli-except] merged into another facet from the command line, except notes in facets no longer in your journal
+        [cli-both] merged into another facet from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.finish.stopped = { $presentation ->
+       *[none-plain] finished deleting
+        [none-erasing] finished deleting, erasing what was in the way
+        [none-except] finished deleting, except notes in facets no longer in your journal
+        [none-both] finished deleting, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] finished deleting in transcripts
+        [transcripts-erasing] finished deleting in transcripts, erasing what was in the way
+        [transcripts-except] finished deleting in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] finished deleting in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] finished deleting in body
+        [body-erasing] finished deleting in body, erasing what was in the way
+        [body-except] finished deleting in body, except notes in facets no longer in your journal
+        [body-both] finished deleting in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] finished deleting in import
+        [import-erasing] finished deleting in import, erasing what was in the way
+        [import-except] finished deleting in import, except notes in facets no longer in your journal
+        [import-both] finished deleting in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] finished deleting in entities
+        [entities-erasing] finished deleting in entities, erasing what was in the way
+        [entities-except] finished deleting in entities, except notes in facets no longer in your journal
+        [entities-both] finished deleting in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] finished deleting in settings
+        [settings-erasing] finished deleting in settings, erasing what was in the way
+        [settings-except] finished deleting in settings, except notes in facets no longer in your journal
+        [settings-both] finished deleting in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] finished deleting in home
+        [home-erasing] finished deleting in home, erasing what was in the way
+        [home-except] finished deleting in home, except notes in facets no longer in your journal
+        [home-both] finished deleting in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] finished deleting in backup
+        [backup-erasing] finished deleting in backup, erasing what was in the way
+        [backup-except] finished deleting in backup, except notes in facets no longer in your journal
+        [backup-both] finished deleting in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] finished deleting in agents
+        [agents-erasing] finished deleting in agents, erasing what was in the way
+        [agents-except] finished deleting in agents, except notes in facets no longer in your journal
+        [agents-both] finished deleting in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] finished deleting in activities
+        [activities-erasing] finished deleting in activities, erasing what was in the way
+        [activities-except] finished deleting in activities, except notes in facets no longer in your journal
+        [activities-both] finished deleting in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] finished deleting in speakers
+        [speakers-erasing] finished deleting in speakers, erasing what was in the way
+        [speakers-except] finished deleting in speakers, except notes in facets no longer in your journal
+        [speakers-both] finished deleting in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] finished deleting from the command line
+        [cli-erasing] finished deleting from the command line, erasing what was in the way
+        [cli-except] finished deleting from the command line, except notes in facets no longer in your journal
+        [cli-both] finished deleting from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.originals.release = { $presentation ->
+       *[none-plain] removed after you approved it
+        [none-erasing] removed after you approved it, erasing what was in the way
+        [none-except] removed after you approved it, except notes in facets no longer in your journal
+        [none-both] removed after you approved it, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed after you approved it in transcripts
+        [transcripts-erasing] removed after you approved it in transcripts, erasing what was in the way
+        [transcripts-except] removed after you approved it in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed after you approved it in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed after you approved it in body
+        [body-erasing] removed after you approved it in body, erasing what was in the way
+        [body-except] removed after you approved it in body, except notes in facets no longer in your journal
+        [body-both] removed after you approved it in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed after you approved it in import
+        [import-erasing] removed after you approved it in import, erasing what was in the way
+        [import-except] removed after you approved it in import, except notes in facets no longer in your journal
+        [import-both] removed after you approved it in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed after you approved it in entities
+        [entities-erasing] removed after you approved it in entities, erasing what was in the way
+        [entities-except] removed after you approved it in entities, except notes in facets no longer in your journal
+        [entities-both] removed after you approved it in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed after you approved it in settings
+        [settings-erasing] removed after you approved it in settings, erasing what was in the way
+        [settings-except] removed after you approved it in settings, except notes in facets no longer in your journal
+        [settings-both] removed after you approved it in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed after you approved it in home
+        [home-erasing] removed after you approved it in home, erasing what was in the way
+        [home-except] removed after you approved it in home, except notes in facets no longer in your journal
+        [home-both] removed after you approved it in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed after you approved it in backup
+        [backup-erasing] removed after you approved it in backup, erasing what was in the way
+        [backup-except] removed after you approved it in backup, except notes in facets no longer in your journal
+        [backup-both] removed after you approved it in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed after you approved it in agents
+        [agents-erasing] removed after you approved it in agents, erasing what was in the way
+        [agents-except] removed after you approved it in agents, except notes in facets no longer in your journal
+        [agents-both] removed after you approved it in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed after you approved it in activities
+        [activities-erasing] removed after you approved it in activities, erasing what was in the way
+        [activities-except] removed after you approved it in activities, except notes in facets no longer in your journal
+        [activities-both] removed after you approved it in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed after you approved it in speakers
+        [speakers-erasing] removed after you approved it in speakers, erasing what was in the way
+        [speakers-except] removed after you approved it in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed after you approved it in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed after you approved it from the command line
+        [cli-erasing] removed after you approved it from the command line, erasing what was in the way
+        [cli-except] removed after you approved it from the command line, except notes in facets no longer in your journal
+        [cli-both] removed after you approved it from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.other = { $presentation ->
+       *[none-plain] removed
+        [none-erasing] removed, erasing what was in the way
+        [none-except] removed, except notes in facets no longer in your journal
+        [none-both] removed, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed in transcripts
+        [transcripts-erasing] removed in transcripts, erasing what was in the way
+        [transcripts-except] removed in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed in body
+        [body-erasing] removed in body, erasing what was in the way
+        [body-except] removed in body, except notes in facets no longer in your journal
+        [body-both] removed in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed in import
+        [import-erasing] removed in import, erasing what was in the way
+        [import-except] removed in import, except notes in facets no longer in your journal
+        [import-both] removed in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed in entities
+        [entities-erasing] removed in entities, erasing what was in the way
+        [entities-except] removed in entities, except notes in facets no longer in your journal
+        [entities-both] removed in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed in settings
+        [settings-erasing] removed in settings, erasing what was in the way
+        [settings-except] removed in settings, except notes in facets no longer in your journal
+        [settings-both] removed in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed in home
+        [home-erasing] removed in home, erasing what was in the way
+        [home-except] removed in home, except notes in facets no longer in your journal
+        [home-both] removed in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed in backup
+        [backup-erasing] removed in backup, erasing what was in the way
+        [backup-except] removed in backup, except notes in facets no longer in your journal
+        [backup-both] removed in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed in agents
+        [agents-erasing] removed in agents, erasing what was in the way
+        [agents-except] removed in agents, except notes in facets no longer in your journal
+        [agents-both] removed in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed in activities
+        [activities-erasing] removed in activities, erasing what was in the way
+        [activities-except] removed in activities, except notes in facets no longer in your journal
+        [activities-both] removed in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed in speakers
+        [speakers-erasing] removed in speakers, erasing what was in the way
+        [speakers-except] removed in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed from the command line
+        [cli-erasing] removed from the command line, erasing what was in the way
+        [cli-except] removed from the command line, except notes in facets no longer in your journal
+        [cli-both] removed from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.segment.delete = { $presentation ->
+       *[none-plain] deleted
+        [none-erasing] deleted, erasing what was in the way
+        [none-except] deleted, except notes in facets no longer in your journal
+        [none-both] deleted, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] deleted in transcripts
+        [transcripts-erasing] deleted in transcripts, erasing what was in the way
+        [transcripts-except] deleted in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] deleted in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] deleted in body
+        [body-erasing] deleted in body, erasing what was in the way
+        [body-except] deleted in body, except notes in facets no longer in your journal
+        [body-both] deleted in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] deleted in import
+        [import-erasing] deleted in import, erasing what was in the way
+        [import-except] deleted in import, except notes in facets no longer in your journal
+        [import-both] deleted in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] deleted in entities
+        [entities-erasing] deleted in entities, erasing what was in the way
+        [entities-except] deleted in entities, except notes in facets no longer in your journal
+        [entities-both] deleted in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] deleted in settings
+        [settings-erasing] deleted in settings, erasing what was in the way
+        [settings-except] deleted in settings, except notes in facets no longer in your journal
+        [settings-both] deleted in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] deleted in home
+        [home-erasing] deleted in home, erasing what was in the way
+        [home-except] deleted in home, except notes in facets no longer in your journal
+        [home-both] deleted in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] deleted in backup
+        [backup-erasing] deleted in backup, erasing what was in the way
+        [backup-except] deleted in backup, except notes in facets no longer in your journal
+        [backup-both] deleted in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] deleted in agents
+        [agents-erasing] deleted in agents, erasing what was in the way
+        [agents-except] deleted in agents, except notes in facets no longer in your journal
+        [agents-both] deleted in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] deleted in activities
+        [activities-erasing] deleted in activities, erasing what was in the way
+        [activities-except] deleted in activities, except notes in facets no longer in your journal
+        [activities-both] deleted in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] deleted in speakers
+        [speakers-erasing] deleted in speakers, erasing what was in the way
+        [speakers-except] deleted in speakers, except notes in facets no longer in your journal
+        [speakers-both] deleted in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] deleted from the command line
+        [cli-erasing] deleted from the command line, erasing what was in the way
+        [cli-except] deleted from the command line, except notes in facets no longer in your journal
+        [cli-both] deleted from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.speakers.wipe = { $presentation ->
+       *[none-plain] cleared
+        [none-erasing] cleared, erasing what was in the way
+        [none-except] cleared, except notes in facets no longer in your journal
+        [none-both] cleared, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] cleared in transcripts
+        [transcripts-erasing] cleared in transcripts, erasing what was in the way
+        [transcripts-except] cleared in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] cleared in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] cleared in body
+        [body-erasing] cleared in body, erasing what was in the way
+        [body-except] cleared in body, except notes in facets no longer in your journal
+        [body-both] cleared in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] cleared in import
+        [import-erasing] cleared in import, erasing what was in the way
+        [import-except] cleared in import, except notes in facets no longer in your journal
+        [import-both] cleared in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] cleared in entities
+        [entities-erasing] cleared in entities, erasing what was in the way
+        [entities-except] cleared in entities, except notes in facets no longer in your journal
+        [entities-both] cleared in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] cleared in settings
+        [settings-erasing] cleared in settings, erasing what was in the way
+        [settings-except] cleared in settings, except notes in facets no longer in your journal
+        [settings-both] cleared in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] cleared in home
+        [home-erasing] cleared in home, erasing what was in the way
+        [home-except] cleared in home, except notes in facets no longer in your journal
+        [home-both] cleared in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] cleared in backup
+        [backup-erasing] cleared in backup, erasing what was in the way
+        [backup-except] cleared in backup, except notes in facets no longer in your journal
+        [backup-both] cleared in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] cleared in agents
+        [agents-erasing] cleared in agents, erasing what was in the way
+        [agents-except] cleared in agents, except notes in facets no longer in your journal
+        [agents-both] cleared in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] cleared in activities
+        [activities-erasing] cleared in activities, erasing what was in the way
+        [activities-except] cleared in activities, except notes in facets no longer in your journal
+        [activities-both] cleared in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] cleared in speakers
+        [speakers-erasing] cleared in speakers, erasing what was in the way
+        [speakers-except] cleared in speakers, except notes in facets no longer in your journal
+        [speakers-both] cleared in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] cleared from the command line
+        [cli-erasing] cleared from the command line, erasing what was in the way
+        [cli-except] cleared from the command line, except notes in facets no longer in your journal
+        [cli-both] cleared from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.action.voice.only.release = { $presentation ->
+       *[none-plain] removed because "leave out other voices" was on
+        [none-erasing] removed because "leave out other voices" was on, erasing what was in the way
+        [none-except] removed because "leave out other voices" was on, except notes in facets no longer in your journal
+        [none-both] removed because "leave out other voices" was on, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] removed because "leave out other voices" was on in transcripts
+        [transcripts-erasing] removed because "leave out other voices" was on in transcripts, erasing what was in the way
+        [transcripts-except] removed because "leave out other voices" was on in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] removed because "leave out other voices" was on in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] removed because "leave out other voices" was on in body
+        [body-erasing] removed because "leave out other voices" was on in body, erasing what was in the way
+        [body-except] removed because "leave out other voices" was on in body, except notes in facets no longer in your journal
+        [body-both] removed because "leave out other voices" was on in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] removed because "leave out other voices" was on in import
+        [import-erasing] removed because "leave out other voices" was on in import, erasing what was in the way
+        [import-except] removed because "leave out other voices" was on in import, except notes in facets no longer in your journal
+        [import-both] removed because "leave out other voices" was on in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] removed because "leave out other voices" was on in entities
+        [entities-erasing] removed because "leave out other voices" was on in entities, erasing what was in the way
+        [entities-except] removed because "leave out other voices" was on in entities, except notes in facets no longer in your journal
+        [entities-both] removed because "leave out other voices" was on in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] removed because "leave out other voices" was on in settings
+        [settings-erasing] removed because "leave out other voices" was on in settings, erasing what was in the way
+        [settings-except] removed because "leave out other voices" was on in settings, except notes in facets no longer in your journal
+        [settings-both] removed because "leave out other voices" was on in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] removed because "leave out other voices" was on in home
+        [home-erasing] removed because "leave out other voices" was on in home, erasing what was in the way
+        [home-except] removed because "leave out other voices" was on in home, except notes in facets no longer in your journal
+        [home-both] removed because "leave out other voices" was on in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] removed because "leave out other voices" was on in backup
+        [backup-erasing] removed because "leave out other voices" was on in backup, erasing what was in the way
+        [backup-except] removed because "leave out other voices" was on in backup, except notes in facets no longer in your journal
+        [backup-both] removed because "leave out other voices" was on in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] removed because "leave out other voices" was on in agents
+        [agents-erasing] removed because "leave out other voices" was on in agents, erasing what was in the way
+        [agents-except] removed because "leave out other voices" was on in agents, except notes in facets no longer in your journal
+        [agents-both] removed because "leave out other voices" was on in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] removed because "leave out other voices" was on in activities
+        [activities-erasing] removed because "leave out other voices" was on in activities, erasing what was in the way
+        [activities-except] removed because "leave out other voices" was on in activities, except notes in facets no longer in your journal
+        [activities-both] removed because "leave out other voices" was on in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] removed because "leave out other voices" was on in speakers
+        [speakers-erasing] removed because "leave out other voices" was on in speakers, erasing what was in the way
+        [speakers-except] removed because "leave out other voices" was on in speakers, except notes in facets no longer in your journal
+        [speakers-both] removed because "leave out other voices" was on in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] removed because "leave out other voices" was on from the command line
+        [cli-erasing] removed because "leave out other voices" was on from the command line, erasing what was in the way
+        [cli-except] removed because "leave out other voices" was on from the command line, except notes in facets no longer in your journal
+        [cli-both] removed because "leave out other voices" was on from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.event.erased = { $presentation ->
+       *[none-plain] erased
+        [none-erasing] erased, erasing what was in the way
+        [none-except] erased, except notes in facets no longer in your journal
+        [none-both] erased, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] erased in transcripts
+        [transcripts-erasing] erased in transcripts, erasing what was in the way
+        [transcripts-except] erased in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] erased in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] erased in body
+        [body-erasing] erased in body, erasing what was in the way
+        [body-except] erased in body, except notes in facets no longer in your journal
+        [body-both] erased in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] erased in import
+        [import-erasing] erased in import, erasing what was in the way
+        [import-except] erased in import, except notes in facets no longer in your journal
+        [import-both] erased in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] erased in entities
+        [entities-erasing] erased in entities, erasing what was in the way
+        [entities-except] erased in entities, except notes in facets no longer in your journal
+        [entities-both] erased in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] erased in settings
+        [settings-erasing] erased in settings, erasing what was in the way
+        [settings-except] erased in settings, except notes in facets no longer in your journal
+        [settings-both] erased in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] erased in home
+        [home-erasing] erased in home, erasing what was in the way
+        [home-except] erased in home, except notes in facets no longer in your journal
+        [home-both] erased in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] erased in backup
+        [backup-erasing] erased in backup, erasing what was in the way
+        [backup-except] erased in backup, except notes in facets no longer in your journal
+        [backup-both] erased in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] erased in agents
+        [agents-erasing] erased in agents, erasing what was in the way
+        [agents-except] erased in agents, except notes in facets no longer in your journal
+        [agents-both] erased in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] erased in activities
+        [activities-erasing] erased in activities, erasing what was in the way
+        [activities-except] erased in activities, except notes in facets no longer in your journal
+        [activities-both] erased in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] erased in speakers
+        [speakers-erasing] erased in speakers, erasing what was in the way
+        [speakers-except] erased in speakers, except notes in facets no longer in your journal
+        [speakers-both] erased in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] erased from the command line
+        [cli-erasing] erased from the command line, erasing what was in the way
+        [cli-except] erased from the command line, except notes in facets no longer in your journal
+        [cli-both] erased from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.event.erased.on.date = { $presentation ->
+       *[none-plain] erased on its date
+        [none-erasing] erased on its date, erasing what was in the way
+        [none-except] erased on its date, except notes in facets no longer in your journal
+        [none-both] erased on its date, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] erased on its date in transcripts
+        [transcripts-erasing] erased on its date in transcripts, erasing what was in the way
+        [transcripts-except] erased on its date in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] erased on its date in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] erased on its date in body
+        [body-erasing] erased on its date in body, erasing what was in the way
+        [body-except] erased on its date in body, except notes in facets no longer in your journal
+        [body-both] erased on its date in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] erased on its date in import
+        [import-erasing] erased on its date in import, erasing what was in the way
+        [import-except] erased on its date in import, except notes in facets no longer in your journal
+        [import-both] erased on its date in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] erased on its date in entities
+        [entities-erasing] erased on its date in entities, erasing what was in the way
+        [entities-except] erased on its date in entities, except notes in facets no longer in your journal
+        [entities-both] erased on its date in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] erased on its date in settings
+        [settings-erasing] erased on its date in settings, erasing what was in the way
+        [settings-except] erased on its date in settings, except notes in facets no longer in your journal
+        [settings-both] erased on its date in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] erased on its date in home
+        [home-erasing] erased on its date in home, erasing what was in the way
+        [home-except] erased on its date in home, except notes in facets no longer in your journal
+        [home-both] erased on its date in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] erased on its date in backup
+        [backup-erasing] erased on its date in backup, erasing what was in the way
+        [backup-except] erased on its date in backup, except notes in facets no longer in your journal
+        [backup-both] erased on its date in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] erased on its date in agents
+        [agents-erasing] erased on its date in agents, erasing what was in the way
+        [agents-except] erased on its date in agents, except notes in facets no longer in your journal
+        [agents-both] erased on its date in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] erased on its date in activities
+        [activities-erasing] erased on its date in activities, erasing what was in the way
+        [activities-except] erased on its date in activities, except notes in facets no longer in your journal
+        [activities-both] erased on its date in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] erased on its date in speakers
+        [speakers-erasing] erased on its date in speakers, erasing what was in the way
+        [speakers-except] erased on its date in speakers, except notes in facets no longer in your journal
+        [speakers-both] erased on its date in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] erased on its date from the command line
+        [cli-erasing] erased on its date from the command line, erasing what was in the way
+        [cli-except] erased on its date from the command line, except notes in facets no longer in your journal
+        [cli-both] erased on its date from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.event.recovered = { $presentation ->
+       *[none-plain] recovered
+        [none-erasing] recovered, erasing what was in the way
+        [none-except] recovered, except notes in facets no longer in your journal
+        [none-both] recovered, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] recovered in transcripts
+        [transcripts-erasing] recovered in transcripts, erasing what was in the way
+        [transcripts-except] recovered in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] recovered in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] recovered in body
+        [body-erasing] recovered in body, erasing what was in the way
+        [body-except] recovered in body, except notes in facets no longer in your journal
+        [body-both] recovered in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] recovered in import
+        [import-erasing] recovered in import, erasing what was in the way
+        [import-except] recovered in import, except notes in facets no longer in your journal
+        [import-both] recovered in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] recovered in entities
+        [entities-erasing] recovered in entities, erasing what was in the way
+        [entities-except] recovered in entities, except notes in facets no longer in your journal
+        [entities-both] recovered in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] recovered in settings
+        [settings-erasing] recovered in settings, erasing what was in the way
+        [settings-except] recovered in settings, except notes in facets no longer in your journal
+        [settings-both] recovered in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] recovered in home
+        [home-erasing] recovered in home, erasing what was in the way
+        [home-except] recovered in home, except notes in facets no longer in your journal
+        [home-both] recovered in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] recovered in backup
+        [backup-erasing] recovered in backup, erasing what was in the way
+        [backup-except] recovered in backup, except notes in facets no longer in your journal
+        [backup-both] recovered in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] recovered in agents
+        [agents-erasing] recovered in agents, erasing what was in the way
+        [agents-except] recovered in agents, except notes in facets no longer in your journal
+        [agents-both] recovered in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] recovered in activities
+        [activities-erasing] recovered in activities, erasing what was in the way
+        [activities-except] recovered in activities, except notes in facets no longer in your journal
+        [activities-both] recovered in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] recovered in speakers
+        [speakers-erasing] recovered in speakers, erasing what was in the way
+        [speakers-except] recovered in speakers, except notes in facets no longer in your journal
+        [speakers-both] recovered in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] recovered from the command line
+        [cli-erasing] recovered from the command line, erasing what was in the way
+        [cli-except] recovered from the command line, except notes in facets no longer in your journal
+        [cli-both] recovered from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.event.trashed = { $presentation ->
+       *[none-plain] moved to the trash
+        [none-erasing] moved to the trash, erasing what was in the way
+        [none-except] moved to the trash, except notes in facets no longer in your journal
+        [none-both] moved to the trash, erasing what was in the way, except notes in facets no longer in your journal
+        [transcripts-plain] moved to the trash in transcripts
+        [transcripts-erasing] moved to the trash in transcripts, erasing what was in the way
+        [transcripts-except] moved to the trash in transcripts, except notes in facets no longer in your journal
+        [transcripts-both] moved to the trash in transcripts, erasing what was in the way, except notes in facets no longer in your journal
+        [body-plain] moved to the trash in body
+        [body-erasing] moved to the trash in body, erasing what was in the way
+        [body-except] moved to the trash in body, except notes in facets no longer in your journal
+        [body-both] moved to the trash in body, erasing what was in the way, except notes in facets no longer in your journal
+        [import-plain] moved to the trash in import
+        [import-erasing] moved to the trash in import, erasing what was in the way
+        [import-except] moved to the trash in import, except notes in facets no longer in your journal
+        [import-both] moved to the trash in import, erasing what was in the way, except notes in facets no longer in your journal
+        [entities-plain] moved to the trash in entities
+        [entities-erasing] moved to the trash in entities, erasing what was in the way
+        [entities-except] moved to the trash in entities, except notes in facets no longer in your journal
+        [entities-both] moved to the trash in entities, erasing what was in the way, except notes in facets no longer in your journal
+        [settings-plain] moved to the trash in settings
+        [settings-erasing] moved to the trash in settings, erasing what was in the way
+        [settings-except] moved to the trash in settings, except notes in facets no longer in your journal
+        [settings-both] moved to the trash in settings, erasing what was in the way, except notes in facets no longer in your journal
+        [home-plain] moved to the trash in home
+        [home-erasing] moved to the trash in home, erasing what was in the way
+        [home-except] moved to the trash in home, except notes in facets no longer in your journal
+        [home-both] moved to the trash in home, erasing what was in the way, except notes in facets no longer in your journal
+        [backup-plain] moved to the trash in backup
+        [backup-erasing] moved to the trash in backup, erasing what was in the way
+        [backup-except] moved to the trash in backup, except notes in facets no longer in your journal
+        [backup-both] moved to the trash in backup, erasing what was in the way, except notes in facets no longer in your journal
+        [agents-plain] moved to the trash in agents
+        [agents-erasing] moved to the trash in agents, erasing what was in the way
+        [agents-except] moved to the trash in agents, except notes in facets no longer in your journal
+        [agents-both] moved to the trash in agents, erasing what was in the way, except notes in facets no longer in your journal
+        [activities-plain] moved to the trash in activities
+        [activities-erasing] moved to the trash in activities, erasing what was in the way
+        [activities-except] moved to the trash in activities, except notes in facets no longer in your journal
+        [activities-both] moved to the trash in activities, erasing what was in the way, except notes in facets no longer in your journal
+        [speakers-plain] moved to the trash in speakers
+        [speakers-erasing] moved to the trash in speakers, erasing what was in the way
+        [speakers-except] moved to the trash in speakers, except notes in facets no longer in your journal
+        [speakers-both] moved to the trash in speakers, erasing what was in the way, except notes in facets no longer in your journal
+        [cli-plain] moved to the trash from the command line
+        [cli-erasing] moved to the trash from the command line, erasing what was in the way
+        [cli-except] moved to the trash from the command line, except notes in facets no longer in your journal
+        [cli-both] moved to the trash from the command line, erasing what was in the way, except notes in facets no longer in your journal
+    }
+
+journal.window.settings.removal.history.group.backup.count = { $quantity ->
+        [one] { $count } backup copies
+       *[other] { $count } backup copies
+    }
+
+journal.window.settings.removal.history.group.detected.entities.count = { $quantity ->
+        [one] { $count } detected entities
+       *[other] { $count } detected entities
+    }
+
+journal.window.settings.removal.history.group.entity.count = { $quantity ->
+        [one] { $count } entities
+       *[other] { $count } entities
+    }
+
+journal.window.settings.removal.history.group.facet.count = { $quantity ->
+        [one] { $count } facets
+       *[other] { $count } facets
+    }
+
+journal.window.settings.removal.history.group.facet.file.count = { $quantity ->
+        [one] { $count } files from a facet merge
+       *[other] { $count } files from a facet merge
+    }
+
+journal.window.settings.removal.history.group.import.count = { $quantity ->
+        [one] { $count } imports
+       *[other] { $count } imports
+    }
+
+journal.window.settings.removal.history.group.memory.count = { $quantity ->
+        [one] { $count } memories agents saved
+       *[other] { $count } memories agents saved
+    }
+
+journal.window.settings.removal.history.group.mixed.count = { $quantity ->
+        [one] { $count } things
+       *[other] { $count } things
+    }
+
+journal.window.settings.removal.history.group.original.count = { $quantity ->
+        [one] { $count } originals
+       *[other] { $count } originals
+    }
+
+journal.window.settings.removal.history.group.originals.count = { $quantity ->
+        [one] original media from { $count } segments
+       *[other] original media from { $count } segments
+    }
+
+journal.window.settings.removal.history.group.segment.count = { $quantity ->
+        [one] { $count } segments
+       *[other] { $count } segments
+    }
+
+journal.window.settings.removal.history.group.speakers.count = { $quantity ->
+        [one] { $count } what your journal keeps about voices
+       *[other] { $count } what your journal keeps about voices
+    }
+
+journal.window.settings.removal.history.group.unknown.count = { $quantity ->
+        [one] { $count } other things
+       *[other] { $count } other things
+    }
+
+journal.window.settings.removal.history.group.workout.count = { $quantity ->
+        [one] { $count } workouts
+       *[other] { $count } workouts
+    }
+
+journal.window.settings.removal.history.imported.day = imported { $imported_day }
+
+journal.window.settings.removal.history.visible.count = showing the newest { $shown } of { $total }.
+
+journal.window.settings.retention.logs.keep.days = { $quantity ->
+        [one] currently: keep operational logs { $days } days
+       *[other] currently: keep operational logs { $days } days
+    }
+
+journal.window.settings.retention.originals.after.days.except.silent.audio = { $quantity ->
+        [one] currently: list originals for removal after { $days } day, except audio with no speech.
+       *[other] currently: list originals for removal after { $days } days, except audio with no speech.
+    }
+
+journal.window.settings.retention.originals.after.days.include.silent.audio = { $quantity ->
+        [one] currently: list originals for removal after { $days } day, and audio with no speech after processing.
+       *[other] currently: list originals for removal after { $days } days, and audio with no speech after processing.
+    }
+
+journal.window.settings.speech.left.out.recording.count = { $quantity ->
+        [one] speech left out today: { $duration } across 1 recording
+       *[other] speech left out today: { $duration } across { $recordings } recordings
+    }
+
+journal.window.settings.storage.mark.blocked.count = { $quantity ->
+        [one] { $count } segment blocked.
+       *[other] { $count } segments blocked.
+    }
+
+journal.window.settings.storage.mark.no.media.count = { $quantity ->
+        [one] { $count } segment with no original media.
+       *[other] { $count } segments with no original media.
+    }
+
+journal.window.settings.storage.mark.not.ready.count = { $quantity ->
+        [one] { $count } segment not ready yet.
+       *[other] { $count } segments not ready yet.
+    }
+
+journal.window.settings.storage.mark.unchanged.total = nothing new to add to the list. on the removal list: { $listed_originals }.
+
+journal.window.settings.storage.media.summary = { $quantity ->
+        [one] { $raw_segments } with raw media · { $purged_quantity ->
+        [one] { $purged_segments } purged
+       *[other] { $purged_segments } purged
+    }
+       *[other] { $raw_segments } with raw media · { $purged_quantity ->
+        [one] { $purged_segments } purged
+       *[other] { $purged_segments } purged
+    }
+    }
+
+journal.window.settings.storage.warning.no.automatic.removal = your journal is set to always retain original media, so nothing is added to the list automatically.
+
+journal.window.settings.trash.backup.failed.count = { $quantity ->
+        [one] couldn't remove 1 erased thing from your backups this time.
+       *[other] couldn't remove { $erased } erased things from your backups this time.
+    }
+
+journal.window.settings.trash.backup.partly.erased.count = { $quantity ->
+        [one] 1 erased thing is removed from your backups, except some older ones that still hold it.
+       *[other] { $erased } erased things are removed from your backups, except some older ones that still hold them.
+    }
+
+journal.window.settings.trash.backup.refused.count = { $quantity ->
+        [one] no backup can restore 1 erased thing, but your storage didn't delete its copies.
+       *[other] no backup can restore { $remaining } erased things, but your storage didn't delete their copies.
+    }
+
+journal.window.settings.trash.backup.retry.clock = your journal tries again at { $time }.
+
+journal.window.settings.trash.backup.retry.later = your journal tries again later.
+
+journal.window.settings.trash.backup.running.count = { $quantity ->
+        [one] removing 1 erased thing from your backups…
+       *[other] removing { $erased } erased things from your backups…
+    }
+
+journal.window.settings.trash.backup.stays.count = { $quantity ->
+        [one] no backup can restore 1 erased thing, but copies of it stay in your bucket.
+       *[other] no backup can restore { $remaining } erased things, but copies of them stay in your bucket.
+    }
+
+journal.window.settings.trash.backup.storage.refused = your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission.
+
+journal.window.settings.trash.backup.unknown.count = { $quantity ->
+        [one] no backup can restore 1 erased thing. your journal couldn't confirm its copies are gone from your bucket.
+       *[other] no backup can restore { $remaining } erased things. your journal couldn't confirm their copies are gone from your bucket.
+    }
+
+journal.window.settings.trash.backup.waiting.count = { $quantity ->
+        [one] 1 erased thing is waiting to be removed from your backups.
+       *[other] { $waiting } erased things are waiting to be removed from your backups.
+    }
+
+journal.window.settings.trash.body.span = { $first_day } to { $last_day }
+
+journal.window.settings.trash.confirm.empty.entity.count = { $quantity ->
+        [one] { $count } entity can't be recovered after this.
+       *[other] { $count } entities can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.facet.count = { $quantity ->
+        [one] { $count } facet can't be recovered after this.
+       *[other] { $count } facets can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.generic.count = { $quantity ->
+        [one] { $count } thing can't be recovered after this.
+       *[other] { $count } things can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.import.count = { $quantity ->
+        [one] { $count } import can't be recovered after this.
+       *[other] { $count } imports can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.memory.count = { $quantity ->
+        [one] { $count } memory can't be recovered after this.
+       *[other] { $count } memories can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.segment.count = { $quantity ->
+        [one] { $count } segment can't be recovered after this.
+       *[other] { $count } segments can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.stretch.count = { $quantity ->
+        [one] { $count } stretch of time can't be recovered after this.
+       *[other] { $count } stretches of time can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.empty.workout.count = { $quantity ->
+        [one] { $count } workout can't be recovered after this.
+       *[other] { $count } workouts can't be recovered after this.
+    }
+
+journal.window.settings.trash.confirm.erase.entity.count = { $quantity ->
+        [one] erase this entity now?
+       *[other] erase { $count } entities now?
+    }
+
+journal.window.settings.trash.confirm.erase.facet.count = { $quantity ->
+        [one] erase this facet now?
+       *[other] erase { $count } facets now?
+    }
+
+journal.window.settings.trash.confirm.erase.generic.count = { $quantity ->
+        [one] erase this thing now?
+       *[other] erase { $count } things now?
+    }
+
+journal.window.settings.trash.confirm.erase.import.count = { $quantity ->
+        [one] erase this import now?
+       *[other] erase { $count } imports now?
+    }
+
+journal.window.settings.trash.confirm.erase.memory.count = { $quantity ->
+        [one] erase this memory now?
+       *[other] erase { $count } memories now?
+    }
+
+journal.window.settings.trash.confirm.erase.segment.count = { $quantity ->
+        [one] erase this segment now?
+       *[other] erase { $count } segments now?
+    }
+
+journal.window.settings.trash.confirm.erase.stretch.count = { $quantity ->
+        [one] erase this stretch of time now?
+       *[other] erase { $count } stretches of time now?
+    }
+
+journal.window.settings.trash.confirm.erase.workout.count = { $quantity ->
+        [one] erase this workout now?
+       *[other] erase { $count } workouts now?
+    }
+
+journal.window.settings.trash.confirm.recover.over.existing.facets = { $quantity ->
+        [one] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
+       *[other] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
+    }
+
+journal.window.settings.trash.confirm.stretch.held.imports = { $quantity ->
+        [one] the { $imports } imports it holds, and the files they kept, are erased with it.
+       *[other] the { $imports } imports it holds, and the files they kept, are erased with it.
+    }
+
+journal.window.settings.trash.confirm.stretch.held.imports.none.kept = { $quantity ->
+        [one] the { $imports } imports it holds are erased with it.
+       *[other] the { $imports } imports it holds are erased with it.
+    }
+
+journal.window.settings.trash.confirm.waiting.segments.multiple.imports = { $quantity ->
+        [one] the { $segments } segments from them that wait in the trash on their own are erased with them.
+       *[other] the { $segments } segments from them that wait in the trash on their own are erased with them.
+    }
+
+journal.window.settings.trash.confirm.waiting.segments.one.import = { $quantity ->
+        [one] the { $segments } segments from it that wait in the trash on their own are erased with it.
+       *[other] the { $segments } segments from it that wait in the trash on their own are erased with it.
+    }
+
+journal.window.settings.trash.erase.day = erases { $erase_day }
+
+journal.window.settings.trash.erase.entity.count = { $quantity ->
+        [one] erased { $count } entity from your journal.
+       *[other] erased { $count } entities from your journal.
+    }
+
+journal.window.settings.trash.erase.facet.count = { $quantity ->
+        [one] erased { $count } facet from your journal.
+       *[other] erased { $count } facets from your journal.
+    }
+
+journal.window.settings.trash.erase.generic.count = { $quantity ->
+        [one] erased { $count } thing from your journal.
+       *[other] erased { $count } things from your journal.
+    }
+
+journal.window.settings.trash.erase.import.count = { $quantity ->
+        [one] erased { $count } import from your journal.
+       *[other] erased { $count } imports from your journal.
+    }
+
+journal.window.settings.trash.erase.memory.count = { $quantity ->
+        [one] erased { $count } memory from your journal.
+       *[other] erased { $count } memories from your journal.
+    }
+
+journal.window.settings.trash.erase.segment.count = { $quantity ->
+        [one] erased { $count } segment from your journal.
+       *[other] erased { $count } segments from your journal.
+    }
+
+journal.window.settings.trash.erase.stretch.count = { $quantity ->
+        [one] erased { $count } stretch of time from your journal.
+       *[other] erased { $count } stretches of time from your journal.
+    }
+
+journal.window.settings.trash.erase.workout.count = { $quantity ->
+        [one] erased { $count } workout from your journal.
+       *[other] erased { $count } workouts from your journal.
+    }
+
+journal.window.settings.trash.receipt.erased.partial.multiple.left = { $quantity ->
+        [one] erased { $erased } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the others couldn't be erased and are still in the trash.
+       *[other] erased { $erased } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the others couldn't be erased and are still in the trash.
+    }
+
+journal.window.settings.trash.receipt.erased.partial.one.left = { $quantity ->
+        [one] erased { $erased } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the other couldn't be erased and is still in the trash.
+       *[other] erased { $erased } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the other couldn't be erased and is still in the trash.
+    }
+
+journal.window.settings.trash.receipt.gone.additional = { $quantity ->
+        [one] { $gone } more are no longer in the trash.
+       *[other] { $gone } more are no longer in the trash.
+    }
+
+journal.window.settings.trash.receipt.recovered.partial.multiple.left = { $quantity ->
+        [one] recovered { $recovered } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the others couldn't be recovered and are still in the trash.
+       *[other] recovered { $recovered } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the others couldn't be recovered and are still in the trash.
+    }
+
+journal.window.settings.trash.receipt.recovered.partial.one.left = { $quantity ->
+        [one] recovered { $recovered } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the other couldn't be recovered and is still in the trash.
+       *[other] recovered { $recovered } of { $selected_quantity ->
+        [one] { $selected }
+       *[other] { $selected }
+    }. the other couldn't be recovered and is still in the trash.
+    }
+
+journal.window.settings.trash.recover.entity.count = { $quantity ->
+        [one] recovered { $count } entity.
+       *[other] recovered { $count } entities.
+    }
+
+journal.window.settings.trash.recover.facet.count = { $quantity ->
+        [one] recovered { $count } facet.
+       *[other] recovered { $count } facets.
+    }
+
+journal.window.settings.trash.recover.generic.count = { $quantity ->
+        [one] recovered { $count } thing.
+       *[other] recovered { $count } things.
+    }
+
+journal.window.settings.trash.recover.import.count = { $quantity ->
+        [one] recovered { $count } import.
+       *[other] recovered { $count } imports.
+    }
+
+journal.window.settings.trash.recover.memory.count = { $quantity ->
+        [one] recovered { $count } memory.
+       *[other] recovered { $count } memories.
+    }
+
+journal.window.settings.trash.recover.segment.count = { $quantity ->
+        [one] recovered { $count } segment.
+       *[other] recovered { $count } segments.
+    }
+
+journal.window.settings.trash.recover.stretch.count = { $quantity ->
+        [one] recovered { $count } stretch of time.
+       *[other] recovered { $count } stretches of time.
+    }
+
+journal.window.settings.trash.recover.workout.count = { $quantity ->
+        [one] recovered { $count } workout.
+       *[other] recovered { $count } workouts.
+    }
+
+journal.window.settings.trash.refusal.facets.named = recover { $facet_name } from the trash first, then this.
+
+journal.window.settings.trash.refusal.facets.named.multiple.others = { $quantity ->
+        [one] recover { $facet_name } and { $other_facets } others from the trash first, then this.
+       *[other] recover { $facet_name } and { $other_facets } others from the trash first, then this.
+    }
+
+journal.window.settings.trash.refusal.facets.named.one.other = recover { $facet_name } and 1 other from the trash first, then this.
+
+journal.window.settings.trash.refusal.imports.count = { $quantity ->
+        [one] recover the import it cleared voice data from first. it's in the trash.
+       *[other] recover the { $imports } imports it cleared voice data from first. they're in the trash.
+    }
+
+journal.window.settings.trash.refusal.people.named = recover { $person_name } from the trash first, then this.
+
+journal.window.settings.trash.refusal.people.named.multiple.others = { $quantity ->
+        [one] recover { $person_name } and { $other_people } others from the trash first, then this.
+       *[other] recover { $person_name } and { $other_people } others from the trash first, then this.
+    }
+
+journal.window.settings.trash.refusal.people.named.one.other = recover { $person_name } and 1 other from the trash first, then this.
+
+journal.window.settings.trash.refusal.segments.count = { $quantity ->
+        [one] recover the segment it cleared voice data from first. it's in the trash.
+       *[other] recover the { $segments } segments it cleared voice data from first. they're in the trash.
+    }
+
+journal.window.settings.trash.row.cleared.day = cleared { $cleared_day }
+
+journal.window.settings.trash.row.facets.count = { $quantity ->
+        [one] in 1 facet
+       *[other] in { $facets } facets
+    }
+
+journal.window.settings.trash.row.import.source.trashed = its import, { $import_label }, is in the trash. recover that first, then this.
+
+journal.window.settings.trash.row.merge.destination = merged into { $destination }
+
+journal.window.settings.trash.row.merge.destination.live = where both facets had a file of the same name, the merge kept { $destination }'s. recovering erases { $destination }'s and puts the other facet's in its place.
+
+journal.window.settings.trash.row.merge.destination.trashed = the facet these were merged into, { $destination }, is in the trash. recover that first, then this.
+
+journal.window.settings.trash.row.segment.count = { $quantity ->
+        [one] { $segments } segment
+       *[other] { $segments } segments
+    }
+
+journal.window.settings.trash.row.stretch.blocked.by.import = part of it comes from { $import_label }, an import that's in the trash. recover that first, then this.
+
+journal.window.settings.trash.row.stretch.held.import.label = it holds { $import_label } too, and the file it kept.
+
+journal.window.settings.trash.row.stretch.held.imports = { $quantity ->
+        [one] it holds { $imports } imports too, and the files they kept.
+       *[other] it holds { $imports } imports too, and the files they kept.
+    }
+
+journal.window.settings.trash.row.stretch.held.imports.none.kept = { $quantity ->
+        [one] it holds { $imports } imports too.
+       *[other] it holds { $imports } imports too.
+    }
+
+journal.window.settings.trash.selection.count = { $quantity ->
+        [one] { $selected } selected
+       *[other] { $selected } selected
+    }
+
 journal.window.shell.connecting = connecting…
 
 journal.window.shell.last.message = last message:
@@ -12119,8 +13509,6 @@ journal.window.settings.consent.facet.delete.copy.list.the.activities.it.found.a
 
 journal.window.settings.consent.facet.delete.copy.list.the.notes.it.keeps.about.its = the notes it keeps about its entities
 
-journal.window.settings.consent.facet.delete.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
-
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
@@ -12139,8 +13527,6 @@ journal.window.settings.consent.facet.delete.copy.movetotrash.move.to.trash = mo
 
 journal.window.settings.consent.facet.delete.copy.newname.a.new.facet.you.give.this = a new facet you give this name will hold those segments.
 
-journal.window.settings.consent.facet.delete.copy.noun.facet = facet
-
 journal.window.settings.consent.facet.delete.copy.opentrash.open.trash = open trash
 
 journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = it leaves your journal now and can't be recovered.
@@ -12155,21 +13541,13 @@ journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.
 
 journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.and.the.variant2 = segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.
 
-journal.window.settings.consent.facet.delete.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
-
 journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = couldn't move that to the trash
-
-journal.window.settings.consent.facet.delete.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
 
 journal.window.settings.consent.facet.delete.copy.title.delete.this.facet = delete this facet?
 
 journal.window.settings.consent.facet.delete.copy.title.erase.this.facet.now = erase this facet now?
 
 journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash = moved to the trash
-
-journal.window.settings.consent.facet.delete.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
-
-journal.window.settings.consent.facet.delete.copy.title.noun.recovered = { $slot1 } recovered
 
 journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer = your journal didn't answer
 
@@ -12197,25 +13575,15 @@ journal.window.settings.consent.trash.copy.backuplink.backup = backup →
 
 journal.window.settings.consent.trash.copy.body.body.data = body data
 
-journal.window.settings.consent.trash.copy.bodyempty.n.things.can.t.be.recovered = { $slot1 } { $slot2 } can't be recovered after this.
-
 journal.window.settings.consent.trash.copy.bodymany.they.can.t.be.recovered.after = they can't be recovered after this.
 
 journal.window.settings.consent.trash.copy.bodyone.it.can.t.be.recovered.after = it can't be recovered after this.
-
-journal.window.settings.consent.trash.copy.bodyspan.first.to.last = { $slot1 } to { $slot2 }
 
 journal.window.settings.consent.trash.copy.busy.something.else.is.changing.this.right = something else is changing this right now. try again in a minute.
 
 journal.window.settings.consent.trash.copy.cancel.cancel = cancel
 
-journal.window.settings.consent.trash.copy.cleared.cleared.day = cleared { $slot1 }
-
 journal.window.settings.consent.trash.copy.confirmempty.empty.the.trash = empty the trash?
-
-journal.window.settings.consent.trash.copy.confirmmany.erase.n.things.now = erase { $slot1 } { $slot2 } now?
-
-journal.window.settings.consent.trash.copy.confirmone.erase.this.thing.now = erase this { $slot1 } now?
 
 journal.window.settings.consent.trash.copy.detaching.this.stopped.part.way.into.the = this stopped part way into the trash. your journal keeps trying to finish moving it.
 
@@ -12231,31 +13599,19 @@ journal.window.settings.consent.trash.copy.entityhiddenback.recovering.puts.it.b
 
 journal.window.settings.consent.trash.copy.entitysamename.another.entity.with.this.name.is = another entity with this name is in your journal now. recovering puts this one back beside it.
 
-journal.window.settings.consent.trash.copy.erased.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal.
-
 journal.window.settings.consent.trash.copy.erasefailedmany.couldn.t.erase.those.so.they = couldn't erase those, so they're still in the trash. try again.
 
 journal.window.settings.consent.trash.copy.erasefailedone.couldn.t.erase.that.so.it = couldn't erase that, so it's still in the trash. try again.
 
 journal.window.settings.consent.trash.copy.erasenow.erase.now = erase now
 
-journal.window.settings.consent.trash.copy.eraseson.erases.date = erases { $slot1 }
-
 journal.window.settings.consent.trash.copy.erasingsoon.erasing.soon = erasing soon
 
 journal.window.settings.consent.trash.copy.error.couldn.t.load.your.trash.reload = couldn't load your trash. reload the page to try again.
 
-journal.window.settings.consent.trash.copy.facetmany.in.n.facets = in { $slot1 } facets
-
-journal.window.settings.consent.trash.copy.facetone.in.facet = in 1 facet
-
 journal.window.settings.consent.trash.copy.facetreplaces.another.facet.with.this.name.is = another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.
 
-journal.window.settings.consent.trash.copy.failedone.couldn.t.remove.erased.thing.from = couldn't remove 1 erased thing from your backups this time. your journal tries again { $slot1 }.
-
 journal.window.settings.consent.trash.copy.gonemany.those.are.no.longer.in.the = those are no longer in the trash.
-
-journal.window.settings.consent.trash.copy.gonemoremany.n.more.are.no.longer.in = { $slot1 } more are no longer in the trash.
 
 journal.window.settings.consent.trash.copy.gonemoreone.more.is.no.longer.in.the = 1 more is no longer in the trash.
 
@@ -12271,10 +13627,6 @@ journal.window.settings.consent.trash.copy.importintrash.recover.its.import.from
 
 journal.window.settings.consent.trash.copy.importtrashed.its.import.is.in.the.trash = its import is in the trash. recover the import first, then this.
 
-journal.window.settings.consent.trash.copy.importtrashedlabel.its.import.label.is.in.the = its import, { $slot1 }, is in the trash. recover that first, then this.
-
-journal.window.settings.consent.trash.copy.later.later = later
-
 journal.window.settings.consent.trash.copy.legacy.archive.media.your.journal.archived.before.it = media your journal archived before it noted where each file sits can't be taken out of that archive safely, so that archive keeps it.
 
 journal.window.settings.consent.trash.copy.location.location = location
@@ -12289,15 +13641,9 @@ journal.window.settings.consent.trash.copy.mentionsmany.anything.elsewhere.in.yo
 
 journal.window.settings.consent.trash.copy.mentionsone.anything.elsewhere.in.your.journal.that = anything elsewhere in your journal that mentions it isn't erased.
 
-journal.window.settings.consent.trash.copy.mergedinto.merged.into.title = merged into { $slot1 }
-
 journal.window.settings.consent.trash.copy.mergegone.the.facet.these.were.merged.into = the facet these were merged into is no longer in your journal, so they can't be recovered.
 
-journal.window.settings.consent.trash.copy.mergelive.where.both.facets.had.a.file = where both facets had a file of the same name, the merge kept { $slot1 }'s. recovering erases { $slot2 }'s and puts the other facet's in its place.
-
 journal.window.settings.consent.trash.copy.mergenomanifest.recovering.puts.these.back.where.the = recovering puts these back where the merge left them, outside any facet.
-
-journal.window.settings.consent.trash.copy.mergetrashed.the.facet.these.were.merged.into = the facet these were merged into, { $slot1 }, is in the trash. recover that first, then this.
 
 journal.window.settings.consent.trash.copy.nametaken.this.can.t.be.recovered.while = this can't be recovered while a different file is in its place in the segment.
 
@@ -12317,25 +13663,11 @@ journal.window.settings.consent.trash.copy.originalsstaysone.its.segment.and.eve
 
 journal.window.settings.consent.trash.copy.other.other.things.in.your.journal = other things in your journal
 
-journal.window.settings.consent.trash.copy.partialerasemany.erased.done.of.n.the.others = erased { $slot1 } of { $slot2 }. the others couldn't be erased and are still in the trash.
-
-journal.window.settings.consent.trash.copy.partialeraseone.erased.done.of.n.the.other = erased { $slot1 } of { $slot2 }. the other couldn't be erased and is still in the trash.
-
-journal.window.settings.consent.trash.copy.partialrecovermany.recovered.done.of.n.the.others = recovered { $slot1 } of { $slot2 }. the others couldn't be recovered and are still in the trash.
-
-journal.window.settings.consent.trash.copy.partialrecoverone.recovered.done.of.n.the.other = recovered { $slot1 } of { $slot2 }. the other couldn't be recovered and is still in the trash.
-
-journal.window.settings.consent.trash.copy.partmany.n.erased.things.are.removed.from = { $slot1 } erased things are removed from your backups, except some older ones that still hold them.
-
-journal.window.settings.consent.trash.copy.partone.erased.thing.is.removed.from.your = 1 erased thing is removed from your backups, except some older ones that still hold it.
-
 journal.window.settings.consent.trash.copy.range.choose.a.number.from.to = choose a number from 1 to 30.
 
 journal.window.settings.consent.trash.copy.recordingintrash.recover.its.segment.from.the.trash = recover its segment from the trash first, then this.
 
 journal.window.settings.consent.trash.copy.recover.recover = recover
-
-journal.window.settings.consent.trash.copy.recovered.recovered.n.things = recovered { $slot1 } { $slot2 }.
 
 journal.window.settings.consent.trash.copy.recoverfailedmany.couldn.t.recover.those.so.they = couldn't recover those, so they're still in the trash. try again.
 
@@ -12347,17 +13679,9 @@ journal.window.settings.consent.trash.copy.recoverstuckone.couldn.t.recover.that
 
 journal.window.settings.consent.trash.copy.redirected.this.facet.s.name.now.leads = this facet's name now leads to another facet, so it can't be recovered.
 
-journal.window.settings.consent.trash.copy.refused.your.storage.said.no.or.said = your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission. your journal tries again { $slot1 }.
-
-journal.window.settings.consent.trash.copy.refusedmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things, but your storage didn't delete their copies.
-
-journal.window.settings.consent.trash.copy.refusedone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing, but your storage didn't delete its copies.
-
 journal.window.settings.consent.trash.copy.replaceconfirm.recover.and.replace = recover and replace
 
 journal.window.settings.consent.trash.copy.replaceone.another.facet.with.this.name.is = another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.
-
-journal.window.settings.consent.trash.copy.replacesomemany.k.facets.you.picked.each.have = { $slot1 } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
 
 journal.window.settings.consent.trash.copy.replacesomeone.facet.you.picked.has.another.with = 1 facet you picked has another with the same name in your journal now. recovering erases that one, with everything in it, and puts this one back.
 
@@ -12369,17 +13693,7 @@ journal.window.settings.consent.trash.copy.returnedimport.some.of.what.it.brough
 
 journal.window.settings.consent.trash.copy.returnedworkout.the.same.workout.is.back.in = the same workout is back in your journal. recovering replaces that copy.
 
-journal.window.settings.consent.trash.copy.running.removing.n.erased.things.from.your = removing { $slot1 } erased things from your backups…
-
-journal.window.settings.consent.trash.copy.runningone.removing.erased.thing.from.your.backups = removing 1 erased thing from your backups…
-
 journal.window.settings.consent.trash.copy.screen.screen = screen
-
-journal.window.settings.consent.trash.copy.segmentmany.n.segments = { $slot1 } segments
-
-journal.window.settings.consent.trash.copy.segmentone.n.segment = { $slot1 } segment
-
-journal.window.settings.consent.trash.copy.selected.n.selected = { $slot1 } selected
 
 journal.window.settings.consent.trash.copy.settinglabel.also.remove.erased.things.from.your = also remove erased things from your backups
 
@@ -12409,23 +13723,13 @@ journal.window.settings.consent.trash.copy.speakerskept.people.and.segments.that
 
 journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back.what.was.cleared = recovering puts back what was cleared, replacing what's been redone since for the same segments and people, including speakers you named.
 
-journal.window.settings.consent.trash.copy.staysmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things, but copies of them stay in your bucket.
-
 journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in = summaries made from them elsewhere in your journal aren't erased and may still mention them.
-
-journal.window.settings.consent.trash.copy.staysone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing, but copies of it stay in your bucket.
 
 journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = summaries made from it elsewhere in your journal aren't erased and may still mention it.
 
 journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups = removing erased things from your backups stopped part way. your journal picks it up again on its own.
 
 journal.window.settings.consent.trash.copy.stretchblocked.part.of.it.comes.from.an = part of it comes from an import that's in the trash. recover the import first, then this.
-
-journal.window.settings.consent.trash.copy.stretchblockedlabel.part.of.it.comes.from.label = part of it comes from { $slot1 }, an import that's in the trash. recover that first, then this.
-
-journal.window.settings.consent.trash.copy.stretcherasesmany.the.k.imports.it.holds.and = the { $slot1 } imports it holds, and the files they kept, are erased with it.
-
-journal.window.settings.consent.trash.copy.stretcherasesmanynone.the.k.imports.it.holds.are = the { $slot1 } imports it holds are erased with it.
 
 journal.window.settings.consent.trash.copy.stretcherasesone.the.import.it.holds.and.the = the import it holds, and the file it kept, are erased with it.
 
@@ -12435,12 +13739,6 @@ journal.window.settings.consent.trash.copy.stretchfinishing.this.is.still.moving
 
 journal.window.settings.consent.trash.copy.stretchfinishing.this.stopped.part.way.into.the = this stopped part way into the trash. your journal keeps trying to finish moving it, and you can recover or erase it once it has.
 
-journal.window.settings.consent.trash.copy.stretchholdslabel.it.holds.label.too.and.the = it holds { $slot1 } too, and the file it kept.
-
-journal.window.settings.consent.trash.copy.stretchholdsmany.it.holds.k.imports.too.and = it holds { $slot1 } imports too, and the files they kept.
-
-journal.window.settings.consent.trash.copy.stretchholdsmanynone.it.holds.k.imports.too = it holds { $slot1 } imports too.
-
 journal.window.settings.consent.trash.copy.stretchholdsone.it.holds.an.import.too = it holds an import too.
 
 journal.window.settings.consent.trash.copy.stretchimportintrash.recover.the.import.part.of.it = recover the import part of it comes from first. it's in the trash.
@@ -12449,23 +13747,11 @@ journal.window.settings.consent.trash.copy.taken.this.can.t.be.recovered.because
 
 journal.window.settings.consent.trash.copy.unknown.check.your.bucket.s.versioning.lifecycle = check your bucket's versioning, lifecycle and lock settings to make sure the copies are gone.
 
-journal.window.settings.consent.trash.copy.unknownmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things. your journal couldn't confirm their copies are gone from your bucket.
-
-journal.window.settings.consent.trash.copy.unknownone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing. your journal couldn't confirm its copies are gone from your bucket.
-
 journal.window.settings.consent.trash.copy.versions.your.storage.keeps.earlier.versions.of = your storage keeps earlier versions of deleted files, so the copies stay in your bucket until you delete those versions or your provider's own rules remove them.
 
 journal.window.settings.consent.trash.copy.waitbusy.this.starts.when.the.backup.that = this starts when the backup that's running now finishes.
 
-journal.window.settings.consent.trash.copy.waitingmany.n.erased.things.are.waiting.to = { $slot1 } erased things are waiting to be removed from your backups.
-
-journal.window.settings.consent.trash.copy.waitingone.erased.thing.is.waiting.to.be = 1 erased thing is waiting to be removed from your backups.
-
-journal.window.settings.consent.trash.copy.waitingownmanymany.the.w.segments.from.them.that = the { $slot1 } segments from them that wait in the trash on their own are erased with them.
-
 journal.window.settings.consent.trash.copy.waitingownmanyone.the.segment.from.them.that.waits = the segment from them that waits in the trash on its own is erased with them.
-
-journal.window.settings.consent.trash.copy.waitingownonemany.the.w.segments.from.it.that = the { $slot1 } segments from it that wait in the trash on their own are erased with it.
 
 journal.window.settings.consent.trash.copy.waitingownoneone.the.segment.from.it.that.waits = the segment from it that waits in the trash on its own is erased with it.
 
@@ -12474,26 +13760,6 @@ journal.window.settings.consent.trash.copy.waitoffline.your.journal.can.t.reach.
 journal.window.settings.consent.trash.copy.waitpaused.backup.is.paused.so.this.happens = backup is paused, so this happens once you resume it.
 
 journal.window.settings.consent.trash.copy.waitsboth.recover.the.segments.and.imports.it = recover the segments and imports it cleared voice data from first. they're in the trash.
-
-journal.window.settings.consent.trash.copy.waitsfacetmany.recover.title.and.n.others.from = recover { $slot1 } and { $slot2 } others from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitsfacetnone.recover.title.from.the.trash.first = recover { $slot1 } from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitsfacetone.recover.title.and.other.from.the = recover { $slot1 } and 1 other from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitsimportmany.recover.the.n.imports.it.cleared = recover the { $slot1 } imports it cleared voice data from first. they're in the trash.
-
-journal.window.settings.consent.trash.copy.waitsimportone.recover.the.import.it.cleared.voice = recover the import it cleared voice data from first. it's in the trash.
-
-journal.window.settings.consent.trash.copy.waitspersonmany.recover.name.and.n.others.from = recover { $slot1 } and { $slot2 } others from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitspersonnone.recover.name.from.the.trash.first = recover { $slot1 } from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitspersonone.recover.name.and.other.from.the = recover { $slot1 } and 1 other from the trash first, then this.
-
-journal.window.settings.consent.trash.copy.waitssegmentmany.recover.the.n.segments.it.cleared = recover the { $slot1 } segments it cleared voice data from first. they're in the trash.
-
-journal.window.settings.consent.trash.copy.waitssegmentone.recover.the.segment.it.cleared.voice = recover the segment it cleared voice data from first. it's in the trash.
 
 journal.window.settings.consent.trash.copy.why.why.and.what.you.can.do = why, and what you can do
 
@@ -12743,10 +14009,6 @@ journal.window.settings.granola.state.words.ready.ready.to.set.up = ready to set
 
 journal.window.settings.granola.state.words.setting.up.setting.up = setting up
 
-journal.window.settings.granola.stays.many = stay
-
-journal.window.settings.granola.stays.one = stays
-
 journal.window.settings.group.label.ai = AI
 
 journal.window.settings.group.label.data = data
@@ -12819,8 +14081,6 @@ journal.window.settings.importance.labels.low.low.priority = low priority
 
 journal.window.settings.importance.labels.normal.normal = normal
 
-journal.window.settings.link.label.api.keys = API keys
-
 journal.window.settings.link.label.confidential.setup = confidential setup
 
 journal.window.settings.link.label.configure.in.api.keys = configure in API keys
@@ -12831,17 +14091,9 @@ journal.window.settings.link.label.set.up.your.voice.first = set up your voice f
 
 journal.window.settings.link.label.settings = settings
 
-journal.window.settings.logs.deleted = deleted
-
-journal.window.settings.logs.directories = { $count }{ $slot1 }cache dir(s)
-
-journal.window.settings.logs.files = { $count }{ $slot1 }file(s)
-
 journal.window.settings.logs.no.deletions = no deletions
 
 journal.window.settings.logs.preview = preview
-
-journal.window.settings.logs.skipped = { $count }{ $slot1 }skipped
 
 journal.window.settings.option.label.about = about
 
@@ -12905,125 +14157,45 @@ journal.window.settings.redaction.many = { $count }{ $slot1 }rules
 
 journal.window.settings.redaction.one = { $count }{ $slot1 }rule
 
-journal.window.settings.removal.action.backup.erase.partly.removed.from.your.backups.except.some = removed from your backups, except some older ones that still hold it
-
-journal.window.settings.removal.action.backup.erase.removed.from.your.backups = removed from your backups
-
-journal.window.settings.removal.action.backup.erase.shared.removed.from.your.backups = removed from your backups
-
-journal.window.settings.removal.action.backup.erase.stays.removed.from.your.backups.but.copies = removed from your backups, but copies may stay in storage
-
-journal.window.settings.removal.action.backup.off.deleted.when.you.turned.off.backup = deleted when you turned off backup
-
-journal.window.settings.removal.action.detected.entities.delete.deleted = deleted
-
-journal.window.settings.removal.action.entity.delete.deleted = deleted
-
-journal.window.settings.removal.action.facet.delete.deleted = deleted
-
-journal.window.settings.removal.action.facet.merge.merged.into.another.facet = merged into another facet
-
-journal.window.settings.removal.action.fallback.label.removed = removed
-
-journal.window.settings.removal.action.finish.stopped.finished.deleting = finished deleting
-
-journal.window.settings.removal.action.import.delete.deleted = deleted
-
-journal.window.settings.removal.action.memory.delete.deleted = deleted
-
-journal.window.settings.removal.action.note.backup.erase.shared.a.part.identical.to.something.you = a part identical to something you kept stays, as part of what you kept.
-
-journal.window.settings.removal.action.originals.release.removed.after.you.approved.it = removed after you approved it
-
-journal.window.settings.removal.action.segment.delete.deleted = deleted
-
-journal.window.settings.removal.action.speakers.wipe.cleared = cleared
-
-journal.window.settings.removal.action.stretch.delete.deleted = deleted
-
-journal.window.settings.removal.action.voice.only.release.removed.because.leave.out.other.voices = removed because "leave out other voices" was on
-
-journal.window.settings.removal.action.workout.delete.deleted = deleted
-
 journal.window.settings.removal.backup.operated.storage.sol.pbc.operates = storage { $slot1 } operates
 
 journal.window.settings.removal.backup.own.your.own.storage = your own storage
 
 journal.window.settings.removal.copy.empty.nothing.has.been.removed.since.your = nothing has been removed since your journal started keeping this history. anything removed before then isn't listed.
 
-journal.window.settings.removal.copy.erasedonitsdate.erased.on.its.date = erased on its date
-
 journal.window.settings.removal.copy.error.couldn.t.load.your.removal.history = couldn't load your removal history. reload the page to try again.
 
-journal.window.settings.removal.copy.foldboth.how.erasing.what.was.in.the = { $slot1 }, erasing what was in the way, except notes in facets no longer in your journal
-
-journal.window.settings.removal.copy.folderasing.how.erasing.what.was.in.the = { $slot1 }, erasing what was in the way
-
-journal.window.settings.removal.copy.foldexcept.how.except.notes.in.facets.no = { $slot1 }, except notes in facets no longer in your journal
-
 journal.window.settings.removal.copy.footall.anything.removed.before.your.journal.started = anything removed before your journal started keeping this history isn't listed.
-
-journal.window.settings.removal.copy.footsome.showing.the.newest.shown.of.total = showing the newest { $slot1 } of { $slot2 }.
-
-journal.window.settings.removal.copy.mixed.n.things = { $slot1 } things
 
 journal.window.settings.removal.copy.namenotkept.its.name.isn.t.kept = its name isn't kept
 
 journal.window.settings.removal.detail.the.selection.couldn.t.be.read = the selection couldn't be read
 
-journal.window.settings.removal.event.erased.erased = erased
-
-journal.window.settings.removal.event.recovered.recovered = recovered
-
-journal.window.settings.removal.event.trashed.moved.to.the.trash = moved to the trash
-
-journal.window.settings.removal.imported.label.imported.day = imported { $slot1 }
-
 journal.window.settings.removal.kind.backup.backup.copies = backup copies
 
-journal.window.settings.removal.kind.detected.entities.detected.entities = detected entities
-
 journal.window.settings.removal.kind.detected.entities.detected.entity = detected entity
-
-journal.window.settings.removal.kind.entity.entities = entities
 
 journal.window.settings.removal.kind.entity.entity = entity
 
 journal.window.settings.removal.kind.facet.facet = facet
 
-journal.window.settings.removal.kind.facet.facets = facets
-
 journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge = files from a facet merge
-
-journal.window.settings.removal.kind.fallback.label.other.things = other things
 
 journal.window.settings.removal.kind.fallback.label.something.else = something else
 
-journal.window.settings.removal.kind.group.originals.original.media.from.n.segments = original media from { $slot1 } segments
-
 journal.window.settings.removal.kind.import.import = import
-
-journal.window.settings.removal.kind.import.imports = imports
-
-journal.window.settings.removal.kind.memory.memories.agents.saved = memories agents saved
 
 journal.window.settings.removal.kind.memory.memory.an.agent.saved = memory an agent saved
 
 journal.window.settings.removal.kind.original.original.media = original media
 
-journal.window.settings.removal.kind.original.originals = originals
-
 journal.window.settings.removal.kind.originals.original.media = original media
 
 journal.window.settings.removal.kind.segment.segment = segment
 
-journal.window.settings.removal.kind.segment.segments = segments
-
 journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices = what your journal keeps about voices
 
 journal.window.settings.removal.kind.workout.workout = workout
-
-journal.window.settings.removal.kind.workout.workouts = workouts
 
 journal.window.settings.removal.response.action.failure = your journal couldn't finish that. reload your trash to check.
 
@@ -13056,28 +14228,6 @@ journal.window.settings.removal.source.quick.quick.import = quick import
 journal.window.settings.removal.source.recording.meeting.audio = meeting audio
 
 journal.window.settings.removal.source.text.text = text
-
-journal.window.settings.removal.surface.activities.in.activities = in activities
-
-journal.window.settings.removal.surface.agents.in.agents = in agents
-
-journal.window.settings.removal.surface.backup.in.backup = in backup
-
-journal.window.settings.removal.surface.body.in.body = in body
-
-journal.window.settings.removal.surface.cli.from.the.command.line = from the command line
-
-journal.window.settings.removal.surface.entities.in.entities = in entities
-
-journal.window.settings.removal.surface.home.in.home = in home
-
-journal.window.settings.removal.surface.import.in.import = in import
-
-journal.window.settings.removal.surface.settings.in.settings = in settings
-
-journal.window.settings.removal.surface.speakers.in.speakers = in speakers
-
-journal.window.settings.removal.surface.transcripts.in.transcripts = in transcripts
 
 journal.window.settings.retention.detail.days.must.be.a.positive.integer = days must be a positive integer
 
@@ -13199,8 +14349,6 @@ journal.window.settings.settings.content.save.failed = Save failed
 
 journal.window.settings.settings.content.unknown.error = unknown error
 
-journal.window.settings.settings.content.would.be.deleted = would be deleted
-
 journal.window.settings.settings.copy.heading.couldn.t.load.settings = couldn't load settings
 
 journal.window.settings.settings.copy.heading.couldn.t.load.storage.settings = couldn't load storage settings
@@ -13221,10 +14369,6 @@ journal.window.settings.settings.copy.statustext.currently.list.originals.for.re
 
 journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant2 = currently: list originals for removal after processing, except audio with no speech.
 
-journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant3 = currently: list originals for removal after{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, except audio with no speech.
-
-journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant4 = currently: list originals for removal after{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, and audio with no speech after processing.
-
 journal.window.settings.settings.copy.text.face.data.couldn.t.be.erased = face data couldn't be erased.
 
 journal.window.settings.settings.copy.text.loading.settings = loading settings…
@@ -13237,17 +14381,9 @@ journal.window.settings.settings.copy.title.reload.to.apply = reload to apply
 
 journal.window.settings.settings.description.face.data.erased = face data erased.
 
-journal.window.settings.settings.description.hour.ago = 1 hour ago
-
 journal.window.settings.settings.description.just.now = just now
 
-journal.window.settings.settings.description.meeting = 1 meeting
-
 journal.window.settings.settings.description.there.was.no.face.data.to = there was no face data to erase.
-
-journal.window.settings.settings.description.value1.hours.ago = { $value1 }{ $slot1 }hours ago
-
-journal.window.settings.settings.description.value1.min.ago = { $value1 }{ $slot1 }min ago
 
 journal.window.settings.settings.feedback.add.a.facet = add a facet
 
@@ -13256,8 +14392,6 @@ journal.window.settings.settings.feedback.add.a.facet.variant2 = + add a facet
 journal.window.settings.settings.feedback.add.failed = add failed
 
 journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola = bringing in your meetings from { $slot1 }…
-
-journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola.variant2 = bringing in your meetings from { $slot1 }.{ $slot2 }{ $value1 }{ $slot3 }so far.
 
 journal.window.settings.settings.feedback.check.now = check now
 
@@ -13278,8 +14412,6 @@ journal.window.settings.settings.feedback.couldn.t.refresh.storage.settings.show
 journal.window.settings.settings.feedback.couldn.t.save.the.key.try = couldn't save the key. try again.
 
 journal.window.settings.settings.feedback.creation.failed = creation failed
-
-journal.window.settings.settings.feedback.disconnected.the.value1.from.granola.value2 = disconnected. the{ $slot1 }{ $value1 }{ $slot2 }from { $slot3 }{ $slot4 }{ $value2 }{ $slot5 }in your journal. connect again to keep them up to date; nothing comes in twice.
 
 journal.window.settings.settings.feedback.enter.a.positive.number.of.days = enter a positive number of days.
 
@@ -13315,8 +14447,6 @@ journal.window.settings.settings.feedback.rule.must.be.characters.or.less = rule
 
 journal.window.settings.settings.feedback.save.failed = save failed
 
-journal.window.settings.settings.feedback.the.value1.already.in.your.journal = the{ $slot1 }{ $value1 }{ $slot2 }already in your journal{ $slot3 }{ $value2 }.
-
 journal.window.settings.settings.feedback.update.failed = update failed
 
 journal.window.settings.settings.feedback.use.this.key = use this key
@@ -13345,25 +14475,11 @@ journal.window.settings.storage.days = days
 
 journal.window.settings.storage.history.read = the removal history couldn't be read.
 
-journal.window.settings.storage.keep.nudge = { $slot1 }your journal is set to always retain original media, so nothing is added to the list automatically.
-
-journal.window.settings.storage.mark.blocked.many = { $count }{ $slot1 }segments blocked.
-
-journal.window.settings.storage.mark.blocked.one = { $count }{ $slot1 }segment blocked.
-
 journal.window.settings.storage.mark.days = unreadable chronicle days:{ $slot1 }{ $days }.
 
 journal.window.settings.storage.mark.failure = error:{ $slot1 }{ $detail }
 
 journal.window.settings.storage.mark.new = New items:{ $slot1 }{ $count }.
-
-journal.window.settings.storage.mark.no.media.many = { $count }{ $slot1 }segments with no original media.
-
-journal.window.settings.storage.mark.no.media.one = { $count }{ $slot1 }segment with no original media.
-
-journal.window.settings.storage.mark.not.ready.many = { $count }{ $slot1 }segments not ready yet.
-
-journal.window.settings.storage.mark.not.ready.one = { $count }{ $slot1 }segment not ready yet.
 
 journal.window.settings.storage.mark.total = on the removal list:{ $slot1 }{ $count }.
 
@@ -13423,11 +14539,7 @@ journal.window.settings.transcribe.runtime.unsupported = unsupported
 
 journal.window.settings.transcribe.runtime.windows.parakeet.cpp = { $slot1 } { $slot2 }
 
-journal.window.settings.trash.backups.when = at{ $slot1 }{ $time }
-
 journal.window.settings.trash.copy.empty.the.trash.is.empty = the trash is empty.
-
-journal.window.settings.trash.copy.failed.couldn.t.remove.n.erased.things = couldn't remove { $slot1 } erased things from your backups this time. your journal tries again { $slot2 }.
 
 journal.window.settings.trash.copy.loading.loading = loading…
 
@@ -13459,41 +14571,7 @@ journal.window.settings.trash.kind.label.stretch.stretch.of.time = stretch of ti
 
 journal.window.settings.trash.kind.label.workout.workout = workout
 
-journal.window.settings.trash.words.entity.entities = entities
-
-journal.window.settings.trash.words.entity.entity = entity
-
-journal.window.settings.trash.words.facet.facet = facet
-
-journal.window.settings.trash.words.facet.facets = facets
-
-journal.window.settings.trash.words.generic.many = things
-
-journal.window.settings.trash.words.generic.one = thing
-
-journal.window.settings.trash.words.import.import = import
-
-journal.window.settings.trash.words.import.imports = imports
-
-journal.window.settings.trash.words.memory.memories = memories
-
-journal.window.settings.trash.words.memory.memory = memory
-
-journal.window.settings.trash.words.segment.segment = segment
-
-journal.window.settings.trash.words.segment.segments = segments
-
-journal.window.settings.trash.words.stretch.stretch.of.time = stretch of time
-
-journal.window.settings.trash.words.stretch.stretches.of.time = stretches of time
-
-journal.window.settings.trash.words.workout.workout = workout
-
-journal.window.settings.trash.words.workout.workouts = workouts
-
 journal.window.settings.validation.invalid = invalid
-
-journal.window.settings.visible.text.a.bookmark.to.value1.shows.a = a bookmark to{ $slot1 }{ $value1 }{ $slot2 }shows a page asking you to open your journal from the journal app or with solstone journal open. this browser keeps access until your journal restarts; any other browser needs a new one-time link.
 
 journal.window.settings.visible.text.a.line.when.you.remove.something = a line when you remove something, and again if it comes back from the trash or is erased: what it was, when, and where. this history never keeps what was in it.
 
@@ -13510,10 +14588,6 @@ journal.window.settings.visible.text.agents.you.connect.to.your.journal = agents
 journal.window.settings.visible.text.ai = AI
 
 journal.window.settings.visible.text.all.default.activities.attached = all default activities attached
-
-journal.window.settings.visible.text.and.click = , and click
-
-journal.window.settings.visible.text.and.paste.it.below = , and paste it below.
 
 journal.window.settings.visible.text.anyone.using.this.computer.and.any = anyone using this computer, and any program running on it, will be able to open your journal, read it and change it, without a link from you.
 
@@ -13543,13 +14617,9 @@ journal.window.settings.visible.text.by.class = by class
 
 journal.window.settings.visible.text.by.day = by day
 
-journal.window.settings.visible.text.cache.dir.s = cache dir(s) (
-
 journal.window.settings.visible.text.categories = categories
 
 journal.window.settings.visible.text.checking = checking…
-
-journal.window.settings.visible.text.choose = choose
 
 journal.window.settings.visible.text.choose.a.lucide.override.or.keep = choose a { $slot1 } override, or keep using the emoji
 
@@ -13559,13 +14629,9 @@ journal.window.settings.visible.text.clean.up.operational.logs.older.than = clea
 
 journal.window.settings.visible.text.cleans.up.operational.logs.this.does = cleans up operational logs. this does not affect your original media or your journal.
 
-journal.window.settings.visible.text.click = click
-
 journal.window.settings.visible.text.click.to.change.emoji = click to change emoji
 
 journal.window.settings.visible.text.click.to.choose.a.color = click to choose a color
-
-journal.window.settings.visible.text.click.your.workspace.name.at.the = click your workspace name at the bottom left, then
 
 journal.window.settings.visible.text.closed.only.your.account.on.this = closed: only your account on this computer can open your journal. other accounts see a page that shows nothing from it. programs running as a service, as another account or inside WSL can't reach it. agents you've connected and devices you've paired keep their own access. an administrator on this computer can still reach your journal's folder.
 
@@ -13577,8 +14643,6 @@ journal.window.settings.visible.text.comma.separated.alternative.names.that.may 
 
 journal.window.settings.visible.text.comma.separated.email.addresses.for.participant = comma-separated email addresses for participant detection
 
-journal.window.settings.visible.text.compacted = compacted
-
 journal.window.settings.visible.text.confidential.processing.needs = confidential processing needs
 
 journal.window.settings.visible.text.configure.automatic.syncing.of.material.from = configure automatic syncing of material from external devices.
@@ -13587,13 +14651,9 @@ journal.window.settings.visible.text.configure.service.tokens.for.imports.tokens
 
 journal.window.settings.visible.text.configure.which.activities.are.observed.for = configure which activities are observed for this facet.
 
-journal.window.settings.visible.text.configure.your.plaud.token.in = configure your { $slot1 } token in
-
 journal.window.settings.visible.text.copied = copied
 
 journal.window.settings.visible.text.copy = copy
-
-journal.window.settings.visible.text.copy.the.key.which.starts.with = copy the key, which starts with
 
 journal.window.settings.visible.text.couldn.t.confirm.which.choice.is = couldn't confirm which choice is saved. reload the page to check.
 
@@ -13614,8 +14674,6 @@ journal.window.settings.visible.text.currently.keep.everything = currently: keep
 journal.window.settings.visible.text.currently.keep.operational.logs.days = currently: keep operational logs 30 days
 
 journal.window.settings.visible.text.currently.keep.operational.logs.indefinitely = currently: keep operational logs indefinitely.
-
-journal.window.settings.visible.text.currently.keep.operational.logs.value1.days = currently: keep operational logs{ $slot1 }{ $value1 }{ $slot2 }days
 
 journal.window.settings.visible.text.currently.list.audio.with.no.speech = currently: list audio with no speech for removal after processing.
 
@@ -13753,19 +14811,13 @@ journal.window.settings.visible.text.no.speech.left.out.today = no speech left o
 
 journal.window.settings.visible.text.nothing.new.to.add.to.the = nothing new to add to the list.
 
-journal.window.settings.visible.text.nothing.new.to.add.to.the.variant2 = nothing new to add to the list. on the removal list:{ $slot1 }{ $value1 }.
-
 journal.window.settings.visible.text.nothing.on.this.computer.has.reached = nothing on this computer has reached your journal without a browser since it started.
 
 journal.window.settings.visible.text.notifications = notifications
 
 journal.window.settings.visible.text.open = open ›
 
-journal.window.settings.visible.text.open.anyone.using.this.computer.and = open: anyone using this computer, and any program running on it, can open your journal at{ $slot1 }{ $value1 }.
-
 journal.window.settings.visible.text.open.the.granola.app.on.your = open the { $slot1 } app on your computer.
-
-journal.window.settings.visible.text.operational.log.file.s.and = operational-log file(s) and
 
 journal.window.settings.visible.text.optional = (optional)
 
@@ -13789,8 +14841,6 @@ journal.window.settings.visible.text.preview = preview
 
 journal.window.settings.visible.text.pronouns.for.use.in.templates.subject = pronouns for use in templates (subject/object/possessive/reflexive)
 
-journal.window.settings.visible.text.purged = { $slot1 }purged
-
 journal.window.settings.visible.text.raw.media = raw media
 
 journal.window.settings.visible.text.reach.your.journal.from.your.other = reach your journal from your other devices
@@ -13800,8 +14850,6 @@ journal.window.settings.visible.text.recent.actions.and.changes.to.this = recent
 journal.window.settings.visible.text.redaction.rules = redaction rules
 
 journal.window.settings.visible.text.results = results
-
-journal.window.settings.visible.text.retention.log.line.s = retention-log line(s)
 
 journal.window.settings.visible.text.retry = retry
 
@@ -13817,10 +14865,6 @@ journal.window.settings.visible.text.segments = segments
 
 journal.window.settings.visible.text.sign.in.to.plaud.s.web = 1) sign in to { $slot1 }'s web portal. 2) open your browser's console. 3) copy the token shown there into the field above.
 
-journal.window.settings.visible.text.speech.left.out.today.value1.across = speech left out today:{ $slot1 }{ $value1 }{ $slot2 }across 1 recording
-
-journal.window.settings.visible.text.speech.left.out.today.value1.across.variant2 = speech left out today:{ $slot1 }{ $value1 }{ $slot2 }across{ $slot3 }{ $value2 }{ $slot4 }recordings
-
 journal.window.settings.visible.text.speech.to.text.backend.and.processing = speech-to-text backend and processing settings.
 
 journal.window.settings.visible.text.speech.to.text.engine.to.use = speech-to-text engine to use for transcription
@@ -13834,8 +14878,6 @@ journal.window.settings.visible.text.system = { $slot1 }(system)
 journal.window.settings.visible.text.the.face.details.it.uses.to = the face details it uses to tell people apart stay in your journal. they're never sent to the agents you connect; only a profile pic is.
 
 journal.window.settings.visible.text.the.words.are.saved.but.the = the words are saved, but the original audio hasn't been deleted yet. your journal will try again.
-
-journal.window.settings.visible.text.then = , then
 
 journal.window.settings.visible.text.these.programs.reached.your.journal.without = these programs reached your journal without a browser since it started, and will stop working until they're updated:
 
@@ -13853,10 +14895,6 @@ journal.window.settings.visible.text.this.runs.after.audio.arrives.in = this run
 
 journal.window.settings.visible.text.this.setting.could.not.be.read = this setting could not be read. try again shortly.
 
-journal.window.settings.visible.text.tick = , tick
-
-journal.window.settings.visible.text.to.enable.sync = to enable sync.
-
 journal.window.settings.visible.text.to.erase.the.face.data.your = to erase the face data your journal has found, turn this off first.
 
 journal.window.settings.visible.text.try.again = try again
@@ -13867,15 +14905,11 @@ journal.window.settings.visible.text.turning.this.off.stops.new.reading = turnin
 
 journal.window.settings.visible.text.unavailable = unavailable
 
-journal.window.settings.visible.text.under.api = under API.
-
 journal.window.settings.visible.text.unsupported = unsupported
 
 journal.window.settings.visible.text.use.emoji = use emoji
 
 journal.window.settings.visible.text.valid = { $slot1 }✓ valid
-
-journal.window.settings.visible.text.value1.not.configured = { $value1 }{ $slot1 }not configured.
 
 journal.window.settings.visible.text.what.happens.to.the.audio = what happens to the audio
 
@@ -13886,10 +14920,6 @@ journal.window.settings.visible.text.when.no.speech.is.found.in = when no speech
 journal.window.settings.visible.text.whether.other.accounts.and.programs.on = whether other accounts and programs on this computer can open your journal without a link from you.
 
 journal.window.settings.visible.text.whether.other.accounts.and.programs.on.variant2 = whether other accounts and programs on this computer can open your journal.
-
-journal.window.settings.visible.text.with.raw.media = { $slot1 }with raw media ·{ $slot2 }
-
-journal.window.settings.visible.text.would.be.compacted = would be compacted
 
 journal.window.settings.visible.text.you.can.change.both.later = you can change both later.
 

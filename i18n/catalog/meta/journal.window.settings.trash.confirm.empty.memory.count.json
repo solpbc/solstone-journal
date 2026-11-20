@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm empty memory count.",
+  "context": "Journal window. Settings window. trash confirm empty memory count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "db15f3412b384bff85653b33efab33564ccaf55957800a4249abf46d75b5479f",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "description": "Journal window. Settings logs preview file and directory count.",
+  "context": "Journal window. Journal window. Settings logs preview file and directory count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "directory_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "directories",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ef39c36266bc7c66505ce4d8b15ddaeea61214a4c1208fd6b5255454d213a166",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

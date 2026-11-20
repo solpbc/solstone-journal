@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash backup unknown count.",
+  "context": "Journal window. Settings window. trash backup unknown count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b83d0b63bf86bd988a8e588e30fd15b982bcaa3d87b5593204c68e8d004c560b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

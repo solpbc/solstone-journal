@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash refusal people named.",
+  "context": "Journal window. Settings window. trash refusal people named.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66940795d845bc5acefefa115b63e33689e5ce1061534f2ad01024cdb3f29bc5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

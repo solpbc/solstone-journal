@@ -1,0 +1,34 @@
+{
+  "description": "Settings window. trash refusal people named multiple others.",
+  "context": "Journal window. Settings window. trash refusal people named multiple others.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "person_name",
+      "type": "string"
+    },
+    {
+      "name": "other_people",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fdde9a2efb962a8c23fcb8644137712a9481370fea31dfb1540be74c39c3b73a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash row facets count.",
+  "context": "Journal window. Settings window. trash row facets count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "71e42e4387e965057a0f9a5879b586c72eaa6490a0715a291867452a431d47ef",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

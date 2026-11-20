@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover workout count.",
+  "context": "Journal window. Settings window. trash recover workout count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bb3f7fe5c639b1fd1114e431cb34965a4d6cbd14f48a10c84cf826600014f2df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. retention originals after days include silent audio.",
+  "context": "Journal window. Settings window. retention originals after days include silent audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "75b0833af5b28b828fd337b009ce4a6b40d4cc2f7ec0c265bc42f5c7bfad1dee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

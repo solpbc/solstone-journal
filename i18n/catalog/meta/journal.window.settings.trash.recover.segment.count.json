@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover segment count.",
+  "context": "Journal window. Settings window. trash recover segment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b43cb1fcdf32440d6b6fcd6a11997ed6bc08a5135c8078fecf1a6cd2b9f06abd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

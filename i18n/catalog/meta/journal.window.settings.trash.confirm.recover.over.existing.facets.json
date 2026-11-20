@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm recover over existing facets.",
+  "context": "Journal window. Settings window. trash confirm recover over existing facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "51e5f802845c31ba71817214479d5fd048e9073efc3908dae6dcc5222e69bfca",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

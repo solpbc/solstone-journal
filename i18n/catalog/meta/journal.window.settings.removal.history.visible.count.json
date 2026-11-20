@@ -1,0 +1,25 @@
+{
+  "description": "Settings window. removal history visible count.",
+  "context": "Journal window. Settings window. removal history visible count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14ceef9dde7d441aa8bb0ddafbd84042d2d153eed57a7c46a31a6bf2c716e48a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

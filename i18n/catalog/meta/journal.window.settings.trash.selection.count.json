@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash selection count.",
+  "context": "Journal window. Settings window. trash selection count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "adc940ffe5015c617c53cdc2d9d3677f3a75d110d8e22a11db1772a41c9bb51a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

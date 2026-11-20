@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm empty generic count.",
+  "context": "Journal window. Settings window. trash confirm empty generic count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "340283d28a1a3f6ef56ac592b6fc0e0047af6ef7c57a357a1eddc8b36ba4b139",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

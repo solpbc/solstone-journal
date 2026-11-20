@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm erase stretch count.",
+  "context": "Journal window. Settings window. trash confirm erase stretch count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5ad6610e586ef7f64d9cda570e0747cc556c01a43fc9626d8e7b0fdc820149e4",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash row cleared day.",
+  "context": "Journal window. Settings window. trash row cleared day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "cleared_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d4cabd317855476cd18fe2736eb53e21a9488c9c08ba4f52f74259f755c4308",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

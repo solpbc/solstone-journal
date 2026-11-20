@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. granola clock minutes ago.",
+  "context": "Journal window. Settings window. granola clock minutes ago.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c3565d8309f7e8841ba41f55d3843035e89183f0e5ab711f327eba194cd97811",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

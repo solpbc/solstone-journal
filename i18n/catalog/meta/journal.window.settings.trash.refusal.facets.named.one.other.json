@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash refusal facets named one other.",
+  "context": "Journal window. Settings window. trash refusal facets named one other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "36bf76f21d9fb1ac35f948afb83bf32fe321b97c5a88dd28fc8f33a4e3321f32",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

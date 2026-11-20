@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm erase entity count.",
+  "context": "Journal window. Settings window. trash confirm erase entity count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6dec28a1ea5153bdf754099dfcbd875f365ddaa6a233d00d8aad75b619c2aa1f",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

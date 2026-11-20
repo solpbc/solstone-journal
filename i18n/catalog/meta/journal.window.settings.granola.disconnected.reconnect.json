@@ -1,0 +1,16 @@
+{
+  "description": "Settings window. granola disconnected reconnect.",
+  "context": "Journal window. Settings window. granola disconnected reconnect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d661fe02b1fdbbba78433ead8f9cd06e8b395b959dcfc169c6570aa5df27226",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

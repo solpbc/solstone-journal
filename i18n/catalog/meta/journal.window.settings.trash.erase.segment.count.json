@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash erase segment count.",
+  "context": "Journal window. Settings window. trash erase segment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "819e5be6eb0bf06f0a9a4f19fbb332bfaad4a057dd14ad6cb142c699d3afa4c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

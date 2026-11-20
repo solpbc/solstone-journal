@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover import count.",
+  "context": "Journal window. Settings window. trash recover import count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a5b5d9799b9fec1d0ce2c8dde52e9ef4852e9d00cca7c5e87d01b4f50585c300",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

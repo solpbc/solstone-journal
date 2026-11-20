@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash row stretch held imports none kept.",
+  "context": "Journal window. Settings window. trash row stretch held imports none kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "imports",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5d6591e5dc2230d9d13b15d7ad32b7641f99c4eba24ef2e819bc612af87043fb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

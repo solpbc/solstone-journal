@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm empty segment count.",
+  "context": "Journal window. Settings window. trash confirm empty segment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "00cb19c6607312a82d72c85410e77e184eb89973a1a93f455f43b81a540e4fe2",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

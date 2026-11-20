@@ -1,0 +1,39 @@
+{
+  "description": "Settings window. storage media summary.",
+  "context": "Journal window. Settings window. storage media summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "raw_segments",
+      "type": "string"
+    },
+    {
+      "name": "purged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "purged_segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d9483a911999c5bdaaf15894cf545f81a9490326738bba2ee7a9a581e1959ab8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

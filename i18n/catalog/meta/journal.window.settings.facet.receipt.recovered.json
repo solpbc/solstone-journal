@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. Settings facet receipt recovered.",
+  "context": "Journal window. Journal window. Settings facet receipt recovered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6938ab771a9f79e9a3df09255c47a69076456461f6a4f6168867e7896ee14d2a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

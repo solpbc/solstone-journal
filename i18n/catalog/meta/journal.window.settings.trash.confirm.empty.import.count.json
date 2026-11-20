@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash confirm empty import count.",
+  "context": "Journal window. Settings window. trash confirm empty import count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "91f015f578ce20f512a50647d3c41113bfc9fe62bc7c6b4e363d2971d2e78aa7",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

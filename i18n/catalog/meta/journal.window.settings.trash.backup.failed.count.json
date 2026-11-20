@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash backup failed count.",
+  "context": "Journal window. Settings window. trash backup failed count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "erased",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0ce93e56c22242bbc9e7636721fd7154e357f4dab4a593381fad40b5726abe65",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash row stretch blocked by import.",
+  "context": "Journal window. Settings window. trash row stretch blocked by import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d248f3df56508bdf7c2872081920c6887fdc7c9c2a1a90b51861774a6d47244b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

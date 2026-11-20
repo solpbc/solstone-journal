@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. storage mark not ready count.",
+  "context": "Journal window. Settings window. storage mark not ready count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "71016f778250294c5a0ebad9b6efcdaa6e54b3bd7fb1953a405ddb7d69ac84a1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

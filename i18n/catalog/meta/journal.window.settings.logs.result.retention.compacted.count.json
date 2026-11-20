@@ -1,0 +1,34 @@
+{
+  "description": "Journal window. Settings logs result retention compacted count.",
+  "context": "Journal window. Journal window. Settings logs result retention compacted count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "lines",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4d9849bc72c99becf292ae0a5b1446048e56242a1ad735cbfe41ca4e948f8695",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

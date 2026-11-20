@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash backup waiting count.",
+  "context": "Journal window. Settings window. trash backup waiting count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "284a446520284beb21890fc20454a05cd6d93cc0c7550cd87a24f2a8d559210c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

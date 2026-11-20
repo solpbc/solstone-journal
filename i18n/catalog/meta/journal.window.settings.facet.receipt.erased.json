@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. Settings facet receipt erased.",
+  "context": "Journal window. Journal window. Settings facet receipt erased.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e264fc3f3eeff79e0613c794bb7bf07186995539e5e69c5b4e829b77c1b6ae1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

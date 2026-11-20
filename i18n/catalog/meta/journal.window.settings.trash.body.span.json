@@ -1,0 +1,25 @@
+{
+  "description": "Settings window. trash body span.",
+  "context": "Journal window. Settings window. trash body span.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_day",
+      "type": "string"
+    },
+    {
+      "name": "last_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "15843f20110aa44887f0874734d2f94cf038a62a337f0a6876de04d609cdcc34",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

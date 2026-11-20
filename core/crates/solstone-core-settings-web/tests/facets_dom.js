@@ -297,6 +297,11 @@ class Document {
     if (tag === 'TEXTAREA') return new HTMLTextAreaElement(tagName, this);
     return new Element(tagName, this);
   }
+  createTextNode(value) {
+    const child = new Element('#text', this);
+    child.textContent = value;
+    return child;
+  }
   getElementById(id) { return this.querySelector('#' + id); }
   querySelector(selector) {
     if (selector === 'body') return this.body;

@@ -1,0 +1,21 @@
+{
+  "description": "Settings window. trash row import source trashed.",
+  "context": "Journal window. Settings window. trash row import source trashed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc4d368db582187f0e6ef504d12ffee09a5b26cc7e1ec60ab29566db38b24d39",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

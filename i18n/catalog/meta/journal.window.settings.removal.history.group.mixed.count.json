@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. removal history group mixed count.",
+  "context": "Journal window. Settings window. removal history group mixed count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d7c54de2e8312c84756a487a93b3b90749f6cc07a1401cce46f02a78f935aaf6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

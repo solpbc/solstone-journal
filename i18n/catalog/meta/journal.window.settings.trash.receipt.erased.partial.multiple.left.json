@@ -1,0 +1,39 @@
+{
+  "description": "Settings window. trash receipt erased partial multiple left.",
+  "context": "Journal window. Settings window. trash receipt erased partial multiple left.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "erased",
+      "type": "string"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    },
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5203de4c3fb10ee70c6feee93e04506be9ad4ebae8a3cd023099bb43709838e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash recover stretch count.",
+  "context": "Journal window. Settings window. trash recover stretch count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b8e59ce04f8cb384524f0bf9ead2e4a0640d2b64d6ab54698dbf22ed729e666f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

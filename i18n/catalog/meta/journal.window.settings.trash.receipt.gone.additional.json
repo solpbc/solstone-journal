@@ -1,0 +1,30 @@
+{
+  "description": "Settings window. trash receipt gone additional.",
+  "context": "Journal window. Settings window. trash receipt gone additional.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "gone",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "378b3ba9f13f964f67c4b4eeb16920f9323d1d613291ce1c7ea4f0987a34189a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

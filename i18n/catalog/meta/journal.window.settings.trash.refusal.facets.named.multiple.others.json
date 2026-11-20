@@ -1,0 +1,34 @@
+{
+  "description": "Settings window. trash refusal facets named multiple others.",
+  "context": "Journal window. Settings window. trash refusal facets named multiple others.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    },
+    {
+      "name": "other_facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e2e8cef76ae88f95b232b092561b7eea73ed4066e66ac45a1ecff8bd30c8534e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
