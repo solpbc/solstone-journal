@@ -1,0 +1,25 @@
+{
+  "description": "Service error advice. The log_link markers enclose the button that opens system manager logs.",
+  "context": "Journal window. Service error advice. The log_link markers enclose the button that opens system manager logs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "log_link_start",
+      "type": "string"
+    },
+    {
+      "name": "log_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fd6bd3c7d6d287ce8db881b9db6d2cfcb8c2115cbd209492ef197d310df751c7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

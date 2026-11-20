@@ -1,0 +1,30 @@
+{
+  "description": "Accessible count of services retrying.",
+  "context": "Journal window. Accessible count of services retrying.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "14d935740a10b47a241c956f7aa0edad2e1e3f9186f8c35a44c6f2e051feb822",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

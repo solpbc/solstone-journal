@@ -1,0 +1,34 @@
+{
+  "description": "Health overview. count is the number of affected devices, and devices lists their names.",
+  "context": "Journal window. Health overview. count is the number of affected devices, and devices lists their names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "devices",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5f56d4fad9f54508a5ed1273517f06c38a9881e215a739ee4de29559164a9952",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

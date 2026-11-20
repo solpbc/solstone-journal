@@ -1,0 +1,21 @@
+{
+  "description": "Status label shown after a read fails. status describes the last observed delivery state.",
+  "context": "Journal window. Status label shown after a read fails. status describes the last observed delivery state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf5630c752caf031c9bc01b84fa71896ea7310922ce19cbd248f426972e5d4d5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

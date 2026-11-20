@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for services. status is a complete status or a list of independent metrics.",
+  "context": "Journal window. Accessible label for services. status is a complete status or a list of independent metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a7bf1f9a87a0fb64a8f4f25381fa669c65956771e744ac4d1bbf227db70e436c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

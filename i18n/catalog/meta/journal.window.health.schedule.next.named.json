@@ -1,0 +1,25 @@
+{
+  "description": "Next scheduled action. name is the task label, and when is its due time or status.",
+  "context": "Journal window. Next scheduled action. name is the task label, and when is its due time or status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8a0abd64ce408227aac9b146c40fc5c8275082203e4763b66a48bbaaca90a37",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

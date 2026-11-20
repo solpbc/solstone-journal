@@ -1,0 +1,29 @@
+{
+  "description": "Consent notice. Values are counts of older recordings, daily outputs and activities.",
+  "context": "Journal window. Consent notice. Values are counts of older recordings, daily outputs and activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "day_outputs",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fd5f097706b61cb01a3e89023fc62e837886acddd14ae6964d1b4a79175e3316",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Search status and supporting details. status is the verdict, and details lists the measured results.",
+  "context": "Journal window. Search status and supporting details. status is the verdict, and details lists the measured results.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2f9b765b696469c18e2543b57dde2dffc15ba9d55910fb695108419432f1330",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

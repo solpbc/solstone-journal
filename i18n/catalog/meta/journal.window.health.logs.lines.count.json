@@ -1,0 +1,30 @@
+{
+  "description": "Number of lines in the logs. The English one branch omits the numeral.",
+  "context": "Journal window. Number of lines in the logs. The English one branch omits the numeral.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c71971fefdf7c60013cde084ebc88ce8afcbb54867178d73f406a811e2b7c681",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Import failure advice when the failed stage is known. stage is an internal stage identifier. The log_link markers enclose the log button.",
+  "context": "Journal window. Import failure advice when the failed stage is known. stage is an internal stage identifier. The log_link markers enclose the log button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "log_link_start",
+      "type": "string"
+    },
+    {
+      "name": "log_link_end",
+      "type": "string"
+    },
+    {
+      "name": "stage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50e59e848efc3659869788609c0704b2b26218e5a4b4b4c38fb95a76053c85be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

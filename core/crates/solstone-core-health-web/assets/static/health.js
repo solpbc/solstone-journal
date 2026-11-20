@@ -10,42 +10,37 @@
     "LOGS_LEVEL_OPTION_ERROR": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.errors.only'),
     "LOGS_LEVEL_OPTION_INFO": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.info.above'),
     "LOGS_LEVEL_OPTION_WARNING": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.warnings.errors'),
-    "LOGS_SERVICE_COLLAPSED": window.JournalI18n.render('journal.window.health.logs.labels.logs.service.collapsed.service.n.lines.errors.errors'),
     "LOGS_SERVICE_FILTER_LABEL": window.JournalI18n.render('journal.window.health.logs.labels.logs.service.filter.service'),
     "LOGS_STREAM_FILTER_LABEL": window.JournalI18n.render('journal.window.health.logs.labels.logs.stream.filter.stream')
   };
   const HEALTH_GLANCE_COPY = {
-    "HEALTH_GLANCE_CATCHING_UP": window.JournalI18n.render('journal.window.health.glance.glance.catching.catching.up.on.n.tasks.in'),
-    "HEALTH_GLANCE_CHECKING": window.JournalI18n.render('journal.window.health.glance.glance.checking.checking.where.your.journal.stands'),
-    "HEALTH_GLANCE_CLIENT_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.client.one.of.your.devices.hasn.t'),
-    "HEALTH_GLANCE_DEVICE_FAILING": window.JournalI18n.render('journal.window.health.glance.glance.device.your.journal.couldn.t.accept.uploads'),
-    "HEALTH_GLANCE_DEVICES_FAILING": window.JournalI18n.render('journal.window.health.glance.glance.devices.your.journal.couldn.t.accept.uploads'),
-    "HEALTH_GLANCE_DEVICE_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.device.device.hasn.t.added.to.your'),
-    "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": window.JournalI18n.render('journal.window.health.glance.glance.device.device.hasn.t.added.to.your.variant2'),
-    "HEALTH_GLANCE_DEVICES_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.devices.n.devices.haven.t.added.to'),
-    "HEALTH_GLANCE_DEVICES_UNAVAILABLE": window.JournalI18n.render('journal.window.health.glance.glance.devices.your.devices.delivery.status.is.unavailable'),
-    "HEALTH_GLANCE_DEVICES_UNKNOWN": window.JournalI18n.render('journal.window.health.glance.glance.devices.delivery.from.some.of.your.devices'),
-    "HEALTH_GLANCE_WORK_HELD": window.JournalI18n.render('journal.window.health.glance.glance.work.some.queued.work.is.on.hold'),
-    "HEALTH_GLANCE_WORK_UNAVAILABLE": window.JournalI18n.render('journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right'),
-    "HEALTH_GLANCE_OK": window.JournalI18n.render('journal.window.health.glance.glance.ok.the.journal.s.live.services.and'),
-    "HEALTH_GLANCE_BACKUP": "{headline}",
-    "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
-    "HEALTH_GLANCE_CHECKIN_STALE": window.JournalI18n.render('journal.window.health.glance.glance.checkin.a.journal.run.on.name.stopped'),
-    "HEALTH_GLANCE_CHECKINS_STALE": window.JournalI18n.render('journal.window.health.glance.glance.checkins.n.journal.runs.stopped.checking.in'),
-    "HEALTH_GLANCE_STORAGE_PRIVACY": "{message}",
-    "HEALTH_GLANCE_SERVICE_ATTENTION": window.JournalI18n.render('journal.window.health.glance.glance.service.service.needs.attention.service.names'),
-    "HEALTH_GLANCE_SERVICES_ATTENTION": window.JournalI18n.render('journal.window.health.glance.glance.services.n.services.need.attention.service.names'),
-    "HEALTH_GLANCE_SERVICES_UNREACHABLE": window.JournalI18n.render('journal.window.health.glance.glance.services.the.journal.s.services.couldn.t'),
-    "HEALTH_OBSERVE_LOCAL_REPORTING": window.JournalI18n.render('journal.window.health.glance.observe.local.your.journal.s.computer.isn.t.variant2'),
-    "HEALTH_OBSERVE_LOCAL_SILENT": window.JournalI18n.render('journal.window.health.glance.observe.local.your.journal.s.computer.isn.t'),
-    "HEALTH_OBSERVE_UNKNOWN_REPORTING": window.JournalI18n.render('journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s.variant2'),
-    "HEALTH_OBSERVE_UNKNOWN_SILENT": window.JournalI18n.render('journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s'),
-    "HEALTH_DEVICES_COUNT_ONE": window.JournalI18n.render('journal.window.health.glance.devices.count.device.is.adding.to.your.journal'),
-    "HEALTH_DEVICES_COUNT_MANY": window.JournalI18n.render('journal.window.health.glance.devices.count.n.devices.are.adding.to.your'),
-    "HEALTH_DEVICES_EMPTY": window.JournalI18n.render('journal.window.health.glance.devices.empty.no.devices.are.paired.yet'),
-    "HEALTH_DEVICES_PAIR_LINK": window.JournalI18n.render('journal.window.health.glance.devices.pair.pair.a.device'),
-    "HEALTH_DEVICES_SEE_LINK": window.JournalI18n.render('journal.window.health.glance.devices.see.see.your.devices.in.network'),
-    "HEALTH_DEVICES_MANAGE_LINK": window.JournalI18n.render('journal.window.health.glance.devices.manage.manage.in.network')
+    HEALTH_OBSERVE_LOCAL_SILENT: window.JournalI18n.render('journal.window.health.glance.observe.local.your.journal.s.computer.isn.t'),
+    HEALTH_OBSERVE_UNKNOWN_SILENT: window.JournalI18n.render('journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s'),
+    HEALTH_DEVICES_EMPTY: window.JournalI18n.render('journal.window.health.glance.devices.empty.no.devices.are.paired.yet'),
+    HEALTH_DEVICES_PAIR_LINK: window.JournalI18n.render('journal.window.health.glance.devices.pair.pair.a.device'),
+    HEALTH_DEVICES_SEE_LINK: window.JournalI18n.render('journal.window.health.glance.devices.see.see.your.devices.in.network'),
+    HEALTH_DEVICES_MANAGE_LINK: window.JournalI18n.render('journal.window.health.glance.devices.manage.manage.in.network'),
+  };
+  const HEALTH_GLANCE_MESSAGES = {
+    HEALTH_GLANCE_CATCHING_UP: 'journal.window.health.glance.catching.up',
+    HEALTH_GLANCE_CHECKING: 'journal.window.health.glance.glance.checking.checking.where.your.journal.stands',
+    HEALTH_GLANCE_CLIENT_SILENT: 'journal.window.health.glance.glance.client.one.of.your.devices.hasn.t',
+    HEALTH_GLANCE_DEVICE_FAILING: 'journal.window.health.glance.device.failing',
+    HEALTH_GLANCE_DEVICES_FAILING: 'journal.window.health.glance.devices.failing',
+    HEALTH_GLANCE_DEVICE_SILENT: 'journal.window.health.glance.device.silent',
+    HEALTH_GLANCE_DEVICE_SILENT_NO_AGE: 'journal.window.health.glance.device.silent.no.age',
+    HEALTH_GLANCE_DEVICES_SILENT: 'journal.window.health.glance.devices.silent',
+    HEALTH_GLANCE_DEVICES_UNAVAILABLE: 'journal.window.health.glance.glance.devices.your.devices.delivery.status.is.unavailable',
+    HEALTH_GLANCE_DEVICES_UNKNOWN: 'journal.window.health.glance.glance.devices.delivery.from.some.of.your.devices',
+    HEALTH_GLANCE_WORK_HELD: 'journal.window.health.glance.glance.work.some.queued.work.is.on.hold',
+    HEALTH_GLANCE_WORK_UNAVAILABLE: 'journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right',
+    HEALTH_GLANCE_OK: 'journal.window.health.glance.glance.ok.the.journal.s.live.services.and',
+    HEALTH_GLANCE_CHECKIN_STALE: 'journal.window.health.glance.checkin.stale',
+    HEALTH_GLANCE_CHECKINS_STALE: 'journal.window.health.glance.checkins.stale',
+    HEALTH_GLANCE_SERVICE_ATTENTION: 'journal.window.health.glance.service.attention',
+    HEALTH_GLANCE_SERVICES_ATTENTION: 'journal.window.health.glance.services.attention',
+    HEALTH_GLANCE_SERVICES_UNREACHABLE: 'journal.window.health.glance.glance.services.the.journal.s.services.couldn.t',
+    HEALTH_DEVICES_COUNT_MANY: 'journal.window.health.glance.devices.count.many',
   };
   // Worst signal wins, and green is earned: a verdict may not read "everything's
   // working" while the device rows below it say a device has gone quiet, and a
@@ -212,6 +207,12 @@
     vitalsBar: document.querySelector('.vitals-bar'),
     logExportBtn: document.getElementById('logExportBtn'),
   };
+
+  function renderCount(id, count, displayed = String(count)) {
+    return window.JournalI18n.render(id, [
+      ['count', displayed], ['quantity', window.JournalI18n.cardinalQuantity(count)]
+    ]);
+  }
 
   function logHealthError(error, context) {
     if (window.logError) {
@@ -437,7 +438,7 @@
         else bytesEl.removeAttribute('data-total');
 
         if (hasReceived && hasTotal) {
-          bytesEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.of.value2', [['value1', String(formatSpeechBytes(payload.bytes_received))], ['value2', String(formatSpeechBytes(payload.bytes_total))]]);
+          bytesEl.textContent = window.JournalI18n.render('journal.window.health.speech.setup.download.bytes', [['received', String(formatSpeechBytes(payload.bytes_received))], ['total', String(formatSpeechBytes(payload.bytes_total))]]);
         } else if (hasReceived) {
           bytesEl.textContent = formatSpeechBytes(payload.bytes_received);
         } else {
@@ -605,7 +606,7 @@
       host.replaceChildren();
       for (const item of data.items) {
         const row = document.createElement('p');
-        row.textContent = `${item.program} · ${item.count} ${item.count === 1 ? window.JournalI18n.render('journal.window.health.status.request') : window.JournalI18n.render('journal.window.health.status.requests')} · ${new Date(item.last_seen * 1000).toLocaleString()}`;
+        row.textContent = window.JournalI18n.render('journal.window.health.local.program.requests', [['program', item.program], ['count', String(item.count)], ['last_seen', new Date(item.last_seen * 1000).toLocaleString()], ['quantity', window.JournalI18n.cardinalQuantity(item.count)]]);
         host.appendChild(row);
       }
       if (!data.items.length) host.textContent = window.JournalI18n.render('journal.window.health.visible.text.none.since.this.journal.started');
@@ -663,7 +664,7 @@
     const pending = Number(data.pending_days) || 0;
     const label = day ? window.JournalFormat.day(day) : '';
     if (!day || !label) {
-      line.textContent = (data.scope ? data.scope + ': ' : '') + (data.verdict || '');
+      line.textContent = data.scope ? window.JournalI18n.render('journal.window.health.backlog.verdict.scoped', [['scope', data.scope], ['verdict', data.verdict || '']]) : data.verdict || '';
       return;
     }
     const link = document.createElement('a');
@@ -671,13 +672,11 @@
     link.href = `/app/transcripts/${encodeURIComponent(day)}`;
     if (pending === 1 && stuckCount === 0) {
       line.textContent = '';
-      link.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.is.still.catching.up', [['value1', String(label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase()))]]);
+      link.textContent = window.JournalI18n.render('journal.window.health.backlog.catching.up.day', [['day', String(label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase()))]]);
       line.appendChild(link);
       return;
     }
-    line.textContent = `${data.verdict || ''} `;
-    link.textContent = window.JournalI18n.render('journal.window.health.visible.text.oldest.value1', [['value1', String(label)]]);
-    line.appendChild(link);
+    line.replaceChildren(...window.JournalI18n.renderMarkup('journal.window.health.backlog.verdict.with.link', [['verdict', data.verdict || ''], ['day', label]], {elements: { oldest_link: link }}));
   }
 
   function renderBacklogState(backlogState, searchIndex) {
@@ -703,23 +702,20 @@
       if (activities > 0 && oldestDay) {
         const label = window.JournalFormat ? window.JournalFormat.day(oldestDay) : oldestDay;
         const formattedDay = label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase());
-        let tmpl = '';
-        if (activities === 1 && dayCount === 1) {
-          tmpl = backlogCopy.unfinished_template_one || '';
-        } else if (activities > 1 && dayCount === 1) {
-          tmpl = backlogCopy.unfinished_template_many_one_day || '';
-        } else if (activities > 0 && dayCount > 1) {
-          tmpl = backlogCopy.unfinished_template_many_days || '';
-        }
-        if (tmpl) {
-          const text = tmpl
-            .replace('{day}', formattedDay)
-            .replace('{n}', String(activities))
-            .replace('{days}', String(dayCount));
+        const available = dayCount > 1 ? backlogCopy.unfinished_template_many_days
+          : dayCount === 1 && (activities === 1
+            ? backlogCopy.unfinished_template_one : backlogCopy.unfinished_template_many_one_day);
+        if (available) {
+          const id = dayCount > 1 ? 'journal.window.stats.backlog.unfinished.multiple.days'
+            : 'journal.window.stats.backlog.unfinished.one.day';
+          const text = window.JournalI18n.render(id, [
+            ['oldest_day', formattedDay], ['count', String(activities)],
+            ['quantity', window.JournalI18n.cardinalQuantity(activities)]
+          ]);
           const link = document.createElement('a');
           link.className = 'backlog-verdict-day';
           link.href = `/app/transcripts/${encodeURIComponent(oldestDay)}`;
-          link.textContent = `${text} →`;
+          link.textContent = text;
           unfinishedLine.replaceChildren(link);
           unfinishedLine.hidden = false;
         } else {
@@ -739,15 +735,19 @@
         const index = searchIndex.index;
         if (index) {
           const details = [];
-          if (index.queued > 0) details.push(window.JournalI18n.render('journal.window.health.status.value1.updates.queued', [['value1', String(index.queued)]]));
-          if (index.failed_deletions > 0) details.push(window.JournalI18n.render('journal.window.health.status.value1.removals.still.waiting', [['value1', String(index.failed_deletions)]]));
+          if (index.queued > 0) details.push(renderCount('journal.window.health.search.queued', index.queued));
+          if (index.failed_deletions > 0) details.push(renderCount('journal.window.health.search.removals', index.failed_deletions));
           if (Number.isFinite(index.last_finished_check_at_ms)) {
             const hours = Math.max(0, Math.floor((Date.now() - index.last_finished_check_at_ms) / 3600000));
-            details.push(window.JournalI18n.render('journal.window.health.window.explanation.last.search.check.value1.value2.updated', [['value1', String(hours < 1 ? window.JournalI18n.render('journal.window.health.window.explanation.less.than.an.hour.ago') : window.JournalI18n.render('journal.window.health.status.value1.hours.ago', [['value1', String(hours)]]))], ['value2', String(index.check_indexed)], ['value3', String(index.check_removed)]]));
+            const args = [['updated', String(index.check_indexed)], ['removed', String(index.check_removed)],
+              ['updated_quantity', window.JournalI18n.cardinalQuantity(index.check_indexed)], ['removed_quantity', window.JournalI18n.cardinalQuantity(index.check_removed)]];
+            if (hours >= 1) args.push(['hours', String(hours)], ['hour_quantity', window.JournalI18n.cardinalQuantity(hours)]);
+            details.push(window.JournalI18n.render(hours < 1 ? 'journal.window.health.search.last.check.recent'
+              : 'journal.window.health.search.last.check.elapsed', args));
           } else {
             details.push(window.JournalI18n.render('journal.window.health.window.explanation.no.finished.search.check.yet'));
           }
-          searchLine.textContent += ` ${details.join('; ')}.`;
+          searchLine.textContent = window.JournalI18n.render('journal.window.health.search.summary.details', [['status', searchIndex.text], ['details', details.join('; ')]]);
         }
         searchLine.hidden = false;
       } else {
@@ -788,11 +788,10 @@
     const count = Number(notSensed);
     if (!card) return;
     if (Number.isFinite(count) && count > 0) {
-      const word = count === 1 ? window.JournalI18n.render('journal.window.health.status.segment') : window.JournalI18n.render('journal.window.health.status.segments');
       const el = existing || document.createElement('p');
       el.id = 'mediaBacklogLine';
       el.className = 'brain-health-pending';
-      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.value2.waiting.for.media.processing', [['value1', String(count)], ['value2', String(word)]]);
+      el.textContent = renderCount('journal.window.health.backlog.media.segments', count);
       if (!existing) {
         card.appendChild(el);
       }
@@ -833,19 +832,30 @@
       reach.textContent = window.JournalI18n.render('journal.window.health.visible.text.the.journal.has.not.finished.checking');
     } else {
       const range = inventory.oldest_day ? inventory.oldest_day + '–' + inventory.newest_day : window.JournalI18n.render('journal.window.health.status.no.recorded.days');
-      reach.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.of.value2.days.checked.value3', [['value1', String(inventory.days_inspected)], ['value2', String(inventory.days_total)], ['value3', String(range)]])
-        + (!fresh ? window.JournalI18n.render('journal.window.health.visible.text.last.known.progress.checked') + new Date(inventory.as_of_ms).toLocaleString() + '.'
-          : inventory.complete ? window.JournalI18n.render('journal.window.health.visible.text.the.inspection.covers.the.whole.journal') : window.JournalI18n.render('journal.window.health.visible.text.the.inspection.is.incomplete'));
+      const args = [['checked', String(inventory.days_inspected)], ['total', String(inventory.days_total)],
+        ['range', range], ['quantity', window.JournalI18n.cardinalQuantity(inventory.days_total)],
+        ['checked_quantity', window.JournalI18n.cardinalQuantity(inventory.days_inspected)]];
+      const freshness = !fresh ? 'stale' : inventory.complete ? 'complete' : 'incomplete';
+      if (!fresh) args.push(['checked_at', new Date(inventory.as_of_ms).toLocaleString()]);
+      reach.textContent = window.JournalI18n.render(`journal.window.health.work.inspection.${freshness}`, args);
       const names = [window.JournalI18n.render('journal.window.health.status.today'), window.JournalI18n.render('journal.window.health.window.explanation.your.requests.and.yesterday'), window.JournalI18n.render('journal.window.health.status.recent.days'), window.JournalI18n.render('journal.window.health.status.imports'), window.JournalI18n.render('journal.window.health.status.finishing.older.days'), window.JournalI18n.render('journal.window.health.status.updating.older.days')];
       inventory.bands.forEach((band, i) => {
         const row = document.createElement('li');
-        row.textContent = names[i] + ': ' + band.segments_complete + window.JournalI18n.render('journal.window.health.status.recordings.ready')
-          + band.segments_owed + window.JournalI18n.render('journal.window.health.status.left') + band.daily_units_complete + window.JournalI18n.render('journal.window.health.status.daily.outputs.ready')
-          + band.daily_units_owed + window.JournalI18n.render('journal.window.health.visible.text.left')
-          + (band.activities_owed ? '; ' + band.activities_owed + window.JournalI18n.render('journal.window.health.visible.text.activities.left') : '')
-          + (band.owner_requests ? '; ' + band.owner_requests + window.JournalI18n.render('journal.window.health.visible.text.requests.to.redo.a.day') : '')
-          + (band.permission_held ? '; ' + band.permission_held + window.JournalI18n.render('journal.window.health.visible.text.waiting.for.permission') : '')
-          + (band.prerequisite_held ? '; ' + band.prerequisite_held + window.JournalI18n.render('journal.window.health.visible.text.waiting.for.recordings') : '') + '.';
+        const args = [['band', names[i]], ['recordings_ready', String(band.segments_complete)],
+          ['recordings_left', String(band.segments_owed)], ['outputs_ready', String(band.daily_units_complete)],
+          ['outputs_left', String(band.daily_units_owed)],
+          ['recordings_ready_quantity', window.JournalI18n.cardinalQuantity(band.segments_complete)],
+          ['recordings_left_quantity', window.JournalI18n.cardinalQuantity(band.segments_owed)],
+          ['outputs_ready_quantity', window.JournalI18n.cardinalQuantity(band.daily_units_complete)],
+          ['outputs_left_quantity', window.JournalI18n.cardinalQuantity(band.daily_units_owed)]];
+        const details = [];
+        if (band.activities_owed) details.push(renderCount('journal.window.health.work.band.activities', band.activities_owed));
+        if (band.owner_requests) details.push(renderCount('journal.window.health.work.band.owner.requests', band.owner_requests));
+        if (band.permission_held) details.push(renderCount('journal.window.health.work.band.permission', band.permission_held));
+        if (band.prerequisite_held) details.push(renderCount('journal.window.health.work.band.recordings', band.prerequisite_held));
+        if (details.length) args.push(['details', details.join('; ')]);
+        row.textContent = window.JournalI18n.render(details.length
+          ? 'journal.window.health.work.band.progress.details' : 'journal.window.health.work.band.progress', args);
         rows.appendChild(row);
       });
     }
@@ -858,21 +868,26 @@
       const day = key => new Date(Number(key.slice(0, 4)), Number(key.slice(4, 6)) - 1, Number(key.slice(6, 8)))
         .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const range = progress.caught_up_since
-        ? window.JournalI18n.render('journal.window.health.window.explanation.history.caught.up.back.to.value1', [['value1', String(day(progress.caught_up_since))]])
+        ? window.JournalI18n.render('journal.window.health.history.caught.up.since', [['day', String(day(progress.caught_up_since))]])
         : inventory.oldest_day && inventory.oldest_day <= progress.through_day
           ? window.JournalI18n.render('journal.window.health.window.explanation.older.history.is.still.catching.up') : window.JournalI18n.render('journal.window.health.window.explanation.no.older.history.to.check');
-      const parts = [range, window.JournalI18n.render('journal.window.health.window.explanation.value1.recordings.and.value2.daily.outputs', [['value1', String(count(progress.segments_owed))], ['value2', String(count(progress.daily_units_owed))]])];
-      if (fresh && progress.net_per_hour > 0) parts.push(window.JournalI18n.render('journal.window.health.status.about.value1.an.hour', [['value1', String(progress.net_per_hour.toLocaleString(undefined, { maximumSignificantDigits: 3 }))]]));
-      if (progress.set_aside_units) parts.push(window.JournalI18n.render('journal.window.health.status.value1.items.set.aside', [['value1', String(count(progress.set_aside_units))]]));
-      if (progress.unreadable_days) parts.push(window.JournalI18n.render('journal.window.health.window.explanation.value1.days.could.not.be.checked', [['value1', String(count(progress.unreadable_days))]]));
-      history.textContent = (!fresh ? window.JournalI18n.render('journal.window.health.visible.text.last.checked') : '') + parts.join(' · ')
-        + window.JournalI18n.render('journal.window.health.status.through.value1.today.and.yesterday.are', [['value1', String(day(progress.through_day))]]);
+      const counts = window.JournalI18n.render('journal.window.health.history.counts', [
+        ['recordings', count(progress.segments_owed)], ['outputs', count(progress.daily_units_owed)],
+        ['recording_quantity', window.JournalI18n.cardinalQuantity(progress.segments_owed)],
+        ['output_quantity', window.JournalI18n.cardinalQuantity(progress.daily_units_owed)]
+      ]);
+      const parts = [range, counts];
+      if (fresh && progress.net_per_hour > 0) parts.push(window.JournalI18n.render('journal.window.health.history.rate.hourly', [['rate', String(progress.net_per_hour.toLocaleString(undefined, { maximumSignificantDigits: 3 }))]]));
+      if (progress.set_aside_units) parts.push(renderCount('journal.window.health.history.held.count', progress.set_aside_units, count(progress.set_aside_units)));
+      if (progress.unreadable_days) parts.push(renderCount('journal.window.health.history.unreadable.count', progress.unreadable_days, count(progress.unreadable_days)));
+      history.textContent = window.JournalI18n.render(fresh ? 'journal.window.health.history.summary.current'
+        : 'journal.window.health.history.summary.stale', [['metrics', parts.join(' · ')], ['through_day', day(progress.through_day)]]);
     }
     const cost = section.querySelector('[data-work-cost]');
     const older = inventory?.bands?.slice(4);
     const count = (key) => older?.reduce((total, band) => total + (band[key] || 0), 0);
     cost.textContent = older && fresh && inventory.complete
-      ? window.JournalI18n.renderEnglish('journal.window.health.visible.text.finishing.value1.older.recordings.value2.daily', [['value1', String(count('segments_owed'))], ['value2', String(count('daily_units_owed'))], ['value3', String(count('activities_owed'))]])
+      ? window.JournalI18n.renderEnglish('journal.window.health.history.cost.consent', [['recordings', String(count('segments_owed'))], ['day_outputs', String(count('daily_units_owed'))], ['activities', String(count('activities_owed'))]])
       : window.JournalI18n.renderEnglish('journal.window.health.visible.text.finishing.older.recordings.and.day.updates');
     section.querySelector('[data-work-confirm]').hidden = !work?.confirmation_available || work.history_confirmed;
     const details = section.querySelector('[data-work-details]');
@@ -1103,7 +1118,7 @@
   function ageAgo(ms) {
     const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
     if (value < 60000) return window.JournalI18n.render('journal.window.health.status.just.now');
-    return relativeTime(value) + window.JournalI18n.render('journal.window.health.status.ago');
+    return window.JournalI18n.render('journal.window.health.time.legacy.age', [['duration', relativeTime(value)]]);
   }
 
   // A duration that is still running is not an age, so it gets the ladder
@@ -1163,7 +1178,7 @@
     if (delta < 0) return window.JournalI18n.render('journal.window.health.status.due.now');
     // Spelled units, same ladder as every other age on the page (G3-104).
     if (delta < 60000) return window.JournalI18n.render('journal.window.health.window.explanation.in.under.a.minute');
-    return window.JournalI18n.render('journal.window.health.status.in.value1', [['value1', String(relativeTime(delta))]]);
+    return window.JournalI18n.render('journal.window.health.schedule.next.duration', [['duration', String(relativeTime(delta))]]);
   }
 
   function renderInfoItems(parent, items) {
@@ -1245,7 +1260,7 @@
     if (failing.length > 1) {
       return {
         key: 'HEALTH_GLANCE_DEVICES_FAILING',
-        vars: { n: String(failing.length), devices: failing.map(describeRejectedClient).join(', ') },
+        vars: { count: failing.length, devices: failing.map(describeRejectedClient).join(', ') },
         action: GLANCE_DEVICES_ACTION,
       };
     }
@@ -1256,14 +1271,15 @@
       const age = registeredClientAge(silent[0]);
       return {
         key: age ? 'HEALTH_GLANCE_DEVICE_SILENT' : 'HEALTH_GLANCE_DEVICE_SILENT_NO_AGE',
-        vars: { device: registeredClientName(silent[0]), age: age || '' },
+        vars: age ? { device: registeredClientName(silent[0]), age }
+          : { device: registeredClientName(silent[0]) },
         action: GLANCE_DEVICES_ACTION,
       };
     }
     if (silent.length > 1) {
       return {
         key: 'HEALTH_GLANCE_DEVICES_SILENT',
-        vars: { n: String(silent.length), devices: silent.map(describeRegisteredClient).join(', ') },
+        vars: { count: silent.length, devices: silent.map(describeRegisteredClient).join(', ') },
         action: GLANCE_DEVICES_ACTION,
       };
     }
@@ -1354,9 +1370,8 @@
     section.hidden = current && holds.length === 0;
     section.dataset.current = String(current);
     const notice = section.querySelector('[data-held-work-notice]');
-    notice.textContent = workStale ? window.JournalI18n.render('journal.window.health.visible.text.set.aside.work.was.last.checked') + new Date(inventory.as_of_ms).toLocaleString() + window.JournalI18n.render('journal.window.health.status.checking.its.status.again') : current ? '' : state.heldWorkSnapshot
-      ? window.JournalI18n.render('journal.window.health.visible.text.queued.work.status.is.unavailable.last')
-        + new Date(state.heldWorkSnapshot.observedAt).toLocaleString() + '.'
+    notice.textContent = workStale ? window.JournalI18n.render('journal.window.health.work.hold.stale', [['checked_at', new Date(inventory.as_of_ms).toLocaleString()]]) : current ? '' : state.heldWorkSnapshot
+      ? window.JournalI18n.render('journal.window.health.work.hold.unavailable', [['checked_at', new Date(state.heldWorkSnapshot.observedAt).toLocaleString()]])
       : window.JournalI18n.render('journal.window.health.visible.text.queued.work.status.is.unavailable');
     notice.hidden = current;
     const rows = section.querySelector('[data-held-work-rows]');
@@ -1365,7 +1380,7 @@
     const pager = section.querySelector('[data-held-work-pages]');
     if (pager) {
       pager.hidden = holds.length <= HELD_WORK_PAGE_SIZE;
-      pager.querySelector('span').textContent = window.JournalI18n.render('journal.window.health.visible.text.page') + (heldWorkPage + 1) + window.JournalI18n.render('journal.window.health.visible.text.of') + Math.max(1, Math.ceil(holds.length / HELD_WORK_PAGE_SIZE));
+      pager.querySelector('span').textContent = window.JournalI18n.render('journal.window.health.work.hold.page', [['page', String(heldWorkPage + 1)], ['pages', String(Math.max(1, Math.ceil(holds.length / HELD_WORK_PAGE_SIZE)))]]);
       const previous = pager.querySelector('[data-held-previous]');
       const next = pager.querySelector('[data-held-next]');
       previous.disabled = heldWorkPage === 0;
@@ -1404,9 +1419,18 @@
       const scope = hold.partition
         ? names[hold.partition] || scheduleName(hold.partition) || window.JournalI18n.render('journal.window.health.status.queued.processing')
         : window.JournalI18n.render('journal.window.health.status.all.queued.work');
-      row.querySelector('p').textContent = hold.label ? hold.label + (hold.count > 1 ? ' · ' + hold.count + window.JournalI18n.render('journal.window.health.visible.text.items') : '') + ': ' + (hold.displayReason || heldReason(hold.reason)) : scope + ': ' + hold.count
-        + (hold.count === 1 ? window.JournalI18n.render('journal.window.health.visible.text.task') : window.JournalI18n.render('journal.window.health.visible.text.tasks'))
-        + (state.heldWorkCurrent ? window.JournalI18n.render('journal.window.health.visible.text.on.hold.for.a.safety.check') : window.JournalI18n.render('journal.window.health.visible.text.on.hold.at.the.last.check'));
+      const reason = hold.displayReason || heldReason(hold.reason);
+      let line;
+      if (hold.label) {
+        line = hold.count > 1 ? window.JournalI18n.render('journal.window.health.work.hold.reason.count', [['item', hold.label], ['reason', reason], ['count', String(hold.count)], ['quantity', window.JournalI18n.cardinalQuantity(hold.count)]])
+          : window.JournalI18n.render('journal.window.health.work.hold.reason', [['item', hold.label], ['reason', reason]]);
+      } else {
+        const id = state.heldWorkCurrent ? 'journal.window.health.work.hold.tasks.current'
+          : 'journal.window.health.work.hold.tasks.last.check';
+        line = window.JournalI18n.render(id, [['scope', scope], ['count', String(hold.count)],
+          ['quantity', window.JournalI18n.cardinalQuantity(hold.count)]]);
+      }
+      row.querySelector('p').textContent = line;
       row.querySelector('pre').textContent = JSON.stringify(hold.evidence, null, 2);
       const retry = row.querySelector('button');
       retry.onclick = async () => {
@@ -1452,10 +1476,9 @@
       const names = Array.from(state.crashed.keys()).sort();
       return {
         key: names.length === 1 ? 'HEALTH_GLANCE_SERVICE_ATTENTION' : 'HEALTH_GLANCE_SERVICES_ATTENTION',
-        vars: {
-          n: String(names.length),
-          service_names: names.map(serviceName).join(', '),
-        },
+        vars: names.length === 1
+          ? { services: serviceName(names[0]) }
+          : { count: names.length, services: names.map(serviceName).join(', ') },
       };
     }
 
@@ -1466,8 +1489,8 @@
     if (staleHeartbeats.length > 0) {
       const names = Array.from(new Set(staleHeartbeats.map(String))).sort();
       return names.length === 1
-        ? { key: 'HEALTH_GLANCE_CHECKIN_STALE', vars: { name: names[0] } }
-        : { key: 'HEALTH_GLANCE_CHECKINS_STALE', vars: { n: String(names.length), names: names.join(', ') } };
+        ? { key: 'HEALTH_GLANCE_CHECKIN_STALE', vars: { run: names[0] } }
+        : { key: 'HEALTH_GLANCE_CHECKINS_STALE', vars: { count: names.length, runs: names.join(', ') } };
     }
 
     if (brainSnapshot && ['blocked', 'unhealthy', 'unknown'].includes(brainSnapshot.state)) {
@@ -1520,8 +1543,7 @@
       return {
         key: 'HEALTH_GLANCE_CATCHING_UP',
         vars: {
-          n: String(catchingUp),
-          tasks: catchingUp === 1 ? window.JournalI18n.render('journal.window.health.status.task') : window.JournalI18n.render('journal.window.health.status.tasks'),
+          count: catchingUp,
           age: ageAgo(now - (state.lastEventTs || now)),
         },
       };
@@ -1537,24 +1559,18 @@
     return null;
   }
 
-  function formatCopy(template, values = {}) {
-    let text = String(template || '');
-    for (const [key, value] of Object.entries(values || {})) {
-      text = text.replaceAll('{' + key + '}', () => String(value ?? ''));
-    }
-    return text;
-  }
-
   function formatGlanceSentence(selection) {
     if (!selection) return '';
-    let text = HEALTH_GLANCE_COPY[selection.key] || '';
-    for (const [key, value] of Object.entries(selection.vars || {})) {
-      // A function replacement: a device named "$&" or "$1" is a name, not a
-      // capture reference, and a string replacement would let it rewrite the
-      // sentence around it (F-34).
-      text = text.replaceAll('{' + key + '}', () => String(value ?? ''));
+    const vars = selection.vars || {};
+    if (selection.key === 'HEALTH_GLANCE_STORAGE_PRIVACY') return vars.message || '';
+    if (selection.key === 'HEALTH_GLANCE_BACKUP' || selection.key === 'HEALTH_GLANCE_BRAIN_ATTENTION') {
+      return vars.headline || '';
     }
-    return text;
+    const id = HEALTH_GLANCE_MESSAGES[selection.key];
+    if (!id) return '';
+    const args = Object.entries(vars).map(([key, value]) => [key, String(value ?? '')]);
+    if (Object.hasOwn(vars, 'count')) args.push(['quantity', window.JournalI18n.cardinalQuantity(vars.count)]);
+    return window.JournalI18n.render(id, args);
   }
 
   const GLANCE_ATTENTION_KEYS = new Set([
@@ -1649,11 +1665,11 @@
         // vocabulary, so derive from age_seconds and fall back only if absent.
         const checkedAge = Number.isFinite(evidence.age_seconds)
           ? ageAgo(evidence.age_seconds * 1000)
-          : (evidence.age_text ? evidence.age_text + window.JournalI18n.render('journal.window.health.status.ago') : '');
-        const checked = checkedAge ? window.JournalI18n.render('journal.window.health.status.checked.value1', [['value1', String(checkedAge)]]) : '';
-        lines.push(`${window.JournalFormat.processingLane(identity.lane)}${checked}`);
+          : (evidence.age_text ? window.JournalI18n.render('journal.window.health.time.legacy.age', [['duration', evidence.age_text]]) : '');
+        const lane = window.JournalFormat.processingLane(identity.lane);
+        lines.push(checkedAge ? window.JournalI18n.render('journal.window.health.thinking.brain.checked', [['lane', lane], ['age', checkedAge]]) : lane);
       } else {
-        lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
+        lines.push(window.JournalI18n.render('journal.window.health.thinking.brain.reason', [['lane', window.JournalFormat.processingLane(identity.lane)], ['reason', brain.reason_text || '']]));
       }
     } else if (identity.lane || identity.provider || identity.model) {
       lines.push(brain.reason_text || '');
@@ -1671,7 +1687,7 @@
     // acts on, so they sit in the processing disclosure rather than leading the
     // page as a headline figure (G3-106).
     const tokensText = Number.isFinite(state.todayTokens)
-      ? window.JournalI18n.render('journal.window.health.status.value1.tokens.used.today', [['value1', String(window.JournalFormat.compactTokens(state.todayTokens))]])
+      ? renderCount('journal.window.health.thinking.tokens.today', state.todayTokens, String(window.JournalFormat.compactTokens(state.todayTokens)))
       : '';
     if (identityText || tokensText) {
       const details = document.createElement('details');
@@ -1766,7 +1782,7 @@
     // landed, the vital says 'unavailable' and this line may not contradict it.
     if (state.lastAgentFinishTs && state.cortexSeen) {
       const el = ensureChild(idx++);
-      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.last.run.finished') + ageAgo(Date.now() - state.lastAgentFinishTs);
+      el.textContent = window.JournalI18n.render('journal.window.health.thinking.last.run.finished', [['age', ageAgo(Date.now() - state.lastAgentFinishTs)]]);
       el.style.color = '';
     }
 
@@ -1776,7 +1792,7 @@
       errEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.couldn.t.check.thinking.errors.today');
       errEl.style.color = 'var(--warn-ink)';
     } else if (errCount > 0) {
-      errEl.textContent = errCount + window.JournalI18n.render('journal.window.health.visible.text.recent.error') + (errCount !== 1 ? 's' : '');
+      errEl.textContent = renderCount('journal.window.health.thinking.recent.errors', errCount);
       errEl.style.color = 'var(--danger)';
     } else {
       errEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.no.recent.errors');
@@ -1794,8 +1810,8 @@
       // schedules disclosure in the vitals bar (G3-102).
       const label = scheduleName(nextSchedule.name);
       el.textContent = label
-        ? window.JournalI18n.render('journal.window.health.visible.text.next') + label + ' ' + formatNextRun(nextSchedule.next_run)
-        : window.JournalI18n.render('journal.window.health.visible.text.next.scheduled.run') + formatNextRun(nextSchedule.next_run);
+        ? window.JournalI18n.render('journal.window.health.schedule.next.named', [['name', label], ['when', formatNextRun(nextSchedule.next_run)]])
+        : window.JournalI18n.render('journal.window.health.schedule.next.unnamed', [['when', formatNextRun(nextSchedule.next_run)]]);
       el.style.color = '';
     }
 
@@ -1806,9 +1822,7 @@
 
   function updateLogsBadge() {
     if (state.deepLinkMode) return;
-    let text = state.logTotalCount === 1
-      ? window.JournalI18n.render('journal.window.health.log.line.count.line')
-      : window.JournalI18n.render('journal.window.health.log.line.count.value1.lines', [['value1', String(state.logTotalCount)]]);
+    let text = renderCount('journal.window.health.logs.lines.count', state.logTotalCount);
     if (state.lastLogTs) {
       if (window.JournalClock?.parts) {
         const p = window.JournalClock.parts(state.lastLogTs);
@@ -1981,11 +1995,11 @@
       const filter = state.recentErrorsFilter;
       const label = document.createElement('div');
       label.style.cssText = 'padding: 0.2em 0 0.45em; font-size: 0.8em; color: var(--ink-soft); display: flex; gap: 0.5em; align-items: center;';
-      const dayText = filter.day === 'today' ? "today's" : filter.day;
-      label.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.showing.value1.errors', [['value1', String(dayText)]])));
-      if (filter.talent) {
-        label.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.value1', [['value1', String(talentName(filter.talent))]])));
-      }
+      const args = filter.day === 'today' ? [] : [['day', filter.day]];
+      const scope = filter.day === 'today' ? 'today' : 'day';
+      if (filter.talent) args.push(['talent', talentName(filter.talent)]);
+      const id = `journal.window.health.errors.filter.${scope}${filter.talent ? '.talent' : ''}`;
+      label.appendChild(document.createTextNode(window.JournalI18n.render(id, args)));
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.setAttribute('data-action', 'clear-error-filter');
@@ -2100,43 +2114,35 @@
     if (types.has('agent')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.window.explanation.thinking.errors.usually.clear.up.on')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.model.runtime.logs');
-      advice.appendChild(btn);
-      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.details')));
+      advice.append(...window.JournalI18n.renderMarkup('journal.window.health.errors.advice.thinking', [], {elements: { log_link: btn }}));
       container.appendChild(advice);
     }
     if (types.has('import')) {
       const importErr = recent.find(({ e }) => e.type === 'import')?.e;
-      const stageText = importErr?.stage && importErr.stage !== 'unknown' ? window.JournalI18n.render('journal.window.health.status.at') + importErr.stage : '';
+      const stage = importErr?.stage && importErr.stage !== 'unknown' ? String(importErr.stage) : '';
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.import.failed') + stageText + window.JournalI18n.render('journal.window.health.status.check.the.source.file.and.retry')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'importer');
       btn.className = 'error-advice-link';
-      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.file.importer.logs');
-      advice.appendChild(btn);
-      advice.appendChild(document.createTextNode('.'));
+      advice.append(...(stage ? window.JournalI18n.renderMarkup('journal.window.health.errors.advice.import.stage', [['stage', stage]], {elements: { log_link: btn }})
+        : window.JournalI18n.renderMarkup('journal.window.health.errors.advice.import', [], {elements: { log_link: btn }})));
       container.appendChild(advice);
     }
     // Default fallback for any unrecognized error types (connection/service errors)
     if (Array.from(types).some(t => t !== 'agent' && t !== 'import')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.service.error.detected')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'supervisor');
       btn.className = 'error-advice-link';
-      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.system.manager.logs');
-      advice.appendChild(btn);
-      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.details')));
+      advice.append(...window.JournalI18n.renderMarkup('journal.window.health.errors.advice.service', [], {elements: { log_link: btn }}));
       container.appendChild(advice);
     }
   }
@@ -2263,39 +2269,37 @@
     const crashedCount = Array.from(state.crashed.values()).filter(info => info.phase !== 'backoff').length;
     const retryingCount = state.crashed.size - crashedCount;
     const serviceParts = [];
-    if (runningCount > 0) serviceParts.push(window.JournalI18n.render('journal.window.health.accessible.service.count.value1.active', [['value1', String(runningCount)]]));
-    if (retryingCount > 0) serviceParts.push(retryingCount + window.JournalI18n.render('journal.window.health.status.retrying.variant2'));
-    if (crashedCount > 0) serviceParts.push(crashedCount + window.JournalI18n.render('journal.window.health.status.needs.attention'));
-    sections[0]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services') + (state.supervisorSeen ? serviceParts.join(', ') || window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel()));
-
-    sections[1]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.thinking') + (state.cortexSeen ? state.agentCount + window.JournalI18n.render('journal.window.health.accessible.label.running') : pendingVitalLabel()));
-    sections[2]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.tasks') + (state.supervisorSeen ? state.tasks.length + window.JournalI18n.render('journal.window.health.accessible.label.active.variant2') : pendingVitalLabel()));
+    if (runningCount > 0) serviceParts.push(renderCount('journal.window.health.vitals.services.active', runningCount));
+    if (retryingCount > 0) serviceParts.push(renderCount('journal.window.health.vitals.services.retrying', retryingCount));
+    if (crashedCount > 0) serviceParts.push(renderCount('journal.window.health.vitals.services.attention', crashedCount));
+    const services = state.supervisorSeen ? serviceParts.join(', ') || window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel();
+    sections[0]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.services.accessible', [['status', services]]));
+    const thinking = state.cortexSeen ? renderCount('journal.window.health.vitals.thinking.running', state.agentCount) : pendingVitalLabel();
+    sections[1]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.thinking.accessible', [['status', thinking]]));
+    const tasks = state.supervisorSeen ? renderCount('journal.window.health.vitals.tasks.active', state.tasks.length) : pendingVitalLabel();
+    sections[2]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.tasks.accessible', [['status', tasks]]));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
     let healthLabel = timeoutFired ? window.JournalI18n.render('journal.window.health.status.unavailable') : window.JournalI18n.render('journal.window.health.status.loading');
     if (crashedCount > 0) {
       healthLabel = window.JournalI18n.render('journal.window.health.window.explanation.error.services.need.attention');
     } else if (staleCount > 0) {
-      healthLabel = staleCount === 1
-        ? window.JournalI18n.render('journal.window.health.accessible.check.in.warning.warning.journal.run.stopped.checking.in')
-        : window.JournalI18n.render('journal.window.health.accessible.check.in.warning.warning.value1.journal.runs.stopped.checking', [['value1', String(staleCount)]]);
+      healthLabel = renderCount('journal.window.health.vitals.heartbeat.warning', staleCount);
     } else if (retryingCount > 0) {
       healthLabel = window.JournalI18n.render('journal.window.health.status.warning.services.retrying');
     } else if (state.health) {
       healthLabel = window.JournalI18n.render('journal.window.health.status.ok');
     }
-    sections[3]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.health') + healthLabel);
+    sections[3]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.health.accessible', [['status', healthLabel]]));
 
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
-    sections[4]?.setAttribute(
-      'aria-label',
-      window.JournalI18n.render('journal.window.health.accessible.label.queues') + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel()))
-    );
+    const queues = queueEntries.map(([cmd, size]) => cmd + ' ' + size).join(', ')
+      || (state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel());
+    sections[4]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.queues.accessible', [['status', queues]]));
 
-    sections[5]?.setAttribute(
-      'aria-label',
-      window.JournalI18n.render('journal.window.health.accessible.label.schedules') + (state.schedules.length ? state.schedules.length + window.JournalI18n.render('journal.window.health.accessible.label.scheduled') : state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel())
-    );
+    const schedules = state.schedules.length ? renderCount('journal.window.health.vitals.schedules.count', state.schedules.length)
+      : state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel();
+    sections[5]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.schedules.accessible', [['status', schedules]]));
   }
 
   // Update vitals bar
@@ -2345,13 +2349,13 @@
         }
         const retrying = crashed && info.phase === 'backoff';
         const statusClass = retrying ? 'restarting' : (crashed ? 'crashed' : 'active');
-        const statusLabel = retrying ? window.JournalI18n.render('journal.window.health.status.retrying') : crashed ? window.JournalI18n.render('journal.window.health.status.crashed') : window.JournalI18n.render('journal.window.health.status.active');
-        const restartInfo = retrying ? window.JournalI18n.render('journal.window.health.status.retrying.variant3') : '';
+        const state = retrying ? 'retrying' : crashed ? 'crashed' : 'active';
+        const service = serviceName(name);
         dot.className = retrying ? 'service-dot restarting' : (crashed ? 'service-dot crashed' : 'service-dot');
         dot.children[0].className = 'status-indicator ' + statusClass;
-        dot.children[0].setAttribute('aria-label', serviceName(name) + ': ' + statusLabel + restartInfo);
+        dot.children[0].setAttribute('aria-label', window.JournalI18n.render(`journal.window.health.vitals.service.${state}`, [['service', service]]));
         dot.children[1].setAttribute('title', name);
-        dot.children[1].textContent = serviceName(name) + restartInfo;
+        dot.children[1].textContent = retrying ? window.JournalI18n.render('journal.window.health.vitals.service.retrying.label', [['service', service]]) : service;
       }
     }
 
@@ -2366,11 +2370,11 @@
 
 
     // Agents count
-    writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + window.JournalI18n.render('journal.window.health.status.running'));
+    writeVital(elements.agentsValue, state.cortexSeen, renderCount('journal.window.health.vitals.thinking.running', state.agentCount));
 
     // Tasks
     const taskCount = state.tasks.length;
-    writeVital(elements.tasksValue, state.supervisorSeen, window.JournalI18n.render('journal.window.health.active.task.count.value1.active', [['value1', String(taskCount)]]));
+    writeVital(elements.tasksValue, state.supervisorSeen, renderCount('journal.window.health.vitals.tasks.active', taskCount));
 
     // Health with stale heartbeat names
     if (state.health) {
@@ -2389,8 +2393,9 @@
         staleList.className = 'stale-list';
         hv.appendChild(staleList);
       }
-      const mainSpan = hv.children[0];
-      const staleListSpan = hv.children[1];
+      const mainSpan = hv.querySelector('.health-main');
+      const staleListSpan = hv.querySelector('.stale-list');
+      if (hasCrashed || staleCount === 0) hv.replaceChildren(mainSpan, staleListSpan);
 
       if (hasCrashed) {
         mainSpan.textContent = window.JournalI18n.render('journal.window.health.visible.text.services.need.attention');
@@ -2399,10 +2404,15 @@
         staleListSpan.style.display = 'none';
         updateVitalsStatus('error');
       } else if (staleCount > 0) {
-        mainSpan.textContent = staleCount + window.JournalI18n.render('journal.window.health.visible.text.journal.run') + (staleCount === 1 ? '' : 's') + window.JournalI18n.render('journal.window.health.visible.text.stopped.checking.in');
+        mainSpan.textContent = '';
         mainSpan.style.color = 'var(--warn-ink)';
-        staleListSpan.textContent = ' ' + staleHeartbeats.map(String).join(', ');
+        staleListSpan.textContent = '';
         staleListSpan.style.display = '';
+        const parts = window.JournalI18n.renderMarkup('journal.window.health.vitals.heartbeat.stopped', [
+          ['count', String(staleCount)], ['run_names', staleHeartbeats.map(String).join(', ')],
+          ['quantity', window.JournalI18n.cardinalQuantity(staleCount)]
+        ], {elements: {warning: mainSpan, runs: staleListSpan}});
+        hv.replaceChildren(...parts);
         updateVitalsStatus('warning');
       } else if (hasRetrying) {
         mainSpan.textContent = window.JournalI18n.render('journal.window.health.visible.text.services.retrying');
@@ -2465,12 +2475,19 @@
       const dueNow = schedules.filter(schedule => schedule.due
         || (schedule.next_run && Number(schedule.next_run) <= Date.now())).length;
       const next = formatNextRun(schedules[0].next_run);
-      const tail = dueNow === 1
-        ? window.JournalI18n.render('journal.window.health.status.one.is.due.now')
-        : dueNow > 1
-          ? window.JournalI18n.render('journal.window.health.status.value1.are.due.now', [['value1', String(dueNow)]])
-          : next ? window.JournalI18n.render('journal.window.health.status.next') + next : '';
-      details.querySelector('summary').textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.scheduled.value2', [['value1', String(schedules.length)], ['value2', String(tail)]]);
+      const scheduled = schedules.length;
+      const summaryArgs = [['count', String(scheduled)]];
+      let summaryId;
+      if (dueNow > 0) {
+        summaryId = 'journal.window.health.schedule.summary.due';
+        summaryArgs.push(['due', String(dueNow)], ['due_quantity', window.JournalI18n.cardinalQuantity(dueNow)],
+          ['scheduled_quantity', window.JournalI18n.cardinalQuantity(scheduled)]);
+      } else {
+        summaryId = next ? 'journal.window.health.schedule.summary.next' : 'journal.window.health.schedule.summary.idle';
+        summaryArgs.push(['quantity', window.JournalI18n.cardinalQuantity(scheduled)]);
+        if (next) summaryArgs.push(['when', next]);
+      }
+      details.querySelector('summary').textContent = window.JournalI18n.render(summaryId, summaryArgs);
       details.querySelector('ul').innerHTML = schedules.map(schedule => {
         const name = schedule.name || window.JournalI18n.render('journal.window.health.status.unnamed');
         const label = scheduleName(name) || name.replace(/^maintenance:/, '').replace(/[:_-]+/g, ' ');
@@ -2560,12 +2577,12 @@
         badge: window.JournalI18n.render('journal.window.health.status.adding'),
         unavailable: false,
         heading: age
-          ? window.JournalI18n.render('journal.window.health.heading.value1.added.to.your.journal.value2', [['value1', String(name)], ['value2', String(ageAgo(adding[0].capture_elapsed_ms))]])
-          : window.JournalI18n.render('journal.window.health.heading.value1.is.adding.to.your.journal', [['value1', String(name)]]),
+          ? window.JournalI18n.render('journal.window.health.device.capture.offline.last.added', [['device', String(name)], ['age', String(ageAgo(adding[0].capture_elapsed_ms))]])
+          : window.JournalI18n.render('journal.window.health.device.capture.offline.adding', [['device', String(name)]]),
       };
     }
     if (state.registeredClients.some(client => client.capture_state === 'unknown')) {
-      return { badge: window.JournalI18n.render('journal.window.health.status.unknown'), unavailable: true, heading: HEALTH_GLANCE_COPY.HEALTH_GLANCE_DEVICES_UNKNOWN };
+      return { badge: window.JournalI18n.render('journal.window.health.status.unknown'), unavailable: true, heading: window.JournalI18n.render('journal.window.health.glance.glance.devices.delivery.from.some.of.your.devices') };
     }
     return { badge: window.JournalI18n.render('journal.window.health.status.quiet'), unavailable: false, heading: window.JournalI18n.render('journal.window.health.heading.no.device.is.reporting.live.activity') };
   }
@@ -2629,18 +2646,19 @@
     if (!confirmedLocal && displayedStream && state.hostCapabilities?.desktop_capture === true) {
       const label = window.JournalFormat.stream(displayedStream);
       const unknown = label === window.JournalFormat.stream('_default');
-      const template = state.localHost
-        ? (unknown ? HEALTH_GLANCE_COPY.HEALTH_OBSERVE_LOCAL_SILENT : HEALTH_GLANCE_COPY.HEALTH_OBSERVE_LOCAL_REPORTING)
-        : (unknown ? HEALTH_GLANCE_COPY.HEALTH_OBSERVE_UNKNOWN_SILENT : HEALTH_GLANCE_COPY.HEALTH_OBSERVE_UNKNOWN_REPORTING);
-      // The label reads in the sentence; the stream name it stands for stays
-      // one hover away.
-      const [before, after = ''] = template.split('{label}');
-      elements.observeSourceNote.replaceChildren(document.createTextNode(before));
-      if (template.includes('{label}')) {
+      if (unknown) {
+        elements.observeSourceNote.textContent = state.localHost
+          ? HEALTH_GLANCE_COPY.HEALTH_OBSERVE_LOCAL_SILENT
+          : HEALTH_GLANCE_COPY.HEALTH_OBSERVE_UNKNOWN_SILENT;
+      } else {
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
         labelEl.title = displayedStream;
-        elements.observeSourceNote.append(labelEl, document.createTextNode(after));
+        const id = state.localHost ? 'journal.window.health.observe.local.reporting'
+          : 'journal.window.health.observe.unknown.reporting';
+        elements.observeSourceNote.replaceChildren(...window.JournalI18n.renderMarkup(id, [], {
+          fixed: { stream: labelEl }
+        }));
       }
       elements.observeSourceNote.classList.remove('hidden');
     } else {
@@ -2659,10 +2677,9 @@
           const streams = primary.screencast.streams || [];
           const elapsed = primary.screencast.window_elapsed_seconds || 0;
           const streamCount = streams.length;
-          const displayLabel = streamCount === 1 ? window.JournalI18n.render('journal.window.health.status.display') : window.JournalI18n.render('journal.window.health.status.displays');
           const mins = Math.max(1, Math.round(elapsed / 60));
           return {
-            status: window.JournalI18n.render('journal.window.health.status.taking.in.value1.value2.value3.min', [['value1', String(streamCount)], ['value2', String(displayLabel)], ['value3', String(mins)]]),
+            status: window.JournalI18n.render('journal.window.health.capture.screen.displays', [['count', String(streamCount)], ['minutes', String(mins)], ['quantity', window.JournalI18n.cardinalQuantity(streamCount)], ['minute_quantity', window.JournalI18n.cardinalQuantity(mins)]]),
             detail: streamCount > 0
               ? streams.map(s => `${s.position || 'unknown'} ${s.connector || 'unknown'}`).join(', ')
               : '',
@@ -2681,7 +2698,7 @@
           const elapsed = tmux.tmux.window_elapsed_seconds || 0;
           const mins = Math.max(1, Math.round(elapsed / 60));
           return {
-            status: window.JournalI18n.render('journal.window.health.status.adding.value1.value2.value3.min', [['value1', String(captures)], ['value2', String(captures === 1 ? window.JournalI18n.render('journal.window.health.status.snapshot') : window.JournalI18n.render('journal.window.health.status.snapshots'))], ['value3', String(mins)]]),
+            status: window.JournalI18n.render('journal.window.health.capture.terminal.snapshots', [['count', String(captures)], ['minutes', String(mins)], ['quantity', window.JournalI18n.cardinalQuantity(captures)], ['minute_quantity', window.JournalI18n.cardinalQuantity(mins)]]),
             detail: sessions.length > 0 ? sessions.join(', ') : '',
           };
         },
@@ -2693,12 +2710,11 @@
         extract: () => {
           if (!primary?.audio) return null;
           const hits = primary.audio.threshold_hits || 0;
-          const willSave = primary.audio.will_save ? window.JournalI18n.render('journal.window.health.status.saving') : '';
+          const id = primary.audio.will_save ? 'journal.window.health.capture.audio.sounds.saving'
+            : 'journal.window.health.capture.audio.sounds';
           return {
             status: hits === 0 ? window.JournalI18n.render('journal.window.health.status.quiet')
-              : hits === 1
-                ? window.JournalI18n.render('journal.window.health.audio.capture.status.sound.detected.value1', [['value1', String(willSave)]])
-                : window.JournalI18n.render('journal.window.health.audio.capture.status.value1.sounds.detected.value2', [['value1', String(hits)], ['value2', String(willSave)]]),
+              : window.JournalI18n.render(id, [['count', String(hits)], ['quantity', window.JournalI18n.cardinalQuantity(hits)]]),
           };
         },
       },
@@ -2712,7 +2728,7 @@
           if (primary.activity.power_save) return { status: window.JournalI18n.render('journal.window.health.status.power.saving') };
           if (primary.activity.screen_locked) return { status: window.JournalI18n.render('journal.window.health.status.screen.locked') };
           if (primary.activity.sink_muted) return { status: window.JournalI18n.render('journal.window.health.status.audio.muted') };
-          return { status: window.JournalI18n.render('journal.window.health.status.idle.value1.s', [['value1', String(Math.floor(idleMs/1000))]]) };
+          return { status: window.JournalI18n.render('journal.window.health.device.capture.idle', [['seconds', String(Math.floor(idleMs/1000))], ['seconds_quantity', window.JournalI18n.cardinalQuantity(Math.floor(idleMs/1000))]]) };
         },
       },
       {
@@ -2750,12 +2766,13 @@
         const queued = p.queued?.length || 0;
         if (isRunning && queued > 0) {
           ch.statusEl.textContent = running.length > 1
-            ? window.JournalI18n.render('journal.window.health.visible.text.running.value1.value2.queued', [['value1', String(running.length)], ['value2', String(queued)]])
-            : window.JournalI18n.render('journal.window.health.visible.text.running.value1.queued', [['value1', String(queued)]]);
+            ? window.JournalI18n.render('journal.window.health.device.processing.running.and.queued', [['running', String(running.length)], ['queued', String(queued)],
+              ['running_quantity', window.JournalI18n.cardinalQuantity(running.length)], ['queue_quantity', window.JournalI18n.cardinalQuantity(queued)]])
+            : window.JournalI18n.render('journal.window.health.device.processing.running.with.queue', [['queued', String(queued)], ['queue_quantity', window.JournalI18n.cardinalQuantity(queued)]]);
         } else if (isRunning) {
-          ch.statusEl.textContent = running.length > 1 ? window.JournalI18n.render('journal.window.health.visible.text.running.value1', [['value1', String(running.length)]]) : window.JournalI18n.render('journal.window.health.visible.text.running');
+          ch.statusEl.textContent = running.length > 1 ? window.JournalI18n.render('journal.window.health.device.processing.running.count', [['running', String(running.length)], ['running_quantity', window.JournalI18n.cardinalQuantity(running.length)]]) : window.JournalI18n.render('journal.window.health.visible.text.running');
         } else if (queued > 0) {
-          ch.statusEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.queued.value1', [['value1', String(queued)]]);
+          ch.statusEl.textContent = window.JournalI18n.render('journal.window.health.device.processing.queued', [['queued', String(queued)], ['queue_quantity', window.JournalI18n.cardinalQuantity(queued)]]);
         } else {
           ch.statusEl.textContent = ch.idleText;
         }
@@ -2863,23 +2880,18 @@
 	  // their own copy of the same twelve months and the same year rule.
 	  const sinceDay = ms => window.JournalFormat.sinceDay(ms);
 
-	  // Plural forms are real: '1 uploads turned away' was one of them.
-	  function uploadsTurnedAway(count) {
-	    return count === 1 ? window.JournalI18n.render('journal.window.health.window.explanation.upload.turned.away') : count + window.JournalI18n.render('journal.window.health.status.uploads.turned.away');
-	  }
-
 	  function registeredClientMeta(client) {
 	    const lastCapture = client.last_accepted_ingest_at && Date.parse(client.last_accepted_ingest_at);
 	    if (Number.isFinite(lastCapture)) {
 	      const deltaMs = Date.now() - lastCapture;
 	      if (deltaMs < 0) return window.JournalI18n.render('journal.window.health.window.explanation.last.added.from.future');
-	      return window.JournalI18n.render('journal.window.health.status.last.added.value1', [['value1', String(ageAgo(deltaMs))]]);
+	      return window.JournalI18n.render('journal.window.health.device.activity.last.added', [['age', String(ageAgo(deltaMs))]]);
 	    }
 	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
 	    if (Number.isFinite(lastSeen)) {
 	      const seenDelta = Date.now() - lastSeen;
 	      if (seenDelta < 0) return window.JournalI18n.render('journal.window.health.window.explanation.last.seen.from.future');
-	      return window.JournalI18n.render('journal.window.health.status.last.reported.value1', [['value1', String(ageAgo(seenDelta))]]);
+	      return window.JournalI18n.render('journal.window.health.device.activity.last.reported', [['age', String(ageAgo(seenDelta))]]);
 	    }
 	    // G3-208: a device that has never reported still has an age the owner can
 	    // judge staleness by — the day it was paired. Blank was the least useful
@@ -2888,7 +2900,7 @@
 	    if (Number.isFinite(paired)) {
 	      const pairedDelta = Date.now() - paired;
 	      if (pairedDelta < 0) return window.JournalI18n.render('journal.window.health.status.never.reported');
-	      return window.JournalI18n.render('journal.window.health.status.paired.value1', [['value1', String(ageAgo(pairedDelta))]]);
+	      return window.JournalI18n.render('journal.window.health.device.activity.paired', [['age', String(ageAgo(pairedDelta))]]);
 	    }
 	    return window.JournalI18n.render('journal.window.health.status.never.reported');
 	  }
@@ -2953,9 +2965,18 @@
     const count = typeof rejection?.active_count === 'number' && Number.isFinite(rejection.active_count)
       ? rejection.active_count : null;
     const firstMs = typeof rejection?.first === 'string' ? Date.parse(rejection.first) : NaN;
-    const since = Number.isFinite(firstMs) ? window.JournalI18n.render('journal.window.health.status.since') + sinceDay(firstMs) : '';
-    detail.textContent = (sourceName === null ? '' : (sourceName || window.JournalI18n.render('journal.window.health.visible.text.default')) + ': ')
-      + (count === null ? window.JournalI18n.render('journal.window.health.visible.text.an.upload.was.turned.away') : uploadsTurnedAway(count)) + since;
+    const args = [];
+    let id = 'journal.window.health.device.upload.' + (count === null ? 'unknown' : 'count');
+    if (sourceName !== null) {
+      id += '.source';
+      args.push(['source', sourceName || window.JournalI18n.render('journal.window.health.visible.text.default')]);
+    }
+    if (Number.isFinite(firstMs)) {
+      id += '.since';
+      args.push(['day', sinceDay(firstMs)]);
+    }
+    if (count !== null) args.push(['count', String(count)], ['quantity', window.JournalI18n.cardinalQuantity(count)]);
+    detail.textContent = window.JournalI18n.render(id, args);
     row.appendChild(detail);
     if (rejection?.reason_code) {
       const tech = document.createElement('details');
@@ -2963,10 +2984,10 @@
       tech.dataset.rejectionKey = key;
       tech.open = openKeys.has(key);
       const summary = document.createElement('summary');
-      summary.textContent = sourceName === null ? window.JournalI18n.render('journal.window.health.visible.text.technical.details') : window.JournalI18n.render('journal.window.health.visible.text.technical.details.value1', [['value1', String(sourceName || window.JournalI18n.render('journal.window.health.status.default'))]]);
+      summary.textContent = sourceName === null ? window.JournalI18n.render('journal.window.health.visible.text.technical.details') : window.JournalI18n.render('journal.window.health.device.source.technical.details', [['source', String(sourceName || window.JournalI18n.render('journal.window.health.status.default'))]]);
       tech.appendChild(summary);
       const code = document.createElement('div');
-      code.textContent = window.JournalI18n.render('journal.window.health.visible.text.reason.code') + rejection.reason_code;
+      code.textContent = window.JournalI18n.render('journal.window.health.device.upload.reason.code', [['code', String(rejection.reason_code)]]);
       tech.appendChild(code);
       row.appendChild(tech);
     }
@@ -3000,10 +3021,14 @@
       const notice = document.createElement('p');
       notice.className = 'registered-client-recovery';
       notice.dataset.readState = 'unavailable';
-      notice.textContent = window.JournalI18n.render('journal.window.health.visible.text.delivery.status.couldn.t.be.checked')
-        + (state.registeredClientsObservedAt === null ? ''
-          : window.JournalI18n.render('journal.window.health.visible.text.last.successful.check.value1', [['value1', String(new Date(state.registeredClientsObservedAt).toLocaleString())]]))
-        + (attentionClients.length ? window.JournalI18n.render('journal.window.health.visible.text.the.rows.below.show.that.last') : '');
+      let id = 'journal.window.health.device.delivery.unavailable';
+      const args = [];
+      if (state.registeredClientsObservedAt !== null) {
+        id += '.checked';
+        args.push(['checked_at', new Date(state.registeredClientsObservedAt).toLocaleString()]);
+      }
+      if (attentionClients.length) id += '.rows';
+      notice.textContent = window.JournalI18n.render(id, args);
       elements.registeredClientsStrip.appendChild(notice);
     } else if (list.length === 0) {
       const emptyP = document.createElement('p');
@@ -3022,9 +3047,7 @@
       if (activeCount > 0) {
         const countP = document.createElement('p');
         countP.className = 'registered-clients-count';
-        countP.textContent = activeCount === 1
-          ? HEALTH_GLANCE_COPY.HEALTH_DEVICES_COUNT_ONE
-          : formatCopy(HEALTH_GLANCE_COPY.HEALTH_DEVICES_COUNT_MANY, { n: activeCount });
+        countP.textContent = renderCount('journal.window.health.glance.devices.count.many', activeCount);
         elements.registeredClientsStrip.appendChild(countP);
       }
     }
@@ -3046,7 +3069,7 @@
       }
       if (state.registeredClientsFailed) {
         stateClass = 'disconnected';
-        labelText = window.JournalI18n.render('journal.window.health.status.last.known') + labelText;
+        labelText = window.JournalI18n.render('journal.window.health.device.delivery.last.known', [['status', labelText]]);
       }
       const row = document.createElement('div');
       row.className = 'registered-client-row';
@@ -3346,10 +3369,10 @@
     // Progress bars
     const progressItems = [];
     if (d.agents_total > 0) {
-      progressItems.push({ label: window.JournalI18n.render('journal.window.health.status.runs') + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
+      progressItems.push({ label: window.JournalI18n.render('journal.window.health.thinking.check.progress.runs', [['completed', String(d.agents_completed || 0)], ['total', String(d.agents_total)]]), pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
     }
     if (d.segments_total > 0) {
-      progressItems.push({ label: window.JournalI18n.render('journal.window.health.status.segments.variant2') + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
+      progressItems.push({ label: window.JournalI18n.render('journal.window.health.thinking.check.progress.segments', [['completed', String(d.segments_completed || 0)], ['total', String(d.segments_total)]]), pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
     }
     const progContainer = elements.thinkProgress;
     while (progContainer.children.length > progressItems.length) {
@@ -3377,7 +3400,7 @@
 
     // Current agents
     if (d.current_agents && d.current_agents.length > 0) {
-      elements.thinkAgents.textContent = window.JournalI18n.render('journal.window.health.visible.text.running.variant2') + d.current_agents.join(', ');
+      elements.thinkAgents.textContent = window.JournalI18n.render('journal.window.health.thinking.check.running', [['agents', d.current_agents.join(', ')]]);
     } else {
       elements.thinkAgents.textContent = '';
     }
@@ -3410,10 +3433,6 @@
     if (/^\S+\s+I\s+/.test(text)) return 'info';
 
     return 'info';
-  }
-
-  function formatTemplate(template, values) {
-    return template.replace(/\{(service|n|errors)\}/g, (_, key) => String(values[key]));
   }
 
   function stripLogPrefix(line) {
@@ -3467,11 +3486,13 @@
     header.setAttribute('tabindex', '0');
     header.setAttribute('aria-expanded', String(!collapsed));
     if (collapsed) {
-      header.textContent = formatTemplate(HEALTH_LOGS_COPY.LOGS_SERVICE_COLLAPSED, {
-        service: serviceName(service),
-        n: records.length,
-        errors: countErrorRecords(records),
-      });
+      const lines = records.length;
+      const errors = countErrorRecords(records);
+      header.textContent = window.JournalI18n.render('journal.window.health.logs.service.collapsed', [
+        ['service', serviceName(service)], ['lines', String(lines)], ['errors', String(errors)],
+        ['line_quantity', window.JournalI18n.cardinalQuantity(lines)],
+        ['error_quantity', window.JournalI18n.cardinalQuantity(errors)]
+      ]);
     } else {
       header.textContent = '── ' + serviceName(service) + ' ──';
     }
@@ -3550,7 +3571,7 @@
       });
       elements.logsAnnouncer.textContent = stripLogPrefix(record.line);
       state.logErrorCount++;
-      elements.logErrorBadge.textContent = state.logErrorCount + window.JournalI18n.render('journal.window.health.visible.text.error.variant2') + (state.logErrorCount > 1 ? 's' : '');
+      elements.logErrorBadge.textContent = renderCount('journal.window.health.logs.errors.count', state.logErrorCount);
       elements.logErrorBadge.classList.remove('hidden');
       if (state.logsCollapsed) {
         state.logsCollapsed = false;
@@ -4002,7 +4023,7 @@
         viewport.textContent = '';
         if (!ok) {
           const message = data.error || window.CONVEY_COPY.LOG_READ_FAILED;
-          appendDeepLinkLogLine(viewport, message, 'stderr', window.JournalI18n.render('journal.window.health.status.error') + message);
+          appendDeepLinkLogLine(viewport, message, 'stderr', 'ERROR: ' + message);
           return;
         }
         const pathHeader = document.createElement('div');
@@ -4182,7 +4203,7 @@
     const ageMs = Date.now() - state.lastEventTs;
     const ago = Math.floor(ageMs / 1000);
     if (ago >= 60) {
-      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.no.updates.in.value1', [['value1', String(relativeTime(ageMs))]]);
+      el.textContent = window.JournalI18n.render('journal.window.health.vitals.connection.quiet.since', [['duration', String(relativeTime(ageMs))]]);
       el.className = 'connection-indicator disconnected';
       elements.logsConnectionNote.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.updates.may.be.delayed');
       elements.logsConnectionNote.classList.remove('hidden');
@@ -4192,7 +4213,7 @@
       elements.logsConnectionNote.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.updates.may.be.delayed');
       elements.logsConnectionNote.classList.remove('hidden');
     } else {
-      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.updated.value1', [['value1', String(ageAgo(ageMs))]]);
+      el.textContent = window.JournalI18n.render('journal.window.health.vitals.connection.updated', [['age', String(ageAgo(ageMs))]]);
       el.className = 'connection-indicator';
       elements.logsConnectionNote.textContent = '';
       elements.logsConnectionNote.classList.add('hidden');

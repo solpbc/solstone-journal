@@ -1,0 +1,21 @@
+{
+  "description": "Heading when this device is adding to the journal without live reporting.",
+  "context": "Journal window. Heading when this device is adding to the journal without live reporting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "909ab4ba93e9c977755b65552dfc70626c5da9dbb1553448fffa1eb4fcd5871b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

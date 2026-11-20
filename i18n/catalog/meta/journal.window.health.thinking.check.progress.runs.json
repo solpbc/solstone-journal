@@ -1,0 +1,25 @@
+{
+  "description": "Current thinking check. completed and total are counts of runs.",
+  "context": "Journal window. Current thinking check. completed and total are counts of runs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c93fcf70e3bdef148fd35795973acb13498312b007429d5d294aab7e3413ae5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

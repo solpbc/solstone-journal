@@ -1,0 +1,61 @@
+{
+  "description": "Work inspection band. band is its scope label and the other values are counts. The recordings_left_quantity selector controls only its matching count. The outputs_ready_quantity selector controls only its matching count. The outputs_left_quantity selector controls only its matching count.",
+  "context": "Journal window. Work inspection band. band is its scope label and the other values are counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "band",
+      "type": "string"
+    },
+    {
+      "name": "recordings_ready",
+      "type": "string"
+    },
+    {
+      "name": "recordings_left",
+      "type": "string"
+    },
+    {
+      "name": "outputs_ready",
+      "type": "string"
+    },
+    {
+      "name": "outputs_left",
+      "type": "string"
+    },
+    {
+      "name": "recordings_ready_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "recordings_left_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "outputs_ready_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "outputs_left_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "899866dbff9b71ea13ca40955b55bcaad021f4cba9de2eab21b06b758fb15ca9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "recordings_ready_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Tokens used on the current journal day. count is compact formatted.",
+  "context": "Journal window. Tokens used on the current journal day. count is compact formatted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "75f706e68c73a95de1ac6f3f0e5d9344e7e3142a0311064e4f2de9d6f7297d6d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

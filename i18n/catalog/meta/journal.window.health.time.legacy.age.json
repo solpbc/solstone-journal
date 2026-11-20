@@ -1,0 +1,21 @@
+{
+  "description": "Age shown for older status data. duration is a formatted amount.",
+  "context": "Journal window. Age shown for older status data. duration is a formatted amount.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ad366613023a5ca52b66d42e49e7889b8930efc77acde64ce5d94bdbd0c55af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

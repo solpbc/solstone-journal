@@ -1,0 +1,30 @@
+{
+  "description": "Device idle indicator. seconds is the duration as an integer.",
+  "context": "Journal window. Device idle indicator. seconds is the duration as an integer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    },
+    {
+      "name": "seconds_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3188f3c374a1388505ae12e25bc85f40c41cffed7fdad17873e2c3a4658c7356",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "seconds_quantity",
+    "type": "cardinal"
+  }
+}

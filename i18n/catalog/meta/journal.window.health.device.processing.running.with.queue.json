@@ -1,0 +1,30 @@
+{
+  "description": "Device processing indicator with the number of queued sessions.",
+  "context": "Journal window. Device processing indicator with the number of queued sessions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "queued",
+      "type": "string"
+    },
+    {
+      "name": "queue_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5794ffd3e23d984f700b669e1c5bb82e75c1caeef1767a462255c18c1dbc84ad",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "queue_quantity",
+    "type": "cardinal"
+  }
+}

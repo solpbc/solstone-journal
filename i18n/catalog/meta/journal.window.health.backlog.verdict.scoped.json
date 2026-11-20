@@ -1,0 +1,25 @@
+{
+  "description": "Backlog headline and preceding scope label. verdict is a complete journal status.",
+  "context": "Journal window. Backlog headline and preceding scope label. verdict is a complete journal status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scope",
+      "type": "string"
+    },
+    {
+      "name": "verdict",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cd026a3295ce4437dd1f48226252176db1f5f8cc062e8691d1f40b06ef2bdd1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

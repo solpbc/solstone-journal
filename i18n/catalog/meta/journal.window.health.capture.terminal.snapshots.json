@@ -1,0 +1,39 @@
+{
+  "description": "Live terminal capture. count is the number of terminal snapshots and minutes is the approximate duration. minute_quantity selects grammar for the approximate duration independently of the capture count.",
+  "context": "Journal window. Live terminal capture. count is the number of terminal snapshots and minutes is the approximate duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "minute_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ddd7209c5f8dfab3308f2071202b0b506e8637a73ea5d59c87c397fc0aa1895e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

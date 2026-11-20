@@ -1,0 +1,21 @@
+{
+  "description": "Current thinking check. agents is the list of agent names.",
+  "context": "Journal window. Current thinking check. agents is the list of agent names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agents",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ffed3e76c8c7220ae308299b04656a012d4de37ac2bba50dafcb48e4d44a26c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

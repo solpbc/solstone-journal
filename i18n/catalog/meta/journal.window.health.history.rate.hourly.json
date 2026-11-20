@@ -1,0 +1,21 @@
+{
+  "description": "Approximate hourly processing rate. rate is a preformatted decimal.",
+  "context": "Journal window. Approximate hourly processing rate. rate is a preformatted decimal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "rate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a8b49038e2863efbc445d355dc3ff540c67e0eac98d7e4bc1162ff16e8ba9ba",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

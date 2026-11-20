@@ -1,0 +1,21 @@
+{
+  "description": "Health overview. device is the name and technical source labels of the device with rejected uploads.",
+  "context": "Journal window. Health overview. device is the name and technical source labels of the device with rejected uploads.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37d0a6aad7c3014e8e7db4042f5e4cc07cee9f256102aaad31d8e720a962a279",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

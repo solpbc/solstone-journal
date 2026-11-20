@@ -1,0 +1,25 @@
+{
+  "description": "Thinking error advice. Keep log_link_start and log_link_end around the button that opens the model runtime logs.",
+  "context": "Journal window. Thinking error advice. Keep log_link_start and log_link_end around the button that opens the model runtime logs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "log_link_start",
+      "type": "string"
+    },
+    {
+      "name": "log_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ef02900235f6441bd5c06a4e99d34f1236079f50201c88839993f7cb1270345",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

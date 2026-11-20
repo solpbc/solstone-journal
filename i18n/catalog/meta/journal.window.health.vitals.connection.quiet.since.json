@@ -1,0 +1,21 @@
+{
+  "description": "Live diagnostics status. duration is a formatted interval since the last update.",
+  "context": "Journal window. Live diagnostics status. duration is a formatted interval since the last update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "68506ef2b7dd58739265c6ab090a0e7b4a4ec37ed42a60454d4fd98f1c4542c7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

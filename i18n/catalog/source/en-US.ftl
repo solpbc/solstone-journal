@@ -76,6 +76,528 @@ journal.window.chrome.unknown.error = something went wrong. reload to try again.
 
 journal.window.chrome.zone.time = { $label } time
 
+journal.window.health.backlog.catching.up.day = { $day } is still catching up →
+
+journal.window.health.backlog.media.segments = { $quantity ->
+        [one] { $count } segment waiting for media processing
+       *[other] { $count } segments waiting for media processing
+    }
+
+journal.window.health.backlog.verdict.scoped = { $scope }: { $verdict }
+
+journal.window.health.backlog.verdict.with.link = { $verdict } { $oldest_link_start }oldest: { $day } →{ $oldest_link_end }
+
+journal.window.health.capture.audio.sounds = { $quantity ->
+        [one] 1 sound detected
+       *[other] { $count } sounds detected
+    }
+
+journal.window.health.capture.audio.sounds.saving = { $quantity ->
+        [one] 1 sound detected · saving
+       *[other] { $count } sounds detected · saving
+    }
+
+journal.window.health.capture.screen.displays = { $quantity ->
+        [one] taking in { $count } display, ~{ $minute_quantity ->
+            [one] { $minutes } min
+           *[other] { $minutes } min
+        }
+       *[other] taking in { $count } displays, ~{ $minute_quantity ->
+            [one] { $minutes } min
+           *[other] { $minutes } min
+        }
+    }
+
+journal.window.health.capture.terminal.snapshots = { $quantity ->
+        [one] adding { $count } snapshot, ~{ $minute_quantity ->
+            [one] { $minutes } min
+           *[other] { $minutes } min
+        }
+       *[other] adding { $count } snapshots, ~{ $minute_quantity ->
+            [one] { $minutes } min
+           *[other] { $minutes } min
+        }
+    }
+
+journal.window.health.device.activity.last.added = last added { $age }
+
+journal.window.health.device.activity.last.reported = last reported { $age }
+
+journal.window.health.device.activity.paired = paired { $age }
+
+journal.window.health.device.capture.idle = { $seconds_quantity ->
+        [one] idle: { $seconds }s
+       *[other] idle: { $seconds }s
+    }
+
+journal.window.health.device.capture.offline.adding = { $device } is adding to your journal. live detail isn't being reported right now.
+
+journal.window.health.device.capture.offline.last.added = { $device } added to your journal { $age }. live detail isn't being reported right now.
+
+journal.window.health.device.delivery.last.known = last known: { $status }
+
+journal.window.health.device.delivery.unavailable = delivery status couldn't be checked.
+
+journal.window.health.device.delivery.unavailable.checked = delivery status couldn't be checked. last successful check: { $checked_at }.
+
+journal.window.health.device.delivery.unavailable.checked.rows = delivery status couldn't be checked. last successful check: { $checked_at }. the rows below show that last check.
+
+journal.window.health.device.delivery.unavailable.rows = delivery status couldn't be checked. the rows below show that last check.
+
+journal.window.health.device.processing.queued = { $queue_quantity ->
+        [one] queued: { $queued }
+       *[other] queued: { $queued }
+    }
+
+journal.window.health.device.processing.running.and.queued = { $running_quantity ->
+        [one] running ({ $running }, +{ $queue_quantity ->
+            [one] { $queued } queued
+           *[other] { $queued } queued
+        })
+       *[other] running ({ $running }, +{ $queue_quantity ->
+            [one] { $queued } queued
+           *[other] { $queued } queued
+        })
+    }
+
+journal.window.health.device.processing.running.count = { $running_quantity ->
+        [one] running ({ $running })
+       *[other] running ({ $running })
+    }
+
+journal.window.health.device.processing.running.with.queue = { $queue_quantity ->
+        [one] running (+{ $queued } queued)
+       *[other] running (+{ $queued } queued)
+    }
+
+journal.window.health.device.source.technical.details = technical details: { $source }
+
+journal.window.health.device.upload.count = { $quantity ->
+        [one] 1 upload turned away
+       *[other] { $count } uploads turned away
+    }
+
+journal.window.health.device.upload.count.since = { $quantity ->
+        [one] 1 upload turned away since { $day }
+       *[other] { $count } uploads turned away since { $day }
+    }
+
+journal.window.health.device.upload.count.source = { $quantity ->
+        [one] { $source }: 1 upload turned away
+       *[other] { $source }: { $count } uploads turned away
+    }
+
+journal.window.health.device.upload.count.source.since = { $quantity ->
+        [one] { $source }: 1 upload turned away since { $day }
+       *[other] { $source }: { $count } uploads turned away since { $day }
+    }
+
+journal.window.health.device.upload.reason.code = reason code: { $code }
+
+journal.window.health.device.upload.unknown = an upload was turned away
+
+journal.window.health.device.upload.unknown.since = an upload was turned away since { $day }
+
+journal.window.health.device.upload.unknown.source = { $source }: an upload was turned away
+
+journal.window.health.device.upload.unknown.source.since = { $source }: an upload was turned away since { $day }
+
+journal.window.health.errors.advice.import = import failed. check the source file and retry, or { $log_link_start }view file importer logs{ $log_link_end }.
+
+journal.window.health.errors.advice.import.stage = import failed at { $stage }. check the source file and retry, or { $log_link_start }view file importer logs{ $log_link_end }.
+
+journal.window.health.errors.advice.service = service error detected. { $log_link_start }view system manager logs{ $log_link_end } for details.
+
+journal.window.health.errors.advice.thinking = thinking errors usually clear up on the next run. { $log_link_start }view model runtime logs{ $log_link_end } for details.
+
+journal.window.health.errors.filter.day = showing { $day } errors
+
+journal.window.health.errors.filter.day.talent = showing { $day } errors for { $talent }
+
+journal.window.health.errors.filter.today = showing today's errors
+
+journal.window.health.errors.filter.today.talent = showing today's errors for { $talent }
+
+journal.window.health.glance.catching.up = { $quantity ->
+        [one] catching up on { $count } task in the background. last update { $age }.
+       *[other] catching up on { $count } tasks in the background. last update { $age }.
+    }
+
+journal.window.health.glance.checkin.stale = a journal run on { $run } stopped checking in with your journal.
+
+journal.window.health.glance.checkins.stale = { $quantity ->
+        [one] a journal run on { $runs } stopped checking in with your journal.
+       *[other] { $count } journal runs stopped checking in with your journal: { $runs }.
+    }
+
+journal.window.health.glance.device.failing = your journal couldn't accept uploads from { $device }.
+
+journal.window.health.glance.device.silent = { $device } hasn't added to your journal in { $age }.
+
+journal.window.health.glance.device.silent.no.age = { $device } hasn't added to your journal recently.
+
+journal.window.health.glance.devices.count.many = { $quantity ->
+        [one] 1 device is adding to your journal.
+       *[other] { $count } devices are adding to your journal.
+    }
+
+journal.window.health.glance.devices.failing = { $quantity ->
+        [one] your journal couldn't accept uploads from { $count } devices: { $devices }.
+       *[other] your journal couldn't accept uploads from { $count } devices: { $devices }.
+    }
+
+journal.window.health.glance.devices.silent = { $quantity ->
+        [one] { $count } devices haven't added to your journal recently: { $devices }.
+       *[other] { $count } devices haven't added to your journal recently: { $devices }.
+    }
+
+journal.window.health.glance.service.attention = 1 service needs attention: { $services }.
+
+journal.window.health.glance.services.attention = { $quantity ->
+        [one] { $count } services need attention: { $services }.
+       *[other] { $count } services need attention: { $services }.
+    }
+
+journal.window.health.history.caught.up.since = history caught up back to { $day }
+
+journal.window.health.history.cost.consent = finishing { $recordings } older recordings, { $day_outputs } daily outputs and { $activities } activities uses your chosen model and may add charges from your provider. today's work goes first.
+
+journal.window.health.history.counts = { $recording_quantity ->
+        [one] { $recordings } recordings and { $output_quantity ->
+            [one] { $outputs } daily outputs left
+           *[other] { $outputs } daily outputs left
+        }
+       *[other] { $recordings } recordings and { $output_quantity ->
+            [one] { $outputs } daily outputs left
+           *[other] { $outputs } daily outputs left
+        }
+    }
+
+journal.window.health.history.held.count = { $quantity ->
+        [one] { $count } items set aside
+       *[other] { $count } items set aside
+    }
+
+journal.window.health.history.rate.hourly = about { $rate } an hour
+
+journal.window.health.history.summary.current = { $metrics }. through { $through_day }; today and yesterday are separate.
+
+journal.window.health.history.summary.stale = last checked: { $metrics }. through { $through_day }; today and yesterday are separate.
+
+journal.window.health.history.unreadable.count = { $quantity ->
+        [one] { $count } days could not be checked
+       *[other] { $count } days could not be checked
+    }
+
+journal.window.health.local.program.requests = { $quantity ->
+        [one] { $program } · { $count } request · { $last_seen }
+       *[other] { $program } · { $count } requests · { $last_seen }
+    }
+
+journal.window.health.logs.errors.count = { $quantity ->
+        [one] { $count } error
+       *[other] { $count } errors
+    }
+
+journal.window.health.logs.lines.count = { $quantity ->
+        [one] 1 line
+       *[other] { $count } lines
+    }
+
+journal.window.health.logs.service.collapsed = { $line_quantity ->
+        [one] ── { $service } ── ({ $lines } lines, ★ { $error_quantity ->
+            [one] { $errors } errors
+           *[other] { $errors } errors
+        })
+       *[other] ── { $service } ── ({ $lines } lines, ★ { $error_quantity ->
+            [one] { $errors } errors
+           *[other] { $errors } errors
+        })
+    }
+
+journal.window.health.observe.local.reporting = your journal's computer isn't reporting yet. showing { $stream }.
+
+journal.window.health.observe.unknown.reporting = can't identify your journal's computer yet. showing { $stream }.
+
+journal.window.health.schedule.next.duration = in { $duration }
+
+journal.window.health.schedule.next.named = next: { $name } { $when }
+
+journal.window.health.schedule.next.unnamed = next scheduled run { $when }
+
+journal.window.health.schedule.summary.due = { $due_quantity ->
+        [one] { $scheduled_quantity ->
+            [one] { $count } scheduled
+           *[other] { $count } scheduled
+        } · one is due now
+       *[other] { $scheduled_quantity ->
+            [one] { $count } scheduled
+           *[other] { $count } scheduled
+        } · { $due } are due now
+    }
+
+journal.window.health.schedule.summary.idle = { $quantity ->
+        [one] { $count } scheduled
+       *[other] { $count } scheduled
+    }
+
+journal.window.health.schedule.summary.next = { $quantity ->
+        [one] { $count } scheduled · next { $when }
+       *[other] { $count } scheduled · next { $when }
+    }
+
+journal.window.health.search.last.check.elapsed = { $hour_quantity ->
+        [one] last search check { $hours } hours ago: { $updated_quantity ->
+            [one] { $updated } updated
+           *[other] { $updated } updated
+        }, { $removed_quantity ->
+            [one] { $removed } removed
+           *[other] { $removed } removed
+        }
+       *[other] last search check { $hours } hours ago: { $updated_quantity ->
+            [one] { $updated } updated
+           *[other] { $updated } updated
+        }, { $removed_quantity ->
+            [one] { $removed } removed
+           *[other] { $removed } removed
+        }
+    }
+
+journal.window.health.search.last.check.recent = { $updated_quantity ->
+        [one] last search check less than an hour ago: { $updated } updated, { $removed_quantity ->
+            [one] { $removed } removed
+           *[other] { $removed } removed
+        }
+       *[other] last search check less than an hour ago: { $updated } updated, { $removed_quantity ->
+            [one] { $removed } removed
+           *[other] { $removed } removed
+        }
+    }
+
+journal.window.health.search.queued = { $quantity ->
+        [one] { $count } updates queued
+       *[other] { $count } updates queued
+    }
+
+journal.window.health.search.removals = { $quantity ->
+        [one] { $count } removals still waiting
+       *[other] { $count } removals still waiting
+    }
+
+journal.window.health.search.summary.details = { $status } { $details }.
+
+journal.window.health.speech.setup.download.bytes = { $received } of { $total }
+
+journal.window.health.thinking.brain.checked = { $lane }, checked { $age }
+
+journal.window.health.thinking.brain.reason = { $lane }: { $reason }
+
+journal.window.health.thinking.check.progress.runs = runs: { $completed } / { $total }
+
+journal.window.health.thinking.check.progress.segments = segments: { $completed } / { $total }
+
+journal.window.health.thinking.check.running = running: { $agents }
+
+journal.window.health.thinking.last.run.finished = last run finished { $age }
+
+journal.window.health.thinking.recent.errors = { $quantity ->
+        [one] { $count } recent error
+       *[other] { $count } recent errors
+    }
+
+journal.window.health.thinking.tokens.today = { $quantity ->
+        [one] { $count } tokens used today
+       *[other] { $count } tokens used today
+    }
+
+journal.window.health.time.legacy.age = { $duration } ago
+
+journal.window.health.vitals.connection.quiet.since = no updates in { $duration }
+
+journal.window.health.vitals.connection.updated = updated { $age }
+
+journal.window.health.vitals.health.accessible = health: { $status }
+
+journal.window.health.vitals.heartbeat.stopped = { $quantity ->
+        [one] { $warning_start }{ $count } journal run stopped checking in:{ $warning_end }{ $runs_start } { $run_names }{ $runs_end }
+       *[other] { $warning_start }{ $count } journal runs stopped checking in:{ $warning_end }{ $runs_start } { $run_names }{ $runs_end }
+    }
+
+journal.window.health.vitals.heartbeat.warning = { $quantity ->
+        [one] warning, 1 journal run stopped checking in
+       *[other] warning, { $count } journal runs stopped checking in
+    }
+
+journal.window.health.vitals.queues.accessible = queues: { $status }
+
+journal.window.health.vitals.schedules.accessible = schedules: { $status }
+
+journal.window.health.vitals.schedules.count = { $quantity ->
+        [one] { $count } scheduled
+       *[other] { $count } scheduled
+    }
+
+journal.window.health.vitals.service.active = { $service }: active
+
+journal.window.health.vitals.service.crashed = { $service }: crashed
+
+journal.window.health.vitals.service.retrying = { $service }: retrying (retrying)
+
+journal.window.health.vitals.service.retrying.label = { $service } (retrying)
+
+journal.window.health.vitals.services.accessible = services: { $status }
+
+journal.window.health.vitals.services.active = { $quantity ->
+        [one] { $count } active
+       *[other] { $count } active
+    }
+
+journal.window.health.vitals.services.attention = { $quantity ->
+        [one] { $count } needs attention
+       *[other] { $count } needs attention
+    }
+
+journal.window.health.vitals.services.retrying = { $quantity ->
+        [one] { $count } retrying
+       *[other] { $count } retrying
+    }
+
+journal.window.health.vitals.tasks.accessible = tasks: { $status }
+
+journal.window.health.vitals.tasks.active = { $quantity ->
+        [one] { $count } active
+       *[other] { $count } active
+    }
+
+journal.window.health.vitals.thinking.accessible = thinking: { $status }
+
+journal.window.health.vitals.thinking.running = { $quantity ->
+        [one] { $count } running
+       *[other] { $count } running
+    }
+
+journal.window.health.work.band.activities = { $quantity ->
+        [one] { $count } activities left
+       *[other] { $count } activities left
+    }
+
+journal.window.health.work.band.owner.requests = { $quantity ->
+        [one] { $count } requests to redo a day
+       *[other] { $count } requests to redo a day
+    }
+
+journal.window.health.work.band.permission = { $quantity ->
+        [one] { $count } waiting for permission
+       *[other] { $count } waiting for permission
+    }
+
+journal.window.health.work.band.progress = { $recordings_ready_quantity ->
+        [one] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+            [one] { $recordings_left } left
+           *[other] { $recordings_left } left
+        }; { $outputs_ready_quantity ->
+            [one] { $outputs_ready } daily outputs ready
+           *[other] { $outputs_ready } daily outputs ready
+        }, { $outputs_left_quantity ->
+            [one] { $outputs_left } left
+           *[other] { $outputs_left } left
+        }.
+       *[other] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+            [one] { $recordings_left } left
+           *[other] { $recordings_left } left
+        }; { $outputs_ready_quantity ->
+            [one] { $outputs_ready } daily outputs ready
+           *[other] { $outputs_ready } daily outputs ready
+        }, { $outputs_left_quantity ->
+            [one] { $outputs_left } left
+           *[other] { $outputs_left } left
+        }.
+    }
+
+journal.window.health.work.band.progress.details = { $recordings_ready_quantity ->
+        [one] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+            [one] { $recordings_left } left
+           *[other] { $recordings_left } left
+        }; { $outputs_ready_quantity ->
+            [one] { $outputs_ready } daily outputs ready
+           *[other] { $outputs_ready } daily outputs ready
+        }, { $outputs_left_quantity ->
+            [one] { $outputs_left } left
+           *[other] { $outputs_left } left
+        }; { $details }.
+       *[other] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+            [one] { $recordings_left } left
+           *[other] { $recordings_left } left
+        }; { $outputs_ready_quantity ->
+            [one] { $outputs_ready } daily outputs ready
+           *[other] { $outputs_ready } daily outputs ready
+        }, { $outputs_left_quantity ->
+            [one] { $outputs_left } left
+           *[other] { $outputs_left } left
+        }; { $details }.
+    }
+
+journal.window.health.work.band.recordings = { $quantity ->
+        [one] { $count } waiting for recordings
+       *[other] { $count } waiting for recordings
+    }
+
+journal.window.health.work.hold.page = page { $page } of { $pages }
+
+journal.window.health.work.hold.reason = { $item }: { $reason }
+
+journal.window.health.work.hold.reason.count = { $quantity ->
+        [one] { $item } · { $count } items: { $reason }
+       *[other] { $item } · { $count } items: { $reason }
+    }
+
+journal.window.health.work.hold.stale = set-aside work was last checked { $checked_at }. checking its status again.
+
+journal.window.health.work.hold.tasks.current = { $quantity ->
+        [one] { $scope }: { $count } task on hold for a safety check.
+       *[other] { $scope }: { $count } tasks on hold for a safety check.
+    }
+
+journal.window.health.work.hold.tasks.last.check = { $quantity ->
+        [one] { $scope }: { $count } task on hold at the last check.
+       *[other] { $scope }: { $count } tasks on hold at the last check.
+    }
+
+journal.window.health.work.hold.unavailable = queued work status is unavailable. last known status, checked { $checked_at }.
+
+journal.window.health.work.inspection.complete = { $quantity ->
+        [one] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). the inspection covers the whole journal.
+       *[other] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). the inspection covers the whole journal.
+    }
+
+journal.window.health.work.inspection.incomplete = { $quantity ->
+        [one] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). the inspection is incomplete.
+       *[other] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). the inspection is incomplete.
+    }
+
+journal.window.health.work.inspection.stale = { $quantity ->
+        [one] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). last known progress, checked { $checked_at }.
+       *[other] { $checked_quantity ->
+            [one] { $checked }
+           *[other] { $checked }
+        } of { $total } days checked ({ $range }). last known progress, checked { $checked_at }.
+    }
+
 journal.window.not.found.detail = The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
 
 journal.window.not.found.heading = Not Found
@@ -4901,27 +5423,9 @@ journal.window.handoff.spp.pending = finish turning it on in your browser.
 
 journal.window.handoff.spp.revoked = confidential processing isn't on. turn it on again when you're ready.
 
-journal.window.health.accessible.check.in.warning.warning.journal.run.stopped.checking.in = warning, 1 journal run stopped checking in
-
-journal.window.health.accessible.check.in.warning.warning.value1.journal.runs.stopped.checking = warning,{ $slot1 }{ $value1 }{ $slot2 }journal runs stopped checking in
-
 journal.window.health.accessible.label.active = active
 
-journal.window.health.accessible.label.active.variant2 = { $slot1 }active
-
-journal.window.health.accessible.label.health = health:{ $slot1 }
-
 journal.window.health.accessible.label.none = none
-
-journal.window.health.accessible.label.queues = queues:{ $slot1 }
-
-journal.window.health.accessible.label.running = { $slot1 }running
-
-journal.window.health.accessible.label.scheduled = { $slot1 }scheduled
-
-journal.window.health.accessible.label.schedules = schedules:{ $slot1 }
-
-journal.window.health.accessible.label.services = services:{ $slot1 }
 
 journal.window.health.accessible.label.services.all.running = services: all running
 
@@ -4934,10 +5438,6 @@ journal.window.health.accessible.label.services.warning = services: warning
 journal.window.health.accessible.label.stale = stale
 
 journal.window.health.accessible.label.stale.not.responding = stale, not responding
-
-journal.window.health.accessible.label.tasks = tasks:{ $slot1 }
-
-journal.window.health.accessible.label.thinking = thinking:{ $slot1 }
 
 journal.window.health.accessible.name.health.loading = health: loading
 
@@ -4954,8 +5454,6 @@ journal.window.health.accessible.name.set.aside.work.pages = set-aside work page
 journal.window.health.accessible.name.tasks.loading = tasks: loading
 
 journal.window.health.accessible.name.thinking.loading = thinking: loading
-
-journal.window.health.accessible.service.count.value1.active = { $value1 }{ $slot1 }active
 
 journal.window.health.action.a.required.field.is.missing = a required field is missing.
 
@@ -5005,15 +5503,9 @@ journal.window.health.action.your.request.is.saved.it.will.run.when.your = your 
 
 journal.window.health.action.your.retry.request.is.saved.the.journal.will.check = your retry request is saved. the journal will check this work before retrying it.
 
-journal.window.health.active.task.count.value1.active = { $value1 }{ $slot1 }active
-
 journal.window.health.agent.errors.many = errors today
 
 journal.window.health.agent.errors.one = error today
-
-journal.window.health.audio.capture.status.sound.detected.value1 = 1 sound detected{ $value1 }
-
-journal.window.health.audio.capture.status.value1.sounds.detected.value2 = { $value1 }{ $slot1 }sounds detected{ $value2 }
 
 journal.window.health.backlog.action.process.now = prioritize day
 
@@ -5061,10 +5553,6 @@ journal.window.health.disclosure.label.inspection.details = inspection details
 
 journal.window.health.disclosure.label.review.items.on.hold = review items on hold
 
-journal.window.health.glance.devices.count.device.is.adding.to.your.journal = 1 device is adding to your journal.
-
-journal.window.health.glance.devices.count.n.devices.are.adding.to.your = { $slot1 } devices are adding to your journal.
-
 journal.window.health.glance.devices.empty.no.devices.are.paired.yet = no devices are paired yet.
 
 journal.window.health.glance.devices.manage.manage.in.network = manage in network →
@@ -5073,35 +5561,15 @@ journal.window.health.glance.devices.pair.pair.a.device = pair a device →
 
 journal.window.health.glance.devices.see.see.your.devices.in.network = see your devices in network →
 
-journal.window.health.glance.glance.catching.catching.up.on.n.tasks.in = catching up on { $slot1 } { $slot2 } in the background. last update { $slot3 }.
-
-journal.window.health.glance.glance.checkin.a.journal.run.on.name.stopped = a journal run on { $slot1 } stopped checking in with your journal.
-
 journal.window.health.glance.glance.checking.checking.where.your.journal.stands = checking where your journal stands…
-
-journal.window.health.glance.glance.checkins.n.journal.runs.stopped.checking.in = { $slot1 } journal runs stopped checking in with your journal: { $slot2 }.
 
 journal.window.health.glance.glance.client.one.of.your.devices.hasn.t = one of your devices hasn't reached your journal recently.
 
-journal.window.health.glance.glance.device.device.hasn.t.added.to.your = { $slot1 } hasn't added to your journal in { $slot2 }.
-
-journal.window.health.glance.glance.device.device.hasn.t.added.to.your.variant2 = { $slot1 } hasn't added to your journal recently.
-
-journal.window.health.glance.glance.device.your.journal.couldn.t.accept.uploads = your journal couldn't accept uploads from { $slot1 }.
-
 journal.window.health.glance.glance.devices.delivery.from.some.of.your.devices = delivery from some of your devices isn't known right now.
-
-journal.window.health.glance.glance.devices.n.devices.haven.t.added.to = { $slot1 } devices haven't added to your journal recently: { $slot2 }.
 
 journal.window.health.glance.glance.devices.your.devices.delivery.status.is.unavailable = your devices' delivery status is unavailable right now.
 
-journal.window.health.glance.glance.devices.your.journal.couldn.t.accept.uploads = your journal couldn't accept uploads from { $slot1 } devices: { $slot2 }.
-
 journal.window.health.glance.glance.ok.the.journal.s.live.services.and = the journal's live services and processing are working.
-
-journal.window.health.glance.glance.service.service.needs.attention.service.names = 1 service needs attention: { $slot1 }.
-
-journal.window.health.glance.glance.services.n.services.need.attention.service.names = { $slot1 } services need attention: { $slot2 }.
 
 journal.window.health.glance.glance.services.the.journal.s.services.couldn.t = the journal's services couldn't be reached. check that your journal is running.
 
@@ -5111,11 +5579,7 @@ journal.window.health.glance.glance.work.some.queued.work.is.on.hold = some queu
 
 journal.window.health.glance.observe.local.your.journal.s.computer.isn.t = your journal's computer isn't reporting yet.
 
-journal.window.health.glance.observe.local.your.journal.s.computer.isn.t.variant2 = your journal's computer isn't reporting yet. showing { $slot1 }.
-
 journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s = can't identify your journal's computer yet.
-
-journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s.variant2 = can't identify your journal's computer yet. showing { $slot1 }.
 
 journal.window.health.heading.checking.device.activity = checking device activity…
 
@@ -5126,10 +5590,6 @@ journal.window.health.heading.health.state.couldn.t.be.loaded = health state cou
 journal.window.health.heading.no.device.is.reporting.live.activity = no device is reporting live activity right now.
 
 journal.window.health.heading.no.devices.are.linked.to.your = no devices are linked to your journal yet.
-
-journal.window.health.heading.value1.added.to.your.journal.value2 = { $value1 }{ $slot1 }added to your journal{ $slot2 }{ $value2 }. live detail isn't being reported right now.
-
-journal.window.health.heading.value1.is.adding.to.your.journal = { $value1 }{ $slot1 }is adding to your journal. live detail isn't being reported right now.
 
 journal.window.health.label.review.folder.privacy = review folder privacy
 
@@ -5144,10 +5604,6 @@ journal.window.health.link.label.get.help = get help →
 journal.window.health.link.label.manage.backup = manage backup →
 
 journal.window.health.link.label.view.devices = view devices →
-
-journal.window.health.log.line.count.line = 1 line
-
-journal.window.health.log.line.count.value1.lines = { $value1 }{ $slot1 }lines
 
 journal.window.health.logs.a.required.field.is.missing = a required field is missing.
 
@@ -5164,8 +5620,6 @@ journal.window.health.logs.labels.logs.level.option.errors.only = errors only
 journal.window.health.logs.labels.logs.level.option.info.above = info & above
 
 journal.window.health.logs.labels.logs.level.option.warnings.errors = warnings & errors
-
-journal.window.health.logs.labels.logs.service.collapsed.service.n.lines.errors.errors = ── { $slot1 } ── ({ $slot2 } lines, ★ { $slot3 } errors)
 
 journal.window.health.logs.labels.logs.service.filter.service = service
 
@@ -5301,37 +5755,21 @@ journal.window.health.speech.setup.copy.summary.setup.details = setup details
 
 journal.window.health.speech.setup.copy.summary.show.recovery.steps = show recovery steps
 
-journal.window.health.status.about.value1.an.hour = about{ $slot1 }{ $value1 }{ $slot2 }an hour
-
 journal.window.health.status.active = active
 
 journal.window.health.status.activity.processing = activity processing
 
 journal.window.health.status.adding = adding
 
-journal.window.health.status.adding.value1.value2.value3.min = adding{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, ~{ $value3 }{ $slot3 }min
-
-journal.window.health.status.ago = { $slot1 }ago
-
 journal.window.health.status.all.queued.work = all queued work
 
 journal.window.health.status.an.unnamed.device = an unnamed device
 
-journal.window.health.status.at = { $slot1 }at{ $slot2 }
-
 journal.window.health.status.audio.muted = audio muted
-
-journal.window.health.status.check.the.source.file.and.retry = . check the source file and retry, or{ $slot1 }
-
-journal.window.health.status.checked.value1 = , checked{ $slot1 }{ $value1 }
 
 journal.window.health.status.checking = checking
 
-journal.window.health.status.checking.its.status.again = . checking its status again.
-
 journal.window.health.status.crashed = crashed
-
-journal.window.health.status.daily.outputs.ready = { $slot1 }daily outputs ready,{ $slot2 }
 
 journal.window.health.status.daily.processing = daily processing
 
@@ -5345,13 +5783,7 @@ journal.window.health.status.didn.t.finish = didn't finish
 
 journal.window.health.status.didn.t.finish.importing = didn't finish importing
 
-journal.window.health.status.display = display
-
-journal.window.health.status.displays = displays
-
 journal.window.health.status.due.now = due now
-
-journal.window.health.status.error = ERROR:{ $slot1 }
 
 journal.window.health.status.facet = facet
 
@@ -5359,31 +5791,13 @@ journal.window.health.status.finishing.activities = finishing activities
 
 journal.window.health.status.finishing.older.days = finishing older days
 
-journal.window.health.status.for.details = { $slot1 }for details.
-
-journal.window.health.status.for.value1 = { $slot1 }for{ $slot2 }{ $value1 }
-
 journal.window.health.status.idle = idle
-
-journal.window.health.status.idle.value1.s = idle:{ $slot1 }{ $value1 }s
 
 journal.window.health.status.import = import
 
-journal.window.health.status.import.failed = import failed
-
 journal.window.health.status.imports = imports
 
-journal.window.health.status.in.value1 = in{ $slot1 }{ $value1 }
-
 journal.window.health.status.just.now = just now
-
-journal.window.health.status.last.added.value1 = last added{ $slot1 }{ $value1 }
-
-journal.window.health.status.last.known = last known:{ $slot1 }
-
-journal.window.health.status.last.reported.value1 = last reported{ $slot1 }{ $value1 }
-
-journal.window.health.status.left = { $slot1 }left;{ $slot2 }
 
 journal.window.health.status.loading = loading
 
@@ -5391,11 +5805,7 @@ journal.window.health.status.loading.variant2 = loading…
 
 journal.window.health.status.mode = mode
 
-journal.window.health.status.needs.attention = { $slot1 }needs attention
-
 journal.window.health.status.never.reported = never reported
-
-journal.window.health.status.next = { $slot1 }· next{ $slot2 }
 
 journal.window.health.status.no.devices = no devices
 
@@ -5403,11 +5813,7 @@ journal.window.health.status.no.recorded.days = no recorded days
 
 journal.window.health.status.ok = ok
 
-journal.window.health.status.one.is.due.now = { $slot1 }· one is due now
-
 journal.window.health.status.organizing.segments = organizing segments…
-
-journal.window.health.status.paired.value1 = paired{ $slot1 }{ $value1 }
 
 journal.window.health.status.power.saving = power saving
 
@@ -5419,25 +5825,9 @@ journal.window.health.status.quiet = quiet
 
 journal.window.health.status.recent.days = recent days
 
-journal.window.health.status.recordings.ready = { $slot1 }recordings ready,{ $slot2 }
-
-journal.window.health.status.request = request
-
-journal.window.health.status.requests = requests
-
 journal.window.health.status.retrying = retrying
 
-journal.window.health.status.retrying.variant2 = { $slot1 }retrying
-
-journal.window.health.status.retrying.variant3 = { $slot1 }(retrying)
-
-journal.window.health.status.running = { $slot1 }running
-
 journal.window.health.status.running.variant2 = running…
-
-journal.window.health.status.runs = runs:{ $slot1 }
-
-journal.window.health.status.saving = { $slot1 }· saving
 
 journal.window.health.status.screen.locked = screen locked
 
@@ -5447,31 +5837,9 @@ journal.window.health.status.segment = segment
 
 journal.window.health.status.segment.processing = segment processing
 
-journal.window.health.status.segments = segments
-
-journal.window.health.status.segments.variant2 = segments:{ $slot1 }
-
-journal.window.health.status.service.error.detected = service error detected.{ $slot1 }
-
 journal.window.health.status.setup.details = setup details
 
-journal.window.health.status.showing.value1.errors = showing{ $slot1 }{ $value1 }{ $slot2 }errors
-
-journal.window.health.status.since = { $slot1 }since{ $slot2 }
-
-journal.window.health.status.snapshot = snapshot
-
-journal.window.health.status.snapshots = snapshots
-
 journal.window.health.status.starting = starting…
-
-journal.window.health.status.taking.in.value1.value2.value3.min = taking in{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, ~{ $value3 }{ $slot3 }min
-
-journal.window.health.status.task = task
-
-journal.window.health.status.tasks = tasks
-
-journal.window.health.status.through.value1.today.and.yesterday.are = . through{ $slot1 }{ $value1 }; today and yesterday are separate.
 
 journal.window.health.status.today = today
 
@@ -5488,20 +5856,6 @@ journal.window.health.status.unnamed = unnamed
 journal.window.health.status.updating.older.days = updating older days
 
 journal.window.health.status.uploads.rejected = uploads rejected
-
-journal.window.health.status.uploads.turned.away = { $slot1 }uploads turned away
-
-journal.window.health.status.value1.are.due.now = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }are due now
-
-journal.window.health.status.value1.hours.ago = { $value1 }{ $slot1 }hours ago
-
-journal.window.health.status.value1.items.set.aside = { $value1 }{ $slot1 }items set aside
-
-journal.window.health.status.value1.removals.still.waiting = { $value1 }{ $slot1 }removals still waiting
-
-journal.window.health.status.value1.tokens.used.today = { $value1 }{ $slot1 }tokens used today
-
-journal.window.health.status.value1.updates.queued = { $value1 }{ $slot1 }updates queued
 
 journal.window.health.status.warning.services.retrying = warning, services retrying
 
@@ -5539,11 +5893,7 @@ journal.window.health.visible.text.active.imports = Active imports
 
 journal.window.health.visible.text.active.runs = Active runs
 
-journal.window.health.visible.text.activities.left = { $slot1 }activities left
-
 journal.window.health.visible.text.all.services.running = all services running
-
-journal.window.health.visible.text.an.upload.was.turned.away = an upload was turned away
 
 journal.window.health.visible.text.audio = audio
 
@@ -5571,15 +5921,11 @@ journal.window.health.visible.text.couldn.t.check.thinking.errors.today = couldn
 
 journal.window.health.visible.text.default = default
 
-journal.window.health.visible.text.delivery.status.couldn.t.be.checked = delivery status couldn't be checked.
-
 journal.window.health.visible.text.dismiss = dismiss
 
 journal.window.health.visible.text.error = error
 
 journal.window.health.visible.text.error.today = error today
-
-journal.window.health.visible.text.error.variant2 = { $slot1 }error
 
 journal.window.health.visible.text.errors.today = errors today
 
@@ -5587,29 +5933,13 @@ journal.window.health.visible.text.everything.is.idle = everything is idle
 
 journal.window.health.visible.text.finishing.older.recordings.and.day.updates = finishing older recordings and day updates uses your chosen model and may add charges from your provider. today's work goes first.
 
-journal.window.health.visible.text.finishing.value1.older.recordings.value2.daily = finishing{ $slot1 }{ $value1 }{ $slot2 }older recordings,{ $slot3 }{ $value2 }{ $slot4 }daily outputs and{ $slot5 }{ $value3 }{ $slot6 }activities uses your chosen model and may add charges from your provider. today's work goes first.
-
 journal.window.health.visible.text.health = health
 
 journal.window.health.visible.text.hide = ▼ hide
 
 journal.window.health.visible.text.idle = idle
 
-journal.window.health.visible.text.items = { $slot1 }items
-
-journal.window.health.visible.text.journal.run = { $slot1 }journal run
-
 journal.window.health.visible.text.journal.source = journal source
-
-journal.window.health.visible.text.last.checked = last checked:{ $slot1 }
-
-journal.window.health.visible.text.last.known.progress.checked = last known progress, checked{ $slot1 }
-
-journal.window.health.visible.text.last.run.finished = last run finished{ $slot1 }
-
-journal.window.health.visible.text.last.successful.check.value1 = { $slot1 }last successful check:{ $slot2 }{ $value1 }.
-
-journal.window.health.visible.text.left = { $slot1 }left
 
 journal.window.health.visible.text.local.speech.recognition = local speech recognition
 
@@ -5617,35 +5947,19 @@ journal.window.health.visible.text.log.file = log file
 
 journal.window.health.visible.text.log.updates.may.be.delayed = log updates may be delayed
 
-journal.window.health.visible.text.next = next:{ $slot1 }
-
-journal.window.health.visible.text.next.scheduled.run = next scheduled run{ $slot1 }
-
 journal.window.health.visible.text.no.matching.recent.errors.yet = no matching recent errors yet.
 
 journal.window.health.visible.text.no.recent.errors = no recent errors
 
 journal.window.health.visible.text.no.recent.errors.variant2 = no recent errors.
 
-journal.window.health.visible.text.no.updates.in.value1 = no updates in{ $slot1 }{ $value1 }
-
 journal.window.health.visible.text.none.since.this.journal.started = none since this journal started.
-
-journal.window.health.visible.text.of = { $slot1 }of{ $slot2 }
 
 journal.window.health.visible.text.ok = ok
 
 journal.window.health.visible.text.older.work.is.allowed.to.use = older work is allowed to use your chosen model, which may add charges from your provider. today's work goes first.
 
-journal.window.health.visible.text.oldest.value1 = oldest:{ $slot1 }{ $value1 }{ $slot2 }→
-
-journal.window.health.visible.text.on.hold.at.the.last.check = { $slot1 }on hold at the last check.
-
-journal.window.health.visible.text.on.hold.for.a.safety.check = { $slot1 }on hold for a safety check.
-
 journal.window.health.visible.text.on.the.computer.running.your.journal = on the computer running your journal:
-
-journal.window.health.visible.text.page = page{ $slot1 }
 
 journal.window.health.visible.text.processing.details = processing details
 
@@ -5653,21 +5967,11 @@ journal.window.health.visible.text.processing.status.unavailable = processing st
 
 journal.window.health.visible.text.programs.that.reach.your.journal.without = programs that reach your journal without a browser, since your journal started. this list stays on this computer.
 
-journal.window.health.visible.text.queued.value1 = queued:{ $slot1 }{ $value1 }
-
 journal.window.health.visible.text.queued.work.status.is.unavailable = queued work status is unavailable.
-
-journal.window.health.visible.text.queued.work.status.is.unavailable.last = queued work status is unavailable. last known status, checked{ $slot1 }
 
 journal.window.health.visible.text.queues = queues
 
-journal.window.health.visible.text.reason.code = reason code:{ $slot1 }
-
-journal.window.health.visible.text.recent.error = { $slot1 }recent error
-
 journal.window.health.visible.text.recent.errors = Recent errors
-
-journal.window.health.visible.text.requests.to.redo.a.day = { $slot1 }requests to redo a day
 
 journal.window.health.visible.text.retry = retry
 
@@ -5680,14 +5984,6 @@ journal.window.health.visible.text.retrying = retrying…
 journal.window.health.visible.text.run.id = run id
 
 journal.window.health.visible.text.running = running
-
-journal.window.health.visible.text.running.value1 = running ({ $value1 })
-
-journal.window.health.visible.text.running.value1.queued = running (+{ $value1 }{ $slot1 }queued)
-
-journal.window.health.visible.text.running.value1.value2.queued = running ({ $value1 }, +{ $value2 }{ $slot1 }queued)
-
-journal.window.health.visible.text.running.variant2 = running:{ $slot1 }
 
 journal.window.health.visible.text.saving.your.choice = saving your choice…
 
@@ -5707,8 +6003,6 @@ journal.window.health.visible.text.services.need.attention = services need atten
 
 journal.window.health.visible.text.services.retrying = services retrying
 
-journal.window.health.visible.text.set.aside.work.was.last.checked = set-aside work was last checked{ $slot1 }
-
 journal.window.health.visible.text.show = ▶ show
 
 journal.window.health.visible.text.some.services.slow.to.respond = some services slow to respond
@@ -5717,35 +6011,21 @@ journal.window.health.visible.text.sources.adding.to.your.journal = sources addi
 
 journal.window.health.visible.text.stale = stale
 
-journal.window.health.visible.text.stopped.checking.in = { $slot1 }stopped checking in:
-
 journal.window.health.visible.text.system.activity = system activity
 
 journal.window.health.visible.text.system.vitals = system vitals
 
 journal.window.health.visible.text.taking.in.your.screen = taking in your screen
 
-journal.window.health.visible.text.task = { $slot1 }task
-
-journal.window.health.visible.text.tasks = { $slot1 }tasks
-
 journal.window.health.visible.text.tasks.variant2 = tasks
 
 journal.window.health.visible.text.technical.details = technical details
 
-journal.window.health.visible.text.technical.details.value1 = technical details:{ $slot1 }{ $value1 }
-
 journal.window.health.visible.text.terminal.sessions = terminal sessions
-
-journal.window.health.visible.text.the.inspection.covers.the.whole.journal = the inspection covers the whole journal.
-
-journal.window.health.visible.text.the.inspection.is.incomplete = the inspection is incomplete.
 
 journal.window.health.visible.text.the.journal.has.not.finished.checking = the journal has not finished checking its work. keep it running to see progress here.
 
 journal.window.health.visible.text.the.retry.could.not.be.saved = the retry could not be saved. try again.
-
-journal.window.health.visible.text.the.rows.below.show.that.last = { $slot1 }the rows below show that last check.
 
 journal.window.health.visible.text.thinking = thinking
 
@@ -5761,35 +6041,13 @@ journal.window.health.visible.text.unknown = unknown
 
 journal.window.health.visible.text.unnamed.device = unnamed device
 
-journal.window.health.visible.text.updated.value1 = updated{ $slot1 }{ $value1 }
-
 journal.window.health.visible.text.updates.are.slow = updates are slow
 
-journal.window.health.visible.text.value1.is.still.catching.up = { $value1 }{ $slot1 }is still catching up →
-
-journal.window.health.visible.text.value1.of.value2 = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }
-
-journal.window.health.visible.text.value1.of.value2.days.checked.value3 = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days checked ({ $value3 }).{ $slot4 }
-
-journal.window.health.visible.text.value1.scheduled.value2 = { $value1 }{ $slot1 }scheduled{ $value2 }
-
-journal.window.health.visible.text.value1.value2.waiting.for.media.processing = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }waiting for media processing
-
-journal.window.health.visible.text.view.file.importer.logs = view file importer logs
-
 journal.window.health.visible.text.view.logs = view logs
-
-journal.window.health.visible.text.view.model.runtime.logs = view model runtime logs
-
-journal.window.health.visible.text.view.system.manager.logs = view system manager logs
 
 journal.window.health.visible.text.waiting = waiting…
 
 journal.window.health.visible.text.waiting.for.live.updates = waiting for live updates
-
-journal.window.health.visible.text.waiting.for.permission = { $slot1 }waiting for permission
-
-journal.window.health.visible.text.waiting.for.recordings = { $slot1 }waiting for recordings
 
 journal.window.health.visible.text.warning = warning
 
@@ -5811,17 +6069,11 @@ journal.window.health.window.explanation.error.network.error.loading.log.file = 
 
 journal.window.health.window.explanation.error.services.need.attention = error, services need attention
 
-journal.window.health.window.explanation.history.caught.up.back.to.value1 = history caught up back to{ $slot1 }{ $value1 }
-
 journal.window.health.window.explanation.in.under.a.minute = in under a minute
 
 journal.window.health.window.explanation.last.added.from.future = last added from future
 
-journal.window.health.window.explanation.last.search.check.value1.value2.updated = last search check{ $slot1 }{ $value1 }:{ $slot2 }{ $value2 }{ $slot3 }updated,{ $slot4 }{ $value3 }{ $slot5 }removed
-
 journal.window.health.window.explanation.last.seen.from.future = last seen from future
-
-journal.window.health.window.explanation.less.than.an.hour.ago = less than an hour ago
 
 journal.window.health.window.explanation.network.error.loading.log.file = network error loading log file
 
@@ -5841,19 +6093,11 @@ journal.window.health.window.explanation.the.recording.could.not.be.read = the r
 
 journal.window.health.window.explanation.the.recording.has.no.audio.stream = the recording has no audio stream.
 
-journal.window.health.window.explanation.thinking.errors.usually.clear.up.on = thinking errors usually clear up on the next run.{ $slot1 }
-
 journal.window.health.window.explanation.this.processing.step.has.been.set = this processing step has been set aside.
 
 journal.window.health.window.explanation.this.recording.exceeds.the.audio.processing = this recording exceeds the audio processing limit on this device. the original is kept. use a shorter recording, reduce its audio tracks, or process it on a computer.
 
 journal.window.health.window.explanation.this.recording.is.larger.than.the = this recording is larger than the 16 mib limit on this device. the original is kept. use a smaller recording or process it on a computer.
-
-journal.window.health.window.explanation.upload.turned.away = 1 upload turned away
-
-journal.window.health.window.explanation.value1.days.could.not.be.checked = { $value1 }{ $slot1 }days could not be checked
-
-journal.window.health.window.explanation.value1.recordings.and.value2.daily.outputs = { $value1 }{ $slot1 }recordings and{ $slot2 }{ $value2 }{ $slot3 }daily outputs left
 
 journal.window.health.window.explanation.waiting.before.another.attempt = waiting before another attempt.
 

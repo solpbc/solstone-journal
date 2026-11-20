@@ -1,0 +1,21 @@
+{
+  "description": "Time until the schedule runs. duration is a formatted relative interval.",
+  "context": "Journal window. Time until the schedule runs. duration is a formatted relative interval.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "62861e89d0e9d650e6dcaf2d8e4ed41a98d2bae0c82aace71cff5e61bc5525ef",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

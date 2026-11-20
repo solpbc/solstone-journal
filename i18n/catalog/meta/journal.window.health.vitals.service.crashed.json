@@ -1,0 +1,21 @@
+{
+  "description": "Service indicator. service is the display name of the background service.",
+  "context": "Journal window. Service indicator. service is the display name of the background service.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17090366c380b7ec7e90064651024b401ec47abda188894b3a57edcede3e1f3e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

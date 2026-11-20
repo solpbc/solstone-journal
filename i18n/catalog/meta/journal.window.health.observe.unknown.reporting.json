@@ -1,0 +1,21 @@
+{
+  "description": "Capture-status explanation. stream is the device label, backed by a span with its technical name as its title.",
+  "context": "Journal window. Capture-status explanation. stream is the device label, backed by a span with its technical name as its title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a4106c81cd29ed6af1ab50f36f88b47acfc83e4fc1f4d7ef623d84e55ba9ec4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Count of requests awaiting permission.",
+  "context": "Journal window. Count of requests awaiting permission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9a0da01a41b33be8dd5dfb619dbc2793db5f193a6b9917cadf8689b6e0395eeb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

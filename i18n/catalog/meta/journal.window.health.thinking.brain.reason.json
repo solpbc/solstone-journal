@@ -1,0 +1,25 @@
+{
+  "description": "Brain status. lane labels the processing option and reason is the corresponding status.",
+  "context": "Journal window. Brain status. lane labels the processing option and reason is the corresponding status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a842373eda0b85cbf8f1bf636369df28244b4bf4a4e794a07003935cfd28d95",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Time the last thinking job ended. age is a formatted relative age.",
+  "context": "Journal window. Time the last thinking job ended. age is a formatted relative age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e87a45519845f0fdf4b101f36a578d47bcaaea0bef93bd006ea7fcd4fd6a9e9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Count of activities still to process.",
+  "context": "Journal window. Count of activities still to process.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f6ba6230f55bf34bf3a951c30ea3ab454de4825d8cdc0c8fdc50b7ad9b3bbafa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

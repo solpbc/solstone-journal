@@ -1,0 +1,34 @@
+{
+  "description": "Held work count. scope is a journal task or a group of tasks.",
+  "context": "Journal window. Held work count. scope is a journal task or a group of tasks.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scope",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fe6af927775451f34fb3f90dbbced0a02bcbce2eee361d996d2e06c8d46661a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

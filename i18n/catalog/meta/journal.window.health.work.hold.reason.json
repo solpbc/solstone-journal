@@ -1,0 +1,25 @@
+{
+  "description": "Set-aside work. item is the day and task label and reason is a complete status for the hold.",
+  "context": "Journal window. Set-aside work. item is the day and task label and reason is a complete status for the hold.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "item",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bbad55a49fe09c159b9ac88e22ac6c443547d4f034999cc11250e8575a53508",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

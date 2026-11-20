@@ -1,0 +1,21 @@
+{
+  "description": "Time since this device last checked in. age is a formatted relative age.",
+  "context": "Journal window. Time since this device last checked in. age is a formatted relative age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "015b937f6d6336645e81e119b806796ee11930d0462e7807157d985383c4ba57",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

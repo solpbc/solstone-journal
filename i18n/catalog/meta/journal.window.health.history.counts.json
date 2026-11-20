@@ -1,0 +1,39 @@
+{
+  "description": "History progress. recordings and outputs count recordings and daily outputs still to process. output_quantity selects the grammatical form for the number of daily outputs.",
+  "context": "Journal window. History progress. recordings and outputs count recordings and daily outputs still to process.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "outputs",
+      "type": "string"
+    },
+    {
+      "name": "recording_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "output_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "11926b32239cd28becb68736c2500aee51144025b0320f40255581c37d9e423b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "recording_quantity",
+    "type": "cardinal"
+  }
+}

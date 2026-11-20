@@ -1,0 +1,21 @@
+{
+  "description": "Health overview. device is the name of a device whose last activity time is unknown.",
+  "context": "Journal window. Health overview. device is the name of a device whose last activity time is unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "78869e8ea184e6f5d13d604afba4b59639866620e01e3230cbe19456ac965f23",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

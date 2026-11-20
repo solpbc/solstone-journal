@@ -1,0 +1,25 @@
+{
+  "description": "Brain status. lane is the processing lane label, and age is a formatted age.",
+  "context": "Journal window. Brain status. lane is the processing lane label, and age is a formatted age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8f7fe23d8872b234d5b73a9219c7f0e36602dd71fd24677c4b733b69c49c11e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

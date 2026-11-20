@@ -1,0 +1,25 @@
+{
+  "description": "Import failure advice when no stage is known. The log_link markers enclose the log button.",
+  "context": "Journal window. Import failure advice when no stage is known. The log_link markers enclose the log button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "log_link_start",
+      "type": "string"
+    },
+    {
+      "name": "log_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "47a9f1a62bcd60dad35b7b4742ea065a7e8596b80298ddd36b8331e048edd5f1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

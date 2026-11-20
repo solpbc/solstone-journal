@@ -1,0 +1,21 @@
+{
+  "description": "Recent rejected upload with unknown count. The optional source is a label and day is a formatted date.",
+  "context": "Journal window. Recent rejected upload with unknown count. The optional source is a label and day is a formatted date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9758fdc1c568c705650c9c3131388417e87431d5d2d9f7876717a37ec67cfcf9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

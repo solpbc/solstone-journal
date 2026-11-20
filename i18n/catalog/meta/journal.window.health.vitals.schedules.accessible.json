@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for schedules. status is a complete status or a list of independent metrics.",
+  "context": "Journal window. Accessible label for schedules. status is a complete status or a list of independent metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "970dcf25e0390219279a420e37d8093e6b779b98c7de806a13a118be4bcde487",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

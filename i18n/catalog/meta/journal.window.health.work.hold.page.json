@@ -1,0 +1,25 @@
+{
+  "description": "Pagination indicator in set-aside work. page is the current page and pages is the total.",
+  "context": "Journal window. Pagination indicator in set-aside work. page is the current page and pages is the total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "page",
+      "type": "string"
+    },
+    {
+      "name": "pages",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aad97bc41eb060eff96423a7dd03b373987396626758be5d224751ae78196a7a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

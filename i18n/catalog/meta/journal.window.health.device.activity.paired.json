@@ -1,0 +1,21 @@
+{
+  "description": "Time since the device paired. age is a formatted relative age.",
+  "context": "Journal window. Time since the device paired. age is a formatted relative age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "361482895bf1cd5c0483afefa7a880fd5d55e51c618f4aaa56763ef46a2adc1d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

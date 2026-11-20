@@ -1,0 +1,25 @@
+{
+  "description": "History summary. metrics contains independent progress metrics and through_day is the latest date in this section.",
+  "context": "Journal window. History summary. metrics contains independent progress metrics and through_day is the latest date in this section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "metrics",
+      "type": "string"
+    },
+    {
+      "name": "through_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14e98e64dbe12020557d8019b561eed7542e33533745f1cf8165302f2ecb1e03",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

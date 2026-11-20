@@ -1,0 +1,30 @@
+{
+  "description": "Number of search deletions waiting.",
+  "context": "Journal window. Number of search deletions waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ed1f2eaca895ebea89527cbfb37acea95bf2e11c17d5c7c76c89a5cc18a8b307",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

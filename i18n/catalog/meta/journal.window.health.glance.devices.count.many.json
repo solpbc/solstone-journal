@@ -1,0 +1,30 @@
+{
+  "description": "Health overview. count is the number of devices adding to this journal.",
+  "context": "Journal window. Health overview. count is the number of devices adding to this journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c2a59dd6228e72fe92070d182dfd30eeb67982332ac402490a3bfe936756c620",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Live diagnostics status. age is a formatted time since the last update.",
+  "context": "Journal window. Live diagnostics status. age is a formatted time since the last update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ae2b823207782d47e2c1c20cddd26bbc8e88f3f0fa06ee387663e02412c8bb0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

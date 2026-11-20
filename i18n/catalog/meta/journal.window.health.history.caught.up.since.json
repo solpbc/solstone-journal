@@ -1,0 +1,21 @@
+{
+  "description": "History progress. day is the earliest date with completed work.",
+  "context": "Journal window. History progress. day is the earliest date with completed work.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05effef29fcc821a7df612a2799caedc4bdad960597252a0f8815e9a6f6bd4c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

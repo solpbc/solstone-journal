@@ -1,0 +1,21 @@
+{
+  "description": "Time of the next scheduled action when a display label is unavailable.",
+  "context": "Journal window. Time of the next scheduled action when a display label is unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13ab7dbf13feb0c1d03103fdeb5bc9bd24c2d6e8092ed30eed1ca1110253842b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

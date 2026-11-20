@@ -1,0 +1,50 @@
+{
+  "description": "Visual health warning. count is the number of journal runs that stopped reporting and run_names is their displayed list. The warning and runs markers enclose the styled text and the list.",
+  "context": "Journal window. Visual health warning. count is the number of journal runs that stopped reporting and run_names is their displayed list. The warning and runs markers enclose the styled text and the list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "warning_start",
+      "type": "string"
+    },
+    {
+      "name": "warning_end",
+      "type": "string"
+    },
+    {
+      "name": "runs_start",
+      "type": "string"
+    },
+    {
+      "name": "runs_end",
+      "type": "string"
+    },
+    {
+      "name": "run_names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b517d053011508a33e04094a482f3d0048248222cd04964e29a5a57ba7755d4d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

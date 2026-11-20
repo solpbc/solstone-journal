@@ -1,0 +1,38 @@
+{
+  "description": "Recent rejected uploads. Optional source and day identify where and when they began.",
+  "context": "Journal window. Recent rejected uploads. Optional source and day identify where and when they began.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "33d0dc46bbd1d5c80839dddeeb3e9455db66c481a94ff56b12ab15b113692acf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

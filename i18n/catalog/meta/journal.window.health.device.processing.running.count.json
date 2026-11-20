@@ -1,0 +1,30 @@
+{
+  "description": "Device processing indicator with more than one running session.",
+  "context": "Journal window. Device processing indicator with more than one running session.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "running",
+      "type": "string"
+    },
+    {
+      "name": "running_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8329d8af20123faddfe2af4bc239c18bc2f8c822844424c08340b35b6ed07ccc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "running_quantity",
+    "type": "cardinal"
+  }
+}

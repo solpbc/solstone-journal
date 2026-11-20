@@ -1,0 +1,30 @@
+{
+  "description": "Audio capture indicator. count is the number of sounds detected in the current recording window.",
+  "context": "Journal window. Audio capture indicator. count is the number of sounds detected in the current recording window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a26c6eed4a3b39220430a8df2de2448123905af1062d802e4f101fc59639548d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Current thinking check. completed and total are counts of segments.",
+  "context": "Journal window. Current thinking check. completed and total are counts of segments.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f5aa19b22052e0408168c5752a851d7e8383d3a758e259159069b89bccc2766",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

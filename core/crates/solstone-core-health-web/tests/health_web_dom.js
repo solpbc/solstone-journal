@@ -174,7 +174,10 @@ class Element {
     return child;
   }
 
-  append(...children) { children.forEach((child) => this.appendChild(child)); }
+  append(...children) {
+    children.forEach((child) => this.appendChild(
+      typeof child === 'string' ? this.ownerDocument.createTextNode(child) : child));
+  }
   prepend(child) {
     if (child.parentElement) child.parentElement.removeChild(child);
     child.parentElement = this;
@@ -325,6 +328,11 @@ function test(name, fn) {
   });
 }
 
+function loadHealthCatalog(context) {
+  loadWindowCatalog(context);
+  vm.runInContext(sourceBlock(loadHealthSource(), 'function renderCount(', 'function logHealthError('), context);
+}
+
 function extractRenderFunctions(source) {
   // Extract renderBacklogState and renderBacklogVerdict
   const start = source.indexOf('function renderBacklogVerdict(');
@@ -352,7 +360,7 @@ function createEnvironment() {
     Array,
     Object,
   });
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   vm.runInContext(dateFormatSource, context);
   context.window.JournalFormat.day = (d) => `Apr 3, 2026`;
 
@@ -455,7 +463,7 @@ function extractGlanceFunction(source) {
 function glanceFor(crashed, staleHeartbeats, searchIndex = null, attention = {}) {
   const context = vm.createContext({
     reportHealthReady() {}, Array, Object, String, Number, Math, Set, Map, window: {} });
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   context.crashedEntries = crashed;
   context.staleHeartbeats = staleHeartbeats;
   context.searchIndex = searchIndex;
@@ -488,12 +496,11 @@ function glanceFor(crashed, staleHeartbeats, searchIndex = null, attention = {})
 test('a stale check-in is not counted as a failing service', async () => {
   const both = glanceFor(['observe'], ['work-laptop (/home/owner/journal)']);
   assert.strictEqual(both.key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
-  assert.strictEqual(both.vars.n, '1');
-  assert.ok(!both.vars.service_names.includes('laptop'), both.vars.service_names);
+  assert.ok(!both.vars.services.includes('laptop'), both.vars.services);
 
   const staleOnly = glanceFor([], ['work-laptop (/home/owner/journal)']);
   assert.strictEqual(staleOnly.key, 'HEALTH_GLANCE_CHECKIN_STALE');
-  assert.strictEqual(staleOnly.vars.name, 'work-laptop (/home/owner/journal)');
+  assert.strictEqual(staleOnly.vars.run, 'work-laptop (/home/owner/journal)');
 
   const none = glanceFor([], []);
   assert.strictEqual(none.key, 'HEALTH_GLANCE_OK');
@@ -685,7 +692,7 @@ function createDeviceEnvironment() {
     serviceName: value => value, relativeTime: value => String(value), ageAgo: value => String(value),
     fetch: async () => ({ ok: true, json: async () => ({ clients: [] }) }),
   });
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   vm.runInContext(dateFormatSource, context);
   context.updateStatusSummary = () => {
     context.selection = vm.runInContext('selectGlanceSentence(state, Date.now())', context);
@@ -746,7 +753,7 @@ test('attention counts devices and keeps global rejection when sources are absen
   const laptop = { ...device('laptop'), capture_state: 'degraded', failing: true,
     ingest_rejection: { active_count: 2, reason_code: 'global-rejection' } };
   await env.load([phone, laptop]);
-  assert.strictEqual(env.verdict().vars.n, '2');
+  assert.strictEqual(env.verdict().vars.count, 2);
   assert.strictEqual(env.doc.querySelectorAll('.registered-client-row').length, 2);
   assert.ok(env.verdict().vars.devices.includes('laptop'));
   assert.ok(env.doc.querySelectorAll('.registered-client-tech').some(el => el.textContent.includes('global-rejection')));
@@ -1296,7 +1303,7 @@ function createBackupEnvironment() {
   section.append(summary, facts);
   doc.body.appendChild(section);
   Object.assign(context, { AbortController, setTimeout, clearTimeout, logHealthError() {} });
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   vm.runInContext(fs.readFileSync(path.resolve(crateDir, '..', 'solstone-core-backup-web', 'assets', 'backup-status.js'), 'utf8'), context);
   vm.runInContext(sourceBlock(loadHealthSource(), 'const backupSection =', 'function clearHealthStateError('), context);
   const read = async payload => {
@@ -1611,7 +1618,7 @@ function createSpeechEnvironment(applicable = true) {
     }),
   });
 
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   context.state = {hostCapabilities: {terminal_speech_setup: true}};
   const speechCode = sourceBlock(source, 'const SPEECH_SETUP_COPY =', 'function clearHealthStateError(');
   vm.runInContext(speechCode, context);
@@ -2213,7 +2220,7 @@ function logFilterEnvironment() {
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, requestAnimationFrame: (fn) => fn(),
     fetch: ask, getJson: ask, updateLogsBadge() {},
   });
-  loadWindowCatalog(context);
+  loadHealthCatalog(context);
   vm.runInContext(focusSource, context, { filename: 'focus.js' });
   vm.runInContext(sourceBlock(source, 'const HEALTH_LOGS_COPY =', 'const HEALTH_GLANCE_COPY ='), context);
   vm.runInContext(sourceBlock(source, 'const SERVICE_NAMES =', '// Readable names for talent ids'), context);

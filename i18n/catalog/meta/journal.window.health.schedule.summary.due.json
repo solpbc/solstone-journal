@@ -1,0 +1,39 @@
+{
+  "description": "Schedule summary. count is the total scheduled and due is the number due now. scheduled_quantity selects the form for the total scheduled.",
+  "context": "Journal window. Schedule summary. count is the total scheduled and due is the number due now.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "due",
+      "type": "string"
+    },
+    {
+      "name": "due_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "scheduled_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1676c02e5040fdd81636ca8858d594f9938046c3e2b47eb521200d331c54d0fe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "due_quantity",
+    "type": "cardinal"
+  }
+}

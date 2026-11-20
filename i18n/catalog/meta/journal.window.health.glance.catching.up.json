@@ -1,0 +1,34 @@
+{
+  "description": "Health overview. count is the number of active tasks and age is the displayed time of the last event.",
+  "context": "Journal window. Health overview. count is the number of active tasks and age is the displayed time of the last event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e71323c95cfca3d47ba2d60e52af56e65df12c8c0fc761ac73fe08cb702e9966",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

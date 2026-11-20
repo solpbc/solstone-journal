@@ -1,0 +1,38 @@
+{
+  "description": "Set-aside work when several items share this hold. item is the day and task label and reason is the status.",
+  "context": "Journal window. Set-aside work when several items share this hold. item is the day and task label and reason is the status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "item",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6d0d772c58917356a83c9fffe8237a558b7590d9df5969f22ee1cf8be4ba8d6a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

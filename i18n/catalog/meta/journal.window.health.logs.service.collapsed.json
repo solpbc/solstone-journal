@@ -1,0 +1,43 @@
+{
+  "description": "Collapsed service log header. lines is the number of lines and errors is the number of errors. error_quantity selects the form for the number of errors.",
+  "context": "Journal window. Collapsed service log header. lines is the number of lines and errors is the number of errors.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    },
+    {
+      "name": "lines",
+      "type": "string"
+    },
+    {
+      "name": "errors",
+      "type": "string"
+    },
+    {
+      "name": "line_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "error_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d1d4b3a67be9097ea010cd3bf95f99c67d0c2710143f5ae4dca3b0b42e16202e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "line_quantity",
+    "type": "cardinal"
+  }
+}

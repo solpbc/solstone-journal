@@ -1,0 +1,21 @@
+{
+  "description": "Set-aside work notice. checked_at is the formatted time of the last check.",
+  "context": "Journal window. Set-aside work notice. checked_at is the formatted time of the last check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7386a38440e5436d5a67af57895ba6bf840918cc6a07631b07ee09ab7375b3d6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

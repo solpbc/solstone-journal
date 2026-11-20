@@ -1,0 +1,21 @@
+{
+  "description": "Technical disclosure. code is a fixed diagnostic identifier.",
+  "context": "Journal window. Technical disclosure. code is a fixed diagnostic identifier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fe4eddc053c5d743f2d7e76a3f36d1e2260fd662f3e9a8e098009bbb245fd327",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

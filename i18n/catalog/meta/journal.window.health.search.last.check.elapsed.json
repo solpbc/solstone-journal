@@ -1,0 +1,48 @@
+{
+  "description": "Search progress. hours measures age and updated and removed count affected items. removed_quantity selects the form for the number removed. updated_quantity selects the form for the number updated.",
+  "context": "Journal window. Search progress. hours measures age and updated and removed count affected items.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    },
+    {
+      "name": "updated",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "hour_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "removed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "updated_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "68d2de1fbd116906e1b914d762d2cf02d17bec22b5fa53e5b3c9b3f24e835fa7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "hour_quantity",
+    "type": "cardinal"
+  }
+}

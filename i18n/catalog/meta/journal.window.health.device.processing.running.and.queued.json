@@ -1,0 +1,39 @@
+{
+  "description": "Device processing indicator showing running and queued sessions. Use the independent queue quantity for the number of queued sessions.",
+  "context": "Journal window. Device processing indicator showing running and queued sessions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "running",
+      "type": "string"
+    },
+    {
+      "name": "queued",
+      "type": "string"
+    },
+    {
+      "name": "running_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "queue_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "af7094818480b9ba7ddfb31d8bebc4f2a6903ae536fc2ad79cf91f0c2f87502a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "running_quantity",
+    "type": "cardinal"
+  }
+}

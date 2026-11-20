@@ -1,0 +1,34 @@
+{
+  "description": "Schedule summary. count is the total scheduled and when, if present, is the next due time or status.",
+  "context": "Journal window. Schedule summary. count is the total scheduled and when, if present, is the next due time or status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b593289ddb47c57c65e8f67b89e59e07479fd388c86918c1a4f8dde2d7e74326",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

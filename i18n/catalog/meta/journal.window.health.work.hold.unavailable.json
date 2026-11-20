@@ -1,0 +1,21 @@
+{
+  "description": "Queued work was unreadable. checked_at is the formatted time of the last successful check.",
+  "context": "Journal window. Queued work was unreadable. checked_at is the formatted time of the last successful check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6716c39970586047a6698cdc84da70bc13eb4e60980e65697bb34e3c82689688",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

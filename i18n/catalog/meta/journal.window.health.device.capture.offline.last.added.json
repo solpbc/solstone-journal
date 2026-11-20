@@ -1,0 +1,25 @@
+{
+  "description": "Heading when a device sent activity but live reporting is unavailable. age is a formatted relative age.",
+  "context": "Journal window. Heading when a device sent activity but live reporting is unavailable. age is a formatted relative age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "993e8bcf5e6013ccdb3859508675eb152a76c7d9b0b433288b4deb0c37f09299",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

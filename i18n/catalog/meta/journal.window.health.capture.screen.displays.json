@@ -1,0 +1,39 @@
+{
+  "description": "Live screen capture. count is the number of displays and minutes is the approximate duration. minute_quantity selects grammar for the approximate duration independently of the capture count.",
+  "context": "Journal window. Live screen capture. count is the number of displays and minutes is the approximate duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "minute_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a653758d95f1816e6c1fa23cac82de5f65a6bf5979b3c9f3bfd065f6024535ac",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

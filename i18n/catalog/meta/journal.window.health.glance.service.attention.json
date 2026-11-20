@@ -1,0 +1,21 @@
+{
+  "description": "Health overview. service is the service name and services lists service names, depending on the status.",
+  "context": "Journal window. Health overview. service is the service name and services lists service names, depending on the status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "services",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ebd7f3aca855d66efed55cb82346b5881b8914cadefe4ecfcd9fd6ce6e40e21",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

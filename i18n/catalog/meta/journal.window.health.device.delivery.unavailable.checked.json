@@ -1,0 +1,21 @@
+{
+  "description": "Notice when device delivery information could not be checked. checked_at is the time of the last successful check.",
+  "context": "Journal window. Notice when device delivery information could not be checked. checked_at is the time of the last successful check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "358c2749c424e14c50f8eee18fd1c5464184149b6255fcde3e9f938c03d607fd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

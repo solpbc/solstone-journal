@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for thinking. status is a complete status or a list of independent metrics.",
+  "context": "Journal window. Accessible label for thinking. status is a complete status or a list of independent metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7397a948f563e9b6aafc4144fcac6402ffed61b318fbb3e1b7fb5623b247f905",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

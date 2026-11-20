@@ -1,0 +1,25 @@
+{
+  "description": "Downloaded bytes during speech setup. Both arguments are formatted sizes.",
+  "context": "Journal window. Downloaded bytes during speech setup. Both arguments are formatted sizes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "received",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7a99520cf76dd2e061fed2172b9bb787330ba2848d12d743cd1cebae13bbf97",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

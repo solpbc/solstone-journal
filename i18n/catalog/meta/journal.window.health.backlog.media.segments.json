@@ -1,0 +1,30 @@
+{
+  "description": "Media processing backlog. count is the number of segments awaiting processing.",
+  "context": "Journal window. Media processing backlog. count is the number of segments awaiting processing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b292bc3a9b4b47c964755875d031ffb6ebb3c2d2b7148c4c7fe4e8589a613661",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

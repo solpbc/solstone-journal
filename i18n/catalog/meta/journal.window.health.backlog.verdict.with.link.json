@@ -1,0 +1,33 @@
+{
+  "description": "Backlog headline with a separate link to the oldest day. verdict is a complete status and day is the displayed date. Keep the markers around the link.",
+  "context": "Journal window. Backlog headline with a separate link to the oldest day. verdict is a complete status and day is the displayed date. Keep the markers around the link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "verdict",
+      "type": "string"
+    },
+    {
+      "name": "oldest_link_start",
+      "type": "string"
+    },
+    {
+      "name": "oldest_link_end",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "045980ced40b701e7261efbf4bd7801647a082e61f8202fa9007a5afcf45cedb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

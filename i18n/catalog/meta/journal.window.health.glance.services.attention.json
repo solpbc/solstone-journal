@@ -1,0 +1,34 @@
+{
+  "description": "Health overview. count is the number of affected services and services lists their display names.",
+  "context": "Journal window. Health overview. count is the number of affected services and services lists their display names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "services",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1da7d0c2c9e367f4a174daea5ec8512d2150e539bdd6d56faea15d8b5b1d1fd1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

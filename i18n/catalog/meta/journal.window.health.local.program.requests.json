@@ -1,0 +1,38 @@
+{
+  "description": "Older local connection. program is the reported program name and last_seen is a formatted timestamp.",
+  "context": "Journal window. Older local connection. program is the reported program name and last_seen is a formatted timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "program",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "last_seen",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "199d824ab19ff15de6e1435222b4190e69526fa29159c59236d92062cc351063",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

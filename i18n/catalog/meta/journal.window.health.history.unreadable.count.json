@@ -1,0 +1,30 @@
+{
+  "description": "Number of journal days that could not be inspected.",
+  "context": "Journal window. Number of journal days that could not be inspected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f562cc7df6647c6d3443f7e4456b4d77e8db80426792e241d79586bee9d06e19",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

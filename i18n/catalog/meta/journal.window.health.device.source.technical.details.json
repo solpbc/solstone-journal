@@ -1,0 +1,21 @@
+{
+  "description": "Disclosure label. source is the name of the rejected source.",
+  "context": "Journal window. Disclosure label. source is the name of the rejected source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8707471789d0b5953a9f4a5bdca2da443621f767bc17458c3617490345be07c6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

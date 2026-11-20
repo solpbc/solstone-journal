@@ -1,0 +1,39 @@
+{
+  "description": "Search progress when the most recent check was under one hour ago. updated and removed are item counts. removed_quantity selects the form for the number removed.",
+  "context": "Journal window. Search progress when the most recent check was under one hour ago. updated and removed are item counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "updated",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "updated_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "removed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7abe193a37a5d69984dcbc968f70f071a03754f3e1d0ac216623ec63ef19f29f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "updated_quantity",
+    "type": "cardinal"
+  }
+}

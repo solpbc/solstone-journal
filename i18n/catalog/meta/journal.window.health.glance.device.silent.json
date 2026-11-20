@@ -1,0 +1,25 @@
+{
+  "description": "Health overview. device is the name of a device, and age is a formatted relative duration.",
+  "context": "Journal window. Health overview. device is the name of a device, and age is a formatted relative duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "79f494122d1c007e9979967eb14caa9274ab734ec5818a2106d0948c0a64d8de",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

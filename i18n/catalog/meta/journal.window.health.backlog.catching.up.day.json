@@ -1,0 +1,21 @@
+{
+  "description": "Link to the only day with catching-up work. day is the displayed date.",
+  "context": "Journal window. Link to the only day with catching-up work. day is the displayed date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3715e163f0c79cfe956f9fb66a800412e10079f6eac21a254e640a26340fb2b3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

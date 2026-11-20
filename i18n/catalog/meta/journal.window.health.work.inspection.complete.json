@@ -1,0 +1,43 @@
+{
+  "description": "Work inspection. checked and total are journal day counts, range is a date range, checked_at is a formatted time. checked_quantity is the independently inflected count of checked days.",
+  "context": "Journal window. Work inspection. checked and total are journal day counts, range is a date range, checked_at is a formatted time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "range",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "checked_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2e7cd004dd34631c4c6957fdb2cd95b4bb9348c418873613c5863bceafec0c1f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

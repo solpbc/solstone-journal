@@ -1,0 +1,21 @@
+{
+  "description": "Log filter description. day is the selected date and talent is the selected thinking task when present.",
+  "context": "Journal window. Log filter description. day is the selected date and talent is the selected thinking task when present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbd5ee804a350461100c65b050d31ef45b74c1a1b6a4d6b90b951c1c0eab8eb7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

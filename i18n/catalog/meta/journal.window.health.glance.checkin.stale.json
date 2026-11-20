@@ -1,0 +1,21 @@
+{
+  "description": "Health overview. run is the name of the run that stopped checking in.",
+  "context": "Journal window. Health overview. run is the name of the run that stopped checking in.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "run",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9601903cd8e4ceb46b59087cd969a5ac60eecff63ff81fd9d02b5b1ea8be55ce",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

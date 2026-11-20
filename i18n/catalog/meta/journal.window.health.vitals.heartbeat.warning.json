@@ -1,0 +1,30 @@
+{
+  "description": "Accessible warning about a count of journal runs that stopped reporting.",
+  "context": "Journal window. Accessible warning about a count of journal runs that stopped reporting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "39f44e6fa61ad6dd73810eb0f680bcdc8e58976a268922b7695e2eac01c7cb20",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

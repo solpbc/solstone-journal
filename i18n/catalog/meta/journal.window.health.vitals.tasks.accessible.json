@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for tasks. status is a complete status or a list of independent metrics.",
+  "context": "Journal window. Accessible label for tasks. status is a complete status or a list of independent metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75ebf3f7426458affb5f86c078fdd56dfe91b9ace60d7f9a0b3f5a1ce724f07e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

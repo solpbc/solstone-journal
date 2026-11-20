@@ -1,0 +1,30 @@
+{
+  "description": "Number of history tasks set aside.",
+  "context": "Journal window. Number of history tasks set aside.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fb2a5ad9467635efa33abab7467398b203bd6a6e5ecf5d07ea2468fea531a861",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
