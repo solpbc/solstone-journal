@@ -269,6 +269,9 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
         .iter()
         .filter_map(|category| AdmittedCategory::from_stored_word(category))
         .collect();
+    if !categories.contains(&AdmittedCategory::ScreenText) {
+        categories.remove(&AdmittedCategory::Screenshots);
+    }
     // Profile pics are read with entities, and a grant from before the choice keeps them.
     categories.remove(&AdmittedCategory::ProfilePics);
     if categories.contains(&AdmittedCategory::Entities)
@@ -608,6 +611,36 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn screenshots_require_both_stored_words() {
+        let temp = TempDir::new().unwrap();
+        let store = PermissionStore::open(temp.path());
+        for (words, allowed) in [
+            (vec!["screen_text"], false),
+            (vec!["photos", "screenshots"], false),
+            (vec!["screen_text", "screenshots"], true),
+        ] {
+            store
+                .set_permission(
+                    "bearer:one",
+                    ReadPermission {
+                        categories: words.into_iter().map(str::to_owned).collect(),
+                        scope: ReadScope::WholeJournal,
+                    },
+                )
+                .unwrap();
+            let PermissionDecision::Snapshot(grant) =
+                evaluate_connection_read(temp.path(), "bearer:one")
+            else {
+                panic!("grant must be enforceable")
+            };
+            assert_eq!(
+                grant.categories.contains(&AdmittedCategory::Screenshots),
+                allowed
+            );
+        }
+    }
 
     #[test]
     fn an_entities_grant_from_before_the_choice_keeps_profile_pics() {

@@ -917,6 +917,7 @@ fn what_a_list_leaves_out_is_not_found_by_address() {
                 version: None,
             },
             None,
+            None,
         )
     };
     assert!(segment("desk", "090000_300").is_ok());
@@ -1020,6 +1021,7 @@ fn body_data_by_address_needs_the_permission_and_a_day_that_shows() {
                 segment: "063000_300".to_owned(),
                 version: None,
             },
+            None,
             None,
         )
     };

@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can let an agent see screenshots and ask for a picture from a specific moment on your screen.
+
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
 - your agents can read several journal entries, transcripts or activities in one call.
 - an agent can ask for daily summaries of body, places, photos, notes and people when it reads a week.

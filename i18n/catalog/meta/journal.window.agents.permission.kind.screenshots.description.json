@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for screenshots in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for screenshots.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01ce0a49adf287b73c913b779975387a433cfdaf97416ab4ce5b1b5769b5522b",
+  "max_length": 200,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

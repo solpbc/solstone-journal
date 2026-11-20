@@ -520,6 +520,7 @@ const permissionKinds = [
   ['profile_pics', 'profile pics', true, 'entities'],
   ['facets', 'summaries', true],
   ['screen_text', 'screen text', true],
+  ['screenshots', 'include screenshots', false, 'screen_text'],
   ['body', 'body', true],
   ['notes', 'notes', false],
   ['documents', 'documents', false],

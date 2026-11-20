@@ -577,6 +577,10 @@ journal.window.agents.permission.kind.profile.pics.description = the picture you
 
 journal.window.agents.permission.kind.profile.pics.label = profile pics
 
+journal.window.agents.permission.kind.screenshots.description = this agent can see your screenshots and ask for a picture of what was on your screen at a specific moment, if your journal still has the recording.
+
+journal.window.agents.permission.kind.screenshots.label = include screenshots
+
 journal.window.agents.permission.kind.screen.text.description = text and summaries from your screens and terminal, with times when available. visible text can include passwords or other secrets. your redaction rules do not apply to that text.
 
 journal.window.agents.permission.kind.screen.text.label = screen text

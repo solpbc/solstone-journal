@@ -95,3 +95,23 @@ fn elementary_streams_and_broken_media_have_the_expected_failure_surface() {
         "truncated media must error or return a missing slot, never a partial image"
     );
 }
+
+#[test]
+fn a_timestamp_returns_the_frame_on_screen_until_the_next_pts() {
+    for (offset, expected) in [
+        (0, Some((0, DISTINCT_ID1_RGB24_SHA256))),
+        (999, Some((0, DISTINCT_ID1_RGB24_SHA256))),
+        (2499, Some((2000, DISTINCT_ID3_RGB24_SHA256))),
+        (3000, None),
+    ] {
+        let frame = solstone_core_grab::frame_at(
+            fs::File::open(corpus_path("distinct.mkv")).unwrap(),
+            offset,
+        )
+        .unwrap();
+        assert_eq!(
+            frame.map(|(at, pixels)| (at, sha256_hex(pixels.as_raw()))),
+            expected.map(|(at, hash)| (at, hash.to_owned()))
+        );
+    }
+}

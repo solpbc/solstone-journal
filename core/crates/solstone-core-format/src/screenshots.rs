@@ -34,6 +34,21 @@ pub const SCREENSHOT_SEGMENT_SECONDS: u32 = 1;
 /// The `meta` key that carries a screenshot's capture facts.
 pub const SCREENSHOT_META_KEY: &str = "screenshot";
 
+/// The display named by an original screen recording or its description.
+pub fn screen_media_stem<'a>(segment: &str, name: &'a str) -> Option<&'a str> {
+    use crate::content::{KindAssignment, file_spec, kinds::Kind};
+    let (stem, ext) = name.rsplit_once('.')?;
+    let screen_name = is_screenshot_file_name(name)
+        || ext == "webm"
+        || (ext == "mp4" && stem.ends_with("screen"))
+        || (matches!(ext, "mov" | "jsonl") && (stem == "screen" || stem.ends_with("_screen")));
+    if !screen_name {
+        return None;
+    }
+    let spec = file_spec(&format!("{segment}/{name}"))?;
+    (spec.kind == KindAssignment::Settled(Kind::Screen)).then_some(stem)
+}
+
 /// Whether a stream's name is that of a screenshots stream, for the few labels
 /// decided from the name alone. Behaviour is decided by the bound source.
 pub fn is_screenshots_stream_name(stream: &str) -> bool {

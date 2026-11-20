@@ -98,6 +98,10 @@ pub(crate) fn bounded_picture(bytes: &[u8]) -> Option<Picture> {
     if let Some(orientation) = orientation {
         image.apply_orientation(orientation);
     }
+    encode_picture(image)
+}
+
+pub(crate) fn encode_picture(mut image: DynamicImage) -> Option<Picture> {
     if image.width().max(image.height()) > PICTURE_LONG_EDGE {
         image = image.resize(
             PICTURE_LONG_EDGE,

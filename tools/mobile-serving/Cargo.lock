@@ -5902,6 +5902,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-grab"
+version = "2.0.85"
+dependencies = [
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "image",
+ "jiff 1.0.0",
+ "serde",
+ "serde_json",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "solstone-core-retention",
+ "solstone-core-time",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "solstone-core-handoff-nonce"
 version = "2.0.85"
 dependencies = [
@@ -6558,6 +6575,7 @@ dependencies = [
  "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-format",
+ "solstone-core-grab",
  "solstone-core-home",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",

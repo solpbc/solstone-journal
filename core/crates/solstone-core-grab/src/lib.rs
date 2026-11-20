@@ -14,6 +14,7 @@ mod selection;
 mod time;
 
 pub use error::{GrabFailure, GrabFailureClass};
+pub use extract::frame_at;
 pub use request::{GrabDiagnostics, GrabOutput, GrabRequest, RecordingDiagnostics};
 
 #[cfg(feature = "test-hooks")]

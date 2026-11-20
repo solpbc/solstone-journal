@@ -21,6 +21,7 @@ pub enum Kind {
     Facets,
     Entities,
     ProfilePics,
+    Screenshots,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +101,17 @@ pub const KINDS: &[KindSpec] = &[
             description_id: "journal.window.agents.permission.kind.screen.text.description",
         }),
         checked_by_default: true,
+    },
+    KindSpec {
+        kind: Kind::Screenshots,
+        stored_word: "screenshots",
+        permission: Some(AdmittedCategory::Screenshots),
+        query_alias: None,
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.screenshots.label",
+            description_id: "journal.window.agents.permission.kind.screenshots.description",
+        }),
+        checked_by_default: false,
     },
     KindSpec {
         kind: Kind::Body,
@@ -219,7 +231,11 @@ pub fn permission_words() -> impl Iterator<Item = &'static str> {
 impl KindSpec {
     /// The kind this one is an option of, shown under it where an owner chooses.
     pub fn option_of(&self) -> Option<&'static str> {
-        matches!(self.kind, Kind::ProfilePics).then_some("entities")
+        match self.kind {
+            Kind::ProfilePics => Some("entities"),
+            Kind::Screenshots => Some("screen_text"),
+            _ => None,
+        }
     }
 }
 
@@ -401,6 +417,7 @@ mod tests {
                 (Kind::ProfilePics, Some("profile_pics")),
                 (Kind::Facets, Some("facets")),
                 (Kind::Screen, Some("screen_text")),
+                (Kind::Screenshots, Some("screenshots")),
                 (Kind::Body, Some("body")),
                 (Kind::Notes, Some("notes")),
                 (Kind::Documents, Some("documents")),

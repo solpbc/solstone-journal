@@ -60,6 +60,7 @@ const NOTHING: ToolRequirement = ToolRequirement {
 };
 /// The kinds eligible for direct segment pages. Other kinds have index routes.
 pub(crate) const SEGMENT_KINDS: &[AdmittedCategory] = &[
+    AdmittedCategory::Screenshots,
     AdmittedCategory::Transcripts,
     AdmittedCategory::Body,
     AdmittedCategory::Notes,
@@ -168,7 +169,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
         title: "read a journal entry",
-        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo can include a smaller copy when available. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
+        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo or screenshot can include a smaller copy when allowed and available. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
         input_schema: fetch_input_schema,
         requires: FETCH,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
@@ -186,7 +187,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. a span returns segments with times, sources and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
+        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. a span returns segments with times, sources and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
         input_schema: transcript_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -882,6 +883,8 @@ fn transcript_input_schema(_context: &SchemaContext<'_>) -> Value {
         "additionalProperties": false,
         "properties": {
             "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "offset_ms": { "type": "integer", "minimum": 0, "maximum": u32::MAX, "description": "milliseconds from the start of a single screen segment" },
+            "display": { "type": "string", "minLength": 1, "maxLength": 255 },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
         }
     });

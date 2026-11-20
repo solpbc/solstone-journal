@@ -369,10 +369,39 @@ fn permitted_transcript_files(
         });
         if files.is_empty() && (!was_empty || !permissions.contains(&AdmittedCategory::Transcripts))
         {
-            return Err(SegmentTranscriptReadError::NoPermittedFiles);
+            // A permitted screen can have only media and its description, or
+            // share a segment with speech this connection cannot read.
+            let screen = permissions.contains(&AdmittedCategory::Screenshots)
+                && (has_screen_description(segment.path())
+                    || fs::read_dir(segment.path())
+                        .map_err(|_| SegmentTranscriptReadError::Io)?
+                        .filter_map(Result::ok)
+                        .any(|entry| {
+                            entry.file_type().is_ok_and(|kind| kind.is_file())
+                                && entry
+                                    .file_name()
+                                    .to_str()
+                                    .and_then(|name| {
+                                        solstone_core_format::screenshots::screen_media_stem(
+                                            &origin, name,
+                                        )
+                                    })
+                                    .is_some()
+                        }));
+            if !screen {
+                return Err(SegmentTranscriptReadError::NoPermittedFiles);
+            }
         }
     }
     Ok(files)
+}
+
+fn has_screen_description(segment: &Path) -> bool {
+    let talents = segment.join("talents");
+    fs::symlink_metadata(&talents).is_ok_and(|meta| meta.is_dir())
+        && ["screen.md", "screen_text.md"]
+            .iter()
+            .any(|name| fs::symlink_metadata(talents.join(name)).is_ok_and(|meta| meta.is_file()))
 }
 
 fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptReadError> {

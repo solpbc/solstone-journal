@@ -1052,6 +1052,20 @@
       "locales": []
     },
     {
+      "id": "journal.window.agents.permission.kind.screenshots.description",
+      "source": "01ce0a49adf287b73c913b779975387a433cfdaf97416ab4ce5b1b5769b5522b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.agents.permission.kind.screenshots.label",
+      "source": "626d6f97f283938832efd0c38459f9990d7aa3bccc559a8d2e0da2433779dcc6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.agents.permission.kind.transcripts.description",
       "source": "de0e27bdebbd00d27e2eb6585e8e0ed3d9db732ea21d91145f5c13fdb6b261f3",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

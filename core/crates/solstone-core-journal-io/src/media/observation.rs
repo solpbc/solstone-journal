@@ -122,6 +122,29 @@ impl MediaDirectory {
         Ok(Some(second))
     }
 
+    /// Read one existing regular file by descriptor. Recheck its binding and
+    /// change stamp after the reader finishes, before returning its result.
+    pub fn with_read_file<T>(
+        &self,
+        name: &OsStr,
+        read: impl FnOnce(File) -> T,
+    ) -> io::Result<Option<T>> {
+        plain_name(name)?;
+        self.revalidate()?;
+        let Some(file) = platform::open_source(&self.inner, name)? else {
+            return Ok(None);
+        };
+        let entry = platform::entry_from_file(name, &file)?;
+        let result = read(file.try_clone()?);
+        if platform::entry_from_file(name, &file)? != entry
+            || platform::entry(&self.inner, name)? != Some(entry)
+        {
+            return Err(changed());
+        }
+        self.revalidate()?;
+        Ok(Some(result))
+    }
+
     /// Read a bounded prefix, allowing files larger than the prefix budget.
     pub fn read_prefix(&self, name: &OsStr, maximum: usize) -> io::Result<Option<MediaRead>> {
         self.read_observed(name, maximum, false)

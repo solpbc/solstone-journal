@@ -240,6 +240,7 @@ pub enum AdmittedCategory {
     Photos,
     /// The picture shown for an entity. An option of entities, never content.
     ProfilePics,
+    Screenshots,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

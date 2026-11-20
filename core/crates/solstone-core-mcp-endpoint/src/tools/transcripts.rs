@@ -23,6 +23,8 @@ pub(crate) struct ValidatedListTranscripts {
 }
 
 pub(crate) struct ValidatedGetTranscript {
+    pub(crate) offset_ms: Option<u32>,
+    pub(crate) display: Option<String>,
     pub(crate) reference: String,
     pub(crate) cursor: Option<String>,
 }
@@ -55,6 +57,8 @@ struct ListParams {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GetParams {
+    offset_ms: Option<u32>,
+    display: Option<String>,
     reference: String,
     #[serde(default)]
     cursor: Option<String>,
@@ -169,7 +173,17 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
     if params.reference.is_empty() || params.reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
         return Err(ToolError::InvalidInput);
     }
+    if (params.offset_ms.is_some() && params.cursor.is_some())
+        || params
+            .display
+            .as_ref()
+            .is_some_and(|name| params.offset_ms.is_none() || name.is_empty() || name.len() > 255)
+    {
+        return Err(ToolError::InvalidInput);
+    }
     Ok(ValidatedGetTranscript {
+        offset_ms: params.offset_ms,
+        display: params.display,
         reference: params.reference,
         cursor: params.cursor,
     })

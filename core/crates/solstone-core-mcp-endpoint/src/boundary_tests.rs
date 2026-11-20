@@ -16739,7 +16739,7 @@ fn journal_links_attach_to_entity_rows_without_changing_tool_references() {
 }
 
 #[test]
-fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
+fn photos_and_imported_screenshots_follow_their_own_picture_permissions() {
     let journal = fixture();
     let root = journal.path();
     let photo = root.join("chronicle/20260308/import.image/130000_300");
@@ -16805,10 +16805,15 @@ fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
     assert_eq!(output.value["picture"]["state"], "not_kept");
     assert!(output.images.is_empty());
 
-    // A screenshot is screen: its description reads, its picture never rides here.
+    // A pre-existing screen grant can still read the description.
     let output = fetched("shotneedle");
-    assert!(output.value.get("picture").is_none());
+    assert_eq!(output.value["picture"]["state"], "not_allowed");
     assert!(output.images.is_empty());
+
+    grant(&["screen_text", "screenshots"]);
+    let output = fetched("shotneedle");
+    assert_eq!(output.value["picture"]["state"], "attached");
+    assert_eq!(output.images.len(), 1);
 
     // Without photos, neither the description nor the picture is found.
     grant(&["screen_text"]);
@@ -16818,6 +16823,182 @@ fn a_photos_grant_fetches_the_photo_with_its_picture_and_screen_never_does() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn screen_connection_lists_a_mixed_segment_and_reads_one_display_at_a_time() {
+    let journal = fixture();
+    let root = journal.path();
+    let segment = root.join("chronicle").join(DAY).join(STREAM).join(SEGMENT);
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["screen_text".into(), "screenshots".into()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.into()],
+                },
+            },
+        )
+        .unwrap();
+    let sidecar = "{\"raw\":\"left_screen.webm\"}\n{\"timestamp\":0,\"analysis\":{\"visual_description\":\"a coloured square\"}}\n";
+    fs::write(segment.join("left_screen.jsonl"), sidecar).unwrap();
+    fs::write(segment.join("right_screen.jsonl"), "{}\n").unwrap();
+    fs::write(
+        segment.join("left_screen.webm"),
+        include_bytes!("../../../fixtures/grab_corpus/distinct.mkv"),
+    )
+    .unwrap();
+    let list = probe(&journal, "list_transcripts", json!({"day":DAY})).unwrap();
+    let reference = &list["transcripts"][0]["reference"];
+    assert!(reference.is_string(), "{list}");
+    for arguments in [
+        json!({"references":[reference],"offset_ms":0}),
+        json!({"reference":reference,"offset_ms":0,"cursor":"next"}),
+        json!({"reference":reference,"display":"left_screen"}),
+    ] {
+        assert_eq!(
+            probe(&journal, "get_transcript", arguments),
+            Err(McpProbeError::InvalidInput)
+        );
+    }
+    let read = |offset: u32| {
+        dispatch_output(
+            &journal,
+            "get_transcript",
+            json!({"reference":reference,"display":"left_screen","offset_ms":offset}),
+        )
+    };
+    let choice = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference":reference,"offset_ms":0}),
+    )
+    .unwrap();
+    assert_eq!(
+        choice["picture"]["displays"],
+        json!(["left_screen", "right_screen"])
+    );
+    let first = read(100);
+    let last = read(2500);
+    assert_eq!(first.value["picture"]["description"], "a coloured square");
+    assert_eq!(first.value["picture"]["frame_offset_ms"], 0);
+    assert_eq!(last.value["picture"]["frame_offset_ms"], 2000);
+    assert_eq!(last.images.len(), 1);
+    assert_ne!(first.images, last.images);
+    assert_eq!(first.value["entries"], json!([]));
+    assert!(!first.value.to_string().contains("approved transcript"));
+    let result = crate::jsonrpc::image_tool_result(last.value, None, &last.images);
+    assert_eq!(result["content"][1]["mimeType"], "image/jpeg");
+    fs::remove_file(segment.join("left_screen.webm")).unwrap();
+    let gone = read(2500);
+    assert_eq!(gone.value["picture"]["state"], "not_kept");
+    assert_eq!(gone.value["picture"]["description"], "a coloured square");
+    assert!(
+        gone.value["picture"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer kept")
+    );
+    assert!(gone.images.is_empty());
+    fs::write(segment.join("left_screen.webm"), b"broken").unwrap();
+    assert_eq!(read(2500).value["picture"]["state"], "unreadable");
+    fs::write(segment.join("talents/facets.json"), r#"[{"facet":"beta"}]"#).unwrap();
+    assert!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference":reference,"offset_ms":0})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn native_screenshot_and_its_description_arrive_through_the_screen_connection() {
+    let journal = fixture();
+    let root = journal.path();
+    let stream = "phone_screenshots";
+    let folder = root
+        .join("chronicle")
+        .join(DAY)
+        .join(stream)
+        .join("120000_1");
+    fs::create_dir_all(&folder).unwrap();
+    fs::create_dir_all(root.join("streams")).unwrap();
+    fs::write(root.join("streams/phone_screenshots.json"),json!({"name":stream,"kind":"observer","source":"screenshots","created_at":0,"last_day":null,"last_segment":null,"seq":1,
+        "cid":format!("sha256:{}", "a".repeat(64))}).to_string()).unwrap();
+    fs::write(
+        folder.join("screenshot_screen.jsonl"),
+        concat!(
+            r#"{"raw":"screenshot_screen.png"}"#,
+            "\n",
+            r#"{"timestamp":0,"analysis":{"visual_description":"a yellow square"}}"#
+        ),
+    )
+    .unwrap();
+    image::RgbImage::from_pixel(16, 16, image::Rgb([255, 255, 0]))
+        .save(folder.join("screenshot_screen.png"))
+        .unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["screen_text".into(), "screenshots".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let listed = probe(&journal, "list_transcripts", json!({"day":DAY})).unwrap();
+    let reference = &listed["transcripts"][0]["reference"];
+    let got = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference":reference,"offset_ms":0}),
+    );
+    assert_eq!(got.value["picture"]["description"], "a yellow square");
+    assert_eq!(got.images.len(), 1);
+    let image = image::load_from_memory(&got.images[0]).unwrap().to_rgb8();
+    let pixel = image.get_pixel(0, 0);
+    assert!(pixel[0] > 245 && pixel[1] > 245 && pixel[2] < 10);
+
+    #[cfg(feature = "test-hooks")]
+    {
+        // The owner can turn the option off even after a picture was prepared.
+        let store = PermissionStore::open(root);
+        let (result, fired) = crate::source_freeze_barrier::run_with_source_freeze_barrier(
+            crate::source_freeze_barrier::FreezePoint::After,
+            1,
+            move || {
+                store
+                    .set_permission(
+                        CONNECTION,
+                        ReadPermission {
+                            categories: vec!["screen_text".into()],
+                            scope: ReadScope::WholeJournal,
+                        },
+                    )
+                    .unwrap();
+            },
+            || {
+                probe(
+                    &journal,
+                    "get_transcript",
+                    json!({"reference":reference,"offset_ms":0}),
+                )
+            },
+        );
+        assert!(fired);
+        assert!(result.is_err());
+        assert!(matches!(
+            probe(
+                &journal,
+                "get_transcript",
+                json!({"reference":reference,"offset_ms":0})
+            ),
+            Err(McpProbeError::PermissionDenied)
+        ));
+    }
 }
 
 #[test]

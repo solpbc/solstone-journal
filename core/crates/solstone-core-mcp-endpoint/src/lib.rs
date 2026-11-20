@@ -79,6 +79,7 @@ mod references;
 mod registry;
 #[cfg(unix)]
 mod rlimit;
+mod screen_picture;
 #[cfg(all(test, feature = "full-tests"))]
 mod screen_text_tests;
 pub(crate) mod segment_links;

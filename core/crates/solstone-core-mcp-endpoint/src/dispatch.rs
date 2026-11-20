@@ -427,6 +427,12 @@ fn scope_refusal(
     request: &ValidatedTool,
 ) -> Option<(String, Option<AdmittedCategory>)> {
     let named = match request {
+        ValidatedTool::GetTranscript(request)
+            if request.offset_ms.is_some()
+                && !snapshot.categories.contains(&AdmittedCategory::Screenshots) =>
+        {
+            Some(AdmittedCategory::Screenshots)
+        }
         ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => request
             .category
             .into_iter()
@@ -476,6 +482,9 @@ fn scope_refusal(
 
 pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
     use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+    if kind == AdmittedCategory::Screenshots {
+        return "this connection needs permission to include screenshots".to_owned();
+    }
     let copy = kind
         .kind_spec()
         .permission_copy
@@ -670,6 +679,10 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             }
         }
         ValidatedTool::GetTranscript(request) => {
+            if let Some(offset) = request.offset_ms {
+                arguments.insert("offset_ms".into(), offset.into());
+            }
+            insert_present(&mut arguments, "display", request.display.as_deref());
             arguments.insert(
                 "reference".to_owned(),
                 reference_fingerprint(&request.reference).into(),
@@ -1097,6 +1110,8 @@ fn read_batch(
         let request = match tool {
             ToolName::Fetch => ValidatedTool::Fetch(ValidatedFetch { reference }),
             ToolName::GetTranscript => ValidatedTool::GetTranscript(ValidatedGetTranscript {
+                offset_ms: None,
+                display: None,
                 reference,
                 cursor: None,
             }),
@@ -2972,6 +2987,27 @@ fn fetch(
                 value["picture"] = state;
                 picture = kept.map(|kept| kept.jpeg);
             }
+            if let Some(folder) = crate::screen_picture::import_folder(&entry.path) {
+                let (info, image) = if snapshot.categories.contains(&AdmittedCategory::Screenshots)
+                {
+                    crate::screen_picture::imported(journal_root, folder)
+                } else {
+                    (
+                        json!({"state":"not_allowed","message":kind_refusal(AdmittedCategory::Screenshots)}),
+                        None,
+                    )
+                };
+                if !live_allows(journal_root, &boundary, &entry.path, Some(&entry.stream))
+                    || !crate::source_release::check_indexed_source_release(
+                        journal_root,
+                        &entry.path,
+                    )
+                {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                }
+                value["picture"] = info;
+                picture = image;
+            }
             let target = format!("{}#{}", entry.path, entry.idx);
             let mut prepared = Prepared::new(value, 1, vec![target]).served_as_is(served_as_is);
             prepared.images.extend(picture);
@@ -4083,6 +4119,7 @@ fn get_transcript(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetTranscript,
 ) -> Result<Prepared, DispatchError> {
+    let moment = request.offset_ms.map(|ms| (ms, request.display.as_deref()));
     // A segment's name: found among the day's segments as the journal lists
     // them, then read as any segment is.
     if crate::names::is_name(&request.reference) {
@@ -4094,6 +4131,7 @@ fn get_transcript(
             snapshot,
             &address,
             request.cursor.as_deref(),
+            moment,
         );
     }
     let reference = match codec()
@@ -4105,6 +4143,11 @@ fn get_transcript(
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
     {
         ReferenceTarget::Segment(reference) => reference,
+        ReferenceTarget::SourceSpan(_) | ReferenceTarget::SegmentSpan(_)
+            if request.offset_ms.is_some() =>
+        {
+            return Err(DispatchError::InvalidInput);
+        }
         ReferenceTarget::SourceSpan(span) => {
             return crate::body_source::read_source_span(
                 journal_root,
@@ -4131,6 +4174,7 @@ fn get_transcript(
         snapshot,
         &reference.into(),
         request.cursor.as_deref(),
+        moment,
     )
 }
 
@@ -4141,6 +4185,7 @@ pub(crate) fn read_segment(
     snapshot: &ConnectionReadSnapshot,
     reference: &crate::references::SegmentAddress,
     cursor: Option<&str>,
+    moment: Option<(u32, Option<&str>)>,
 ) -> Result<Prepared, DispatchError> {
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     let segment =
@@ -4237,7 +4282,30 @@ pub(crate) fn read_segment(
     } else {
         None
     };
+    let screen = if allowed && page_res.as_ref().is_some_and(Result::is_ok) {
+        moment
+            .map(|(offset, display)| {
+                crate::screen_picture::moment(
+                    journal_root,
+                    segment.path(),
+                    reference,
+                    offset,
+                    display,
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
     let allowed = allowed
+        && (screen.is_none()
+            || crate::may_see::segment_scope(
+                journal_root,
+                snapshot,
+                &reference.day,
+                &reference.stream,
+                &reference.segment,
+            ) == Some(true))
         && crate::source_release::check_segment_transcript_release(
             journal_root,
             &reference.day,
@@ -4312,9 +4380,15 @@ pub(crate) fn read_segment(
         response_val["capture_zone"] = zone;
     }
     // Each transcript entry is made literal after paging.
-    Ok(Prepared::new(response_val, count, vec![target])
-        .served_as_is(&["entries"])
-        .when_empty(GET_TRANSCRIPT_EMPTY))
+    let mut prepared = Prepared::new(response_val, count, vec![target]).served_as_is(&["entries"]);
+    if let Some((info, image)) = screen {
+        prepared.value["picture"] = info;
+        prepared.images.extend(image);
+        prepared.count = prepared.count.max(1);
+        Ok(prepared)
+    } else {
+        Ok(prepared.when_empty(GET_TRANSCRIPT_EMPTY))
+    }
 }
 
 pub(crate) fn differing_capture_zone(

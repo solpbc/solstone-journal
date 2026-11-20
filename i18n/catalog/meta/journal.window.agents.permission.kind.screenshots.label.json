@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for screenshots in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for screenshots.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "626d6f97f283938832efd0c38459f9990d7aa3bccc559a8d2e0da2433779dcc6",
+  "max_length": 35,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

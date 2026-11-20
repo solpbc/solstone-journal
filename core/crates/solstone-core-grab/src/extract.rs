@@ -35,54 +35,134 @@ pub(crate) fn decode_frames(
     ffmpeg::init().map_err(|error| {
         GrabFailure::runtime(format!("failed to initialize video decoder: {error}"))
     })?;
-    let mut input = open_input(path)
-        .map_err(|error| GrabFailure::runtime(format!("failed to decode video: {error}")))?;
+    let input = open_input(path).map_err(decode_error)?;
+    let mut scaler = None;
+    let mut results = vec![None; ids.len()];
+    let mut decoded_index = 0_i64;
+    visit_frames(input, |frame, _| {
+        decoded_index += 1;
+        for (position, _) in ids
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| **id == decoded_index)
+        {
+            results[position] = Some(to_rgb(&frame, &mut scaler)?);
+        }
+        Ok(results.iter().all(Option::is_some))
+    })?;
+    Ok(results)
+}
+
+/// The frame on screen at a segment-relative timestamp, read only from the
+/// admitted recording. The selected frame starts at or before the requested
+/// time; the next presentation timestamp ends that frame's interval.
+pub fn frame_at(
+    file: std::fs::File,
+    offset_ms: u32,
+) -> Result<Option<(u64, image::RgbImage)>, GrabFailure> {
+    ffmpeg::init().map_err(decode_error)?;
+    let io = ffmpeg::format::context::StreamIo::from_read_seek(file).map_err(decode_error)?;
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("format_whitelist", INPUT_FORMATS);
+    options.set("protocol_whitelist", "");
+    let mut input =
+        ffmpeg::format::input_from_stream(io, None, Some(options)).map_err(decode_error)?;
+    let wanted_us = i64::from(offset_ms) * 1000;
+    let video = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .ok_or_else(|| GrabFailure::runtime("failed to decode video: no video stream"))?;
+    let duration_us = if video.duration() > 0 {
+        use ffmpeg::Rescale;
+        let start_pts = video.start_time().max(0);
+        video
+            .duration()
+            .saturating_add(start_pts)
+            .rescale(video.time_base(), (1, 1_000_000))
+    } else {
+        input.duration()
+    };
+    if duration_us > 0 && wanted_us >= duration_us {
+        return Ok(None);
+    }
+    // Seek to a keyframe at or before the moment. Unindexed recordings still
+    // work with the ordinary linear decode from their beginning.
+    if offset_ms > 0 {
+        let _ = input.seek(wanted_us, ..wanted_us);
+    }
+    let mut selected = None;
+    visit_frames(input, |frame, base| {
+        let seconds = frame.pts().expect("visit_frames checks pts") as f64 * f64::from(base);
+        if seconds * 1000.0 > f64::from(offset_ms) + 0.000_001 {
+            return Ok(true);
+        }
+        selected = Some(((seconds * 1000.0).round() as u64, frame));
+        Ok(false)
+    })?;
+    let Some((actual, frame)) = selected else {
+        return Ok(None);
+    };
+    let rgb = to_rgb(&frame, &mut None)?;
+    let image = image::RgbImage::from_raw(rgb.width, rgb.height, rgb.pixels)
+        .ok_or_else(|| GrabFailure::runtime("invalid RGB frame"))?;
+    Ok(Some((actual, image)))
+}
+
+fn visit_frames(
+    mut input: ffmpeg::format::context::Input,
+    mut visit: impl FnMut(ffmpeg::frame::Video, ffmpeg::Rational) -> Result<bool, GrabFailure>,
+) -> Result<(), GrabFailure> {
     let stream = input
         .streams()
         .best(ffmpeg::media::Type::Video)
         .ok_or_else(|| GrabFailure::runtime("failed to decode video: no video stream"))?;
     let index = stream.index();
-    let parameters = stream.parameters();
-    let context =
-        ffmpeg::codec::context::Context::from_parameters(parameters).map_err(decode_error)?;
+    let base = stream.time_base();
+    let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+        .map_err(decode_error)?;
     let mut decoder = context.decoder().video().map_err(decode_error)?;
-    // Built from each decoded frame, never from stream parameters: a truncated
-    // file can leave the stream's pixel format unknown, and FFmpeg aborts the
-    // process when asked to scale from an unknown format.
-    let mut scaler = None;
-    let mut results = vec![None; ids.len()];
-    let mut decoded_index = 0_i64;
     loop {
         let mut packet = ffmpeg::Packet::empty();
-        match packet.read(&mut input) {
+        let eof = match packet.read(&mut input) {
+            Ok(()) if packet.stream() != index => continue,
             Ok(()) => {
-                if packet.stream() == index {
-                    decoder.send_packet(&packet).map_err(decode_error)?;
-                    receive(
-                        &mut decoder,
-                        &mut scaler,
-                        ids,
-                        &mut results,
-                        &mut decoded_index,
-                    )?;
-                    if results.iter().all(Option::is_some) {
-                        return Ok(results);
+                decoder.send_packet(&packet).map_err(decode_error)?;
+                false
+            }
+            Err(ffmpeg::Error::Eof) => {
+                decoder.send_eof().map_err(decode_error)?;
+                true
+            }
+            Err(error) => return Err(decode_error(error)),
+        };
+        loop {
+            let mut frame = ffmpeg::frame::Video::empty();
+            match decoder.receive_frame(&mut frame) {
+                Ok(()) => {
+                    if frame.pts().is_some() && visit(frame, base)? {
+                        return Ok(());
                     }
                 }
+                Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => break,
+                Err(ffmpeg::Error::Eof) => return Ok(()),
+                Err(error) => return Err(decode_error(error)),
             }
-            Err(ffmpeg::Error::Eof) => break,
-            Err(error) => return Err(decode_error(error)),
+        }
+        if eof {
+            return Ok(());
         }
     }
-    decoder.send_eof().map_err(decode_error)?;
-    receive(
-        &mut decoder,
-        &mut scaler,
-        ids,
-        &mut results,
-        &mut decoded_index,
-    )?;
-    Ok(results)
+}
+
+fn to_rgb(
+    frame: &ffmpeg::frame::Video,
+    scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
+) -> Result<RgbFrame, GrabFailure> {
+    let mut rgb = ffmpeg::frame::Video::empty();
+    rgb_scaler_for(scaler, frame)
+        .and_then(|s| s.run(frame, &mut rgb))
+        .map_err(decode_error)?;
+    copy_rgb(&rgb).ok_or_else(|| GrabFailure::runtime("failed to decode video: invalid RGB frame"))
 }
 
 fn rgb_scaler_for<'a>(
@@ -107,42 +187,6 @@ fn rgb_scaler_for<'a>(
         )?);
     }
     slot.as_mut().ok_or(ffmpeg::Error::Bug)
-}
-
-fn receive(
-    decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
-    ids: &[i64],
-    results: &mut [Option<RgbFrame>],
-    decoded_index: &mut i64,
-) -> Result<(), GrabFailure> {
-    loop {
-        let mut frame = ffmpeg::frame::Video::empty();
-        match decoder.receive_frame(&mut frame) {
-            Ok(()) => {
-                if frame.pts().is_none() {
-                    continue;
-                }
-                for (position, _id) in ids
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, id)| **id - 1 == *decoded_index)
-                {
-                    let mut rgb = ffmpeg::frame::Video::empty();
-                    rgb_scaler_for(scaler, &frame)
-                        .and_then(|scaler| scaler.run(&frame, &mut rgb))
-                        .map_err(decode_error)?;
-                    results[position] = Some(copy_rgb(&rgb).ok_or_else(|| {
-                        GrabFailure::runtime("failed to decode video: invalid RGB frame")
-                    })?);
-                }
-                *decoded_index += 1;
-            }
-            Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => return Ok(()),
-            Err(ffmpeg::Error::Eof) => return Ok(()),
-            Err(error) => return Err(decode_error(error)),
-        }
-    }
 }
 
 fn copy_rgb(frame: &ffmpeg::frame::Video) -> Option<RgbFrame> {
