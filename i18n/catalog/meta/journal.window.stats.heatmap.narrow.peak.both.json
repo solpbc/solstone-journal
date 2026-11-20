@@ -1,0 +1,25 @@
+{
+  "description": "Narrow heatmap summary with weekdays and weekends. Each hour is a spoken clock label.",
+  "context": "Journal window. Narrow heatmap summary with weekdays and weekends. Each hour is a spoken clock label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday_hour",
+      "type": "string"
+    },
+    {
+      "name": "weekend_hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4b10a3679910f86b11defbc87df0f10e4be691e6770b07b404b90f92ee7d53fb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

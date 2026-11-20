@@ -1,0 +1,33 @@
+{
+  "description": "Hours chart tooltip including storage. storage is the formatted disk use.",
+  "context": "Journal window. Hours chart tooltip including storage. storage is the formatted disk use.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "audio",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "storage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c845036e17e5b52f5758832c9ca497e7a150b5e30b398145a876b045bee72224",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

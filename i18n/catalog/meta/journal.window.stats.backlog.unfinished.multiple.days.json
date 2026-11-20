@@ -1,0 +1,34 @@
+{
+  "description": "Link to unfinished work across multiple days. oldest_day is the displayed date of the oldest unfinished work.",
+  "context": "Journal window. Link to unfinished work across multiple days. oldest_day is the displayed date of the oldest unfinished work.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "oldest_day",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "216b4852b634912f9b9180f3a288046975e79d8c2b46890dafc728e61f1a6a35",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

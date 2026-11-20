@@ -1,0 +1,25 @@
+{
+  "description": "Stats read error. retry_start and retry_end enclose the retry button label.",
+  "context": "Journal window. Stats read error. retry_start and retry_end enclose the retry button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "retry_start",
+      "type": "string"
+    },
+    {
+      "name": "retry_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ae56da3923acf4effe740cf20a4f6d941a81763813961799825b667a3e3916f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

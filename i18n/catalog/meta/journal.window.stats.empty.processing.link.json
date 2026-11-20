@@ -1,0 +1,33 @@
+{
+  "description": "Empty stats notice. Keep heading_start and heading_end around the emphasized heading, and health_start and health_end around the Health link label.",
+  "context": "Journal window. Empty stats notice. Keep heading_start and heading_end around the emphasized heading, and health_start and health_end around the Health link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "heading_start",
+      "type": "string"
+    },
+    {
+      "name": "heading_end",
+      "type": "string"
+    },
+    {
+      "name": "health_start",
+      "type": "string"
+    },
+    {
+      "name": "health_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f34c2dd79b71e6107c79a27691800a8f736c6b71aa49519d076ab37bbcb953aa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

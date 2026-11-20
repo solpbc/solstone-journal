@@ -79,11 +79,19 @@
     return Number(value || 0).toLocaleString();
   }
 
-  function requestCount(value) {
+  function renderCount(id, value, args = []) {
     const count = Number(value || 0);
-    return count === 1
-      ? window.JournalI18n.render('journal.window.stats.tokens.requests.one', [['count', String(number(count))]])
-      : window.JournalI18n.render('journal.window.stats.tokens.requests.many', [['count', String(number(count))]]);
+    return window.JournalI18n.render(id, [
+      ...args, ['count', number(count)], ['quantity', window.JournalI18n.cardinalQuantity(count)]
+    ]);
+  }
+
+  function requestCount(value) {
+    return renderCount('journal.window.stats.tokens.request.count', value);
+  }
+
+  function tokenCount(value) {
+    return renderCount('journal.window.stats.tokens.token.count', value);
   }
 
   function dayLabel(day) {
@@ -205,8 +213,8 @@
     // there is one rendering rule and no absent case to branch on (F-28).
     const parts = [
       requestCount(item.requests),
-      window.JournalI18n.render('journal.window.stats.tokens.count', [['count', String(number(item.tokens))]]),
-      window.JournalI18n.render('journal.window.stats.tokens.cached', [['count', String(number(item.cached_tokens))]]),
+      tokenCount(item.tokens),
+      renderCount('journal.window.stats.tokens.cached.count', item.cached_tokens),
       share(item.percent),
     ];
     detail.textContent = parts.join(' · ');
@@ -290,7 +298,7 @@
         ? window.JournalI18n.render('journal.window.stats.tokens.kind.generate')
         : window.JournalI18n.render('journal.window.stats.tokens.kind.cogitate');
       const detail = document.createElement('p');
-      detail.textContent = window.JournalI18n.render('journal.window.stats.tokens.requests.and.tokens', [['requests', String(requestCount(data.requests))], ['tokens', String(number(data.tokens))]]);
+      detail.textContent = [requestCount(data.requests), tokenCount(data.tokens)].join(' · ');
       section.append(title, detail);
       comparison.append(section);
     });
@@ -314,7 +322,7 @@
 
   function renderUsage(data) {
     heading.textContent = dayLabel(data.day);
-    summary.textContent = window.JournalI18n.render('journal.window.stats.tokens.requests.and.tokens', [['requests', String(requestCount(data.total.requests))], ['tokens', String(number(data.total.tokens))]]);
+    summary.textContent = [requestCount(data.total.requests), tokenCount(data.total.tokens)].join(' · ');
     tableData.providers = data.by_provider || [];
     tableData.models = data.by_model || [];
     renderTable('providers');
@@ -373,7 +381,7 @@
       button.type = 'button';
       button.className = 'token-rollup__bar';
       button.dataset.tokensDay = day;
-      button.setAttribute('aria-label', window.JournalI18n.render('journal.window.stats.tokens.day.rollup', [['day', String(dayLabel(day))], ['tokens', String(number(totals[day]))]]));
+      button.setAttribute('aria-label', renderCount('journal.window.stats.tokens.rollup.count', totals[day], [['day', String(dayLabel(day))]]));
       button.setAttribute('aria-pressed', String(day === selected));
       // The bar element itself stays full-height (a 44px+ hit target); only
       // the visible fill (--bar-fill, consumed by the CSS gradient) tracks

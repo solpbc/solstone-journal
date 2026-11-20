@@ -1,0 +1,30 @@
+{
+  "description": "Number of cached tokens. count is the preformatted amount.",
+  "context": "Journal window. Number of cached tokens. count is the preformatted amount.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "de0001944013974814aafe09ed81cdc21fa73be73e52b366ca9c217ceb586a5e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Audio processing progress count. count is the displayed number of segments.",
+  "context": "Journal window. Audio processing progress count. count is the displayed number of segments.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ba2f6d3b09ba38605cb87a1ad71e17e64f1e69502ce519dee91e0399ae737d6f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

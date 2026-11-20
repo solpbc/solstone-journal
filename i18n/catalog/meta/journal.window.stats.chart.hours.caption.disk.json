@@ -1,0 +1,37 @@
+{
+  "description": "Accessible chart stack label with disk use. storage is a formatted byte size.",
+  "context": "Journal window. Accessible chart stack label with disk use. storage is a formatted byte size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "audio",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "storage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "564848554cf299dd8c4e4f2909bb5314031f340ffbe202423c593fc368c0e773",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

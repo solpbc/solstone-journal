@@ -1,0 +1,29 @@
+{
+  "description": "Accessible chart stack label. categories is the list of independent name and count labels.",
+  "context": "Journal window. Accessible chart stack label. categories is the list of independent name and count labels.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "categories",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c22aa38b5582499fbeb3cff88fc8d9168273ccf993c6d913c9980cfc154bd4c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

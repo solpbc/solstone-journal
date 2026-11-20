@@ -1,0 +1,21 @@
+{
+  "description": "Narrow heatmap summary when only weekends have activity. weekend_hour is a spoken clock label.",
+  "context": "Journal window. Narrow heatmap summary when only weekends have activity. weekend_hour is a spoken clock label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekend_hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ad54f33744dc14ba8243be4fd9b8abe28bb130211b4fcb62ed695853ac4c657",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

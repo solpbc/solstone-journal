@@ -1,0 +1,34 @@
+{
+  "description": "Accessible label for a day in the token chart. day is the formatted date and count is the displayed token total.",
+  "context": "Journal window. Accessible label for a day in the token chart. day is the formatted date and count is the displayed token total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ab2bd3de1c977a24dd470b75b52314cee7cc1fe1c828187bb84e298937eae696",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

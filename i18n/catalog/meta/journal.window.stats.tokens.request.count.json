@@ -1,0 +1,30 @@
+{
+  "description": "Selected-day number of requests. count is the preformatted amount.",
+  "context": "Journal window. Selected-day number of requests. count is the preformatted amount.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "587b00d0a02aa68c8903a5de3bce489da59458326db85f34ce381c0f238ab97c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

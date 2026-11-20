@@ -9235,6 +9235,88 @@ journal.window.speakers.window.state.text.you.corrected = you corrected
 
 journal.window.speakers.window.state.text.you.identified = you identified
 
+journal.window.stats.backlog.older.audio.count = { $quantity ->
+        [one] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
+       *[other] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
+    }
+
+journal.window.stats.backlog.remaining.count = { $quantity ->
+        [one] { $count } steps left
+       *[other] { $count } steps left
+    }
+
+journal.window.stats.backlog.unfinished.multiple.days = { $quantity ->
+        [one] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
+       *[other] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
+    }
+
+journal.window.stats.backlog.unfinished.one.day = { $quantity ->
+        [one] an activity from { $oldest_day } couldn't finish processing →
+       *[other] { $count } activities from { $oldest_day } couldn't finish processing →
+    }
+
+journal.window.stats.chart.categories.caption = { $day }: { $total } ({ $categories })
+
+journal.window.stats.chart.category.value = { $name }: { $count }
+
+journal.window.stats.chart.hours.caption = { $day }: { $total }h (audio: { $audio }h, screen: { $screen }h)
+
+journal.window.stats.chart.hours.caption.disk = { $day }: { $total }h (audio: { $audio }h, screen: { $screen }h), disk: { $storage }
+
+journal.window.stats.chart.hours.tip = { $day } - Audio: { $audio }h, Screen: { $screen }h
+
+journal.window.stats.chart.hours.tip.disk = { $day } - Audio: { $audio }h, Screen: { $screen }h, Disk: { $storage }
+
+journal.window.stats.chart.hours.value = { $hours }h
+
+journal.window.stats.chart.inspection.empty = { $day }: 0
+
+journal.window.stats.empty.processing.link = { $heading_start }no statistics yet. { $heading_end }check processing status in { $health_start }health{ $health_end }.
+
+journal.window.stats.heatmap.cell.inactive = { $day } { $hour } · no activity
+
+journal.window.stats.heatmap.narrow.peak.both = your busiest hour is around { $weekday_hour } on weekdays and around { $weekend_hour } on weekends. the hour by hour grid needs a wider screen.
+
+journal.window.stats.heatmap.narrow.peak.weekday = your busiest hour is around { $weekday_hour } on weekdays. the hour by hour grid needs a wider screen.
+
+journal.window.stats.heatmap.narrow.peak.weekend = your busiest hour is around { $weekend_hour } on weekends. the hour by hour grid needs a wider screen.
+
+journal.window.stats.progress.count.pending = { $quantity ->
+        [one] { $count } pending
+       *[other] { $count } pending
+    }
+
+journal.window.stats.progress.count.processed = { $quantity ->
+        [one] { $count } processed
+       *[other] { $count } processed
+    }
+
+journal.window.stats.read.failure.retry = couldn't load statistics. try again to refresh this view. { $retry_start }try again{ $retry_end }
+
+journal.window.stats.schema.regeneration.admin = These stats were generated with an older format. Open the admin terminal from the journal app's journal menu on the mac your journal runs on and run { $command } to regenerate.
+
+journal.window.stats.schema.regeneration.terminal = These stats were generated with an older format. Run { $command } to regenerate.
+
+journal.window.stats.tokens.cached.count = { $quantity ->
+        [one] { $count } cached
+       *[other] { $count } cached
+    }
+
+journal.window.stats.tokens.request.count = { $quantity ->
+        [one] { $count } request
+       *[other] { $count } requests
+    }
+
+journal.window.stats.tokens.rollup.count = { $quantity ->
+        [one] { $day }: { $count } tokens
+       *[other] { $day }: { $count } tokens
+    }
+
+journal.window.stats.tokens.token.count = { $quantity ->
+        [one] { $count } tokens
+       *[other] { $count } tokens
+    }
+
 journal.window.support.report.automatic.disclosure = the journal does not send a report or register you with support on its own.
 
 journal.window.support.report.open = make a report
@@ -10969,8 +11051,6 @@ journal.window.stats.backlog.caught.up = your journal's all caught up.
 
 journal.window.stats.backlog.details = processing details
 
-journal.window.stats.backlog.older.audio = { $count }{ $slot1 }older audio segments from before the last 30 days are still waiting to be transcribed.
-
 journal.window.stats.backlog.process.now = process now
 
 journal.window.stats.backlog.queued = queued, working on it now
@@ -10984,8 +11064,6 @@ journal.window.stats.backlog.reason.sensed = taken in, not yet thought through
 journal.window.stats.backlog.reason.unattempted = not looked at yet
 
 journal.window.stats.backlog.redo.confirm = redo this whole day from scratch? this repeats completed processing, so it'll take longer.
-
-journal.window.stats.backlog.remaining = { $count }{ $slot1 }steps left
 
 journal.window.stats.backlog.repair.fallback = a processing step keeps failing. try again
 
@@ -11021,19 +11099,11 @@ journal.window.stats.chart.hours.accessible = observation hours bar chart showin
 
 journal.window.stats.chart.hours.audio = audio
 
-journal.window.stats.chart.hours.day = { $day }:{ $slot1 }{ $total }h (audio:{ $slot2 }{ $audio }h, screen:{ $slot3 }{ $screen }h){ $disk }
-
-journal.window.stats.chart.hours.disk = , disk:{ $slot1 }{ $bytes }
-
 journal.window.stats.chart.hours.empty.detail = no audio or screen activity yet
 
 journal.window.stats.chart.hours.empty.heading = no activity yet
 
 journal.window.stats.chart.hours.screen = screen
-
-journal.window.stats.chart.hours.tooltip = { $day }{ $slot1 }- Audio:{ $slot2 }{ $audio }h, Screen:{ $slot3 }{ $screen }h
-
-journal.window.stats.chart.hours.tooltip.disk = Disk:{ $slot1 }{ $bytes }
 
 journal.window.stats.chart.inspection.caption = day{ $slot1 }
 
@@ -11051,8 +11121,6 @@ journal.window.stats.heatmap.accessible = activity heatmap showing activity by d
 
 journal.window.stats.heatmap.cell = { $day }{ $slot1 }{ $hour }{ $slot2 }·{ $slot3 }{ $activity }
 
-journal.window.stats.heatmap.empty = no activity
-
 journal.window.stats.heatmap.hour.am = { $hour }{ $slot1 }am
 
 journal.window.stats.heatmap.hour.pm = { $hour }{ $slot1 }pm
@@ -11060,14 +11128,6 @@ journal.window.stats.heatmap.hour.pm = { $hour }{ $slot1 }pm
 journal.window.stats.heatmap.midnight = 12 am
 
 journal.window.stats.heatmap.narrow.empty = no activity to chart yet.
-
-journal.window.stats.heatmap.narrow.join = { $slot1 }and{ $slot2 }
-
-journal.window.stats.heatmap.narrow.peak = your busiest hour is{ $slot1 }{ $hours }. the hour by hour grid needs a wider screen.
-
-journal.window.stats.heatmap.narrow.weekday = around{ $slot1 }{ $hour }{ $slot2 }on weekdays
-
-journal.window.stats.heatmap.narrow.weekend = around{ $slot1 }{ $hour }{ $slot2 }on weekends
 
 journal.window.stats.heatmap.noon = 12 pm
 
@@ -11080,12 +11140,6 @@ journal.window.stats.page.heading.stats = stats
 journal.window.stats.pending.stats = your stats aren't ready yet. check back in a moment.
 
 journal.window.stats.progress.audio = audio processing
-
-journal.window.stats.progress.pending = { $count }{ $slot1 }pending
-
-journal.window.stats.progress.processed = { $count }{ $slot1 }processed
-
-journal.window.stats.read.error = couldn't load statistics. try again to refresh this view.{ $slot1 }
 
 journal.window.stats.refresh = refresh
 
@@ -11109,12 +11163,6 @@ journal.window.stats.response.read.stats.detail = Failed to read stats data
 
 journal.window.stats.response.read.token.detail = Failed to read token data
 
-journal.window.stats.schema.regenerate = These stats were generated with an older format. Run{ $slot1 }
-
-journal.window.stats.schema.regenerate.end = { $slot1 }to regenerate.
-
-journal.window.stats.schema.regenerate.macos = These stats were generated with an older format. Open the admin terminal from the journal app's journal menu on the mac your journal runs on and run{ $slot1 }
-
 journal.window.stats.section.heading.activities = activities
 
 journal.window.stats.section.heading.activity.heatmap.since.your.journal.began = activity heatmap (since your journal began)
@@ -11127,19 +11175,7 @@ journal.window.stats.section.heading.selected.day = selected day
 
 journal.window.stats.section.heading.token.activity.last.days = token activity (last 30 days)
 
-journal.window.stats.stats.empty.detail = check processing status in{ $slot1 }
-
-journal.window.stats.stats.empty.head = no statistics yet.{ $slot1 }
-
-journal.window.stats.stats.empty.health = health
-
-journal.window.stats.tokens.cached = { $count }{ $slot1 }cached
-
-journal.window.stats.tokens.count = { $count }{ $slot1 }tokens
-
 journal.window.stats.tokens.day.error = token activity isn't available for this day.
-
-journal.window.stats.tokens.day.rollup = { $day }:{ $slot1 }{ $tokens }{ $slot2 }tokens
 
 journal.window.stats.tokens.empty = no token activity this day.
 
@@ -11166,12 +11202,6 @@ journal.window.stats.tokens.provider.single.unnamed = one provider this day, no 
 journal.window.stats.tokens.provider.unnamed = no provider named
 
 journal.window.stats.tokens.providers.empty = no providers this day.
-
-journal.window.stats.tokens.requests.and.tokens = { $requests }{ $slot1 }·{ $slot2 }{ $tokens }{ $slot3 }tokens
-
-journal.window.stats.tokens.requests.many = { $count }{ $slot1 }requests
-
-journal.window.stats.tokens.requests.one = { $count }{ $slot1 }request
 
 journal.window.stats.tokens.share = { $percent }% of the day's tokens
 

@@ -1,0 +1,29 @@
+{
+  "description": "Hours chart tooltip. day is the journal day and audio and screen are decimal hours.",
+  "context": "Journal window. Hours chart tooltip. day is the journal day and audio and screen are decimal hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "audio",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac64ce207b9bb26e7e9951bf5f682a4f95704f9581941bf3e51edf45651c1e0a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

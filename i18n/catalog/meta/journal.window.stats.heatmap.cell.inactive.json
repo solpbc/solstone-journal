@@ -1,0 +1,25 @@
+{
+  "description": "Accessible heatmap cell with weekday and time for an hour without activity.",
+  "context": "Journal window. Accessible heatmap cell with weekday and time for an hour without activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8588ecd2fe894866c2556a69890641f4b80352665814338eb7f6c66cfee16f19",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

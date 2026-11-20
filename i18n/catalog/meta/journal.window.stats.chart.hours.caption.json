@@ -1,0 +1,33 @@
+{
+  "description": "Accessible chart stack label. The values are a formatted date and decimal hours.",
+  "context": "Journal window. Accessible chart stack label. The values are a formatted date and decimal hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "audio",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "642efd2fd8b8c905a826cd101090d08fedd3bf62085a8d7908ccfc3358f5d066",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

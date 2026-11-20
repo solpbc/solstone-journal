@@ -1,0 +1,21 @@
+{
+  "description": "Accessible daily chart value when the day has no measured value.",
+  "context": "Journal window. Accessible daily chart value when the day has no measured value.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7536410848aa9694ab355b88519ce10c98b0f400c4cd68a2e4a5ae5f1c725628",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

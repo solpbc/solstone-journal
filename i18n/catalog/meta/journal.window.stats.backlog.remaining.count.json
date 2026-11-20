@@ -1,0 +1,30 @@
+{
+  "description": "Work remaining on this day. count is the displayed number of processing steps.",
+  "context": "Journal window. Work remaining on this day. count is the displayed number of processing steps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7352e29fb5670cd03b2bce341a56585471bea30086a04a0785ad32bcb48c9332",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

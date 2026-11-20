@@ -1,0 +1,21 @@
+{
+  "description": "Narrow heatmap summary when only weekdays have activity. weekday_hour is a spoken clock label.",
+  "context": "Journal window. Narrow heatmap summary when only weekdays have activity. weekday_hour is a spoken clock label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday_hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "deaf59894de774a10dc7d02d857b2933889c3a5c7a4b303e0d5c227b4b1b4f47",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

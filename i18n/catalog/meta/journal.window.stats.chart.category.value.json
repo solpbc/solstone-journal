@@ -1,0 +1,25 @@
+{
+  "description": "One facet or activity chart entry. name can be an owner-defined label.",
+  "context": "Journal window. One facet or activity chart entry. name can be an owner-defined label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2b78d54750b5f052fe75cea5eef8bbd846ac1d5d81677a5c875bb7c3dc4840d7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

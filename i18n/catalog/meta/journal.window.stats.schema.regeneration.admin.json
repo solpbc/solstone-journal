@@ -1,0 +1,21 @@
+{
+  "description": "Stats format warning for Mac. command is a fixed terminal command displayed in a code span.",
+  "context": "Journal window. Stats format warning for Mac. command is a fixed terminal command displayed in a code span.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "414fcfe581834a6192d0d26461add79fb2f826b9b462e3ae69b3cd319d3cbd18",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
