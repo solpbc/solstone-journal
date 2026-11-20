@@ -1613,6 +1613,7 @@ mod tests {
                 ("screen".into(), "analyzed".into()),
             ]),
             think: None,
+            item: None,
         };
         let value = serde_json::to_value(attach_visible_streams_to_ranges(
             &[("09:00".into(), "09:15".into())],
@@ -1621,6 +1622,46 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(value[0]["state"], "pending");
+    }
+
+    #[tokio::test]
+    async fn day_and_detail_agree_on_notes_and_documents_in_one_stream() {
+        let root = root();
+        for (key, file) in [
+            ("101300_300", "note_transcript.md"),
+            ("101700_300", "document_transcript.md"),
+        ] {
+            segment(
+                root.path(),
+                DAY,
+                "import.text",
+                key,
+                &[(file, b"filed text")],
+            );
+        }
+        let (status, _, body) =
+            response(app(root.path()), &format!("/app/transcripts/api/day/{DAY}")).await;
+        assert_eq!(status, StatusCode::OK);
+        let day: Value = serde_json::from_slice(&body).unwrap();
+        for (key, kind) in [("101300_300", "notes"), ("101700_300", "documents")] {
+            let row = day["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["key"] == key)
+                .expect("filed import in day");
+            assert_eq!(row["types"], json!(["markdown"]));
+            assert_eq!(row["item"], json!({"kind": kind, "source": "imported"}));
+            let (status, _, body) = response(
+                app(root.path()),
+                &format!("/app/transcripts/api/segment/{DAY}/import.text/{key}"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let detail: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(detail["item"], row["item"]);
+            assert_eq!(detail["chunks"][0]["markdown"], "filed text");
+        }
     }
 
     #[test]
@@ -1634,6 +1675,7 @@ mod tests {
             types: vec!["audio".into()],
             data_state: BTreeMap::from([("audio".into(), "pending".into())]),
             think: None,
+            item: None,
         };
 
         let ranges = attach_visible_streams_to_ranges(

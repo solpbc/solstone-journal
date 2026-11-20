@@ -163,6 +163,7 @@ pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
         types: segment.types,
         data_state: segment.data_state.0,
         think: None,
+        item: None,
     }
 }
 #[allow(clippy::result_large_err)]

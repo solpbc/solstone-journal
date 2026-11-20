@@ -14392,3 +14392,27 @@ journal.window.transcripts.window.explanation.this.segment.holds.location.only =
 journal.window.transcripts.window.explanation.this.segment.holds.location.only.reading = this segment holds location only: 1 reading.
 
 journal.window.transcripts.window.explanation.this.segment.holds.location.only.value1 = this segment holds location only:{ $slot1 }{ $value1 }{ $slot2 }readings.
+
+journal.window.shared.import.item.kind.note = note
+
+journal.window.shared.import.item.kind.document = document
+
+journal.window.shared.import.item.kind.transcript = transcript
+
+journal.window.shared.import.item.kind.screenshot = screenshot
+
+journal.window.shared.import.item.kind.photo = photo
+
+journal.window.shared.import.item.source.imported = imported
+
+journal.window.shared.import.item.source.obsidian = Obsidian
+
+journal.window.shared.import.item.source.evernote = Evernote
+
+journal.window.shared.import.item.source.pdf = PDF
+
+journal.window.shared.import.item.label = { $kind } · { $source }
+
+journal.window.shared.import.item.dated.label = { $label } · { $date }
+
+journal.window.shared.import.item.text.unavailable = no text available

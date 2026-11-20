@@ -1148,6 +1148,44 @@
   transition: opacity 0.1s ease;
 }
 
+.tr-day-imports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tr-day-imports li + li {
+  border-top: 1px solid var(--hairline);
+}
+.tr-day-imports button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.tr-day-imports button:hover {
+  background: var(--cream);
+}
+.tr-day-imports button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.tr-day-import-when {
+  color: var(--ink-soft);
+  font-size: .875em;
+  font-variant-numeric: tabular-nums;
+}
+
 .tr-panel.loading {
   opacity: 0.5;
 }
@@ -2958,7 +2996,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     <!-- Right content panel -->
     <div class="tr-content" id="trContent">
-      <label class="tr-segment-picker" for="trSegmentPicker">{{journal.window.transcripts.field.label.segments.in.this.range}}
+      <label class="tr-segment-picker" for="trSegmentPicker"><span id="trSegmentPickerLabel">{{journal.window.transcripts.field.label.segments.in.this.range}}</span>
         <select id="trSegmentPicker" disabled><option value="">{{journal.window.transcripts.option.label.choose.a.segment}}</option></select>
       </label>
       <div class="tr-header">

@@ -289,6 +289,7 @@
     const zoomLabels = document.getElementById('trZoomLabels');
     const zoomSegments = document.getElementById('trZoomSegments');
     const segmentPicker = document.getElementById('trSegmentPicker');
+    const segmentPickerLabel = document.getElementById('trSegmentPickerLabel');
     const segmentChoiceId = seg => JSON.stringify([seg.stream, seg.key]);
     segmentPicker.addEventListener('change', () => {
       const seg = allSegments.find(item => segmentChoiceId(item) === segmentPicker.value);
@@ -1549,12 +1550,32 @@
       return Boolean(says.what) && says.what === String(typeDesc || '').trim().toLowerCase();
     }
 
+    function importItemLabel(seg) {
+      return seg?.item ? window.JournalFormat.importItem(seg.item) : '';
+    }
+
+    function isDateOnlyImport(seg) {
+      return Boolean(seg?.item) && window.JournalFormat.isDateOnlyImport(seg.item);
+    }
+
+    function importItemWhen(seg) {
+      if (isDateOnlyImport(seg)) return window.JournalFormat.filedDay(day);
+      return isMomentSegment(seg) ? seg.start : `${seg.start} – ${seg.end}`;
+    }
+
+    function datedImportLabel(label, date) {
+      return window.JournalI18n.render('journal.window.shared.import.item.dated.label', [
+        ['label', label], ['date', date]
+      ]);
+    }
+
     // Build range text with total media size
     // A segment's range is its recording device's own wall clock. When that
     // device reported a zone other than the one this journal shows times in,
     // name it beside the range so the times read as what they are.
     function segmentRangeLabel(seg) {
       if (seg.locationRow) return seg.start;
+      if (isDateOnlyImport(seg)) return window.JournalFormat.filedDay(day);
       // A screenshot or photo is a moment, so its time alone.
       const range = isMomentSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`;
       if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
@@ -1567,6 +1588,10 @@
     function updateRangeText() {
       if (!selectedSegment || !segmentData) return;
       const seg = selectedSegment;
+      if (isDateOnlyImport(seg)) {
+        rangeText.textContent = segmentRangeLabel(seg);
+        return;
+      }
       let parts = [escapeHtml(segmentRangeLabel(seg))];
 
 
@@ -1633,7 +1658,7 @@
     function markdownOnlySegments(segments) {
       return (segments || []).filter(seg => {
         const types = seg.types || [];
-        return types.includes('markdown') && !types.includes('audio') && !types.includes('screen');
+        return !isDateOnlyImport(seg) && types.includes('markdown') && !types.includes('audio') && !types.includes('screen');
       });
     }
 
@@ -1856,22 +1881,33 @@
 
     function buildZoomSegments() {
       const filtered = filterSegmentsInRange();
-      const streams = [...new Set(filtered.map(s => s.stream))].sort();
+      const timed = filtered.filter(seg => !isDateOnlyImport(seg));
+      const dateOnly = allSegments.filter(isDateOnlyImport);
+      const choices = [...dateOnly, ...timed];
+      const streams = [...new Set(timed.map(s => s.stream))].sort();
       const colCount = streams.length;
       zoomSegments.innerHTML = '';
       segmentPicker.innerHTML = `<option value="">${window.JournalI18n.renderHtml('journal.window.transcripts.option.label.choose.a.segment')}</option>`;
-      segmentPicker.disabled = filtered.length === 0;
-      filtered.forEach(seg => {
+      segmentPicker.disabled = choices.length === 0;
+      if (segmentPickerLabel) {
+        const labelId = dateOnly.length
+          ? 'journal.window.transcripts.accessible.name.items'
+          : 'journal.window.transcripts.field.label.segments.in.this.range';
+        segmentPickerLabel.textContent = window.JournalI18n.render(labelId);
+      }
+      choices.forEach(seg => {
         const option = document.createElement('option');
         option.value = segmentChoiceId(seg);
-        option.textContent = `${isMomentSegment(seg) ? seg.start : `${seg.start} – ${seg.end}`} · ${humanizeStreamName(seg.stream)}`;
+        const itemLabel = importItemLabel(seg);
+        if (itemLabel) option.textContent = datedImportLabel(itemLabel, importItemWhen(seg));
+        else option.textContent = `${isMomentSegment(seg) ? seg.start : `${seg.start} – ${seg.end}`} · ${humanizeStreamName(seg.stream)}`;
         option.title = seg.stream;
         segmentPicker.appendChild(option);
       });
       segmentPicker.value = selectedSegment && !selectedSegment.locationRow ? segmentChoiceId(selectedSegment) : '';
       renderSegPick(filtered);
 
-      if (filtered.length === 0) {
+      if (timed.length === 0) {
         zoomSegments.innerHTML = `<div class="tr-zoom-empty">${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.nothing.in.this.range')}</div>`;
         return;
       }
@@ -1880,7 +1916,7 @@
       // subdivide their stream column so none sit unreachable underneath another.
       const momentSlots = new Map();
       for (const stream of streams) {
-        const moments = filtered
+        const moments = timed
           .filter(seg => seg.stream === stream && isMomentSegment(seg))
           .map(seg => ({ seg, top: zoomY(Math.max(parseTime(seg.start), range.start)) }))
           .sort((a, b) => a.top - b.top || String(a.seg.key).localeCompare(String(b.seg.key)));
@@ -1902,7 +1938,7 @@
         }
       }
 
-      filtered.forEach(seg => {
+      timed.forEach(seg => {
         const segStart = parseTime(seg.start);
         const segEnd = parseTime(seg.end);
 
@@ -1935,7 +1971,7 @@
         const hasBrowser = seg.types.includes('browser');
         const hasImage = seg.types.includes('image');
         const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
-        const isShotOnly = isScreenshotsStream(seg.stream);
+        const isShotOnly = seg.item?.kind === 'screen_text' || isScreenshotsStream(seg.stream);
         const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
         const dataState = seg.data_state || {};
         const hasPendingAdvertised = (seg.types || []).some(
@@ -1993,15 +2029,18 @@
         const segmentStatusLabel = hasAnalyzingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.analyzing') : hasPendingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.pending') : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
         const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
         const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
-        const label = humanizeStreamName(seg.stream);
-        const omitType = shouldOmitStreamType(seg.stream, typeDesc);
+        const itemLabel = importItemLabel(seg);
+        const label = itemLabel || humanizeStreamName(seg.stream);
+        const omitType = Boolean(itemLabel) || shouldOmitStreamType(seg.stream, typeDesc);
         const typeTitlePart = omitType ? '' : ' · ' + segmentTypeLabel(typeDesc);
         const typeAriaPart = omitType ? '' : ', ' + typeLabel;
         // A screenshot or photo is a moment, not a stretch: its time alone, no length.
         const titleSpan = isMoment ? seg.start : seg.start + ' – ' + seg.end + ' · ' + window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min', [['value1', String(duration)]]);
         const ariaSpan = isMoment ? seg.start : seg.start + ' \u2013 ' + seg.end;
-        pill.title = titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
-        pill.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.segment') + ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix);
+        pill.title = itemLabel ? datedImportLabel(itemLabel, titleSpan) + statusSuffix :
+          titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
+        if (itemLabel) pill.setAttribute('aria-label', datedImportLabel(itemLabel, ariaSpan) + ariaStatusSuffix);
+        else pill.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.segment') + ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix);
         pill.dataset.key = seg.key;
         pill.dataset.stream = seg.stream;
 
@@ -2060,7 +2099,7 @@
       // while the rail shows midday), recenter the range to contain it.
       const segStart = parseTime(seg.start);
       const segEnd = parseTime(seg.end);
-      if (segStart < range.start || segEnd > range.end) {
+      if (!isDateOnlyImport(seg) && (segStart < range.start || segEnd > range.end)) {
         const rangeLen = range.end - range.start;
         const segMid = (segStart + segEnd) / 2;
         let newStart = snap(Math.max(timelineStart, segMid - rangeLen / 2));
@@ -2088,7 +2127,7 @@
         pill.classList.toggle('tr-active', pill.dataset.key === seg.key && pill.dataset.stream === seg.stream);
       });
 
-      titleEl.textContent = humanizeStreamName(seg.stream);
+      titleEl.textContent = importItemLabel(seg) || humanizeStreamName(seg.stream);
       titleEl.title = seg.stream;
       if (copyStreamBtn) copyStreamBtn.style.display = '';
       selectedSegmentZone = null;
@@ -2107,7 +2146,7 @@
     function updateSegmentEntryCount(count) {
       if (!selectedSegment) return;
       const rangeLabel = segmentRangeLabel(selectedSegment);
-      rangeText.textContent = Number.isFinite(count) && count > 0
+      rangeText.textContent = !isDateOnlyImport(selectedSegment) && Number.isFinite(count) && count > 0
         ? `${rangeLabel} · ${window.JournalI18n.render(count === 1
             ? 'journal.window.transcripts.body.count.entry.one' : 'journal.window.transcripts.body.count.entry.many', [['count', String(count)]])}`
         : rangeLabel;
@@ -2175,7 +2214,7 @@
         pill.classList.remove('tr-active');
       });
 
-      titleEl.textContent = humanizeStreamName(seg.stream);
+      titleEl.textContent = importItemLabel(seg) || humanizeStreamName(seg.stream);
       titleEl.title = seg.stream;
       if (copyStreamBtn) copyStreamBtn.style.display = '';
       selectedSegmentZone = null;
@@ -2386,7 +2425,7 @@
         tabsContainer.classList.remove('visible');
         return;
       }
-      addTab('transcript', window.JournalI18n.render('journal.window.transcripts.tab.transcript'));
+      addTab('transcript', isDateOnlyImport(selectedSegment) ? importItemLabel(selectedSegment) : window.JournalI18n.render('journal.window.transcripts.tab.transcript'));
       // A Granola meeting brings words, not sound: there is no audio to show.
       if (dataState.audio && !data.granola) {
         addTab('audio', window.JournalI18n.render('journal.window.transcripts.visible.text.audio'));
@@ -2412,7 +2451,9 @@
         addTab(`md-${stem}`, label);
       });
 
-      tabsContainer.classList.add('visible');
+      if (!isDateOnlyImport(selectedSegment) || tabsContainer.children.length > 1) {
+        tabsContainer.classList.add('visible');
+      }
     }
 
     function activateTab(tabId) {
@@ -2444,7 +2485,15 @@
         tabPanes[tabId] = pane;
 
         if (tabId === 'transcript') {
-          renderSegmentTimeline(segmentData, true, true, pane, true, true);
+          if (isDateOnlyImport(selectedSegment)) {
+            if (!tabsContainer.classList.contains('visible')) {
+              pane.removeAttribute('role');
+              pane.removeAttribute('aria-labelledby');
+            }
+            renderFiledText(segmentData, pane);
+          } else {
+            renderSegmentTimeline(segmentData, true, true, pane, true, true);
+          }
         } else if (tabId === 'audio') {
           renderSegmentTimeline(segmentData, true, false, pane, false, false);
         } else if (tabId === 'screen') {
@@ -2618,6 +2667,18 @@
       `;
     }
 
+    function renderFiledText(data, target) {
+      const parts = (data.chunks || [])
+        .filter(chunk => chunk.type === 'markdown')
+        .map(chunk => window.AppServices.renderMarkdown(chunk.markdown))
+        .filter(Boolean);
+      if (!parts.length) {
+        target.textContent = window.JournalI18n.render('journal.window.shared.import.item.text.unavailable');
+        return;
+      }
+      target.innerHTML = `<div class="tr-md-content">${parts.join('')}</div>`;
+    }
+
     function renderLoadedSegmentData(data, requestedTabId = null) {
       segmentData = data;
       // Still images need no decoding, so any tab can show them at once.
@@ -2635,6 +2696,10 @@
         return;
       }
 
+      if (selectedSegment && data.item) {
+        selectedSegment = { ...selectedSegment, item: data.item };
+        titleEl.textContent = importItemLabel(selectedSegment) || humanizeStreamName(selectedSegment.stream);
+      }
       if (data.granola?.title) {
         titleEl.textContent = data.granola.title;
       }
@@ -5092,8 +5157,40 @@
       });
     }
 
-    function refreshUnselectedLocation(glanceHtml = null) {
+    function renderDayImports(glanceHtml, importsChanged) {
+      const imports = allSegments.filter(seg => seg.item);
+      const existing = panel.querySelector('.tr-day-imports');
+      if (!imports.length) {
+        if (glanceHtml || existing) panel.innerHTML = glanceHtml || dayInvitationHtml;
+        return;
+      }
+      if (existing && !glanceHtml && !importsChanged) return;
+
+      const list = document.createElement('ul');
+      list.className = 'tr-day-imports';
+      list.setAttribute('role', 'list');
+      const ordered = [
+        ...imports.filter(isDateOnlyImport),
+        ...imports.filter(seg => !isDateOnlyImport(seg)),
+      ];
+      for (const seg of ordered) {
+        const row = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.append(
+          deleteDialogElement('strong', null, importItemLabel(seg)),
+          deleteDialogElement('span', 'tr-day-import-when', importItemWhen(seg)),
+        );
+        button.addEventListener('click', () => selectSegment(seg));
+        row.append(button);
+        list.append(row);
+      }
+      panel.replaceChildren(list);
+    }
+
+    function refreshUnselectedLocation(glanceHtml = null, importsChanged = false) {
       if (selectedSegment) return;
+      if (importsChanged && !allSegments.length) panel.querySelector('.tr-day-imports')?.remove();
 
       // Remove existing [data-location-section] and [data-location-notice] before painting a new one
       panel.querySelectorAll('[data-location-section]').forEach(el => el.remove());
@@ -5141,9 +5238,7 @@
         }
       }
 
-      if (glanceHtml) {
-        panel.innerHTML = glanceHtml;
-      }
+      renderDayImports(glanceHtml, importsChanged);
       const addon = locationAddonHtml();
       if (addon) {
         panel.insertAdjacentHTML('beforeend', addon);
@@ -5754,11 +5849,13 @@
       deleteSegmentModalEraseFoot.hidden = !erasing;
 
       const meta = deleteDialogElement('p', 'tr-delete-segment-meta trash-dlg-meta');
-      const streamName = deleteDialogElement('strong', null, humanizeStreamName(seg.stream));
+      const streamName = deleteDialogElement('strong', null, importItemLabel(seg) || humanizeStreamName(seg.stream));
       streamName.setAttribute('title', seg.stream);
-      const dayName = deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase());
+      const dayLabel = isDateOnlyImport(seg) ? window.JournalFormat.filedDay(day) : window.JournalFormat.day(day).toLowerCase();
+      const dayName = deleteDialogElement('strong', null, dayLabel);
       const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) || isPhotoSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`);
-      meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName, deleteDialogElement('span', null, ' · '), timeName);
+      meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName);
+      if (!isDateOnlyImport(seg)) meta.append(deleteDialogElement('span', null, ' · '), timeName);
 
       const parts = isLocRow ? ['location'] : segmentParts([seg], holdsLoc);
       const list = deleteDialogElement('ul', 'tr-delete-segment-list');
@@ -6484,6 +6581,7 @@
       const wasOpen = isOpenSegment(seg);
       allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
       if (wasOpen) clearSegmentSelection();
+      else if (seg.item) refreshUnselectedLocation(null, true);
       buildZoomSegments();
       refreshSegmentIndicators();
     }
@@ -6577,6 +6675,7 @@
       if (!allSegments.some(existing => existing.key === seg.key && existing.stream === seg.stream)) {
         allSegments.push(seg);
         sortSegmentsByKey();
+        if (seg.item) refreshUnselectedLocation(null, true);
       }
       buildZoomSegments();
       refreshSegmentIndicators();
@@ -6642,6 +6741,7 @@
     }
 
     function segPickRange(seg) {
+      if (seg.item && !isDateOnlyImport(seg)) return importItemWhen(seg);
       // A screenshot is a moment, so its time alone.
       if (isScreenshotsStream(seg.stream)) return seg.start;
       return segPickFill(TRASH_COPY.pickRange, { start: seg.start, end: seg.end });
@@ -6667,7 +6767,7 @@
       const line = deleteDialogElement('span', 'removal-line');
       line.append(
         deleteDialogElement('span', 'removal-what removal-time', segPickRange(seg)),
-        deleteDialogElement('span', 'removal-qual', humanizeStreamName(seg.stream)),
+        deleteDialogElement('span', 'removal-qual', importItemLabel(seg) || humanizeStreamName(seg.stream)),
       );
       body.append(line);
       const note = segPick.notes.get(id);
@@ -6765,7 +6865,7 @@
       const shown = deleteDialogElement('ul', 'trash-set-list');
       segs.slice(0, 5).forEach((seg) => {
         const item = deleteDialogElement('li');
-        item.append(deleteDialogElement('strong', null, segPickRange(seg)), deleteDialogElement('span', null, ` · ${humanizeStreamName(seg.stream)}`));
+        item.append(deleteDialogElement('strong', null, segPickRange(seg)), deleteDialogElement('span', null, ` · ${importItemLabel(seg) || humanizeStreamName(seg.stream)}`));
         shown.append(item);
       });
       if (segs.length > 5) shown.append(deleteDialogElement('li', 'trash-set-more', segPickFill(copy.more, { n: segs.length - 5 })));
@@ -6850,9 +6950,10 @@
       const failed = answer.failed.map((entry) => ({ seg: find(entry.segment), key: entry.key })).filter((item) => item.seg);
 
       // What moved leaves the timeline, the detail column and the list at once.
-      if (done.some(({ seg }) => isOpenSegment(seg))) clearSegmentSelection();
       const gone = new Set(done.map(({ seg }) => segmentChoiceId(seg)));
       allSegments = allSegments.filter((seg) => !gone.has(segmentChoiceId(seg)));
+      if (done.some(({ seg }) => isOpenSegment(seg))) clearSegmentSelection();
+      else if (done.some(({ seg }) => seg.item)) refreshUnselectedLocation(null, true);
       if (failed.length) {
         segPick.chosen = new Map(failed.map(({ seg }) => [segmentChoiceId(seg), seg]));
         segPick.notes = new Map(failed.map(({ seg, key }) => [segmentChoiceId(seg), segPickNoteKey(key, erase)]));

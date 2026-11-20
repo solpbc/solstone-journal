@@ -5,7 +5,12 @@
 
 use std::path::Path;
 
-use super::{AdmittedCategory, IndexDisposition, KindAssignment, body_material, file_spec};
+use serde::Serialize;
+
+use super::{
+    AdmittedCategory, ContentUnit, Family, FileFormat, FilePattern, IndexDisposition,
+    KindAssignment, body_material, file_spec,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -271,6 +276,82 @@ impl Kind {
     }
 }
 
+/// The item shown on the owner dashboard for a supported filed import.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DashboardImportItem {
+    pub kind: &'static str,
+    pub source: &'static str,
+}
+
+impl DashboardImportItem {
+    pub fn from_file(path: &str) -> Option<Self> {
+        Self::from_spec(file_spec(path)?)
+    }
+
+    fn from_spec(spec: &FilePattern) -> Option<Self> {
+        // Use the matched registry row, not the input stream, to select the
+        // imports this view covers. A chat export can have the same kind and
+        // file format as a manual conversation transcript.
+        let lane = spec.pattern.split('/').nth(1)?;
+        let KindAssignment::Settled(kind) = spec.kind else {
+            return None;
+        };
+        if spec.unit != ContentUnit::Segment {
+            return None;
+        }
+        let source = match (lane, kind, spec.format) {
+            (
+                "import.text",
+                Kind::Notes | Kind::Documents,
+                FileFormat::Content(Family::Markdown),
+            )
+            | ("import.text", Kind::Transcripts, FileFormat::Content(Family::AiChat))
+            | ("import.image", Kind::Screen | Kind::Photos, _) => "imported",
+            ("import.obsidian", Kind::Notes, _) => "obsidian",
+            ("import.evernote", Kind::Notes, _) => "evernote",
+            // The document importer writes this row for PDF imports.
+            ("import.document", Kind::Documents, _) => "pdf",
+            _ => return None,
+        };
+        Some(Self {
+            kind: kind.permission()?.as_str(),
+            source,
+        })
+    }
+
+    /// A descriptive file is the primary identity. An original can supply it
+    /// while the import has no description yet, but a conflicting description
+    /// cannot be resolved by directory order.
+    pub fn from_segment_files<'a>(
+        segment: &str,
+        names: impl IntoIterator<Item = &'a str>,
+    ) -> Option<Self> {
+        let mut descriptions = Vec::new();
+        let mut originals = Vec::new();
+        for name in names {
+            let path = format!("{segment}/{name}");
+            let Some(spec) = file_spec(&path) else {
+                continue;
+            };
+            let Some(item) = Self::from_spec(spec) else {
+                continue;
+            };
+            if spec.format == FileFormat::Original {
+                originals.push(item);
+            } else {
+                descriptions.push(item);
+            }
+        }
+        let items = if descriptions.is_empty() {
+            originals
+        } else {
+            descriptions
+        };
+        let item = *items.first()?;
+        items.iter().all(|other| *other == item).then_some(item)
+    }
+}
+
 /// Effective permission for material that already has an index admission.
 pub fn indexed_permission(
     journal: Option<&Path>,
@@ -348,6 +429,113 @@ pub fn segment_file_permission(path: &str) -> AdmittedCategory {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dashboard_imports_use_the_registered_kind_and_only_the_selected_sources() {
+        for (stream, name, permission, source) in [
+            (
+                "import.text",
+                "note_transcript.md",
+                AdmittedCategory::Notes,
+                "imported",
+            ),
+            (
+                "import.text",
+                "document_transcript.md",
+                AdmittedCategory::Documents,
+                "imported",
+            ),
+            (
+                "import.text",
+                "conversation_transcript.jsonl",
+                AdmittedCategory::Transcripts,
+                "imported",
+            ),
+            (
+                "import.image",
+                "screenshot_transcript.md",
+                AdmittedCategory::ScreenText,
+                "imported",
+            ),
+            (
+                "import.image",
+                "image_transcript.md",
+                AdmittedCategory::Photos,
+                "imported",
+            ),
+            (
+                "import.evernote",
+                "note_transcript.md",
+                AdmittedCategory::Notes,
+                "evernote",
+            ),
+            (
+                "import.obsidian",
+                "note_transcript.md",
+                AdmittedCategory::Notes,
+                "obsidian",
+            ),
+            (
+                "import.document",
+                "document_transcript.md",
+                AdmittedCategory::Documents,
+                "pdf",
+            ),
+        ] {
+            let segment = format!("20260407/{stream}/123456_300");
+            let path = format!("{segment}/{name}");
+            let expected = Some(DashboardImportItem {
+                kind: permission.as_str(),
+                source,
+            });
+            assert_eq!(DashboardImportItem::from_file(&path), expected);
+            assert_eq!(
+                DashboardImportItem::from_segment_files(&segment, [name]),
+                expected
+            );
+        }
+
+        for (stream, name) in [
+            ("import.chatgpt", "conversation_transcript.jsonl"),
+            ("import.kindle", "book_transcript.md"),
+            ("import.ics", "event_transcript.md"),
+            ("import.apple_health", "reading_transcript.md"),
+            ("phone", "audio.jsonl"),
+            ("phone_obsidian", "note_transcript.md"),
+            ("import.text", "imported.md"),
+            ("import.text", "unknown_transcript.md"),
+            ("import.text", "import_kind.json"),
+        ] {
+            let path = format!("chronicle/20260407/{stream}/123456_300/{name}");
+            assert_eq!(DashboardImportItem::from_file(&path), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn dashboard_segment_prefers_descriptive_material_to_an_original() {
+        let segment = "20260407/import.image/123456_0";
+        let screenshot =
+            DashboardImportItem::from_file(&format!("{segment}/screenshot_transcript.md"));
+        assert!(screenshot.is_some());
+        assert_eq!(
+            DashboardImportItem::from_segment_files(
+                segment,
+                ["original.png", "screenshot_transcript.md"]
+            ),
+            screenshot
+        );
+        assert_eq!(
+            DashboardImportItem::from_segment_files(segment, ["original.screenshot.png"]),
+            screenshot
+        );
+        assert_eq!(
+            DashboardImportItem::from_segment_files(
+                segment,
+                ["image_transcript.md", "screenshot_transcript.md"]
+            ),
+            None
+        );
+    }
 
     #[test]
     fn manual_imports_keep_index_and_segment_permissions_agreeing() {

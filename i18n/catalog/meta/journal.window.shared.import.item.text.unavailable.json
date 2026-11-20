@@ -1,0 +1,16 @@
+{
+  "description": "The reading pane has no text to display for this imported note or document.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f559b1ce157d1a4840e593cc1153b85d439581d25b9bc45a76a761e06f4f45f",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

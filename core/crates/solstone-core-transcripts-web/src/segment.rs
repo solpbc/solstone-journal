@@ -616,6 +616,14 @@ fn prepare_segment_localized(
         "warnings": warnings.len(),
         "warning_details": warnings,
     });
+    if let Some(item) =
+        solstone_core_format::content::kinds::DashboardImportItem::from_segment_files(
+            &crate::segment_media::segment_rel(day, stream, key),
+            files.iter().filter_map(|path| path.file_name()?.to_str()),
+        )
+    {
+        payload["item"] = json!(item);
+    }
     if let Some(text) = sense_display {
         payload["sense_display"] = Value::String(text);
     }

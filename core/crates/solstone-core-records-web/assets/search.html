@@ -88,15 +88,17 @@
  function matchesStatus(total,days){return window.JournalI18n.render('journal.window.search.count.summary', [['matches', String(counted(total,'match'))], ['days', String(counted(days,'day'))]]);}
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
-  const recordTime=Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
+  const itemLabel=hit.item?window.JournalFormat.importItem(hit.item):'';
+  const dateOnly=Boolean(itemLabel)&&window.JournalFormat.isDateOnlyImport(hit.item);
+  const recordTime=!dateOnly&&Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
   const rawStream=String(hit.stream||'').trim();
   const memorySource=memoryPath(String(hit.path||''));
   // A memory names the agent that saved it. The name is the agent's own choice; the key tells two apart.
-  const streamLabel=memorySource&&hit.creation_label?String(hit.creation_label)+' · '+memorySource.source.slice(0,4):rawStream&&window.JournalFormat?window.JournalFormat.stream(rawStream):'';
+  const streamLabel=itemLabel||(memorySource&&hit.creation_label?String(hit.creation_label)+' · '+memorySource.source.slice(0,4):rawStream&&window.JournalFormat?window.JournalFormat.stream(rawStream):'');
   // Don't say the type twice: drop the agent label when the stream label
   // already says it, as its what word ("Audio" beside an audio label) or as
   // an import ("Imported" beside an imported label).
-  let showAgentLabel=Boolean(hit.agent_label);
+  let showAgentLabel=!itemLabel&&Boolean(hit.agent_label);
   if(showAgentLabel&&rawStream){
    const agentKey=String(hit.agent_label).trim().toLowerCase();
    const says=window.JournalFormat.streamSays(rawStream);
@@ -106,12 +108,16 @@
   if(hit.facet_title)meta.append(node('span','',hit.facet_title));
   if(streamLabel){
    const streamSpan=node('span','',streamLabel);
-   streamSpan.setAttribute('title',rawStream);
+   if(!itemLabel)streamSpan.setAttribute('title',rawStream);
    meta.append(streamSpan);
+  }
+  if(dateOnly){
+   const date=window.JournalFormat.filedDay(hit.day);
+   if(date)meta.append(node('span','',date));
   }
   if(recordTime)meta.append(node('span','',recordTime));
   // Screen text names when it was on screen; the segment id and its offset stand in only when it can't.
-  if(hit.segment)meta.append(node('span','search-citation',hit.time?String(hit.time):String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
+  if(hit.segment&&!dateOnly)meta.append(node('span','search-citation',hit.time?String(hit.time):String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
   card.append(meta);const text=node('p','search-excerpt');
   text.append(excerpt(hit.text));
   card.append(text);

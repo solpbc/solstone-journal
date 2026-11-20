@@ -1,0 +1,16 @@
+{
+  "description": "The singular kind of an imported note.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72fb5d225a4191b8844620e2c94dc6a534876d89bbcb176e00c42a243db0dffd",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

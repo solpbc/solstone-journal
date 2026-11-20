@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- imported notes, documents, transcripts, screenshots and photos show their kinds on the transcripts page and in search. notes and documents show the day they belong to.
 - "photos of people" and "photo" are now "profile pics" and "profile pic", in settings and on a person's page.
 
 ### Fixed

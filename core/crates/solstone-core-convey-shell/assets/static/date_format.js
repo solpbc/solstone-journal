@@ -436,7 +436,44 @@
       : day + " '" + String(value.getFullYear()).slice(-2);
   }
 
+  const IMPORT_ITEM_COPY = 'journal.window.shared.import.item.';
+  const IMPORT_ITEM_KINDS = {
+    notes: 'note',
+    documents: 'document',
+    transcripts: 'transcript',
+    screen_text: 'screenshot',
+    photos: 'photo',
+  };
+
+  function importItem(item) {
+    if (!item || !Object.hasOwn(IMPORT_ITEM_KINDS, item.kind)) return '';
+    const kind = window.JournalI18n.render(IMPORT_ITEM_COPY + 'kind.' + IMPORT_ITEM_KINDS[item.kind]);
+    const source = window.JournalI18n.render(IMPORT_ITEM_COPY + 'source.' + item.source);
+    return window.JournalI18n.render(IMPORT_ITEM_COPY + 'label', [['kind', kind], ['source', source]]);
+  }
+
+  function isDateOnlyImport(item) {
+    return item?.kind === 'notes' || item?.kind === 'documents';
+  }
+
+  let filedDayFormat;
+  function filedDay(day) {
+    const parts = /^(\d{4})(\d{2})(\d{2})$/.exec(day);
+    if (!parts) return '';
+    // A journal day is a civil date. UTC here avoids shifting it to the
+    // browser's previous or next day when the owner travels.
+    const [, year, month, date] = parts;
+    const value = new Date(`${year}-${month}-${date}T00:00:00Z`);
+    if (Number.isNaN(value.getTime())) return '';
+    const locale = window.JournalI18n.formatLocale;
+    filedDayFormat ??= new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' });
+    return filedDayFormat.format(value).toLocaleLowerCase(locale);
+  }
+
   window.JournalFormat = {
+    importItem,
+    isDateOnlyImport,
+    filedDay,
     processingLane,
     sinceDay,
     compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),

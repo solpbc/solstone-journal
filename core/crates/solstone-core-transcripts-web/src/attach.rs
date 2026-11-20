@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
+use solstone_core_format::content::kinds::DashboardImportItem;
 use solstone_core_system_health::{
     DataStateMap, FilesystemHealthLogSource, SegmentInput, ThoughtVerdict, TimeRange,
     lookup_segment_progress, read_segment_progress, segment_fully_sensed, segment_fully_thought,
@@ -23,6 +24,8 @@ pub(crate) struct TranscriptSegment {
     pub(crate) types: Vec<String>,
     pub(crate) data_state: BTreeMap<String, String>,
     pub(crate) think: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) item: Option<DashboardImportItem>,
 }
 
 #[derive(Serialize)]
@@ -58,6 +61,9 @@ pub(crate) fn normalize_markdown_only_segments(
             .filter_map(Result::ok)
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect::<Vec<_>>();
+        let relative = crate::segment_media::segment_rel(day, &segment.stream, &segment.key);
+        segment.item =
+            DashboardImportItem::from_segment_files(&relative, names.iter().map(String::as_str));
         let markdown = names
             .iter()
             .any(|name| solstone_core_format::content::markdown_transcript_name(name));

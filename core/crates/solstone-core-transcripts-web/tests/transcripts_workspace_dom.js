@@ -1171,6 +1171,62 @@ function test(name, fn) {
   tests.push({ name, fn });
 }
 
+test('filed entries leave the timed rail and stay reachable by picker and history', async () => {
+  const note = {
+    key: '021500_300', stream: 'import.text', start: '02:15', end: '02:20',
+    types: ['markdown'], data_state: { markdown: 'analyzed' },
+    item: { kind: 'notes', source: 'imported' },
+  };
+  const timed = {
+    key: '115000_300', stream: 'room', start: '11:50', end: '11:55',
+    types: ['audio'], data_state: { audio: 'analyzed' },
+  };
+  const env = await createEnvironment(undefined, 'analyzed', false, [note, timed], {
+    postResponse: () => ({ status: 200, body: { imports: [] } }),
+    journalFormat: seededJournalFormat({ room: 'room' }),
+  });
+  assert.deepStrictEqual(getZoomPills(env.doc).map(pill => pill.dataset.key), [timed.key]);
+  assert.equal(env.doc.querySelectorAll('#trSegments .tr-seg-markdown').length, 0);
+  const noteButton = env.doc.querySelector('.tr-day-imports button');
+  assert.ok(noteButton);
+  const date = env.window.JournalFormat.filedDay('20200115');
+  assert.ok(noteButton.textContent.includes(date));
+  assert.ok(!noteButton.textContent.includes(note.start));
+  const picker = env.doc.getElementById('trSegmentPicker');
+  const option = picker.querySelectorAll('option').find(option => option.value.includes(note.key));
+  assert.ok(option);
+  assert.ok(option.textContent.includes(date));
+  assert.ok(!option.textContent.includes(note.start));
+
+  picker.value = option.value;
+  picker.dispatchEvent({ type: 'change' });
+  const content = {
+    item: note.item,
+    data_state: { markdown: 'analyzed' },
+    chunks: [{ type: 'markdown', time: '11:45:00', markdown: 'this is the note body' }],
+  };
+  await env.releasePendingSegmentGets('analyzed', content);
+  assert.ok(env.window.location.hash.startsWith('#' + note.key + '/transcript'));
+  const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+  assert.ok(pane.innerHTML.includes('this is the note body'), pane.innerHTML);
+  assert.ok(!pane.innerHTML.includes('11:45'), pane.innerHTML);
+  assert.equal(env.doc.querySelector('#trTabs').classList.contains('visible'), false);
+
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const deleteMeta = env.doc.querySelector('.tr-delete-segment-meta');
+  assert.ok(deleteMeta.textContent.includes(date));
+  assert.ok(!deleteMeta.textContent.includes(note.start));
+  env.doc.querySelector('#trDeleteSegmentModalCancel').dispatchEvent({ type: 'click' });
+
+  env.history.back();
+  await env.flushHashchanges();
+  assert.ok(env.doc.querySelector('.tr-day-imports button'));
+  env.history.forward();
+  await env.flushHashchanges();
+  await env.releasePendingSegmentGets('analyzed', content);
+  assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('this is the note body'));
+});
+
 test('segment picker selects the right stream and follows browser back', async () => {
   const env = await createEnvironment();
   const picker = env.doc.getElementById('trSegmentPicker');
@@ -3471,6 +3527,45 @@ test('select mode: the set dialog lists five segments then how many more, and mo
   assert.strictEqual(text('.tr-delete-lead'), C.eraseLead);
   assert.strictEqual(text('.tr-delete-stays'), C.eraseStays);
   assert.ok($('trDeleteSegmentModalHeader').classList.contains('danger'));
+});
+
+test('moving and recovering a set refreshes the day’s import list', async () => {
+  const notes = ['114500', '115000', '021500'].map(key => ({
+    key: key + '_300', stream: 'import.text',
+    start: key.slice(0, 2) + ':' + key.slice(2, 4),
+    end: { '114500': '11:50', '115000': '11:55', '021500': '02:20' }[key],
+    types: ['markdown'], data_state: { markdown: 'analyzed' },
+    item: { kind: 'notes', source: 'imported' },
+  }));
+  const env = await createEnvironment(undefined, 'analyzed', false, notes, {
+    journalFormat: seededJournalFormat({}),
+    postResponse(record) {
+      if (record.url.endsWith('/app/transcripts/api/segments/delete')) {
+        const done = record.body.segments.map(segment => ({
+          segment,
+          trash: { id: segment.key, erase_at: '2020-01-22T09:00:00Z' },
+        }));
+        return { status: 200, body: { done, failed: [] } };
+      }
+      return { status: 200, body: { done: record.body.ids, failed: [] } };
+    },
+  });
+  const $ = (id) => env.doc.getElementById(id);
+  const listed = () => env.doc.querySelectorAll('.tr-day-imports button').length;
+  assert.equal(listed(), 3);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  const shown = env.doc.querySelectorAll('#trDeleteSegmentModalBody .trash-set-list li');
+  assert.equal(shown.length, 2);
+  assert.notEqual(shown[0].textContent, shown[1].textContent);
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  const sent = env.posts.find(post => post.url.endsWith('/app/transcripts/api/segments/delete'));
+  assert.deepStrictEqual(sent.body.segments.map(segment => segment.key), notes.slice(0, 2).map(note => note.key));
+  assert.equal(listed(), 1);
+  await receiptButton(env.notifications.at(-1), TRASH_COPY.buttons.recover).onClick();
+  assert.equal(listed(), 3);
 });
 
 test('select mode: a set that partly moves keeps the refused one chosen with its note, and recover puts the rest back', async () => {

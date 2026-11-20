@@ -1,0 +1,25 @@
+{
+  "description": "An imported item label and its date or time, used in the picker and timeline.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19504fb4e03878de8b9cfd8fdbc29770a0d4112eec641d39f9bb8398ef6a0762",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

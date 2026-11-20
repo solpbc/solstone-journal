@@ -36129,6 +36129,90 @@
       "locales": []
     },
     {
+      "id": "journal.window.shared.import.item.dated.label",
+      "source": "19504fb4e03878de8b9cfd8fdbc29770a0d4112eec641d39f9bb8398ef6a0762",
+      "contract": "850e5db65a1202d31856d0d1e4f5bf86c015d26fed82d85375e86ffeb4d7b425",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.document",
+      "source": "8f1c0fa40cb7883809c1106a98a46586022b087c924a432e77949d9235265346",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.note",
+      "source": "72fb5d225a4191b8844620e2c94dc6a534876d89bbcb176e00c42a243db0dffd",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.photo",
+      "source": "02364f9b1e058df759f2f58ea686e2ef8d1be98764a129651100f4011c1797d6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.screenshot",
+      "source": "cb58f958edba2f8632ce8a0385b2068416285741bceacef82e63d6f74f42c46c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.transcript",
+      "source": "25c273293722e6ce2e895de1fe5f9002b0c2d3e04c57f88ef984a5277f8a0494",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.label",
+      "source": "89badc4a1e6ebee5fefd605d1d5b555a095dbfd02018231152a955b8b4f5f030",
+      "contract": "fc2aba8764445eecf63571e2dec06ef49f39b778833ca7b2beb05851d3e1e97b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.source.evernote",
+      "source": "d746070b9e47271926fb3e6d35a021cda79e9e23399f78f9faefc04584b78989",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.source.imported",
+      "source": "25a6c8add9e1cdc002adbfe384b078787872bc05f6cbe89c22122fa514aad6c4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.source.obsidian",
+      "source": "8c729b41dda9031327f2a05422eb394fd8688dd2a8e3f586966c24b7a41bca3b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.source.pdf",
+      "source": "b3b7f19de85a9fd5b0c98bf454330d23aa310a9f9acc8f0dc65fe17809361898",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.import.item.text.unavailable",
+      "source": "7f559b1ce157d1a4840e593cc1153b85d439581d25b9bc45a76a761e06f4f45f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.shared.mount.workspace.button.label.try.again",
       "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

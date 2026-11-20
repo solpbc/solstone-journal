@@ -76091,6 +76091,180 @@
       "selector": null
     },
     {
+      "id": "journal.window.shared.import.item.dated.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e64617465642e6c6162656c",
+      "namespace": "journal.window.shared.import.item.dated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.document",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e646f63756d656e74",
+      "namespace": "journal.window.shared.import.item.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6e6f7465",
+      "namespace": "journal.window.shared.import.item.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.photo",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e70686f746f",
+      "namespace": "journal.window.shared.import.item.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.screenshot",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e73637265656e73686f74",
+      "namespace": "journal.window.shared.import.item.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.kind.transcript",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e7472616e736372697074",
+      "namespace": "journal.window.shared.import.item.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6c6162656c",
+      "namespace": "journal.window.shared.import.item",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.source.evernote",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e657665726e6f7465",
+      "namespace": "journal.window.shared.import.item.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.source.imported",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e696d706f72746564",
+      "namespace": "journal.window.shared.import.item.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.source.obsidian",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e6f6273696469616e",
+      "namespace": "journal.window.shared.import.item.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.source.pdf",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e706466",
+      "namespace": "journal.window.shared.import.item.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.import.item.text.unavailable",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e746578742e756e617661696c61626c65",
+      "namespace": "journal.window.shared.import.item.text",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.shared.mount.workspace.button.label.try.again",
       "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e6d6f756e742e776f726b73706163652e627574746f6e2e6c6162656c2e7472792e616761696e",
       "namespace": "journal.window.shared.mount.workspace.button.label.try",

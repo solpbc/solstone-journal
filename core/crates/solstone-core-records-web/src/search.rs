@@ -296,6 +296,11 @@ fn search_response_with_index_in(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if let Some(item) =
+                    solstone_core_format::content::kinds::DashboardImportItem::from_file(&hit.metadata.path)
+                {
+                    hit_obj["item"] = json!(item);
+                }
                 if solstone_core_possible_names::is_possible_names_path(&hit.metadata.path) {
                     // Tentative: the journal's guess at who or what was meant.
                     hit_obj["possible_name"] = Value::Bool(true);

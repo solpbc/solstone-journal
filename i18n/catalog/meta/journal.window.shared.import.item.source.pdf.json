@@ -1,0 +1,16 @@
+{
+  "description": "The file format of an imported PDF document.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3b7f19de85a9fd5b0c98bf454330d23aa310a9f9acc8f0dc65fe17809361898",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

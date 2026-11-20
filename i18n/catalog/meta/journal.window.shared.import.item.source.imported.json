@@ -1,0 +1,16 @@
+{
+  "description": "Provenance next to the kind of a file imported into the journal.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25a6c8add9e1cdc002adbfe384b078787872bc05f6cbe89c22122fa514aad6c4",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

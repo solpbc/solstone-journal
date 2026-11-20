@@ -1,0 +1,16 @@
+{
+  "description": "The singular kind of an imported conversation or transcript.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25c273293722e6ce2e895de1fe5f9002b0c2d3e04c57f88ef984a5277f8a0494",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

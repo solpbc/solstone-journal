@@ -212,6 +212,37 @@ test('renderHit drops an agent label the stream label already says, and keeps an
   assert.strictEqual(agentShown({ stream: 'ja1r', agent_label: 'Describe' }), true);
 });
 
+test('a filed note replaces file-derived metadata and keeps the matched entry action', () => {
+  const env = seededSearch();
+  const hit = {
+    day: '20260403', stream: 'import.text', path: '20260403/import.text/090000_300/note_transcript.md',
+    agent_label: 'FILE-LABEL', segment: '090000_300', time: '09:00:00',
+    text: 'filed text', ts: 1775199600000, entry_id: 21, idx: 0,
+  };
+  const reading = env.window.renderHit(hit, '/app/transcripts/20260403');
+  const baseline = metaSpans(env, hit).map((span) => span.textContent);
+  const item = { kind: 'notes', source: 'imported' };
+  const note = env.window.renderHit({ ...hit, item }, '/app/transcripts/20260403');
+  const metadata = note.querySelector('.search-meta').querySelectorAll('span').map((span) => span.textContent);
+  assert.ok(baseline.includes(hit.agent_label));
+  assert.ok(baseline.includes(hit.time));
+  const clock = env.window.JournalFormat.time(hit.ts);
+  assert.ok(baseline.includes(clock));
+  assert.ok(!metadata.includes(clock));
+  assert.ok(!metadata.includes(hit.time));
+  assert.ok(!metadata.includes(hit.agent_label));
+  assert.ok(metadata.includes(env.window.JournalFormat.importItem(item)));
+  assert.ok(metadata.includes(env.window.JournalFormat.filedDay(hit.day)));
+  assert.strictEqual(note.querySelector('.search-excerpt').textContent, reading.querySelector('.search-excerpt').textContent);
+  assert.strictEqual(note.querySelector('button').getAttribute('aria-expanded'), 'false');
+
+  const transcript = { kind: 'transcripts', source: 'imported' };
+  const timed = metaSpans(env, { ...hit, item: transcript }).map((span) => span.textContent);
+  assert.ok(timed.includes(clock));
+  assert.ok(timed.includes(hit.time));
+  assert.ok(!timed.includes(hit.agent_label));
+});
+
 test('the count line takes the one form for one match and one day, and the many form otherwise', () => {
   const env = createSearchEnvironment();
   const words = (line) => line.replace(/[0-9,.]/g, ' ').split(/\s+/).filter(Boolean);

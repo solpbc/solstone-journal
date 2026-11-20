@@ -1,0 +1,16 @@
+{
+  "description": "The singular kind of an imported screenshot.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb58f958edba2f8632ce8a0385b2068416285741bceacef82e63d6f74f42c46c",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "The source of a note imported from Evernote.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d746070b9e47271926fb3e6d35a021cda79e9e23399f78f9faefc04584b78989",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
