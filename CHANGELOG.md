@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- media offload on a large journal on linux or mac could stop at the computer's limit on open files and never finish. it now works through your older recordings in batches until it has proposed enough to bring your media back within your media budget. when the offload command stops while preparing proposals, it now says why.
 - search could miss words in long paragraphs and code blocks in markdown files. those words now show up in search.
 - photos you share or import now show their picture on the transcripts page, instead of text alone. click or tap a photo to open it larger.
 - photos now land on the day and time they were taken, in the time zone where they were taken, rather than the time you imported them or a date guessed from the filename. when a photo has no date inside it, your journal places it at import time and says so on the photo and its import page.

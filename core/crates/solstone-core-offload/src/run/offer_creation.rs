@@ -32,8 +32,6 @@ pub use owned::{
     prepare_owned_offload_inputs,
 };
 mod planner;
-#[cfg(all(test, unix, feature = "full-tests"))]
-pub(super) use planner::with_payload_capacity_fault;
 pub use planner::{
     OffloadPlanning, OffloadPlanningPhase, OffloadPlanningRefusal, OffloadPlanningReport,
     OwnedOffloadPlan, OwnedOffloadPlanFinish, OwnedOffloadPlanFinishRefusal, OwnedOffloadPlanHold,
@@ -41,6 +39,8 @@ pub use planner::{
     SettledOffloadPlan, SettledOffloadPlanReport, create_owned_planned_offload_offers,
     create_planned_offload_offers, prepare_owned_offload_plan,
 };
+#[cfg(all(test, unix, feature = "full-tests"))]
+pub(super) use planner::{with_batch_limits, with_payload_capacity_fault};
 
 use crate::ledger::writer::{
     LedgerConfirmation, LedgerSync, LedgerWriteEffect, LedgerWriteReceipt, LedgerWriteRefusal,
@@ -466,19 +466,47 @@ mod native {
         capacity_for_payload(operation, payload)
     }
 
-    pub(super) fn capacity_for_payload(
+    fn required_bytes(
         operation: &PreparedArchiveOperation<'_>,
         payload: u64,
-    ) -> Result<Arc<MediaDirectory>, OffloadCreationRefusal> {
+    ) -> Result<u64, OffloadCreationRefusal> {
         let metadata = u64::try_from(MAX_REGISTER_BYTES)
             .ok()
             .and_then(|bound| bound.checked_mul(2))
             .and_then(|bound| bound.checked_add(1024 * 1024))
             .ok_or(OffloadCreationRefusal::Metadata)?;
-        let required = operation
+        operation
             .configuration()
             .offload_required_bytes(payload, metadata)
-            .map_err(|error| inputs(OffloadOfferRefusal::Admission(error)))?;
+            .map_err(|error| inputs(OffloadOfferRefusal::Admission(error)))
+    }
+
+    /// Free space a payload copy needs beyond its own bytes: the floor and metadata.
+    pub(super) fn staging_overhead(
+        operation: &PreparedArchiveOperation<'_>,
+    ) -> Result<u64, OffloadCreationRefusal> {
+        required_bytes(operation, 0)
+    }
+
+    /// Open handles one offload batch may hold: the process limit less a reserve
+    /// for everything else it opens, capped so a batch holds its segments for
+    /// minutes rather than hours. Windows has no comparable per-process limit.
+    pub(super) fn batch_handles() -> u64 {
+        const RESERVE: u64 = 512;
+        const MAXIMUM: u64 = 8192;
+        #[cfg(unix)]
+        let limit = nix::sys::resource::getrlimit(nix::sys::resource::Resource::RLIMIT_NOFILE)
+            .map_or(1024, |(soft, _)| soft);
+        #[cfg(not(unix))]
+        let limit = MAXIMUM + RESERVE;
+        limit.min(MAXIMUM + RESERVE).saturating_sub(RESERVE)
+    }
+
+    pub(super) fn capacity_for_payload(
+        operation: &PreparedArchiveOperation<'_>,
+        payload: u64,
+    ) -> Result<Arc<MediaDirectory>, OffloadCreationRefusal> {
+        let required = required_bytes(operation, payload)?;
         operation
             .revalidate()
             .map_err(|error| inputs(OffloadOfferRefusal::Admission(error)))?;

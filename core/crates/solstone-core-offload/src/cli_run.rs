@@ -281,7 +281,54 @@ pub const PRODUCER_SUPPORTED: bool = cfg!(any(
 ));
 
 /// Run the installed offload producer while retaining its complete outcome.
+///
+/// One plan holds every selected segment open until its offers publish, so a
+/// plan takes a bounded batch. While a batch settles with relief still needed,
+/// plan the next one: each published batch counts toward the next projection.
+/// No batch starts after `BATCH_START_WINDOW`, so a scheduled run ends inside
+/// its maintenance cap (7 hours) instead of being stopped mid-batch.
 pub fn run_cli_offload(
+    journal: &Path,
+    clock: Arc<dyn Clock + Send + Sync>,
+    dry_run: bool,
+) -> OwnedOffloadCliRun {
+    const BATCH_START_WINDOW: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
+    let started = std::time::Instant::now();
+    let mut earlier = String::new();
+    let mut batch = 1usize;
+    let mut projected = u64::MAX;
+    loop {
+        let mut run = run_cli_offload_batch(journal, Arc::clone(&clock), dry_run);
+        let next = (run.phase() == CliRunPhase::Finished && run.exit_code == 0)
+            .then(|| run.settled_report())
+            .flatten()
+            .map(SettledOffloadPlanReport::planning)
+            .filter(|planning| {
+                planning.batch_limited()
+                    && planning.phase() == crate::run::OffloadPlanningPhase::OffersPublished
+            })
+            .and_then(|planning| planning.initial_projection())
+            .map(|projection| projection.projected_local_bytes)
+            // A batch that did not lower the projection would repeat forever.
+            .filter(|next| *next < projected)
+            .filter(|_| started.elapsed() < BATCH_START_WINDOW);
+        if batch > 1 || next.is_some() {
+            run.stdout
+                .insert_str(0, &format!("offload_batch={batch}\n"));
+        }
+        let Some(next) = next else {
+            run.stdout.insert_str(0, &earlier);
+            return run;
+        };
+        earlier.push_str(&run.stdout);
+        // Settled: release this batch's activity before preparing the next.
+        drop(run);
+        projected = next;
+        batch += 1;
+    }
+}
+
+fn run_cli_offload_batch(
     journal: &Path,
     clock: Arc<dyn Clock + Send + Sync>,
     dry_run: bool,

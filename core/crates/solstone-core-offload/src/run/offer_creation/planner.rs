@@ -46,6 +46,29 @@ pub(in crate::run) fn with_payload_capacity_fault<T>(run: impl FnOnce() -> T) ->
     (result, consumed)
 }
 
+// Private, thread-bound batch limits: (handle budget, staging bytes available).
+#[cfg(all(test, unix, feature = "full-tests"))]
+thread_local! {
+    static BATCH_LIMITS: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(all(test, unix, feature = "full-tests"))]
+pub(in crate::run) fn with_batch_limits<T>(
+    handles: u64,
+    available: u64,
+    run: impl FnOnce() -> T,
+) -> T {
+    BATCH_LIMITS.with(|limits| assert!(limits.replace(Some((handles, available))).is_none()));
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            BATCH_LIMITS.with(|limits| limits.set(None));
+        }
+    }
+    let _reset = Reset;
+    run()
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OffloadPlanningPhase {
     Held,
@@ -71,6 +94,7 @@ pub struct OffloadPlanning {
     local: Option<RawMediaPopulation>,
     decision: Option<CurrentOffloadDecision>,
     initial_projection: Option<ProposedRelief>,
+    batch_limited: bool,
 }
 
 impl OffloadPlanning {
@@ -82,7 +106,12 @@ impl OffloadPlanning {
             local: None,
             decision: None,
             initial_projection: None,
+            batch_limited: false,
         }
+    }
+    /// This plan stopped selecting at its batch limit while relief was still needed.
+    pub fn batch_limited(&self) -> bool {
+        self.batch_limited
     }
     pub fn phase(&self) -> OffloadPlanningPhase {
         self.phase
@@ -120,6 +149,7 @@ impl OffloadPlanning {
             local: self.local,
             decision: self.decision.map(CurrentOffloadDecision::into_report),
             initial_projection: self.initial_projection,
+            batch_limited: self.batch_limited,
         })
     }
 }
@@ -132,10 +162,15 @@ pub struct OffloadPlanningReport {
     local: Option<RawMediaPopulation>,
     decision: Option<CurrentOffloadReport>,
     initial_projection: Option<ProposedRelief>,
+    batch_limited: bool,
 }
 impl OffloadPlanningReport {
     pub fn phase(&self) -> OffloadPlanningPhase {
         self.phase
+    }
+    /// Offers were published for one bounded batch and more relief is still needed.
+    pub fn batch_limited(&self) -> bool {
+        self.batch_limited
     }
     pub fn reconciliation(&self) -> &OffloadReconciliationReport {
         &self.reconciliation
@@ -242,11 +277,34 @@ mod bound {
         native::capacity(operation, observed)
     }
 
+    /// Handles one selected segment keeps open from capture through publication:
+    /// its own, parent and owner directory chains, plus a stage and copy per file.
+    /// Measured on Linux at 14 per segment and 3 per file; these carry margin.
+    const SEGMENT_HANDLES: u64 = 16;
+    const FILE_HANDLES: u64 = 4;
+
+    fn batch_limits(
+        admitted: CurrentArchive<'_, '_>,
+    ) -> Result<(u64, u64), OffloadCreationRefusal> {
+        #[cfg(all(test, unix, feature = "full-tests"))]
+        if let Some(limits) = BATCH_LIMITS.with(std::cell::Cell::get) {
+            return Ok(limits);
+        }
+        let available = MediaDirectory::open(Arc::clone(admitted.journal_root()), Path::new(""))
+            .and_then(|parent| parent.available_bytes())
+            .map_err(|error| native::inputs(error.into()))?;
+        Ok((native::batch_handles(), available))
+    }
+
+    /// Select whole segments, oldest first, until the needed relief is covered or
+    /// the batch reaches what one run can hold: open handles within the process
+    /// limit, and a staged copy within free space. A batch always takes its first
+    /// segment, so a run makes progress or refuses with the real capacity reason.
     pub(super) fn candidates(
         admitted: CurrentArchive<'_, '_>,
         report: &OffloadPlanning,
         at: &ZonedDateTime,
-    ) -> Result<Vec<OffloadOfferSelection>, OffloadCreationRefusal> {
+    ) -> Result<(Vec<OffloadOfferSelection>, bool), OffloadCreationRefusal> {
         let local = report.local.as_ref().expect("complete local population");
         let decision = report.decision.as_ref().expect("current inspection");
         let projection = report
@@ -291,8 +349,13 @@ mod bound {
                     .then(|| (key, file.name().to_owned()))
             })
             .collect::<BTreeSet<_>>();
+        let (handle_budget, available) = batch_limits(admitted)?;
+        let staging_budget =
+            available.saturating_sub(native::staging_overhead(admitted.prepared_operation())?);
         let mut selected = Vec::new();
         let mut additional = 0u64;
+        let (mut handles, mut staged, mut largest) = (0u64, 0u64, 0u64);
+        let mut limited = false;
         for ((day, stream, dir, layout), names) in groups {
             observation.revalidate(admitted).map_err(current)?;
             let parent = Path::new("chronicle").join(&day);
@@ -342,6 +405,26 @@ mod bound {
             if increment == 0 {
                 continue;
             }
+            let group_handles = (selected_names.len() as u64)
+                .saturating_mul(FILE_HANDLES)
+                .saturating_add(SEGMENT_HANDLES);
+            let (mut group_bytes, mut group_largest) = (0u64, 0u64);
+            for name in &selected_names {
+                let bytes = names.get(name).copied().unwrap_or(0);
+                group_bytes = group_bytes.saturating_add(bytes);
+                group_largest = group_largest.max(bytes);
+            }
+            let next_staged = staged.saturating_add(group_bytes);
+            let next_largest = largest.max(group_largest);
+            if !selected.is_empty()
+                && (handles.saturating_add(group_handles) > handle_budget
+                    || next_staged.saturating_add(next_largest) > staging_budget)
+            {
+                limited = true;
+                break;
+            }
+            handles = handles.saturating_add(group_handles);
+            (staged, largest) = (next_staged, next_largest);
             selected_names.sort();
             selected.push(OffloadOfferSelection {
                 target,
@@ -359,7 +442,7 @@ mod bound {
         admitted
             .revalidate()
             .map_err(OffloadCreationRefusal::Archive)?;
-        Ok(selected)
+        Ok((selected, limited))
     }
 
     pub(super) fn preflight(
@@ -429,7 +512,8 @@ mod bound {
         {
             return Ok(None);
         }
-        let selected = candidates(admitted, report, at)?;
+        let (selected, limited) = candidates(admitted, report, at)?;
+        report.batch_limited = limited;
         Ok(Some(selected))
     }
 

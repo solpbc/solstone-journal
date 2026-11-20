@@ -30,6 +30,10 @@ pub use offer_creation::{
 pub(crate) fn with_payload_capacity_fault<T>(run: impl FnOnce() -> T) -> (T, bool) {
     offer_creation::with_payload_capacity_fault(run)
 }
+#[cfg(all(test, unix, feature = "full-tests"))]
+pub(crate) fn with_batch_limits<T>(handles: u64, available: u64, run: impl FnOnce() -> T) -> T {
+    offer_creation::with_batch_limits(handles, available, run)
+}
 
 #[cfg(all(test, unix, feature = "full-tests"))]
 pub(crate) fn with_source_cleanup_fault<T>(index: usize, run: impl FnOnce() -> T) -> (T, bool) {
@@ -281,6 +285,7 @@ mod current {
 
     use jiff::ZonedDateTime;
     use serde_json::{Map, Value};
+    use solstone_core_backup::archive_activity::PreparedArchiveOperation;
     use solstone_core_backup_runtime::{AdmittedArchive, ArchiveError, OwnedAdmittedArchive};
     use solstone_core_journal_io::journal_root::JournalRoot;
     use solstone_core_journal_io::locking::LockOptions;
@@ -326,6 +331,14 @@ mod current {
             match self {
                 Self::Generic(operation) => operation.revalidate(),
                 Self::Owned(operation) => operation.revalidate_local(),
+            }
+        }
+    }
+    impl<'clock> CurrentArchive<'_, 'clock> {
+        pub(super) fn prepared_operation(&self) -> &PreparedArchiveOperation<'clock> {
+            match self {
+                Self::Generic(operation) => operation.prepared_operation(),
+                Self::Owned(operation) => operation.prepared_operation(),
             }
         }
     }

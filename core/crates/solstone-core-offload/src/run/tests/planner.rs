@@ -498,3 +498,53 @@ fn owned_planner_closed_and_settled_fields_are_send_static() {
     require::<OffloadPlanningReport>();
     require::<CurrentOffloadReport>();
 }
+
+/// One plan holds every selected segment open until its offers publish, so a
+/// plan stops at what one run can hold: open handles and a staged copy.
+#[test]
+fn owning_planner_takes_a_batch_one_run_can_hold() {
+    #[cfg(target_os = "linux")]
+    fn open_handles() -> usize {
+        std::fs::read_dir("/proc/self/fd").unwrap().count()
+    }
+    // (handle budget, staging bytes free) -> (groups captured, batch limited)
+    for (handles, available, expected) in [
+        (u64::MAX, u64::MAX, (21, false)),
+        (5 * (16 + 2 * 4), u64::MAX, (5, true)),
+        (u64::MAX, 0, (1, true)),
+    ] {
+        let fixture = CurrentFixture::new(SegmentLayout::Named);
+        fixture.save(&[]);
+        for index in 0..20 {
+            let dir = fixture
+                .journal
+                .path()
+                .join(format!("chronicle/20260101/_default/03{index:02}00_300"));
+            std::fs::create_dir_all(&dir).unwrap();
+            for name in ["a.webm", "b.webm"] {
+                let raw = dir.join(name);
+                std::fs::write(&raw, [9u8; 32]).unwrap();
+                write_eligible_sidecar(&raw);
+            }
+        }
+        fixture.change_config(|config| config["backup"]["offload"]["budget_bytes"] = json!(1));
+        let clock = TestClock { now: CURRENT_NOW };
+        #[cfg(target_os = "linux")]
+        let before = open_handles();
+        let operation = prepare(&fixture, &clock);
+        let runner = runner();
+        let services = services(&runner, &Http, &clock, &Maintenance);
+        let result = crate::run::with_batch_limits(handles, available, || {
+            create_planned_offload_offers(operation, &services, at())
+        });
+        let groups = result.observed().map(|observed| observed.groups().len());
+        let limited = result.planning().unwrap().batch_limited();
+        assert_eq!((groups, limited), (Some(expected.0), expected.1));
+        // The estimate covers what the captured batch actually holds open.
+        #[cfg(target_os = "linux")]
+        if handles != u64::MAX {
+            let held = open_handles().saturating_sub(before) as u64;
+            assert!(held <= handles, "held={held} budget={handles}");
+        }
+    }
+}

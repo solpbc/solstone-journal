@@ -82,6 +82,7 @@ pub struct CliObservedEffects {
     pub planning_phase: Option<OffloadPlanningPhase>,
     pub budget_bytes: Option<u64>,
     pub initial_projection: Option<ProposedRelief>,
+    pub batch_limited: bool,
     pub reconciliation: Vec<CliReconciliationFact>,
     pub creation: Option<CliCreationFacts>,
 }
@@ -252,6 +253,7 @@ impl CliObservedEffects {
             planning_phase: Some(planning.phase()),
             budget_bytes: planning.budget_bytes(),
             initial_projection: planning.initial_projection().cloned(),
+            batch_limited: planning.batch_limited(),
             reconciliation: reconciliation(groups),
             creation: None,
         }
@@ -277,6 +279,7 @@ impl CliObservedEffects {
             planning_phase: Some(planning.phase()),
             budget_bytes: planning.budget_bytes(),
             initial_projection: planning.initial_projection().cloned(),
+            batch_limited: planning.batch_limited(),
             reconciliation: reconciliation(planning.reconciliation().groups()),
             creation: report.creation().map(settled_creation),
         }
@@ -290,6 +293,9 @@ impl CliObservedEffects {
                 OffloadPlanningPhase::OffersPublished => "offers_published",
             };
             writeln!(output, "planning_phase={phase}").unwrap();
+        }
+        if self.batch_limited {
+            writeln!(output, "planning_batch_limited=true").unwrap();
         }
         if let Some(projection) = &self.initial_projection {
             writeln!(
@@ -454,6 +460,15 @@ impl OwnedOffloadCliRun {
         if journal_changed {
             self.stdout.push_str("hold_reason=journal_changed\n");
         }
+        let io_error = match self.plan_hold().and_then(OwnedOffloadPlanHold::reason) {
+            Some(OffloadCreationRefusal::Inputs(OffloadOfferRefusal::Io(error))) => {
+                Some(error.to_string())
+            }
+            _ => None,
+        };
+        if let Some(error) = io_error {
+            writeln!(self.stdout, "hold_io_error={error}").unwrap();
+        }
         self.observed.render(&mut self.stdout);
         if let Some(runtime) = self.runtime() {
             let state = runtime.state();
@@ -501,10 +516,68 @@ impl OwnedOffloadCliRun {
                 Custody::AdmissionFailure { failure, .. } => {
                     format!("offload stopped: {}.\n{guidance}\n", failure.error())
                 }
+                Custody::PlanHold { plan, .. } if !journal_changed => match hold_reason(plan) {
+                    Some(why) => format!("offload stopped: {why}.\n{guidance}\n"),
+                    None => format!("{guidance}\n"),
+                },
                 _ => format!("{guidance}\n"),
             }
         };
     }
+}
+
+fn size(bytes: u64) -> String {
+    if bytes >= 1_000_000_000 {
+        format!("{:.1} GB", bytes as f64 / 1e9)
+    } else {
+        format!("{:.0} MB", bytes as f64 / 1e6)
+    }
+}
+
+/// Why a plan held, in closed words. The system's own IO text goes to stdout.
+fn hold_reason(plan: &OwnedOffloadPlanHold) -> Option<String> {
+    use crate::run::OwnedOffloadPlanFinishRefusal as Finish;
+    use OffloadOfferRefusal as Offer;
+    let Some(reason) = plan.reason() else {
+        return plan.finish_refusal().map(|refusal| {
+            match refusal {
+                Finish::IncompletePlan => "preparing proposals did not finish",
+                Finish::Creation => "making proposals did not finish",
+                Finish::Readback(_) => "reading the copy back from your backup failed",
+                Finish::Census(_) | Finish::Obligations(_) => {
+                    "your journal still has unfinished work"
+                }
+            }
+            .to_owned()
+        });
+    };
+    Some(match reason {
+        OffloadCreationRefusal::Inputs(Offer::Io(_)) => {
+            "a file in your journal couldn't be opened or read".into()
+        }
+        OffloadCreationRefusal::Inputs(Offer::InsufficientSpace {
+            available,
+            required,
+        }) => format!(
+            "not enough free space on this computer ({} free, {} needed)",
+            size(*available),
+            size(*required)
+        ),
+        OffloadCreationRefusal::Inputs(Offer::Admission(error)) => error.to_string(),
+        OffloadCreationRefusal::Inputs(Offer::Readback(error))
+        | OffloadCreationRefusal::Readback(error) => error.to_string(),
+        OffloadCreationRefusal::Archive(error) => error.to_string(),
+        OffloadCreationRefusal::Inputs(_) => {
+            "the selected recordings could not be confirmed".into()
+        }
+        OffloadCreationRefusal::Planning(_) => "offload couldn't prepare its proposals".into(),
+        OffloadCreationRefusal::Native => "making a temporary copy failed".into(),
+        OffloadCreationRefusal::Metadata
+        | OffloadCreationRefusal::Entropy
+        | OffloadCreationRefusal::Ledger
+        | OffloadCreationRefusal::Verification
+        | OffloadCreationRefusal::Publication => "saving offload's record failed".into(),
+    })
 }
 
 #[cfg(test)]
