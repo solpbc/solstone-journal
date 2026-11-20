@@ -221,7 +221,7 @@ fn parse_message_pattern(
             }
 
             let branch_pattern =
-                match parse_pattern_elements(&variant.value.elements, locale, msg_id) {
+                match parse_pattern_elements(&variant.value.elements, locale, msg_id, true) {
                     Ok(p) => p,
                     Err(mut f) => {
                         faults.append(&mut f);
@@ -248,7 +248,7 @@ fn parse_message_pattern(
     }
 
     // Non-selector pattern
-    let branch_pattern = parse_pattern_elements(&pattern.elements, locale, msg_id)?;
+    let branch_pattern = parse_pattern_elements(&pattern.elements, locale, msg_id, false)?;
 
     Ok(ParsedMessage {
         id: msg_id.to_string(),
@@ -265,6 +265,7 @@ fn parse_pattern_elements(
     elements: &[ast::PatternElement<&str>],
     locale: &str,
     msg_id: &str,
+    nested_cardinal: bool,
 ) -> Result<Vec<PatternElement>, Vec<Fault>> {
     let mut faults = Vec::new();
     let mut out = Vec::new();
@@ -292,8 +293,12 @@ fn parse_pattern_elements(
                 });
             }
             ast::PatternElement::Placeable { expression } => match expression {
-                ast::Expression::Select { .. } => {
-                    faults.push(Fault::new("nested-selector", locale, msg_id));
+                ast::Expression::Select { selector, variants } => {
+                    match parse_nested_cardinal(selector, variants, locale, msg_id, nested_cardinal)
+                    {
+                        Ok(select) => out.push(select),
+                        Err(mut nested) => faults.append(&mut nested),
+                    }
                 }
                 ast::Expression::Inline(inline) => match inline {
                     ast::InlineExpression::VariableReference { id } => {
@@ -326,6 +331,131 @@ fn parse_pattern_elements(
         Err(faults)
     } else {
         Ok(out)
+    }
+}
+
+fn parse_nested_cardinal(
+    selector: &ast::InlineExpression<&str>,
+    variants: &[ast::Variant<&str>],
+    locale: &str,
+    msg_id: &str,
+    allowed: bool,
+) -> Result<PatternElement, Vec<Fault>> {
+    let unsupported = || vec![Fault::new("nested-selector", locale, msg_id)];
+    let ast::InlineExpression::VariableReference { id } = selector else {
+        return Err(unsupported());
+    };
+    if !allowed {
+        return Err(unsupported());
+    }
+    let mut keys = HashSet::new();
+    let mut branches = Vec::new();
+    for variant in variants {
+        let ast::VariantKey::Identifier { name } = variant.key else {
+            return Err(vec![Fault::new("exact-number-branch", locale, msg_id)]);
+        };
+        if !CLDR_CATEGORIES.contains(&name) {
+            return Err(unsupported());
+        }
+        if !keys.insert(name) {
+            return Err(vec![Fault::new("duplicate-branch", locale, msg_id)]);
+        }
+        branches.push(Branch {
+            key: Some(name.to_string()),
+            default: variant.default,
+            pattern: parse_pattern_elements(&variant.value.elements, locale, msg_id, true)?,
+        });
+    }
+    Ok(PatternElement {
+        kind: ElementKind::Select(branches),
+        value: id.name.to_string(),
+    })
+}
+
+struct PatternAdmission<'a> {
+    meta: &'a MessageMetadata,
+    locale: &'a str,
+    msg_id: &'a str,
+    family: Option<&'a CardinalFamily>,
+    is_source: bool,
+    seen_args: HashSet<String>,
+    seen_selectors: HashSet<String>,
+    faults: Vec<Fault>,
+}
+
+impl PatternAdmission<'_> {
+    fn fault(&mut self, rule: &'static str) {
+        self.faults.push(Fault::new(rule, self.locale, self.msg_id));
+    }
+
+    fn resolve(&mut self, pattern: &mut [PatternElement]) {
+        for element in pattern {
+            match &mut element.kind {
+                ElementKind::Arg
+                    if self
+                        .meta
+                        .protected_slots
+                        .iter()
+                        .any(|s| s.name == element.value) =>
+                {
+                    element.kind = ElementKind::Slot;
+                }
+                ElementKind::Arg if self.meta.arguments.iter().any(|a| a.name == element.value) => {
+                    self.seen_args.insert(element.value.clone());
+                }
+                ElementKind::Arg => self.fault("argument-parity"),
+                ElementKind::Select(branches) => self.resolve_select(&element.value, branches),
+                _ => {}
+            }
+        }
+    }
+
+    fn resolve_select(&mut self, name: &str, branches: &mut [Branch]) {
+        if self.meta.format_intent != FormatIntent::Cardinal
+            || !self
+                .meta
+                .arguments
+                .iter()
+                .any(|a| a.name == name && a.arg_type == crate::vocab::ScalarType::Cardinal)
+            || self.meta.selector.as_ref().is_some_and(|s| s.name == name)
+        {
+            self.fault("nested-selector");
+        }
+        self.seen_args.insert(name.to_string());
+        self.seen_selectors.insert(name.to_string());
+        if branches.iter().filter(|b| b.default).count() != 1
+            || !branches
+                .iter()
+                .any(|b| b.default && b.key.as_deref() == Some("other"))
+        {
+            self.fault("cardinal-default");
+        }
+        if let Some(family) = self.family {
+            for key in branches.iter().filter_map(|b| b.key.as_deref()) {
+                if !family.can_show(key) {
+                    self.fault("cardinal-branch-unreachable");
+                }
+            }
+            if !self.is_source {
+                for key in family.categories() {
+                    if !branches.iter().any(|b| b.key.as_deref() == Some(key)) {
+                        self.fault("cardinal-branch-missing");
+                    }
+                }
+            }
+        }
+        for branch in &mut *branches {
+            self.resolve(&mut branch.pattern);
+        }
+
+        // An inline plural may move within the message. Its effective set of
+        // protected values must be the same whichever branch is selected.
+        let mut slot_sets = branches.iter().map(|b| get_slot_multiset(&b.pattern));
+        if let Some(first) = slot_sets.next()
+            && !slot_sets.all(|slots| slots == first)
+        {
+            self.fault("protected-slot-mismatch");
+        }
     }
 }
 
@@ -440,40 +570,37 @@ pub fn validate_admitted_message(
         }
     }
 
-    // Resolve pattern elements to Slot or Arg, check undeclared
-    let slot_names: HashSet<&str> = meta
-        .protected_slots
-        .iter()
-        .map(|s| s.name.as_str())
-        .collect();
-    let arg_names: HashSet<&str> = meta.arguments.iter().map(|a| a.name.as_str()).collect();
-
-    let mut message_args_union = HashSet::new();
-
+    let mut admission = PatternAdmission {
+        meta,
+        locale,
+        msg_id,
+        family,
+        is_source,
+        seen_args: HashSet::new(),
+        seen_selectors: HashSet::new(),
+        faults: Vec::new(),
+    };
     for branch in &mut msg.branches {
-        for el in &mut branch.pattern {
-            if el.kind == ElementKind::Arg {
-                let name = el.value.as_str();
-                if slot_names.contains(name) {
-                    el.kind = ElementKind::Slot;
-                } else if arg_names.contains(name) {
-                    message_args_union.insert(name.to_string());
-                } else {
-                    faults.push(Fault::new("argument-parity", locale, msg_id));
-                }
-            }
+        admission.resolve(&mut branch.pattern);
+    }
+    if let Some(sel_var) = &msg.selector_var {
+        admission.seen_args.insert(sel_var.clone());
+    }
+    let declared_args: HashSet<String> = meta.arguments.iter().map(|a| a.name.clone()).collect();
+    if admission.seen_args != declared_args {
+        admission.fault("argument-parity");
+    }
+    if let Some(source) = source_msg {
+        let source_selectors: HashSet<_> = source
+            .inline_selectors()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if admission.seen_selectors != source_selectors {
+            admission.fault("selector-identity");
         }
     }
-
-    if let Some(sel_var) = &msg.selector_var {
-        message_args_union.insert(sel_var.clone());
-    }
-
-    // Argument parity: union of argument names across message must equal metadata arguments
-    let declared_args: HashSet<String> = meta.arguments.iter().map(|a| a.name.clone()).collect();
-    if message_args_union != declared_args {
-        faults.push(Fault::new("argument-parity", locale, msg_id));
-    }
+    faults.extend(admission.faults);
 
     // Compare translation with source if not source
     if !is_source && let Some(src) = source_msg {
@@ -553,11 +680,48 @@ pub fn validate_admitted_message(
     }
 }
 
-fn get_slot_multiset(pattern: &[PatternElement]) -> Vec<String> {
+impl ParsedMessage {
+    pub fn inline_selectors(&self) -> Vec<&str> {
+        let mut names: Vec<_> = self
+            .inline_branches()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
+    pub fn inline_branches(&self) -> HashSet<(&str, &str)> {
+        fn collect<'a>(branches: &'a [Branch], found: &mut HashSet<(&'a str, &'a str)>) {
+            for branch in branches {
+                for element in &branch.pattern {
+                    if let ElementKind::Select(variants) = &element.kind {
+                        found.extend(variants.iter().filter_map(|variant| {
+                            Some((element.value.as_str(), variant.key.as_deref()?))
+                        }));
+                        collect(variants, found);
+                    }
+                }
+            }
+        }
+        let mut found = HashSet::new();
+        collect(&self.branches, &mut found);
+        found
+    }
+}
+
+pub(crate) fn get_slot_multiset(pattern: &[PatternElement]) -> Vec<String> {
     let mut slots: Vec<String> = pattern
         .iter()
-        .filter(|el| el.kind == ElementKind::Slot)
-        .map(|el| el.value.clone())
+        .flat_map(|el| match &el.kind {
+            ElementKind::Slot => vec![el.value.clone()],
+            ElementKind::Select(branches) => branches
+                .iter()
+                .find(|b| b.default)
+                .map_or_else(Vec::new, |b| get_slot_multiset(&b.pattern)),
+            _ => Vec::new(),
+        })
         .collect();
     slots.sort();
     slots

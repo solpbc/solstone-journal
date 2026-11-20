@@ -290,7 +290,33 @@ fn get_test_inputs(
                 }
             }
             let exp = compute_expected_string(bundle, msg, locale, &inputs)?;
-            res.push((inputs, exp));
+            res.push((inputs.clone(), exp));
+
+            let mut names = msg.inline_selectors();
+            if !names.is_empty() {
+                let selector = msg.meta.selector.as_ref().expect("validated cardinal");
+                names.push(&selector.name);
+                // Exercise each independent axis while the other quantities
+                // are fixed, without multiplying cases across every axis.
+                for name in names {
+                    let spec = msg
+                        .meta
+                        .arguments
+                        .iter()
+                        .find(|arg| arg.name == name)
+                        .expect("validated inline cardinal");
+                    let value = 1_i64.clamp(
+                        spec.min.unwrap_or(i32::MIN as f64) as i64,
+                        spec.max.unwrap_or(i32::MAX as f64) as i64,
+                    );
+                    if inputs.get(name).and_then(JsonValue::as_i64) != Some(value) {
+                        let mut mixed = inputs.clone();
+                        mixed.insert(name.to_string(), json!(value));
+                        let exp = compute_expected_string(bundle, msg, locale, &mixed)?;
+                        res.push((mixed, exp));
+                    }
+                }
+            }
         }
     }
 
@@ -354,8 +380,17 @@ pub fn compute_expected_string(
         }
     };
 
+    evaluate_pattern(msg, &branch.pattern, cardinal_rule, inputs)
+}
+
+fn evaluate_pattern(
+    msg: &TargetMessage,
+    pattern: &[crate::model::PatternElement],
+    cardinal_rule: Option<&str>,
+    inputs: &Map<String, JsonValue>,
+) -> Result<String, Vec<Fault>> {
     let mut out = String::new();
-    for el in &branch.pattern {
+    for el in pattern {
         match el.kind {
             ElementKind::Text => {
                 out.push_str(&el.value);
@@ -368,6 +403,24 @@ pub fn compute_expected_string(
                     .find(|s| s.name == el.value)
                     .ok_or_else(|| vec![Fault::catalog("io-error")])?;
                 out.push_str(&slot.value);
+            }
+            ElementKind::Select(ref branches) => {
+                let count = inputs
+                    .get(&el.value)
+                    .and_then(JsonValue::as_i64)
+                    .ok_or_else(|| vec![Fault::catalog("plural-rule")])?;
+                let key = plural::category(cardinal_rule, count).map_err(|f| vec![f])?;
+                let variant = branches
+                    .iter()
+                    .find(|b| b.key.as_deref() == Some(key))
+                    .or_else(|| branches.iter().find(|b| b.default))
+                    .ok_or_else(|| vec![Fault::catalog("plural-rule")])?;
+                out.push_str(&evaluate_pattern(
+                    msg,
+                    &variant.pattern,
+                    cardinal_rule,
+                    inputs,
+                )?);
             }
             ElementKind::Arg => {
                 let arg_spec = msg.meta.arguments.iter().find(|a| a.name == el.value);
@@ -453,6 +506,14 @@ fn rust_resource_expected(
     {
         let category = plural::category(cardinal_family, count).map_err(|f| vec![f])?;
         args.set(plural::CATEGORY_ARGUMENT, category);
+    }
+    for name in msg.inline_selectors() {
+        let count = inputs
+            .get(name)
+            .and_then(JsonValue::as_i64)
+            .ok_or_else(|| vec![Fault::catalog("plural-rule")])?;
+        let category = plural::category(cardinal_family, count).map_err(|f| vec![f])?;
+        args.set(plural::inline_category_argument(name), category);
     }
     let (key, _) = resolved_identity(msg, inputs);
     let pattern = reader

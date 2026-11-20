@@ -43,18 +43,24 @@ fn put_str(buf: &mut Vec<u8>, s: &str) {
 }
 
 pub fn compute_source_hash(msg: &ParsedMessage) -> String {
-    let mut bytes = Vec::new();
-    for b in &msg.branches {
-        let key_str = b.key.as_deref().unwrap_or("");
-        put_str(&mut bytes, key_str);
-        bytes.push(if b.default { 1 } else { 0 });
-        let pattern_len = b.pattern.len() as u64;
-        bytes.extend_from_slice(&pattern_len.to_be_bytes());
-        for el in &b.pattern {
-            put_str(&mut bytes, el.kind.as_str());
-            put_str(&mut bytes, &el.value);
+    fn write_branches(bytes: &mut Vec<u8>, branches: &[crate::model::Branch]) {
+        for branch in branches {
+            put_str(bytes, branch.key.as_deref().unwrap_or(""));
+            bytes.push(u8::from(branch.default));
+            bytes.extend_from_slice(&(branch.pattern.len() as u64).to_be_bytes());
+            for element in &branch.pattern {
+                put_str(bytes, element.kind.as_str());
+                put_str(bytes, &element.value);
+                if let crate::model::ElementKind::Select(variants) = &element.kind {
+                    bytes.extend_from_slice(&(variants.len() as u64).to_be_bytes());
+                    write_branches(bytes, variants);
+                }
+            }
         }
     }
+
+    let mut bytes = Vec::new();
+    write_branches(&mut bytes, &msg.branches);
     sha256_hex(&bytes)
 }
 

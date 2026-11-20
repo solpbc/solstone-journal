@@ -2665,6 +2665,111 @@ assert.throws(() => {
         );
     }
 
+    #[test]
+    fn inline_cardinal_selectors_keep_each_quantity_independent() {
+        use crate::admit::{parse_ftl_resource, validate_admitted_message};
+        use crate::target::model::{Target, TargetBundle, TargetMessage};
+        use std::collections::HashMap;
+
+        let fixture = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            Some("ar"),
+        )
+        .unwrap();
+        let source_id = "synth.notes.forms";
+        let mut meta = fixture.metadata[source_id].clone();
+        meta.arguments.retain(|arg| arg.name == "count");
+        let mut other_arg = meta.arguments[0].clone();
+        other_arg.name = "days".into();
+        meta.arguments.push(other_arg);
+        meta.protected_slots.clear();
+        let id = "synth.notes.independent";
+        let ftl = format!(
+            "{id} = {{ $count ->\n    [one] match on {{ $days ->\n        [one] one day\n       *[other] multiple days\n    }}\n   *[other] matches on {{ $days ->\n        [one] one day\n       *[other] multiple days\n    }}\n}}\n"
+        );
+        let parse = |body: &str| {
+            parse_ftl_resource(body, "en")
+                .unwrap()
+                .messages
+                .remove(id)
+                .unwrap()
+        };
+        let family = crate::plural::family("en").unwrap();
+        let mut source = parse(&ftl);
+        validate_admitted_message(&mut source, &meta, "en", true, None, Some(family)).unwrap();
+        let mut rewritten = parse(&ftl.replace("one day", "a day"));
+        validate_admitted_message(
+            &mut rewritten,
+            &meta,
+            "en",
+            false,
+            Some(&source),
+            Some(family),
+        )
+        .unwrap();
+        assert_ne!(
+            crate::freshness::compute_source_hash(&source),
+            crate::freshness::compute_source_hash(&rewritten)
+        );
+        let mut missing = parse(&format!(
+            "{id} = {{ $count ->\n    [one] match on {{ $days }}\n   *[other] matches on {{ $days }}\n}}\n"
+        ));
+        let faults = validate_admitted_message(
+            &mut missing,
+            &meta,
+            "en",
+            false,
+            Some(&source),
+            Some(family),
+        )
+        .unwrap_err();
+        assert!(faults.iter().any(|fault| fault.rule == "selector-identity"));
+
+        let locale = fixture
+            .registry
+            .locales
+            .iter()
+            .find(|loc| loc.tag == "en")
+            .unwrap()
+            .clone();
+        let bundle = TargetBundle {
+            id: "independent".into(),
+            messages: vec![TargetMessage {
+                id: id.into(),
+                resource_key: crate::history::compute_resource_key(id),
+                meta,
+                translations: HashMap::from([("en".into(), source)]),
+            }],
+            locales: vec![locale],
+        };
+        let cases = crate::target::cases::generate_cases(
+            &[bundle],
+            &[Target::Rust, Target::Classic],
+            Channel::Production,
+        )
+        .unwrap();
+        for target in ["rust", "classic"] {
+            let cases = cases["cases"].as_array().unwrap();
+            let expected = |count, days| {
+                let case = cases
+                    .iter()
+                    .find(|case| {
+                        case["target"] == target
+                            && case["inputs"]["count"] == count
+                            && case["inputs"]["days"] == days
+                    })
+                    .unwrap();
+                case["logical_expected"]
+                    .as_str()
+                    .unwrap()
+                    .replace(['\u{2068}', '\u{2069}'], "")
+            };
+            assert_eq!(expected(1, 0), "match on multiple days");
+            assert_eq!(expected(0, 1), "matches on one day");
+        }
+    }
+
     /// The selection in every generated reader, for every family, against the table.
     #[cfg(feature = "full-tests")]
     #[test]

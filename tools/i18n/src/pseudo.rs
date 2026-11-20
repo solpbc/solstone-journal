@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::admit::ParsedMessage;
+use crate::admit::{ParsedMessage, get_slot_multiset};
 use crate::fault::Fault;
 use crate::model::ElementKind;
 use std::collections::HashMap;
@@ -38,48 +38,59 @@ pub fn generate_pseudo_ftl(
     messages: &HashMap<String, ParsedMessage>,
     transform_fn: fn(&str) -> String,
 ) -> String {
+    fn write_pattern(
+        out: &mut String,
+        elements: &[crate::model::PatternElement],
+        transform: fn(&str) -> String,
+        indent: &str,
+    ) {
+        for element in elements {
+            match &element.kind {
+                ElementKind::Text => {
+                    out.push_str(&transform(&element.value).replace('\n', &format!("\n{indent}")))
+                }
+                ElementKind::Arg | ElementKind::Slot => {
+                    out.push_str(&format!("{{ ${} }}", element.value))
+                }
+                ElementKind::Select(branches) => {
+                    write_select(out, &element.value, branches, transform, indent)
+                }
+            }
+        }
+    }
+
+    fn write_select(
+        out: &mut String,
+        selector: &str,
+        branches: &[crate::model::Branch],
+        transform: fn(&str) -> String,
+        indent: &str,
+    ) {
+        out.push_str(&format!("{{ ${selector} ->\n"));
+        let child_indent = format!("{indent}        ");
+        for branch in branches {
+            let star = if branch.default { "*" } else { " " };
+            let key = branch.key.as_deref().unwrap_or("other");
+            out.push_str(&format!("{indent}   {star}[{key}] "));
+            write_pattern(out, &branch.pattern, transform, &child_indent);
+            out.push('\n');
+        }
+        out.push_str(indent);
+        out.push('}');
+    }
+
     let mut ids: Vec<&String> = messages.keys().collect();
     ids.sort();
-
     let mut out = String::new();
     for id in ids {
         let msg = &messages[id];
-        let fluent_id = &msg.id;
-        if let Some(sel_var) = &msg.selector_var {
-            out.push_str(&format!("{} = {{ ${} ->\n", fluent_id, sel_var));
-            for b in &msg.branches {
-                let default_star = if b.default { "*" } else { " " };
-                let key_str = b.key.as_deref().unwrap_or("other");
-                out.push_str(&format!("   {}[{}] ", default_star, key_str));
-                for el in &b.pattern {
-                    match el.kind {
-                        ElementKind::Text => {
-                            out.push_str(&transform_fn(&el.value).replace('\n', "\n        "))
-                        }
-                        ElementKind::Arg | ElementKind::Slot => {
-                            out.push_str(&format!("{{ ${} }}", el.value));
-                        }
-                    }
-                }
-                out.push('\n');
-            }
-            out.push_str("}\n\n");
-        } else {
-            out.push_str(&format!("{} = ", fluent_id));
-            if let Some(b) = msg.branches.first() {
-                for el in &b.pattern {
-                    match el.kind {
-                        ElementKind::Text => {
-                            out.push_str(&transform_fn(&el.value).replace('\n', "\n    "))
-                        }
-                        ElementKind::Arg | ElementKind::Slot => {
-                            out.push_str(&format!("{{ ${} }}", el.value));
-                        }
-                    }
-                }
-            }
-            out.push_str("\n\n");
+        out.push_str(&format!("{} = ", msg.id));
+        if let Some(selector) = &msg.selector_var {
+            write_select(&mut out, selector, &msg.branches, transform_fn, "");
+        } else if let Some(branch) = msg.branches.first() {
+            write_pattern(&mut out, &branch.pattern, transform_fn, "    ");
         }
+        out.push_str("\n\n");
     }
     out
 }
@@ -100,14 +111,10 @@ pub fn write_pseudo_locales(
     let mut slots_den = 0;
     for msg in messages.values() {
         if msg.selector_var.is_some() {
-            branches_den += msg.branches.len();
+            branches_den += msg.branches.len() + msg.inline_branches().len();
         }
         for b in &msg.branches {
-            for el in &b.pattern {
-                if el.kind == ElementKind::Slot {
-                    slots_den += 1;
-                }
-            }
+            slots_den += get_slot_multiset(&b.pattern).len();
         }
     }
 

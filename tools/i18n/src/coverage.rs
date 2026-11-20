@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::admit::ParsedMessage;
-use crate::model::ElementKind;
+use crate::admit::{ParsedMessage, get_slot_multiset};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -77,14 +76,10 @@ impl CoverageReport {
         for cell in &cells {
             if let Some(src) = source_messages.get(&cell.message_id) {
                 if src.selector_var.is_some() {
-                    branches_den += src.branches.len();
+                    branches_den += src.branches.len() + src.inline_branches().len();
                 }
                 for b in &src.branches {
-                    let slot_count = b
-                        .pattern
-                        .iter()
-                        .filter(|el| el.kind == ElementKind::Slot)
-                        .count();
+                    let slot_count = get_slot_multiset(&b.pattern).len();
                     slots_den += slot_count;
                 }
             }
@@ -118,6 +113,10 @@ impl CoverageReport {
                         branches_num += 1;
                     }
                 }
+                branches_num += src
+                    .inline_branches()
+                    .intersection(&tr_msg.inline_branches())
+                    .count();
             }
 
             // Slots numerator: count slots matching source slots
@@ -125,37 +124,19 @@ impl CoverageReport {
                 let src_slots = src
                     .branches
                     .first()
-                    .map(|b| {
-                        b.pattern
-                            .iter()
-                            .filter(|el| el.kind == ElementKind::Slot)
-                            .count()
-                    })
+                    .map(|b| get_slot_multiset(&b.pattern).len())
                     .unwrap_or(0);
                 let tr_slots = tr_msg
                     .branches
                     .first()
-                    .map(|b| {
-                        b.pattern
-                            .iter()
-                            .filter(|el| el.kind == ElementKind::Slot)
-                            .count()
-                    })
+                    .map(|b| get_slot_multiset(&b.pattern).len())
                     .unwrap_or(0);
                 slots_num += tr_slots.min(src_slots);
             } else {
                 for src_b in &src.branches {
-                    let src_slots = src_b
-                        .pattern
-                        .iter()
-                        .filter(|el| el.kind == ElementKind::Slot)
-                        .count();
+                    let src_slots = get_slot_multiset(&src_b.pattern).len();
                     if let Some(tr_b) = tr_msg.branches.iter().find(|b| b.key == src_b.key) {
-                        let tr_slots = tr_b
-                            .pattern
-                            .iter()
-                            .filter(|el| el.kind == ElementKind::Slot)
-                            .count();
+                        let tr_slots = get_slot_multiset(&tr_b.pattern).len();
                         slots_num += tr_slots.min(src_slots);
                     }
                 }

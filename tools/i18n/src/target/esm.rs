@@ -163,6 +163,13 @@ pub(super) fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec
         {
             s.push_str(&format!("    selectorVar: \"{}\",\n", sel.name));
         }
+        let inline_selectors = msg.inline_selectors();
+        if !inline_selectors.is_empty() {
+            s.push_str(&format!(
+                "    inlineSelectors: {},\n",
+                serde_json::to_string(&inline_selectors).unwrap()
+            ));
+        }
         if msg.meta.format_intent == crate::vocab::FormatIntent::Enum
             && let Some(sel) = &msg.meta.selector
         {
@@ -319,6 +326,13 @@ pub(super) fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec
         "    fArgs.{} = select ? select(Math.abs(fArgs[msgInfo.selectorVar])) : \"other\";\n",
         crate::plural::CATEGORY_ARGUMENT
     ));
+    if bundle
+        .messages
+        .iter()
+        .any(|msg| !msg.inline_selectors().is_empty())
+    {
+        s.push_str(&format!("    for (const name of msgInfo.inlineSelectors || []) {{\n      fArgs[\"{}-\" + name] = select ? select(Math.abs(fArgs[name])) : \"other\";\n    }}\n", crate::plural::CATEGORY_ARGUMENT));
+    }
     s.push_str("  }\n\n");
     s.push_str("  const bundle = getBundle(locale, useIsolating);\n\n");
     s.push_str("  const targetKey = msgInfo.formatIntent === \"enum\" ? (msgInfo.variantKeys[selectedVariant] || msgInfo.defaultKey) : msgInfo.resourceKey;\n");

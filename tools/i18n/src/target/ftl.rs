@@ -18,17 +18,14 @@ pub fn generate_bundle_ftl(bundle: &TargetBundle, locale: &str) -> Result<String
 
         match msg.meta.format_intent {
             FormatIntent::Text => {
-                let pattern_str = render_ftl_pattern(&parsed.branches[0].pattern, msg, true)?;
+                let pattern_str = render_ftl_pattern(&parsed.branches[0].pattern, msg, true, "")?;
                 out.push_str(&format!("{} = {}\n\n", msg.resource_key, pattern_str));
             }
             FormatIntent::Cardinal => {
                 // The reader selects the category from the plural table and passes it in.
-                if msg
-                    .meta
-                    .arguments
-                    .iter()
-                    .any(|arg| arg.name == CATEGORY_ARGUMENT)
-                {
+                if msg.meta.arguments.iter().any(|arg| {
+                    arg.name == CATEGORY_ARGUMENT || arg.name.starts_with("i18nCategory-")
+                }) {
                     return Err(Fault::new("argument-parity", locale, &msg.id));
                 }
                 out.push_str(&format!(
@@ -38,7 +35,7 @@ pub fn generate_bundle_ftl(bundle: &TargetBundle, locale: &str) -> Result<String
                 for b in &parsed.branches {
                     let key = b.key.as_deref().unwrap_or("other");
                     let prefix = if b.default { "   *" } else { "    " };
-                    let pattern_str = render_ftl_pattern(&b.pattern, msg, false)?;
+                    let pattern_str = render_ftl_pattern(&b.pattern, msg, false, "    ")?;
                     out.push_str(&format!("{}[{}] {}\n", prefix, key, pattern_str));
                 }
                 out.push_str("}\n\n");
@@ -48,7 +45,7 @@ pub fn generate_bundle_ftl(bundle: &TargetBundle, locale: &str) -> Result<String
                     let variant = b.key.as_deref().unwrap_or("default");
                     let var_key =
                         crate::target::model::enum_variant_resource_key(&msg.resource_key, variant);
-                    let pattern_str = render_ftl_pattern(&b.pattern, msg, true)?;
+                    let pattern_str = render_ftl_pattern(&b.pattern, msg, true, "")?;
                     out.push_str(&format!("{} = {}\n\n", var_key, pattern_str));
                 }
             }
@@ -62,6 +59,7 @@ fn render_ftl_pattern(
     elements: &[crate::model::PatternElement],
     msg: &TargetMessage,
     is_start: bool,
+    indent: &str,
 ) -> Result<String, Fault> {
     let mut out = String::new();
 
@@ -80,6 +78,18 @@ fn render_ftl_pattern(
                     .ok_or_else(|| Fault::catalog("io-error"))?;
                 let escaped = escape_ftl_string_literal(&slot.value);
                 out.push_str(&format!("{{ \"{}\" }}", escaped));
+            }
+            ElementKind::Select(ref variants) => {
+                let selector = crate::plural::inline_category_argument(&el.value);
+                out.push_str(&format!("{{ ${selector} ->\n"));
+                let child_indent = format!("{indent}    ");
+                for variant in variants {
+                    let key = variant.key.as_deref().unwrap_or("other");
+                    let star = if variant.default { "*" } else { " " };
+                    let value = render_ftl_pattern(&variant.pattern, msg, false, &child_indent)?;
+                    out.push_str(&format!("{indent}   {star}[{key}] {value}\n"));
+                }
+                out.push_str(&format!("{indent}}}"));
             }
             ElementKind::Arg => {
                 let arg_spec = msg.meta.arguments.iter().find(|a| a.name == el.value);

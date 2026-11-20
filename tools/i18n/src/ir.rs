@@ -91,6 +91,8 @@ pub struct CompiledBranch {
 pub struct CompiledElement {
     pub kind: String,
     pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branches: Option<Vec<CompiledBranch>>,
 }
 
 pub fn build_ir(
@@ -254,12 +256,14 @@ fn compile_branches(branches: &[Branch], intent: FormatIntent) -> Vec<CompiledBr
                 .pattern
                 .iter()
                 .map(|el| CompiledElement {
-                    kind: match el.kind {
-                        ElementKind::Text => "text".to_string(),
-                        ElementKind::Arg => "arg".to_string(),
-                        ElementKind::Slot => "slot".to_string(),
-                    },
+                    kind: el.kind.as_str().to_string(),
                     value: el.value.clone(),
+                    branches: match &el.kind {
+                        ElementKind::Select(branches) => {
+                            Some(compile_branches(branches, FormatIntent::Cardinal))
+                        }
+                        _ => None,
+                    },
                 })
                 .collect(),
         })

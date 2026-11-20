@@ -180,6 +180,17 @@ pub fn publish(
         });
     }
 
+    if targets
+        .iter()
+        .any(|target| matches!(target, Target::Apple | Target::Android | Target::Gettext))
+        && let Some(msg) = bundles
+            .iter()
+            .flat_map(|bundle| &bundle.messages)
+            .find(|msg| !msg.inline_selectors().is_empty())
+    {
+        return Err(vec![Fault::new("nested-selector-target", "*", &msg.id)]);
+    }
+
     // 4. Create unique stage directory
     let parent = out_dir.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(|_| vec![Fault::catalog("io-error")])?;

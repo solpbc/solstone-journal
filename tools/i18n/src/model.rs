@@ -10,6 +10,7 @@ pub enum ElementKind {
     Text,
     Arg,
     Slot,
+    Select(Vec<Branch>),
 }
 
 impl ElementKind {
@@ -18,6 +19,7 @@ impl ElementKind {
             ElementKind::Text => "text",
             ElementKind::Arg => "arg",
             ElementKind::Slot => "slot",
+            ElementKind::Select(_) => "select",
         }
     }
 }

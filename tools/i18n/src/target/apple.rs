@@ -189,6 +189,9 @@ pub fn render_apple_template(
                     }
                 }
             }
+            ElementKind::Select(_) => {
+                return Err(vec![Fault::new("nested-selector-target", "*", &msg.id)]);
+            }
             ElementKind::Slot => {
                 let slot = msg
                     .meta

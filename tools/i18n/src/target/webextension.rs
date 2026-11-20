@@ -97,7 +97,7 @@ fn generate_webextension_messages_json(
                         .ok_or_else(|| vec![Fault::catalog("io-error")])?;
                     raw_content.push_str(&slot.value);
                 }
-                ElementKind::Arg => {
+                ElementKind::Arg | ElementKind::Select(_) => {
                     // Webextension dynamic messages are prohibited by validator
                     return Err(vec![Fault::new("webextension-dynamic", locale, &msg.id)]);
                 }

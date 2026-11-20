@@ -300,6 +300,19 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
                     crate::plural::CATEGORY_ARGUMENT,
                     index
                 ));
+                for name in msg.inline_selectors() {
+                    let index = msg
+                        .meta
+                        .arguments
+                        .iter()
+                        .position(|arg| arg.name == name)
+                        .ok_or_else(|| Fault::catalog("invalid-metadata"))?;
+                    s.push_str(&format!(
+                        "    f_args.set(\"{}\", plural_category(_cardinal_rule, v{}));\n",
+                        crate::plural::inline_category_argument(name),
+                        index
+                    ));
+                }
             }
             s.push_str("    Ok((_resource_key, f_args))\n");
         }

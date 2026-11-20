@@ -52,6 +52,16 @@ pub struct TargetMessage {
     pub translations: HashMap<String, ParsedMessage>,
 }
 
+impl TargetMessage {
+    pub fn inline_selectors(&self) -> Vec<&str> {
+        // Admission requires the same selector identities in every locale.
+        self.translations
+            .values()
+            .next()
+            .map_or_else(Vec::new, ParsedMessage::inline_selectors)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TargetBundle {
     pub id: String,

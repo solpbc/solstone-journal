@@ -23,6 +23,10 @@ use crate::fault::Fault;
 /// The string argument that carries a message's selected category in target FTL.
 pub const CATEGORY_ARGUMENT: &str = "i18nCategory";
 
+pub(crate) fn inline_category_argument(name: &str) -> String {
+    format!("{CATEGORY_ARGUMENT}-{name}")
+}
+
 pub struct CardinalRule {
     pub category: &'static str,
     pub condition: &'static str,
