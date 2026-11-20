@@ -182,6 +182,7 @@ mod setup_host;
 mod year;
 pub use setup_host::PackagedSpeechSetup;
 pub mod open_link;
+mod shared_sources;
 #[cfg(test)]
 mod shell_bundle_tests;
 pub mod source_link;
@@ -1571,7 +1572,8 @@ fn router_with_roots(
             "/api/system/status",
             get({
                 let journal_root = journal_root.clone();
-                move || system::status(journal_root.clone())
+                let revisions = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+                move || system::status(journal_root.clone(), revisions.clone())
             }),
         )
         .route("/api/system/updates/automatic", post(system::set_automatic))
@@ -1935,7 +1937,7 @@ fn router_with_roots(
         .route_layer(axum::middleware::from_fn(asset_cache::refuse_unknown_hash));
     let routes =
         session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
-    form_body_guard::apply_layer(routes)
+    shared_sources::track_requests(form_body_guard::apply_layer(routes))
         .fallback(not_found)
         .layer(axum::middleware::from_fn(timing::measure))
         .layer(axum::middleware::from_fn(asset_cache::apply))

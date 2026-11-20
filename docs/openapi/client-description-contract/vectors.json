@@ -4,6 +4,66 @@
       "accepted": true,
       "reason_code": null
     },
+    "http_status": 204,
+    "id": "sources.empty",
+    "kind": "declared",
+    "operation": "client.putSelfSources"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "invalid_sources"
+    },
+    "http_status": 400,
+    "id": "sources.invalid",
+    "kind": "declared",
+    "operation": "client.putSelfSources"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "linked_device_required"
+    },
+    "http_status": 403,
+    "id": "sources.device_required",
+    "kind": "declared",
+    "operation": "client.putSelfSources"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "sources_unavailable"
+    },
+    "http_status": 503,
+    "id": "sources.unavailable",
+    "kind": "declared",
+    "operation": "client.knownSources"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "pl_revoked"
+    },
+    "http_status": 403,
+    "id": "sources.revoked",
+    "kind": "declared",
+    "operation": "client.knownSources"
+  },
+  {
+    "decision": {
+      "accepted": true,
+      "reason_code": null
+    },
+    "http_status": 200,
+    "id": "sources.known",
+    "kind": "declared",
+    "operation": "client.knownSources"
+  },
+  {
+    "decision": {
+      "accepted": true,
+      "reason_code": null
+    },
     "http_status": 200,
     "id": "client_description.get_self.authenticated",
     "kind": "declared",

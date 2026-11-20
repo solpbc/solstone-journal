@@ -243,6 +243,29 @@
       "schema_validation": {
         "valid": true
       }
+    },
+    {
+      "consumer_decision": {
+        "accepted": true
+      },
+      "id": "declared.client.ingestObsidianVaults.current_pairs",
+      "kind": "declared",
+      "payload": {
+        "vaults": [
+          {
+            "device": "Studio",
+            "last_synced_at": "2026-11-08T09:44:33-07:00",
+            "vault": "Notes"
+          }
+        ]
+      },
+      "provenance": {
+        "http_status": 200,
+        "protocol_version": 3
+      },
+      "schema_validation": {
+        "valid": true
+      }
     }
   ],
   "schema": "solstone.client-ingest-contract-fixtures.v2"

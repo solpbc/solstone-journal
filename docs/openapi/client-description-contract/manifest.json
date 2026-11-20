@@ -1,9 +1,13 @@
 {
   "bundle_format": "solstone.openapi-contract-bundle.v1",
-  "bundle_semver": "1.0.0",
+  "bundle_semver": "1.1.0",
   "canonical_spec_title": "Linked-device client description contract",
   "client_protocol_version": 1,
   "component_closure": [
+    "KnownSources",
+    "SourceDevice",
+    "KnownSource",
+    "SourceDeclaration",
     "ClientDescriptionResponse",
     "Error",
     "JournalIdentityMeta",
@@ -19,16 +23,16 @@
       "sha256": "bf23b3651fa73dd6bc02748f162130d0b516e01d6d73ac03b56a51fddc062457"
     },
     "fixtures/wire-behavior.json": {
-      "byte_count": 901,
-      "sha256": "a5c332431aec20f3d4abc89f1b8d9c7d34f000b7696fe1e2b94836d787b1810d"
+      "byte_count": 3944,
+      "sha256": "e26cc7cf3478bfca30f0ead60ed163150ca12b2206bd02e1173fcf1edefb676f"
     },
     "projection.openapi.json": {
-      "byte_count": 10752,
-      "sha256": "4d2d1e13d25319fb022bab4345c2f1684705b3c279790db3e1e4611dbbd043a8"
+      "byte_count": 18202,
+      "sha256": "b71eea881eabdeddef2bc0dea1b11ca7be28bc0c33674300cad8eb2eab9a2206"
     },
     "vectors.json": {
-      "byte_count": 1967,
-      "sha256": "95b9ef8da3ba205f1fabcad4c93d945cebbd219776a8d6423f96589fc8fba22b"
+      "byte_count": 3243,
+      "sha256": "e297b7a21fd92c0af5b5d495df41e5756103d36c5f49e8c3ea5470e9a79d19fc"
     }
   },
   "generator_identity": "solstone.repository_contracts.client_description_contract_bundle.v1",
@@ -37,19 +41,22 @@
       "id": "openapi.client_description_contract_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json",
       "role": "openapi_source",
-      "sha256": "c069fb7a3c167322b1504587ad7ab1b143a0abbf9649605248237acb61351270"
+      "sha256": "28946519b5cb41dde4f49c706a22d907c71e1a5e4ac4ed51c640267b1a7f047d"
     }
   ],
-  "openapi_document_version": "1.0.0",
+  "openapi_document_version": "1.1.0",
   "openapi_spec_version": "3.1.0",
   "operation_ids": [
+    "client.putSelfSources",
+    "client.knownSources",
+    "system.sourceCapabilities",
     "client.getSelfDescription",
     "client.putSelfDescription",
     "client.patchClientLabel"
   ],
   "projection_path": "projection.openapi.json",
   "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-  "scope_rationale": "This client-description bundle projects GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+  "scope_rationale": "This client-description bundle projects client descriptions, labels and shared source awareness.",
   "vocabularies": [
     {
       "classification": "open",

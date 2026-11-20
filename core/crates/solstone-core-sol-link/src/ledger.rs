@@ -872,6 +872,9 @@ impl AuthorizationLedger {
             .parent()
             .and_then(std::path::Path::parent)
         {
+            if crate::source_declarations::remove_locked(journal_root, fingerprint).is_err() {
+                log::warn!("could not remove declarations for an unpaired device");
+            }
             let _ = crate::client_description_store::remove_description_entry(
                 journal_root,
                 fingerprint,

@@ -52,6 +52,8 @@ mod serve;
 pub mod service_identity;
 #[cfg(feature = "host")]
 pub mod setup_progress;
+#[cfg(feature = "host")]
+pub mod source_declarations;
 
 #[cfg(feature = "host")]
 pub use acceptor::{

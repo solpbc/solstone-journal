@@ -13,7 +13,12 @@ use solstone_core_home::readers::get_capture_health;
 /// What this journal understands from a linked device, beyond the ingest
 /// protocol itself. A device sends a kind of content only to a journal that
 /// lists it here.
-const CAPABILITIES: &[&str] = &["calendar_notes", "obsidian_notes", "screenshots"];
+const CAPABILITIES: &[&str] = &[
+    "calendar_notes",
+    "obsidian_notes",
+    "screenshots",
+    "shared_sources",
+];
 
 /// What the journal's own update check last learned. The status route reads
 /// only this, so no page or device reading it causes a request to the update
@@ -153,11 +158,12 @@ fn refresh_update_listing() -> bool {
 
 /// The status body every platform answers with; only how the version is
 /// worked out differs between them.
-fn status_body(version: Value, capture: Value) -> Value {
+fn status_body(version: Value, capture: Value, rev: Option<String>) -> Value {
     let mut body = json!({
         "version": version,
         "capture": capture,
         "capabilities": CAPABILITIES,
+        "sources_rev": rev,
         "ok": true,
     });
     // What the security advisory check last found, on a desktop journal.
@@ -169,7 +175,15 @@ fn status_body(version: Value, capture: Value) -> Value {
 }
 
 #[allow(clippy::needless_return)]
-pub async fn status(journal_root: PathBuf) -> Response {
+pub async fn status(
+    journal_root: PathBuf,
+    revisions: std::sync::Arc<std::sync::Mutex<solstone_core_ingest::known_sources::RevisionCache>>,
+) -> Response {
+    let registry_root = journal_root.clone();
+    let rev = tokio::task::spawn_blocking(move || revisions.lock().ok()?.revision(&registry_root))
+        .await
+        .ok()
+        .flatten();
     let context = HomeContext::new(journal_root, Timestamp::now());
     let capture = get_capture_health(&context);
     #[cfg(target_os = "linux")]
@@ -208,7 +222,7 @@ pub async fn status(journal_root: PathBuf) -> Response {
         })
         .await
         .unwrap_or_else(|_| json!({"current": env!("CARGO_PKG_VERSION")}));
-        return Json(status_body(version, json!(capture))).into_response();
+        return Json(status_body(version, json!(capture), rev)).into_response();
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -220,6 +234,7 @@ pub async fn status(journal_root: PathBuf) -> Response {
                 "update_available": false,
             }),
             json!(capture),
+            rev,
         ))
         .into_response();
     }
@@ -852,7 +867,7 @@ mod tests {
                 json!({"state": "stale"}),
             ),
         ] {
-            let body = status_body(version.clone(), capture.clone());
+            let body = status_body(version.clone(), capture.clone(), Some("1".into()));
             let capabilities = body["capabilities"].as_array().unwrap();
             for capability in ["calendar_notes", "obsidian_notes", "screenshots"] {
                 assert!(capabilities.iter().any(|value| value == capability));

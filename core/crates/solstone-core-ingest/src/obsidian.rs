@@ -27,7 +27,9 @@ use solstone_core_format::obsidian::{
     Change, KnownRename, NoteChange, NoteEntry, only_link_rewrites, render_edit, render_transcript,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
-use solstone_core_sol_link::ledger::AuthorizationLedger;
+use solstone_core_sol_link::client_description_store::read_descriptions;
+use solstone_core_sol_link::current_display_label;
+use solstone_core_sol_link::source_declarations;
 use solstone_core_time::{Precision, zoned_rfc3339};
 
 use crate::router::{IngestState, refusal};
@@ -475,37 +477,61 @@ pub(crate) async fn obsidian_vaults(
 }
 
 fn listed_vaults(journal: &Path, cid: &str) -> Result<Vec<Value>, String> {
+    let authorized =
+        crate::known_sources::authorized(journal).map_err(|_| "cannot read paired devices")?;
+    let descriptions = read_descriptions(journal).map_err(|_| "cannot read device descriptions")?;
+    let declarations =
+        source_declarations::read(journal).map_err(|_| "cannot read source declarations")?;
+    let mut listed = Vec::new();
+    let vaults = synced_vaults(journal)?;
+    for device in authorized {
+        let other = &device.fingerprint;
+        if other == cid {
+            continue;
+        }
+        let label = current_display_label(&device, descriptions.get(other));
+        if let Some(rows) = vaults.get(other) {
+            for (vault, stamp) in rows {
+                if declarations.get(other).is_some_and(|decl| {
+                    !decl.sources.iter().any(|s| {
+                        s.source == "obsidian" && s.detail.as_ref().is_none_or(|d| d == vault)
+                    })
+                }) {
+                    continue;
+                }
+                listed.push(json!({"vault":vault,"device":label,"last_synced_at":stamp}));
+            }
+        }
+    }
+    listed.sort_by_key(|v| v["vault"].as_str().map(str::to_owned));
+    Ok(listed)
+}
+
+pub(crate) fn synced_vaults(
+    journal: &Path,
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
     let root = journal.join(STATE_DIR);
     let entries = match std::fs::read_dir(&root) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
         Err(error) => return Err(error.to_string()),
     };
-    let mut ledger = AuthorizationLedger::new(journal);
-    let mut vaults = Vec::new();
+    let mut vaults = BTreeMap::<String, BTreeMap<String, String>>::new();
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let Some(held) = read_json::<VaultState>(&entry.path().join("vault.json"))? else {
             continue;
         };
         for (device, last_synced_at) in &held.devices {
-            if device != cid {
-                vaults.push(json!({
-                    "vault": held.vault,
-                    "device": device_label(&mut ledger, device),
-                    "last_synced_at": last_synced_at,
-                }));
+            if last_synced_at.parse::<jiff::Timestamp>().is_ok() {
+                vaults
+                    .entry(device.clone())
+                    .or_default()
+                    .insert(held.vault.clone(), last_synced_at.clone());
             }
         }
     }
-    vaults.sort_by_key(|vault| vault["vault"].as_str().map(str::to_owned));
     Ok(vaults)
-}
-
-fn device_label(ledger: &mut AuthorizationLedger, cid: &str) -> Option<String> {
-    let entry = ledger.get(cid)?;
-    let label = entry.display_label();
-    (!label.is_empty()).then(|| label.to_owned())
 }
 
 #[cfg(test)]

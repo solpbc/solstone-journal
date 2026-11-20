@@ -282,6 +282,9 @@ fn the_vault_list_leaves_out_the_asking_device() {
         "a",
         vec![changed("a.md", "09:00:00", "text\n")],
     );
+    let auth = journal.path().join("link/authorized_clients.json");
+    std::fs::create_dir_all(auth.parent().unwrap()).unwrap();
+    std::fs::write(&auth,r#"[{"fingerprint":"a","device_label":"desk","paired_at":"2026-04-19T00:00:00Z","instance_id":"i"}]"#).unwrap();
     let held = read_vault(journal.path(), "Notes").unwrap();
     assert!(held.devices.contains_key("a"));
     assert!(listed_vaults(journal.path(), "a").unwrap().is_empty());
@@ -289,6 +292,26 @@ fn the_vault_list_leaves_out_the_asking_device() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["vault"], "Notes");
     assert_eq!(listed[0]["last_synced_at"], "2026-11-08T09:00:00-07:00");
+    let observed = crate::known_sources::snapshot(journal.path(), None).unwrap();
+    let body = serde_json::to_value(&observed).unwrap();
+    assert_eq!(body["devices"][0]["sources"][0]["origin"], "observed");
+    assert_eq!(body["devices"][0]["sources"][0]["detail"], "Notes");
+    solstone_core_sol_link::source_declarations::replace(
+        journal.path(),
+        "a",
+        vec![],
+        "2026-11-08T18:00:00Z".into(),
+    )
+    .unwrap();
+    let cleared = crate::known_sources::snapshot(journal.path(), None).unwrap();
+    assert_ne!(observed.sources_rev, cleared.sources_rev);
+    assert!(
+        serde_json::to_value(cleared).unwrap()["devices"][0]["sources"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(listed_vaults(journal.path(), "b").unwrap().is_empty());
 }
 
 #[test]

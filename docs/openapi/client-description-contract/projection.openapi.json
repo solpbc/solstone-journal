@@ -90,6 +90,89 @@
         ],
         "type": "object"
       },
+      "KnownSource": {
+        "properties": {
+          "declared_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_synced_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
+            "enum": [
+              "declared",
+              "observed"
+            ]
+          },
+          "source": {
+            "pattern": "^[a-z][a-z0-9_-]{0,47}$",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on",
+                  "paused",
+                  "needs_attention"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "detail",
+          "state",
+          "origin",
+          "last_synced_at",
+          "declared_at"
+        ],
+        "type": "object"
+      },
+      "KnownSources": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/SourceDevice"
+            },
+            "type": "array"
+          },
+          "self_cid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources_rev": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "self_cid",
+          "sources_rev",
+          "devices"
+        ],
+        "type": "object"
+      },
       "PatchClientLabelRequest": {
         "additionalProperties": false,
         "properties": {
@@ -186,19 +269,130 @@
           "app_version"
         ],
         "type": "object"
+      },
+      "SourceDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "description": "Nonblank if present, at most 256 UTF-8 bytes, without control characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "pattern": "^[a-z][a-z0-9_-]{0,47}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "on",
+              "paused",
+              "needs_attention"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "state"
+        ],
+        "type": "object"
+      },
+      "SourceDevice": {
+        "properties": {
+          "cid": {
+            "type": "string"
+          },
+          "device_last_seen_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_label": {
+            "type": "string"
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/KnownSource"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cid",
+          "display_label",
+          "platform",
+          "device_type",
+          "device_last_seen_at",
+          "sources"
+        ],
+        "type": "object"
       }
     }
   },
   "info": {
-    "description": "Generated from client_description_contract_authority.json. Covers GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+    "description": "Generated from client_description_contract_authority.json. Covers client descriptions, labels and shared source awareness.",
     "title": "Linked-device client description contract",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "x-disclaimer": "reported-device-metadata / owner-label-precedence",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/system/status": {
+      "get": {
+        "operationId": "system.sourceCapabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "capabilities": {
+                      "contains": {
+                        "const": "shared_sources"
+                      },
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sources_rev": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "capabilities",
+                    "sources_rev"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Additive source-awareness fields. The token is opaque and null when temporarily unavailable."
+          }
+        }
+      }
+    },
     "/app/network/api/clients/self": {
       "get": {
         "description": "Get current description for the authenticated caller linked device.",
@@ -289,6 +483,62 @@
         ]
       }
     },
+    "/app/network/api/clients/self/sources": {
+      "put": {
+        "description": "Replace the declaring paired device’s source list. The certificate identifies the device.",
+        "operationId": "client.putSelfSources",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Complete replacement in any order. Each source/detail pair must be unique. An empty array clears the list.",
+                "items": {
+                  "$ref": "#/components/schemas/SourceDeclaration"
+                },
+                "maxItems": 64,
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Saved."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Correct the invalid declaration before retrying."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "A paired device is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Retry without unpairing."
+          }
+        }
+      }
+    },
     "/app/network/api/clients/{cid}/label": {
       "patch": {
         "description": "Set or clear the owner override label for a paired device. Callable from the computer the journal runs on or from any device paired with the journal.",
@@ -359,6 +609,44 @@
         "x-aliases": [
           "/app/link/api/clients/{cid}/label"
         ]
+      }
+    },
+    "/app/network/api/sources": {
+      "get": {
+        "description": "Currently paired devices and their sources. Confirmed declarations take precedence over accepted deliveries. The caller has a null self_cid on localhost.",
+        "operationId": "client.knownSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnownSources"
+                }
+              }
+            },
+            "description": "Known sources"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Pair this device again."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Retry without unpairing."
+          }
+        }
       }
     }
   },

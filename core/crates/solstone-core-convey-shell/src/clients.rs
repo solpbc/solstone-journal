@@ -76,7 +76,7 @@ const CLIENT_ENTRY_FIELDS: [&str; 29] = [
 ];
 
 pub(crate) fn router(prefix: &str, pair_windows: Arc<PairWindowManager>) -> Router {
-    Router::new()
+    crate::shared_sources::router(prefix)
         .route(&format!("{prefix}/api/clients"), get(list))
         .route(
             &format!("{prefix}/api/clients/self"),

@@ -25,6 +25,7 @@
 mod calendar;
 mod carried;
 mod health;
+pub mod known_sources;
 mod listing;
 mod model;
 mod obsidian;

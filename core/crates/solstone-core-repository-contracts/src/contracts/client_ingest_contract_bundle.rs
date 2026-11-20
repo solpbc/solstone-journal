@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "15.3.0";
+const BUNDLE_SEMVER: &str = "15.4.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -481,6 +481,14 @@ fn wire_behavior() -> Value {
             "selected_keys": []
         },
         "schema_validation": {"valid": true}
+    }));
+    fixtures.push(json!({
+        "id":"declared.client.ingestObsidianVaults.current_pairs",
+        "kind":"declared",
+        "payload":{"vaults":[{"vault":"Notes","device":"Studio","last_synced_at":"2026-11-08T09:44:33-07:00"}]},
+        "provenance":{"http_status":200,"protocol_version":3},
+        "consumer_decision":{"accepted":true},
+        "schema_validation":{"valid":true}
     }));
     json!({"schema": "solstone.client-ingest-contract-fixtures.v2", "fixtures": fixtures})
 }

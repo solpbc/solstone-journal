@@ -3,7 +3,7 @@
 
 //! Generated-contract oracle for the linked-device client description and owner labeling contract.
 //!
-//! Projects GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.
+//! Projects client descriptions, labels and shared source awareness.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "1.0.0";
+const BUNDLE_SEMVER: &str = "1.1.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-description-contract";
 const AUTHORITY_PATH: &str = "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json";
 /// The client description OpenAPI authority is `client_description_contract_authority.json`, colocated with this
@@ -28,7 +28,14 @@ const ARTIFACTS: [&str; 5] = [
     "fixtures/wire-behavior.json",
     "consumer-audit.json",
 ];
-const OPERATION_SPECS: [(&str, &str, &str); 3] = [
+const OPERATION_SPECS: [(&str, &str, &str); 6] = [
+    (
+        "/app/network/api/clients/self/sources",
+        "put",
+        "client.putSelfSources",
+    ),
+    ("/app/network/api/sources", "get", "client.knownSources"),
+    ("/api/system/status", "get", "system.sourceCapabilities"),
     (
         "/app/network/api/clients/self",
         "get",
@@ -45,7 +52,11 @@ const OPERATION_SPECS: [(&str, &str, &str); 3] = [
         "client.patchClientLabel",
     ),
 ];
-const COMPONENT_CLOSURE: [&str; 7] = [
+const COMPONENT_CLOSURE: [&str; 11] = [
+    "KnownSources",
+    "SourceDevice",
+    "KnownSource",
+    "SourceDeclaration",
     "ClientDescriptionResponse",
     "Error",
     "JournalIdentityMeta",
@@ -189,7 +200,7 @@ fn selected_projection(authority: &Value) -> Value {
         "info": {
             "title": "Linked-device client description contract",
             "version": BUNDLE_SEMVER,
-            "description": "Generated from client_description_contract_authority.json. Covers GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+            "description": "Generated from client_description_contract_authority.json. Covers client descriptions, labels and shared source awareness.",
             "x-generated": true,
             "x-generated-by": "solstone-core-repository-contracts",
             "x-disclaimer": "reported-device-metadata / owner-label-precedence"
@@ -215,6 +226,12 @@ fn consumer_audit() -> Value {
 
 fn behavior_vectors() -> Value {
     json!([
+        {"id": "sources.empty", "kind": "declared", "operation": "client.putSelfSources", "http_status": 204, "decision": {"accepted": true, "reason_code": null}},
+        {"id": "sources.invalid", "kind": "declared", "operation": "client.putSelfSources", "http_status": 400, "decision": {"accepted": false, "reason_code": "invalid_sources"}},
+        {"id": "sources.device_required", "kind": "declared", "operation": "client.putSelfSources", "http_status": 403, "decision": {"accepted": false, "reason_code": "linked_device_required"}},
+        {"id": "sources.unavailable", "kind": "declared", "operation": "client.knownSources", "http_status": 503, "decision": {"accepted": false, "reason_code": "sources_unavailable"}},
+        {"id": "sources.revoked", "kind": "declared", "operation": "client.knownSources", "http_status": 403, "decision": {"accepted": false, "reason_code": "pl_revoked"}},
+        {"id": "sources.known", "kind": "declared", "operation": "client.knownSources", "http_status": 200, "decision": {"accepted": true, "reason_code": null}},
         {
             "id": "client_description.get_self.authenticated",
             "kind": "declared",
@@ -301,6 +318,11 @@ fn behavior_vectors() -> Value {
 fn wire_behavior() -> Value {
     json!({
         "fixtures": [
+            {"id": "sources.declare", "kind": "declared", "payload": [{"source": "obsidian", "state": "on", "detail": "Notes"}], "provenance": {"http_status": 204, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
+            {"id": "sources.clear", "kind": "declared", "payload": [], "provenance": {"http_status": 204, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
+            {"id": "sources.snapshot", "kind": "declared", "payload": {"self_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sources_rev": "1d9038", "devices": [{"cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "display_label": "Desk", "platform": "linux", "device_type": "desktop", "device_last_seen_at": "2026-11-20T12:00:00Z", "sources": [{"source": "obsidian", "state": "on", "detail": "Notes", "origin": "declared", "declared_at": "2026-11-20T12:00:00Z", "last_synced_at": null}]}, {"cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "display_label": "Laptop", "platform": "linux", "device_type": "desktop", "device_last_seen_at": "2026-11-20T12:00:00Z", "sources": [{"source": "terminal", "detail": null, "state": null, "origin": "observed", "last_synced_at": "2026-11-20T12:00:00Z", "declared_at": null}]}]}, "provenance": {"http_status": 200, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
+            {"id": "sources.invalid", "kind": "declared", "payload": {"error": "Bad Request", "reason_code": "invalid_sources", "detail": "Send each source and detail combination once."}, "provenance": {"http_status": 400, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
+            {"id": "sources.retry", "kind": "declared", "payload": {"error": "Service Unavailable", "reason_code": "sources_unavailable", "detail": "The journal could not read or save the paired source list. Retry without unpairing."}, "provenance": {"http_status": 503, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
             {
                 "id": "declared.client_description.put_self.sample",
                 "kind": "declared",
@@ -367,12 +389,12 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
             "role": "openapi_source",
             "sha256": sha256(authority_bytes)
         }],
-        "openapi_document_version": "1.0.0",
+        "openapi_document_version": BUNDLE_SEMVER,
         "openapi_spec_version": openapi_spec_version,
         "operation_ids": OPERATION_SPECS.map(|(_, _, id)| id),
         "projection_path": "projection.openapi.json",
         "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-        "scope_rationale": "This client-description bundle projects GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+        "scope_rationale": "This client-description bundle projects client descriptions, labels and shared source awareness.",
         "vocabularies": [platform_vocabulary(), device_type_vocabulary()],
         "windows_linux_rollout_targets": []
     })

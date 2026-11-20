@@ -1,6 +1,119 @@
 {
   "fixtures": [
     {
+      "id": "sources.declare",
+      "kind": "declared",
+      "payload": [
+        {
+          "detail": "Notes",
+          "source": "obsidian",
+          "state": "on"
+        }
+      ],
+      "provenance": {
+        "http_status": 204,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "sources.clear",
+      "kind": "declared",
+      "payload": [],
+      "provenance": {
+        "http_status": 204,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "sources.snapshot",
+      "kind": "declared",
+      "payload": {
+        "devices": [
+          {
+            "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "device_last_seen_at": "2026-11-20T12:00:00Z",
+            "device_type": "desktop",
+            "display_label": "Desk",
+            "platform": "linux",
+            "sources": [
+              {
+                "declared_at": "2026-11-20T12:00:00Z",
+                "detail": "Notes",
+                "last_synced_at": null,
+                "origin": "declared",
+                "source": "obsidian",
+                "state": "on"
+              }
+            ]
+          },
+          {
+            "cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "device_last_seen_at": "2026-11-20T12:00:00Z",
+            "device_type": "desktop",
+            "display_label": "Laptop",
+            "platform": "linux",
+            "sources": [
+              {
+                "declared_at": null,
+                "detail": null,
+                "last_synced_at": "2026-11-20T12:00:00Z",
+                "origin": "observed",
+                "source": "terminal",
+                "state": null
+              }
+            ]
+          }
+        ],
+        "self_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sources_rev": "1d9038"
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "sources.invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "Send each source and detail combination once.",
+        "error": "Bad Request",
+        "reason_code": "invalid_sources"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "sources.retry",
+      "kind": "declared",
+      "payload": {
+        "detail": "The journal could not read or save the paired source list. Retry without unpairing.",
+        "error": "Service Unavailable",
+        "reason_code": "sources_unavailable"
+      },
+      "provenance": {
+        "http_status": 503,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
       "id": "declared.client_description.put_self.sample",
       "kind": "declared",
       "payload": {

@@ -543,7 +543,7 @@
     },
     "/app/devices/ingest/obsidian/vaults": {
       "get": {
-        "description": "List the Obsidian vaults this journal has from devices other than the caller, so an app can warn before the first send of a vault with the same name. `device` is the device's label as the journal knows it, or null.",
+        "description": "Synced Obsidian vaults from other currently paired devices. Device names reflect owner renames. A device that declares Obsidian off is omitted. Each listed vault has a real sync time.",
         "operationId": "client.ingestObsidianVaults",
         "parameters": [
           {
@@ -904,7 +904,8 @@
                   ]
                 },
                 "last_synced_at": {
-                  "type": "string"
+                  "type": "string",
+                  "format": "date-time"
                 }
               }
             }
