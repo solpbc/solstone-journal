@@ -814,6 +814,8 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     // wrappers are already outside the captured body.
     let mut utterances = HashSet::new();
     let mut pending_body = None;
+    let mut all_language_labels = true;
+    let mut numeric_bodies = 0usize;
     for line in nonblank(lines).skip(header.rows) {
         let captured = regex.captures(line);
         let speaker = captured
@@ -832,12 +834,18 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 return false;
             }
             matched += 1;
-            if header.summary_words != 0
-                && let Some(body) = captured.as_ref().and_then(|c| c.name("body"))
-            {
-                turn_words += body.as_str().split_whitespace().count();
+            if let Some(body) = captured.as_ref().and_then(|c| c.name("body")) {
+                if header.summary_words != 0 {
+                    turn_words += body.as_str().split_whitespace().count();
+                }
+                if shape == Bare && is_numeric_value(body.as_str()) {
+                    numeric_bodies += 1;
+                }
             }
             if let Some(speaker) = speaker {
+                if shape == Bare && all_language_labels {
+                    all_language_labels = is_language_label(speaker);
+                }
                 speakers.push(speaker.to_lowercase());
             }
             in_turn = true;
@@ -961,6 +969,9 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         }
         RoleLine => distinct.len() >= 2 && matched >= 3 && interleaves && unmatched <= matched / 3,
         Bare => {
+            if (!interview && all_language_labels) || numeric_bodies * 5 >= matched * 4 {
+                return false;
+            }
             let mut counts = HashMap::new();
             for speaker in &speakers {
                 *counts.entry(speaker).or_insert(0) += 1;
@@ -976,6 +987,175 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 && unmatched <= matched / 3
         }
     }
+}
+
+fn is_numeric_value(body: &str) -> bool {
+    let body = body.trim();
+    if body.is_empty() {
+        return false;
+    }
+    let mut parts = body.split_whitespace();
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    let rest: Vec<_> = parts.collect();
+    if rest.len() > 1 || !rest.first().is_none_or(|unit| is_measurement_unit(unit)) {
+        return false;
+    }
+    let core = first
+        .trim_start_matches(['$', '€', '£', '¥', '+', '-', '~', '±'])
+        .trim_end_matches(['%', '°']);
+    let core = if rest.is_empty() {
+        let idx = core.find(|c: char| c.is_alphabetic()).unwrap_or(core.len());
+        let (num, suffix) = core.split_at(idx);
+        if !suffix.is_empty() && !is_measurement_unit(suffix) {
+            return false;
+        }
+        num.trim_end_matches(['%', '°'])
+    } else {
+        core
+    };
+    core.bytes().any(|b| b.is_ascii_digit())
+        && core
+            .bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b',' | b'/' | b':' | b'-' | b'+'))
+}
+
+fn is_measurement_unit(unit: &str) -> bool {
+    matches!(
+        unit.trim_end_matches('.').to_ascii_lowercase().as_str(),
+        "%" | "usd"
+            | "eur"
+            | "gbp"
+            | "jpy"
+            | "cad"
+            | "aud"
+            | "chf"
+            | "btc"
+            | "eth"
+            | "kg"
+            | "g"
+            | "mg"
+            | "lb"
+            | "lbs"
+            | "oz"
+            | "km"
+            | "m"
+            | "cm"
+            | "mm"
+            | "mi"
+            | "ft"
+            | "in"
+            | "l"
+            | "ml"
+            | "ms"
+            | "s"
+            | "sec"
+            | "min"
+            | "hr"
+            | "hrs"
+            | "kb"
+            | "mb"
+            | "gb"
+            | "tb"
+            | "hz"
+            | "khz"
+            | "mhz"
+            | "ghz"
+            | "c"
+            | "f"
+            | "°c"
+            | "°f"
+            | "bpm"
+            | "kcal"
+            | "cal"
+            | "pts"
+            | "px"
+    )
+}
+
+fn is_language_label(label: &str) -> bool {
+    let label = label.trim();
+    let lower = label.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "english"
+            | "french"
+            | "spanish"
+            | "german"
+            | "italian"
+            | "portuguese"
+            | "russian"
+            | "japanese"
+            | "chinese"
+            | "korean"
+            | "arabic"
+            | "dutch"
+            | "swedish"
+            | "polish"
+            | "turkish"
+            | "hindi"
+            | "ukrainian"
+            | "vietnamese"
+            | "hebrew"
+            | "greek"
+            | "latin"
+            | "finnish"
+            | "danish"
+            | "norwegian"
+            | "czech"
+            | "original"
+            | "translation"
+            | "translated"
+            | "source"
+            | "target"
+    ) {
+        return true;
+    }
+    // Two-letter ISO 639-1 language codes (EN/FR, en/fr) or locale tags (en-US/fr-FR).
+    // Bare two-letter codes require uniform case so Title-Case names (Vi, An) stay speakers.
+    let (code, region) = match label.split_once(['-', '_']) {
+        Some((c, r)) => (c, Some(r)),
+        None => (label, None),
+    };
+    let valid_case = if let Some(r) = region {
+        (r.len() == 2 || r.len() == 4) && r.bytes().all(|b| b.is_ascii_alphabetic())
+    } else {
+        code.bytes().all(|b| b.is_ascii_uppercase()) || code.bytes().all(|b| b.is_ascii_lowercase())
+    };
+    valid_case
+        && matches!(
+            code.to_ascii_lowercase().as_str(),
+            "en" | "fr"
+                | "de"
+                | "es"
+                | "it"
+                | "pt"
+                | "ru"
+                | "ja"
+                | "zh"
+                | "ko"
+                | "ar"
+                | "nl"
+                | "sv"
+                | "pl"
+                | "tr"
+                | "hi"
+                | "uk"
+                | "vi"
+                | "he"
+                | "el"
+                | "la"
+                | "fi"
+                | "da"
+                | "no"
+                | "cs"
+                | "ro"
+                | "hu"
+                | "th"
+                | "id"
+                | "ca"
+        )
 }
 
 fn markdown_title(line: &str) -> Option<&str> {

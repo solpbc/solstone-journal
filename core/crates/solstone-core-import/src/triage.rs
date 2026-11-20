@@ -19,7 +19,7 @@ mod image;
 mod rules;
 use rules::{Evidence, RULES, Rule, Stage};
 
-pub const RULESET_VERSION: u32 = 5;
+pub const RULESET_VERSION: u32 = 6;
 pub use solstone_core_format::content::IMPORT_KIND_FILENAME as METADATA_FILENAME;
 
 /// Rule provenance is static for the version written with each verdict.

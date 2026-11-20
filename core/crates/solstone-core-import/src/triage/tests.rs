@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 5);
+    assert_eq!(found.ruleset_version, 6);
     let shuffled = RULES
         .iter()
         .rev()
@@ -1301,6 +1301,34 @@ fn real_two_person_conversations_survive_two_label_guards() {
         ),
     ] {
         expected(name, text, Kind::Transcripts, &[rule]);
+    }
+}
+
+#[test]
+fn two_label_price_logs_and_translation_pairs_stay_notes() {
+    let prices =
+        "Gold: 2301.5\nSilver: 27.1\nGold: 2314.2\nSilver: 27.4\nGold: 2298.8\nSilver: 26.9\n";
+    let currency_prices = "Gold: $2,301.50\nSilver: $27.10\nGold: $2,314.20\nSilver: $27.40\nGold: $2,298.80\nSilver: $26.90\n";
+    let bold_prices = "**Gold:** 2301.5 USD\n**Silver:** 27.1 USD\n**Gold:** 2314.2 USD\n**Silver:** 27.4 USD\n**Gold:** 2298.8 USD\n**Silver:** 26.9 USD\n";
+    let metrics = "Weight: 182.4 lb\nDistance: 5.2 km\nWeight: 181.9 lb\nDistance: 6.1 km\nWeight: 181.5 lb\nDistance: 4.8 km\n";
+    let translations = "EN: Good morning, how are you?\nFR: Bonjour, comment allez-vous ?\nEN: Where is the harbor?\nFR: Où est le port ?\nEN: Thank you very much.\nFR: Merci beaucoup.\n";
+    let lowercase_translations = "en: Good morning, how are you?\nfr: Bonjour, comment allez-vous ?\nen: Where is the harbor?\nfr: Où est le port ?\nen: Thank you very much.\nfr: Merci beaucoup.\n";
+    let locale_translations = "en-US: Good morning, how are you?\nfr-FR: Bonjour, comment allez-vous ?\nen-US: Where is the harbor?\nfr-FR: Où est le port ?\nen-US: Thank you very much.\nfr-FR: Merci beaucoup.\n";
+    let named_translations = "English: Good morning, how are you?\nFrench: Bonjour, comment allez-vous ?\nEnglish: Where is the harbor?\nFrench: Où est le port ?\nEnglish: Thank you very much.\nFrench: Merci beaucoup.\n";
+    let bold_translations = "**EN:** Good morning, how are you?\n**FR:** Bonjour, comment allez-vous ?\n**EN:** Where is the harbor?\n**FR:** Où est le port ?\n**EN:** Thank you very much.\n**FR:** Merci beaucoup.\n";
+
+    for (name, text) in [
+        ("prices.txt", prices),
+        ("currency.txt", currency_prices),
+        ("prices.md", bold_prices),
+        ("metrics.txt", metrics),
+        ("translations.txt", translations),
+        ("translations-lower.txt", lowercase_translations),
+        ("translations-locale.txt", locale_translations),
+        ("translations-named.txt", named_translations),
+        ("translations.md", bold_translations),
+    ] {
+        expected(name, text, Kind::Notes, &["note_default"]);
     }
 }
 
