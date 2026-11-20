@@ -564,7 +564,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function formatInstallBytes(received, total) {
     if (received === null || received === undefined || total === null || total === undefined) return '';
     const gb = 1e9;
-    return `${(Number(received) / gb).toFixed(1)} GB of ${(Number(total) / gb).toFixed(1)} GB`;
+    return window.JournalI18n.render('journal.window.thinking.local.download.quantity', [
+      ['received', (Number(received) / gb).toFixed(1)],
+      ['total', (Number(total) / gb).toFixed(1)],
+    ]);
   }
 
   function installCopyForStatus(status, text) {
@@ -574,7 +577,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const bytesLine = formatInstallBytes(status.progress_bytes_received, status.progress_bytes_total);
       return {
         pill: text?.pill_inflight || '',
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: phaseLabel,
         message: bytesLine || phaseLabel,
         notice: text?.notice_inflight || '',
@@ -582,7 +585,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         bootstrap: false,
         bootstrapLabel: text?.install || '',
         cancel: true,
-        cancelLabel: text?.cancel || 'cancel',
+        cancelLabel: text?.cancel || window.JournalI18n.render('journal.window.thinking.button.label.cancel'),
         tone: '',
       };
     }
@@ -595,7 +598,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const verdict = isCancelled ? text?.cancelled_verdict : text?.interrupted_verdict;
         return {
           pill: verdict || '',
-          title: 'local',
+          title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
           sub: verdict || '',
           message: '',
           notice: text?.stopped_reason || '',
@@ -603,7 +606,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
           bootstrap: true,
           bootstrapLabel: text?.retry || '',
           cancel: true,
-          cancelLabel: text?.cancel || 'cancel',
+          cancelLabel: text?.cancel || window.JournalI18n.render('journal.window.thinking.button.label.cancel'),
           tone: 'bad',
         };
       }
@@ -631,7 +634,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       }
       return {
         pill: text?.pill_failed || '',
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: text?.failed_verdict || '',
         message: '',
         notice: text?.[classKey] || text?.failed_reason || '',
@@ -639,7 +642,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         bootstrap: true,
         bootstrapLabel: text?.retry || '',
         cancel: true,
-        cancelLabel: text?.cancel || 'cancel',
+        cancelLabel: text?.cancel || window.JournalI18n.render('journal.window.thinking.button.label.cancel'),
         tone: 'bad',
       };
     }
@@ -653,7 +656,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const value = states[key] || {};
       return {
         pill: value.pill || '',
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: value.verdict || '',
         message: '',
         notice: value.reason || '',
@@ -892,7 +895,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const states = text?.attestation_states || {};
     if (stateName === 'verified') {
       return {
-        pill: 'active',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.active'),
         tone: 'hot',
         message: formatCopy(states.verified || '', {checked: checkedLabel}),
         recheck: false,
@@ -900,7 +903,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (stateName === 'inactive') {
       return {
-        pill: 'available',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.available'),
         tone: '',
         message: states.inactive || '',
         recheck: false,
@@ -908,7 +911,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable') {
       return {
-        pill: stateName === 'unreachable' ? 'unreachable' : window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
+        pill: stateName === 'unreachable' ? window.JournalI18n.render('journal.window.thinking.confidential.status.unreachable') : window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
         tone: 'bad',
         message: states[stateName] || '',
         recheck: state.providers?.brain?.identity?.lane === 'spp',
@@ -916,7 +919,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (stateName === 'verifying') {
       return {
-        pill: 'checking',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.checking'),
         tone: '',
         message: states.verifying || '',
         recheck: false,
@@ -1199,7 +1202,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function laneDisplayLabel(lane) {
-    if (lane.id === 'byo') return lane.label || 'byo';
+    if (lane.id === 'byo') return lane.label || window.JournalI18n.render('journal.window.thinking.lane.label.byo.short');
     return (lane.label || lane.id || '').toLowerCase();
   }
 
@@ -1210,7 +1213,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function applyCopy(payload) {
     copy = payload || {};
     providerLabels = copy.provider_labels || fallbackProviderLabels;
-    setText('thinkingHeading', copy.heading || 'thinking');
+    setText('thinkingHeading', copy.heading || window.JournalI18n.render('journal.window.thinking.copy.thinking'));
   }
 
   function renderInitialLoading() {
@@ -2647,7 +2650,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function providerLabel(provider) {
-    return mapValue(providerLabels, provider) || provider || 'provider';
+    return mapValue(providerLabels, provider) || provider || window.JournalI18n.render('journal.window.thinking.field.label.provider');
   }
 
   // Prior partial G2-05: the runs table and cards still showed the raw
@@ -3373,7 +3376,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       writeAttr(localCard, 'aria-disabled', 'false');
     }
     if (capabilityBlocked) {
-      setPill('localLanePill', 'unavailable');
+      setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.copy.unavailable'));
       const desc = $('localLaneDescription');
       if (desc) {
         setLocalReason(desc, state.localCapability?.detail || '');
@@ -3403,18 +3406,18 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setElementData(localCard, 'openView', 'data-open-view', 'local-setup');
       }
       if (localActive) {
-        setPill('localLanePill', 'active', 'hot');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.copy.active'), 'hot');
         setText('localLaneDescription', localLane.description || '');
         setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage'));
       } else if (endpointOverride) {
-        setPill('localLanePill', 'endpoint');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.local.status.endpoint'));
         const managed = state.providers.active_lane?.lane === 'confidential';
         setText('localLaneDescription', managed
           ? window.JournalI18n.render('journal.window.thinking.status.text.not.in.use.while.confidential.processing')
           : window.JournalI18n.render('journal.window.thinking.status.text.not.in.use.while.your.own'));
         setText('localLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.set.up.the.bundled.model'));
       } else if (gpuBlocked) {
-        setPill('localLanePill', 'unavailable', 'bad');
+        setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.copy.unavailable'), 'bad');
         const desc = $('localLaneDescription');
         drawPart(desc, ['gpu'], () => {
           desc.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.your.journal.s.computer.can.t');
@@ -3918,15 +3921,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function localCopy() {
     if (bundledLocalUnavailable()) {
-      return {pill: 'unavailable', title: 'local',
+      return {pill: window.JournalI18n.render('journal.window.thinking.copy.unavailable'), title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.bundled.local.thinking.isn.t.available'),
         message: '', notice: window.JournalI18n.render('journal.window.thinking.notice.choose.another.thinking.option'),
         activate: false, bootstrap: false, cancel: false, tone: ''};
     }
     if (localCapabilityBlocked()) {
       return {
-        pill: 'unavailable',
-        title: 'local',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.unavailable'),
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.t.variant2'),
         message: '',
         notice: state.localCapability?.detail || '',
@@ -3940,7 +3943,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const text = copy.local_recovery?.states?.local_probe_failed || {};
       return {
         pill: text.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: text.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'),
         message: '',
         notice: text.reason || window.JournalI18n.render('journal.window.thinking.notice.try.checking.again.in.a.moment'),
@@ -3951,8 +3954,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     if (localEndpointConfigured()) {
       return {
-        pill: 'endpoint',
-        title: 'local',
+        pill: window.JournalI18n.render('journal.window.thinking.local.status.endpoint'),
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.you.re.pointed.at.your.own'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.you.re.pointed.at.your.own'),
@@ -3966,7 +3969,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       || ['local_probe_failed', 'gpu_probe_failed', 'availability_unavailable'].includes(state.localAvailability?.reason_code);
     if (inspectionFailed) {
       const text = copy.local_recovery?.states?.local_probe_failed || {};
-      return {pill: text.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'), title: 'local',
+      return {pill: text.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'), title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: text.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'), message: '',
         notice: text.reason || window.JournalI18n.render('journal.window.thinking.notice.try.checking.again.in.a.moment'),
         activate: false, bootstrap: false, tone: ''};
@@ -3993,7 +3996,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (local.status === 'ready' || reason === 'ready') {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.status.off'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.run'),
         message: '',
         notice: copy.glance?.local?.detail || '',
@@ -4006,8 +4009,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // when the required hardware is absent.
     if (reason === 'gpu_unavailable') {
       return {
-        pill: 'unavailable',
-        title: 'local',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.unavailable'),
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.t'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.your.journal.s.computer.doesn.t', [['value1', String(activeLaneLabel('byo'))]]),
@@ -4022,7 +4025,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const copyProbe = copy.local_recovery?.states?.local_probe_failed;
       return {
         pill: copyProbe?.pill || window.JournalI18n.render('journal.window.thinking.window.state.text.couldn.t.check'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: copyProbe?.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'),
         message: '',
         notice: copyProbe?.reason || window.JournalI18n.render('journal.window.thinking.notice.couldn.t.check.local.setup.you', [['value1', String(activeLaneLabel('byo'))]]),
@@ -4040,7 +4043,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (reason === 'local_model_installing') {
       return {
         pill: copy.local_install?.pill_inflight || '',
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.setting.up.a.local.model'),
         message: '',
         notice: copy.local_install?.notice_inflight || '',
@@ -4053,8 +4056,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // consumer-only vocabulary, kept inert.
     if (reason === 'local_model_loading') {
       return {
-        pill: 'starting',
-        title: 'local',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.starting'),
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.starting.the.local.model'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.local.thinking.will.stay.in.your'),
@@ -4068,7 +4071,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (localSetupMissingReasons.has(reason)) {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.window.state.text.setup.needed'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.local.setup.is.not.finished.yet'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.finish.local.setup.before.turning.on'),
@@ -4083,7 +4086,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (reason === 'local_endpoint_unreachable') {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.own.endpoint.didn.t.answer'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.check.the.endpoint.in.value1.then', [['value1', String(activeLaneLabel('byo'))]]),
@@ -4097,7 +4100,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (localServerUnhealthyReasons.has(reason)) {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.local.thinking.isn.t.ready.yet'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.check.again.after.the.local.service'),
@@ -4110,8 +4113,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // issues do not emit it.
     if (reason === 'ram_insufficient') {
       return {
-        pill: 'unavailable',
-        title: 'local',
+        pill: window.JournalI18n.render('journal.window.thinking.copy.unavailable'),
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.needs.more'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.you.can.still.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
@@ -4125,7 +4128,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (local.status === 'blocked') {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.window.state.text.not.ready'),
-        title: 'local',
+        title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.couldn.t.get.local.thinking.ready'),
         message: '',
         notice: window.JournalI18n.render('journal.window.thinking.notice.try.again.or.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
@@ -4135,8 +4138,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       };
     }
     return {
-      pill: 'checking',
-      title: 'local',
+      pill: window.JournalI18n.render('journal.window.thinking.copy.checking'),
+      title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
       sub: window.JournalI18n.render('journal.window.thinking.sub.checking.local.readiness'),
       message: '',
       notice: '',
@@ -4184,7 +4187,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setButtonState('localBootstrap', local.bootstrap, !local.bootstrap);
     setButtonText('localBootstrap', local.bootstrapLabel || copy.local_install?.install || '');
     setButtonState('localCancel', !!local.cancel, !local.cancel);
-    setButtonText('localCancel', local.cancelLabel || copy.local_install?.cancel || 'cancel');
+    setButtonText('localCancel', local.cancelLabel || copy.local_install?.cancel || window.JournalI18n.render('journal.window.thinking.button.label.cancel'));
     setButtonState('localRuntimeRetry', local.retryRuntime, !local.retryRuntime);
     setButtonText('localRuntimeRetry', local.retryRuntimeLabel || copy.local_recovery?.retry || '');
     setButtonState('localActivate', local.activate, !local.activate);
@@ -4241,7 +4244,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function byoSetupLabel(brain) {
     if (brain.kind !== 'byo') return activeLaneLabel(brain.kind);
-    if (brain.byoKind === 'endpoint') return copy.lane_switch?.setup_endpoint || 'endpoint';
+    if (brain.byoKind === 'endpoint') return copy.lane_switch?.setup_endpoint || window.JournalI18n.render('journal.window.thinking.local.status.endpoint');
     return brain.providerLabel || activeLaneLabel('byo');
   }
 

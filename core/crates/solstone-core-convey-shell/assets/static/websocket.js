@@ -683,7 +683,7 @@
         const reconnectedId = window.AppServices?.notifications?.show({
           app: 'system',
           icon: 'check',
-          title: 'reconnected',
+          title: window.JournalI18n.render('journal.window.shared.websocket.title.reconnected'),
           message: window.JournalI18n.render('journal.window.shared.websocket.message.live.updates.connected'),
           dismissible: true
         });

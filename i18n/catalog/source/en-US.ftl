@@ -16014,3 +16014,15 @@ journal.window.describe.notification.blocked.provider.key.missing = your AI prov
 journal.window.describe.notification.blocked.title = screen descriptions are waiting
 
 journal.window.shared.app.notification.segments = { $count }{ $slot1 }segments
+
+journal.window.shared.websocket.title.reconnected = reconnected
+
+journal.window.sol.link.capability.runtime.unavailable = the journal app does not provide this local runtime
+
+journal.window.thinking.confidential.status.unreachable = unreachable
+
+journal.window.thinking.lane.label.byo.short = byo
+
+journal.window.thinking.local.download.quantity = { $received }{ $slot1 }{ $slot2 } of{ $slot3 }{ $total }{ $slot4 }{ $slot5 }
+
+journal.window.thinking.local.status.endpoint = endpoint

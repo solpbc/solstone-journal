@@ -1,0 +1,16 @@
+{
+  "description": "Title of the notice after live updates reconnect in the journal's shared view.",
+  "context": "Journal window, shared view. Title of the notice after live updates reconnect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1756dc1d4b19f48706ca1247db6396b50b5b6e8223f778231396bf1b5b1e5079",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

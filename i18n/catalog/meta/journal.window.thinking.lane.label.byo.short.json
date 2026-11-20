@@ -1,0 +1,16 @@
+{
+  "description": "Fallback to the short bring-your-own lane name in the journal's thinking view.",
+  "context": "Journal window, thinking view. Fallback to the short bring-your-own lane name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "911dae0d00e58d34578396c1d72b463e212dd601a2bccceaa4ab90b882d7eaf5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

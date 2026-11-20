@@ -267,7 +267,11 @@ pub fn read_setup_progress_with_downloads(
         }
     } else {
         let inputs = gather_host_inputs(journal, env!("CARGO_PKG_VERSION"));
-        crate::http::local_capability(&build_check_report(&inputs)).overall
+        crate::http::local_capability(
+            &build_check_report(&inputs),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .overall
     };
 
     Ok(SetupProgress {

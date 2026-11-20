@@ -598,7 +598,7 @@ async fn state(
                 None
             };
             let capability =
-                solstone_core_sol_link::http::compute_local_capability(&journal.0).await;
+                solstone_core_sol_link::http::compute_local_capability_in(&journal.0, locale).await;
             let reason_code = if capability.overall == "blocked" {
                 capability.checks.first().map(|c| c.reason_code)
             } else {
@@ -827,6 +827,7 @@ async fn retry_local_runtime(
 
 async fn bootstrap_capability(
     journal_root: &std::path::Path,
+    locale: &str,
 ) -> solstone_core_sol_link::http::LocalCapabilityResponse {
     #[cfg(all(test, windows, feature = "full-tests"))]
     if bootstrap_capability_test::admitted(journal_root) {
@@ -836,7 +837,7 @@ async fn bootstrap_capability(
             checks: Vec::new(),
         };
     }
-    solstone_core_sol_link::http::compute_local_capability(journal_root).await
+    solstone_core_sol_link::http::compute_local_capability_in(journal_root, locale).await
 }
 
 /// Lets a Windows installer test reach the installer branch of the bootstrap
@@ -882,7 +883,7 @@ async fn start_local_bootstrap(
             query.get("model").map(String::as_str).unwrap_or_default(),
         ));
     };
-    let capability = bootstrap_capability(&journal.0).await;
+    let capability = bootstrap_capability(&journal.0, locale).await;
     if !capability.admits_local() {
         return json_response(json!({
             "refused": true,

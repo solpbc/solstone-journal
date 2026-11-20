@@ -1,0 +1,52 @@
+{
+  "description": "Progress of a local Thinking download in GB in the journal's thinking view.",
+  "context": "Journal window, thinking view. Progress of a local Thinking download in GB.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "received",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e93ac15459362cc144567dc24b6016e0f666182c0ef8a1c8f90178f5faeae6b",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "GB"
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot5",
+      "kind": "accepted-input",
+      "value": "GB"
+    }
+  ]
+}

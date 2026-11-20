@@ -1,0 +1,16 @@
+{
+  "description": "Pill for a configured local endpoint in the journal's thinking view.",
+  "context": "Journal window, thinking view. Pill for a configured local endpoint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "177a81a56f6b523790b00c8cf49e694c6fe772e41ab309ac3153ee0f8d2e3ee2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

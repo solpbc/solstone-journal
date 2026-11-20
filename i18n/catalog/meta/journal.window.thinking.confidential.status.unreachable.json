@@ -1,0 +1,16 @@
+{
+  "description": "Pill for an unreachable confidential processing service in the journal's thinking view.",
+  "context": "Journal window, thinking view. Pill for an unreachable confidential processing service.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15ea3f94bef65ce306e0eef47a8fc406f67c7baa05d26cc074a973d3f0d41a62",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

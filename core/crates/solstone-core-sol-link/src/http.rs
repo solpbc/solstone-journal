@@ -19,13 +19,14 @@ use solstone_core_check::{CheckReport, Severity, build_check_report, gather_host
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::window_catalog::{ENGLISH, text};
 use solstone_core_journal_config::load_mutation_base;
 use solstone_core_journal_config_write::{
     ConfigMutationError, JournalConfigMutation, mutate_journal_config,
 };
 use solstone_core_thinking_copy::{
     ConfidentialLaneDetail, Lane, SetupCatalogFacts, confidential_lane_detail, lanes,
-    thinking_copy_payload,
+    localized_thinking_copy_payload,
 };
 
 use crate::ca::jid_from_spki;
@@ -436,6 +437,14 @@ async fn init_state(
 }
 
 pub async fn compute_local_capability(journal_root: &Path) -> LocalCapabilityResponse {
+    compute_local_capability_in(journal_root, ENGLISH).await
+}
+
+/// Project the same host capability for a journal window request.
+pub async fn compute_local_capability_in(
+    journal_root: &Path,
+    locale: &str,
+) -> LocalCapabilityResponse {
     let key = solstone_core_local::install::pins::platform_key();
     if solstone_core_local::embedded::supports_key(&key) {
         return if solstone_core_local::embedded::identity_for_key(&key).is_some() {
@@ -452,7 +461,10 @@ pub async fn compute_local_capability(journal_root: &Path) -> LocalCapabilityRes
                     name: "runtime",
                     severity: "blocked",
                     reason_code: "embedded_runtime_unavailable",
-                    detail: "the journal app does not provide this local runtime".into(),
+                    detail: text(
+                        locale,
+                        "journal.window.sol.link.capability.runtime.unavailable",
+                    ),
                 }],
             }
         };
@@ -468,7 +480,7 @@ pub async fn compute_local_capability(journal_root: &Path) -> LocalCapabilityRes
     })
     .await;
     let capability = match report {
-        Ok(report) => local_capability(&report),
+        Ok(report) => local_capability(&report, locale),
         Err(error) => {
             log::warn!("local capability check did not finish: {error}");
             LocalCapabilityResponse {
@@ -692,7 +704,7 @@ async fn init_local_capability(
 /// Answer "can this computer run local thinking" from the same platform, GPU and
 /// Mac memory rows `journal setup` reads before it chooses local. Those rows use
 /// the same memory bars the local model install refuses below.
-pub(crate) fn local_capability(report: &CheckReport) -> LocalCapabilityResponse {
+pub(crate) fn local_capability(report: &CheckReport, locale: &str) -> LocalCapabilityResponse {
     let rows = || {
         report
             .checks
@@ -707,22 +719,23 @@ pub(crate) fn local_capability(report: &CheckReport) -> LocalCapabilityResponse 
                 name: "local",
                 severity: "blocked",
                 reason_code: row.name,
-                detail: local_unavailable_reason(row.name),
+                detail: local_unavailable_reason(row.name, locale),
             }],
         };
     }
     if rows().any(|check| check.severity == Severity::Unknown) {
-        let checks =
-            if rows().any(|check| check.name == "gpu" && check.severity == Severity::Unknown) {
-                vec![LocalCapabilityCheck {
-                    name: "local",
-                    severity: "unknown",
-                    reason_code: "gpu",
-                    detail: gpu_memory_unknown_reason(),
-                }]
-            } else {
-                Vec::new()
-            };
+        let checks = if rows()
+            .any(|check| check.name == "gpu" && check.severity == Severity::Unknown)
+        {
+            vec![LocalCapabilityCheck {
+                name: "local",
+                severity: "unknown",
+                reason_code: "gpu",
+                detail: thinking_copy_pointer_string(locale, "/local_install/gpu_memory_unknown"),
+            }]
+        } else {
+            Vec::new()
+        };
         let local_admitted = matches!(report.platform.os.as_str(), "Darwin" | "Linux");
         return LocalCapabilityResponse {
             overall: "unknown",
@@ -737,29 +750,22 @@ pub(crate) fn local_capability(report: &CheckReport) -> LocalCapabilityResponse 
     }
 }
 
-fn thinking_copy_pointer_string(pointer: &str) -> String {
-    serde_json::to_value(thinking_copy_payload())
-        .ok()
-        .and_then(|copy| {
-            copy.pointer(pointer)
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
+fn thinking_copy_pointer_string(locale: &str, pointer: &str) -> String {
+    localized_thinking_copy_payload(locale)
+        .pointer(pointer)
+        .and_then(Value::as_str)
         .unwrap_or_default()
+        .to_owned()
 }
 
 /// The thinking page's own owner copy for the refusal this row predicts.
-fn local_unavailable_reason(row: &str) -> String {
+fn local_unavailable_reason(row: &str, locale: &str) -> String {
     let pointer = match row {
         "gpu" => "/local_recovery/states/gpu_memory_insufficient/reason",
         "memory" => "/local_install/memory_failed",
         _ => "/local_recovery/states/unsupported/reason",
     };
-    thinking_copy_pointer_string(pointer)
-}
-
-fn gpu_memory_unknown_reason() -> String {
-    thinking_copy_pointer_string("/local_install/gpu_memory_unknown")
+    thinking_copy_pointer_string(locale, pointer)
 }
 
 pub(crate) fn injected_init_html() -> String {
@@ -2065,13 +2071,18 @@ mod access_tests {
 
 #[cfg(test)]
 mod local_capability_tests {
-    use super::local_capability;
+    use super::{ENGLISH, LocalCapabilityResponse};
+    use solstone_core_check::CheckReport;
     use solstone_core_check::{
         CheckInputs, DiskInput, MemoryInput, NvidiaInput, PlatformInput, RfdetrCheckInput,
         VulkanInput, build_check_report,
     };
 
     const GIB: u64 = 1024 * 1024 * 1024;
+
+    fn local_capability(report: &CheckReport) -> LocalCapabilityResponse {
+        super::local_capability(report, ENGLISH)
+    }
 
     fn inputs(os: &str, arch: &str, memory_bytes: Option<u64>) -> CheckInputs {
         CheckInputs {
