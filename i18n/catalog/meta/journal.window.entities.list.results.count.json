@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. list results count.",
+  "context": "Journal window. Entities view. list results count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "matched_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "matched",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5f8b9ec93e32d27e59b5933c983f82e0cc885ab5d7f4c816fbb31d755a28817a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "matched_quantity",
+    "type": "cardinal"
+  }
+}

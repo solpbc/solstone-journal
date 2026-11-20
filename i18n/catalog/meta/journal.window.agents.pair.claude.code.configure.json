@@ -1,0 +1,33 @@
+{
+  "description": "Agents view. pair claude code configure.",
+  "context": "Journal window. Agents view. pair claude code configure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "copy_button",
+      "type": "string"
+    },
+    {
+      "name": "menu_command",
+      "type": "string"
+    },
+    {
+      "name": "server",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed1c3601a3ef954fd983286c0eacb7c79fc0eade839f829f1dbfd95d31958b5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

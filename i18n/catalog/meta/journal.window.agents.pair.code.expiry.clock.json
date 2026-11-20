@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. pair code expiry clock.",
+  "context": "Journal window. Agents window. pair code expiry clock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "expiry_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7f1c5d0d502590481c2ec6e6c735a495ece2c82874cdd407ec269a07f1498c0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

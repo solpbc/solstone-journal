@@ -260,7 +260,7 @@
     const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
-    let label = window.JournalI18n.render('journal.window.shared.date.nav.visible.text.week.of.value1.value2', [['value1', String(MONTHS_SHORT[target.getMonth()])], ['value2', String(target.getDate())]]);
+    let label = window.JournalI18n.render('journal.window.shared.date.nav.week.headline.month.day', [['month', String(MONTHS_SHORT[target.getMonth()])], ['day', String(target.getDate())]]);
     if (target.getFullYear() !== nowYear(activeNow)) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
@@ -276,7 +276,7 @@
     const lastSunday = thisSunday ? addDays(thisSunday, -7) : null;
     if (normalized === thisSunday) return window.JournalI18n.render('journal.window.shared.date.nav.week.current');
     if (normalized === lastSunday) return window.JournalI18n.render('journal.window.shared.date.nav.week.previous');
-    let label = window.JournalI18n.render('journal.window.shared.date.nav.visible.text.week.of.value1.value2', [['value1', String(MONTHS_SHORT[target.getMonth()])], ['value2', String(target.getDate())]]);
+    let label = window.JournalI18n.render('journal.window.shared.date.nav.week.headline.month.day', [['month', String(MONTHS_SHORT[target.getMonth()])], ['day', String(target.getDate())]]);
     if (target.getFullYear() !== nowYear(activeNow)) {
       label += `, ${target.getFullYear()}`;
     }
@@ -286,9 +286,14 @@
   function countLabel(count, unit) {
     const normalized = coerceCount(count);
     const noun = unit || {};
-    if (normalized === 1) return `1 ${noun.one}`;
-    if (normalized > 0) return `${normalized} ${noun.other}`;
-    return noun.none || '';
+    if (normalized <= 0) return noun.none || '';
+    if (noun.countMessage) {
+      return window.JournalI18n.render(noun.countMessage, [
+        ['quantity', window.JournalI18n.cardinalQuantity(normalized)], ['count', String(normalized)]
+      ]);
+    }
+    // An unregistered calendar can still provide its own labels.
+    return normalized === 1 ? `1 ${noun.one}` : `${normalized} ${noun.other}`;
   }
 
   function coerceCount(value) {
@@ -487,9 +492,7 @@
     if (!freshness || freshness.complete !== false) return '';
     if (freshness.behind > 0) return window.JournalI18n.render('journal.window.shared.date.nav.days.counting');
     if (freshness.failed > 0) {
-      return freshness.failed === 1
-        ? window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.count.day.still.trying')
-        : window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.count.value1.days.still', [['value1', String(freshness.failed)]]);
+      return window.JournalI18n.render('journal.window.shared.date.nav.index.failed.day.count', [['quantity', window.JournalI18n.cardinalQuantity(freshness.failed)], ['count', String(freshness.failed)]]);
     }
     // Not complete with nothing counted: the journal couldn't be read at all.
     return window.JournalI18n.render('journal.window.shared.date.nav.window.explanation.couldn.t.load.which.months.have');
@@ -584,8 +587,16 @@
     return apps.find((app) => app.name === appName) || null;
   }
 
+  const calendarCountMessages = new Map([
+    ['activities', 'journal.window.view.activities.date.count'],
+    ['body', 'journal.window.view.body.date.count'],
+    ['map', 'journal.window.view.map.date.count'],
+    ['speakers', 'journal.window.view.speakers.date.count'],
+    ['transcripts', 'journal.window.view.transcripts.date.count'],
+  ]);
+
   function selectedUnit() {
-    return state.config?.unit || {};
+    return { ...state.config?.unit, countMessage: calendarCountMessages.get(state.appName) };
   }
 
   function allowFutureDates() {
@@ -961,7 +972,10 @@
     button.dataset.dateNavCell = kind;
     button.dataset.value = value;
     button.setAttribute('role', 'gridcell');
-    button.setAttribute('aria-label', `${label}, ${countLabel(normalized, selectedUnit())}`);
+    const quantityLabel = countLabel(normalized, selectedUnit());
+    button.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.date.nav.cell.date.and.count', [
+      ['day_label', label], ['quantity_label', quantityLabel]
+    ]));
     button.textContent = label;
     button.style.setProperty('--intensity', String(heatIntensity(normalized, state.currentMax || 0)));
     button.disabled = disabled;
@@ -974,10 +988,10 @@
     if (kind === 'week') {
       const meta = document.createElement('span');
       meta.className = 'date-nav-content__cell-count';
-      meta.textContent = countLabel(normalized, selectedUnit());
+      meta.textContent = quantityLabel;
       button.appendChild(meta);
     } else {
-      button.title = countLabel(normalized, selectedUnit());
+      button.title = quantityLabel;
     }
     return button;
   }
@@ -1162,7 +1176,7 @@
       const present = coerceCount(data[sundayKey]) > 0;
       return renderCell({
         value: sundayKey,
-        label: window.JournalI18n.render('journal.window.shared.date.nav.label.week.of.value1.value2', [['value1', String(MONTHS_SHORT[date.getMonth()])], ['value2', String(date.getDate())]]),
+        label: window.JournalI18n.render('journal.window.shared.date.nav.week.option.month.day', [['month', String(MONTHS_SHORT[date.getMonth()])], ['day', String(date.getDate())]]),
         count: present ? 1 : 0,
         selected: sundayKey === state.day,
         disabled: !present,

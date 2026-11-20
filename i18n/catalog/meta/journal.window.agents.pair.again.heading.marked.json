@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. pair again heading marked.",
+  "context": "Journal window. Agents view. pair again heading marked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "agent_key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bdc1aef4640630f4a059bf7fcf25a285063f4e013aa3c519779fd4d3a0d96087",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

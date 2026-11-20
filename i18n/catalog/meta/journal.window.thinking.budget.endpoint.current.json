@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. budget endpoint current.",
+  "context": "Journal window. Thinking view. budget endpoint current.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "token_budget",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf7421167ad30dd98730e9ad9adbb8896569c163e149029e85ce50ca5dd46ce3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

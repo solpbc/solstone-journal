@@ -1,0 +1,30 @@
+{
+  "description": "Thinking view. pace none finished hours.",
+  "context": "Journal window. Thinking view. pace none finished hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hours_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "11f14e20036260f32ada7212f1320867738a26146f4629a84da3bf3db2a42597",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "hours_quantity",
+    "type": "cardinal"
+  }
+}

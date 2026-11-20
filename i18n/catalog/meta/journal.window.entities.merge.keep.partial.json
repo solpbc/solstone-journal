@@ -1,0 +1,48 @@
+{
+  "description": "Entities view. merge keep partial.",
+  "context": "Journal window. Entities view. merge keep partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "failed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    },
+    {
+      "name": "processed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "16caf9d3e9b7f5fd48e22e947d5a216c33f7c684362b3ac0685a58499f772f6b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "failed_quantity",
+    "type": "cardinal"
+  }
+}

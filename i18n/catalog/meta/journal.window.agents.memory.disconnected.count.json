@@ -1,0 +1,30 @@
+{
+  "description": "Journal window. agents memory disconnected count.",
+  "context": "Journal window. Journal window. agents memory disconnected count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "32cd96470a876bffb541d838b79a353d9973bc5d91b3194b455b3eb32b3d2725",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

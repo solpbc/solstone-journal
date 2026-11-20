@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. detected hidden last detected.",
+  "context": "Journal window. Entities view. detected hidden last detected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dc12c532e30a7b261a54bbf76b0fae77926032ca0e57c35f0aae8574b5a318df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

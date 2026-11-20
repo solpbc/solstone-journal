@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane unsupported keep active.",
+  "context": "Journal window. Thinking view. lane unsupported keep active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "active_lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "388aac78b5622bf085ac9834c3a07c9d69b3555c2427e3c9530270112cae1e21",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

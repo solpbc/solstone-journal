@@ -1,0 +1,21 @@
+{
+  "description": "Body view. hide previous day carryover.",
+  "context": "Journal window. Body view. hide previous day carryover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hidden_day_link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9177ec922a9b6b2c3ae402c9f3a7da8c217dc8a6dd966f4c9f26f9569975f66",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Agents window. permission whole journal categories.",
+  "context": "Journal window. Agents window. permission whole journal categories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "categories",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0191a2769b10ef1e32d184fc529d1912862767a1bcd06a51edc4a9836cd34f34",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

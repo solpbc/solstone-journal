@@ -1,0 +1,16 @@
+{
+  "description": "Journal window shell. shared gate drawer statement median unavailable.",
+  "context": "Journal window. Journal window shell. shared gate drawer statement median unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18447013200d0ac3315a420b0581cc22675a265c754190cf2b81de9c28f21d21",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

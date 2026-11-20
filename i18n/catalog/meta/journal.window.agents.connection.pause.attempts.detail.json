@@ -1,0 +1,34 @@
+{
+  "description": "Agents view. connection pause attempts detail.",
+  "context": "Journal window. Agents view. connection pause attempts detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "attempted_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c32fa3d85e4e9f64c0ee78d8c468e4e3c191cf7aa7b48063f0a19cf0a0c55b24",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

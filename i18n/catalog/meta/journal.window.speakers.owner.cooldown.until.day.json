@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. owner cooldown until day.",
+  "context": "Journal window. Speakers view. owner cooldown until day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "retry_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b22cbd43a7ffaa24d8ea0b4d3ffca43e71e8f3fc5a13feacdd1d2a3ee14ec597",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

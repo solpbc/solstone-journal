@@ -1,0 +1,51 @@
+{
+  "description": "Year view. thread days in year.",
+  "context": "Journal window. Year view. thread days in year.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days_count",
+      "type": "string"
+    },
+    {
+      "name": "year",
+      "type": "string"
+    },
+    {
+      "name": "first_day",
+      "type": "string"
+    },
+    {
+      "name": "last_day",
+      "type": "string"
+    },
+    {
+      "name": "weeks_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "weeks_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b66711456ba4d871038ea81d8eb11d80c180bc1b04bd9e8fe26712d7836fdfff",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

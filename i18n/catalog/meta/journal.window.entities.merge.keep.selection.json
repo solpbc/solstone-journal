@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. merge keep selection.",
+  "context": "Journal window. Entities view. merge keep selection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "08f24eff17d2298710fb34423e40dc978a74114f9ede3172172b396382a4b3b7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "selected_quantity",
+    "type": "cardinal"
+  }
+}

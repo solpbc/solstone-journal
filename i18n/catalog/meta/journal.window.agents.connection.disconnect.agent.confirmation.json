@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. connection disconnect agent confirmation.",
+  "context": "Journal window. Agents window. connection disconnect agent confirmation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6537c043cb02edb74e0a146085af654175487c6e5278f2019aa9233e0e36083",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

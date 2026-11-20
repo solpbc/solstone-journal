@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared date format duration second count.",
+  "context": "Journal window. Journal window shell. shared date format duration second count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "09475ed4430745cf4b5d8170c3c4c43f02062663058890ace678029e925cb29b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

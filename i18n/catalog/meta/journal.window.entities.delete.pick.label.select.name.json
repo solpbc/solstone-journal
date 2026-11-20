@@ -1,0 +1,21 @@
+{
+  "description": "Entities view deletion. pick label select name.",
+  "context": "Journal window. Entities view deletion. pick label select name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e9bd474a24db2dd6028f6addb02ce7a97531557a26dfe24a3cdf8fd954c5761",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

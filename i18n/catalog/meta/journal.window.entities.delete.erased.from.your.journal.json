@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. erased n things from your journal.",
+  "context": "Journal window. Entities view deletion. erased n things from your journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "26caeb6f32ceed2dd45687a32b077e97ccca5b21388858df8ff87b6aa9f19fed",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

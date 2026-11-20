@@ -1,0 +1,21 @@
+{
+  "description": "Entities view deletion. they erase date unless you recover.",
+  "context": "Journal window. Entities view deletion. they erase date unless you recover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "erase_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d8c2fb34b1e46f8d7bf1bd02d827f86b013cb7238eab6d1a164865c3a1a6ec6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

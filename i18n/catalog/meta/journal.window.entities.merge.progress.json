@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. merge progress.",
+  "context": "Journal window. Entities view. merge progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "557d9f860f97e94d98f116cc52851901d4fd23ed3dd5825d98c9e5cc3f3448b4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "done_quantity",
+    "type": "cardinal"
+  }
+}

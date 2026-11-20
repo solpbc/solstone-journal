@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane current can continue.",
+  "context": "Journal window. Thinking view. lane current can continue.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "active_lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b063a0d59f03494b1db34af3e182b7a6d3cd9e91fa424f7305b3ad1508c6b6b8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

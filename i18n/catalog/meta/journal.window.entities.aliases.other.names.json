@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. aliases other names.",
+  "context": "Journal window. Entities view. aliases other names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "aliases",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a420bc163ba5bfad3efd5f91499921552ab30675561c37041ba42499c0b2eec",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

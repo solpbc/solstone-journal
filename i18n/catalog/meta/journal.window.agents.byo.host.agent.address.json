@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. byo host agent address.",
+  "context": "Journal window. Agents view. byo host agent address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_endpoint",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c8fd6ba4ff60d019f349b6e82e1b25057196d5912708829e0ccd2002e9889885",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

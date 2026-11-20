@@ -1,0 +1,29 @@
+{
+  "description": "Entities view. trust history event.",
+  "context": "Journal window. Entities view. trust history event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "event_kind",
+      "type": "string"
+    },
+    {
+      "name": "event_time",
+      "type": "string"
+    },
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b1c1e56a334eb0a7440896bee9187950ae7f97a97a8a2a8631dfa7ffc8428b0f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

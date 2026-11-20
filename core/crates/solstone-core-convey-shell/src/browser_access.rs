@@ -387,7 +387,7 @@ fn no_store(headers: &mut HeaderMap) {
 }
 
 fn landing(link_refused: bool, locale: &str) -> Response {
-    use crate::window_catalog::{html, language_tag};
+    use crate::window_catalog::{escape_html, html, language_tag, strings};
     let refused = if link_refused {
         format!(
             "<p>{}</p>",
@@ -398,8 +398,16 @@ fn landing(link_refused: bool, locale: &str) -> Response {
     };
     let title = html(locale, "journal.window.shell.title");
     let heading = html(locale, "journal.window.local.access.heading");
-    let detail =
-        html(locale, LANDING_DETAIL).replace("{command}", "<code>solstone journal open</code>");
+    const COMMAND_SLOT: &str = "\u{fdd0}";
+    let instruction = strings(locale, LANDING_DETAIL, [("open_command", COMMAND_SLOT)]);
+    let (before, after) = instruction
+        .split_once(COMMAND_SLOT)
+        .expect("browser entry instruction includes the opening command");
+    let detail = format!(
+        "{}<code>solstone journal open</code>{}",
+        escape_html(before),
+        escape_html(after)
+    );
     let lang = language_tag(locale);
     let page = format!(
         "<!doctype html><html lang=\"{lang}\"><head>{LANDING_HEAD}<title>{title}</title>{LANDING_STYLE}</head><body><h1>{heading}</h1>{refused}<p>{detail}</p></body></html>"
@@ -417,9 +425,9 @@ fn landing(link_refused: bool, locale: &str) -> Response {
 const LANDING_HEAD: &str = "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\">";
 const LANDING_STYLE: &str = "<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;line-height:1.5;color:#222;background:#fafaf8}code{background:#eee;padding:.1rem .3rem;border-radius:.2rem}@media(prefers-color-scheme:dark){body{color:#ddd;background:#1b1b1a}code{background:#333}}</style>";
 #[cfg(windows)]
-const LANDING_DETAIL: &str = "journal.window.local.access.detail.windows";
+const LANDING_DETAIL: &str = "journal.window.local.access.instruction.windows";
 #[cfg(not(windows))]
-const LANDING_DETAIL: &str = "journal.window.local.access.detail.other";
+const LANDING_DETAIL: &str = "journal.window.local.access.instruction.other";
 
 /// Routes only the owner socket serves.
 pub(crate) fn socket_routes(access: Arc<BrowserAccess>) -> Router {

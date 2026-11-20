@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. moved n things to the trash.",
+  "context": "Journal window. Entities view deletion. moved n things to the trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "da18686833f754388e77abea67fe860387b6911072aab7ddb868c361ade134c0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

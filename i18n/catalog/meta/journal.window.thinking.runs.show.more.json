@@ -1,0 +1,39 @@
+{
+  "description": "Thinking view. runs show more.",
+  "context": "Journal window. Thinking view. runs show more.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "next_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "next_count",
+      "type": "string"
+    },
+    {
+      "name": "remaining_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "remaining_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "48b1b2b31906bfc0046dfdbe41e0762d242e3e6cd8149cbaac1a0bc8bfb7e708",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "next_quantity",
+    "type": "cardinal"
+  }
+}

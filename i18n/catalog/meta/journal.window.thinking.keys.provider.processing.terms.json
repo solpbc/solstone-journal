@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view provider processing disclosure followed by its terms link.",
+  "context": "Journal window. Thinking view provider processing disclosure followed by its terms link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    },
+    {
+      "name": "terms_link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec16c1e55a4291f840fe590365efff86ab4d9aa3e0e55e77899e837d42cd2fb3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

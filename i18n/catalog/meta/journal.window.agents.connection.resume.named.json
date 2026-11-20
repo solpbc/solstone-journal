@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection resume named.",
+  "context": "Journal window. Agents view. connection resume named.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "220ceb7b5861eeda09964f0f322edb13af09ff5ef0bb9c26bf8ee30b48fac51e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

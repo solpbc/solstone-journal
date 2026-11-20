@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. detail last mentioned full day.",
+  "context": "Journal window. Entities view. detail last mentioned full day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f621ea79ef75b883d9237dafe112a36f1a561b32b6f77afc7acdfbea1e93b9f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

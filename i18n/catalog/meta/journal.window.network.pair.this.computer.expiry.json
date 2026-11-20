@@ -1,0 +1,21 @@
+{
+  "description": "Network window. pair this computer expiry.",
+  "context": "Journal window. Network window. pair this computer expiry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14970baebdfba1d9f5843195e3bf59de96fbc904732f32d23da586e4d0bed5f0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

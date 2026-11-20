@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. shared day grid cell date and pending count.",
+  "context": "Journal window. Journal window. shared day grid cell date and pending count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day_label",
+      "type": "string"
+    },
+    {
+      "name": "quantity_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a48ac5b607d9db842d771eb63a6521e24b243e179140590a4d107798256c3a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

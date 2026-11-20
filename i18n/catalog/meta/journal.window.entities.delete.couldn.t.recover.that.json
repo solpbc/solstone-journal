@@ -1,0 +1,16 @@
+{
+  "description": "Entities view deletion. couldn t recover that noun.",
+  "context": "Journal window. Entities view deletion. couldn t recover that noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0f70c64870880468bf10a43708459147b1cd48fd45d7a737ce2bca6ae2111df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

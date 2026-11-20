@@ -180,7 +180,7 @@
       const label = branded.startsWith('journal.window.') && Object.hasOwn(IMPORT_SOURCE_LABELS, parts[1])
         ? render(branded)
         : branded;
-      return render('journal.window.shared.date.format.visible.text.value1.imported', [['value1', label]]);
+      return render('journal.window.shared.date.format.imported.source.label', [['source_name', label]]);
     }
     if (parts.length === 2) {
       const qualifier = parts[1];
@@ -371,7 +371,7 @@
   function formatDuration(seconds) {
     if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return window.JournalI18n.render('journal.window.shared.date.format.duration.unavailable');
     const value = Math.round(Math.max(0, Number(seconds)));
-    if (value < 60) return window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.sec', [['value1', String(value)]]);
+    if (value < 60) return window.JournalI18n.render('journal.window.shared.date.format.duration.second.count', [['quantity', window.JournalI18n.cardinalQuantity(value)], ['seconds', String(value)]]);
     // Stats' hour buckets reach thousands of minutes, so the ladder needs an
     // hours rung or 1,995 minutes reads "1995 min 0 sec". S-3 / G2-B14. A zero
     // remainder is dropped at every rung above seconds, so five minutes reads
@@ -379,11 +379,11 @@
     if (value < 3600) {
       const remainderSeconds = value % 60;
       const minutes = Math.floor(value / 60);
-      return remainderSeconds ? window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min.value2.sec', [['value1', String(minutes)], ['value2', String(remainderSeconds)]]) : window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min', [['value1', String(minutes)]]);
+      return remainderSeconds ? window.JournalI18n.render('journal.window.shared.date.format.duration.minute.and.second.count', [['quantity', window.JournalI18n.cardinalQuantity(minutes)], ['minutes', String(minutes)], ['seconds_quantity', window.JournalI18n.cardinalQuantity(remainderSeconds)], ['seconds', String(remainderSeconds)]]) : window.JournalI18n.render('journal.window.shared.date.format.duration.minute.count', [['quantity', window.JournalI18n.cardinalQuantity(minutes)], ['minutes', String(minutes)]]);
     }
     const remainderMinutes = Math.floor((value % 3600) / 60);
     const hours = Math.floor(value / 3600);
-    return remainderMinutes ? window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.hr.value2.min', [['value1', String(hours)], ['value2', String(remainderMinutes)]]) : window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.hr', [['value1', String(hours)]]);
+    return remainderMinutes ? window.JournalI18n.render('journal.window.shared.date.format.duration.hour.and.minute.count', [['quantity', window.JournalI18n.cardinalQuantity(hours)], ['hours', String(hours)], ['minutes_quantity', window.JournalI18n.cardinalQuantity(remainderMinutes)], ['minutes', String(remainderMinutes)]]) : window.JournalI18n.render('journal.window.shared.date.format.duration.hour.count', [['quantity', window.JournalI18n.cardinalQuantity(hours)], ['hours', String(hours)]]);
   }
 
   // A bare lookup on an object literal reaches Object.prototype, so a lane

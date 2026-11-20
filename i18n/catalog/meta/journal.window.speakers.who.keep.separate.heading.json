@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who keep separate heading.",
+  "context": "Journal window. Speakers view. who keep separate heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e639df8368abacb9e391a54e0e2c0417ea82949b46b6e1c1869f81763cba5b0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

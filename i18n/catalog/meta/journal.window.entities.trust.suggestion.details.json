@@ -1,0 +1,29 @@
+{
+  "description": "Entities view. trust suggestion details.",
+  "context": "Journal window. Entities view. trust suggestion details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_name",
+      "type": "string"
+    },
+    {
+      "name": "target_name",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "56db446e68246085ce540243d9e437fdcfae785de8610d98cfb6ab4f50a37322",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

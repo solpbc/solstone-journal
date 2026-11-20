@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers known show all count.",
+  "context": "Journal window. Journal view. speakers known show all count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "19af16412badae7244fb3d0d9f621b6882453644f9469e66683ab0b36de54150",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane switch keep current.",
+  "context": "Journal window. Thinking view. lane switch keep current.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current_setup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7ee12b3ad76c74b31940c3324c61f612c2b6dd566dee73159c0caa3dedd4415",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Year view. thread jump to first day.",
+  "context": "Journal window. Year view. thread jump to first day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e1581af13c72e338b05050547e84e4144067a06e0d2c9b76f4ce148b6301fe15",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

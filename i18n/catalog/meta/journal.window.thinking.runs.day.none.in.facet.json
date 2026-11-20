@@ -1,0 +1,34 @@
+{
+  "description": "Thinking view. runs day none in facet.",
+  "context": "Journal window. Thinking view. runs day none in facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "runs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "runs_count",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9c897e8ab3d3b327d68c0fb2d1ff5482458a4714d9fa853b37c594750206eeee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "runs_quantity",
+    "type": "cardinal"
+  }
+}

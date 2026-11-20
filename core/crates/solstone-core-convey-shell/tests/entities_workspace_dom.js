@@ -349,6 +349,8 @@ async function entityDeleteCases(workspace) {
     const h = pickHarness();
     vm.runInContext(`
       function groupedCount(n) { return String(n); }
+      ${workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate('))}
+      ${workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal'))}
       function formatDateShort() { return ''; }
       function formatMentionedDate() { return ''; }
       // Photos of people are their own cases (entities_faces_dom.js).
@@ -409,7 +411,7 @@ async function entityDeleteCases(workspace) {
     check(JSON.stringify(lines(null)) === JSON.stringify([L.details, L.facetUnknown, L.voiceUnknown]), 'a failed preview falls back to words without counts');
     check(JSON.stringify(lines({ type: 'person', facets: 0, voice: false })) === JSON.stringify([L.details]), 'no facets and no voice: only the true line');
     check(JSON.stringify(lines({ type: 'person', facets: 1, voice: true })) === JSON.stringify([L.details, L.facetOne, L.voice]), 'one facet and a voice');
-    check(lines({ facets: 3 })[1] === L.facetMany.replace('{n}', 3), 'several facets carry their count');
+    check(lines({ facets: 3 })[1] === L.facetMany({ n: 3 }), 'several facets carry their count');
 
     let release;
     h.answers['GET /app/entities/api/journal/entity/a/delete'] = () => new Promise((resolve) => { release = resolve; });
@@ -439,7 +441,7 @@ async function entityDeleteCases(workspace) {
     const del = h.log.fetches.find((f) => f.method === 'DELETE');
     check(del && del.body && del.body.erase === true, 'erase now sends erase');
     check(h.log.toList === 1 && h.log.reloads === 1, 'after an erase the page goes to the list and reloads it');
-    check(h.log.receipts.at(-1).title === C.receipt.erased.title.replace('{noun}', C.noun), 'the erased receipt');
+    check(h.log.receipts.at(-1).title === C.receipt.erased.title, 'the erased receipt');
     check(modal.style.display === 'none', 'the dialog closed');
   }
 
@@ -463,7 +465,7 @@ async function entityDeleteCases(workspace) {
     await receipt.buttons[0].onClick();
     const recover = h.log.fetches.find((f) => f.url === '/app/settings/api/trash/recover');
     check(JSON.stringify(recover.body) === JSON.stringify({ ids: ['T1'], page: 'entities' }), 'recover posts the trash id and this page');
-    check(h.log.reloads === 2 && h.log.receipts.at(-1).title === C.receipt.recovered.title.replace('{noun}', C.noun), 'recover reloads the list and says so');
+    check(h.log.reloads === 2 && h.log.receipts.at(-1).title === C.receipt.recovered.title, 'recover reloads the list and says so');
   }
 
   // Refusals: each code reaches its own words; the server's own words never show.
@@ -489,7 +491,7 @@ async function entityDeleteCases(workspace) {
     const odd = await refusedWith('something-new', false);
     check(odd.message === C.receipt.moveRefused.message, 'an unknown code is other');
     const damagedErase = await refusedWith('record_damaged', true);
-    check(damagedErase.title === C.receipt.eraseRefused.title.replace('{noun}', C.noun) && damagedErase.message === C.eraseRefused.record_damaged,
+    check(damagedErase.title === C.receipt.eraseRefused.title && damagedErase.message === C.eraseRefused.record_damaged,
       'a refused erase has its own title and its own record line');
     const busyErase = await refusedWith('busy', true);
     check(busyErase.message === C.refused.busy, 'a refused erase shares the other messages');
@@ -533,7 +535,7 @@ async function entityDeleteCases(workspace) {
     check(h.log.navigated.at(-1) === 'me', 'your own entity still opens its page');
     rows()[1].fire('click');
     check(api.entityPick.items.has('a') && rows()[1].classList.contains('journal-row--picked'), 'pressing a row picks it');
-    check(byId('journal-pick-some').hidden === false && byId('journal-pick-count').textContent === C.selected.replace('{n}', 1), 'the strip counts what is picked');
+    check(byId('journal-pick-some').hidden === false && byId('journal-pick-count').textContent === C.selected({ n: 1 }), 'the strip counts what is picked');
     rows()[2].fire('keydown', { key: ' ' });
     check(api.entityPick.items.has('b'), 'Space on a row picks it');
     rows()[2].fire('keydown', { key: 'Enter' });
@@ -547,7 +549,7 @@ async function entityDeleteCases(workspace) {
     // The selection holds across pages and searches inside a folder.
     api.setSummary(summary([ent('x'), ent('y')], 120));
     api.renderJournalEntities();
-    check(byId('journal-pick-count').textContent === C.selected.replace('{n}', 2), 'a new page keeps what was picked');
+    check(byId('journal-pick-count').textContent === C.selected({ n: 2 }), 'a new page keeps what was picked');
     byId('journal-pick-all').onchange();
     check(api.entityPick.items.size === 4 && h.doc.activeElement === byId('journal-pick-delete'), 'select all adds this page and moves focus to delete');
 
@@ -588,9 +590,9 @@ async function entityDeleteCases(workspace) {
     byId('journal-pick-all').onchange();
     byId('journal-pick-delete').onclick();
     const body = byId('entityDeleteModalBody');
-    check(byId('entityDeleteModalTitle').textContent === C.move.titleMany.replace('{n}', 8), 'the set title counts them');
+    check(byId('entityDeleteModalTitle').textContent === C.move.titleMany({ n: 8 }), 'the set title counts them');
     const list = body.children[0];
-    check(list.children.length === 6 && list.children[5].textContent === C.more.replace('{n}', 3), 'up to five, then how many more');
+    check(list.children.length === 6 && list.children[5].textContent === C.more({ n: 3 }), 'up to five, then how many more');
     check(JSON.stringify(bodyKeys(body).slice(1)) === JSON.stringify([C.move.reachMany, C.move.ownMany, C.move.staysMany, C.againMany]), 'the set has no counts');
     byId('entityDeleteModalErase').fire('click');
     check(JSON.stringify(bodyKeys(body).slice(1, 3)) === JSON.stringify([C.erase.reachMany, C.erase.ownMany]), 'the set erase step');
@@ -609,10 +611,10 @@ async function entityDeleteCases(workspace) {
     const rows = byId('journal-entity-cards-content').children;
     check(rows[0].querySelector('.journal-row-note').textContent === C.notes.busy && rows[1].querySelector('.journal-row-note').textContent === C.notes.record_damaged,
       'each refused row carries its own note');
-    check(api.entityPick.notes.get('far') && byId('journal-pick-count').textContent === C.selected.replace('{n}', 3), 'one picked elsewhere stays picked, counted');
+    check(api.entityPick.notes.get('far') && byId('journal-pick-count').textContent === C.selected({ n: 3 }), 'one picked elsewhere stays picked, counted');
     const receipt = h.log.receipts.at(-1);
-    check(receipt.title === C.set.partMoved.title.replace('{done}', 4).replace('{n}', 8), 'the receipt says how many of how many moved');
-    check(receipt.message === C.set.markedMany.replace('{k}', 3) + ' ' + C.set.goneMoreOne.replace('{g}', 1), 'it counts the marked and the gone');
+    check(receipt.title === C.set.partMoved.title({ done: 4, n: 8 }), 'the receipt says how many of how many moved');
+    check(receipt.message === C.set.marked({ k: 3 }) + ' ' + C.set.goneMore({ g: 1 }), 'it counts the marked and the gone');
     check(receipt.buttons[0].label === C.buttons.recover && receipt.autoDismiss === undefined, 'a partly done set offers recover and stays');
   }
 
@@ -683,6 +685,8 @@ async function detectedHideCases(workspace, copy) {
       let detectedPage = 1;
       function facetTitle(name) { return 'Title of ' + name; }
       function groupedCount(n) { return String(n); }
+      ${workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate('))}
+      ${workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal'))}
       function renderDetectedPagination() {}
       function attachDetectedEntity() {}
       function renderEntities(term) { renderDetectedTable(term); }
@@ -1014,7 +1018,7 @@ async function main() {
   check(scriptStart >= '<script>'.length && scriptEnd > scriptStart, 'the complete Entities workspace script parses');
 
   // Every entities refusal answers `error: "Entity request refused"`; the owner's reason is in `detail`.
-  const errorStart = workspace.indexOf('function entityTrustFormat(');
+  const errorStart = workspace.indexOf('function entityWindowArgs(');
   const errorEnd = workspace.indexOf('function entityTrustIdentitySummary', errorStart);
   check(errorStart !== -1 && errorEnd !== -1, 'workspace exposes the entities error-message helper');
   const errorContext = {
@@ -1200,7 +1204,8 @@ async function main() {
     restoredFocusTarget: () => null,
     closeEntityDeleteDialog: () => {},
   };
-  const scopeSource = `${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
+  const scopeSource = `${workspace.slice(errorStart, errorEnd)}
+${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
   runWithJournalCatalog(scopeSource, context, {filename: 'entities-scope.js'});
   // The list-state key builder lives in the paged-list region, outside both slices; the scope
   // harness only needs adoptJournalSummary to record a key, not to compute one.
@@ -1306,23 +1311,16 @@ async function main() {
     document: connDoc,
     console,
     ENT_COPY: {
-      ENT_CONN_SUMMARY: 'ENT_CONN_SUMMARY:{s}:{a}',
-      ENT_CONN_SUMMARY_CALENDAR: 'ENT_CONN_SUMMARY_CALENDAR:{c}',
-      ENT_CONN_ROW_META_SCHEDULED: 'ENT_CONN_ROW_META_SCHEDULED:{day}',
       ENT_CONN_CALENDAR_ONLY: 'ENT_CONN_CALENDAR_ONLY',
       ENT_CONN_EVENTS_ONLY: 'ENT_CONN_EVENTS_ONLY',
-      ENT_CONN_ROW_META_ATTENDANCE: 'ENT_CONN_ROW_META_ATTENDANCE:{n}:{day}',
-      ENT_CONN_ROW_META_ONE_ATTENDANCE: 'ENT_CONN_ROW_META_ONE_ATTENDANCE:{day}',
-      ENT_CONN_ROW_META: 'ENT_CONN_ROW_META:{n}:{day}',
-      ENT_CONN_ROW_META_ONE: 'ENT_CONN_ROW_META_ONE:{day}',
-      ENT_CONN_WITH_YOU_SUMMARY: 'ENT_CONN_WITH_YOU_SUMMARY:{n}:{kind}:{day}',
-      ENT_CONN_WITH_YOU_SUMMARY_ONE: 'ENT_CONN_WITH_YOU_SUMMARY_ONE:{kind}:{day}',
-      ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED: 'ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:{day}',
       ENT_CONN_WITH_YOU_TOGGLE: 'ENT_CONN_WITH_YOU_TOGGLE',
     },
     ATTENDANCE_KINDS: new Set(['attended-with', 'co-present', 'scheduled-with']),
   };
   const connSource = [
+    workspace.slice(errorStart, errorEnd),
+    workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate(')),
+    'function groupedCount(value) { return String(value); }',
     workspace.slice(parseStart, parseEnd),
     workspace.slice(connMapStart, connMapEnd),
     workspace.slice(netStart, netEnd),
@@ -1403,8 +1401,8 @@ async function main() {
   const calText = calDescendants.map(n => n.textContent).join(' ');
 
   check(
-    calDescendants.some(n => n.textContent.includes('ENT_CONN_ROW_META_SCHEDULED')),
-    'scheduled row contains ENT_CONN_ROW_META_SCHEDULED',
+    calDescendants.some(n => n.textContent === 'may 3'),
+    'scheduled row gives its last day',
   );
   check(
     calDescendants.some(n => n.textContent === 'ENT_CONN_CALENDAR_ONLY' && n.className === 'entity-conn-chip entity-conn-chip-event-only'),
@@ -1412,14 +1410,13 @@ async function main() {
   );
   check(
     !calText.includes('ENT_CONN_EVENTS_ONLY')
-      && !calText.includes('ENT_CONN_ROW_META_ATTENDANCE')
-      && !calText.includes('ENT_CONN_ROW_META_ONE_ATTENDANCE'),
-    'scheduled row does not contain attendance copy keys',
+      && !calText.includes('event together') && !calText.includes('events together'),
+    'scheduled row omits attendance wording',
   );
 
   const summary = allDescendants(connContainer).find(n => n.className === 'entity-conn-summary');
   check(
-    summary && summary.textContent === 'ENT_CONN_SUMMARY:1:1 · ENT_CONN_SUMMARY_CALENDAR:1',
+    summary && summary.textContent === '1 with direct evidence · 1 from shared events only · 1 from your calendar only',
     'summary includes direct, attendance, and scheduled counts',
   );
 
@@ -1430,7 +1427,7 @@ async function main() {
   ], '20260530', true);
   const summary2 = allDescendants(connContainer2).find(n => n.className === 'entity-conn-summary');
   check(
-    summary2 && summary2.textContent === 'ENT_CONN_SUMMARY:1:1' && !summary2.textContent.includes('ENT_CONN_SUMMARY_CALENDAR'),
+    summary2 && summary2.textContent === '1 with direct evidence · 1 from shared events only',
     'summary without scheduled neighbours omits calendar clause',
   );
 
@@ -1450,9 +1447,7 @@ async function main() {
     'scheduled single',
   );
   check(
-    resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
-      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
-      && !resScheduled1.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    resScheduled1.text === 'on your calendar only · latest may 1',
     'scheduled total 1 uses scheduled copy and neither one- nor many-moments copy',
   );
 
@@ -1468,9 +1463,7 @@ async function main() {
     'scheduled multiple',
   );
   check(
-    resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:')
-      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
-      && !resScheduledMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE'),
+    resScheduledMany.text === 'on your calendar only · latest may 1',
     'scheduled total > 1 uses scheduled copy and neither one- nor many-moments copy',
   );
 
@@ -1480,9 +1473,7 @@ async function main() {
     if (cls !== undefined) historyOne.evidence_class = cls;
     const resOne = checkWithYou(historyOne, `${cls ?? 'undefined'} total 1`);
     check(
-      resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
-        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
-        && !resOne.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      resOne.text.startsWith('1 moment together · latest '),
       `${cls ?? 'undefined'} total 1 uses one-moment copy and neither many nor scheduled copy`,
     );
 
@@ -1496,9 +1487,7 @@ async function main() {
     if (cls !== undefined) historyMany.evidence_class = cls;
     const resMany = checkWithYou(historyMany, `${cls ?? 'undefined'} total > 1`);
     check(
-      resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
-        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
-        && !resMany.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+      resMany.text.startsWith('4 moments together · latest '),
       `${cls ?? 'undefined'} total > 1 uses many-moments copy and neither one nor scheduled copy`,
     );
   }
@@ -1515,9 +1504,7 @@ async function main() {
     'null class multiple',
   );
   check(
-    resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY:')
-      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_ONE')
-      && !resNull.text.includes('ENT_CONN_WITH_YOU_SUMMARY_SCHEDULED:'),
+    resNull.text.startsWith('2 moments together · latest '),
     'null evidence_class total > 1 uses many-moments copy and not scheduled copy',
   );
 
@@ -1587,7 +1574,8 @@ async function main() {
         },
       },
     };
-    runWithJournalCatalog(`${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidyState = tidyState;`, context, {filename: 'entities-tidy.js'});
+    runWithJournalCatalog(`${workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate('))}
+${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidyState = tidyState;`, context, {filename: 'entities-tidy.js'});
     context.tidyClock.sleep = async (ms) => { log.sleeps.push(ms); };
     context.renderTidyToast = () => {};
     context.renderIdsPanel = () => {};

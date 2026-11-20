@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. facet membership single.",
+  "context": "Journal window. Entities view. facet membership single.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5718c59f5cf7a635058c00781522cb1fd256e44e214be313f0b8d3de38502e3d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

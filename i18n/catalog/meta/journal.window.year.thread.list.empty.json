@@ -1,0 +1,21 @@
+{
+  "description": "Year view. thread list empty.",
+  "context": "Journal window. Year view. thread list empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bcd8d7f04163d00371136be488c41afea937d35335411285e1a6ecc543e8a799",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

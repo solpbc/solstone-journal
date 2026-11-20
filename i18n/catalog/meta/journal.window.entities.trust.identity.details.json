@@ -1,0 +1,29 @@
+{
+  "description": "Entities view. trust identity details.",
+  "context": "Journal window. Entities view. trust identity details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    },
+    {
+      "name": "entity_type",
+      "type": "string"
+    },
+    {
+      "name": "aliases",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1fa46ba764241e24983ee9159e4131bf38b2005844b03c4f9cef2d66649d329f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

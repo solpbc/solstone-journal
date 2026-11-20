@@ -1,0 +1,39 @@
+{
+  "description": "Entities view deletion. erased done of n.",
+  "context": "Journal window. Entities view deletion. erased done of n.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "processed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b36ece6b402a1ac7b6ae1d46c6d61636cc1457e9b6009bf63f16d1d8c26f51c7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "processed_quantity",
+    "type": "cardinal"
+  }
+}

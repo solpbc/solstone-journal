@@ -1,0 +1,30 @@
+{
+  "description": "Agents view. connection activity detail partial.",
+  "context": "Journal window. Agents view. connection activity detail partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "763160660fffd87c87ff9c705d87fb5a2673471f82581b5816d24584e6c09076",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

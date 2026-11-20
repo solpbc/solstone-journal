@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane updated elapsed month.",
+  "context": "Journal window. Journal window shell. shared status pane updated elapsed month.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e33c087c10a74ef1b4e20d88777d7097dca53e43f00d5cd66ec654ea24df8120",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

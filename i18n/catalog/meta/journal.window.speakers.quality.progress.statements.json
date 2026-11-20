@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers quality progress statements.",
+  "context": "Journal window. Journal view. speakers quality progress statements.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "801fdb8bfcf0f041f8158a7074b09fe925c78ac2db80d85827a0f0a0deae2332",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

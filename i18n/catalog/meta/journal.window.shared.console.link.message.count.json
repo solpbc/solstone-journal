@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared console link message count.",
+  "context": "Journal window. Journal window shell. shared console link message count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "047a627aab637f8eb7beb5875ffb58ab7dc64724c2a25b1ccd35e461bf5cf03e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

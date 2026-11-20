@@ -1,0 +1,21 @@
+{
+  "description": "Year view. days empty.",
+  "context": "Journal window. Year view. days empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5e1cab3c13353833bea116883c80d9e3c8d76ceb2b2d5dfbb7624c1fc2e9149",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

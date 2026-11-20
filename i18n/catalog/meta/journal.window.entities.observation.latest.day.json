@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. observation latest day.",
+  "context": "Journal window. Entities view. observation latest day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "589fa18ffb153560f76f51c64e4e31e43ec901955a7c51f35b224c43d6e1f3f0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

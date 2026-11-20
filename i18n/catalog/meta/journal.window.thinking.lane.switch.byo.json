@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane switch byo.",
+  "context": "Journal window. Thinking view. lane switch byo.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "saved_setup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0f48007c53adfa9f6bfeccd8a4d6fd9165c734b762b7bb9dad7d70253fc3438",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

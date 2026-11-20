@@ -1,0 +1,48 @@
+{
+  "description": "Entities view. hide undo partial.",
+  "context": "Journal window. Entities view. hide undo partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "failed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "restored_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "restored",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ce4b1fa09c141d7d3a1905d30fec7ada9f359ec6bd0d520cd17914ff328bb043",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "failed_quantity",
+    "type": "cardinal"
+  }
+}

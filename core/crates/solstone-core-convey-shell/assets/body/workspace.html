@@ -1182,8 +1182,6 @@ a.body-day-cell:focus-visible {
   const HIDE_API = "/app/body/api/hidden";
   const HIDE_COPY = {
     hide: window.JournalI18n.render('journal.window.body.hide.copy.hide.hide.this.day'),
-    hideLabel: window.JournalI18n.render('journal.window.body.hide.copy.hide.label.hide.body.data.from.day'),
-    receiptTitle: window.JournalI18n.render('journal.window.body.hide.copy.receipt.title.body.data.from.day.is.hidden'),
     receiptMessage: window.JournalI18n.render('journal.window.body.hide.copy.receipt.message.it.stays.hidden.when.you.import'),
     receiptNoSearch: window.JournalI18n.render('journal.window.body.hide.copy.receipt.no.search.search.and.connected.agents.may.still'),
     tryAgain: window.JournalI18n.render('journal.window.body.hide.copy.try.again.try.again'),
@@ -1197,7 +1195,6 @@ a.body-day-cell:focus-visible {
     markLine1: window.JournalI18n.render('journal.window.body.hide.copy.mark.line1.it.s.still.in.your.journal'),
     markLine2: window.JournalI18n.render('journal.window.body.hide.copy.mark.line2.search.and.the.activities.page.leave'),
     markUnhide: window.JournalI18n.render('journal.window.body.hide.copy.mark.unhide.unhide.this.day'),
-    dayAfter: window.JournalI18n.render('journal.window.body.hide.copy.day.after.the.rest.of.a.night.or'),
     gridFoot: window.JournalI18n.render('journal.window.body.hide.copy.grid.foot.striped.days.are.ones.you.hid'),
     unreadable: window.JournalI18n.render('journal.window.body.hide.copy.unreadable.your.journal.can.t.read.which'),
   };
@@ -1206,7 +1203,7 @@ a.body-day-cell:focus-visible {
     const showTitle = options.showTitle !== false;
     const hideDay = safeDay(options.hideDay);
     const hide = hideDay
-      ? `<button type="button" class="body-day-hide" data-body-hide="${escapeHtml(hideDay)}" data-copy-key="hide" aria-label="${escapeHtml(HIDE_COPY.hideLabel.replace("{day}", workoutDayLabel(hideDay)))}">${icon("eye-off")}<span>${escapeHtml(HIDE_COPY.hide)}</span></button>`
+      ? `<button type="button" class="body-day-hide" data-body-hide="${escapeHtml(hideDay)}" data-copy-key="hide" aria-label="${window.JournalI18n.renderHtml('journal.window.body.hide.data.from.day', [['day', workoutDayLabel(hideDay)]])}">${icon("eye-off")}<span>${escapeHtml(HIDE_COPY.hide)}</span></button>`
       : "";
     return html([
       '<header class="body-header">',
@@ -1221,11 +1218,25 @@ a.body-day-cell:focus-visible {
     return `<div class="body-card body-freshness body-hidden-unreadable" role="status" data-copy-key="unreadable"><p>${escapeHtml(HIDE_COPY.unreadable)}</p></div>`;
   }
 
+  function bodyTextLink(href, text, className = '') {
+    const node = document.createElement('a');
+    node.setAttribute('href', href);
+    if (className) node.className = className;
+    node.textContent = text;
+    return node;
+  }
+
+  function bodyInlineHtml(id, args, fixed, elements = {}) {
+    const fragment = document.createElement('span');
+    fragment.append(...window.JournalI18n.renderMarkup(id, args, { fixed, elements }));
+    return fragment.innerHTML;
+  }
+
   function nearbyDays(nearest) {
-    return html([
-      nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
-      nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
-    ]);
+    const links = document.createDocumentFragment();
+    if (nearest.prev) links.append(bodyTextLink(bodyDayHref(nearest.prev), `← ${nearest.prev_label ?? ''}`, 'body-link'), ' ');
+    if (nearest.next) links.append(bodyTextLink(bodyDayHref(nearest.next), `${nearest.next_label ?? ''} →`, 'body-link'));
+    return bodyInlineHtml('journal.window.body.day.nearby.with.data', [], { nearby_days: links });
   }
 
   // A hidden day says it's hidden and what that does, once, with unhide as
@@ -1239,7 +1250,7 @@ a.body-day-cell:focus-visible {
       `<p class="body-hidden-copy" data-copy-key="markLine1">${escapeHtml(HIDE_COPY.markLine1)}</p>`,
       `<p class="body-hidden-copy" data-copy-key="markLine2">${escapeHtml(HIDE_COPY.markLine2)}</p>`,
       `<button type="button" class="body-btn body-btn--outline" data-body-unhide="${escapeHtml(day)}" data-copy-key="markUnhide">${icon("eye")}<span>${escapeHtml(HIDE_COPY.markUnhide)}</span></button>`,
-      (nearest.prev || nearest.next) ? `<p class="body-hidden-near">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nearby.days.with.data')} ${nearbyDays(nearest)}</p>` : "",
+      (nearest.prev || nearest.next) ? `<p class="body-hidden-near">${nearbyDays(nearest)}</p>` : "",
       '</section>',
     ]);
   }
@@ -1251,8 +1262,9 @@ a.body-day-cell:focus-visible {
       const day = safeDay(item && item.day);
       if (!day) return "";
       const label = workoutDayLabel(day) || String(item.label ?? "");
-      const [before, after] = HIDE_COPY.dayAfter.split("{day}");
-      return `<p class="body-muted body-hidden-with" data-copy-key="dayAfter" data-hidden-day="${escapeHtml(day)}">${escapeHtml(before)}<a class="body-link" href="${bodyDayHref(day)}">${escapeHtml(label)}</a>${escapeHtml(after ?? "")}</p>`;
+      const dayLink = bodyTextLink(bodyDayHref(day), label, 'body-link');
+      const message = bodyInlineHtml('journal.window.body.hide.previous.day.carryover', [], { hidden_day_link: dayLink });
+      return `<p class="body-muted body-hidden-with" data-copy-key="dayAfter" data-hidden-day="${escapeHtml(day)}">${message}</p>`;
     }).join("");
   }
 
@@ -1352,7 +1364,7 @@ a.body-day-cell:focus-visible {
     if (!hasDays && !asArray(imports?.new).length && !asArray(imports?.old).length) {
       return html([
         renderHeader(window.JournalI18n.render('journal.window.view.body.label'), window.JournalI18n.render('journal.window.body.window.explanation.your.body.brought.into.your.journal'), false),
-        `<p class="body-subtitle">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nothing.here.yet.bring.in.your')} <a href="/app/import/">${window.JournalI18n.renderHtml('journal.window.body.link.label.import.page')}</a>. ${window.JournalI18n.renderHtml('journal.window.body.empty.import.options')} <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">${window.JournalI18n.renderHtml('journal.window.body.link.label.read.about.body.imports')}</a>.</p>`,
+        `<p class="body-subtitle">${emptyImportInstructions()}</p>`,
       ]);
     }
     return html([
@@ -1364,13 +1376,22 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
+  function emptyImportInstructions() {
+    const imports = bodyTextLink('/app/import/', '');
+    const docs = bodyTextLink('https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md', '');
+    docs.target = '_blank';
+    docs.rel = 'noopener noreferrer';
+    return bodyInlineHtml('journal.window.body.empty.workouts.import', [], {}, { import_link: imports }) + ' '
+      + bodyInlineHtml('journal.window.body.empty.workouts.import.resources', [], {}, { docs_link: docs });
+  }
+
   function renderEmptyDay(bodyDay, heldEarlier) {
     const nearest = asObject(bodyDay.nearest);
     return html([
       `<section class="body-card" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.empty.day')}">`,
       heldEarlier ? "" : `<p class="body-empty">${window.JournalI18n.renderHtml('journal.window.body.visible.text.nothing.for.this.day')}</p>`,
       (nearest.prev || nearest.next)
-        ? `<p>${window.JournalI18n.renderHtml('journal.window.body.visible.text.nearby.days.with.data')} ${nearbyDays(nearest)}</p>`
+        ? `<p>${nearbyDays(nearest)}</p>`
         : `<p class="body-muted"><a class="body-link" href="/app/body/">${window.JournalI18n.renderHtml('journal.window.body.link.label.body.overview')}</a></p>`,
       '</section>',
     ]);
@@ -1382,11 +1403,18 @@ a.body-day-cell:focus-visible {
     return list.map((item) => `<p class="body-muted body-earlier">${escapeHtml(item.line)}</p>`).join("");
   }
 
+  function additionalStravaRecords(count) {
+    const number = document.createElement('span');
+    number.className = 'body-num';
+    number.textContent = String(count);
+    return bodyInlineHtml('journal.window.body.workout.strava.additional.count', [['quantity', window.JournalI18n.cardinalQuantity(count)]], { count: number });
+  }
+
   function renderStravaWorkout(workout) {
     const id = escapeHtml(workout.strava_activity_id);
     const details = asArray(workout.details);
     const more = asArray(workout.more_from_strava);
-    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} ${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava')}</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.accessible.name.delete')} ${escapeHtml(workout.name)}">${window.JournalI18n.renderHtml('journal.window.body.button.label.delete')}</button>${details.length ? `<span class="body-workout-details">${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava.s.figures')} ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>${window.JournalI18n.renderHtml('journal.window.body.disclosure.label.more.from.strava')} <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} ${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava')}</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.workout.delete.name', [['workout_name', String(workout.name ?? '')]])}">${window.JournalI18n.renderHtml('journal.window.body.button.label.delete')}</button>${details.length ? `<span class="body-workout-details">${window.JournalI18n.renderHtml('journal.window.body.workout.strava.figures', [['figures', details.map(value => String(value ?? '')).join(' · ')]])}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>${additionalStravaRecords(more.length)}</summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
   }
 
   // Deleting a Strava workout moves every piece of it, on every day it covers, to
@@ -1408,7 +1436,7 @@ a.body-day-cell:focus-visible {
     again: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.again.importing.a.strava.download.again.brings'),
     buttons: { eraseNow: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.body.workout.copy.cancel.cancel'), moveToTrash: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.body.workout.copy.back.back'), recover: window.JournalI18n.render('journal.window.body.workout.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.body.workout.copy.open.trash.open.trash') },
     receipt: {
-      moved: { title: window.JournalI18n.render('journal.window.body.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.body.message.erases.date.unless.you.recover.it') },
+      moved: { title: window.JournalI18n.render('journal.window.body.title.moved.to.the.trash') },
       recovered: { title: window.JournalI18n.render('journal.window.body.title.workout.recovered'), message: window.JournalI18n.render('journal.window.body.message.it.s.back.in.your.journal') },
       erased: { title: window.JournalI18n.render('journal.window.body.title.workout.erased.from.your.journal') },
       recoverFailed: { title: window.JournalI18n.render('journal.window.body.title.couldn.t.recover.that.workout'), message: window.JournalI18n.render('journal.window.body.message.it.s.still.in.the.trash') },
@@ -1437,10 +1465,12 @@ a.body-day-cell:focus-visible {
   }
   function workoutReceipt(kind, fill = {}, buttons = []) {
     const copy = WORKOUT_COPY.receipt[kind];
-    const put = (value) => value.replace("{date}", fill.date || "");
     const settled = kind === "moved" || kind === "recovered" || kind === "erased";
-    const notice = { icon: settled ? (kind === "recovered" ? "undo-2" : "trash-2") : "triangle-alert", title: put(copy.title), dismissible: true, buttons };
-    if (copy.message && (kind !== "moved" || fill.date)) notice.message = put(copy.message);
+    const notice = { icon: settled ? (kind === "recovered" ? "undo-2" : "trash-2") : "triangle-alert", title: copy.title, dismissible: true, buttons };
+    if (copy.message) notice.message = copy.message;
+    if (kind === "moved" && fill.date) {
+      notice.message = window.JournalI18n.render('journal.window.body.workout.trash.recovers.until.day', [['erase_day', fill.date]]);
+    }
     if (fill.message) notice.message = fill.message;
     // A refused or failed card stays until the owner dismisses it.
     if (settled) notice.autoDismiss = 10000;
@@ -1559,7 +1589,7 @@ a.body-day-cell:focus-visible {
       return;
     }
     if (showing(day) && hooks) hooks.reloadDay("[data-body-unhide]");
-    const title = HIDE_COPY.receiptTitle.replace("{day}", workoutDayLabel(day));
+    const title = window.JournalI18n.render('journal.window.body.hide.data.receipt', [['day', workoutDayLabel(day)]]);
     const unhide = { label: HIDE_COPY.unhide, onClick: () => unhideBodyDay(day) };
     if (answer.search_queued === true) {
       hideToast("receipt", { icon: "eye-off", title, message: HIDE_COPY.receiptMessage, autoDismiss: 8000, buttons: [unhide] });

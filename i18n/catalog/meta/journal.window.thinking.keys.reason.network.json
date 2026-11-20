@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys reason network.",
+  "context": "Journal window. Thinking view. keys reason network.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19c4494c69fd1b84e6f586712211b94eb53cff07a453b78e9546fe05c111dbf3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

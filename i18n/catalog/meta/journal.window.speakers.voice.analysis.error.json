@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. voice analysis error.",
+  "context": "Journal window. Speakers view. voice analysis error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce3c800b44b20c72a14551b7f07521bbd64b029e5a5267eb4fb4a27c9f4400c4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

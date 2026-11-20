@@ -1,0 +1,16 @@
+{
+  "description": "Network window. delivery checkin never.",
+  "context": "Journal window. Network window. delivery checkin never.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81dbe4c7f121b73c67108a08ba7c49f59002a7389d4495bef4ea58e4919bffc4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

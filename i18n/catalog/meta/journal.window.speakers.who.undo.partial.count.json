@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. who undo partial count.",
+  "context": "Journal window. Speakers view. who undo partial count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "restored_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "restored",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "skipped_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "de2bd2a324109a987f8d762c2ca111227bea15f576747d63952d5c8a69c5d4cf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "restored_quantity",
+    "type": "cardinal"
+  }
+}

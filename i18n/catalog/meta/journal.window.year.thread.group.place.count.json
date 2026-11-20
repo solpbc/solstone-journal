@@ -1,0 +1,30 @@
+{
+  "description": "Year view. thread group place count.",
+  "context": "Journal window. Year view. thread group place count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9ee8bfd866f6ff2fd118ec01689d36ea730b228701fc62641877befa81eeb502",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

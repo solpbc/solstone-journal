@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents connection to bring it back with its.",
+  "context": "Journal window. Journal window. agents connection to bring it back with its.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c58a926f5ca804e34809bcbe6374c09cc365c6f0816db5254a6d21f3a6a0d573",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

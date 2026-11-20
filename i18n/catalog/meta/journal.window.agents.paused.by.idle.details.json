@@ -1,0 +1,42 @@
+{
+  "description": "Agents window. paused by idle details.",
+  "context": "Journal window. Agents window. paused by idle details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "pause_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ff1fd2eee0074bafbce7f2e77f39b4ab2f32b97560e2252bb07efb0b44a0e0d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

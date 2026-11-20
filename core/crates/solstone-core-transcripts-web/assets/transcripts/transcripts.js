@@ -2035,7 +2035,7 @@
         const typeTitlePart = omitType ? '' : ' · ' + segmentTypeLabel(typeDesc);
         const typeAriaPart = omitType ? '' : ', ' + typeLabel;
         // A screenshot or photo is a moment, not a stretch: its time alone, no length.
-        const titleSpan = isMoment ? seg.start : seg.start + ' – ' + seg.end + ' · ' + window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.min', [['value1', String(duration)]]);
+        const titleSpan = isMoment ? seg.start : seg.start + ' – ' + seg.end + ' · ' + window.JournalI18n.render('journal.window.shared.date.format.duration.minute.count', [['quantity', window.JournalI18n.cardinalQuantity(duration)], ['minutes', String(duration)]]);
         const ariaSpan = isMoment ? seg.start : seg.start + ' \u2013 ' + seg.end;
         pill.title = itemLabel ? datedImportLabel(itemLabel, titleSpan) + statusSuffix :
           titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';

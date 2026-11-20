@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. observation disclosure.",
+  "context": "Journal window. Entities view. observation disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "visible_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "visible",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0375fb9de192cd9aa6b9d38c8d10090a7cdc0626892b04735dfcf2feab7adf9f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "visible_quantity",
+    "type": "cardinal"
+  }
+}

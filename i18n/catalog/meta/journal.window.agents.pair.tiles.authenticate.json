@@ -1,0 +1,25 @@
+{
+  "description": "Agents window. pair tiles authenticate.",
+  "context": "Journal window. Agents window. pair tiles authenticate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "copy_button",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c6da00f994d2c9d76dcd7377a4f6f1d3c98e621278f10497500df79f9bcd23f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

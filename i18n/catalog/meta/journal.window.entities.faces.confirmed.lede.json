@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces confirmed lede.",
+  "context": "Journal window. Entities view. faces confirmed lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "858f825516cc0a7acb0cd56151b8f6427f1f2880f45b97bb835081d9bd842df5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

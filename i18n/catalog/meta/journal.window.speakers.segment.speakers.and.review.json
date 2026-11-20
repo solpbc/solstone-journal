@@ -1,0 +1,47 @@
+{
+  "description": "Journal window. speakers segment speakers and review.",
+  "context": "Journal window. Journal window. speakers segment speakers and review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speakers_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    },
+    {
+      "name": "speakers",
+      "type": "string"
+    },
+    {
+      "name": "review_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "needs_review",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ebd6cf8ce00d728014a1949696d6cdec87b4c28cc400e6bcaac553a4f31eddea",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "speakers_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Connections history for a fallback event. Choose the wording for this relationship and moment count.",
+  "context": "Journal window. Connections history for a fallback event. Choose the wording for this relationship and moment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "moments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "moments",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "evidence_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "65821634a5032d34799406c7557e6756ab82d641b608f697ec833618a9a5ae54",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "moments_quantity",
+    "type": "cardinal"
+  }
+}

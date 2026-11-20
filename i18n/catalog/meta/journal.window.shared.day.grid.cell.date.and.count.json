@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. shared day grid cell date and count.",
+  "context": "Journal window. Journal window. shared day grid cell date and count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day_label",
+      "type": "string"
+    },
+    {
+      "name": "quantity_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da58b1e8c7707a72cfe18f51115ba005091724eae5e963746685ccb8d1ea323e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

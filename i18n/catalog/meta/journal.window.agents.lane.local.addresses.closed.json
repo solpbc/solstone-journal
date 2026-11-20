@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. lane local addresses closed.",
+  "context": "Journal window. Agents window. lane local addresses closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c75f0fe4c1ed1998a873e877dfa663c6ceae373720f4e66ee6c15df168f97611",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

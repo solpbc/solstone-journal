@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. who evidence meeting notes.",
+  "context": "Journal window. Speakers view. who evidence meeting notes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6aa9274fc990c6e15f33f5d3e4bd5c535b7141e778c044c406723702018c32cb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

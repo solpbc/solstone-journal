@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. pair again check agent.",
+  "context": "Journal window. Agents window. pair again check agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e58619504af826901e06eefb63cafbb9940b7c9850fa7ccdbfe2fc790e7421bf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "description": "Thinking view. pace day summary.",
+  "context": "Journal window. Thinking view. pace day summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day_count",
+      "type": "string"
+    },
+    {
+      "name": "period",
+      "type": "string"
+    },
+    {
+      "name": "thoughts_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "thoughts_count",
+      "type": "string"
+    },
+    {
+      "name": "hours_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hours_count",
+      "type": "string"
+    },
+    {
+      "name": "older_share",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "aec6361aa796053561d63536054fe38d6bc5926ee50089b2b9b8b14a396adbbf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "day_quantity",
+    "type": "cardinal"
+  }
+}

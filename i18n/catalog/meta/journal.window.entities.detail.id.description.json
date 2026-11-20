@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. entities detail id description.",
+  "context": "Journal window. Journal window. entities detail id description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d2e6386d383e4d35facec240956ea930641125ba63fed495b1eef87ed02546d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

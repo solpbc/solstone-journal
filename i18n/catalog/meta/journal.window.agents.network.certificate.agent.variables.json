@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. network certificate agent variables.",
+  "context": "Journal window. Agents view. network certificate agent variables.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "claude_variable",
+      "type": "string"
+    },
+    {
+      "name": "codex_variable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "45114d3d34dc0c32421ccb86e1eb616d0e49c50e65ba42798f5d232d157968e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

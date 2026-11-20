@@ -1,0 +1,39 @@
+{
+  "description": "Whole saved endpoint notice when image support cannot be verified.",
+  "context": "Journal window. Whole saved endpoint notice when image support cannot be verified.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "3b09ba951106f21153d45c07f17c6fac2f543df74641cea9a4006cc7b1ef6c6d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "reason",
+    "type": "string",
+    "enum_values": [
+      "unreachable",
+      "timeout",
+      "busy",
+      "key",
+      "rejected",
+      "unusable",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

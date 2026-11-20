@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. owner teaching statements.",
+  "context": "Journal window. Speakers view. owner teaching statements.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "statements_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "statements",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2e5342fb693bfad881747e3f5e266e6da16a1265a6a1b96a2e8ab691deacb6fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "statements_quantity",
+    "type": "cardinal"
+  }
+}

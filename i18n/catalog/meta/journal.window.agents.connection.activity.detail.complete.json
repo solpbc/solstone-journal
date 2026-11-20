@@ -1,0 +1,30 @@
+{
+  "description": "Agents view. connection activity detail complete.",
+  "context": "Journal window. Agents view. connection activity detail complete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "436e09f9ccd721d956915c9cee23e2aa8e03db70b71ac897d3dcb6825b484894",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

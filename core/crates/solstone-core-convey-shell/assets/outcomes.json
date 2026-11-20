@@ -12,7 +12,7 @@
     "relay_identity_conflict": "journal.window.handoff.spl.outcome.guidance.relay.identity.conflict",
     "relay_rotation_unsupported": "journal.window.handoff.spl.outcome.guidance.relay.rotation.unsupported",
     "relay_unavailable": "journal.window.handoff.spl.outcome.guidance.relay.unavailable",
-    "relay_rejected": "journal.window.handoff.spl.outcome.guidance.relay.rejected"
+    "relay_rejected": "journal.window.handoff.spl.relay.rejected.with.status"
   },
   "SME_ALREADY_ENABLED_DETAIL": "journal.window.handoff.sme.already.enabled.detail",
   "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "journal.window.handoff.sme.consent.link.prepare.failed.detail",

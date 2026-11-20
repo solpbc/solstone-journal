@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys provider processing terms legacy.",
+  "context": "Journal window. Thinking view. keys provider processing terms legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6234624474024ffde2c1ab1f037d30c59ce4e2e0ac43108c17977852aefccac",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

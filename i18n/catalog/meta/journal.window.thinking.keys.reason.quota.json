@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys reason quota.",
+  "context": "Journal window. Thinking view. keys reason quota.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8d3ac247e59785cec08107b8d2418e0c46359ba2b98646edba9462dc6d919f9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

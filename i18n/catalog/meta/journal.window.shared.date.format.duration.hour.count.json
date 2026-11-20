@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared date format duration hour count.",
+  "context": "Journal window. Journal window shell. shared date format duration hour count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "025581b1f3bec53e68157d90ec54b2a6be23378c03cef486776081bc3984253c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers segment meeting matching prompt.",
+  "context": "Journal window. Journal view. speakers segment meeting matching prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7dbd536f9e1a1b128f506e9a021e717659005fcdc26a78761e12baa4efc01849",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

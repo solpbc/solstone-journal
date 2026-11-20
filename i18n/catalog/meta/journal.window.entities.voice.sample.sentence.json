@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. voice sample sentence.",
+  "context": "Journal window. Entities view. voice sample sentence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sentence_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed8b6388abfe33006a359e624278fc5cf8810fb1aab0a984cd3891af09c237a3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

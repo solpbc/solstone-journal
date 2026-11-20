@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. trust merge preview summary.",
+  "context": "Journal window. Entities view. trust merge preview summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "aliases_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "aliases",
+      "type": "string"
+    },
+    {
+      "name": "emails",
+      "type": "string"
+    },
+    {
+      "name": "emails_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3030352dd15579286b7036973b7d5a6fd67179f6f802538ea5498dc80b035286",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "aliases_quantity",
+    "type": "cardinal"
+  }
+}

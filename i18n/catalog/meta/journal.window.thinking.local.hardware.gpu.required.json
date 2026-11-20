@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. thinking local hardware gpu required.",
+  "context": "Journal window. Journal window. thinking local hardware gpu required.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc6dd984dc64cfb612cfb737918d050b661618bbd62d55bbceba3f16a76b6fe7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

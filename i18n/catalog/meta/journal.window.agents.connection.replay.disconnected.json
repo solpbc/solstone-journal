@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. connection replay disconnected.",
+  "context": "Journal window. Agents view. connection replay disconnected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "connection_route",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cacbc44217e7104a9404f068213a15d37512da5e2aa45b7e3406bb99dc926af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. facet membership list.",
+  "context": "Journal window. Entities view. facet membership list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "leading_facets",
+      "type": "string"
+    },
+    {
+      "name": "final_facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "045ccd6033a66769fb67daa69fc528b33bc0d964ec5c746516819cdb28764728",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

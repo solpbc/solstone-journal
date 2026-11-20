@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. examples names.",
+  "context": "Journal window. Entities view. examples names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "36c25bf8d2aee43ca72fe83208ed5b1fc4b693cec174fea8a4c50d93587773aa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

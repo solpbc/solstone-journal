@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection unreadable support.",
+  "context": "Journal window. Agents view. connection unreadable support.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "support_link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb5061fdf7e3ec9bc70d69c310bd72d3fc84c59f6caedc5b1ace254da13a5e81",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

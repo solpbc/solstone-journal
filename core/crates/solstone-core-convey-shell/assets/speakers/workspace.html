@@ -1944,7 +1944,6 @@ function runDay(ctx, page) {
   // overview's or another day's, is the router's, and the router restores it.
   const ownPath = window.location.pathname;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
-  const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
   const DAY_DISCOVERY_LOAD_ERROR = window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.new.voices.right');
   // The day view reads the cached look and never starts one, so its two quiet
@@ -2414,7 +2413,7 @@ function runDay(ctx, page) {
             })
             .catch((err) => {
               ownerDetectionInFlight = false;
-              renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.analyze.voice.patterns.value1', [['value1', String(err.serverMessage)]]));
+              renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.voice.analysis.error', [['detail', String(err.serverMessage)]]));
               window.logError(err, { context: 'speakers: owner detect failed' });
             });
         }
@@ -2465,7 +2464,7 @@ function runDay(ctx, page) {
       if (stale()) return;
       ownerDetectionInFlight = false;
       hideDiscovery();
-      renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.window.explanation.couldn.t.load.owner.status.value1', [['value1', String(err.serverMessage)]]));
+      renderOwnerBanner(window.JournalI18n.render('journal.window.speakers.owner.status.error', [['detail', String(err.serverMessage)]]));
       window.logError(err, { context: 'speakers: checkOwnerStatus failed' });
     }
   }
@@ -2524,7 +2523,7 @@ function runDay(ctx, page) {
       <div class="spk-owner-panel">
         <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_CANDIDATE_TITLE || '')}</div>
         <div class="spk-owner-copy">
-          ${escapeHtml(ownerTeachTemplateText(SPK_COPY.SPK_OWNER_CANDIDATE_BODY_TEMPLATE, { count: Number(data.cluster_size || 0).toLocaleString() }))}
+          ${escapeHtml(window.JournalI18n.renderEnglish('journal.window.speakers.owner.voice.sample.count', [...speakerCountArgs('statements', Number(data.cluster_size || 0), Number(data.cluster_size || 0).toLocaleString())]))}
         </div>
         <div class="spk-owner-copy">${escapeHtml(SPK_COPY.SPK_OWNER_CANDIDATE_EFFECT || '')}</div>
         <div class="spk-owner-samples">
@@ -2535,7 +2534,7 @@ function runDay(ctx, page) {
               : '';
             return `
             <div class="spk-owner-sample" data-sample-idx="${index}">
-              <div class="spk-owner-sample-title">${escapeHtml(ownerSampleWhen(sample) || window.JournalI18n.render('journal.window.speakers.status.text.sample.value1', [['value1', String(index + 1)]]))}</div>
+              <div class="spk-owner-sample-title">${escapeHtml(ownerSampleWhen(sample) || window.JournalI18n.render('journal.window.speakers.sample.ordinal', [['sample_number', String(index + 1)]]))}</div>
               ${sample.text ? `<div class="spk-owner-sample-text">${escapeHtml(sample.text)}</div>` : ''}
               ${sample.artifact_eligible && sample.audio_url
                 ? `<div class="spk-owner-sample-player">
@@ -2653,7 +2652,7 @@ function runDay(ctx, page) {
 
   function ownerNotReadyLine(data) {
     if (data.reason === 'cooldown') {
-      return ownerTeachTemplateText(SPK_COPY.SPK_OWNER_COOLDOWN_TEMPLATE, { date: lookAgainDay(data.next_look_after) });
+      return window.JournalI18n.render('journal.window.speakers.owner.cooldown.until.day', [['retry_day', lookAgainDay(data.next_look_after)]]);
     }
     if (data.low_quality_reason === 'median_duration_too_short' || data.low_quality_reason === 'cluster_too_diffuse') {
       return SPK_COPY.SPK_OWNER_NOT_READY_SHORT_OR_MIXED || '';
@@ -2683,44 +2682,30 @@ function runDay(ctx, page) {
     return Math.max(0, Math.floor(count));
   }
 
-  function ownerTeachTemplateText(template, replacements) {
-    return Object.entries(replacements).reduce(
-      (text, entry) => text.replaceAll(`{${entry[0]}}`, String(entry[1])),
-      template || ''
-    );
+  function speakerCountArgs(name, count, display = String(count)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(count)], [name, display]];
   }
 
-  function ownerTeachProgressText(state, copy, minimum) {
-    return ownerTeachTemplateText(copy.SPK_OWNER_TEACH_PROGRESS_TEMPLATE, {
-      count: ownerTeachMomentumCount(state),
-      minimum,
-    });
+  function ownerTeachProgressText(state, minimum) {
+    return window.JournalI18n.render('journal.window.speakers.owner.teaching.progress', [...speakerCountArgs('statements', ownerTeachMomentumCount(state)), ...speakerCountArgs('required', minimum)]);
   }
 
-  function ownerTeachExhaustedBody(state, copy, minimum) {
-    return ownerTeachTemplateText(copy.SPK_OWNER_TEACH_EXHAUSTED_BODY_TEMPLATE, {
-      count: ownerTeachMomentumCount(state),
-      minimum,
-    });
+  function ownerTeachExhaustedBody(state, minimum) {
+    return window.JournalI18n.render('journal.window.speakers.owner.teaching.exhausted.progress', [...speakerCountArgs('statements', ownerTeachMomentumCount(state)), ...speakerCountArgs('required', minimum)]);
   }
 
-  function ownerRevealStatementText(state, copy) {
-    return ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE, {
-      count: ownerTeachMomentumCount(state),
-    });
+  function ownerRevealStatementText(state) {
+    return window.JournalI18n.render('journal.window.speakers.owner.teaching.statements', [...speakerCountArgs('statements', ownerTeachMomentumCount(state))]);
   }
 
-  function ownerRevealFactTexts(state, source, copy) {
-    if (source === 'manual_tags' || source === 'redo') return [ownerRevealStatementText(state, copy)];
+  function ownerRevealFactTexts(state, source) {
+    if (source === 'manual_tags' || source === 'redo') return [ownerRevealStatementText(state)];
     const meta = state?.centroid_metadata || {};
     const streams = Array.isArray(meta.streams) ? meta.streams.length : 0;
     // Plural forms are real: this read "appears in 1 places".
-    const streamsTemplate = streams === 1
-      ? copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
-      : copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE;
     return [
-      ownerTeachTemplateText(streamsTemplate, { count: streams }),
-      ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE, { tier: meta.evidence_tier || '' }),
+      window.JournalI18n.render('journal.window.speakers.owner.reveal.stream.count', speakerCountArgs('streams', streams)),
+      window.JournalI18n.render('journal.window.speakers.owner.reveal.evidence.tier', [['evidence_tier', meta.evidence_tier || '']]),
     ];
   }
 
@@ -2873,8 +2858,8 @@ function runDay(ctx, page) {
     return `<details class="spk-owner-diagnostics">
           <summary class="spk-owner-diagnostics-summary">${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.why.not.yet')}</summary>
           <div class="spk-owner-diagnostics-body">
-            <div class="spk-owner-diagnostics-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, OWNER_MIN || 0))}</div>
-            <div class="spk-owner-diagnostics-line">${escapeHtml(ownerTeachTemplateText(SPK_COPY.SPK_OWNER_RECORDINGS_TEMPLATE, { count: Number(data.segments_available || 0).toLocaleString() }))}</div>
+            <div class="spk-owner-diagnostics-line">${escapeHtml(ownerTeachProgressText(data, OWNER_MIN || 0))}</div>
+            <div class="spk-owner-diagnostics-line">${escapeHtml(window.JournalI18n.render('journal.window.speakers.owner.recordings.audio.count', [...speakerCountArgs('recordings', Number(data.segments_available || 0), Number(data.segments_available || 0).toLocaleString())]))}</div>
           </div>
         </details>`;
   }
@@ -2898,7 +2883,7 @@ function runDay(ctx, page) {
         <div class="spk-owner-copy">
           ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_BODY || '')}
         </div>
-        <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, minimum))}</div>
+        <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, minimum))}</div>
         <div class="spk-owner-progress" aria-hidden="true">
           <div class="spk-owner-progress-fill" style="width:${progress}%"></div>
         </div>
@@ -2939,7 +2924,7 @@ function runDay(ctx, page) {
     const count = ownerTeachMomentumCount(data);
     const progress = minimum > 0 ? Math.min(100, Math.max(0, Math.round((count / minimum) * 100))) : 0;
     return `
-      <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, minimum))}</div>
+      <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, minimum))}</div>
       <div class="spk-owner-progress" aria-hidden="true">
         <div class="spk-owner-progress-fill" style="width:${progress}%"></div>
       </div>
@@ -2980,7 +2965,7 @@ function runDay(ctx, page) {
     } else if (ownerTeachState.items.length === 0 || !current) {
       body = `
         <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_EXHAUSTED_TITLE || '')}</div>
-        <div class="spk-owner-copy">${escapeHtml(ownerTeachExhaustedBody(data, SPK_COPY, OWNER_MIN || 0))}</div>
+        <div class="spk-owner-copy">${escapeHtml(ownerTeachExhaustedBody(data, OWNER_MIN || 0))}</div>
       `;
     } else {
       const meta = [
@@ -3301,7 +3286,7 @@ function runDay(ctx, page) {
   }
 
   function renderOwnerReveal(data, source) {
-    const facts = ownerRevealFactTexts(data, source, SPK_COPY);
+    const facts = ownerRevealFactTexts(data, source);
     const title = source === 'redo' ? SPK_COPY.SPK_OWNER_REDO_DONE : SPK_COPY.SPK_OWNER_REVEAL_TITLE;
     ownerBanner.style.display = 'block';
     ownerBanner.innerHTML = `
@@ -3461,16 +3446,16 @@ function runDay(ctx, page) {
         ${renderDayDiscoveryNotice(dayDiscoveryNotice)}
         ${clusters.length ? `
           <details class="spk-day-discovery" ${dayDiscoveryOpen ? 'open' : ''}>
-          <summary class="spk-discovery-title">${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.unnamed.voices.across.your.journal')}${clusters.length})</summary>
+          <summary class="spk-discovery-title">${window.JournalI18n.renderHtml('journal.window.speakers.day.discovery.unnamed.count', [...speakerCountArgs('count', clusters.length)])}</summary>
           <div class="spk-discovery-copy">
-            ${clusters.length} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.recurring.voice.pattern')}${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? window.JournalI18n.renderHtml('journal.window.speakers.window.state.text.don.t') : window.JournalI18n.renderHtml('journal.window.speakers.window.state.text.doesn.t')} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.match.anyone.you.ve.named.listen')}
+            ${window.JournalI18n.renderHtml('journal.window.speakers.day.discovery.pattern.count', [...speakerCountArgs('count', clusters.length)])}
           </div>
           ${dayDiscoveryOverviewLinkHtml()}
           <div class="spk-discovery-clusters">
             ${clusters.map(cluster => `
               <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
                 <div class="spk-discovery-cluster-title">
-                  ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.unknown.speaker')} <span style="font-weight: 400">&middot; ${cluster.size} ${pluralize(cluster.size, 'sample')} &middot; ${cluster.segment_count} ${pluralize(cluster.segment_count, 'segment')}</span>
+                  ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.unknown.speaker')} <span style="font-weight: 400">&middot; ${window.JournalI18n.renderHtml('journal.window.speakers.discovery.sample.count', [...speakerCountArgs('count', cluster.size)])} &middot; ${window.JournalI18n.renderHtml('journal.window.speakers.discovery.segment.count', [...speakerCountArgs('count', cluster.segment_count)])}</span>
                 </div>
                 ${(cluster.samples || []).map(sample => `
                   <div class="spk-discovery-sample">
@@ -3659,7 +3644,7 @@ function runDay(ctx, page) {
 
     if (segmentTotal > 20 && segments.length < segmentTotal) {
       container.style.display = '';
-      btn.textContent = window.JournalI18n.render('journal.window.speakers.visible.text.load.more.segments.value1.of.value2', [['value1', String(segments.length)], ['value2', String(segmentTotal)]]);
+      btn.textContent = window.JournalI18n.render('journal.window.speakers.segments.show.more', [...speakerCountArgs('shown', segments.length), ...speakerCountArgs('total', segmentTotal)]);
       btn.onclick = loadMoreSegments;
     } else {
       container.style.display = 'none';
@@ -3700,6 +3685,18 @@ function runDay(ctx, page) {
       ? segmentIdentity(selectedSegment)
       : segmentIdentity(sorted[0]);
 
+    function segmentAriaLabel(segment) {
+      const args = [
+        ['start_time', String(segment.start)], ['end_time', String(segment.end)],
+        ['speakers_quantity', window.JournalI18n.cardinalQuantity(segment.speaker_count)], ['speakers', String(segment.speaker_count)]
+      ];
+      if (segment.attribution_needs_review > 0) {
+        args.push(['review_quantity', window.JournalI18n.cardinalQuantity(segment.attribution_needs_review)], ['needs_review', String(segment.attribution_needs_review)]);
+        return window.JournalI18n.renderHtml('journal.window.speakers.segment.speakers.and.review', args);
+      }
+      return window.JournalI18n.renderHtml('journal.window.speakers.segment.speakers', args);
+    }
+
     const hadFocus = segmentList.contains(document.activeElement);
     const focusedIdentity = hadFocus ? document.activeElement.dataset?.segmentIdentity : null;
 
@@ -3709,16 +3706,16 @@ function runDay(ctx, page) {
           role="option"
           tabindex="${segmentIdentity(seg) === focusIdentity ? '0' : '-1'}"
           aria-selected="${sameSegment(selectedSegment, seg)}"
-          aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.speaker')}${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + window.JournalI18n.render('journal.window.speakers.window.state.text.to.review') : ''}">
+          aria-label="${segmentAriaLabel(seg)}">
         <div class="spk-segment-time">
           ${seg.start} - ${seg.end}
-          ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${seg.speaker_count} ${pluralize(seg.speaker_count, 'speaker')}</span>` : ''}
+          ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${window.JournalI18n.renderHtml('journal.window.speakers.segment.speaker.count', [...speakerCountArgs('count', seg.speaker_count)])}</span>` : ''}
         </div>
         <div class="spk-segment-meta">${formatDuration(seg.duration)}</div>
         <div class="spk-segment-sources">
           ${seg.sources.map(s => `<span class="spk-source-badge">${formatSource(s)}</span>`).join('')}
         </div>
-        ${seg.attribution_needs_review > 0 ? `<div class="spk-review-badge">${seg.attribution_needs_review} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.to.review')}</div>` : ''}
+        ${seg.attribution_needs_review > 0 ? `<div class="spk-review-badge">${window.JournalI18n.renderHtml('journal.window.speakers.segment.review.badge', [['quantity', window.JournalI18n.cardinalQuantity(seg.attribution_needs_review)], ['count', String(seg.attribution_needs_review)]])}</div>` : ''}
       </li>
     `).join('');
 
@@ -3743,7 +3740,7 @@ function runDay(ctx, page) {
     const header = document.querySelector('.spk-segments-header');
     if (header) {
       if (segmentTotal > 20) {
-        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${segments.length} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.of')} ${segmentTotal}</span>`;
+        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${window.JournalI18n.renderHtml('journal.window.speakers.segment.visible.total', [...speakerCountArgs('visible', segments.length), ...speakerCountArgs('total', segmentTotal)])}</span>`;
       } else {
         header.textContent = segmentHeaderLabel();
       }
@@ -3778,11 +3775,11 @@ function runDay(ctx, page) {
 
     const summaryParts = [];
     if (seg.speaker_count > 0) {
-      summaryParts.push(`<span>${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.speaker')}${seg.speaker_count !== 1 ? 's' : ''}</span>`);
+      summaryParts.push(`<span>${window.JournalI18n.renderHtml('journal.window.speakers.segment.speaker.count', [...speakerCountArgs('count', seg.speaker_count)])}</span>`);
     }
     if (seg.attribution_total > 0) {
       const reviewed = seg.attribution_total - seg.attribution_needs_review;
-      summaryParts.push(`<span>${reviewed}/${seg.attribution_total} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.attributed')}</span>`);
+      summaryParts.push(`<span>${window.JournalI18n.renderHtml('journal.window.speakers.segment.attributed.total', [...speakerCountArgs('attributed', reviewed), ...speakerCountArgs('total', seg.attribution_total)])}</span>`);
     }
 
     let html = `
@@ -4036,7 +4033,7 @@ function runDay(ctx, page) {
         const nonOwnerTotal = seg?.attribution_non_owner_total || 0;
         const nullCount = seg?.attribution_null || 0;
         const showPrompt = seg?.speaker_count > 0 && nonOwnerTotal > 0 && (nullCount / nonOwnerTotal) > 0.5;
-        return showPrompt ? `<div class="spk-seeding-prompt">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.this.meeting.has')} ${seg.speaker_count} ${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.named.speakers.but.their.voices.can')}</div>` : '';
+        return showPrompt ? `<div class="spk-seeding-prompt">${window.JournalI18n.renderHtml('journal.window.speakers.segment.meeting.matching.prompt', [...speakerCountArgs('count', seg.speaker_count)])}</div>` : '';
       })()}
       ${!hasLabels ? `<div class="spk-status spk-status-info">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.speakers.haven.t.been.identified.yet')}</div>` : ''}
       ${sentences.length === 0 ? `<div class="spk-empty">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.no.sentences.match.this.filter')}</div>` : sentences.map(renderSentence).join('')}
@@ -4067,7 +4064,7 @@ function runDay(ctx, page) {
     if (currentFilter === 'all') {
       return `sentences (${total})`;
     }
-    return window.JournalI18n.render('journal.window.speakers.window.explanation.sentences.value1.of.value2', [['value1', String(visible)], ['value2', String(total)]]);
+    return window.JournalI18n.render('journal.window.speakers.sentences.visible.range', [...speakerCountArgs('shown', visible), ...speakerCountArgs('total', total)]);
   }
 
   function renderSentence(sentence) {
@@ -4560,7 +4557,6 @@ function runOverview(ctx, page) {
   const dayGridHost = document.getElementById('spkDayGridHost');
   const dayGridLegend = document.getElementById('spkDayGridLegend');
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
-  const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
   const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   let mountedDayGridKey = null;
@@ -4606,6 +4602,7 @@ function runOverview(ctx, page) {
 
   function dayGridUnit() {
     return {
+      countMessage: 'journal.window.speakers.grid.to.name.count',
       one: COPY.SPK_GRID_UNIT_ONE,
       other: COPY.SPK_GRID_UNIT_OTHER,
       none: COPY.SPK_GRID_UNIT_NONE,
@@ -4614,6 +4611,7 @@ function runOverview(ctx, page) {
 
   function dayGridActivityUnit() {
     return {
+      countMessage: 'journal.window.speakers.grid.all.named.count',
       one: COPY.SPK_GRID_ACTIVITY_ONE,
       other: COPY.SPK_GRID_ACTIVITY_OTHER,
     };
@@ -4654,10 +4652,6 @@ function runOverview(ctx, page) {
     return `<span class="spk-cohesion"><span class="spk-dots">${dots}</span><span>${escapeHtml(label)}</span></span>`;
   }
 
-  function copyTemplate(key, values) {
-    return String(COPY[key] || '').replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));
-  }
-
   // A sample is named by when it was said, never by its file coordinates.
   function sampleWhen(sample) {
     const format = window.JournalFormat;
@@ -4665,21 +4659,25 @@ function runOverview(ctx, page) {
     return `${format.day(sample.day)}, ${format.segmentTimeOfDay(sample.segment_key)}`;
   }
 
+  function speakerCountArgs(name, count, display = String(count)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(count)], [name, display]];
+  }
+
   function relabelHtml(relabel) {
     if (!relabel || !relabel.state) return '';
     const undo = relabel.kind === 'undo';
-    const values = {
-      completed: Number(relabel.completed || 0).toLocaleString(),
-      total: Number(relabel.total || 0).toLocaleString(),
-      count: Number(relabel.not_updated || 0).toLocaleString(),
-    };
+    const completed = Number(relabel.completed || 0);
+    const total = Number(relabel.total || 0);
+    const notUpdated = Number(relabel.not_updated || 0);
     let line = '';
     if (relabel.state === 'running') {
-      line = copyTemplate(undo ? 'SPK_OWNER_UNDO_RUNNING_TEMPLATE' : 'SPK_OWNER_RELABEL_RUNNING_TEMPLATE', values);
+      line = window.JournalI18n.render(undo ? 'journal.window.speakers.owner.relabel.undo.progress' : 'journal.window.speakers.owner.relabel.progress', [
+        ...speakerCountArgs('completed', completed, completed.toLocaleString()), ...speakerCountArgs('total', total, total.toLocaleString())
+      ]);
     } else if (relabel.state === 'waiting') {
       line = COPY.SPK_OWNER_RELABEL_WAITING || '';
     } else if (relabel.state === 'incomplete') {
-      line = copyTemplate('SPK_OWNER_RELABEL_INCOMPLETE_TEMPLATE', values);
+      line = window.JournalI18n.render('journal.window.speakers.owner.relabel.incomplete', speakerCountArgs('count', notUpdated, notUpdated.toLocaleString()));
     } else if (relabel.state === 'done') {
       line = undo ? (COPY.SPK_OWNER_UNDO_DONE || '') : (COPY.SPK_OWNER_RELABEL_DONE || '');
     }
@@ -4709,7 +4707,7 @@ function runOverview(ctx, page) {
 
   function ownerNotReadyLine(data) {
     if (data.reason === 'cooldown') {
-      return copyTemplate('SPK_OWNER_COOLDOWN_TEMPLATE', { date: lookAgainDay(data.next_look_after) });
+      return window.JournalI18n.render('journal.window.speakers.owner.cooldown.until.day', [['retry_day', lookAgainDay(data.next_look_after)]]);
     }
     if (data.low_quality_reason === 'median_duration_too_short' || data.low_quality_reason === 'cluster_too_diffuse') {
       return COPY.SPK_OWNER_NOT_READY_SHORT_OR_MIXED || '';
@@ -4727,7 +4725,7 @@ function runOverview(ctx, page) {
       : null;
     const progressHtml = hasProgress
       ? `<div class="spk-progress" aria-hidden="true"><div class="spk-progress-fill" style="width:${progress}%"></div></div>
-         <p class="spk-overview-muted">${escapeHtml(copyTemplate('SPK_OWNER_TEACH_PROGRESS_TEMPLATE', { count, minimum: threshold }))}</p>`
+         <p class="spk-overview-muted">${escapeHtml(window.JournalI18n.render('journal.window.speakers.owner.teaching.progress', [...speakerCountArgs('statements', count), ...speakerCountArgs('required', threshold)]))}</p>`
       : '';
     ownerPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_LEARNING)}</strong>
@@ -4796,7 +4794,7 @@ function runOverview(ctx, page) {
 
     ownerPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OWNER_CANDIDATE_TITLE || '')}</strong>
-      <p class="spk-overview-muted">${escapeHtml(copyTemplate('SPK_OWNER_CANDIDATE_BODY_TEMPLATE', { count: Number(data.cluster_size || 0).toLocaleString() }))}</p>
+      <p class="spk-overview-muted">${escapeHtml(window.JournalI18n.renderEnglish('journal.window.speakers.owner.voice.sample.count', [...speakerCountArgs('statements', Number(data.cluster_size || 0), Number(data.cluster_size || 0).toLocaleString())]))}</p>
       <p class="spk-overview-muted">${escapeHtml(COPY.SPK_OWNER_CANDIDATE_EFFECT || '')}</p>
       <div class="spk-owner-samples">
         ${samples.map((sample, index) => {
@@ -4807,7 +4805,7 @@ function runOverview(ctx, page) {
           const when = sampleWhen(sample);
           return `
           <div class="spk-owner-sample" data-sample-idx="${index}">
-            <div class="spk-card-title">${escapeHtml(when || window.JournalI18n.render('journal.window.speakers.status.text.sample.value1', [['value1', String(index + 1)]]))}</div>
+            <div class="spk-card-title">${escapeHtml(when || window.JournalI18n.render('journal.window.speakers.sample.ordinal', [['sample_number', String(index + 1)]]))}</div>
             ${sample.text ? `<div class="spk-card-line">${escapeHtml(sample.text)}</div>` : ''}
             ${sample.artifact_eligible && sample.audio_url
               ? `<div class="spk-owner-sample-player">
@@ -5041,7 +5039,7 @@ function runOverview(ctx, page) {
     const total = statements.reduce((sum, [, value]) => sum + value, 0);
     const lines = [];
     if (total > 0) {
-      lines.push(`<p class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.across')} ${escapeHtml(total.toLocaleString())} ${escapeHtml(pluralize(total, 'statement'))}</p>`);
+      lines.push(`<p class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.quality.statement.denominator', [...speakerCountArgs('count', total, total.toLocaleString())])}</p>`);
     }
     statements.filter(([, value]) => value > 0).forEach(([label, value]) => {
       lines.push(qualityLine(label, value, total));
@@ -5058,7 +5056,7 @@ function runOverview(ctx, page) {
     });
     const empty = statements.concat(segments).filter(([, value]) => value === 0);
     if (empty.length) {
-      lines.push(`<p class="spk-card-line spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.none.right.now')} ${escapeHtml(empty.map(([label]) => label).join(', '))}</p>`);
+      lines.push(`<p class="spk-card-line spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.quality.buckets.empty', [['empty_categories', empty.map(([label]) => label).join(', ')]])}</p>`);
     }
     return lines.join('');
   }
@@ -5068,7 +5066,7 @@ function runOverview(ctx, page) {
     if (count === 0) {
       return `<p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_TEACHING_ZERO)}</p>`;
     }
-    return `<p class="spk-card-line">${escapeHtml(String(count))} ${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_TEACHING_LABEL)}</p>`;
+    return `<p class="spk-card-line">${window.JournalI18n.renderHtml('journal.window.speakers.quality.teaching.count', [...speakerCountArgs('count', count)])}</p>`;
   }
 
   function qualityWarning(data) {
@@ -5082,7 +5080,7 @@ function runOverview(ctx, page) {
     const ownerVoice = data.owner_voice || {};
     qualityPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_PREBOOTSTRAP)}</strong>
-      <p class="spk-overview-muted">${escapeHtml(String(qualityCount(ownerVoice.evidence_count)))} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX)}</p>
+      <p class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.quality.progress.statements', [...speakerCountArgs('count', qualityCount(ownerVoice.evidence_count))])}</p>
       <div class="spk-overview-actions">
         <a class="spk-overview-btn spk-overview-btn-primary" href="/app/speakers/${TODAY}">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL)}</a>
       </div>
@@ -5091,7 +5089,7 @@ function runOverview(ctx, page) {
 
   function qualityReadyHeading(data) {
     const days = qualityCount(data.quality_window_days) || 30;
-    return (COPY.SPK_OVERVIEW_QUALITY_READY_TEMPLATE || '').replace('{days}', String(days));
+    return window.JournalI18n.render('journal.window.speakers.quality.window.days', speakerCountArgs('days', days));
   }
 
   function renderQualityReady(data) {
@@ -5190,18 +5188,18 @@ function runOverview(ctx, page) {
       // A filter that matches nothing is a different state from a journal that
       // has learned no other voice yet, and the two must not read alike.
       emptyNotice = query
-        ? `<div class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.visible.text.no.known.voice.matches')}${escapeHtml(knownFilter.value.trim())}"</div>`
+        ? `<div class="spk-overview-muted">${window.JournalI18n.renderHtml('journal.window.speakers.known.search.empty', [['query', knownFilter.value.trim()]])}</div>`
         : `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
     }
     // G1-206: this disclosure and the one under "new voices" both read
     // "unlabeled voices (N)" one section apart, with counts that differed by a
     // factor of 48 and nothing to tell them apart. Each now says what it holds.
     const unnamedBlock = unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.voices.still.using.a.placeholder.name')}${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
+      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.known.placeholder.count', [...speakerCountArgs('count', unnamed.length)])}</summary>${unnamed.map(renderCard).join('')}</details>`
       : '';
     const capped = !query && named.length > KNOWN_PHONE_CAP;
     const showAll = capped
-      ? `<button type="button" id="spkKnownShowAll" class="spk-known-more">${window.JournalI18n.renderHtml('journal.window.speakers.button.label.show.all')} ${named.length} ${window.JournalI18n.renderHtml('journal.window.speakers.button.label.voices')}</button>`
+      ? `<button type="button" id="spkKnownShowAll" class="spk-known-more">${window.JournalI18n.renderHtml('journal.window.speakers.known.show.all.count', [...speakerCountArgs('count', named.length)])}</button>`
       : '';
     knownContainer.innerHTML = `${emptyNotice}<div class="spk-known-grid"${capped ? ' data-capped' : ''}>${named.map(renderCard).join('')}${unnamedBlock}</div>${showAll}`;
     document.getElementById('spkKnownShowAll')?.addEventListener('click', (event) => {
@@ -5365,10 +5363,8 @@ function runOverview(ctx, page) {
 
   function discoveryIssueMessage(issue) {
     const count = discoveryIssueCount(issue);
-    if (count > 0 && COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE) {
-      return COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE.replace('{count}', String(count));
-    }
-    return issue?.message || (COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE || '').replace('{count}', String(count));
+    if (count <= 0 && issue?.message) return issue.message;
+    return window.JournalI18n.render('journal.window.speakers.discovery.unused.samples', speakerCountArgs('samples', count));
   }
 
   function discoveryNoticeFromScan(data) {
@@ -5458,7 +5454,7 @@ function runOverview(ctx, page) {
     const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
         <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || window.JournalI18n.render('journal.window.speakers.status.text.not.yet.named'))}</h3>
-        <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(pluralize(cluster.size || cluster.count || 0, 'sample'))}</p>
+        <p class="spk-card-line">${window.JournalI18n.renderHtml('journal.window.speakers.discovery.sample.count', [...speakerCountArgs('count', cluster.size || cluster.count || 0)])}</p>
         <div class="spk-discovery-actions">
           <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
         </div>
@@ -5470,7 +5466,7 @@ function runOverview(ctx, page) {
     // G1-206: paired with the known-voices disclosure above, which holds the
     // voices that already carry a placeholder name.
     discoveryContainer.innerHTML = named.map(renderCluster).join('') + (unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.disclosure.label.voices.without.a.name.yet')}${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
+      ? `<details ${wasOpen ? 'open' : ''}><summary>${window.JournalI18n.renderHtml('journal.window.speakers.discovery.unlabeled.count', [...speakerCountArgs('count', unnamed.length)])}</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
     discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
       const trigger = card.querySelector('.spk-who-trigger');
       const cluster = discoveryClustersById.get(card.dataset.clusterId);

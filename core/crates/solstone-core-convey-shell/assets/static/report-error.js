@@ -136,7 +136,7 @@
     const review = document.createElement('dl');
     review.className = 'report-error-review';
     review.append(
-      row(window.JournalI18n.render('journal.window.shared.report.error.status.text.your.versions'), fields.about || window.JournalI18n.render('journal.window.shared.report.error.status.text.journal.value1', [['value1', String(fields.version)]])),
+      row(window.JournalI18n.render('journal.window.shared.report.error.status.text.your.versions'), fields.about || window.JournalI18n.render('journal.window.shared.report.error.journal.version', [['version', String(fields.version)]])),
       row(window.CONVEY_COPY.REPORT_APP_LABEL, fields.app),
       row(window.CONVEY_COPY.REPORT_ROUTE_LABEL, fields.route)
     );

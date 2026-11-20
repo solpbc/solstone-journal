@@ -1,0 +1,34 @@
+{
+  "description": "Connections history for a scheduled-with event. Choose the wording for this relationship and moment count.",
+  "context": "Journal window. Connections history for a scheduled-with event. Choose the wording for this relationship and moment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "moments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "moments",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7faea79f3b86fcb8a5c9e8375f5f8d721361fbff926d20b8184e834e7a7a26f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "moments_quantity",
+    "type": "cardinal"
+  }
+}

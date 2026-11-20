@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. thinking glance lane details.",
+  "context": "Journal window. Journal window. thinking glance lane details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lane_label",
+      "type": "string"
+    },
+    {
+      "name": "failure_detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "232a478a90f4aa8886a400561c073a4cf230f730b94b625f2a7e7dbc22d04381",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

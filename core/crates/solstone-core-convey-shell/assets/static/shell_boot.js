@@ -107,7 +107,9 @@
   }
 
   function applyBodyState(app) {
-    document.title = window.JournalI18n.render('journal.window.shared.shell.boot.tooltip.value1.journal', [['value1', String(app.label)]]);
+    document.title = window.JournalI18n.render('journal.window.chrome.view.document.title', [
+      ['view', String(app.name || '')], ['fallback_label', String(app.label)]
+    ]);
   }
 
   function appsByRank(shell, groupField, rankField, group) {
@@ -260,7 +262,7 @@
     try {
       const response = await fetch(app.background_url, { credentials: 'same-origin' });
       if (!response.ok) {
-        throw new Error(window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]));
+        throw new Error(window.JournalI18n.render('journal.window.shared.api.request.failed.http', [['http_status', String(response.status)]]));
       }
       const code = await response.text();
       new Function(code)();

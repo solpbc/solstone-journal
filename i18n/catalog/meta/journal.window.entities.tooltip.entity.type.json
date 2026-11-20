@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. tooltip entity type.",
+  "context": "Journal window. Entities view. tooltip entity type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fdd23427d8d49a6e09776eb7f0d4a2ac9f60d4bd875dbe8e5a9442c96559e37f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

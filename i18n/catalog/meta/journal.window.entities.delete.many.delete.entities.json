@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. many delete n entities.",
+  "context": "Journal window. Entities view deletion. many delete n entities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fdadcb8e07017c91dd50c617a14cb57d031cc13b761dafdd066e2a93eec19fb6",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

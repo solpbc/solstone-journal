@@ -1,0 +1,30 @@
+{
+  "description": "Agents view warning when the advertised addresses are taken by another program.",
+  "context": "Journal window. Agents view warning when the advertised addresses are taken by another program.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "addresses",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "05382d653639992df9b9b1d7d7ec132d6c88437b5251fef1e9287c33e28b884f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

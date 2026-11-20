@@ -94,10 +94,10 @@ mod tests {
                 assert_eq!(
                     strings(
                         ENGLISH,
-                        "journal.window.loading.other",
-                        [("name", "journal")]
+                        "journal.window.shared.api.request.failed.http",
+                        [("http_status", "502")]
                     ),
-                    "loading journal…"
+                    "Request failed (HTTP 502)"
                 );
             })
             .unwrap()

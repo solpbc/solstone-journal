@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces chosen alt.",
+  "context": "Journal window. Entities view. faces chosen alt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a412e9a2ed7afd9ac33a9ad55726d5a94b73682c073dc80826d41426643eea9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

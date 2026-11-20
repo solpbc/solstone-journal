@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents connection the ones you connected this way.",
+  "context": "Journal window. Journal window. agents connection the ones you connected this way.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef4319bec6c2b1573797d5e1df6e3227e05dfa2a36777530012d547a8ab21145",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane rejected elapsed week.",
+  "context": "Journal window. Journal window shell. shared status pane rejected elapsed week.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "27803f168d293ffb08dbb4447c22d5add789d66f5b8d27217f9432ddced47f39",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

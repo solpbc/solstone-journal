@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. who evidence on screen.",
+  "context": "Journal window. Speakers view. who evidence on screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "27847539850f60189652f64a0d1a17928240b25f5713f728513908844c6dd066",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Agents view. move byo relay agents count.",
+  "context": "Journal window. Agents view. move byo relay agents count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "agents",
+      "type": "string"
+    },
+    {
+      "name": "agent_names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9cda0721419283da25351b72208449e99d8e72bde211cdee36673a7978779111",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

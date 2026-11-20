@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. thinking glance lane confirmed elapsed.",
+  "context": "Journal window. Journal window. thinking glance lane confirmed elapsed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lane_label",
+      "type": "string"
+    },
+    {
+      "name": "elapsed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9757875f6dc11898b3dd1b2535242c3fc8ab81ea6ec2f617cf404759d3014b15",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

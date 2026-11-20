@@ -303,8 +303,7 @@
       data-loading-support="{{journal.window.loading.support}}"
       data-loading-thinking="{{journal.window.loading.thinking}}"
       data-loading-transcripts="{{journal.window.loading.transcripts}}"
-      data-loading-year="{{journal.window.loading.year}}"
-      data-loading-other="{{journal.window.loading.other}}">{{journal.window.shell.loading}}</span>
+      data-loading-year="{{journal.window.loading.year}}">{{journal.window.shell.loading}}</span>
     <span class="surface-state-still" data-role="still-working">{{journal.window.chrome.still.working}}</span>
   </div>
 </main>
@@ -315,17 +314,11 @@
   (function () {
     var el = document.getElementById('shell-first-paint-loading');
     if (!el) { return; }
-    // Internal route names stay out of the first frame.
-    var internal = { body: 1, curation: 1, tokens: 1, sol: 1, observer: 1, awareness: 1, link: 1 };
     var app = (window.location.pathname.match(/^\/app\/([a-z0-9_-]+)/i) || [])[1];
     if (!app) return;
     var slug = app.toLowerCase();
     var label = el.getAttribute('data-loading-' + slug);
-    if (label !== null && slug !== 'other') {
-      el.textContent = label;
-    } else if (!Object.prototype.hasOwnProperty.call(internal, slug)) {
-      el.textContent = el.getAttribute('data-loading-other').replace('{name}', slug.replace(/[_-]+/g, ' '));
-    }
+    if (label !== null) el.textContent = label;
   })();
 </script>
 

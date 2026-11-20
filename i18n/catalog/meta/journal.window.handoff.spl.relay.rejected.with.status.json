@@ -1,0 +1,21 @@
+{
+  "description": "Operation guidance after the relay rejected a private network handoff. The status is an HTTP response code.",
+  "context": "Journal window. Operation guidance after the relay rejected a private network handoff. The status is an HTTP response code.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "http_status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2c4b8acbab0f45f1c26435d1a8b5ab8c943db34ecb69baad97d83291fac7c15d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

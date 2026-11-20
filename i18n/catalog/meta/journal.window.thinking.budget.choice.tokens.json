@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. budget choice tokens.",
+  "context": "Journal window. Thinking view. budget choice tokens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "token_budget",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed431adbbb14ff2d624b278a5df667c83a2ce70dd2b0df4a8b9ac6965c0d9410",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. move byo connect named.",
+  "context": "Journal window. Agents view. move byo connect named.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7e070ed944b88dd6b6f45420559b600d261ddc008cc3e36f193365c18ed0ced",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

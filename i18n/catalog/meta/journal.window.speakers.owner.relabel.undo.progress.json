@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. owner relabel undo progress.",
+  "context": "Journal window. Speakers view. owner relabel undo progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "completed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "77d7e42531ab229d95af88bd54c53b704d061656d0442f97badbe41ce0fbf8fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "completed_quantity",
+    "type": "cardinal"
+  }
+}

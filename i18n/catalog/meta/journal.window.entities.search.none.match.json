@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. search none match.",
+  "context": "Journal window. Entities view. search none match.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b93da54597bf738a15023b4c33fe731588395d7387a08e88f3c41c58bdcd28e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

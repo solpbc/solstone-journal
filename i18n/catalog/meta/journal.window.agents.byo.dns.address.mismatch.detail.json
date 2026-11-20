@@ -1,0 +1,37 @@
+{
+  "description": "Agents window. byo dns address mismatch detail.",
+  "context": "Journal window. Agents window. byo dns address mismatch detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "resolved_addresses",
+      "type": "string"
+    },
+    {
+      "name": "relay_address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "024759f94ff3dd639382a20d24f8d53d4c37b6a857de8701a3073316c37ef696",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

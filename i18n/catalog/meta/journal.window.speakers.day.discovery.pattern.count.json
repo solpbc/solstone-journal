@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers day discovery pattern count.",
+  "context": "Journal window. Journal view. speakers day discovery pattern count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "842a40964db5ccf7a31eda04fa3689f11fb0cf7763fb8ddc4272614cf27ba3a9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

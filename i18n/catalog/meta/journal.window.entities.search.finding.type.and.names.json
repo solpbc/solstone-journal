@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. search finding type and names.",
+  "context": "Journal window. Entities view. search finding type and names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    },
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d66ea07e2775711865cf7f6857f1e5cc14bf60647dd8d248d8e67377fec9774",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

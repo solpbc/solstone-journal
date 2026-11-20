@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. memory receipt recovered.",
+  "context": "Journal window. Agents window. memory receipt recovered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d43a7850d76c266f7c8660505656d0bddfd1e697bda0ff8acf98afc448edd6c7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

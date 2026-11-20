@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents connection agents on this device keep working.",
+  "context": "Journal window. Journal window. agents connection agents on this device keep working.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "50389118e941e4ab664a38ecfad0057a3b2878e8d23adf4fc9e2d9e4910bf03e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

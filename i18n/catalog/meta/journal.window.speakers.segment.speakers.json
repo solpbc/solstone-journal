@@ -1,0 +1,38 @@
+{
+  "description": "Journal window. speakers segment speakers.",
+  "context": "Journal window. Journal window. speakers segment speakers.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speakers_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    },
+    {
+      "name": "speakers",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7991b01b8171f116660afac6587390352d984760de61c86c55f6d1ec97b4c82b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "speakers_quantity",
+    "type": "cardinal"
+  }
+}

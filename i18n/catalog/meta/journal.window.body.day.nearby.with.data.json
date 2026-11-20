@@ -1,0 +1,21 @@
+{
+  "description": "Body view. day nearby with data.",
+  "context": "Journal window. Body view. day nearby with data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "nearby_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "60ca59c80ad14e81e8244555e7aec9159e7f9186a631856eafe535a28c23dc87",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

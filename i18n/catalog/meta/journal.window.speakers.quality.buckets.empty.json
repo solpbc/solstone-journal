@@ -1,0 +1,21 @@
+{
+  "description": "Journal view. speakers quality buckets empty.",
+  "context": "Journal window. Journal view. speakers quality buckets empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "empty_categories",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e378dc384204d5fd5d5adb8f4b74cdb67b6c2817b34968eddfd5c2053e8aa391",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

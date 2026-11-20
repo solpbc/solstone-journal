@@ -1,0 +1,54 @@
+{
+  "description": "Journal window shell. chrome view document title.",
+  "context": "Journal window. Journal window shell. chrome view document title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "fallback_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "eaecb69c50bbff586dc41c98655357c61661ac54cf984087e75cd12bc0609e3a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "agents",
+      "activities",
+      "backup",
+      "body",
+      "curation",
+      "entities",
+      "health",
+      "home",
+      "import",
+      "map",
+      "more",
+      "network",
+      "search",
+      "settings",
+      "sources",
+      "speakers",
+      "stats",
+      "support",
+      "thinking",
+      "transcripts",
+      "year",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

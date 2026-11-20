@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. examples first and second.",
+  "context": "Journal window. Entities view. examples first and second.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_name",
+      "type": "string"
+    },
+    {
+      "name": "second_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bac1b8ec96eba2ffa0ac8e18142eeab08e07301099fbbe617f3161d3171d1b93",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

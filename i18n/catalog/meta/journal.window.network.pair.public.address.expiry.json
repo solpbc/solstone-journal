@@ -1,0 +1,21 @@
+{
+  "description": "Network window. pair public address expiry.",
+  "context": "Journal window. Network window. pair public address expiry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46dee201c5ac3c931bb8732c66886d14daf4abb2394dbfab92674570d3a192b9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

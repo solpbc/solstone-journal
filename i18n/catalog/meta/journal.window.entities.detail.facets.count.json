@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. detail facets count.",
+  "context": "Journal window. Entities view. detail facets count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facets_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2bc0206a5fa2ec2c0255ffec718e3dc8eb8810c963f6477ca26ea12804214f01",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "facets_quantity",
+    "type": "cardinal"
+  }
+}

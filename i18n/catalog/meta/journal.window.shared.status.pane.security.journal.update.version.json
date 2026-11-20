@@ -1,0 +1,21 @@
+{
+  "description": "Journal window. shared status pane security journal update version.",
+  "context": "Journal window. Journal window. shared status pane security journal update version.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "fixed_version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bcedab7f4c270dabeaea7ffa6b507e2b5344b236d625dc465f6ea3a7d75e7b1e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

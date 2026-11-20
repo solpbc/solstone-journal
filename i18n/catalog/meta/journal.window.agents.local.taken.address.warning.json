@@ -1,0 +1,21 @@
+{
+  "description": "Agents view warning when one listening LAN address is taken by another program.",
+  "context": "Journal window. Agents view warning when one listening LAN address is taken by another program.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5274fe71b32fb667653f925b39a318e2dfce8b71e7db7f4cf840b882929243af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

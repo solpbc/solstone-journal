@@ -1,0 +1,30 @@
+{
+  "description": "Thinking view. runs failed total.",
+  "context": "Journal window. Thinking view. runs failed total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "failed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "failed_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d09c3e3fd5e0f82f8ffe4c1a80ecf4a76cca1f556b55ba2dddd352ef75d9418c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "failed_quantity",
+    "type": "cardinal"
+  }
+}

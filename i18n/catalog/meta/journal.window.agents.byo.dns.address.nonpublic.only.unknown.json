@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. byo dns address nonpublic only unknown.",
+  "context": "Journal window. Agents window. byo dns address nonpublic only unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7ebca0ccf116d44a6c0c45088ecc65e54ead184f9234f214741689aaa7f6193",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. facet many its place and notes in n.",
+  "context": "Journal window. Entities view deletion. facet many its place and notes in n.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facets",
+      "type": "string"
+    },
+    {
+      "name": "facets_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7b385279555d56e784cf02547ee5097a5cce96124e74a81ff0a0099ee5551215",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "facets_quantity",
+    "type": "cardinal"
+  }
+}

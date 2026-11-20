@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. glance byo model.",
+  "context": "Journal window. Thinking view. glance byo model.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e688e900c0d4945b4900fe756bdc62b8b012eaa9ed3436edb26a1a727c85f69",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

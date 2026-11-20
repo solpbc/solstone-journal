@@ -199,7 +199,15 @@ class Element extends Target {
   set textContent(v) { this.replaceChildren(); if (String(v ?? '')) this.append(String(v)); }
   get innerText() { return this.textContent; }
   set innerHTML(html) { this.replaceChildren(); parseInto(this.ownerDocument, this, String(html ?? '')); }
-  get innerHTML() { return this.textContent; }
+  get innerHTML() {
+    return this.childNodes.map(node => node.nodeType === 1
+      ? node.outerHTML : node.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')).join('');
+  }
+  get outerHTML() {
+    const name = this.tagName.toLowerCase();
+    const attrs = [...this.attrs].map(([key, value]) => ` ${key}="${value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`).join('');
+    return `<${name}${attrs}>${this.innerHTML}</${name}>`;
+  }
   get isConnected() {
     let at = this;
     while (at.parentNode) at = at.parentNode;

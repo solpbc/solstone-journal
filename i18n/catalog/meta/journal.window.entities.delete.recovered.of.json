@@ -1,0 +1,39 @@
+{
+  "description": "Entities view deletion. recovered done of n.",
+  "context": "Journal window. Entities view deletion. recovered done of n.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "processed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b523e32878c47ba3018bcda735231475ba7517933392e439d873181c0bef0e42",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "processed_quantity",
+    "type": "cardinal"
+  }
+}

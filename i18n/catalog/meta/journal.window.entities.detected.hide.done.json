@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. detected hide done.",
+  "context": "Journal window. Entities view. detected hide done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c63bd52869f0a9e34c324535edec50eeb3decfd32feeae3015c1a122b536f02",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. facet empty heading.",
+  "context": "Journal window. Entities view. facet empty heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "567bb737b152e5f7449167f65b83c2bab111a98b08cb5982e60859ebbaa9fac7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

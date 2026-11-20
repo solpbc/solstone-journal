@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys model restored.",
+  "context": "Journal window. Thinking view. keys model restored.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9e65f463cdd10e5d1cf20298ec77885280cabf2016ffc441b3b197195ee856d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

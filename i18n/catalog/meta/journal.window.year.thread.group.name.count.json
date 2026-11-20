@@ -1,0 +1,30 @@
+{
+  "description": "Year view. thread group name count.",
+  "context": "Journal window. Year view. thread group name count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f2f6035c01581dd4d5304f80916ad5fe132987699dd65632c0109c90f3791e6c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

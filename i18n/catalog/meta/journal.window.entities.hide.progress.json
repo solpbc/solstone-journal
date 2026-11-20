@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. hide progress.",
+  "context": "Journal window. Entities view. hide progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "54b5dc6351248b0d7d3022f404dec12e27f7059788f4a64efdf569c7b9fd61f5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "done_quantity",
+    "type": "cardinal"
+  }
+}

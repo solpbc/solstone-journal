@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. thinking local requirements or own model.",
+  "context": "Journal window. Journal window. thinking local requirements or own model.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "requirements_link",
+      "type": "string"
+    },
+    {
+      "name": "own_model_button",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "acfa2e5231000e8d3161fb5384cd07183532910d0593cc384dfca12354b2fdd6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

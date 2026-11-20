@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. network device refusal that device couldn t be forgotten variant2.",
+  "context": "Journal window. Journal window. network device refusal that device couldn t be forgotten variant2.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5382f37b5facae92b3be83d7785b157f4c7fc4f66d558fc0c2dfd2d6dd007e70",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

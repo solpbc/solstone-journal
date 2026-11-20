@@ -1,0 +1,21 @@
+{
+  "description": "Journal window shell. shared status pane version current up to date.",
+  "context": "Journal window. Journal window shell. shared status pane version current up to date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current_version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "89e44b68c25739f76eb6c00e1db17cc7ee7d04da98d81ba0fef3bcd22422e930",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

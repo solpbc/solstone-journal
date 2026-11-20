@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. owner relabel progress.",
+  "context": "Journal window. Speakers view. owner relabel progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "completed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "17417d87fed461ae2a604cde6b4933ed74b34e1498db52d763015cd33106b812",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "completed_quantity",
+    "type": "cardinal"
+  }
+}

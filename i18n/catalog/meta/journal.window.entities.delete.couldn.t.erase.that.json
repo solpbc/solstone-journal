@@ -1,0 +1,16 @@
+{
+  "description": "Entities view deletion. couldn t erase that noun.",
+  "context": "Journal window. Entities view deletion. couldn t erase that noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5800ee0235d450f588476b1ce463bb9106a5460ba5a371098c5de61f8fbec6c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

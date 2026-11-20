@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. trust history suggested by.",
+  "context": "Journal window. Entities view. trust history suggested by.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e0ddff02b396c4026fa0b74aad8177967ffdedb3107ee525234dd089cb6532fe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

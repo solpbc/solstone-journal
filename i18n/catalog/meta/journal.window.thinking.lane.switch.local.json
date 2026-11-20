@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane switch local.",
+  "context": "Journal window. Thinking view. lane switch local.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current_setup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f8340963b4bd433ed074ba5ff6f085174b2b59ad0b4addc65b3774bf4f96444",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

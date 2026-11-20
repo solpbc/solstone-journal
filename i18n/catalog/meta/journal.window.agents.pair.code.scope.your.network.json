@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. pair code scope your network.",
+  "context": "Journal window. Agents window. pair code scope your network.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8bf0a5b2d86958d283d29988678b4fec5d9b31b4a080a8a3865c9f78f87aed28",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -8,7 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { journalContext } = require('./journal_catalog_dom.js');
+const { journalContext, markupNode } = require('./journal_catalog_dom.js');
 
 const rootDir = process.argv[2] || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(rootDir, 'assets/body/workspace.html'), 'utf8');
@@ -56,9 +56,11 @@ function boot(fixtures = {}) {
       const index = docListeners.findIndex((row) => row.type === type && row.fn === fn);
       if (index >= 0) docListeners.splice(index, 1);
     },
-    createElement() {
+    createDocumentFragment: () => markupNode(),
+    createTextNode(text) { const node = markupNode(); node.textContent = text; return node; },
+    createElement(tag) {
       const listeners = [];
-      const node = {
+      const node = Object.assign(markupNode(tag), {
         className: '',
         classList: { toggle() {} },
         attrs: {},
@@ -84,7 +86,7 @@ function boot(fixtures = {}) {
           const target = { closest: (sel) => (sel === selector ? target : null) };
           for (const row of [...listeners]) if (row.type === 'click') row.fn({ target, type: 'click' });
         },
-      };
+      });
       return node;
     },
     querySelector(selector) { return selector === '.body-shell' ? shell : null; },

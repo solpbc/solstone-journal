@@ -1,0 +1,48 @@
+{
+  "description": "Agents window. byo dns caa applies to domain.",
+  "context": "Journal window. Agents window. byo dns caa applies to domain.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "domain",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4ab0c6da2e07a4bfe0bfe1b3e3e6bcb9501e39f1772df91b9f2659f81341429",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot5",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

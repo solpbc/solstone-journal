@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces dismissed lede.",
+  "context": "Journal window. Entities view. faces dismissed lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26b0a72fad5b8649f371d28cc65a17a20a012a2bb947b3a21238a581c1ac8bc8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. detected unhide failed.",
+  "context": "Journal window. Entities view. detected unhide failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d18f9ab73ad3b3a4f3604df202db47a9d67116ec4e08ac42a36663f81b99d9ea",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

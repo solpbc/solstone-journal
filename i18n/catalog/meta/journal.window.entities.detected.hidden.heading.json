@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. detected hidden heading.",
+  "context": "Journal window. Entities view. detected hidden heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "320eea2d2e9b2fdea1c9cba5a246a94a6f9c8f895428d3aacce923183cfd7f22",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

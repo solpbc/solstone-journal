@@ -1,0 +1,28 @@
+{
+  "description": "Journal window shell. shared app notice background task.",
+  "context": "Journal window. Journal window shell. shared app notice background task.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "app_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e6216850c3def712e3f5a43448f938737bd05086482ac88f0418286fa665ce5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

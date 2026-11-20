@@ -896,7 +896,7 @@
       }
       const serverMessage = payload?.error
         ?? payload?.message
-        ?? window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]);
+        ?? window.JournalI18n.render('journal.window.shared.api.request.failed.http', [['http_status', String(response.status)]]);
       const correlationId = response.headers.get('X-Solstone-Request-Id') || '';
       const timestamp = Date.now();
       const reasonCode = payload?.reason_code ?? null;

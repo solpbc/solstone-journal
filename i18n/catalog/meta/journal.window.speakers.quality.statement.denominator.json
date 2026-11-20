@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers quality statement denominator.",
+  "context": "Journal window. Journal view. speakers quality statement denominator.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9113671adc9a7c85f680ee4792c750e1489816b3e2611ea3479641db9256a324",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

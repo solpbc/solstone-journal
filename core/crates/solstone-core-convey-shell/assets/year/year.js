@@ -17,31 +17,15 @@
     stepLabel: global.JournalI18n.render('journal.window.year.copy.step.label.other.years'),
     daysLede: global.JournalI18n.render('journal.window.year.copy.days.lede.each.square.is.a.day.colored'),
     layerLabel: global.JournalI18n.render('journal.window.year.copy.layer.label.what.to.count'),
-    daysNone: global.JournalI18n.render('journal.window.year.copy.days.none.nothing.of.this.kind.in.year'),
     threadsLede: global.JournalI18n.render('journal.window.year.copy.threads.lede.each.row.is.a.place.or'),
     find: global.JournalI18n.render('journal.window.year.copy.find.find.a.place.or.a.name'),
-    findNone: global.JournalI18n.render('journal.window.year.copy.find.none.nothing.in.year.has.that.name'),
-    threadsNone: global.JournalI18n.render('journal.window.year.copy.threads.none.no.places.or.names.in.year'),
-    threadsNoneListed: global.JournalI18n.render('journal.window.year.copy.threads.none.listed.nothing.listed.for.year'),
     places: global.JournalI18n.render('journal.window.year.copy.places.places'),
     otherNames: global.JournalI18n.render('journal.window.year.copy.other.names.other.names'),
-    sectionCount: global.JournalI18n.render('journal.window.year.copy.section.count.count'),
     namesUnavailable: global.JournalI18n.render('journal.window.year.copy.names.unavailable.names.aren.t.listed.your.journal'),
     placesUnavailable: global.JournalI18n.render('journal.window.year.copy.places.unavailable.places.aren.t.listed.the.place'),
     peekHint: global.JournalI18n.render('journal.window.year.copy.peek.hint.choose.a.row.or.a.week'),
-    rowSummary: global.JournalI18n.render('journal.window.year.copy.row.summary.days.in.year.first.to.last'),
-    rowSummaryOne: global.JournalI18n.render('journal.window.year.copy.row.summary.one.day.in.year.first'),
-    rowStart: global.JournalI18n.render('journal.window.year.copy.row.start.start.at.first'),
-    weekOf: global.JournalI18n.render('journal.window.year.copy.week.of.week.of.from.to.to'),
-    weekDays: global.JournalI18n.render('journal.window.year.copy.week.days.days.of.this.week'),
     weekBefore: global.JournalI18n.render('journal.window.year.copy.week.before.the.earlier.week.with.days.on'),
     weekAfter: global.JournalI18n.render('journal.window.year.copy.week.after.the.later.week.with.days.on'),
-    cell: global.JournalI18n.render('journal.window.year.copy.cell.label.week.of.from.days'),
-    day: [global.JournalI18n.render('journal.window.year.copy.day.day'), global.JournalI18n.render('journal.window.year.copy.day.days')],
-    week: [global.JournalI18n.render('journal.window.year.copy.week.week'), global.JournalI18n.render('journal.window.year.copy.week.weeks')],
-    place: [global.JournalI18n.render('journal.window.year.copy.place.place'), global.JournalI18n.render('journal.window.year.copy.place.places')],
-    name: [global.JournalI18n.render('journal.window.year.copy.name.name'), global.JournalI18n.render('journal.window.year.copy.name.names')],
-    yearNone: global.JournalI18n.render('journal.window.year.copy.year.none.nothing.to.show.here.for.year'),
     empty: global.JournalI18n.render('journal.window.year.copy.empty.nothing.here.yet'),
     emptyDetail: global.JournalI18n.render('journal.window.year.copy.empty.detail.once.your.journal.has.activities.places'),
     emptyAction: global.JournalI18n.render('journal.window.year.copy.empty.action.see.your.sources'),
@@ -56,8 +40,8 @@
   // What a day cell can count. Each is a count its own app already shows,
   // with that app's nouns; a day opens on that app's page for it.
   const LAYERS = [
-    { key: 'activities', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), path: '/app/activities', unit: { one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activity'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.activities') } },
-    { key: 'location', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.location'), path: '/app/map', unit: { one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.record'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.records'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.location') } },
+    { key: 'activities', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), path: '/app/activities', unit: { countMessage: 'journal.window.view.activities.date.count', one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activity'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.activities') } },
+    { key: 'location', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.location'), path: '/app/map', unit: { countMessage: 'journal.window.view.map.date.count', one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.record'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.records'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.location') } },
   ];
 
   const TYPE_LABELS = {
@@ -79,14 +63,6 @@
     global.JournalI18n.render('journal.window.date.weekdays.short.fri'),
     global.JournalI18n.render('journal.window.date.weekdays.short.sat')
   ];
-
-  function fill(template, values) {
-    return String(template).replace(/\{(\w+)\}/g, (_, key) => (key in values ? String(values[key]) : ''));
-  }
-
-  function plural(count, words) {
-    return `${count} ${count === 1 ? words[0] : words[1]}`;
-  }
 
   function isYear(value) {
     return typeof value === 'string' && /^\d{4}$/.test(value);
@@ -184,7 +160,7 @@
     const year = payload.year;
     const out = [];
     const places = (payload.places || []).map((place) => thread('place', `place:${place.id}`, place.label, place.days, year));
-    if (places.length) out.push({ key: 'places', title: COPY.places, noun: COPY.place, rows: places });
+    if (places.length) out.push({ key: 'places', title: COPY.places, countMessage: 'journal.window.year.thread.group.place.count', rows: places });
     const byType = {};
     (payload.names || []).forEach((name) => {
       const key = String(name.type || '').toLowerCase();
@@ -193,7 +169,7 @@
     const named = Object.keys(byType).map((key) => ({
       key: `names:${key}`,
       title: TYPE_LABELS[key] || (key ? key : COPY.otherNames),
-      noun: COPY.name,
+      countMessage: 'journal.window.year.thread.group.name.count',
       rows: byType[key],
     }));
     // Kinds of name go by their heading, alphabetically.
@@ -293,7 +269,7 @@
     const layer = LAYERS.find((item) => item.key === state.layer) || LAYERS[0];
     const data = gridData(payload, layer.key);
     if (Object.keys(data.days).length === 0) {
-      section.appendChild(el(doc, 'p', 'year-none', fill(COPY.daysNone, { year: payload.year })));
+      section.appendChild(el(doc, 'p', 'year-none', global.JournalI18n.render('journal.window.year.days.empty', [['year', String(payload.year)]])));
     } else {
       // One host for the life of the view: mounting on it again ends the
       // grid that was there, listeners and all.
@@ -314,21 +290,15 @@
 
   function cellLabel(row, week) {
     const span = weekSpan(row.year, week);
-    return fill(COPY.cell, { label: row.label, from: shortDate(span.from), days: plural(row.weeks[week].length, COPY.day) });
+    return global.JournalI18n.render('journal.window.year.thread.cell.week.days', [['thread_name', row.label], ['week_start', shortDate(span.from)], ['days_quantity', global.JournalI18n.cardinalQuantity(row.weeks[week].length)], ['days_count', String(row.weeks[week].length)]]);
   }
 
   function drawPeek(doc, peek, row, week, select) {
     peek.textContent = '';
     if (week == null) {
       peek.appendChild(el(doc, 'h3', 'year-peek-title', row.label));
-      peek.appendChild(el(doc, 'p', 'year-peek-meta', fill(row.days.length === 1 ? COPY.rowSummaryOne : COPY.rowSummary, {
-        days: plural(row.days.length, COPY.day),
-        year: row.year,
-        first: shortDate(row.days[0]),
-        last: shortDate(row.days[row.days.length - 1]),
-        weeks: plural(row.held.length, COPY.week),
-      })));
-      const start = el(doc, 'button', 'year-peek-start', fill(COPY.rowStart, { first: shortDate(row.days[0]) }));
+      peek.appendChild(el(doc, 'p', 'year-peek-meta', global.JournalI18n.render('journal.window.year.thread.days.in.year', [['days_quantity', global.JournalI18n.cardinalQuantity(row.days.length)], ['days_count', String(row.days.length)], ['year', String(row.year)], ['first_day', shortDate(row.days[0])], ['last_day', shortDate(row.days[row.days.length - 1])], ['weeks_quantity', global.JournalI18n.cardinalQuantity(row.held.length)], ['weeks_count', String(row.held.length)]])));
+      const start = el(doc, 'button', 'year-peek-start', global.JournalI18n.render('journal.window.year.thread.jump.to.first.day', [['first_day', shortDate(row.days[0])]]));
       start.setAttribute('type', 'button');
       start.addEventListener('click', () => select(row, row.held[0], 1));
       peek.appendChild(start);
@@ -348,18 +318,22 @@
     });
     peek.appendChild(step);
     const span = weekSpan(row.year, week);
-    peek.appendChild(el(doc, 'p', 'year-peek-when', fill(COPY.weekOf, { from: shortDate(span.from), to: shortDate(span.to) })));
+    peek.appendChild(el(doc, 'p', 'year-peek-when', global.JournalI18n.render('journal.window.year.thread.week.range', [['start_day', shortDate(span.from)], ['end_day', shortDate(span.to)]])));
     peek.appendChild(el(doc, 'h3', 'year-peek-title', row.label));
     const days = row.weeks[week];
-    const line = el(doc, 'p', 'year-peek-meta', `${fill(COPY.weekDays, { days: plural(days.length, COPY.day) })} `);
+    const line = el(doc, 'p', 'year-peek-meta');
+    const links = doc.createDocumentFragment();
     const base = row.kind === 'place' ? '/app/map' : '/app/activities';
     days.forEach((day, index) => {
-      if (index) line.appendChild(el(doc, 'span', null, ', '));
+      if (index) links.appendChild(el(doc, 'span', null, ', '));
       const open = el(doc, 'a', 'year-peek-day', weekdayDate(day));
       open.setAttribute('href', `${base}/${day}`);
       open.setAttribute('data-day', day);
-      line.appendChild(open);
+      links.appendChild(open);
     });
+    line.append(...global.JournalI18n.renderMarkup('journal.window.year.thread.week.day.links', [
+      ['days_quantity', global.JournalI18n.cardinalQuantity(days.length)], ['days_count', String(days.length)]
+    ], { fixed: { day_links: links } }));
     peek.appendChild(line);
   }
 
@@ -371,8 +345,8 @@
 
     const groups = sections(payload);
     if (!groups.length) {
-      const none = payload.places_unavailable || payload.names_unavailable ? COPY.threadsNoneListed : COPY.threadsNone;
-      section.appendChild(el(doc, 'p', 'year-none', fill(none, { year: payload.year })));
+      const none = payload.places_unavailable || payload.names_unavailable ? 'journal.window.year.thread.list.empty' : 'journal.window.year.thread.empty';
+      section.appendChild(el(doc, 'p', 'year-none', global.JournalI18n.render(none, [['year', String(payload.year)]])));
       root.appendChild(section);
       return;
     }
@@ -431,7 +405,7 @@
 
     groups.forEach((group) => {
       const heading = el(doc, 'h2', 'year-th-section', `${group.title} `);
-      heading.appendChild(el(doc, 'small', null, fill(COPY.sectionCount, { count: plural(group.rows.length, group.noun) })));
+      heading.appendChild(el(doc, 'small', null, global.JournalI18n.render(group.countMessage, [['total_quantity', global.JournalI18n.cardinalQuantity(group.rows.length)], ['total_count', String(group.rows.length)]])));
       group.heading = heading;
       table.appendChild(heading);
       group.rows.forEach((row) => {
@@ -469,7 +443,7 @@
       });
     });
 
-    const none = el(doc, 'p', 'year-none', fill(COPY.findNone, { year: payload.year }));
+    const none = el(doc, 'p', 'year-none', global.JournalI18n.render('journal.window.year.thread.find.empty', [['year', String(payload.year)]]));
     setHidden(none, true);
     table.appendChild(none);
     find.addEventListener('input', () => {
@@ -516,7 +490,7 @@
     }
     drawHead(doc, root, payload, shown, opts);
     if (years.indexOf(payload.year) === -1) {
-      root.appendChild(el(doc, 'p', 'year-none', fill(COPY.yearNone, { year: payload.year })));
+      root.appendChild(el(doc, 'p', 'year-none', global.JournalI18n.render('journal.window.year.view.empty', [['year', String(payload.year)]])));
       return 'empty';
     }
     if (state.view === 'threads') drawThreads(doc, root, payload, shown, opts);

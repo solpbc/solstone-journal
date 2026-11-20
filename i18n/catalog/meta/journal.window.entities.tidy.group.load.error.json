@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. entities tidy group load error.",
+  "context": "Journal window. Journal window. entities tidy group load error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e8fdb2fb3e4eb1615d27eac579360a68b30d2a816f58637ce98f89bbed1b090",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

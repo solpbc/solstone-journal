@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. lane local also reachable.",
+  "context": "Journal window. Agents window. lane local also reachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5e84ad34112077a583f20fd0eeee8891ed175a73de53ec3dd1d9acfd53dd4a3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

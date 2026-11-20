@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. discovery unused samples.",
+  "context": "Journal window. Speakers view. discovery unused samples.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "samples_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "samples",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2df7e18a1b0dcda7d6b86b3212ed09cc13d04532215cc30f69deddea1c5c890d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "samples_quantity",
+    "type": "cardinal"
+  }
+}

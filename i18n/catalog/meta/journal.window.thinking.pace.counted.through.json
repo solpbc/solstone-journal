@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. pace counted through.",
+  "context": "Journal window. Thinking view. pace counted through.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "through_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7bc300f7a41a1cee98b254c70cfb0da6ccbea385b3be84f062cba3974e6923f9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

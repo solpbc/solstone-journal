@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. confidential attestation failed detail legacy.",
+  "context": "Journal window. Thinking view. confidential attestation failed detail legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "attestation_detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c3c27cb962bf16ca6d3aa6492bddebb5f84e86627cfa2546095fc15e4a4b345",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

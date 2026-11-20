@@ -68,15 +68,14 @@ const MORE_STATE_FIELDS = [
     if (view === 'entities') {
       const count = leaf(body, ['folder_counts', 'all']);
       if (typeof count !== 'number') return null;
-      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.entities.kept', [['count', String(count)]]), action: false };
+      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.entities.count', [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]]), action: false };
       if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.nothing.yet'), action: false };
       return null;
     }
     if (view === 'import') {
       if (typeof body.total !== 'number') return null;
       if (body.total === 0) return { text: window.JournalI18n.render('journal.window.more.text.none.yet'), action: false };
-      if (body.total === 1) return { text: window.JournalI18n.render('journal.window.more.text.import'), action: false };
-      if (body.total > 1) return { text: window.JournalI18n.render('journal.window.more.imports.many', [['count', String(body.total)]]), action: false };
+      if (body.total >= 1) return { text: window.JournalI18n.render('journal.window.more.imports.count', [['quantity', window.JournalI18n.cardinalQuantity(body.total)], ['count', String(body.total)]]), action: false };
       return null;
     }
     if (view === 'network') {
@@ -92,14 +91,14 @@ const MORE_STATE_FIELDS = [
     if (view === 'curation') {
       const count = body.to_review;
       if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return null;
-      if (count > 0) return { text: count + window.JournalI18n.render('journal.window.more.text.to.review'), action: true };
+      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.review.count', [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]]), action: true };
       if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.nothing.to.review'), action: false };
       return null;
     }
     if (view === 'agents') {
       if (!Array.isArray(body.connections)) return null;
       const count = body.connections.length;
-      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.agents.connected', [['count', String(count)]]), action: false };
+      if (count > 0) return { text: window.JournalI18n.render('journal.window.more.agents.count', [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]]), action: false };
       if (count === 0) return { text: window.JournalI18n.render('journal.window.more.text.none.yet'), action: false };
       return null;
     }
@@ -147,8 +146,8 @@ const MORE_STATE_FIELDS = [
 
   function pinLabel(app, pinned) {
     return pinned
-      ? window.JournalI18n.render('journal.window.more.window.explanation.unpin.value1.from.the.side.rail', [['value1', String(app.label)]])
-      : window.JournalI18n.render('journal.window.more.window.explanation.pin.value1.to.the.side.rail', [['value1', String(app.label)]]);
+      ? window.JournalI18n.render('journal.window.more.pin.action.unpin', [['view', String(app.name || '')], ['view_name', String(app.label)]])
+      : window.JournalI18n.render('journal.window.more.pin.action.pin', [['view', String(app.name || '')], ['view_name', String(app.label)]]);
   }
 
   function paint(root, shell, pinIcon) {

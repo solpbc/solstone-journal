@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. memory receipt erased.",
+  "context": "Journal window. Agents window. memory receipt erased.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83338604cfadb4f596ee4246f19a54a68894c5c5a14938ce14192db721a8b768",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

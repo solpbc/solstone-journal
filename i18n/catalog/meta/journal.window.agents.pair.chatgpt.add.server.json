@@ -1,0 +1,57 @@
+{
+  "description": "Agents view. pair chatgpt add server.",
+  "context": "Journal window. Agents view. pair chatgpt add server.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "plugins_start",
+      "type": "string"
+    },
+    {
+      "name": "plugins_end",
+      "type": "string"
+    },
+    {
+      "name": "add_start",
+      "type": "string"
+    },
+    {
+      "name": "add_end",
+      "type": "string"
+    },
+    {
+      "name": "custom_server_start",
+      "type": "string"
+    },
+    {
+      "name": "custom_server_end",
+      "type": "string"
+    },
+    {
+      "name": "authorization_start",
+      "type": "string"
+    },
+    {
+      "name": "authorization_end",
+      "type": "string"
+    },
+    {
+      "name": "create_plugin_start",
+      "type": "string"
+    },
+    {
+      "name": "create_plugin_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9fa22ad821a12b6e1898bfa4b326cb7088b2a8e565c75bb6515caa66b94641e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents pair again keeps memories.",
+  "context": "Journal window. Journal window. agents pair again keeps memories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a6df1216ad0528c084ec95a1ee98ad72ae4e7d72fb8b06739a17a9fe4b72bb3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

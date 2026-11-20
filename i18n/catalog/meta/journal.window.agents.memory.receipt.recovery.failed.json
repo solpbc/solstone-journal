@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. memory receipt recovery failed.",
+  "context": "Journal window. Agents window. memory receipt recovery failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d24449d9cefb972df3804b5f50a6375c47221c31773d97cb92940080f2c8b6c9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

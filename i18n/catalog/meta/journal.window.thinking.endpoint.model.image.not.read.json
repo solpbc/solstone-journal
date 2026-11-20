@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. endpoint model image not read.",
+  "context": "Journal window. Thinking view. endpoint model image not read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e995c06f323ffc79c33f13de927dea79241ca1d2de5bd31be012e6adbd4863a9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

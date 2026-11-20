@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. hide already absent count.",
+  "context": "Journal window. Entities view. hide already absent count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "existing_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "existing",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "70353a87b8f3b1b85493b55ebc8721e6071992b46ac7ce7ceee681676ea48fd8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "existing_quantity",
+    "type": "cardinal"
+  }
+}

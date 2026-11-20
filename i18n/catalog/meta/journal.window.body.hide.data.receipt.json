@@ -1,0 +1,21 @@
+{
+  "description": "Body view. hide data receipt.",
+  "context": "Journal window. Body view. hide data receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f0ec931c3ecb2710c049e4b0da03b068160152576618a248b239550a65712d1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

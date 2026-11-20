@@ -1,0 +1,38 @@
+{
+  "description": "Year view. thread cell week days.",
+  "context": "Journal window. Year view. thread cell week days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days_count",
+      "type": "string"
+    },
+    {
+      "name": "thread_name",
+      "type": "string"
+    },
+    {
+      "name": "week_start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8ce2e9fb0a6ab2363d7b0920db8da71e8918dbd58d01a7e77f0656960eb232fb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

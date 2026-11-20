@@ -358,7 +358,7 @@
     }
     if (!response.ok) {
       request.discard();
-      const error = new Error(window.JournalI18n.render('journal.window.shared.api.visible.text.request.failed.http.value1', [['value1', String(response.status)]]));
+      const error = new Error(window.JournalI18n.render('journal.window.shared.api.request.failed.http', [['http_status', String(response.status)]]));
       error.status = response.status;
       error.statusText = response.statusText || '';
       error.url = url;

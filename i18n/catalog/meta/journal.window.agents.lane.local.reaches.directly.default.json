@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. lane local reaches directly default.",
+  "context": "Journal window. Agents window. lane local reaches directly default.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8568dfb669606acf3e8593ec374a4b3ef49e1e1aaa85feddd289e5cf7c2d2e22",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. runs confirmation time.",
+  "context": "Journal window. Thinking view. runs confirmation time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "confirmation_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae37ea52b6b7b2d2c29581895bc5cc901701c35db2a45cd3faafc49a47bdd5fe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

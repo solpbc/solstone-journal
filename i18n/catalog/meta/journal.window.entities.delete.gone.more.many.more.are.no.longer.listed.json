@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. gone more many g more are no longer listed.",
+  "context": "Journal window. Entities view deletion. gone more many g more are no longer listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "gone",
+      "type": "string"
+    },
+    {
+      "name": "gone_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dc062bdba616dd23b580eec6c247bfc71f46c9e2ab237dc4af75a072ceca69cd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "gone_quantity",
+    "type": "cardinal"
+  }
+}

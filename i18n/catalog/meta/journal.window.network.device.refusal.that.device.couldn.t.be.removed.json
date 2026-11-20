@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. network device refusal that device couldn t be removed.",
+  "context": "Journal window. Journal window. network device refusal that device couldn t be removed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8447c4fd0b2683e9216d95063dc6ca9a88b044c70b83c716a840b3b679779fe7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

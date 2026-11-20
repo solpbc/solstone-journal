@@ -1,0 +1,29 @@
+{
+  "description": "Entities view. list page range.",
+  "context": "Journal window. Entities view. list page range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fa41c882fa027a7f46b0a86292445d0763473c482fe2183320f4820e7f05b4e1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

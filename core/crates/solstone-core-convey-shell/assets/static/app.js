@@ -761,7 +761,7 @@ window.AppServices = {
           health.failing = true;
           this.notifications.show({
             app: 'system',
-            title: window.JournalI18n.render('journal.window.shared.app.title.value1.background.task', [['value1', String(String(appName).toLowerCase())]]),
+            title: window.JournalI18n.render('journal.window.shared.app.notice.background.task', [['app_name', String(String(appName).toLowerCase())]]),
             message: toOwnerFacingTaskError(message),
             dismissible: true,
             autoDismiss: false,

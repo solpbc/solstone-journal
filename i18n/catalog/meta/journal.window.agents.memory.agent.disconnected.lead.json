@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. memory agent disconnected lead.",
+  "context": "Journal window. Agents window. memory agent disconnected lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a47ccd95a934fb9827ef9357f29274bc5331f095f8fcd3fc1454fada330c71d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

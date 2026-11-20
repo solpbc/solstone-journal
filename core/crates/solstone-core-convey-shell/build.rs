@@ -231,7 +231,10 @@ fn main() {
     let speakers = read_object(&speakers_copy);
     let speaker_copy = Value::Object(prefixed_object(&speakers, "SPK_"));
     let network_copy = Value::Object(read_object(&network_copy));
-    let outcomes = Value::Object(read_object(&outcomes));
+    // Handoff guidance is rendered from its ID and facts when the operation is read.
+    let mut outcome_labels = read_object(&outcomes);
+    outcome_labels.retain(|_, value| value.is_string());
+    let outcomes = Value::Object(outcome_labels);
     let home_address = Value::Object(read_object(&pairing_config));
     let not_in_new_voices = required_string(&speakers_copy, &speakers, "TR_NOT_IN_NEW_VOICES");
 
@@ -939,22 +942,12 @@ fn english_window_message(id: &str) -> String {
 }
 
 fn window_message(locale: &str, id: &str) -> String {
-    use window_catalog::Value::String as Text;
-
-    let (locale, arguments): (&str, &[(&str, window_catalog::Value<'_>)]) = match id {
-        "journal.window.loading.other" => (locale, &[("name", Text("{name}"))]),
-        "journal.window.network.success.heading" | "journal.window.network.unpair.title.format" => {
-            (locale, &[("label", Text("{label}"))])
-        }
-        "journal.window.network.pair.network.line"
-        | "journal.window.network.pair.public.address.line"
-        | "journal.window.network.pair.relay.line"
-        | "journal.window.network.pair.this.computer.line" => (locale, &[("time", Text("{time}"))]),
+    let locale = match id {
         "journal.window.network.private.link.portal.cta"
-        | "journal.window.network.private.link.needs.subscription.detail" => (SOURCE_LOCALE, &[]),
-        _ => (locale, &[]),
+        | "journal.window.network.private.link.needs.subscription.detail" => SOURCE_LOCALE,
+        _ => locale,
     };
-    window_catalog::render_dotted_with_options(locale, id, arguments, locale != SOURCE_LOCALE)
+    window_catalog::render_dotted_with_options(locale, id, &[], locale != SOURCE_LOCALE)
         .unwrap_or_else(|error| panic!("window catalog message {id} for {locale}: {error:?}"))
 }
 

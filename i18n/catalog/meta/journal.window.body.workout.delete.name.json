@@ -1,0 +1,21 @@
+{
+  "description": "Body view. workout delete name.",
+  "context": "Journal window. Body view. workout delete name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "workout_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba47a6686eb043345acbc40f3545669a03edfe4a324908a25db9a475b52a667b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

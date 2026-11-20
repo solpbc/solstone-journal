@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. connection status again heading.",
+  "context": "Journal window. Agents window. connection status again heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8f6dacf84d24e3917bcd5713692c02b5cf3817bd959b66f784136ecd815e1c23",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

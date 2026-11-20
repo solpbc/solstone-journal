@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents connection agents through solstone me keep working.",
+  "context": "Journal window. Journal window. agents connection agents through solstone me keep working.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13dd10b8f53d156e95617955e3d5ff87c198640ac541f4ac535be87e21ef60ab",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

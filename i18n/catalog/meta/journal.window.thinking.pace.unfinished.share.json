@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. pace unfinished share.",
+  "context": "Journal window. Thinking view. pace unfinished share.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "share",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f61ca4a918a85a66024b03e976bf10d03bb3574bab8a56c7ad05efa8c76629e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

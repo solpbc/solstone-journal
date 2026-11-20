@@ -1,0 +1,21 @@
+{
+  "description": "Network window. pair network expiry.",
+  "context": "Journal window. Network window. pair network expiry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5a67dc32b7d6a323b498e4f883d7a211137701c1b34a7293542a565a962d96b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

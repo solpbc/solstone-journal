@@ -11,7 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { journalContext, runWithJournalCatalog } = require('./journal_catalog_dom.js');
+const { journalContext, runWithJournalCatalog, markupNode } = require('./journal_catalog_dom.js');
 const {permissionKinds} = require('./agents_contract_dom.js');
 
 const root = process.argv[2] || path.join(__dirname, '..');
@@ -214,6 +214,8 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   window.window = window;
   window.top = window;
   const document = {
+    createElement: markupNode,
+    createTextNode(text) { const node = markupNode(); node.textContent = text; return node; },
     getElementById: id => (id === 'agents-view' ? view : fields[id] || null),
     querySelectorAll: () => [],
     addEventListener(name, listener) { (view.listeners[name] ||= []).push(listener); },
@@ -1440,7 +1442,7 @@ async function test(name, body) {
     await click({memoryErase: '1'});
     assert.deepStrictEqual(calls.find(call => call.method === 'DELETE').body, {erase: true, backups: false});
     lacks(view, 'erase me');
-    assert.strictEqual(notifications.at(-1).title, TRASH_COPY.receipt.erased.title.replace('{noun}', TRASH_COPY.noun.memory));
+    assert.strictEqual(notifications.at(-1).title, TRASH_COPY.receipt.erased.title);
   });
 
   await test('an agent\'s memory: every answer has its own receipt, and recover reads the page again', async () => {
@@ -1453,7 +1455,6 @@ async function test(name, body) {
     const refused = () => { throw Object.assign(new Error('refused'), {status: 409}); };
     const silent = () => { throw new TypeError('Failed to fetch'); };
     const unreadable = () => { throw Object.assign(new Error('Malformed server response'), {status: 200, cause: 'parse'}); };
-    const fill = (text, date) => text.replace('{noun}', TRASH_COPY.noun.memory).replace('{date}', date);
     const run = async ({deleteAnswer, recoverAnswer, erase = false, journalClock}) => {
       const booted = await boot(baseState({...door({listening: true}), connections: [claude]}), {memories: {agents, pages: {[source]: [page]}}, deleteAnswer, recoverAnswer, journalClock});
       await booted.click({memories: source});
@@ -1465,8 +1466,8 @@ async function test(name, body) {
     const check = (notice, kind, {settled = false, buttons = [], date = ''} = {}) => {
       const copy = TRASH_COPY.receipt[kind];
       assert.strictEqual(notice.app, 'agents', kind);
-      assert.strictEqual(notice.title, fill(copy.title, date), kind);
-      assert.strictEqual(notice.message, copy.message ? fill(copy.message, date) : undefined, kind);
+      assert.strictEqual(notice.title, copy.title, kind);
+      assert.strictEqual(notice.message, kind === 'moved' && date ? `erases ${date} unless you recover it.` : copy.message, kind);
       assert.strictEqual(notice.autoDismiss, settled ? 10000 : undefined, `${kind}: only a settled receipt dismisses itself`);
       assert.deepStrictEqual([...notice.buttons].map(button => button.label), buttons, kind);
     };

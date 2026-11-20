@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers known placeholder count.",
+  "context": "Journal window. Journal view. speakers known placeholder count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ae7da2a54472dfab455ddf5ee312c3b8b18ef342b344e5edd5ec6db7b4bdb598",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

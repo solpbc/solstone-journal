@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-function relativeTime(ms) {
+function relativeTime(ms, messageFamily, args = []) {
   let seconds = Math.floor(ms / 1000);
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
 
@@ -38,8 +38,10 @@ function relativeTime(ms) {
       }
     }
   }
-  const form = value === 1 ? 'one' : 'other';
-  return window.JournalI18n.render(`journal.window.time.duration.${unit}.${form}`, [['value', String(value)]]);
+  const id = messageFamily ? `${messageFamily}.${unit}` : `journal.window.time.duration.${unit}.count`;
+  return window.JournalI18n.render(id, [
+    ...args, ['quantity', window.JournalI18n.cardinalQuantity(value)], ['count', String(value)]
+  ]);
 }
 
 window.relativeTime = relativeTime;

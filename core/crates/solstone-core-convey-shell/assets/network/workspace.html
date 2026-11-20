@@ -220,7 +220,7 @@
             <button type="button" id="link-pairing-type-computer" data-pairing-action="type" data-pairing-type="computer" aria-pressed="false" data-copy="PAIR_TYPE_COMPUTER"></button>
           </div>
         </div>
-        <p id="link-pairing-network-line" class="modal-warning" data-copy="PAIR_NETWORK_LINE"></p>
+        <p id="link-pairing-network-line" class="modal-warning"></p>
         <div id="link-pairing-for-phone">
           <p class="link-pairing-lead" data-copy="PHONE_STEP_1"></p>
           <p class="link-pairing-alt" data-copy="PHONE_STEP_2"></p>
@@ -276,7 +276,7 @@ systemctl --user start solstone-linux</code></div>
         <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="WINDOW_CLOSED_BUTTON"></button></div>
       </div>
       <div id="link-pairing-complete" hidden>
-        <h3 id="link-pairing-success-heading" data-copy="SUCCESS_HEADING" tabindex="-1"></h3>
+        <h3 id="link-pairing-success-heading" tabindex="-1"></h3>
         <section class="link-identity">
           <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
           <div id="link-pairing-success-mark" class="link-identity-mark"></div>
@@ -2091,7 +2091,7 @@ systemctl --user start solstone-linux</code></div>
         <div class="client-forget" data-forget-cid="${escapeHtml(client.cid)}">
           <button type="button" class="client-forget-open" data-forget-action="ask">${window.JournalI18n.renderHtml('journal.window.network.button.label.forget.this.device')}</button>
           <div class="client-forget-confirm" hidden>
-            <p class="client-forget-question">${window.JournalI18n.renderHtml('journal.window.network.visible.text.forget')} ${escapeHtml(name)}${window.JournalI18n.renderHtml('journal.window.network.visible.text.it.will.need.to.pair.again')}</p>
+            <p class="client-forget-question">${window.JournalI18n.renderHtml('journal.window.network.device.forget.confirm', [['device_name', name || '']])}</p>
             <div class="client-forget-buttons">
               <button type="button" class="danger" data-forget-action="confirm">${window.JournalI18n.renderHtml('journal.window.network.button.label.forget')}</button>
               <button type="button" data-forget-action="cancel">${window.JournalI18n.renderHtml('journal.window.network.button.label.keep.it')}</button>
@@ -2133,7 +2133,7 @@ systemctl --user start solstone-linux</code></div>
           const connection = render.deliveryGroupFor(state.row) === 'adding' ? '' : render.connectionLineLabel(state.row);
           card.setAttribute('aria-label', [displayName, render.deliveryChipLabel(state.row), connection].filter(Boolean).join(', '));
           const question = card.querySelector('.client-forget-question');
-          if (question) question.textContent = window.JournalI18n.render('journal.window.network.visible.text.forget.value1.it.will.need.to', [['value1', String(displayName)]]);
+          if (question) question.textContent = window.JournalI18n.render('journal.window.network.device.forget.confirm', [['device_name', String(displayName)]]);
           if (active) {
             const target = card.querySelector(`[data-label-action="${active}"]`);
             target?.focus();
@@ -2415,7 +2415,7 @@ systemctl --user start solstone-linux</code></div>
           } catch (_err) {
             detail = '';
           }
-          showForgetStatus(row, detail || window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.forgotten') + window.CONVEY_COPY.RELOAD_HINT);
+          showForgetStatus(row, detail || window.JournalI18n.render('journal.window.network.device.refusal.that.device.couldn.t.be.forgotten') + ' ' + window.CONVEY_COPY.RELOAD_HINT);
           setBusy(confirmBtn, false);
           return;
         }
@@ -2424,7 +2424,7 @@ systemctl --user start solstone-linux</code></div>
         loadClients({ focusFrom: held ? cid : null });
       } catch (err) {
         if (ctx.disposed) return;
-        showForgetStatus(row, window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.forgotten.variant2') + window.CONVEY_COPY.RELOAD_HINT);
+        showForgetStatus(row, window.JournalI18n.render('journal.window.network.device.refusal.that.device.couldn.t.be.forgotten.variant2') + ' ' + window.CONVEY_COPY.RELOAD_HINT);
         setBusy(confirmBtn, false);
       }
     }
@@ -2455,9 +2455,10 @@ systemctl --user start solstone-linux</code></div>
     }
 
     async function unpairClient(cid, button) {
-      const name = clientNameFor(button);
+      const name = button.closest('.client-card')?.querySelector('.client-name')?.textContent;
       const copy = linkCopy || {};
-      const title = (copy.UNPAIR_TITLE_FORMAT || window.JournalI18n.render('journal.window.network.window.state.text.unpair.label')).replace('{label}', name);
+      const title = name ? window.JournalI18n.render('journal.window.network.unpair.named.device', [['device_name', name]])
+        : window.JournalI18n.render('journal.window.network.unpair.unnamed.device');
       if (!(await window.SolQuestion.ask({ message: copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title, action: window.JournalI18n.render('journal.window.network.unpair.action'), signal: ctx.signal, opener: () => Array.from(workspaceRoot.querySelectorAll('[data-network-action="unpair"]')).find(el => el.dataset.cid === cid) })) || ctx.disposed) {
         return;
       }
@@ -2475,7 +2476,7 @@ systemctl --user start solstone-linux</code></div>
         loadClients();
       } catch (err) {
         if (ctx.disposed) return;
-        const msg = window.JournalI18n.render('journal.window.network.window.explanation.that.device.couldn.t.be.removed') + window.CONVEY_COPY.RELOAD_HINT;
+        const msg = window.JournalI18n.render('journal.window.network.device.refusal.that.device.couldn.t.be.removed') + ' ' + window.CONVEY_COPY.RELOAD_HINT;
         window.showError?.(msg);
       }
     }

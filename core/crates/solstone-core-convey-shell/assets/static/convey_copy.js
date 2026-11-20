@@ -11,7 +11,6 @@
     'zone.time': [['label', '{label}']],
     'day.zones.part': [['zones', '{zones}']],
     'day.zones.all': [['zones', '{zones}']],
-    'console.snapshot.heading': [['count', '{count}']],
   };
 
   function renderMessage(selected, id, args = []) {
@@ -111,10 +110,12 @@
     formatLocale: language === sourceLocale ? undefined : language,
   });
   window.CONVEY_COPY = Object.freeze(Object.fromEntries(
-    bundle.messageIds.filter(id => id.startsWith(prefix)).map(id => {
-      const key = id.slice(prefix.length);
-      const format = key === 'report.privacy.note' ? renderEnglish : render;
-      return [key.replaceAll('.', '_').toUpperCase(), format(id, argumentsByKey[key])];
-    }),
+    bundle.messageIds
+      .filter(id => id.startsWith(prefix) && id !== 'journal.window.chrome.view.document.title')
+      .map(id => {
+        const key = id.slice(prefix.length);
+        const format = key === 'report.privacy.note' ? renderEnglish : render;
+        return [key.replaceAll('.', '_').toUpperCase(), format(id, argumentsByKey[key])];
+      }),
   ));
 })();

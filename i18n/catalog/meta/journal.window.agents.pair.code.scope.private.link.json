@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. pair code scope private link.",
+  "context": "Journal window. Agents window. pair code scope private link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "837c91d7c33283c58d7c109382732fddbe3cbb7631b85b0f4054f91408b018a6",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

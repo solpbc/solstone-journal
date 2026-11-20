@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. chatgpt account signed in.",
+  "context": "Journal window. Thinking view. chatgpt account signed in.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "account_email",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2c9191ee3386ad40360d169b4653c4f7827cd8aca47c4c8e8e5744bfe8f9131",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

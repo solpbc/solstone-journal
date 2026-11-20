@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces from day.",
+  "context": "Journal window. Entities view. faces from day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b841fc003b06a524d372c4142082dd0c7082496c7ca7d1af03527928b15621ab",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Agents view. pair gemini cli configure.",
+  "context": "Journal window. Agents view. pair gemini cli configure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "copy_button",
+      "type": "string"
+    },
+    {
+      "name": "login_command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa8df6f4792aa8842cf3ad4beda541e6d13613e2caebcd5fadaf3b60a66ca3af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

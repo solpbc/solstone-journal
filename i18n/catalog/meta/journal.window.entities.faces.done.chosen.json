@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces done chosen.",
+  "context": "Journal window. Entities view. faces done chosen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13901dbba2e82e088b6fc1ea76f0a88a9233f548b159195a4c80a481b079dc50",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection pause description.",
+  "context": "Journal window. Agents view. connection pause description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d55f010cdc14479bccda1429a7bdc4eaa396747a53260c7031e7b43f8946f9e7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

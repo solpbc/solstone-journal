@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane retry or use active.",
+  "context": "Journal window. Thinking view. lane retry or use active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "active_lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbd81c500382d2d2ec985ae578dcdc809f5b729d6f91ec0c0b224dafb82a23c6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

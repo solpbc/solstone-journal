@@ -1,0 +1,25 @@
+{
+  "description": "Journal window shell. shared status pane version update installed.",
+  "context": "Journal window. Journal window shell. shared status pane version update installed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current_version",
+      "type": "string"
+    },
+    {
+      "name": "installed_version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ab764289c6a13cc59cdaba887b95e50cc13128cc45b3d2ba9e8a24e80516732d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces done rejected.",
+  "context": "Journal window. Entities view. faces done rejected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f82fd306175ee74e50969e46e564372bbbb31c64a456a986b797b066dd85757",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

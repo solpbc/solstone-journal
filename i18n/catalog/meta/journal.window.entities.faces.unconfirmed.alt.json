@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces unconfirmed alt.",
+  "context": "Journal window. Entities view. faces unconfirmed alt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "15cd0dd17e300a9a9aa4566ddee0aa681626644d878e4ecabb647c6ec09f2d45",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

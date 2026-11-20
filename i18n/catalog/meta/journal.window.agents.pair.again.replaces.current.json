@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents pair again replaces current.",
+  "context": "Journal window. Journal window. agents pair again replaces current.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a39c6fcc2d18c199ec9c17af83f5a8878c5d136c74416e1043fa7cfc91eb7d3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

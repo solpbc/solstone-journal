@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. memories agent heading.",
+  "context": "Journal window. Agents window. memories agent heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "883b9f2f20e1bf6eed33f69c66bca0cc2bce81c0fd1145e09406a25d6c9494f7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

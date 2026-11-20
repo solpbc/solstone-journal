@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers discovery sample count.",
+  "context": "Journal window. Journal view. speakers discovery sample count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "270071ee134b3ca029b87743decf73f83827971c5f3578ae75b35f5a220e8727",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

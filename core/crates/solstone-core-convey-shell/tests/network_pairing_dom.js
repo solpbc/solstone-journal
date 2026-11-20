@@ -17,27 +17,27 @@ const REQUIRED_COPY_KEYS = [
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'DEVICE_PAIR_CTA', 'MODAL_TITLE', 'PAIR_TYPE_PROMPT',
   'PAIR_TYPE_PHONE', 'PAIR_TYPE_COMPUTER', 'PHONE_STEP_1', 'PHONE_STEP_2',
   'THIS_COMPUTER_APP_FINDS', 'THIS_COMPUTER_STEP_1', 'COMPUTER_STEP_1', 'COMPUTER_STEP_2', 'COMPUTER_LINUX_NOTE',
-  'PAIR_NETWORK_LINE', 'PAIR_RELAY_LINE', 'DETAILS_DISCLOSURE', 'CA_FP_LABEL', 'CA_FP_NOTE',
+  'DETAILS_DISCLOSURE', 'CA_FP_LABEL', 'CA_FP_NOTE',
   'PAIR_LINK_FIELD_LABEL', 'PAIR_LINK_COPY_LABEL', 'CHECK_PAIRING_CTA', 'PAIR_START_FAIL_BODY',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'CHECK_AGAIN_LABEL',
   'PRIVATE_LINK_NEEDS_REPAIR', 'SPL_NOT_ENROLLED_REPAIR_CTA', 'PRIVATE_LINK_DISABLE_CTA',
   'PRIVATE_LINK_RETRY_CTA',
-  'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING',
+  'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON',
   'SUCCESS_VERIFY_NOTE', 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_REMOVE_LABEL', 'SUCCESS_REMOVED',
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE', 'PAIR_LINK_ADDRESSES_LINE', 'REACH_DEVICE_ADDRESSES_LABEL',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
   'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY', 'LOCAL_NETWORK_OPEN_CTA', 'LOCAL_NETWORK_FAILED', 'MODE_HOSTED_SETUP_CTA',
-  'PAIR_THIS_COMPUTER_CTA', 'PAIR_THIS_COMPUTER_LINE',
+  'PAIR_THIS_COMPUTER_CTA',
 ];
 
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
-  'PAIR_RELAY_LINE', 'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER', 'SUCCESS_REMOVED',
+  'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER', 'SUCCESS_REMOVED',
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
-  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY', 'PAIR_THIS_COMPUTER_LINE',
+  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -634,7 +634,7 @@ async function main() {
     await settle();
     assert.strictEqual(env.dialog.hidden, false);
     assert.strictEqual(env.nodes.get('link-pairing-material').hidden, false);
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'network 2:05');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this device needs to be on your network (or your VPN) to pair. expires in 2:05.');
     assert.strictEqual(env.nodes.get('link-device-label').textContent, 'sample device');
     assert.strictEqual(env.nodes.get('link-pairing-fingerprint').textContent, 'abcdef0123456789');
     assert.strictEqual(env.nodes.get('link-pairing-link-value').textContent, 'https://go.example/p#ALPHANUMERIC');
@@ -754,7 +754,7 @@ async function main() {
     env.fetchQueue.push(response(material({ home_address_is_public: true })));
     env.click(env.opener);
     await settle();
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'public 2:05');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this pairing link uses your public address. expires in 2:05.');
   });
 
   await testCase('completion names the paired device by its own label', async () => {
@@ -765,7 +765,7 @@ async function main() {
     env.fetchQueue.push(response({ present: true, used: true, device: { cid: 'sha256:aa', display_label: 'studio-mac' } }));
     env.emitLink();
     await settle();
-    assert.strictEqual(env.nodes.get('link-pairing-success-heading').textContent, 'heading studio-mac');
+    assert.strictEqual(env.nodes.get('link-pairing-success-heading').textContent, '"studio-mac" can now reach your journal');
     assert.strictEqual(env.nodes.get('link-pairing-remove').hidden, false);
 
     const unnamed = createEnvironment(manifestDir);
@@ -809,9 +809,9 @@ async function main() {
     env.fetchQueue.push(response(material()));
     env.click(env.opener);
     await settle();
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'network 2:05');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this device needs to be on your network (or your VPN) to pair. expires in 2:05.');
     env.advance(6000);
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'network 1:59');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this device needs to be on your network (or your VPN) to pair. expires in 1:59.');
     env.controller.close();
     assert.strictEqual(env.intervals.size, 0);
   });
@@ -821,7 +821,7 @@ async function main() {
     env.fetchQueue.push(response(material({ relay: true })));
     env.click(env.opener);
     await settle();
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'relay 2:05');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this link pairs through your private network, so the device can be anywhere. expires in 2:05.');
     env.fetchQueue.push(response({ present: true, used: true, device: { cid: 'sha256:aa', display_label: 'phone' } }));
     env.emitLink();
     await settle();
@@ -929,7 +929,7 @@ async function main() {
     env.fetchQueue.push(response(material()));
     env.click(env.opener);
     await settle();
-    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'network 2:05');
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'this device needs to be on your network (or your VPN) to pair. expires in 2:05.');
     assert.deepStrictEqual([...env.timers.values()].map(({ delay }) => delay), [125 * 1000]);
   });
 
@@ -1179,7 +1179,7 @@ async function main() {
     await vm.runInContext('unpairClient', context)('sha256:delivered', button);
     assert.strictEqual(asked.length, 1);
     assert.ok(asked[0].includes('suze'), 'the question names the device');
-    assert.ok(copy.UNPAIR_BODY && asked[0].includes(copy.UNPAIR_BODY), 'the question carries the unpair body');
+    assert.ok(asked[0].includes("this device loses access to your journal immediately and can't reconnect until you pair it again."), 'the question carries the unpair body');
     assert.deepStrictEqual(fetched, [], 'declining unpairs nothing');
   });
 
@@ -1589,7 +1589,7 @@ async function main() {
     assert.ok(last.url.endsWith('/pair-start'));
     assert.strictEqual(JSON.parse(last.request.body).same_machine, true);
     assert.strictEqual(env.nodes.get('link-pairing-material').hidden, false);
-    assert.ok(env.nodes.get('link-pairing-network-line').textContent.startsWith('copy-PAIR_THIS_COMPUTER_LINE'));
+    assert.ok(env.nodes.get('link-pairing-network-line').textContent.startsWith('this link works only for the solstone app on this computer.'));
 
     // Assert after same-machine material is showing:
     assert.strictEqual(env.nodes.get('link-pairing-for-computer').hidden, false);

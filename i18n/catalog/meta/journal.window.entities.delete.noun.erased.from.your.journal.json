@@ -1,0 +1,16 @@
+{
+  "description": "Entities view deletion. noun erased from your journal.",
+  "context": "Journal window. Entities view deletion. noun erased from your journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59ca9e21f983d8a97cc5fbc40737092553c21ed302e63c3d56b433143f1696a5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

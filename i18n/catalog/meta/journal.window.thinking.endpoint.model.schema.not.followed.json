@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. endpoint model schema not followed.",
+  "context": "Journal window. Thinking view. endpoint model schema not followed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "810f6436f403de57922f042bf4aa34c6ceec3eb9bc55a6e34755aef029d01963",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. segments show more.",
+  "context": "Journal window. Speakers view. segments show more.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e0a14cd45dd49b06932f5e9f9542642933a902d4e702ca8816d972932b1a280c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shown_quantity",
+    "type": "cardinal"
+  }
+}

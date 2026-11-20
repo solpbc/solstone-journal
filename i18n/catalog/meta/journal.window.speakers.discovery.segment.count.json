@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers discovery segment count.",
+  "context": "Journal window. Journal view. speakers discovery segment count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3ab896a66daf911c04486a8038efcb220dc5323da8bd3d7db2519ec59f43f0f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

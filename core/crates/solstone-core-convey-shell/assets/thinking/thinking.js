@@ -823,7 +823,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const stateName = attestation?.state || '';
     const blocked = stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable';
     if (!blocked || !lastCheckedLabel) return '';
-    return window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1', [['value1', String(lastCheckedLabel)]]);
+    return window.JournalI18n.render('journal.window.thinking.runs.confirmation.time', [['confirmation_time', String(lastCheckedLabel)]]);
   }
 
   function confidentialNoticeLine(operation, text) {
@@ -897,7 +897,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         pill: window.JournalI18n.render('journal.window.thinking.copy.active'),
         tone: 'hot',
-        message: formatCopy(states.verified || '', {checked: checkedLabel}),
+        message: window.JournalI18n.render('journal.window.thinking.confidential.attestation.checked', [['checked_at', String(checkedLabel)]]),
         recheck: false,
       };
     }
@@ -959,7 +959,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return {
         label: row.label || glance.lane_label || '',
         value: row.value || '',
-        detail: formatCopy(row.detail || '', {checked: checkedLabel}),
+        detail: window.JournalI18n.render('journal.window.thinking.confidential.attestation.checked', [['checked_at', String(checkedLabel)]]),
       };
     }
     if (stateName === 'inactive') {
@@ -983,7 +983,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     return {
       label: row.label || '',
       value: row.value || '',
-      detail: formatCopy(row.detail || '', {message}),
+      detail: message,
     };
   }
 
@@ -1031,29 +1031,39 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     return true;
   }
 
-  function formatCopy(template, values = {}) {
-    return String(template || '').replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+  function countArgs(name, value, display = String(value)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(value)], [name + '_count', display]];
   }
 
-  function byoReasonCopy(reasonCode, context, text, provider, model = '') {
-    if (provider === 'chatgpt' || provider === (copy.provider_labels?.chatgpt || '') || context === 'chatgpt') {
-      const chatgptText = text?.chatgpt || copy.byo_setup?.chatgpt || {};
-      if (reasonCode === 'chatgpt_sign_in_required') return chatgptText.signed_out || '';
-      if (reasonCode === 'chatgpt_not_eligible') return chatgptText.not_eligible || '';
-      if (reasonCode === 'model_not_found') return chatgptText.model_not_found || '';
-      if (reasonCode === 'model_missing') return chatgptText.model_missing || '';
-      return chatgptText.save_refused || '';
+  function byoFailureCopy(reasonCode, providerName, modelName = null) {
+    const isChatGpt = providerName === 'chatgpt' || providerName === copy.provider_labels?.chatgpt;
+    const reasonCodes = isChatGpt ? {
+      chatgpt_sign_in_required: 'chatgpt-signed-out',
+      chatgpt_not_eligible: 'chatgpt-ineligible',
+      model_not_found: 'chatgpt-no-model',
+      model_missing: 'chatgpt-model-missing',
+    } : {
+      provider_key_invalid: 'rejected',
+      provider_quota_exceeded: 'quota',
+      network_unreachable: 'network',
+      brain_refresh_timeout: 'network',
+    };
+    const reason = Object.hasOwn(reasonCodes, reasonCode)
+      ? reasonCodes[reasonCode] : isChatGpt ? 'chatgpt-refused' : 'other';
+    const args = [['provider_name', providerName], ['reason', reason]];
+    if (modelName === null) {
+      return window.JournalI18n.render('journal.window.thinking.keys.failed.by.reason', args);
     }
-    if (context === 'probe' && reasonCode === 'model_not_found') {
-      return formatCopy(text?.custom_not_found || '', {provider, model});
+    if (reasonCode === 'model_not_found') {
+      return isChatGpt
+        ? window.JournalI18n.render('journal.window.thinking.copy.your.chatgpt.account.no.longer.offers')
+        : window.JournalI18n.render('journal.window.thinking.keys.model.absent', [
+          ['provider_name', providerName], ['model_name', modelName]
+        ]);
     }
-    const reasonKey = {
-      provider_key_invalid: 'reason_rejected',
-      provider_quota_exceeded: 'reason_quota',
-      network_unreachable: 'reason_network',
-      brain_refresh_timeout: 'reason_network',
-    }[reasonCode || ''] || 'reason_unknown';
-    return formatCopy(text?.[reasonKey] || text?.reason_unknown || '', {provider, model});
+    return window.JournalI18n.render('journal.window.thinking.keys.model.failed.by.reason', [
+      ...args, ['model_name', modelName]
+    ]);
   }
 
   function byoModelStepAllowed(provider, validation) {
@@ -1100,7 +1110,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       showStatus(text?.key_hint || '', '');
       return {status: 'empty'};
     }
-    showStatus(formatCopy(text?.checking_key || '', {provider: providerName}), '');
+    showStatus(window.JournalI18n.render('journal.window.thinking.keys.checking.provider', [['provider_name', String(providerName)]]), '');
     const check = await apiFn('api/keys/check', {
       method: 'POST',
       body: JSON.stringify({env_var: envVar, value}),
@@ -1109,8 +1119,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       resetDraft();
       setMode('paste');
       renderFn();
-      const reason = byoReasonCopy(check?.reason_code, 'key', text, providerName);
-      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(byoFailureCopy(check?.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'invalid', validation: check};
     }
     const result = await apiFn('api/keys', {
@@ -1123,8 +1132,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       resetDraft();
       setMode('paste');
       renderFn();
-      const reason = byoReasonCopy(validation.reason_code, 'key', text, providerName);
-      showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(byoFailureCopy(validation.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'invalid', validation};
     }
     resetDraft();
@@ -1146,12 +1154,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     providerName,
     model,
     googleModelResolutionTargets = [],
-    text,
     setMode,
     renderFn,
     showStatus,
   }) {
-    showStatus(formatCopy(text?.model_saving || '', {model}), '');
+    showStatus(window.JournalI18n.render('journal.window.thinking.keys.model.checking', [['model_name', String(model)]]), '');
     const probe = await apiFn('api/validate-model', {
       method: 'POST',
       body: JSON.stringify({provider, model}),
@@ -1160,14 +1167,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (probe?.reason_code === 'key_missing') {
         setMode('paste');
         renderFn();
-        const reason = byoReasonCopy(probe.reason_code, 'key', text, providerName, model);
-        showStatus(formatCopy(text?.key_failed || '', {provider: providerName, reason}), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+        showStatus(byoFailureCopy(probe.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
         return {status: 'key_missing', probe};
       }
-      const reason = byoReasonCopy(probe?.reason_code, 'probe', text, providerName, model);
-      const message = probe?.reason_code === 'model_not_found'
-        ? reason
-        : formatCopy(text?.probe_failed_save || '', {provider: providerName, model, reason});
+      const message = byoFailureCopy(probe?.reason_code, providerName, model);
       showStatus(message, window.JournalI18n.render('journal.window.thinking.status.text.error'));
       return {status: 'probe_failed', probe};
     }
@@ -1184,7 +1187,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       renderFn();
       if (providers?.active_lane?.lane === 'confidential') {
         showStatus(
-          formatCopy(text?.model_saved_restore || '', {label: model}),
+          window.JournalI18n.render('journal.window.thinking.keys.model.restored', [['model_name', String(model)]]),
           window.JournalI18n.render('journal.window.thinking.status.text.ok'),
         );
         return {status: 'restored', providers};
@@ -1814,12 +1817,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!summary) return;
     summary.replaceChildren();
     const total = document.createElement('span');
-    total.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2', [['value1', String(runs.length)], ['value2', String(runs.length !== 1 ? 's' : '')]]);
+    total.textContent = window.JournalI18n.render('journal.window.thinking.runs.total', [...countArgs('runs', runs.length)]);
     summary.appendChild(total);
     const failed = runs.filter((run) => run.failed).length;
     if (failed) {
       const item = document.createElement('span');
-      item.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.failed', [['value1', String(failed)]]);
+      item.textContent = window.JournalI18n.render('journal.window.thinking.runs.failed.total', [...countArgs('failed', failed)]);
       summary.appendChild(item);
     }
   }
@@ -1922,7 +1925,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // key, so "Qwen 3.5 4B (local)" makes a lane claim that rides on the
     // provider; across two providers that resolve to one label, the lane would
     // be false for some of the runs.
-    const statusText = statuses.size === 1 ? ` ${[...statuses][0]}` : '';
+    const status = statuses.size === 1 ? [...statuses][0] : '';
     const uniformModel = models.size === 1 && providers.size === 1;
     // Every clause here is a claim about every run in the group, not about the
     // group in aggregate — that is what the uniformity guards above buy the
@@ -1935,7 +1938,6 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // of 2 sec and 38 sec averaged to "about 20 sec each", true of neither
     // run. So this is not an average at all: it is the runtime column's own
     // value, said once, and only when every run in the group reads the same.
-    const eachSuffix = group.length === 1 ? '' : window.JournalI18n.render('journal.window.thinking.window.state.text.each');
     const runtimes = new Set(group.map(runRuntimeLabel));
     const sharedRuntime = runtimes.size === 1 ? [...runtimes][0] : null;
     // No hedge: this is not an average any more, it is the runtime column's
@@ -1946,16 +1948,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // not a duration; neither belongs in a sentence about how long the runs
     // took (G2-B12).
     const measuredRuntime = group.every(run => run.runtime_seconds != null && Number.isFinite(Number(run.runtime_seconds)));
-    const durationText = sharedRuntime && measuredRuntime
-      ? `, ${sharedRuntime}${eachSuffix}`
-      : '';
+    const duration = sharedRuntime && measuredRuntime ? sharedRuntime : '';
     // A run can simply not record a model, and runModelLabel hands the absent
     // id straight back — which the sentence then read out as "completed on
     // undefined." Say nothing rather than name a lane the runs did not record;
     // the provider column stays in the table either way, so nothing is lost by
     // the silence.
     const modelLabel = uniformModel ? String([...models][0] ?? '').trim() : '';
-    const modelText = modelLabel ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.on.value1', [['value1', String(modelLabel)]]) : '';
     // No "all". It is a quantifier over the population, and the population
     // here is a filtered view -- `runs` is narrowed to failures when the
     // failed-runs-only box is checked, and the day payload is narrowed to one
@@ -1966,7 +1965,6 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // every filter, and the table below carries the completeness "all" was
     // reaching for. (The empty state at the top of renderThinkingRunsDay
     // already counts matchingRuns rather than runs for exactly this reason.)
-    const runCount = `${group.length} ${label} run${group.length === 1 ? '' : 's'}`;
     // The note reports what it said, so the columns lifted out of the table
     // cannot drift from the facts the sentence actually states. A static list
     // did drift: a whitespace-only model id is truthy in the column (so it is
@@ -1979,13 +1977,18 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // `output` are never here for the same reason: the note never says them,
     // so they only leave by being empty on every row.
     const spokenFor = new Set();
-    if (statusText) spokenFor.add('status');
-    if (modelText) spokenFor.add('model');
+    if (status) spokenFor.add('status');
+    if (modelLabel) spokenFor.add('model');
     // The runtime column is never lifted out of the table, so a runtime clause
     // on its own would only repeat what every row already shows. The note earns
     // its line by standing in for a column; the runtime rides along when it can.
     if (!spokenFor.size) return null;
-    return {text: `${runCount}${statusText}${modelText}${durationText}.`, spokenFor};
+    const args = [...countArgs('runs', group.length), ['talent_name', label]];
+    if (status) args.push(['status', status]);
+    if (modelLabel) args.push(['model_name', modelLabel]);
+    if (duration) args.push(['duration', duration]);
+    const id = `journal.window.thinking.runs.group.summary${status ? '.status' : ''}${modelLabel ? '.model' : ''}${duration ? '.duration' : ''}`;
+    return {text: window.JournalI18n.render(id, args), spokenFor};
   }
 
   function renderThinkingRunList(host, runs, hiddenColumns = new Set()) {
@@ -2103,7 +2106,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const input = document.createElement('input');
     input.type = 'checkbox'; input.checked = state.runsFailuresOnly;
     input.addEventListener('change', () => { state.runsFailuresOnly = input.checked; renderThinkingRunsDay(payload, route); host.querySelector('input[type=checkbox]')?.focus(); });
-    label.append(input, document.createTextNode(window.JournalI18n.render('journal.window.thinking.window.state.text.failed.runs.only')));
+    label.append(input, document.createTextNode(' '), document.createTextNode(window.JournalI18n.render('journal.window.thinking.runs.filter.failed.only')));
     controls.append(label); host.append(controls);
     if (!runs.length) {
       const picked = returnedFacets.find((item) => (item?.name ?? item) === state.runsFacet);
@@ -2128,10 +2131,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         // it told the owner nothing failed when the runs it did not fetch may
         // well have. Name the filter that produced the number.
         const count = matchingRuns.length;
-        const runWord = count === 1 ? 'run' : 'runs';
         detail.textContent = facetFiltered
-          ? window.JournalI18n.render('journal.window.thinking.visible.text.all.value1.value2.in.value3.on', [['value1', String(count)], ['value2', String(runWord)], ['value3', String(facetTitle)]])
-          : window.JournalI18n.render('journal.window.thinking.visible.text.all.value1.value2.on.this.day', [['value1', String(count)], ['value2', String(runWord)]]);
+          ? window.JournalI18n.render('journal.window.thinking.runs.facet.all.completed', [...countArgs('runs', count), ['facet_name', String(facetTitle)]])
+          : window.JournalI18n.render('journal.window.thinking.runs.all.completed', [...countArgs('runs', count)]);
       } else if (route.talent) {
         detail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.no.runs.on.this.day.match');
       } else if (facetFiltered) {
@@ -2141,8 +2143,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         // the truth. Say what the filter did, and count the day only when an
         // unfiltered read of this same day supplied the number.
         detail.textContent = dayTotal
-          ? window.JournalI18n.render('journal.window.thinking.visible.text.value1.value2.on.this.day.none', [['value1', String(dayTotal)], ['value2', String(dayTotal === 1 ? 'run' : 'runs')], ['value3', String(facetTitle)]])
-          : window.JournalI18n.render('journal.window.thinking.visible.text.no.run.on.this.day.carries', [['value1', String(facetTitle)]]);
+          ? window.JournalI18n.render('journal.window.thinking.runs.day.none.in.facet', [...countArgs('runs', dayTotal), ['facet_name', String(facetTitle)]])
+          : window.JournalI18n.render('journal.window.thinking.runs.none.for.facet', [['facet_name', String(facetTitle)]]);
       } else {
         detail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.runs.appear.here.when.processing.takes');
       }
@@ -2195,13 +2197,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const summary = document.createElement('summary');
       const failedInGroup = group.filter((run) => run.failed).length;
       summary.textContent = failedInGroup
-        ? window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2.value3.failed', [['value1', String(group.length)], ['value2', String(group.length !== 1 ? 's' : '')], ['value3', String(failedInGroup)]])
-        : window.JournalI18n.render('journal.window.thinking.visible.text.value1.run.value2', [['value1', String(group.length)], ['value2', String(group.length !== 1 ? 's' : '')]]);
+        ? window.JournalI18n.render('journal.window.thinking.runs.group.total.and.failed', [...countArgs('runs', group.length), ...countArgs('failed', failedInGroup)])
+        : window.JournalI18n.render('journal.window.thinking.runs.total', [...countArgs('runs', group.length)]);
       details.appendChild(summary);
       details.addEventListener('toggle', () => state.runsGroupOpen.set(name, details.open));
       const exact = document.createElement('p');
       exact.className = 'thinking-runs-group-id';
-      exact.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.exact.id.value1', [['value1', String(name)]]);
+      exact.textContent = window.JournalI18n.render('journal.window.thinking.runs.talent.exact.id', [['talent_id', String(name)]]);
       details.appendChild(exact);
       // Computed from the whole group, not just the shown page, so the
       // note and the set of hidden columns don't change shape as more rows
@@ -2222,7 +2224,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const more = document.createElement('button');
         more.type = 'button';
         more.className = 'thinking-runs-control';
-        more.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.show.value1.more.run.value2.value3', [['value1', String(next)], ['value2', String(next !== 1 ? 's' : '')], ['value3', String(remaining)]]);
+        more.textContent = window.JournalI18n.render('journal.window.thinking.runs.show.more', [...countArgs('next', next), ...countArgs('remaining', remaining)]);
         more.addEventListener('click', () => {
           state.runsGroupShown.set(name, shown + thinkingRunsPageSize);
           state.runsGroupOpen.set(name, true);
@@ -2947,6 +2949,19 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
   }
 
+  function glanceConfirmation(laneLabel, elapsed) {
+    if (!elapsed) return laneLabel;
+    return window.JournalI18n.render('journal.window.thinking.glance.lane.confirmed.elapsed', [
+      ['lane_label', String(laneLabel)], ['elapsed', String(elapsed)]
+    ]);
+  }
+
+  function glanceFailure(laneLabel, failureDetail) {
+    return window.JournalI18n.render('journal.window.thinking.glance.lane.details', [
+      ['lane_label', String(laneLabel)], ['failure_detail', String(failureDetail)]
+    ]);
+  }
+
   function renderGlance() {
     return drawn(() => renderGlanceNow());
   }
@@ -3066,10 +3081,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setHidden('brainCheckAction', true);
       } else {
         if (brain.state === 'ready') {
-          const confirmed = evidence.age_text ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1.ago', [['value1', String(evidence.age_text)]]) : '';
-          setText('thinkingActiveDetail', `${chatgptLabel}${confirmed}`);
+          setText('thinkingActiveDetail', glanceConfirmation(chatgptLabel, evidence.age_text));
         } else {
-          setText('thinkingActiveDetail', `${chatgptLabel}: ${brain.reason_text || ''}`);
+          setText('thinkingActiveDetail', glanceFailure(chatgptLabel, brain.reason_text || ''));
         }
         setHidden('chatgptGlancePlan', false);
         setText('chatgptGlancePlanLabel', chatgptText.plan || '');
@@ -3088,10 +3102,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
       if (identity.lane && identity.provider && identity.model) {
         if (brain.state === 'ready') {
-          const confirmed = evidence.age_text ? window.JournalI18n.render('journal.window.thinking.runs.visible.text.last.confirmed.value1.ago', [['value1', String(evidence.age_text)]]) : '';
-          setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
+          setText('thinkingActiveDetail', glanceConfirmation(window.JournalFormat.processingLane(identity.lane), evidence.age_text));
         } else {
-          setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
+          setText('thinkingActiveDetail', glanceFailure(window.JournalFormat.processingLane(identity.lane), brain.reason_text || ''));
         }
       } else if (identity.lane || identity.provider || identity.model) {
         setText('thinkingActiveDetail', brain.reason_text || '');
@@ -3420,7 +3433,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setPill('localLanePill', window.JournalI18n.render('journal.window.thinking.copy.unavailable'), 'bad');
         const desc = $('localLaneDescription');
         drawPart(desc, ['gpu'], () => {
-          desc.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.your.journal.s.computer.can.t');
+          desc.textContent = window.JournalI18n.render('journal.window.thinking.local.hardware.gpu.required') + ' ';
           const link = document.createElement('a');
           link.className = 'textlink';
           link.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
@@ -3463,7 +3476,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
         setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
       } else {
-        setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.using.value1.key.manage', [['value1', String(providerLabel(byoProvider))]]));
+        setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.keys.in.use.manage', [['provider_name', String(providerLabel(byoProvider))]]));
       }
     } else if (endpointOverride) {
       setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage.endpoint'));
@@ -3471,7 +3484,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
       setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
     } else if (configured.length > 0) {
-      setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.manage.value1.key', [['value1', String(providerLabel(byoProvider))]]));
+      setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.keys.manage.provider', [['provider_name', String(providerLabel(byoProvider))]]));
     } else {
       setText('byoLaneStatus', window.JournalI18n.render('journal.window.thinking.status.text.add.a.key.or.endpoint'));
     }
@@ -3534,10 +3547,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const providerName = providerLabel(provider);
     const checked = relativeTime(validation?.timestamp) || relativeTime(new Date().toISOString());
 
-    setText('byoKeyCheckstripText', formatCopy(byoText.key_ok_strip || '', {provider: providerName, when: checked}));
+    setText('byoKeyCheckstripText', window.JournalI18n.render('journal.window.thinking.keys.verified.provider', [['provider_name', String(providerName)], ['checked_at', String(checked)]]));
     setButtonText('byoCheckAgain', byoText.check_again || '');
     setText('byoModelHeading', byoText.model_heading || '');
-    setText('byoModelSub', formatCopy(byoText.model_sub || '', {provider: providerName}));
+    setText('byoModelSub', window.JournalI18n.render('journal.window.thinking.keys.model.provider.instructions', [['provider_name', String(providerName)]]));
     renderConfigurationGuidance();
     setText('byoModelInputLabel', byoText.model_label || '');
     setButtonText('byoDifferentKey', byoText.use_different_key || '');
@@ -3606,10 +3619,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function renderChatGptPanel(chatgptText) {
     const email = state.chatgpt.status?.email;
-    const stripTemplate = email ? chatgptText.strip : chatgptText.strip_no_email;
     setText(
       'chatgptStrip',
-      formatCopy(stripTemplate || '', { email: email || '' }),
+      email ? window.JournalI18n.render('journal.window.thinking.chatgpt.account.signed.in', [['account_email', String(email)]]) : chatgptText.strip_no_email || '',
     );
     setButtonText('chatgptSignOut', chatgptText.sign_out || '');
     setText('chatgptModelHeading', chatgptText.model_heading || '');
@@ -3665,16 +3677,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // other OpenAI-compatible provider to the endpoint form, where it belongs.
   function renderOpenaiCardDescription(byoText) {
     const desc = $('prov-openai-desc');
-    const template = byoText.openai_card || '';
-    if (!desc || !template.includes('{endpoint}')) return;
-    drawPart(desc, [template, byoText.chooser_endpoint || ''], () => {
-      const [before, after] = template.split('{endpoint}');
+    if (!desc) return;
+    drawPart(desc, [byoText.chooser_endpoint || ''], () => {
       const link = document.createElement('button');
       link.type = 'button';
       link.className = 'laneinline';
       link.textContent = byoText.chooser_endpoint || '';
       link.addEventListener('click', () => $('byoModeEndpoint')?.click());
-      desc.replaceChildren(document.createTextNode(before), link, document.createTextNode(after));
+      desc.replaceChildren(...window.JournalI18n.renderMarkup('journal.window.thinking.keys.openai.endpoint.option', [],
+        { fixed: { endpoint_button: link } }));
     });
   }
 
@@ -3766,38 +3777,35 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText('prov-google-desc', window.JournalI18n.render('journal.window.thinking.status.text.use.a.google.ai.studio.key'));
     renderOpenaiCardDescription(byoText);
     if (providerEnv[provider]) {
-      setText('byoPasteTitle', formatCopy(byoText.paste_title, {provider: providerLabel(provider)}));
-      setText('byoKeyLabel', window.JournalI18n.render('journal.window.thinking.status.text.your.value1.key', [['value1', String(providerLabel(provider))]]));
+      setText('byoPasteTitle', window.JournalI18n.render('journal.window.thinking.keys.paste.provider', [['provider_name', String(providerLabel(provider))]]));
+      setText('byoKeyLabel', window.JournalI18n.render('journal.window.thinking.keys.label.provider', [['provider_name', String(providerLabel(provider))]]));
       setText('byoKeyHint', byoText.key_hint || '');
       const terms = $('byoTermsLine');
-      drawPart(terms, [provider, providerLabel(provider), byoText.terms || '', byoText.terms_link || ''], () => {
-        terms.textContent = `${formatCopy(byoText.terms, {provider: providerLabel(provider)})} `;
+      drawPart(terms, [provider, providerLabel(provider), byoText.terms_link || ''], () => {
         const link = document.createElement('a');
         link.className = 'textlink';
         link.href = providerTerms[provider] || providerTerms.anthropic;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = byoText.terms_link || '';
-        terms.appendChild(link);
+        terms.replaceChildren(...window.JournalI18n.renderMarkup('journal.window.thinking.keys.provider.processing.terms', [
+          ['provider_name', providerLabel(provider)]
+        ], { fixed: { terms_link: link } }));
       });
     }
 
     writeDisabled($('byoSaveKey'), false);
     writeDisabled($('byoClearKey'), !configured);
     if (pasteMode && validation && validation.valid === false) {
-      const reason = byoReasonCopy(validation.reason_code, 'key', byoText, providerLabel(provider));
       setMessage(
         'byoKeyStatus',
-        formatCopy(byoText.key_failed || '', {provider: providerLabel(provider), reason}),
+        byoFailureCopy(validation.reason_code, providerLabel(provider)),
         'error',
       );
     } else if (pasteMode && validation && validation.valid === true) {
       setMessage(
         'byoKeyStatus',
-        formatCopy(byoText.key_ok_strip || '', {
-          provider: providerLabel(provider),
-          when: relativeTime(validation.timestamp) || relativeTime(new Date().toISOString()),
-        }),
+        window.JournalI18n.render('journal.window.thinking.keys.verified.provider', [['provider_name', String(providerLabel(provider))], ['checked_at', String(relativeTime(validation.timestamp) || relativeTime(new Date().toISOString()))]]),
         'ok',
       );
     } else {
@@ -3832,7 +3840,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const budget = byoThinkingBudget();
     setText('byoTuningName', tuning.label || '');
     const current = budget
-      ? formatCopy(text.state || '', {budget: thinkingBudgetLabel(budget)})
+      ? window.JournalI18n.render(endpointMode ? 'journal.window.thinking.budget.endpoint.current' : 'journal.window.thinking.budget.key.current', [
+        ['token_budget', thinkingBudgetLabel(budget)]
+      ])
       : tuning.default || '';
     setText('byoTuningState', `· ${current}`);
     const toggle = $('byoThinkingToggle');
@@ -3845,7 +3855,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     });
     markup().querySelectorAll('[data-thinking-budget-label]').forEach((label) => {
       const value = Number(label.dataset.thinkingBudgetLabel);
-      writeText(label, formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)}));
+      writeText(label, window.JournalI18n.render('journal.window.thinking.budget.choice.tokens', [['token_budget', String(thinkingBudgetLabel(value))]]));
     });
     const noteText = showChatGptPanel ? (chatgptText.tuning_note || '') : (text.note || '');
     setText('byoTuningNote', noteText);
@@ -4013,7 +4023,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.can.t'),
         message: '',
-        notice: window.JournalI18n.render('journal.window.thinking.notice.your.journal.s.computer.doesn.t', [['value1', String(activeLaneLabel('byo'))]]),
+        notice: window.JournalI18n.render('journal.window.thinking.lane.unsupported.keep.active', [['active_lane', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4028,7 +4038,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: copyProbe?.verdict || window.JournalI18n.render('journal.window.thinking.sub.couldn.t.check.local.setup'),
         message: '',
-        notice: copyProbe?.reason || window.JournalI18n.render('journal.window.thinking.notice.couldn.t.check.local.setup.you', [['value1', String(activeLaneLabel('byo'))]]),
+        notice: copyProbe?.reason || window.JournalI18n.render('journal.window.thinking.lane.check.failed.keep.active', [['active_lane', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: '',
@@ -4089,7 +4099,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.own.endpoint.didn.t.answer'),
         message: '',
-        notice: window.JournalI18n.render('journal.window.thinking.notice.check.the.endpoint.in.value1.then', [['value1', String(activeLaneLabel('byo'))]]),
+        notice: window.JournalI18n.render('journal.window.thinking.lane.endpoint.check', [['active_lane', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4117,7 +4127,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.your.journal.s.computer.needs.more'),
         message: '',
-        notice: window.JournalI18n.render('journal.window.thinking.notice.you.can.still.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
+        notice: window.JournalI18n.render('journal.window.thinking.lane.current.can.continue', [['active_lane', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4131,7 +4141,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         title: window.JournalI18n.render('journal.window.thinking.section.heading.local'),
         sub: window.JournalI18n.render('journal.window.thinking.sub.couldn.t.get.local.thinking.ready'),
         message: '',
-        notice: window.JournalI18n.render('journal.window.thinking.notice.try.again.or.use.value1', [['value1', String(activeLaneLabel('byo'))]]),
+        notice: window.JournalI18n.render('journal.window.thinking.lane.retry.or.use.active', [['active_lane', String(activeLaneLabel('byo'))]]),
         activate: false,
         bootstrap: false,
         tone: 'bad',
@@ -4209,7 +4219,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         byo.dataset.openView = 'byo-setup';
         byo.textContent = activeLaneLabel('byo');
         byo.addEventListener('click', () => showView('byo-setup'));
-        links.append(requirements, document.createTextNode(window.JournalI18n.render('journal.window.thinking.window.state.text.or.use')), byo);
+        links.append(...window.JournalI18n.renderMarkup('journal.window.thinking.local.requirements.or.own.model', [], {
+          fixed: { requirements_link: requirements, own_model_button: byo }
+        }));
       }
     });
   }
@@ -4275,12 +4287,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (target === 'byo') {
       setText(
         'switchNote',
-        formatCopy(switchCopy.to_byo_note, {setup: byoSavedSetupLabel(targetProvider)}),
+        window.JournalI18n.render('journal.window.thinking.lane.switch.byo', [['saved_setup', String(byoSavedSetupLabel(targetProvider))]]),
       );
     } else if (target === 'local') {
       setText(
         'switchNote',
-        formatCopy(switchCopy.to_local_note, {current: byoSetupLabel(brain)}),
+        window.JournalI18n.render('journal.window.thinking.lane.switch.local', [['current_setup', String(byoSetupLabel(brain))]]),
       );
     } else {
       setText('switchNote', window.JournalI18n.render('journal.window.thinking.status.text.you.can.switch.back.anytime'));
@@ -4290,7 +4302,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       writeAttr(primary, 'data-switch-lane', target);
       writeText(primary, switchCopy.confirm || '');
     }
-    writeText($('switchCancel'), formatCopy(switchCopy.cancel, {current: currentLabel}));
+    writeText($('switchCancel'), window.JournalI18n.render('journal.window.thinking.lane.switch.keep.current', [['current_setup', String(currentLabel)]]));
   }
 
   function renderAll() {
@@ -4794,7 +4806,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   async function recheckByoKey() {
     const provider = laneProvider('byo');
     const byoText = copy.byo_setup || {};
-    setMessage('byoModelStatus', formatCopy(byoText.checking_key || '', {provider: providerLabel(provider)}), '');
+    setMessage('byoModelStatus', window.JournalI18n.render('journal.window.thinking.keys.checking.provider', [['provider_name', String(providerLabel(provider))]]), '');
     const result = await api('api/validate-keys', {method: 'POST'});
     state.keys.key_validation = result.key_validation || {};
     const validation = state.keys.key_validation?.[provider] || {};
@@ -4808,8 +4820,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     state.byoMode = 'paste';
     renderByo();
     if (validation.valid === false) {
-      const reason = byoReasonCopy(validation.reason_code, 'key', byoText, providerLabel(provider));
-      setMessage('byoKeyStatus', formatCopy(byoText.key_failed || '', {provider: providerLabel(provider), reason}), 'error');
+      setMessage('byoKeyStatus', byoFailureCopy(validation.reason_code, providerLabel(provider)), 'error');
     }
   }
 
@@ -4877,7 +4888,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // check is out, and stay where they are (`disabled` would drop focus).
     const clears = [$('localEndpointClear'), $('localEndpointClearFromLocal')];
     clears.forEach((button) => writeAttr(button, 'aria-disabled', 'true'));
-    const checkingMessage = formatCopy(copy.byo_setup?.endpoint_image_checking, {model});
+    const checkingMessage = window.JournalI18n.render('journal.window.thinking.endpoint.model.image.checking', [['model_name', String(model)]]);
     setMessage('localEndpointStatus', checkingMessage);
 
     try {
@@ -4900,7 +4911,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const status = check?.status;
       const schemaLine =
         checkResult?.schema_check?.status === 'not_followed'
-          ? formatCopy(copy.byo_setup?.endpoint_schema_not_followed, {model})
+          ? window.JournalI18n.render('journal.window.thinking.endpoint.model.schema.not.followed', [['model_name', String(model)]])
           : '';
 
       if ((status === 'read' || status === 'not_applicable') && !schemaLine) {
@@ -4917,22 +4928,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (status === 'read' || status === 'not_applicable') {
         checkLine = '';
       } else if (status === 'not_read') {
-        checkLine = formatCopy(copy.byo_setup?.endpoint_image_not_read, {model});
+        checkLine = window.JournalI18n.render('journal.window.thinking.endpoint.model.image.not.read', [['model_name', String(model)]]);
       } else {
-        let reasonKey = 'endpoint_reason_other';
-        const reason = status === 'unchecked' ? check?.reason : undefined;
-        if (reason === 'unreachable') reasonKey = 'endpoint_reason_unreachable';
-        else if (reason === 'timeout') reasonKey = 'endpoint_reason_timeout';
-        else if (reason === 'busy') reasonKey = 'endpoint_reason_busy';
-        else if (reason === 'key') reasonKey = 'endpoint_reason_key';
-        else if (reason === 'rejected') reasonKey = 'endpoint_reason_rejected';
-        else if (reason === 'unusable') reasonKey = 'endpoint_reason_unusable';
-        else reasonKey = 'endpoint_reason_other';
-        const reasonPhrase = copy.byo_setup?.[reasonKey] || '';
-        checkLine = formatCopy(copy.byo_setup?.endpoint_image_unchecked, {
-          model,
-          reason: reasonPhrase,
-        });
+        checkLine = window.JournalI18n.render('journal.window.thinking.endpoint.model.image.unchecked', [
+          ['reason', status === 'unchecked' && check?.reason || 'other'], ['model_name', model]
+        ]);
       }
 
       const statusText = [unlogged, schemaLine, checkLine].filter(Boolean).join('\n');
@@ -5946,7 +5946,6 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const $ = (id) => markup().querySelector(`#${id}`); // this view's markup only
 
     const number = (value) => Math.round(value).toLocaleString();
-    const plural = (count, one, many) => `${number(count)} ${Math.round(count) === 1 ? one : many}`;
     const percent = (part, whole) => {
       if (!whole) return '0%';
       const value = (part / whole) * 100;
@@ -6017,7 +6016,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (!trail) return;
       trail.hidden = median === null || median === undefined;
       if (!trail.hidden) {
-        trail.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.value1.in.a.typical.hour.of', [['value1', String(plural(median, 'thought', 'thoughts'))]]);
+        trail.textContent = window.JournalI18n.render('journal.window.thinking.pace.glance.typical.thoughts', [...countArgs('thoughts', Math.round(median), number(median))]);
       }
     }
 
@@ -6025,8 +6024,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       const thinking = current.thinking_hours;
       setText('paceMedian', current.median === null ? '—' : number(current.median));
       setText('paceMedianSub', thinking
-        ? window.JournalI18n.render('journal.window.thinking.status.text.in.a.typical.hour.of.thinking', [['value1', String(number(thinking))], ['value2', String(plural(current.hours, 'hour', 'hours'))]])
-        : window.JournalI18n.render('journal.window.thinking.status.text.nothing.finished.in.the.last.value1', [['value1', String(plural(current.hours, 'hour', 'hours'))]]));
+        ? window.JournalI18n.render('journal.window.thinking.pace.thinking.hours', [...countArgs('hours', Math.round(current.hours), number(current.hours)), ...countArgs('finished', Math.round(thinking), number(thinking))])
+        : window.JournalI18n.render('journal.window.thinking.pace.none.finished.hours', [...countArgs('hours', Math.round(current.hours), number(current.hours))]));
       const busiest = current.busiest;
       setText('paceBusiest', busiest ? number(busiest.thoughts) : '—');
       setText('paceBusiestSub', busiest ? whenLabel(busiest) : window.JournalI18n.render('journal.window.thinking.status.text.no.busy.hour.yet'));
@@ -6034,7 +6033,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setText('paceOlderSub', window.JournalI18n.render('journal.window.thinking.status.text.of.the.thinking.was.about.older'));
       setText('paceUnfinished', number(current.unfinished));
       const ran = current.thoughts + current.unfinished;
-      setText('paceUnfinishedSub', ran ? window.JournalI18n.render('journal.window.thinking.status.text.value1.of.what.your.journal.ran', [['value1', String(percent(current.unfinished, ran))]]) : '');
+      setText('paceUnfinishedSub', ran ? window.JournalI18n.render('journal.window.thinking.pace.unfinished.share', [['share', String(percent(current.unfinished, ran))]]) : '');
     }
 
     function chartTitle(current) {
@@ -6047,11 +6046,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (!bar) return window.JournalI18n.render('journal.window.thinking.window.explanation.point.at.a.bar.or.select');
       const total = bar.recent + bar.older;
       if (bar.start === undefined) {
-        if (!bar.thinking_hours) return `${whenLabel(bar)}: nothing finished`;
-        return window.JournalI18n.render('journal.window.thinking.window.explanation.value1.value2.in.a.typical.hour', [['value1', String(whenLabel(bar))], ['value2', String(plural(total, 'thought', 'thoughts'))], ['value3', String(plural(bar.thoughts, 'thought', 'thoughts'))], ['value4', String(plural(bar.thinking_hours, 'hour', 'hours'))], ['value5', String(percent(bar.older_thoughts, bar.thoughts))]]);
+        if (!bar.thinking_hours) return window.JournalI18n.render('journal.window.thinking.pace.period.none.finished', [['period', String(whenLabel(bar))]]);
+        return window.JournalI18n.render('journal.window.thinking.pace.day.summary', [...countArgs('day', Math.round(total), number(total)), ['period', String(whenLabel(bar))], ...countArgs('thoughts', Math.round(bar.thoughts), number(bar.thoughts)), ...countArgs('hours', Math.round(bar.thinking_hours), number(bar.thinking_hours)), ['older_share', String(percent(bar.older_thoughts, bar.thoughts))]]);
       }
-      if (!total) return `${whenLabel(bar)}: nothing finished`;
-      return window.JournalI18n.render('journal.window.thinking.window.explanation.value1.value2.value3.about.older.days', [['value1', String(whenLabel(bar))], ['value2', String(plural(total, 'thought', 'thoughts'))], ['value3', String(number(bar.older))]]);
+      if (!total) return window.JournalI18n.render('journal.window.thinking.pace.period.none.finished', [['period', String(whenLabel(bar))]]);
+      return window.JournalI18n.render('journal.window.thinking.pace.hour.summary', [...countArgs('thoughts', Math.round(total), number(total)), ['period', String(whenLabel(bar))], ...countArgs('older', Math.round(bar.older), number(bar.older))]);
     }
 
     // The axis top: four round steps that clear the tallest bar.
@@ -6118,7 +6117,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         element('line', {class: 'pace-median', x1: left, x2: left + plotWidth, y1: y(typical), y2: y(typical)}, svg);
         if (right > 30) {
           const label = element('text', {class: 'pace-axis pace-median-label', x: left + plotWidth + 6, y: y(typical) + 4}, svg);
-          label.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.typical.value1', [['value1', String(number(typical))]]);
+          label.textContent = window.JournalI18n.render('journal.window.thinking.pace.typical.level', [['level', String(number(typical))]]);
         }
       }
       if (paceState.selected >= 0 && list[paceState.selected]) {
@@ -6182,7 +6181,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (empty) {
         const now = paceState.data.this_hour;
         setText('paceEmptyText', now
-          ? window.JournalI18n.render('journal.window.thinking.status.text.your.journal.is.thinking.value1.so', [['value1', String(plural(now, 'thought', 'thoughts'))]])
+          ? window.JournalI18n.render('journal.window.thinking.pace.first.hour.thoughts', [...countArgs('thoughts', Math.round(now), number(now))])
           : window.JournalI18n.render('journal.window.thinking.status.text.your.journal.hasn.t.finished.any'));
         show('paceEmptySetup', !now);
       }
@@ -6194,8 +6193,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setText('paceReadout', readout(list[paceState.selected]));
       const through = hourLabel(paceState.data.through);
       setText('paceThrough', paceState.data.this_hour
-        ? window.JournalI18n.render('journal.window.thinking.status.text.counted.through.value1.this.hour.so', [['value1', String(through)], ['value2', String(plural(paceState.data.this_hour, 'thought', 'thoughts'))]])
-        : window.JournalI18n.render('journal.window.thinking.status.text.counted.through.value1', [['value1', String(through)]]));
+        ? window.JournalI18n.render('journal.window.thinking.pace.counted.through.with.thoughts', [...countArgs('thoughts', Math.round(paceState.data.this_hour), number(paceState.data.this_hour)), ['through_time', String(through)]])
+        : window.JournalI18n.render('journal.window.thinking.pace.counted.through', [['through_time', String(through)]]));
       drawChart(current);
       renderTable(current);
     }

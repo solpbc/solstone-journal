@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. observation coverage.",
+  "context": "Journal window. Entities view. observation coverage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "observations_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "observations",
+      "type": "string"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cea7a4f5ff6e50527683b903cce0dcf4d8ca387b84ab3d2a0cb68a14bb08dc70",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "observations_quantity",
+    "type": "cardinal"
+  }
+}

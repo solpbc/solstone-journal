@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. observation range.",
+  "context": "Journal window. Entities view. observation range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_day",
+      "type": "string"
+    },
+    {
+      "name": "end_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac545def08c56f71b37ce7023268fc672da7eaeb6cf25c8cede7b55cb33d11a8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

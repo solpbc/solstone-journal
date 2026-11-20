@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys reason rejected.",
+  "context": "Journal window. Thinking view. keys reason rejected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9991dbcd5521bd51212a5f05c77074faf34bc1e196bdee768d85dcd83e2a77a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. search placeholder entity count.",
+  "context": "Journal window. Entities view. search placeholder entity count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a9b12047bb5a728602c8363b11f37997270d9807e04da7f96d4591069883ab3d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

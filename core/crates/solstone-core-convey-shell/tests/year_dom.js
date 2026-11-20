@@ -55,11 +55,22 @@ function make(tag) {
   node.hasAttribute = (key) => Object.prototype.hasOwnProperty.call(node.attrs, key);
   // As in a page, a node has one parent: appending it again moves it.
   node.appendChild = (child) => {
+    if (child.tagName === '#FRAGMENT') {
+      [...child.children].forEach(node.appendChild);
+      return child;
+    }
     if (child.parent) child.parent.children = child.parent.children.filter((item) => item !== child);
     child.parent = node;
     node.children.push(child);
     return child;
   };
+  node.append = (...parts) => parts.forEach((part) => {
+    if (typeof part === 'string') {
+      node.text += part;
+    } else {
+      node.appendChild(part);
+    }
+  });
   node.addEventListener = (type, fn) => { (node.listeners[type] = node.listeners[type] || []).push(fn); };
   node.fire = (type, event) => (node.listeners[type] || []).forEach((fn) => fn(event || { preventDefault() {} }));
   node.click = () => node.fire('click');
@@ -96,7 +107,7 @@ const PAYLOAD = {
 
 function draw(read, search, extra) {
   const root = make('main');
-  const doc = { createElement: make };
+  const doc = { createElement: make, createDocumentFragment: () => make('#fragment') };
   const went = [];
   const grids = [];
   const opts = Object.assign({

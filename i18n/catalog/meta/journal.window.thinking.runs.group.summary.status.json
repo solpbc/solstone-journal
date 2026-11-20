@@ -1,0 +1,38 @@
+{
+  "description": "Thinking view. runs group summary status.",
+  "context": "Journal window. Thinking view. runs group summary status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "runs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "runs_count",
+      "type": "string"
+    },
+    {
+      "name": "talent_name",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c66f7e72cece846caf0b11311995a9882f3321ace294d8ca52c672d64f4f279b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "runs_quantity",
+    "type": "cardinal"
+  }
+}

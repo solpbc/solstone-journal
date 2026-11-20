@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys checking provider.",
+  "context": "Journal window. Thinking view. keys checking provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd114c87630990e5e12e69da903ade3a304d649bd61e4d96af804efaa01a78b5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

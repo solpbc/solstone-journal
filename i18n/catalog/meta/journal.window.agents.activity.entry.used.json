@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. activity entry used.",
+  "context": "Journal window. Agents view. activity entry used.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "tool_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef00f6963373dff854e0af9db1bef1de0ed14fb234fa680a3eab6f5ca1326376",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

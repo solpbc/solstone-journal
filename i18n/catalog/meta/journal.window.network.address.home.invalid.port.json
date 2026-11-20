@@ -1,0 +1,21 @@
+{
+  "description": "Network settings validation. Both occurrences give the same listener port used for the owner address.",
+  "context": "Journal window. Network settings validation. Both occurrences give the same listener port used for the owner address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a75d0cc6914155991c3388513c24aa3d783a407eaccb77fd26313063ecd21b8d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

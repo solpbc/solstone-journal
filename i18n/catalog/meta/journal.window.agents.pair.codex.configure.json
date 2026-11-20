@@ -1,0 +1,33 @@
+{
+  "description": "Agents view. pair codex configure.",
+  "context": "Journal window. Agents view. pair codex configure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "copy_button",
+      "type": "string"
+    },
+    {
+      "name": "login_command",
+      "type": "string"
+    },
+    {
+      "name": "copy_login_button",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7d93141723229b77bb464bfbd9daa7ebc823c86f9450ada916e70d47c97f70ed",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

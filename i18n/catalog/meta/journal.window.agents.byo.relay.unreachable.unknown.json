@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. byo relay unreachable unknown.",
+  "context": "Journal window. Agents window. byo relay unreachable unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb74d9c1bd536c6bf09344fbe5223856479362ae6caa620b1a32b7154569f333",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. more and n more.",
+  "context": "Journal window. Entities view deletion. more and n more.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "more",
+      "type": "string"
+    },
+    {
+      "name": "more_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ff1e1d0613b237cf008d30415550660c2b7cd9fd05cc3740d603b46efcca532f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "more_quantity",
+    "type": "cardinal"
+  }
+}

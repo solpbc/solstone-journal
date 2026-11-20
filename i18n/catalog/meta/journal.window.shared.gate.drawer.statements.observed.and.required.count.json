@@ -1,0 +1,39 @@
+{
+  "description": "Journal window shell. shared gate drawer statements observed and required count.",
+  "context": "Journal window. Journal window shell. shared gate drawer statements observed and required count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "minimum_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "observed",
+      "type": "string"
+    },
+    {
+      "name": "minimum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fc53dde480e6c74b231f4d882742ee6225fa6739df3e887bf5e6e738bd1079ed",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

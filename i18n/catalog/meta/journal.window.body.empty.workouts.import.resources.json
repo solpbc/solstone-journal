@@ -1,0 +1,25 @@
+{
+  "description": "Body view. empty workouts import resources.",
+  "context": "Journal window. Body view. empty workouts import resources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "docs_link_start",
+      "type": "string"
+    },
+    {
+      "name": "docs_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9af0646b3854b373cc5b0f615fe79bdda96fdd132f60649125e428c5877ec36",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

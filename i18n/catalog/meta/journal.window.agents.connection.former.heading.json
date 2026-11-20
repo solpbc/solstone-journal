@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection former heading.",
+  "context": "Journal window. Agents view. connection former heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "147f3f008cf7081909103905ad943f79c7357306d041036c2f570457233a5ec8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

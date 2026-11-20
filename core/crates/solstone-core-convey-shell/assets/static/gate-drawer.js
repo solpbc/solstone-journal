@@ -73,14 +73,20 @@
 
   function lineFor(reason, observed, threshold) {
     if (reason === 'too_few_stmts') {
-      const base = window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.value1.longer.statements.so.far', [['value1', String(formatMetric(observed))]]);
-      return threshold === null ? base : `${base}, needs ${formatMetric(threshold)}`;
+      const facts = [['quantity', window.JournalI18n.cardinalQuantity(observed)], ['observed', formatMetric(observed)]];
+      if (threshold === null) return window.JournalI18n.render('journal.window.shared.gate.drawer.statements.observed.count', facts);
+      return window.JournalI18n.render('journal.window.shared.gate.drawer.statements.observed.and.required.count', [
+        ...facts, ['minimum_quantity', window.JournalI18n.cardinalQuantity(threshold)], ['minimum', formatMetric(threshold)]
+      ]);
     }
     if (reason === 'median_duration_too_short') {
-      const base = `median statement length ${formatWithUnit(observed, 's')}`;
-      return threshold === null
-        ? base
-        : `${base}, needs ${formatWithUnit(threshold, 's')}`;
+      const id = observed === null
+        ? (threshold === null ? 'journal.window.shared.gate.drawer.statement.median.unavailable' : 'journal.window.shared.gate.drawer.statement.median.unavailable.required.seconds')
+        : (threshold === null ? 'journal.window.shared.gate.drawer.statement.median.seconds' : 'journal.window.shared.gate.drawer.statement.median.required.seconds');
+      const args = [];
+      if (observed !== null) args.push(['observed', formatMetric(observed)]);
+      if (threshold !== null) args.push(['minimum', formatMetric(threshold)]);
+      return window.JournalI18n.render(id, args);
     }
     if (reason === 'cluster_too_diffuse') {
       return window.JournalI18n.render('journal.window.shared.gate.drawer.window.explanation.voice.pattern.is.still.too.spread');

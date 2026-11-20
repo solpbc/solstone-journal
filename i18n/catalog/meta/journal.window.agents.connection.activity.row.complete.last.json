@@ -1,0 +1,34 @@
+{
+  "description": "Agents view. connection activity row complete last.",
+  "context": "Journal window. Agents view. connection activity row complete last.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "last_request",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c5efd6d5082292793c7a4ebfc83501a3d7f4ba8b7aab1b740ef6bb3f1c534c35",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

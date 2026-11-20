@@ -6489,6 +6489,10 @@ fn network_plate_work(
                     .expect("NetworkResponse serializes to an object");
                 object.insert("horizon_day".to_owned(), Value::String(horizon.day));
                 object.insert(
+                    "horizon_earlier_days".to_owned(),
+                    serde_json::json!(horizon.earlier_days),
+                );
+                object.insert(
                     "horizon_note".to_owned(),
                     Value::String(connections_horizon_note(locale, horizon.earlier_days)),
                 );

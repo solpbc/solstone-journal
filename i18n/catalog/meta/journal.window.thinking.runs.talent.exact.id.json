@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. runs talent exact id.",
+  "context": "Journal window. Thinking view. runs talent exact id.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "talent_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1885a9098471ce861aba23e63cb8361575af6df5752e6468832f7a7bc4ce2631",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection permissions heading.",
+  "context": "Journal window. Agents view. connection permissions heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61fa6209c410464640247896bcfada1f30134ffb8e0c8383cc9f159a8696a4db",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

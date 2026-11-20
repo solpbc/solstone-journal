@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who identify preview heading.",
+  "context": "Journal window. Speakers view. who identify preview heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd76db027b4360616aa2d2a87b707ca2913f92d02dcc37086868b9883b01dcdb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. endpoint model image checking.",
+  "context": "Journal window. Thinking view. endpoint model image checking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b01744b8e3ab23528426165ae8b83a49129bf4b8757bf2d62d9a307305c7c0b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

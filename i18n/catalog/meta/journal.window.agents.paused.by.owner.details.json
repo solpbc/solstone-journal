@@ -1,0 +1,42 @@
+{
+  "description": "Agents window. paused by owner details.",
+  "context": "Journal window. Agents window. paused by owner details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "pause_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e92d08635a2c04253e5c4b77bd940bf6dcafcccbc9093bcff0e6a780c5464d22",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

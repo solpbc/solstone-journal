@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection memory again instructions.",
+  "context": "Journal window. Agents view. connection memory again instructions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3730c7cbaa6ae67d0f42aaae365309fad17907eeeae94dd80d093efdc2594daf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

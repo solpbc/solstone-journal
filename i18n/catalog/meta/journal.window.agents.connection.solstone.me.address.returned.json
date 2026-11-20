@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. connection solstone me address returned.",
+  "context": "Journal window. Agents view. connection solstone me address returned.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "address",
+      "type": "string"
+    },
+    {
+      "name": "returned_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2203ac69ffd0a02c92ad52234797bf4b540afa4e555bd587acefaa2c2571e8da",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

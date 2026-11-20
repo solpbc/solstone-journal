@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who create named person.",
+  "context": "Journal window. Speakers view. who create named person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eee9faf34819ea56932c8c463888639e1215fd29c1048f5d8a9f112a79cdbc39",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

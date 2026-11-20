@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. trust history change.",
+  "context": "Journal window. Entities view. trust history change.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "previous_identity",
+      "type": "string"
+    },
+    {
+      "name": "updated_identity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c032543cbb799bb3106d82535c3dda236296a7807cd190fc92335cde61edd29",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

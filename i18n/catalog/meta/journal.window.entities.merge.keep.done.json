@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. merge keep done.",
+  "context": "Journal window. Entities view. merge keep done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "40518e8291d404d249ddda58cc3eca381f07772bf058915e9385622259564db6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

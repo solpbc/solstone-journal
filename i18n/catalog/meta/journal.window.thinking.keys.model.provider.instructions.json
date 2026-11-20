@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys model provider instructions.",
+  "context": "Journal window. Thinking view. keys model provider instructions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "468d738d59d99efd1fd1ef5a78850e791c5556b287eef60f3c01fc11cef8baff",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

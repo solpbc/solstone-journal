@@ -1,0 +1,48 @@
+{
+  "description": "Entities view. connections summary with calendar.",
+  "context": "Journal window. Entities view. connections summary with calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "direct_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "direct",
+      "type": "string"
+    },
+    {
+      "name": "shared_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shared",
+      "type": "string"
+    },
+    {
+      "name": "calendar_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "calendar",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1d987bf5b585445317483405916d8eb50ae91449dfc642c819b5591c76c2b93f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "direct_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Journal view. entities detected page range.",
+  "context": "Journal window. Journal view. entities detected page range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f2b94749a9a4ac53839c680f3681187c362653ef205b9fc4343944a309a81975",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal window. shared status pane capture last reached day.",
+  "context": "Journal window. Journal window. shared status pane capture last reached day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "since_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "127d3af60bb6447980a185d6f3fc899652d4bdaf912508e7f1c9198e9b2128b4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

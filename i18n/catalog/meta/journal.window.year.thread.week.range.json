@@ -1,0 +1,25 @@
+{
+  "description": "Year view. thread week range.",
+  "context": "Journal window. Year view. thread week range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_day",
+      "type": "string"
+    },
+    {
+      "name": "end_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66714f083210cf77272c95e058abe2ce06de1a0fc3ee175d1f10830d8c01a049",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

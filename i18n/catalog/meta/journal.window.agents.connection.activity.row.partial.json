@@ -1,0 +1,30 @@
+{
+  "description": "Agents view. connection activity row partial.",
+  "context": "Journal window. Agents view. connection activity row partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9d4777221a3c556530a8b6e91e172b4fe275ef3f1689031efc34228876c86d24",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

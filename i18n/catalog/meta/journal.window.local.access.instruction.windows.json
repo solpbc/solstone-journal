@@ -1,0 +1,21 @@
+{
+  "description": "Local browser entry instruction. The shell presents the journal-opening command in a code span.",
+  "context": "Journal window. Local browser entry instruction. The shell presents the journal-opening command in a code span.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "open_command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "56f806cb254ae6a8d0cbac5e29f22fce830fd7639271f7a20266df78bd51c5d4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

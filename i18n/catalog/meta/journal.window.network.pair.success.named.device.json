@@ -1,0 +1,21 @@
+{
+  "description": "Network window. pair success named device.",
+  "context": "Journal window. Network window. pair success named device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da1ad648edb08a4b60f68b75ec9730418146259b785a9a9599fd06aee6fbb725",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

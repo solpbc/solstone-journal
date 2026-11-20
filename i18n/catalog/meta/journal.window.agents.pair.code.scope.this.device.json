@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. pair code scope this device.",
+  "context": "Journal window. Agents window. pair code scope this device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28cd5b8d97f2c6b7a35bbd459fe947ddf03e152ba5314d1e6eba39f35ef0beb8",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

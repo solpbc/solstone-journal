@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. owner reveal evidence tier.",
+  "context": "Journal window. Speakers view. owner reveal evidence tier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "evidence_tier",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf73d3ff28afa0519679b8f42381bf4fd198e7c2cc20079c35f085976ee9fe7b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

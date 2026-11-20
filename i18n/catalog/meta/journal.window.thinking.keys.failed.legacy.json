@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view. keys failed legacy.",
+  "context": "Journal window. Thinking view. keys failed legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "failure_reason",
+      "type": "string"
+    },
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19d7d134fda4b9d78be0f039979e4dc4b20fc466f89ed50ac19a81ff75596bbc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. tooltip mention days.",
+  "context": "Journal window. Entities view. tooltip mention days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "mentions_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "mentions",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c8c07caaf84b5e844a2e2399ecb8c3f4a4df602471d59948cec35f7fcabd4e9a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "mentions_quantity",
+    "type": "cardinal"
+  }
+}

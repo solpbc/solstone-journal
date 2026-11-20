@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who keep separate decline.",
+  "context": "Journal window. Speakers view. who keep separate decline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e97dd62aec5f65a633440fe4968ce6872236e5d8f7072ec69c9c0d6bb31f3a8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

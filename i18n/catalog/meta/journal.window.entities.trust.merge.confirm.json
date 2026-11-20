@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. trust merge confirm.",
+  "context": "Journal window. Entities view. trust merge confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_name",
+      "type": "string"
+    },
+    {
+      "name": "target_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7543d3a196fd39e3166ac1c40eb9692f953a6a84d0166a9ba2f7eab7347c6ce",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

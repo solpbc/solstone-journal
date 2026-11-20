@@ -1,0 +1,21 @@
+{
+  "description": "Body view. workout strava figures.",
+  "context": "Journal window. Body view. workout strava figures.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "figures",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e66ef67bb4db2bf493d85440df770efd3dce20e40d628fd703fe82ba5a6110fd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

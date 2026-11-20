@@ -1,0 +1,21 @@
+{
+  "description": "Journal window. shared status pane security unnamed device update version.",
+  "context": "Journal window. Journal window. shared status pane security unnamed device update version.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "fixed_version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c53218ee5082e36ee7e5d03daae9aadf5b97490170869952ed58672a5fb353a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

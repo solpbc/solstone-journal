@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. status next check at.",
+  "context": "Journal window. Agents view. status next check at.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "check_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6780fe42002ed299ec981dfe1ce56756f99e19798df4c84d46465ef9e0f01e46",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

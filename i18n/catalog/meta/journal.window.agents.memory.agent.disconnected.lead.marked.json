@@ -1,0 +1,25 @@
+{
+  "description": "Agents window. memory agent disconnected lead marked.",
+  "context": "Journal window. Agents window. memory agent disconnected lead marked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "agent_key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1527074398a0e4f2395f1c82db1c1edad4ed99a15254ed153d4dc6476f2c95eb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane age elapsed minute.",
+  "context": "Journal window. Journal window shell. shared status pane age elapsed minute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "aeddea872d09b0689a0ae8850cd68e03a2aaf377361345486d2543df216b6f77",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

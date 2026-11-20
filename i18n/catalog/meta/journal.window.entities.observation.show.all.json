@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. observation show all.",
+  "context": "Journal window. Entities view. observation show all.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "observations_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "observations",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f3913420f3dc8336766d9c9939072c8e657ed51af0ca3287bbe8dc830a3349e2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "observations_quantity",
+    "type": "cardinal"
+  }
+}

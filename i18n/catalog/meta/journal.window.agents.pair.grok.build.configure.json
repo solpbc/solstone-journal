@@ -1,0 +1,37 @@
+{
+  "description": "Agents view. pair grok build configure.",
+  "context": "Journal window. Agents view. pair grok build configure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "copy_button",
+      "type": "string"
+    },
+    {
+      "name": "menu_command",
+      "type": "string"
+    },
+    {
+      "name": "server",
+      "type": "string"
+    },
+    {
+      "name": "login_key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "388354e528d0dca31849fb2b38cc96547514ac4a3da9773ae222e96d043ee34d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

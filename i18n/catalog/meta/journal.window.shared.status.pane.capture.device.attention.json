@@ -1,0 +1,21 @@
+{
+  "description": "Journal window shell. shared status pane capture device attention.",
+  "context": "Journal window. Journal window shell. shared status pane capture device attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58c4ddbedd649eabf271f691d1503c1df68be85ee382da3be6c22d4045d59010",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

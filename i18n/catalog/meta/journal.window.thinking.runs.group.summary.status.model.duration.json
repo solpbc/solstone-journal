@@ -1,0 +1,46 @@
+{
+  "description": "Thinking view. runs group summary status model duration.",
+  "context": "Journal window. Thinking view. runs group summary status model duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "runs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "runs_count",
+      "type": "string"
+    },
+    {
+      "name": "talent_name",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "model_name",
+      "type": "string"
+    },
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c9849210a868410230fb3a19c26cbecde7c37a6f58e7ad36b17028b61300157e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "runs_quantity",
+    "type": "cardinal"
+  }
+}

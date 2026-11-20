@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection permissions change.",
+  "context": "Journal window. Agents view. connection permissions change.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5de07dd541560e76d2daaf11218d4f43faa37907f6cef0f7cd258c508885a175",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

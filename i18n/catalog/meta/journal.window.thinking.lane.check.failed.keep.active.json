@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane check failed keep active.",
+  "context": "Journal window. Thinking view. lane check failed keep active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "active_lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83b3740dc1ea9997e840a4d83cfdf8145b8c3cbcb17b660e8fc6729f9dd68212",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. sentences visible range.",
+  "context": "Journal window. Speakers view. sentences visible range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "efa3f2ab579bfc7618de4f8981b0a9ef4abd4a026fde8ab4f6bc096a99e78065",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shown_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal window shell. shared date format imported source label.",
+  "context": "Journal window. Journal window shell. shared date format imported source label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cc3c56a5bf2063d4f447d31c190052fde488ee897746ed25b73dd1248d72ef2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

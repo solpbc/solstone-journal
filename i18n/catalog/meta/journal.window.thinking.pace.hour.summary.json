@@ -1,0 +1,43 @@
+{
+  "description": "Thinking view. pace hour summary.",
+  "context": "Journal window. Thinking view. pace hour summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "thoughts_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "thoughts_count",
+      "type": "string"
+    },
+    {
+      "name": "period",
+      "type": "string"
+    },
+    {
+      "name": "older_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "older_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bc5f3461c4405fde21d1c607e9d0117a758135db4e7d3297c8e76cff7561f9dc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "thoughts_quantity",
+    "type": "cardinal"
+  }
+}

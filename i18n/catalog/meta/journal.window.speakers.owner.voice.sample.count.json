@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. owner voice sample count.",
+  "context": "Journal window. Speakers view. owner voice sample count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "statements_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "statements",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3247405746656ae3ae8fc4782343920d1218c360d4ca749b04d7523117b65de5",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "statements_quantity",
+    "type": "cardinal"
+  }
+}

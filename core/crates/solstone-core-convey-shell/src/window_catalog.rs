@@ -7,7 +7,8 @@ use axum::http::HeaderMap;
 use serde_json::Value;
 
 pub(crate) use solstone_core_convey_http::window_catalog::{
-    ENGLISH, MissingPage, html, language_tag, not_found, response_locale, text,
+    ENGLISH, MissingPage, escape_html, html, language_tag, not_found, response_locale, strings,
+    text,
 };
 
 const LOCALE_HEADER: &str = "x-solstone-locale";
@@ -39,7 +40,16 @@ pub(crate) fn localize_handoff(mut operation: Value, locale: &str) -> Value {
         return operation;
     };
     let (id, status) = reference.split_once(' ').unwrap_or((reference, ""));
-    *guidance = Value::String(text(locale, id).replace("{code}", status));
+    *guidance = Value::String(match id {
+        // Existing operation records can carry the retired identifier.
+        "journal.window.handoff.spl.outcome.guidance.relay.rejected"
+        | "journal.window.handoff.spl.relay.rejected.with.status" => strings(
+            locale,
+            "journal.window.handoff.spl.relay.rejected.with.status",
+            [("http_status", status)],
+        ),
+        _ => text(locale, id),
+    });
     operation
 }
 

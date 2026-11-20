@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. hide record error.",
+  "context": "Journal window. Entities view. hide record error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "record_detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aff4d0d6f8e21b128523e73a78037a368b49963e3af602c224520f4d1276c4dc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Thinking view. Complete key validation failure by outcome and provider.",
+  "context": "Journal window. Thinking view. Complete key validation failure by outcome and provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "6b67b4302820a93796496bef7beb303b883b7efe9d725c7a904f279084c8dc99",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "reason",
+    "type": "string",
+    "enum_values": [
+      "rejected",
+      "quota",
+      "network",
+      "chatgpt-signed-out",
+      "chatgpt-ineligible",
+      "chatgpt-no-model",
+      "chatgpt-model-missing",
+      "chatgpt-refused",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

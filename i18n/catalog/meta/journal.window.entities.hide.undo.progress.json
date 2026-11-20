@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. hide undo progress.",
+  "context": "Journal window. Entities view. hide undo progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "restored_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "restored",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b2257868f6698c27b18d0fc17c98f0b684de60c02762b8dc958f50ca68491a7a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "restored_quantity",
+    "type": "cardinal"
+  }
+}

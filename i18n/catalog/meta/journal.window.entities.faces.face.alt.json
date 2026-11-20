@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. faces face alt.",
+  "context": "Journal window. Entities view. faces face alt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "154cc6ef427e19ff0cce3e7502cfb5c851c8aa733ba639189785babcbe24a75b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

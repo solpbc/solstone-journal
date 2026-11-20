@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. lane local reaches directly.",
+  "context": "Journal window. Agents window. lane local reaches directly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e350b0665fb29a388591994b9a042f553080b3ff9517a3cd50668d9c6b2ad326",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

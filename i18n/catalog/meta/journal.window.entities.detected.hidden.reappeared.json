@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. detected hidden reappeared.",
+  "context": "Journal window. Entities view. detected hidden reappeared.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    },
+    {
+      "name": "matched_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a3254794906441a0bd3e4c6b7d1874fca6dec987bd5c9b25c31e8f3d3016182",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. facet detach confirm.",
+  "context": "Journal window. Entities view. facet detach confirm.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc09bf23f0544fd55969b8cc1a9123953914c3c7238fa7f6cdbbd69b0362daa2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

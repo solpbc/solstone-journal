@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. pace typical level.",
+  "context": "Journal window. Thinking view. pace typical level.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "level",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0fa5d0c92b971859f4c74a84ec88ca9b6c297b5ffd9ec0e9b660d36cdce0a8e7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

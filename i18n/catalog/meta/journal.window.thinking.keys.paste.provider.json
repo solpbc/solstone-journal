@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys paste provider.",
+  "context": "Journal window. Thinking view. keys paste provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a029334ce8bd4dec0be80621380fbc33dd4eb25662d569f710489200424ab8fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

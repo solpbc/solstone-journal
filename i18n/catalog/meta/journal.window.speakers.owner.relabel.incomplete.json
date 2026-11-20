@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. owner relabel incomplete.",
+  "context": "Journal window. Speakers view. owner relabel incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "85291e85d7385774f0bfe9afbda939b5a675499777cbd315bb08894855447086",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

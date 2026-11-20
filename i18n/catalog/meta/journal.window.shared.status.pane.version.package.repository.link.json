@@ -1,0 +1,21 @@
+{
+  "description": "Journal window. shared status pane version package repository link.",
+  "context": "Journal window. Journal window. shared status pane version package repository link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "repository_link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af5cab6a359b80eac2e3bd812b000a541d0745690e64f70bef360b6f89eff578",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

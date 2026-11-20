@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. tooltip facet name.",
+  "context": "Journal window. Entities view. tooltip facet name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82b4e754061340b180b41802516b0e740a7df67dc0132447db8c071581f0191b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

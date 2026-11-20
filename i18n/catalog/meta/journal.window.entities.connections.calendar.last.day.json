@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. connections calendar last day.",
+  "context": "Journal window. Entities view. connections calendar last day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee99232ad412c6c800ec009d32c29da44177479d9cec6cd3d4f3902468af4a71",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

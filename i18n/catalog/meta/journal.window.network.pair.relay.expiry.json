@@ -1,0 +1,21 @@
+{
+  "description": "Network window. pair relay expiry.",
+  "context": "Journal window. Network window. pair relay expiry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88fe1726d766a8b55f533a127c08cb2f71d378db2d885c189704d899e137db28",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

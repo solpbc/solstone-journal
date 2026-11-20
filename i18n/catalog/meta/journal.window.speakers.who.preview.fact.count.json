@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. who preview fact count.",
+  "context": "Journal window. Speakers view. who preview fact count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "statements_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "statements",
+      "type": "string"
+    },
+    {
+      "name": "conversations",
+      "type": "string"
+    },
+    {
+      "name": "conversations_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a568f88e2d52f47e084d114f50cf561720593ae5e509152298e7f1da4c459bb9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "statements_quantity",
+    "type": "cardinal"
+  }
+}

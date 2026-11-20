@@ -1,3 +1,334 @@
+journal.window.agents.activity.entry.paused = { $agent_name } tried { $tool_name } while paused
+
+journal.window.agents.activity.entry.paused.with.key = { $agent_name }{ $agent_key } tried { $tool_name } while paused
+
+journal.window.agents.activity.entry.used = { $agent_name } used { $tool_name }
+
+journal.window.agents.activity.entry.used.with.key = { $agent_name }{ $agent_key } used { $tool_name }
+
+journal.window.agents.activity.summary.count.partial = { $quantity ->
+        [one] at least { $count }
+       *[other] at least { $count }
+    }
+
+journal.window.agents.byo.dns.address.mismatch.detail = this name points at{ $slot1 }{ $resolved_addresses }. it should have one A record, for your server at{ $slot2 }{ $relay_address }, and no other A or AAAA records. if your DNS host offers a proxy or CDN for this name, turn it off.
+
+journal.window.agents.byo.dns.address.nonpublic.also = this name also points at { $addresses }, which isn't on the internet. remove that record. Claude won't connect to a name that has one.
+
+journal.window.agents.byo.dns.address.nonpublic.also.unknown = this name also points at an address, which isn't on the internet. remove that record. Claude won't connect to a name that has one.
+
+journal.window.agents.byo.dns.address.nonpublic.only = this name points at { $addresses }, which isn't on the internet. remove that record. Claude won't connect to a name that has one.
+
+journal.window.agents.byo.dns.address.nonpublic.only.unknown = this name points at an address, which isn't on the internet. remove that record. Claude won't connect to a name that has one.
+
+journal.window.agents.byo.dns.caa.applies.to.domain = the CAA record that applies to{ $slot1 }{ $domain }{ $slot2 }doesn't match the one shown here. add the record shown here at{ $slot3 }{ $domain }{ $slot4 }itself, not at the domain above it, and remove any other CAA record at{ $slot5 }{ $domain }. if it's already there, copy it again.
+
+journal.window.agents.byo.host.agent.address = agents anywhere can reach your journal at { $agent_endpoint }.
+
+journal.window.agents.byo.host.enabling = turning on { $domain }
+
+journal.window.agents.byo.host.ready = { $domain } is ready.
+
+journal.window.agents.byo.relay.unreachable.address = your journal can't reach your server at { $server_address }. check the address, and that your server accepts SSH.
+
+journal.window.agents.byo.relay.unreachable.unknown = your journal can't reach your server at that address. check the address, and that your server accepts SSH.
+
+journal.window.agents.connection.activity.detail.complete = { $quantity ->
+        [one] { $count } request this week.
+       *[other] { $count } requests this week.
+    }
+
+journal.window.agents.connection.activity.detail.complete.last = { $quantity ->
+        [one] { $count } request this week; last { $last_request }.
+       *[other] { $count } requests this week; last { $last_request }.
+    }
+
+journal.window.agents.connection.activity.detail.partial = { $quantity ->
+        [one] at least { $count } request this week.
+       *[other] at least { $count } requests this week.
+    }
+
+journal.window.agents.connection.activity.detail.partial.last = { $quantity ->
+        [one] at least { $count } request this week; latest found { $last_request }.
+       *[other] at least { $count } requests this week; latest found { $last_request }.
+    }
+
+journal.window.agents.connection.activity.key.complete = { $quantity ->
+        [one] a key you created · { $count } request this week
+       *[other] a key you created · { $count } requests this week
+    }
+
+journal.window.agents.connection.activity.key.complete.last = { $quantity ->
+        [one] a key you created · { $count } request this week · last { $last_request }
+       *[other] a key you created · { $count } requests this week · last { $last_request }
+    }
+
+journal.window.agents.connection.activity.key.partial = { $quantity ->
+        [one] a key you created · at least { $count } request this week
+       *[other] a key you created · at least { $count } requests this week
+    }
+
+journal.window.agents.connection.activity.key.partial.last = { $quantity ->
+        [one] a key you created · at least { $count } request this week · latest found { $last_request }
+       *[other] a key you created · at least { $count } requests this week · latest found { $last_request }
+    }
+
+journal.window.agents.connection.activity.row.complete = { $quantity ->
+        [one] { $count } request this week
+       *[other] { $count } requests this week
+    }
+
+journal.window.agents.connection.activity.row.complete.last = { $quantity ->
+        [one] { $count } request this week · last { $last_request }
+       *[other] { $count } requests this week · last { $last_request }
+    }
+
+journal.window.agents.connection.activity.row.partial = { $quantity ->
+        [one] at least { $count } request this week
+       *[other] at least { $count } requests this week
+    }
+
+journal.window.agents.connection.activity.row.partial.last = { $quantity ->
+        [one] at least { $count } request this week · latest found { $last_request }
+       *[other] at least { $count } requests this week · latest found { $last_request }
+    }
+
+journal.window.agents.connection.again.action = connect { $agent_name } again
+
+journal.window.agents.connection.again.instructions = set { $agent_name } up again, or moved it to another device? connect it again from here and it stays this agent, with its memories and what it may see. the one connected now stops working once the new one connects.
+
+journal.window.agents.connection.agents.on.this.device.and.through = agents on this device, and through solstone.me, keep working.
+
+journal.window.agents.connection.agents.on.this.device.keep.working = agents on this device keep working.
+
+journal.window.agents.connection.agents.through.solstone.me.keep.working = agents through solstone.me keep working.
+
+journal.window.agents.connection.disconnect.agent.confirmation = disconnect this agent? what it already read stays with it. its activity and its memories stay in your journal.
+
+journal.window.agents.connection.former.heading = { $agent_name } was disconnected.
+
+journal.window.agents.connection.memory.again.instructions = connect { $agent_name } again from here and it can recall these memories. choose what it may see when you connect.
+
+journal.window.agents.connection.pause.attempts.detail = { $quantity ->
+        [one] it has tried once since then, most recently { $attempted_at }.
+       *[other] it has tried { $count } times since then, most recently { $attempted_at }.
+    }
+
+journal.window.agents.connection.pause.attempts.summary = { $quantity ->
+        [one] tried once since, latest { $attempted_at }
+       *[other] tried { $count } times since, latest { $attempted_at }
+    }
+
+journal.window.agents.connection.pause.description = { $agent_name } stays connected, with its memories and what it may see, but it can't read your journal or use its memories until you resume it.
+
+journal.window.agents.connection.pause.named = pause { $agent_name }
+
+journal.window.agents.connection.paused.disconnect.instead = if you haven't been using { $agent_name }, disconnect it rather than resuming it.
+
+journal.window.agents.connection.permissions.change = { $agent_name } sees the change the next time it asks for anything; requests already in flight finish under the old choice.
+
+journal.window.agents.connection.permissions.heading = what { $agent_name } may see
+
+journal.window.agents.connection.permissions.revoked = { $agent_name } loses access on its next request. what it already read stays with it. its activity and its memories stay in your journal.
+
+journal.window.agents.connection.replay.disconnected = your journal disconnected { $agent_name } on { $connection_route } because the token it uses to stay connected was used twice. connect it again with a new pairing code.
+
+journal.window.agents.connection.request.more.count = { $quantity ->
+        [one] and { $count } more.
+       *[other] and { $count } more.
+    }
+
+journal.window.agents.connection.request.tool = used { $tool_name }
+
+journal.window.agents.connection.request.waiting = nothing yet. ask { $agent_name } something it can find in your journal, and each request shows up here as it arrives.
+
+journal.window.agents.connection.resume.named = resume { $agent_name }
+
+journal.window.agents.connection.revoke.key.confirmation = revoke this key? what it already read stays with it. its activity and its memories stay in your journal.
+
+journal.window.agents.connection.route = { $route ->
+        [local] it connects on the device running your journal.
+        [lan] it connects on your network.
+        [relay] it connects through solstone.me.
+        [byo] it connects through your own domain.
+       *[other] it connects .
+    }
+
+journal.window.agents.connection.solstone.me.address.returned = your solstone.me address { $address } came back to this journal on { $returned_at }. if that wasn't you, tell support in the services portal. if an agent can't reach your journal, connect it again with a new pairing code.
+
+journal.window.agents.connection.status.accessible.name = { $agent_name } is connected
+
+journal.window.agents.connection.status.again.heading = { $agent_name } is connected again.
+
+journal.window.agents.connection.status.again.heading.with.key = { $agent_name }{ $agent_key } is connected again.
+
+journal.window.agents.connection.status.heading = { $agent_name } is connected.
+
+journal.window.agents.connection.the.ones.you.connected.this.way = the ones you connected this way are kept, with what each may see, for when you turn this back on.
+
+journal.window.agents.connection.to.bring.it.back.with.its = to bring it back with its memories, connect it again from earlier agents.
+
+journal.window.agents.connection.unreadable.support = your journal can't read its agent settings, so no agent can use your journal until it can. your connected agents and what each may see don't change. try again in a moment, and if it keeps happening, { $support_link }.
+
+journal.window.agents.lane.local.addresses.closed = your journal's addresses on your network aren't open right now.
+
+journal.window.agents.lane.local.also.reachable = agents on your network can reach your journal too.
+
+journal.window.agents.lane.local.reaches.directly = agents on this device reach your journal directly.
+
+journal.window.agents.lane.local.reaches.directly.default = the default.
+
+journal.window.agents.local.address.taken = on, but something else has the address
+
+journal.window.agents.local.addresses.one.taken = on, but something else has one of your journal's addresses
+
+journal.window.agents.local.taken.address.warning = something else on this device is using { $address }. an agent that uses that address reaches whatever is there, not your journal. that may be a journal under another login on this device, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through { $address }, and close any that is open.
+
+journal.window.agents.local.taken.addresses.warning = { $quantity ->
+        [one] something else on this device is using this address. an agent that uses one reaches whatever is there, not your journal. that may be a journal under another login on this device, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through { $addresses }. if one is open, close it.
+       *[other] something else on this device is using these addresses. an agent that uses one reaches whatever is there, not your journal. that may be a journal under another login on this device, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through { $addresses }. if one is open, close it.
+    }
+
+journal.window.agents.memories.agent.heading = { $agent_name }'s memories
+
+journal.window.agents.memories.empty.key = no memories in your journal from this key.
+
+journal.window.agents.memories.empty.pairing = no memories in your journal from this pairing.
+
+journal.window.agents.memory.agent.disconnected.lead = { $agent_name } is no longer connected. its memories stay in your journal until you delete them. your journal doesn't check them.
+
+journal.window.agents.memory.agent.disconnected.lead.marked = { $agent_name }{ $agent_key } is no longer connected. its memories stay in your journal until you delete them. your journal doesn't check them.
+
+journal.window.agents.memory.agent.saved.lead = what { $agent_name } saved, in its own words. your journal keeps these as written and doesn't check them.
+
+journal.window.agents.memory.disconnected.count = { $quantity ->
+        [one] no longer connected · { $count } memory
+       *[other] no longer connected · { $count } memories
+    }
+
+journal.window.agents.memory.disconnected.count.latest = { $quantity ->
+        [one] no longer connected · { $count } memory · latest { $day }
+       *[other] no longer connected · { $count } memories · latest { $day }
+    }
+
+journal.window.agents.memory.label.count = { $quantity ->
+        [one] 1 memory
+       *[other] { $count } memories
+    }
+
+journal.window.agents.memory.recall.count = { $quantity ->
+        [one] it can recall its 1 memory.
+       *[other] it can recall its { $count } memories.
+    }
+
+journal.window.agents.memory.receipt.erase.day = erases { $erase_day } unless you recover it.
+
+journal.window.agents.memory.receipt.erase.failed = couldn't erase that memory
+
+journal.window.agents.memory.receipt.erased = memory erased from your journal
+
+journal.window.agents.memory.receipt.recovered = memory recovered
+
+journal.window.agents.memory.receipt.recovery.failed = couldn't recover that memory
+
+journal.window.agents.memory.see.all.count = { $quantity ->
+        [one] see all { $count }
+       *[other] see all { $count }
+    }
+
+journal.window.agents.move.byo.connect.named = connect { $agent_name } at your domain
+
+journal.window.agents.move.byo.relay.agents.count = { $quantity ->
+        [one] you also have solstone.me on. { $agents } agent connects through it: { $agent_names }.
+       *[other] you also have solstone.me on. { $agents } agents connect through it: { $agent_names }.
+    }
+
+journal.window.agents.network.certificate.agent.variables = when starting Claude Code, set { $claude_variable } to that file. for Codex CLI, set { $codex_variable } to it. keep TLS verification on. use these settings only for the agent that needs this address: it will trust any certificate your journal's CA signs. these settings do not make your browser trust the CA. if this device's network address changes, use its new address; the same CA signs its new certificate.
+
+journal.window.agents.pair.again.check.agent = enter the code on that page, check it names { $agent_name }, and connect.
+
+journal.window.agents.pair.again.check.agent.mark = enter the code on that page, check it names { $agent_name }{ $agent_key }, and connect.
+
+journal.window.agents.pair.again.heading = connect { $agent_name } again
+
+journal.window.agents.pair.again.heading.marked = connect { $agent_name }{ $agent_key } again
+
+journal.window.agents.pair.again.keeps.memories = it keeps its memories.
+
+journal.window.agents.pair.again.replaces.current = it keeps its memories and what it may see. the one connected now stops working once this one connects.
+
+journal.window.agents.pair.chatgpt.add.server = on chatgpt.com, open { $plugins_start }Plugins{ $plugins_end }, choose { $add_start }Add{ $add_end } › { $custom_server_start }Add custom MCP server{ $custom_server_end }, paste the address, choose { $authorization_start }OAuth{ $authorization_end }, then { $create_plugin_start }Create as a plugin{ $create_plugin_end }.
+
+journal.window.agents.pair.chatgpt.availability = it then works in your chats, and in a dot if you use one. an MCP server added in ChatGPT's desktop app settings works only in Codex.
+
+journal.window.agents.pair.claude.code.configure = run { $command } { $copy_button } then, in Claude Code, type { $menu_command }, choose { $server } and authenticate.
+
+journal.window.agents.pair.code.expiry.clock = works once. expires at { $expiry_time }.
+
+journal.window.agents.pair.code.scope.private.link = this code works only through solstone.me.
+
+journal.window.agents.pair.code.scope.this.device = this code works only for an agent on the device running your journal.
+
+journal.window.agents.pair.code.scope.your.domain = this code works only at your own domain.
+
+journal.window.agents.pair.code.scope.your.network = this code works only for an agent on your network.
+
+journal.window.agents.pair.codex.configure = run { $command } { $copy_button } then { $login_command } { $copy_login_button }
+
+journal.window.agents.pair.gemini.cli.configure = run { $command } { $copy_button } then, in Gemini CLI, type { $login_command }.
+
+journal.window.agents.pair.grok.build.configure = run { $command } { $copy_button } then, in Grok Build, type { $menu_command }, choose { $server } and press { $login_key } to authenticate.
+
+journal.window.agents.pair.open.code.for.route = { $route ->
+        [local] the open code is for the device running your journal. make a new one for this agent. it replaces the open one.
+        [relay] the open code is for solstone.me. make a new one for this agent. it replaces the open one.
+        [lan] the open code is for your network. make a new one for this agent. it replaces the open one.
+        [byo] the open code is for your domain. make a new one for this agent. it replaces the open one.
+       *[other] the open code is for another address. make a new one for this agent. it replaces the open one.
+    }
+
+journal.window.agents.pair.tiles.authenticate = with the solstone plugin installed, Tiles already has the address. in the Tiles chat, type { $command } { $copy_button }
+
+journal.window.agents.paused.by.idle.details = { $agent_name }{ $slot1 }paused on{ $slot2 }{ $pause_day }{ $slot3 }because it went 30 days without using your journal.
+
+journal.window.agents.paused.by.owner.details = you paused{ $slot1 }{ $agent_name }{ $slot2 }on{ $slot3 }{ $pause_day }.
+
+journal.window.agents.permission.whole.journal.categories = { $categories }{ $slot1 }across your whole journal
+
+journal.window.agents.status.next.check.at = next check: { $check_time }.
+
+journal.window.agents.suggestions.agent.disabled = { $agent_name }{ $slot1 }is told suggestions are off. the ones already waiting stay for you to review.
+
+journal.window.agents.suggestions.agent.enabled = { $agent_name }{ $slot1 }can suggest a fix when something in your journal is wrong. nothing changes until you accept it.
+
+journal.window.agents.suggestions.waiting.count = { $quantity ->
+        [one] 1 suggestion from { $agent_name } is waiting
+       *[other] { $count } suggestions from { $agent_name } are waiting
+    }
+
+journal.window.body.day.nearby.with.data = nearby days with data: { $nearby_days }
+
+journal.window.body.empty.workouts.import = nothing here yet. bring in your workouts from a Strava download on the { $import_link_start }import page{ $import_link_end }.
+
+journal.window.body.empty.workouts.import.resources = if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer's command line. { $docs_link_start }read about body imports{ $docs_link_end }.
+
+journal.window.body.hide.data.from.day = hide body data from { $day }
+
+journal.window.body.hide.data.receipt = body data from { $day } is hidden.
+
+journal.window.body.hide.previous.day.carryover = the rest of a night or workout from { $hidden_day_link }, a day you hid, is hidden here too.
+
+journal.window.body.workout.delete.name = delete { $workout_name }
+
+journal.window.body.workout.strava.additional.count = { $quantity ->
+        [one] more from Strava · { $count }
+       *[other] more from Strava · { $count }
+    }
+
+journal.window.body.workout.strava.figures = Strava's figures: { $figures }
+
+journal.window.body.workout.trash.recovers.until.day = erases { $erase_day } unless you recover it.
+
 journal.window.chrome.console.action.clear = clear
 
 journal.window.chrome.console.action.close = close
@@ -21,8 +352,6 @@ journal.window.chrome.console.heading = system messages
 journal.window.chrome.console.link.label = system messages
 
 journal.window.chrome.console.reporting.off = sending reports is off.
-
-journal.window.chrome.console.snapshot.heading = snapshot of { $count } system messages
 
 journal.window.chrome.console.summary.load.failed = couldn't load part of this page.
 
@@ -74,7 +403,718 @@ journal.window.chrome.still.working = still working…
 
 journal.window.chrome.unknown.error = something went wrong. reload to try again.
 
+journal.window.chrome.view.document.title = { $view ->
+        [agents] agents - journal
+        [activities] activities - journal
+        [backup] backup - journal
+        [body] body - journal
+        [curation] suggestions - journal
+        [entities] entities - journal
+        [health] health - journal
+        [home] home - journal
+        [import] import - journal
+        [map] map - journal
+        [more] more - journal
+        [network] network - journal
+        [search] search - journal
+        [settings] settings - journal
+        [sources] sources - journal
+        [speakers] speakers - journal
+        [stats] stats - journal
+        [support] support - journal
+        [thinking] thinking - journal
+        [transcripts] transcripts - journal
+        [year] year - journal
+       *[other] { $fallback_label } - journal
+    }
+
 journal.window.chrome.zone.time = { $label } time
+
+journal.window.entities.aliases.other.names = also known as: { $aliases }
+
+journal.window.entities.connections.calendar.last.day = { $day }
+
+journal.window.entities.connections.evidence.show.more = { $shown_quantity ->
+        [one] showing { $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. show more
+       *[other] showing { $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. show more
+    }
+
+journal.window.entities.connections.row.attendance = { $total_quantity ->
+        [one] 1 event together · { $day }
+       *[other] { $total } events together · { $day }
+    }
+
+journal.window.entities.connections.row.direct = { $total_quantity ->
+        [one] 1 moment · { $day }
+       *[other] { $total } moments · { $day }
+    }
+
+journal.window.entities.connections.summary = { $direct_quantity ->
+        [one] { $direct } with direct evidence · { $shared_quantity ->
+        [one] { $shared }
+       *[other] { $shared }
+    } from shared events only
+       *[other] { $direct } with direct evidence · { $shared_quantity ->
+        [one] { $shared }
+       *[other] { $shared }
+    } from shared events only
+    }
+
+journal.window.entities.connections.summary.with.calendar = { $direct_quantity ->
+        [one] { $direct } with direct evidence · { $shared_quantity ->
+        [one] { $shared }
+       *[other] { $shared }
+    } from shared events only · { $calendar_quantity ->
+        [one] { $calendar }
+       *[other] { $calendar }
+    } from your calendar only
+       *[other] { $direct } with direct evidence · { $shared_quantity ->
+        [one] { $shared }
+       *[other] { $shared }
+    } from shared events only · { $calendar_quantity ->
+        [one] { $calendar }
+       *[other] { $calendar }
+    } from your calendar only
+    }
+
+journal.window.entities.connections.you.calendar.latest = on your calendar only · latest { $day }
+
+journal.window.entities.connections.you.latest.attended.with = { $moments_quantity ->
+        [one] 1 moment together · latest events ({ $day })
+       *[other] { $moments } moments together · latest events ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.co.present = { $moments_quantity ->
+        [one] 1 moment together · latest around together ({ $day })
+       *[other] { $moments } moments together · latest around together ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.created = { $moments_quantity ->
+        [one] 1 moment together · latest created ({ $day })
+       *[other] { $moments } moments together · latest created ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.fallback = { $moments_quantity ->
+        [one] 1 moment together · latest { $evidence_name } ({ $day })
+       *[other] { $moments } moments together · latest { $evidence_name } ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.family.of = { $moments_quantity ->
+        [one] 1 moment together · latest family ({ $day })
+       *[other] { $moments } moments together · latest family ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.knows = { $moments_quantity ->
+        [one] 1 moment together · latest knows ({ $day })
+       *[other] { $moments } moments together · latest knows ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.mentioned = { $moments_quantity ->
+        [one] 1 moment together · latest mentioned ({ $day })
+       *[other] { $moments } moments together · latest mentioned ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.messaged.with = { $moments_quantity ->
+        [one] 1 moment together · latest messaged ({ $day })
+       *[other] { $moments } moments together · latest messaged ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.other = { $moments_quantity ->
+        [one] 1 moment together · latest related ({ $day })
+       *[other] { $moments } moments together · latest related ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.party.of = { $moments_quantity ->
+        [one] 1 moment together · latest party to ({ $day })
+       *[other] { $moments } moments together · latest party to ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.reports.to = { $moments_quantity ->
+        [one] 1 moment together · latest reports to ({ $day })
+       *[other] { $moments } moments together · latest reports to ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.scheduled.with = { $moments_quantity ->
+        [one] 1 moment together · latest scheduled ({ $day })
+       *[other] { $moments } moments together · latest scheduled ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.spoke.with = { $moments_quantity ->
+        [one] 1 moment together · latest spoke ({ $day })
+       *[other] { $moments } moments together · latest spoke ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.uses = { $moments_quantity ->
+        [one] 1 moment together · latest uses ({ $day })
+       *[other] { $moments } moments together · latest uses ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.works.at = { $moments_quantity ->
+        [one] 1 moment together · latest works at ({ $day })
+       *[other] { $moments } moments together · latest works at ({ $day })
+    }
+
+journal.window.entities.connections.you.latest.works.with = { $moments_quantity ->
+        [one] 1 moment together · latest works with ({ $day })
+       *[other] { $moments } moments together · latest works with ({ $day })
+    }
+
+journal.window.entities.delete.couldn.t.erase.that = couldn't erase that entity
+
+journal.window.entities.delete.couldn.t.recover.that = couldn't recover that entity
+
+journal.window.entities.delete.erased.from.your.journal = { $total_quantity ->
+        [one] erased { $total } entities from your journal
+       *[other] erased { $total } entities from your journal
+    }
+
+journal.window.entities.delete.erased.of = { $processed_quantity ->
+        [one] erased { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] erased { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.delete.erases.unless.you.recover.it = erases { $erase_day } unless you recover it.
+
+journal.window.entities.delete.facet.many.its.place.and.notes.in = { $facets_quantity ->
+        [one] its place and notes in { $facets } facets
+       *[other] its place and notes in { $facets } facets
+    }
+
+journal.window.entities.delete.gone.more.many.more.are.no.longer.listed = { $gone_quantity ->
+        [one] { $gone } more is no longer listed.
+       *[other] { $gone } more are no longer listed.
+    }
+
+journal.window.entities.delete.many.delete.entities = { $total_quantity ->
+        [one] delete { $total } entities?
+       *[other] delete { $total } entities?
+    }
+
+journal.window.entities.delete.many.erase.entities.now = { $total_quantity ->
+        [one] erase { $total } entities now?
+       *[other] erase { $total } entities now?
+    }
+
+journal.window.entities.delete.marked.many.couldn.t.be.moved.and = { $remaining_quantity ->
+        [one] { $remaining } couldn't be moved and is marked below.
+       *[other] { $remaining } couldn't be moved and are marked below.
+    }
+
+journal.window.entities.delete.more.and.more = { $more_quantity ->
+        [one] and { $more } more
+       *[other] and { $more } more
+    }
+
+journal.window.entities.delete.moved.of.to.the = { $processed_quantity ->
+        [one] moved { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } to the trash
+       *[other] moved { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } to the trash
+    }
+
+journal.window.entities.delete.moved.to.the.trash = { $total_quantity ->
+        [one] moved { $total } entities to the trash
+       *[other] moved { $total } entities to the trash
+    }
+
+journal.window.entities.delete.none.still.many.are.still.in.your.journal = { $remaining_quantity ->
+        [one] { $remaining } is still in your journal, marked below.
+       *[other] { $remaining } are still in your journal, marked below.
+    }
+
+journal.window.entities.delete.noun.erased.from.your.journal = entity erased from your journal
+
+journal.window.entities.delete.pick.label.select.name = select { $entity_name }
+
+journal.window.entities.delete.recovered.count = { $total_quantity ->
+        [one] { $total } entities recovered
+       *[other] { $total } entities recovered
+    }
+
+journal.window.entities.delete.recovered.of = { $processed_quantity ->
+        [one] recovered { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] recovered { $processed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.delete.recovered.one = entity recovered
+
+journal.window.entities.delete.selected.selected = { $selected_quantity ->
+        [one] { $selected } selected
+       *[other] { $selected } selected
+    }
+
+journal.window.entities.delete.still.many.couldn.t.be.moved.and = { $remaining_quantity ->
+        [one] { $remaining } couldn't be moved and is still in your journal, marked below.
+       *[other] { $remaining } couldn't be moved and are still in your journal, marked below.
+    }
+
+journal.window.entities.delete.they.erase.unless.you.recover = they erase { $erase_day } unless you recover them.
+
+journal.window.entities.detail.aliases.other.names = Also known as: { $aliases }
+
+journal.window.entities.detail.facets.count = { $facets_quantity ->
+        [one] 1 facet
+       *[other] { $facets } facets
+    }
+
+journal.window.entities.detail.id.description = this name looks like an ID.
+
+journal.window.entities.detail.last.mentioned.date = Last mentioned: { $day }
+
+journal.window.entities.detail.last.mentioned.full.day = Last mentioned: { $day }
+
+journal.window.entities.detected.hidden.heading = hidden in { $facet_name }
+
+journal.window.entities.detected.hidden.in.facet = { $hidden_quantity ->
+        [one] 1 name hidden in { $facet_name }
+       *[other] { $hidden } names hidden in { $facet_name }
+    }
+
+journal.window.entities.detected.hidden.last.detected = last detected { $day }
+
+journal.window.entities.detected.hidden.reappeared = { $entity_name } still matches { $matched_name }, a hidden entity.
+
+journal.window.entities.detected.hidden.reappeared.open = open { $matched_name }
+
+journal.window.entities.detected.hide.action = hide { $entity_name } in { $facet_name }
+
+journal.window.entities.detected.hide.done = { $entity_name } is hidden in { $facet_name }.
+
+journal.window.entities.detected.hide.failed = couldn't hide { $entity_name }. nothing changed.
+
+journal.window.entities.detected.page.range = { $total_quantity ->
+        [one] showing { $first }–{ $last } of { $total } detected entities
+       *[other] showing { $first }–{ $last } of { $total } detected entities
+    }
+
+journal.window.entities.detected.unhide.failed = couldn't unhide { $entity_name }. nothing changed.
+
+journal.window.entities.examples.first.and.second = e.g. { $first_name } and { $second_name }
+
+journal.window.entities.examples.names = e.g. { $names }
+
+journal.window.entities.faces.chosen.alt = { $entity_name }'s profile pic
+
+journal.window.entities.faces.confirmed.lede = you chose this profile pic for { $entity_name }.
+
+journal.window.entities.faces.dismissed.lede = you chose no profile pic for { $entity_name }. if other faces that might be { $entity_name } turn up, they may show here.
+
+journal.window.entities.faces.done.chosen = profile pic saved for { $entity_name }.
+
+journal.window.entities.faces.done.dismissed = no profile pic for { $entity_name }.
+
+journal.window.entities.faces.done.rejected = ok, that one isn't { $entity_name }.
+
+journal.window.entities.faces.face.alt = a face from a meeting on { $day } that might be { $entity_name }
+
+journal.window.entities.faces.facet.hint = choose a profile pic for { $entity_name }
+
+journal.window.entities.faces.from.day = from a meeting on { $day }
+
+journal.window.entities.faces.not.them = not { $entity_name }
+
+journal.window.entities.faces.possible.lede = these faces from your meetings might be { $entity_name }. none is used until you pick one.
+
+journal.window.entities.faces.possible.title = choose a profile pic for { $entity_name }
+
+journal.window.entities.faces.suggested.title = is this { $entity_name }?
+
+journal.window.entities.faces.unconfirmed.alt = a face from a meeting that might be { $entity_name }, not confirmed
+
+journal.window.entities.facet.detach.confirm = detach { $entity_name } from { $facet_name }? stays in your journal and you can re-attach it anytime.
+
+journal.window.entities.facet.detach.done = detached from { $facet_name }. { $entity_name } is still in your journal.
+
+journal.window.entities.facet.empty.heading = nothing in { $facet_name } yet.
+
+journal.window.entities.facet.membership.list = in { $leading_facets } and { $final_facet }
+
+journal.window.entities.facet.membership.single = in { $facet_name }
+
+journal.window.entities.hide.already.absent.count = { $existing_quantity ->
+        [one] 1 was already hidden or gone.
+       *[other] { $existing } were already hidden or gone.
+    }
+
+journal.window.entities.hide.done.count = { $hidden_quantity ->
+        [one] hid 1 entity.
+       *[other] hid { $hidden } entities.
+    }
+
+journal.window.entities.hide.partial = { $remaining_quantity ->
+        [one] hid { $hidden_quantity ->
+        [one] { $hidden }
+       *[other] { $hidden }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. the rest wasn't hidden.
+       *[other] hid { $hidden_quantity ->
+        [one] { $hidden }
+       *[other] { $hidden }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. the rest weren't hidden.
+    }
+
+journal.window.entities.hide.paused.reason = hiding is paused: { $record_detail }.
+
+journal.window.entities.hide.progress = { $done_quantity ->
+        [one] hiding… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] hiding… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.hide.record.error = couldn't hide them: a record in your journal can't be read ({ $record_detail }).
+
+journal.window.entities.hide.selection.count = { $selected_quantity ->
+        [one] hide { $selected }
+       *[other] hide { $selected }
+    }
+
+journal.window.entities.hide.selection.progress = { $done_quantity ->
+        [one] hiding… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] hiding… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.hide.undo.done = { $restored_quantity ->
+        [one] put back 1 entity.
+       *[other] put back { $restored } entities.
+    }
+
+journal.window.entities.hide.undo.partial = { $failed_quantity ->
+        [one] put back { $restored_quantity ->
+        [one] { $restored }
+       *[other] { $restored }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. 1 couldn't be put back; it's still under hidden.
+       *[other] put back { $restored_quantity ->
+        [one] { $restored }
+       *[other] { $restored }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. { $failed } couldn't be put back; they're still under hidden.
+    }
+
+journal.window.entities.hide.undo.progress = { $restored_quantity ->
+        [one] putting back… { $restored } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] putting back… { $restored } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.hide.undo.records.missing.one.entity = { $records_quantity ->
+        [one] it may have come back without all its facets: a record in your journal can't be read ({ $paths }).
+       *[other] it may have come back without all its facets: { $records } records in your journal can't be read ({ $paths }).
+    }
+
+journal.window.entities.hide.undo.records.missing.several.entities = { $records_quantity ->
+        [one] some may have come back without all their facets: a record in your journal can't be read ({ $paths }).
+       *[other] some may have come back without all their facets: { $records } records in your journal can't be read ({ $paths }).
+    }
+
+journal.window.entities.hide.undo.stopped = { $restored_quantity ->
+        [one] undo stopped after putting back { $restored } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. the rest are still under hidden.
+       *[other] undo stopped after putting back { $restored } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }. the rest are still under hidden.
+    }
+
+journal.window.entities.list.heading.facet = entities in { $facet_name }
+
+journal.window.entities.list.last.mentioned.short.day = last mentioned { $day }
+
+journal.window.entities.list.page.range = { $first }–{ $last } of { $total }
+
+journal.window.entities.list.results.count = { $matched_quantity ->
+        [one] { $matched } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } entities
+       *[other] { $matched } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } entities
+    }
+
+journal.window.entities.list.select.all.count = { $total_quantity ->
+        [one] select all { $total }
+       *[other] select all { $total }
+    }
+
+journal.window.entities.list.selected.count = { $selected_quantity ->
+        [one] { $selected } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } ticked
+       *[other] { $selected } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } ticked
+    }
+
+journal.window.entities.merge.confirm.selection = { $selected_quantity ->
+        [one] merge { $selected }
+       *[other] merge { $selected }
+    }
+
+journal.window.entities.merge.keep.done = { $total_quantity ->
+        [one] kept 1 pair separate.
+       *[other] kept { $total } pairs separate.
+    }
+
+journal.window.entities.merge.keep.partial = { $failed_quantity ->
+        [one] kept { $processed_quantity ->
+        [one] { $processed }
+       *[other] { $processed }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } pairs separate. 1 is still listed.
+       *[other] kept { $processed_quantity ->
+        [one] { $processed }
+       *[other] { $processed }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } pairs separate. { $failed } are still listed.
+    }
+
+journal.window.entities.merge.keep.selection = { $selected_quantity ->
+        [one] keep { $selected } separate
+       *[other] keep { $selected } separate
+    }
+
+journal.window.entities.merge.merge.done = { $total_quantity ->
+        [one] merged 1 pair.
+       *[other] merged { $total } pairs.
+    }
+
+journal.window.entities.merge.merge.partial = { $failed_quantity ->
+        [one] merged { $processed_quantity ->
+        [one] { $processed }
+       *[other] { $processed }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } pairs. 1 couldn't be merged.
+       *[other] merged { $processed_quantity ->
+        [one] { $processed }
+       *[other] { $processed }
+    } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } pairs. { $failed } couldn't be merged.
+    }
+
+journal.window.entities.merge.others.leave.list = { $pairs_quantity ->
+        [one] { $pairs } more pairs leave the list without merging: each includes an entity merged away above.
+       *[other] { $pairs } more pairs leave the list without merging: each includes an entity merged away above.
+    }
+
+journal.window.entities.merge.pair.confirm.aria = { $pairs_quantity ->
+        [one] merge 1 pair?
+       *[other] merge { $pairs } pairs?
+    }
+
+journal.window.entities.merge.pair.confirm.heading = { $pairs_quantity ->
+        [one] merge 1 pair?
+       *[other] merge { $pairs } pairs?
+    }
+
+journal.window.entities.merge.preview.direction = { $source_name } merges into { $target_name }
+
+journal.window.entities.merge.progress = { $done_quantity ->
+        [one] merging… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] merging… { $done } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.entities.merge.progress.initial = { $total_quantity ->
+        [one] merging… 0 of { $total }
+       *[other] merging… 0 of { $total }
+    }
+
+journal.window.entities.observation.coverage = { $observations_quantity ->
+        [one] { $observations } observation across { $days_quantity ->
+        [one] { $days } day
+       *[other] { $days } days
+    }
+       *[other] { $observations } observations across { $days_quantity ->
+        [one] { $days } day
+       *[other] { $days } days
+    }
+    }
+
+journal.window.entities.observation.disclosure = { $visible_quantity ->
+        [one] showing the { $visible } most recent of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } moments
+       *[other] showing the { $visible } most recent of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } moments
+    }
+
+journal.window.entities.observation.grid.count = { $quantity ->
+        [one] 1 moment
+       *[other] { $count } moments
+    }
+
+journal.window.entities.observation.latest.day = most recent day: { $day }
+
+journal.window.entities.observation.none.with.entity = nothing with { $entity_name } yet.
+
+journal.window.entities.observation.range = { $start_day } – { $end_day }
+
+journal.window.entities.observation.show.all = { $observations_quantity ->
+        [one] show all { $observations } observation
+       *[other] show all { $observations } observations
+    }
+
+journal.window.entities.search.finding.names = finding entities matching "{ $query }"…
+
+journal.window.entities.search.finding.type = finding { $entity_type } entities…
+
+journal.window.entities.search.finding.type.and.names = finding { $entity_type } entities matching "{ $query }"…
+
+journal.window.entities.search.none.match = no entities match "{ $query }".
+
+journal.window.entities.search.placeholder.entity.count = { $total_quantity ->
+        [one] search { $total } entities
+       *[other] search { $total } entities
+    }
+
+journal.window.entities.tidy.group.load.error = couldn't load this group.
+
+journal.window.entities.tidy.records.unreadable = { $records_quantity ->
+        [one] a record in your journal can't be read ({ $paths })
+       *[other] { $records } records in your journal can't be read ({ $paths })
+    }
+
+journal.window.entities.tooltip.entity.type = type: { $entity_type }
+
+journal.window.entities.tooltip.facet.name = facet: { $facet_name }
+
+journal.window.entities.tooltip.last.mentioned.full.day = Last mentioned: { $day }
+
+journal.window.entities.tooltip.last.mentioned.short.day = last mentioned { $day }
+
+journal.window.entities.tooltip.mention.days = { $mentions_quantity ->
+        [one] { $mentions } mention: days detected in the last 30 days
+       *[other] { $mentions } mentions: days detected in the last 30 days
+    }
+
+journal.window.entities.tooltip.view.in.facet = Click to view in { $facet_name }
+
+journal.window.entities.trust.history.change = { $previous_identity } → { $updated_identity }
+
+journal.window.entities.trust.history.event = { $event_kind } · { $event_time } · { $entity_name }
+
+journal.window.entities.trust.history.suggested.by = suggested by { $agent_name }
+
+journal.window.entities.trust.identity.details = { $entity_name } · { $entity_type } · aka: { $aliases }
+
+journal.window.entities.trust.merge.confirm = merge { $source_name } into { $target_name }? a merge can't be undone.
+
+journal.window.entities.trust.merge.preview.counts = { $voice_samples_quantity ->
+        [one] voice samples added: { $voice_samples } · samples after merge: { $voice_total_quantity ->
+        [one] { $voice_total }
+       *[other] { $voice_total }
+    } · notes under the name being merged: { $notes_quantity ->
+        [one] { $notes }
+       *[other] { $notes }
+    } · speaker labels changed: { $speaker_labels_quantity ->
+        [one] { $speaker_labels }
+       *[other] { $speaker_labels }
+    } · activity records changed: { $activities_quantity ->
+        [one] { $activities }
+       *[other] { $activities }
+    }
+       *[other] voice samples added: { $voice_samples } · samples after merge: { $voice_total_quantity ->
+        [one] { $voice_total }
+       *[other] { $voice_total }
+    } · notes under the name being merged: { $notes_quantity ->
+        [one] { $notes }
+       *[other] { $notes }
+    } · speaker labels changed: { $speaker_labels_quantity ->
+        [one] { $speaker_labels }
+       *[other] { $speaker_labels }
+    } · activity records changed: { $activities_quantity ->
+        [one] { $activities }
+       *[other] { $activities }
+    }
+    }
+
+journal.window.entities.trust.merge.preview.summary = { $aliases_quantity ->
+        [one] aliases added: { $aliases } · emails added: { $emails_quantity ->
+        [one] { $emails }
+       *[other] { $emails }
+    }
+       *[other] aliases added: { $aliases } · emails added: { $emails_quantity ->
+        [one] { $emails }
+       *[other] { $emails }
+    }
+    }
+
+journal.window.entities.trust.suggestion.details = { $source_name } → { $target_name } · { $facet_name }
+
+journal.window.entities.visible.text.detected.entities = detected entities
+
+journal.window.entities.voice.sample.sentence = sentence { $sentence_id }
+
+journal.window.handoff.spl.relay.rejected.with.status = the relay couldn't finish setting up your private network (error { $http_status }).
 
 journal.window.health.backlog.catching.up.day = { $day } is still catching up →
 
@@ -1203,6 +2243,136 @@ journal.window.home.week.intro.memories = { $quantity ->
 journal.window.home.week.navigation.next = { $week } →
 
 journal.window.home.week.navigation.previous = ← { $week }
+
+journal.window.local.access.instruction.other = open your journal from the journal app on a mac, or run { $open_command } in a terminal.
+
+journal.window.local.access.instruction.windows = if this journal is yours, open it from the journal app, or run { $open_command } in a terminal.
+
+journal.window.more.agents.count = { $quantity ->
+        [one] { $count } connected
+       *[other] { $count } connected
+    }
+
+journal.window.more.entities.count = { $quantity ->
+        [one] { $count } kept
+       *[other] { $count } kept
+    }
+
+journal.window.more.imports.count = { $quantity ->
+        [one] 1 import
+       *[other] { $count } imports
+    }
+
+journal.window.more.pin.action.pin = { $view ->
+        [agents] pin agents to the side rail
+        [activities] pin activities to the side rail
+        [backup] pin backup to the side rail
+        [body] pin body to the side rail
+        [curation] pin suggestions to the side rail
+        [entities] pin entities to the side rail
+        [health] pin health to the side rail
+        [home] pin home to the side rail
+        [import] pin import to the side rail
+        [map] pin map to the side rail
+        [more] pin more to the side rail
+        [network] pin network to the side rail
+        [search] pin search to the side rail
+        [settings] pin settings to the side rail
+        [sources] pin sources to the side rail
+        [speakers] pin speakers to the side rail
+        [stats] pin stats to the side rail
+        [support] pin support to the side rail
+        [thinking] pin thinking to the side rail
+        [transcripts] pin transcripts to the side rail
+        [year] pin year to the side rail
+       *[other] pin { $view_name } to the side rail
+    }
+
+journal.window.more.pin.action.unpin = { $view ->
+        [agents] unpin agents from the side rail
+        [activities] unpin activities from the side rail
+        [backup] unpin backup from the side rail
+        [body] unpin body from the side rail
+        [curation] unpin suggestions from the side rail
+        [entities] unpin entities from the side rail
+        [health] unpin health from the side rail
+        [home] unpin home from the side rail
+        [import] unpin import from the side rail
+        [map] unpin map from the side rail
+        [more] unpin more from the side rail
+        [network] unpin network from the side rail
+        [search] unpin search from the side rail
+        [settings] unpin settings from the side rail
+        [sources] unpin sources from the side rail
+        [speakers] unpin speakers from the side rail
+        [stats] unpin stats from the side rail
+        [support] unpin support from the side rail
+        [thinking] unpin thinking from the side rail
+        [transcripts] unpin transcripts from the side rail
+        [year] unpin year from the side rail
+       *[other] unpin { $view_name } from the side rail
+    }
+
+journal.window.more.review.count = { $quantity ->
+        [one] { $count } to review
+       *[other] { $count } to review
+    }
+
+journal.window.network.address.home.invalid.port = use the address your journal is reachable at, with port { $port }: either one on your own network, like 192.168.1.44:{ $port }, or a public address you've exported.
+
+journal.window.network.delivery.checkin.never = never
+
+journal.window.network.delivery.elapsed.day = { $quantity ->
+        [one] added { $count } day ago
+       *[other] added { $count } days ago
+    }
+
+journal.window.network.delivery.elapsed.hour = { $quantity ->
+        [one] added { $count } hour ago
+       *[other] added { $count } hours ago
+    }
+
+journal.window.network.delivery.elapsed.minute = { $quantity ->
+        [one] added { $count } minute ago
+       *[other] added { $count } minutes ago
+    }
+
+journal.window.network.delivery.elapsed.month = { $quantity ->
+        [one] added { $count } month ago
+       *[other] added { $count } months ago
+    }
+
+journal.window.network.delivery.elapsed.second = { $quantity ->
+        [one] added { $count } second ago
+       *[other] added { $count } seconds ago
+    }
+
+journal.window.network.delivery.elapsed.week = { $quantity ->
+        [one] added { $count } week ago
+       *[other] added { $count } weeks ago
+    }
+
+journal.window.network.device.forget.confirm = forget { $device_name }? it will need to pair again to add anything.
+
+journal.window.network.device.refusal.that.device.couldn.t.be.forgotten = that device couldn't be forgotten.
+
+journal.window.network.device.refusal.that.device.couldn.t.be.forgotten.variant2 = that device couldn't be forgotten. your journal may not be reachable.
+
+journal.window.network.device.refusal.that.device.couldn.t.be.removed = that device couldn't be removed. your journal may not be reachable.
+
+journal.window.network.pair.network.expiry = this device needs to be on your network (or your VPN) to pair. expires in { $remaining_time }.
+
+journal.window.network.pair.public.address.expiry = this pairing link uses your public address. expires in { $remaining_time }.
+
+journal.window.network.pair.relay.expiry = this link pairs through your private network, so the device can be anywhere. expires in { $remaining_time }.
+
+journal.window.network.pair.success.named.device = "{ $device_name }" can now reach your journal
+
+journal.window.network.pair.this.computer.expiry = this link works only for the solstone app on this computer. expires in { $remaining_time }.
+
+journal.window.network.unpair.named.device = unpair '{ $device_name }'?
+
+journal.window.network.unpair.unnamed.device = unpair 'this device'?
 
 journal.window.not.found.detail = The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
 
@@ -2600,6 +3770,265 @@ journal.window.settings.trash.selection.count = { $quantity ->
        *[other] { $selected } selected
     }
 
+journal.window.shared.api.request.failed.http = Request failed (HTTP{ $slot1 }{ $http_status })
+
+journal.window.shared.app.notice.background.task = { $app_name }{ $slot1 }background task
+
+journal.window.shared.console.link.message.count = { $quantity ->
+        [one] system messages ({ $count })
+       *[other] system messages ({ $count })
+    }
+
+journal.window.shared.console.link.unread.count = { $quantity ->
+        [one] system messages, { $count } unread
+       *[other] system messages, { $count } unread
+    }
+
+journal.window.shared.console.snapshot.message.count = { $quantity ->
+        [one] snapshot of { $count } system messages
+       *[other] snapshot of { $count } system messages
+    }
+
+journal.window.shared.date.format.duration.hour.and.minute.count = { $quantity ->
+        [one] { $hours } hr { $minutes_quantity ->
+        [one] { $minutes } min
+       *[other] { $minutes } min
+    }
+       *[other] { $hours } hr { $minutes_quantity ->
+        [one] { $minutes } min
+       *[other] { $minutes } min
+    }
+    }
+
+journal.window.shared.date.format.duration.hour.count = { $quantity ->
+        [one] { $hours } hr
+       *[other] { $hours } hr
+    }
+
+journal.window.shared.date.format.duration.minute.and.second.count = { $quantity ->
+        [one] { $minutes } min { $seconds_quantity ->
+        [one] { $seconds } sec
+       *[other] { $seconds } sec
+    }
+       *[other] { $minutes } min { $seconds_quantity ->
+        [one] { $seconds } sec
+       *[other] { $seconds } sec
+    }
+    }
+
+journal.window.shared.date.format.duration.minute.count = { $quantity ->
+        [one] { $minutes } min
+       *[other] { $minutes } min
+    }
+
+journal.window.shared.date.format.duration.second.count = { $quantity ->
+        [one] { $seconds } sec
+       *[other] { $seconds } sec
+    }
+
+journal.window.shared.date.format.imported.source.label = { $source_name }{ $slot1 }· imported
+
+journal.window.shared.date.nav.cell.date.and.count = { $day_label }, { $quantity_label }
+
+journal.window.shared.date.nav.index.failed.day.count = { $quantity ->
+        [one] couldn't count 1 day. still trying.
+       *[other] couldn't count { $count } days. still trying.
+    }
+
+journal.window.shared.date.nav.week.headline.month.day = week of{ $slot1 }{ $month }{ $slot2 }{ $day }
+
+journal.window.shared.date.nav.week.option.month.day = week of{ $slot1 }{ $month }{ $slot2 }{ $day }
+
+journal.window.shared.day.grid.calendar.year = { $year }{ $slot1 }calendar
+
+journal.window.shared.day.grid.cell.date.and.count = { $day_label }: { $quantity_label }
+
+journal.window.shared.day.grid.cell.date.and.pending.count = { $day_label }: { $quantity_label }, rollup pending
+
+journal.window.shared.day.grid.range.anchor = finishes the range from{ $slot1 }{ $start_day }
+
+journal.window.shared.day.grid.range.start = range starts{ $slot1 }{ $start_day }. pick the last day.
+
+journal.window.shared.gate.drawer.statement.median.required.seconds = median statement length { $observed }s, needs { $minimum }s
+
+journal.window.shared.gate.drawer.statement.median.seconds = median statement length { $observed }s
+
+journal.window.shared.gate.drawer.statement.median.unavailable = median statement length n/a
+
+journal.window.shared.gate.drawer.statement.median.unavailable.required.seconds = median statement length n/a, needs { $minimum }s
+
+journal.window.shared.gate.drawer.statements.observed.and.required.count = { $quantity ->
+        [one] { $observed } longer statements so far, needs { $minimum_quantity ->
+        [one] { $minimum }
+       *[other] { $minimum }
+    }
+       *[other] { $observed } longer statements so far, needs { $minimum_quantity ->
+        [one] { $minimum }
+       *[other] { $minimum }
+    }
+    }
+
+journal.window.shared.gate.drawer.statements.observed.count = { $quantity ->
+        [one] { $observed } longer statements so far
+       *[other] { $observed } longer statements so far
+    }
+
+journal.window.shared.report.error.journal.version = journal{ $slot1 }{ $version }
+
+journal.window.shared.status.pane.age.elapsed.day = { $quantity ->
+        [one] { $count } day ago
+       *[other] { $count } days ago
+    }
+
+journal.window.shared.status.pane.age.elapsed.hour = { $quantity ->
+        [one] { $count } hour ago
+       *[other] { $count } hours ago
+    }
+
+journal.window.shared.status.pane.age.elapsed.minute = { $quantity ->
+        [one] { $count } minute ago
+       *[other] { $count } minutes ago
+    }
+
+journal.window.shared.status.pane.age.elapsed.month = { $quantity ->
+        [one] { $count } month ago
+       *[other] { $count } months ago
+    }
+
+journal.window.shared.status.pane.age.elapsed.second = { $quantity ->
+        [one] { $count } second ago
+       *[other] { $count } seconds ago
+    }
+
+journal.window.shared.status.pane.age.elapsed.week = { $quantity ->
+        [one] { $count } week ago
+       *[other] { $count } weeks ago
+    }
+
+journal.window.shared.status.pane.capture.device.attention = { $device } needs attention
+
+journal.window.shared.status.pane.capture.last.reached.day = what it adds hasn't reached your journal since { $since_day }.
+
+journal.window.shared.status.pane.capture.more.need.attention = { $quantity ->
+        [one] and { $count } more need attention
+       *[other] and { $count } more need attention
+    }
+
+journal.window.shared.status.pane.capture.rejected.upload.count = { $quantity ->
+        [one] 1 upload turned away.
+       *[other] { $count } uploads turned away.
+    }
+
+journal.window.shared.status.pane.connected.elapsed.day = { $quantity ->
+        [one] connected for { $count } day
+       *[other] connected for { $count } days
+    }
+
+journal.window.shared.status.pane.connected.elapsed.hour = { $quantity ->
+        [one] connected for { $count } hour
+       *[other] connected for { $count } hours
+    }
+
+journal.window.shared.status.pane.connected.elapsed.minute = { $quantity ->
+        [one] connected for { $count } minute
+       *[other] connected for { $count } minutes
+    }
+
+journal.window.shared.status.pane.connected.elapsed.month = { $quantity ->
+        [one] connected for { $count } month
+       *[other] connected for { $count } months
+    }
+
+journal.window.shared.status.pane.connected.elapsed.second = { $quantity ->
+        [one] connected for { $count } second
+       *[other] connected for { $count } seconds
+    }
+
+journal.window.shared.status.pane.connected.elapsed.week = { $quantity ->
+        [one] connected for { $count } week
+       *[other] connected for { $count } weeks
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.day = { $quantity ->
+        [one] last rejected { $count } day ago
+       *[other] last rejected { $count } days ago
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.hour = { $quantity ->
+        [one] last rejected { $count } hour ago
+       *[other] last rejected { $count } hours ago
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.minute = { $quantity ->
+        [one] last rejected { $count } minute ago
+       *[other] last rejected { $count } minutes ago
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.month = { $quantity ->
+        [one] last rejected { $count } month ago
+       *[other] last rejected { $count } months ago
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.second = { $quantity ->
+        [one] last rejected { $count } second ago
+       *[other] last rejected { $count } seconds ago
+    }
+
+journal.window.shared.status.pane.rejected.elapsed.week = { $quantity ->
+        [one] last rejected { $count } week ago
+       *[other] last rejected { $count } weeks ago
+    }
+
+journal.window.shared.status.pane.security.device.update.version = the solstone app on { $device_name } is missing a security fix (update to { $fixed_version }).
+
+journal.window.shared.status.pane.security.journal.update.version = your journal is missing a security fix (update to { $fixed_version }).
+
+journal.window.shared.status.pane.security.unnamed.device.update.version = the solstone app on one of your devices is missing a security fix (update to { $fixed_version }).
+
+journal.window.shared.status.pane.updated.elapsed.day = { $quantity ->
+        [one] updated { $count } day ago
+       *[other] updated { $count } days ago
+    }
+
+journal.window.shared.status.pane.updated.elapsed.hour = { $quantity ->
+        [one] updated { $count } hour ago
+       *[other] updated { $count } hours ago
+    }
+
+journal.window.shared.status.pane.updated.elapsed.minute = { $quantity ->
+        [one] updated { $count } minute ago
+       *[other] updated { $count } minutes ago
+    }
+
+journal.window.shared.status.pane.updated.elapsed.month = { $quantity ->
+        [one] updated { $count } month ago
+       *[other] updated { $count } months ago
+    }
+
+journal.window.shared.status.pane.updated.elapsed.second = { $quantity ->
+        [one] updated { $count } second ago
+       *[other] updated { $count } seconds ago
+    }
+
+journal.window.shared.status.pane.updated.elapsed.week = { $quantity ->
+        [one] updated { $count } week ago
+       *[other] updated { $count } weeks ago
+    }
+
+journal.window.shared.status.pane.version.current.up.to.date = v{ $current_version } · up to date
+
+journal.window.shared.status.pane.version.package.repository.link = installed from a package. to get updates through your system's updater, add the solstone repository: { $repository_link }
+
+journal.window.shared.status.pane.version.unknown.up.to.date = vunknown · up to date
+
+journal.window.shared.status.pane.version.update.available = v{ $current_version } · { $notice_start }update available (v{ $available_version }){ $notice_end }
+
+journal.window.shared.status.pane.version.update.installed = v{ $current_version } · v{ $installed_version } is installed and starts the next time your journal does
+
+journal.window.shared.websocket.reconnect.failed.history = last reconnect attempt failed. recent attempts: { $attempt_times }
+
+journal.window.shared.websocket.reconnect.failed.no.history = last reconnect attempt failed. no reconnect attempts recorded yet.
+
 journal.window.shell.connecting = connecting…
 
 journal.window.shell.last.message = last message:
@@ -2661,7 +4090,6 @@ journal.window.loading.support = loading support…
 journal.window.loading.thinking = loading thinking settings…
 journal.window.loading.transcripts = loading transcripts…
 journal.window.loading.year = loading year…
-journal.window.loading.other = loading { $name }…
 journal.window.network.modal.title = pair a device
 journal.window.network.pair.type.prompt = what's joining?
 journal.window.network.pair.type.phone = a phone
@@ -2673,9 +4101,6 @@ journal.window.network.this.computer.step.one = copy the pairing link below and 
 journal.window.network.computer.step.one = send the pairing link below to that computer and open it there
 journal.window.network.computer.step.two = choose "open in the solstone app", or paste the link into the solstone app where it asks for one
 journal.window.network.computer.linux.note = on linux, you can also save the link as { $filename } and run:
-journal.window.network.pair.network.line = this device needs to be on your network (or your VPN) to pair. expires in { $time }.
-journal.window.network.pair.public.address.line = this pairing link uses your public address. expires in { $time }.
-journal.window.network.pair.relay.line = this link pairs through your private network, so the device can be anywhere. expires in { $time }.
 journal.window.network.pair.link.addresses.line = this link points your devices to:
 journal.window.network.details.disclosure = technical details
 journal.window.network.ca.fp.label = fingerprint
@@ -2686,7 +4111,6 @@ journal.window.network.pair.link.copy.success.toast = pairing link copied
 journal.window.network.pair.link.copy.fail.toast = couldn't copy pairing link
 journal.window.network.expired.button = this code expired. show a new one
 journal.window.network.window.closed.button = pairing window closed. open a new one
-journal.window.network.success.heading = "{ $label }" can now reach your journal
 journal.window.network.success.heading.unnamed = a new device can now reach your journal
 journal.window.network.success.done = done
 journal.window.network.pair.error.body = can't start pairing. your journal isn't reachable on a network address yet.
@@ -2763,7 +4187,6 @@ journal.window.network.private.link.timeout.body = your private network didn't a
 journal.window.network.device.pair.cta = pair a device
 journal.window.network.device.empty.title = no devices connected yet
 journal.window.network.device.empty.body = pair a device to read your journal on the go.
-journal.window.network.unpair.title.format = unpair '{ $label }'?
 journal.window.network.unpair.body = this device loses access to your journal immediately and can't reconnect until you pair it again. anything stored on the device stays on the device, and anything still waiting to be sent goes to the journal you pair it with next.
 journal.window.network.identity.header.label = this is your journal
 journal.window.network.identity.id.label = journal id
@@ -2788,7 +4211,6 @@ journal.window.network.local.network.failed = couldn't change whether your journ
 journal.window.network.pair.local.network.closed.body = your journal is closed to devices on your network, so a phone or another computer can't reach it to pair yet. opening it lets devices on the same wifi or VPN pair with your journal directly. you can also pair the solstone app on this computer, or set up the relay { $company } runs to pair from anywhere.
 journal.window.network.pair.local.network.closed.without.local.body = your journal is closed to devices on your network. open it to pair devices on the same wifi or VPN, or set up the relay { $company } runs to pair from anywhere.
 journal.window.network.pair.this.computer.cta = pair the solstone app on this computer
-journal.window.network.pair.this.computer.line = this link works only for the solstone app on this computer. expires in { $time }.
 journal.window.network.mode.byo.desc.closed = your devices reach your journal over your own network, same wifi or your own VPN, once you open it to them.
 journal.window.network.private.link.disable.confirm.closed = turn off your private network? your journal is closed to devices on your network, so your other devices can't reach it until you open it to your network or turn the private network back on.
 journal.window.network.private.link.disable.success.closed = your private network is off. your journal is closed to devices on your network, so your other devices can't reach it.
@@ -2798,8 +4220,6 @@ journal.window.network.local.network.agents.closes.note = it closes to them when
 journal.window.chrome.connection.connecting = connecting…
 journal.window.chrome.connection.reconnecting = connection lost. reconnecting
 journal.window.chrome.connection.delayed = some features may be delayed
-
-journal.window.agents.access.connected.again = { $slot1 }is connected again.
 
 journal.window.agents.access.disconnect = disconnect
 
@@ -2815,8 +4235,6 @@ journal.window.agents.accessible.name.connect.an.agent = connect an agent
 
 journal.window.agents.accessible.name.how.your.agents.reach.your.journal = how your agents reach your journal
 
-journal.window.agents.accessible.name.is.connected = is connected
-
 journal.window.agents.accessible.name.one.request = one request
 
 journal.window.agents.accessible.name.turn.off.agents.on.your.network = turn off agents on your network
@@ -2827,13 +4245,7 @@ journal.window.agents.accessible.name.where.is.this.agent = where is this agent
 
 journal.window.agents.accessible.name.which.agent = which agent
 
-journal.window.agents.activity.requests = requests
-
-journal.window.agents.button.label.again = again
-
 journal.window.agents.button.label.apply = apply
-
-journal.window.agents.button.label.at.your.domain = at your domain
 
 journal.window.agents.button.label.bring.my.address.back = bring my address back
 
@@ -2844,8 +4256,6 @@ journal.window.agents.button.label.check = check
 journal.window.agents.button.label.check.again = check again
 
 journal.window.agents.button.label.close = close
-
-journal.window.agents.button.label.connect = connect
 
 journal.window.agents.button.label.connect.an.agent = connect an agent
 
@@ -2867,15 +4277,11 @@ journal.window.agents.button.label.next = next
 
 journal.window.agents.button.label.not.now = not now
 
-journal.window.agents.button.label.pause = pause
-
 journal.window.agents.button.label.remove = remove
 
 journal.window.agents.button.label.rename = rename
 
 journal.window.agents.button.label.replace.certificate.registration = replace certificate registration
-
-journal.window.agents.button.label.resume = resume
 
 journal.window.agents.button.label.save = save
 
@@ -2935,12 +4341,6 @@ journal.window.agents.byo.relay.copy.relay.not.configured.save.your.server.s.add
 
 journal.window.agents.byo.relay.copy.relay.ok.connected.to.your.server = connected to your server.
 
-journal.window.agents.byo.relay.copy.relay.unreachable.that.address = that address
-
-journal.window.agents.byo.relay.copy.relay.unreachable.value1 = value1
-
-journal.window.agents.byo.relay.copy.relay.unreachable.your.journal.can.t.reach.your = your journal can't reach your server at{ $slot1 }{ $value1 }. check the address, and that your server accepts SSH.
-
 journal.window.agents.byo.unconnected = an agent reads nothing until you connect it and choose what it may see.
 
 journal.window.agents.column.heading.type = type
@@ -2989,8 +4389,6 @@ journal.window.agents.field.label.your.server.s.ipv4.address = your server's IPv
 
 journal.window.agents.lane.byo = your own domain
 
-journal.window.agents.lane.default = { $slot1 }the default.
-
 journal.window.agents.lane.own = your own
 
 journal.window.agents.link.label.agents = ← agents
@@ -3009,11 +4407,7 @@ journal.window.agents.link.label.see.what.it.tried = see what it tried
 
 journal.window.agents.link.label.tell.support = tell support ↗
 
-journal.window.agents.memories.latest = { $slot1 }· latest{ $slot2 }{ $date }
-
 journal.window.agents.message.changing.your.journal.s.address.disconnects = changing your journal's address disconnects agents paired at the old address. continue?
-
-journal.window.agents.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
 
 journal.window.agents.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
@@ -3034,8 +4428,6 @@ journal.window.agents.message.name.this.key = name this key
 journal.window.agents.message.remove.your.journal.s.address.agents = remove your journal's address? agents paired through it lose access, even if you add the same address again.
 
 journal.window.agents.message.replace.this.journal.s.certificate.registration = replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.
-
-journal.window.agents.message.value1.what.it.already.read.stays = { $value1 }{ $slot1 }what it already read stays with it. its activity and its memories stay in your journal.
 
 journal.window.agents.move.byo.detail = connect each one at your domain and remove its old connector, then turn solstone.me off. while it's on, { $slot1 } and Cloudflare, who control the solstone.me name today, could in principle stand in for your journal at that address. { $slot2 } doesn't.
 
@@ -3107,10 +4499,6 @@ journal.window.agents.permission.kind.transcripts.description = words spoken or 
 
 journal.window.agents.permission.kind.transcripts.label = transcripts
 
-journal.window.agents.section.heading.again = again
-
-journal.window.agents.section.heading.connect = connect
-
 journal.window.agents.section.heading.connect.an.agent = connect an agent
 
 journal.window.agents.section.heading.connect.it.again = connect it again
@@ -3122,8 +4510,6 @@ journal.window.agents.section.heading.how.it.ended = how it ended
 journal.window.agents.section.heading.its.activity = its activity
 
 journal.window.agents.section.heading.its.memories = its memories
-
-journal.window.agents.section.heading.may.see = may see
 
 journal.window.agents.section.heading.no.agents.connected.yet = no agents connected yet
 
@@ -3140,8 +4526,6 @@ journal.window.agents.section.heading.turn.off.agents.on.this.device = turn off 
 journal.window.agents.section.heading.turn.off.agents.on.your.network = turn off agents on your network?
 
 journal.window.agents.section.heading.turn.off.solstone.me = turn off solstone.me?
-
-journal.window.agents.section.heading.was.disconnected = was disconnected.
 
 journal.window.agents.section.heading.what = what
 
@@ -3217,8 +4601,6 @@ journal.window.agents.status.text.on.but.solstone.me.didn.t = on, but solstone.m
 
 journal.window.agents.status.text.on.but.something.else.has.the = on, but something else has the address
 
-journal.window.agents.status.text.on.but.something.else.has.value1 = on, but something else has{ $slot1 }{ $value1 }
-
 journal.window.agents.status.text.on.but.this.device.isn.t = on, but this device isn't on a network your journal can use
 
 journal.window.agents.status.text.on.but.your.journal.can.t = on, but your journal can't read this device's addresses
@@ -3265,29 +4647,19 @@ journal.window.agents.status.text.the.result.details.are.below = the result deta
 
 journal.window.agents.status.text.turning.on = turning on
 
-journal.window.agents.status.text.value1.s.memories = { $value1 }'s memories
-
 journal.window.agents.status.text.what.your.agents.asked.and.how = what your agents asked and how each request ended. recorded in your journal. the content that was released isn't copied here; each entry points at it.
 
 journal.window.agents.status.text.your.journal.can.t.read.its = your journal can't read its settings
 
 journal.window.agents.status.turning.on = turning on
 
-journal.window.agents.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
-
 journal.window.agents.title.couldn.t.move.that.to.the = couldn't move that to the trash
-
-journal.window.agents.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
 
 journal.window.agents.title.delete.this.memory = delete this memory?
 
 journal.window.agents.title.erase.this.memory.now = erase this memory now?
 
 journal.window.agents.title.moved.to.the.trash = moved to the trash
-
-journal.window.agents.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
-
-journal.window.agents.title.noun.recovered = { $slot1 } recovered
 
 journal.window.agents.title.your.journal.didn.t.answer = your journal didn't answer
 
@@ -3298,8 +4670,6 @@ journal.window.agents.trash.copy.back.back = back
 journal.window.agents.trash.copy.cancel.cancel = cancel
 
 journal.window.agents.trash.copy.erase.now.erase.now = erase now
-
-journal.window.agents.trash.copy.memory.memory = memory
 
 journal.window.agents.trash.copy.move.to.trash.move.to.trash = move to trash
 
@@ -3329,17 +4699,9 @@ journal.window.agents.visible.text.a.tunnel.that.ends.https.can = a tunnel that 
 
 journal.window.agents.visible.text.add = Add
 
-journal.window.agents.visible.text.add.custom.mcp.server = Add custom MCP server
-
 journal.window.agents.visible.text.add.these.two.records.for = add these two records for
 
 journal.window.agents.visible.text.address = address
-
-journal.window.agents.visible.text.again.from.here.and.it.can = again from here and it can recall these memories. choose what it may see when you connect.
-
-journal.window.agents.visible.text.agent = agent
-
-journal.window.agents.visible.text.agents.anywhere.can.reach.your.journal = agents anywhere can reach your journal at
 
 journal.window.agents.visible.text.agents.connected.through.solstone.me.can = agents connected through solstone.me can't reach your journal while it's off. the address and your agents are kept: turning back on uses the same address, with no new certificate while the one you have is still good.
 
@@ -3367,19 +4729,9 @@ journal.window.agents.visible.text.an.agent.that.uses.it.reaches = an agent that
 
 journal.window.agents.visible.text.and = and
 
-journal.window.agents.visible.text.and.authenticate = and authenticate.
-
-journal.window.agents.visible.text.and.close.any.that.is.open = , and close any that is open.
-
-journal.window.agents.visible.text.and.press = and press
-
 journal.window.agents.visible.text.any.device.on.a.network.this = any device on a network this device is on can reach them, including other people on a café's or hotel's wifi, or a VPN service's other customers, but not the wider internet.
 
-journal.window.agents.visible.text.because.the.token.it.uses.to = because the token it uses to stay connected was used twice. connect it again with a new pairing code.
-
 journal.window.agents.visible.text.both.records.found = both records found
-
-journal.window.agents.visible.text.came.back.to.this.journal.on = came back to this journal on
 
 journal.window.agents.visible.text.can.suggest.corrections = can suggest corrections
 
@@ -3387,19 +4739,11 @@ journal.window.agents.visible.text.certificates.are.rationed.each.week.and = cer
 
 journal.window.agents.visible.text.check.the.address.starts.with = check the address starts with
 
-journal.window.agents.visible.text.choose = , choose
-
-journal.window.agents.visible.text.connect = connect
-
 journal.window.agents.visible.text.connect.one.to.let.it.search = connect one to let it search and read your journal, within what you choose.
 
 journal.window.agents.visible.text.copied = copied
 
-journal.window.agents.visible.text.create.as.a.plugin = Create as a plugin
-
 journal.window.agents.visible.text.didn.t.expect.that.page.close = didn't expect that page? close it. nothing connects until you enter the code.
-
-journal.window.agents.visible.text.disconnect.it.rather.than.resuming.it = , disconnect it rather than resuming it.
 
 journal.window.agents.visible.text.download.your.journal.s.public.lan = download your journal's public LAN CA certificate here, then move that file to the computer running your agent. before trusting it there, check its SHA-256 fingerprint against this one:
 
@@ -3421,23 +4765,13 @@ journal.window.agents.visible.text.if.the.device.running.your.journal = if the d
 
 journal.window.agents.visible.text.if.you.haven.t.allowed.solstone = if you haven't allowed solstone.me for this journal yet, turn it off and back on to do that. your journal keeps trying on its own, about every five minutes.
 
-journal.window.agents.visible.text.if.you.haven.t.been.using = if you haven't been using
-
 journal.window.agents.visible.text.if.your.dns.host.s.form = if your DNS host's form has separate fields, use flags 0, tag issue, and the text between the quotes as the value. if it offers a proxy or CDN for this name, turn it off. the CAA record lets only your journal get a certificate for this exact name, though whoever can change your domain's DNS can still get one that covers it.
 
 journal.window.agents.visible.text.in.your.agent.add.your.journal = in your agent, add your journal's address and start connecting.
 
-journal.window.agents.visible.text.is.ready = is ready.
-
 journal.window.agents.visible.text.it.can.t.read.your.journal = it can't read your journal any more. its activity stays in your journal.
 
-journal.window.agents.visible.text.it.connects = it connects
-
-journal.window.agents.visible.text.it.has.tried = it has tried
-
 journal.window.agents.visible.text.it.hasn.t.tried.to.reach = it hasn't tried to reach your journal since.
-
-journal.window.agents.visible.text.it.keeps.its.memories = it keeps its memories
 
 journal.window.agents.visible.text.it.may.see = it may see
 
@@ -3453,29 +4787,13 @@ journal.window.agents.visible.text.local.address = local address
 
 journal.window.agents.visible.text.local.socket = local socket
 
-journal.window.agents.visible.text.loses.access.on.its.next.request = loses access on its next request. what it already read stays with it. its activity and its memories stay in your journal.
-
 journal.window.agents.visible.text.make.a.pairing.code.first.your = make a pairing code first. your journal lets an agent start connecting only while a code is open.
-
-journal.window.agents.visible.text.more = more.
 
 journal.window.agents.visible.text.narrow.or.widen.at.any.time = narrow or widen at any time.
 
-journal.window.agents.visible.text.next.check = next check:
-
-journal.window.agents.visible.text.no.longer.connected = no longer connected ·
-
 journal.window.agents.visible.text.none.of.the.ways.an.agent = none of the ways an agent can reach your journal is ready right now.
 
-journal.window.agents.visible.text.nothing.yet.ask = nothing yet. ask
-
-journal.window.agents.visible.text.oauth = OAuth
-
-journal.window.agents.visible.text.on = on
-
 journal.window.agents.visible.text.on.a.public.server.you.control = on a public server you control, forward TCP port 443 through OpenSSH to this socket on the device running your journal, keeping the encrypted bytes intact. the SSH process must run under the same login as your journal.
-
-journal.window.agents.visible.text.on.chatgpt.com.open = on chatgpt.com, open
 
 journal.window.agents.visible.text.on.your.server.paste.this.as = on your server, paste this as an admin to undo the setup:
 
@@ -3487,35 +4805,15 @@ journal.window.agents.visible.text.only.on.the.device.running.your = only on the
 
 journal.window.agents.visible.text.only.the.first.matching.requests.are = only the first 100 matching requests are shown. these counts are minimums.
 
-journal.window.agents.visible.text.paste.the.address.choose = , paste the address, choose
-
 journal.window.agents.visible.text.paused = paused
 
 journal.window.agents.visible.text.pick.where.the.agent.is.first = pick where the agent is first. the pairing code works only for the one you pick.
 
-journal.window.agents.visible.text.plugins = Plugins
-
 journal.window.agents.visible.text.ready = ready
-
-journal.window.agents.visible.text.request = request
-
-journal.window.agents.visible.text.run = run
-
-journal.window.agents.visible.text.sees.the.change.the.next.time = sees the change the next time it asks for anything; requests already in flight finish under the old choice.
-
-journal.window.agents.visible.text.set = set
-
-journal.window.agents.visible.text.since.then.most.recently = since then, most recently
 
 journal.window.agents.visible.text.socket = socket
 
 journal.window.agents.visible.text.something.else.is.using.this.address = something else is using this address.
-
-journal.window.agents.visible.text.something.else.on.this.device.is = something else on this device is using
-
-journal.window.agents.visible.text.something.it.can.find.in.your = something it can find in your journal, and each request shows up here as it arrives.
-
-journal.window.agents.visible.text.stays.connected.with.its.memories.and = stays connected, with its memories and what it may see, but it can't read your journal or use its memories until you resume it.
 
 journal.window.agents.visible.text.that.memory.isn.t.in.your = that memory isn't in your journal anymore.
 
@@ -3533,8 +4831,6 @@ journal.window.agents.visible.text.the.last.code.was.entered.wrong = the last co
 
 journal.window.agents.visible.text.the.ones.you.connected.are.kept = the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.
 
-journal.window.agents.visible.text.the.open.code.is.for = the open code is for
-
 journal.window.agents.visible.text.the.open.code.no.longer.works = the open code no longer works. make a new one for this agent.
 
 journal.window.agents.visible.text.the.part.of.your.journal.that = the part of your journal that serves agents isn't running, so these addresses are closed.
@@ -3544,14 +4840,6 @@ journal.window.agents.visible.text.the.part.of.your.journal.that.variant2 = the 
 journal.window.agents.visible.text.the.relay.sol.pbc.runs.sees = the relay { $slot1 } runs sees the network addresses on each end, when they connect, and how much passes. a published rule for your address lets only your journal get its certificate, not the relay. whoever controls the solstone.me name (today, { $slot2 } and Cloudflare) could change that rule, get a certificate of its own and read what your agents read. { $slot3 } doesn't. a new certificate would normally show in public certificate logs, but until November 30, 2026, Cloudflare also holds older certificates for every solstone.me address, and using one wouldn't show. a credential seen that way would let someone reach your journal until you disconnect the agent; a key you created, until you revoke it.
 
 journal.window.agents.visible.text.the.server.s.openssh.must.let = the server's OpenSSH must let this forward listen publicly on port 443: set GatewayPorts to yes, and use a login that may listen on that port.
-
-journal.window.agents.visible.text.then = , then
-
-journal.window.agents.visible.text.then.in.claude.code.type = then, in Claude Code, type
-
-journal.window.agents.visible.text.then.in.gemini.cli.type = then, in Gemini CLI, type
-
-journal.window.agents.visible.text.then.in.grok.build.type = then, in Grok Build, type
 
 journal.window.agents.visible.text.these.addresses.can.change.when.this = these addresses can change when this device joins a network again. if one does, give your agent the new one. you may need to connect it again with a new pairing code.
 
@@ -3569,21 +4857,9 @@ journal.window.agents.visible.text.this.isn.t.available.in.this = this isn't ava
 
 journal.window.agents.visible.text.this.isn.t.available.on.windows = this isn't available on windows yet.
 
-journal.window.agents.visible.text.this.week = this week
-
-journal.window.agents.visible.text.through.it = through it:
-
-journal.window.agents.visible.text.to.authenticate = to authenticate.
-
-journal.window.agents.visible.text.to.it.keep.tls.verification.on = to it. keep TLS verification on. use these settings only for the agent that needs this address: it will trust any certificate your journal's CA signs. these settings do not make your browser trust the CA. if this device's network address changes, use its new address; the same CA signs its new certificate.
-
-journal.window.agents.visible.text.to.that.file.for.codex.cli = to that file. for Codex CLI, set
-
 journal.window.agents.visible.text.turn.it.on = turn it on
 
 journal.window.agents.visible.text.turn.this.on.for.agents.on = turn this on for agents on other devices on your wifi or VPN, like Tailscale. while it's on, any device on a network this device is on can reach its addresses, including on a café's or hotel's wifi. an agent reads nothing until you connect it with a pairing code and choose what it may see.
-
-journal.window.agents.visible.text.turning.on = turning on
 
 journal.window.agents.visible.text.two.records.at.your.dns.host = two records at your DNS host
 
@@ -3592,10 +4868,6 @@ journal.window.agents.visible.text.until.it.can.these.addresses.stay = until it 
 journal.window.agents.visible.text.until.it.can.this.stays.as = until it can, this stays as it was, and right now agents on this device can't reach your journal. your connected agents and what each may see don't change.
 
 journal.window.agents.visible.text.until.this.clears.don.t.enter = until this clears, don't enter a pairing code on a page opened through this address, and close any that is open.
-
-journal.window.agents.visible.text.up.again.or.moved.it.to = up again, or moved it to another device? connect it again from here and it stays this agent, with its memories and what it may see. the one connected now stops working once the new one connects.
-
-journal.window.agents.visible.text.used = used
 
 journal.window.agents.visible.text.waiting.for.you.to.approve.solstone = waiting for you to approve solstone.me in the services portal. the request stays open for about fifteen minutes.
 
@@ -3607,15 +4879,9 @@ journal.window.agents.visible.text.what.your.agents.asked.and.what = what your a
 
 journal.window.agents.visible.text.when.it.s.on.agents.use = when it's on, agents use one of these addresses:
 
-journal.window.agents.visible.text.when.starting.claude.code.set = when starting Claude Code, set
-
 journal.window.agents.visible.text.where.is.this.agent = where is this agent?
 
 journal.window.agents.visible.text.whichever.way.an.agent.uses.it = whichever way an agent uses, it reads only what you let it see.
-
-journal.window.agents.visible.text.works.once.expires.at = works once. expires at
-
-journal.window.agents.visible.text.you.also.have.solstone.me.on = you also have solstone.me on.
 
 journal.window.agents.visible.text.you.approve.it.in.the.services = you approve it in the services portal, then it turns on here.
 
@@ -3624,8 +4890,6 @@ journal.window.agents.visible.text.you.can.leave.this.page.while = you can leave
 journal.window.agents.visible.text.your.browser.opens.your.journal.s = your browser opens your journal's page.
 
 journal.window.agents.visible.text.your.browser.shows.it.in.the = your browser shows it in the certificate's details.
-
-journal.window.agents.visible.text.your.journal.can.t.read.its = your journal can't read its agent settings, so no agent can use your journal until it can. your connected agents and what each may see don't change. try again in a moment, and if it keeps happening,
 
 journal.window.agents.visible.text.your.journal.can.t.read.or = your journal can't read or make the certificate for these addresses, so it hasn't opened them. it keeps trying on its own.
 
@@ -3636,8 +4900,6 @@ journal.window.agents.visible.text.your.journal.couldn.t.open.its = your journal
 journal.window.agents.visible.text.your.journal.couldn.t.read.its = your journal couldn't read its memories.
 
 journal.window.agents.visible.text.your.journal.couldn.t.read.these = your journal couldn't read these memories.
-
-journal.window.agents.visible.text.your.journal.disconnected = your journal disconnected
 
 journal.window.agents.visible.text.your.journal.does.this.itself.you = your journal does this itself. you can leave this page; on a phone, keep the app open and in the foreground.
 
@@ -3661,8 +4923,6 @@ journal.window.agents.visible.text.your.journal.s.settings.file.has.variant2 = y
 
 journal.window.agents.visible.text.your.server = your server
 
-journal.window.agents.visible.text.your.solstone.me.address = your solstone.me address
-
 journal.window.agents.visible.text.your.solstone.me.address.stays.yours = your solstone.me address stays yours either way. turning it off here changes nothing in the services portal. manage it there, and if you come back it's the same address.
 
 journal.window.agents.visible.text.your.whole.journal.includes.everything.now = your whole journal includes everything now and anything added later, including facets you create later. chosen facets grow with their contents; facets you create later are not included.
@@ -3681,8 +4941,6 @@ journal.window.agents.window.explanation.agents.can.reach.your.journal.through =
 
 journal.window.agents.window.explanation.agents.on.this.device.and.anywhere = agents on this device, and anywhere through solstone.me, can reach your journal.
 
-journal.window.agents.window.explanation.agents.on.this.device.and.through = { $slot1 }agents on this device, and through solstone.me, keep working.
-
 journal.window.agents.window.explanation.agents.on.this.device.can.reach = agents on this device can reach your journal.
 
 journal.window.agents.window.explanation.agents.on.this.device.can.reach.variant2 = agents on this device can reach your journal. solstone.me isn't working on it.
@@ -3691,15 +4949,7 @@ journal.window.agents.window.explanation.agents.on.this.device.can.reach.variant
 
 journal.window.agents.window.explanation.agents.on.this.device.can.t = agents on this device can't reach your journal right now.
 
-journal.window.agents.window.explanation.agents.on.this.device.keep.working = { $slot1 }agents on this device keep working.
-
-journal.window.agents.window.explanation.agents.on.this.device.reach.your = agents on this device reach your journal directly.{ $value1 }
-
 journal.window.agents.window.explanation.agents.on.your.network.can.reach = agents on your network can reach your journal.
-
-journal.window.agents.window.explanation.agents.through.solstone.me.keep.working = { $slot1 }agents through solstone.me keep working.
-
-journal.window.agents.window.explanation.and.what.it.may.see.the = { $slot1 }and what it may see. the one connected now stops working once this one connects
 
 journal.window.agents.window.explanation.anywhere.at.your.own.domain = anywhere, at your own domain
 
@@ -3719,8 +4969,6 @@ journal.window.agents.window.explanation.connecting.to.the.relay = connecting to
 
 journal.window.agents.window.explanation.delete.the.a.record.at.your = delete the A record at your DNS host first, then the CAA record, or both together. don't leave the A record pointing at a server you no longer have.
 
-journal.window.agents.window.explanation.enter.the.code.on.that.page = enter the code on that page, check it names{ $slot1 }{ $value1 }, and connect.
-
 journal.window.agents.window.explanation.getting.a.certificate.for.it.its = getting a certificate for it. its key never leaves this device.
 
 journal.window.agents.window.explanation.getting.the.certificate.its.key.never = getting the certificate. its key never leaves this device.
@@ -3731,11 +4979,7 @@ journal.window.agents.window.explanation.in.claude.add.the.address.as = in Claud
 
 journal.window.agents.window.explanation.in.claude.if.solstone.is.in = in Claude, if solstone is in Claude's connector directory, choose it there and connect. if it isn't there yet, add the address as a custom connector, then connect it.
 
-journal.window.agents.window.explanation.it.can.recall.its.value1 = { $slot1 }it can recall its{ $slot2 }{ $value1 }.
-
 journal.window.agents.window.explanation.neither.way.is.on.right.now = neither way is on right now.
-
-journal.window.agents.window.explanation.no.memories.in.your.journal.from = no memories in your journal from this{ $slot1 }{ $value1 }.
 
 journal.window.agents.window.explanation.none.of.its.memories.are.left = none of its memories are left in your journal.
 
@@ -3748,8 +4992,6 @@ journal.window.agents.window.explanation.on.bringing.your.address.back = on, bri
 journal.window.agents.window.explanation.on.the.device.running.your.journal = on the device running your journal
 
 journal.window.agents.window.explanation.on.waiting.for.you = on, waiting for you
-
-journal.window.agents.window.explanation.one.of.your.journal.s.addresses = one of your journal's addresses
 
 journal.window.agents.window.explanation.operated.by.sol.pbc = operated by { $slot1 }
 
@@ -3765,15 +5007,9 @@ journal.window.agents.window.explanation.something.else.on.this.device.is = some
 
 journal.window.agents.window.explanation.something.else.on.this.device.is.variant2 = something else on this device is using one of your journal's addresses for agents on your network.
 
-journal.window.agents.window.explanation.suggestion.from.value1.is.waiting = 1 suggestion from{ $slot1 }{ $value1 }{ $slot2 }is waiting
-
-journal.window.agents.window.explanation.the.caa.record.that.applies.to = the CAA record that applies to{ $slot1 }{ $value1 }{ $slot2 }doesn't match the one shown here. add the record shown here at{ $slot3 }{ $value2 }{ $slot4 }itself, not at the domain above it, and remove any other CAA record at{ $slot5 }{ $value3 }. if it's already there, copy it again.
-
 journal.window.agents.window.explanation.the.device.running.your.journal = the device running your journal
 
 journal.window.agents.window.explanation.the.local.address.is.in.use = the local address is in use or reserved. free it before trying again.
-
-journal.window.agents.window.explanation.the.ones.you.connected.this.way = { $slot1 }the ones you connected this way are kept, with what each may see, for when you turn this back on.
 
 journal.window.agents.window.explanation.this.code.expired.before.an.agent = this code expired before an agent used it. make a new one, then connect from your agent again.
 
@@ -3785,41 +5021,9 @@ journal.window.agents.window.explanation.this.isn.t.available.on.windows = this 
 
 journal.window.agents.window.explanation.this.memory.couldn.t.be.read = this memory couldn't be read.
 
-journal.window.agents.window.explanation.this.name.also.points.at = this name also points at
-
-journal.window.agents.window.explanation.this.name.points.at = this name points at
-
-journal.window.agents.window.explanation.this.name.points.at.value1.it = this name points at{ $slot1 }{ $value1 }. it should have one A record, for your server at{ $slot2 }{ $value2 }, and no other A or AAAA records. if your DNS host offers a proxy or CDN for this name, turn it off.
-
-journal.window.agents.window.explanation.to.bring.it.back.with.its = { $slot1 }to bring it back with its memories, connect it again from earlier agents.
-
 journal.window.agents.window.explanation.turn.off.agents.on.this.device = turn off agents on this device
 
 journal.window.agents.window.explanation.use.this.address.only.for.an = use this address only for an agent on the device running your journal. for an agent on another device, turn on agents on your network and use a network address.
-
-journal.window.agents.window.explanation.value1.across.your.whole.journal = { $value1 }{ $slot1 }across your whole journal
-
-journal.window.agents.window.explanation.value1.agents.on.your.network.can = { $value1 }{ $slot1 }agents on your network can reach your journal too.
-
-journal.window.agents.window.explanation.value1.can.suggest.a.fix.when = { $value1 }{ $slot1 }can suggest a fix when something in your journal is wrong. nothing changes until you accept it.
-
-journal.window.agents.window.explanation.value1.is.told.suggestions.are.off = { $value1 }{ $slot1 }is told suggestions are off. the ones already waiting stay for you to review.
-
-journal.window.agents.window.explanation.value1.paused.on.value2.because.it = { $value1 }{ $slot1 }paused on{ $slot2 }{ $value2 }{ $slot3 }because it went 30 days without using your journal.
-
-journal.window.agents.window.explanation.value1.suggestions.from.value2.are.waiting = { $value1 }{ $slot1 }suggestions from{ $slot2 }{ $value2 }{ $slot3 }are waiting
-
-journal.window.agents.window.explanation.value1.value2.is.no.longer.connected = { $value1 }{ $value2 }{ $slot1 }is no longer connected. its memories stay in your journal until you delete them. your journal doesn't check them.
-
-journal.window.agents.window.explanation.value1.value2.which.isn.t.on = { $value1 }{ $slot1 }{ $value2 }, which isn't on the internet. remove that record. Claude won't connect to a name that has one.
-
-journal.window.agents.window.explanation.value1.your.journal.s.addresses.on = { $value1 }{ $slot1 }your journal's addresses on your network aren't open right now.
-
-journal.window.agents.window.explanation.what.value1.saved.in.its.own = what{ $slot1 }{ $value1 }{ $slot2 }saved, in its own words. your journal keeps these as written and doesn't check them.
-
-journal.window.agents.window.explanation.with.the.solstone.plugin.installed.tiles = with the solstone plugin installed, Tiles already has the address. in the Tiles chat, type{ $slot1 }{ $value1 }
-
-journal.window.agents.window.explanation.you.paused.value1.on.value2 = you paused{ $slot1 }{ $value1 }{ $slot2 }on{ $slot3 }{ $value2 }.
 
 journal.window.agents.window.explanation.your.journal.couldn.t.read.all = your journal couldn't read all of these. the others are below.
 
@@ -3831,11 +5035,7 @@ journal.window.agents.window.explanation.your.journal.s.addresses.on.your = your
 
 journal.window.agents.window.explanation.your.server.s.public.ipv4.address = your server's public IPv4 address
 
-journal.window.agents.window.state.text.a.key.you.created = a key you created ·{ $slot1 }
-
 journal.window.agents.window.state.text.already.stored = already stored
-
-journal.window.agents.window.state.text.an.address = an address
 
 journal.window.agents.window.state.text.an.earlier.agent = an earlier agent
 
@@ -3844,8 +5044,6 @@ journal.window.agents.window.state.text.another.address = another address
 journal.window.agents.window.state.text.another.agent = another agent
 
 journal.window.agents.window.state.text.anywhere.through.solstone.me = anywhere through solstone.me
-
-journal.window.agents.window.state.text.at.least = at least{ $slot1 }
 
 journal.window.agents.window.state.text.both.records.found = both records found
 
@@ -3857,12 +5055,6 @@ journal.window.agents.window.state.text.couldn.t.complete = couldn't complete
 
 journal.window.agents.window.state.text.disconnect.agent = disconnect agent
 
-journal.window.agents.window.state.text.disconnect.this.agent = disconnect this agent?
-
-journal.window.agents.window.state.text.is.connected = { $slot1 }is connected.
-
-journal.window.agents.window.state.text.latest.found = latest found
-
 journal.window.agents.window.state.text.listening.here = listening here
 
 journal.window.agents.window.state.text.no.address.yet = no address yet
@@ -3872,10 +5064,6 @@ journal.window.agents.window.state.text.not.checked.yet = not checked yet
 journal.window.agents.window.state.text.not.ready.yet = not ready yet
 
 journal.window.agents.window.state.text.nothing.matched = nothing matched
-
-journal.window.agents.window.state.text.on.the.device.running.your.journal = on the device running your journal
-
-journal.window.agents.window.state.text.on.your.network = on your network
 
 journal.window.agents.window.state.text.original.deleted = original deleted
 
@@ -3887,27 +5075,7 @@ journal.window.agents.window.state.text.replace.registration = replace registrat
 
 journal.window.agents.window.state.text.revoke.key = revoke key
 
-journal.window.agents.window.state.text.revoke.this.key = revoke this key?
-
 journal.window.agents.window.state.text.save.name = save name
-
-journal.window.agents.window.state.text.the.address = the address
-
-journal.window.agents.window.state.text.these.addresses = these addresses
-
-journal.window.agents.window.state.text.this.address = this address
-
-journal.window.agents.window.state.text.this.code.works.only.at.your = { $slot1 }this code works only at your own domain.
-
-journal.window.agents.window.state.text.this.code.works.only.for.an = { $slot1 }this code works only for an agent on your network.
-
-journal.window.agents.window.state.text.this.code.works.only.for.an.variant2 = { $slot1 }this code works only for an agent on the device running your journal.
-
-journal.window.agents.window.state.text.this.code.works.only.through.solstone = { $slot1 }this code works only through solstone.me.
-
-journal.window.agents.window.state.text.through.solstone.me = through solstone.me
-
-journal.window.agents.window.state.text.through.your.own.domain = through your own domain
 
 journal.window.agents.window.state.text.unknown.ending = unknown ending
 
@@ -4813,8 +5981,6 @@ journal.window.body.accessible.name.close = close
 
 journal.window.body.accessible.name.days.your.journal.holds.body.data = days your journal holds body data
 
-journal.window.body.accessible.name.delete = delete
-
 journal.window.body.accessible.name.empty.day = empty day
 
 journal.window.body.button.label.delete = delete
@@ -4854,10 +6020,6 @@ journal.window.body.date.with.clock = {$month}{ $slot1 }{$day},{ $slot2 }{$year}
 journal.window.body.day.invalid = that day couldn't be used.
 
 journal.window.body.day.invalid.detail = Invalid day
-
-journal.window.body.disclosure.label.more.from.strava = more from Strava ·
-
-journal.window.body.empty.import.options = if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer's command line.
 
 journal.window.body.error.day.detail = Invalid day
 
@@ -4907,15 +6069,11 @@ journal.window.body.grid.source.join = { $slot1 }and{ $slot2 }
 
 journal.window.body.grid.sources = {$date}{ $slot1 }·{ $slot2 }{$sources}
 
-journal.window.body.hide.copy.day.after.the.rest.of.a.night.or = the rest of a night or workout from { $slot1 }, a day you hid, is hidden here too.
-
 journal.window.body.hide.copy.grid.foot.striped.days.are.ones.you.hid = striped days are ones you hid.
 
 journal.window.body.hide.copy.hide.failed.couldn.t.hide.this.day.nothing = couldn't hide this day. nothing changed.
 
 journal.window.body.hide.copy.hide.hide.this.day = hide this day
-
-journal.window.body.hide.copy.hide.label.hide.body.data.from.day = hide body data from { $slot1 }
 
 journal.window.body.hide.copy.mark.head.you.hid.this.day.s.body = you hid this day's body data
 
@@ -4934,8 +6092,6 @@ journal.window.body.hide.copy.no.answer.your.journal.didn.t.answer = your journa
 journal.window.body.hide.copy.receipt.message.it.stays.hidden.when.you.import = it stays hidden when you import or sync it again.
 
 journal.window.body.hide.copy.receipt.no.search.search.and.connected.agents.may.still = search and connected agents may still find it.
-
-journal.window.body.hide.copy.receipt.title.body.data.from.day.is.hidden = body data from { $slot1 } is hidden.
 
 journal.window.body.hide.copy.try.again.try.again = try again
 
@@ -4981,15 +6137,9 @@ journal.window.body.link.label.body.overview.variant2 = ← body overview
 
 journal.window.body.link.label.body.overview.variant3 = body overview
 
-journal.window.body.link.label.import.page = import page
-
-journal.window.body.link.label.read.about.body.imports = read about body imports
-
 journal.window.body.logged.who.by = you, in{ $slot1 }{$source}
 
 journal.window.body.logged.who.you = you
-
-journal.window.body.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
 
 journal.window.body.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
@@ -5079,17 +6229,11 @@ journal.window.body.title.workout.recovered = workout recovered
 
 journal.window.body.title.your.journal.didn.t.answer = your journal didn't answer
 
-journal.window.body.visible.text.nearby.days.with.data = nearby days with data:
-
 journal.window.body.visible.text.nothing.for.this.day = nothing for this day.
-
-journal.window.body.visible.text.nothing.here.yet.bring.in.your = nothing here yet. bring in your workouts from a Strava download on the
 
 journal.window.body.visible.text.part.of.this.day.couldn.t = part of this day couldn't be read.
 
 journal.window.body.visible.text.strava = · Strava
-
-journal.window.body.visible.text.strava.s.figures = Strava's figures:
 
 journal.window.body.visible.text.strava.variant2 = Strava
 
@@ -5181,10 +6325,6 @@ journal.window.date.yesterday = Yesterday
 
 journal.window.entities.accessible.label.dismiss = dismiss
 
-journal.window.entities.accessible.label.merge.pair = merge 1 pair?
-
-journal.window.entities.accessible.label.merge.value1.pairs = merge{ $slot1 }{ $value1 }{ $slot2 }pairs?
-
 journal.window.entities.accessible.name.close = close
 
 journal.window.entities.accessible.name.entity.folders = entity folders
@@ -5194,8 +6334,6 @@ journal.window.entities.accessible.name.search.detected.entities = search detect
 journal.window.entities.accessible.name.search.entities = search entities
 
 journal.window.entities.accessible.name.search.entity.cards = search entity cards
-
-journal.window.entities.action.hide.undo.failed.many = { $count }{ $slot1 }couldn't be put back; they're still under hidden.
 
 journal.window.entities.button.detail.reattach = re-attach
 
@@ -5597,29 +6735,17 @@ journal.window.entities.entity.delete.copy.done.done = done
 
 journal.window.entities.entity.delete.copy.erase.now.erase.now = erase now
 
-journal.window.entities.entity.delete.copy.facet.many.its.place.and.notes.in.n = its place and notes in { $slot1 } facets
-
 journal.window.entities.entity.delete.copy.facet.one.its.place.and.notes.in.facet = its place and notes in 1 facet
 
 journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.each = its place and notes in each facet it's in
 
 journal.window.entities.entity.delete.copy.gone.it.s.no.longer.in.your = it's no longer in your journal.
 
-journal.window.entities.entity.delete.copy.gone.more.many.g.more.are.no.longer.listed = { $slot1 } more are no longer listed.
-
-journal.window.entities.entity.delete.copy.gone.more.one.g.more.is.no.longer.listed = { $slot1 } more is no longer listed.
-
 journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one = your journal needs at least one facet that isn't muted.
 
 journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own = this erases the entity's own:
 
 journal.window.entities.entity.delete.copy.lead.this.moves.the.entity.s.own = this moves the entity's own:
-
-journal.window.entities.entity.delete.copy.marked.many.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are marked below.
-
-journal.window.entities.entity.delete.copy.marked.one.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is marked below.
-
-journal.window.entities.entity.delete.copy.more.and.n.more = and { $slot1 } more
 
 journal.window.entities.entity.delete.copy.move.to.trash.move.to.trash = move to trash
 
@@ -5630,12 +6756,6 @@ journal.window.entities.entity.delete.copy.none.erased.one.look.for.it.below.or.
 journal.window.entities.entity.delete.copy.none.gone.many.they.re.no.longer.listed.here = they're no longer listed here.
 
 journal.window.entities.entity.delete.copy.none.gone.one.it.s.no.longer.listed.here = it's no longer listed here.
-
-journal.window.entities.entity.delete.copy.none.still.many.k.are.still.in.your.journal = { $slot1 } are still in your journal, marked below.
-
-journal.window.entities.entity.delete.copy.none.still.one.k.is.still.in.your.journal = { $slot1 } is still in your journal, marked below.
-
-journal.window.entities.entity.delete.copy.noun.entity = entity
 
 journal.window.entities.entity.delete.copy.open.trash.open.trash = open trash
 
@@ -5660,8 +6780,6 @@ journal.window.entities.entity.delete.copy.part.erased.one.the.other.wasn.t.eras
 journal.window.entities.entity.delete.copy.part.recovered.many.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
 
 journal.window.entities.entity.delete.copy.part.recovered.one.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
-
-journal.window.entities.entity.delete.copy.pick.label.select.name = select { $slot1 }
 
 journal.window.entities.entity.delete.copy.principal.this.is.you.so.it.can = this is you, so it can't be deleted.
 
@@ -5689,8 +6807,6 @@ journal.window.entities.entity.delete.copy.select.all.select.all = select all
 
 journal.window.entities.entity.delete.copy.select.select = select
 
-journal.window.entities.entity.delete.copy.selected.n.selected = { $slot1 } selected
-
 journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in = transcripts, summaries and activities elsewhere in your journal aren't erased and may still mention them.
 
 journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in.variant2 = transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention them.
@@ -5699,57 +6815,9 @@ journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activ
 
 journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in.variant2 = transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention it.
 
-journal.window.entities.entity.delete.copy.still.many.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are still in your journal, marked below.
-
-journal.window.entities.entity.delete.copy.still.one.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is still in your journal, marked below.
-
-journal.window.entities.entity.delete.copy.things.entities = entities
-
-journal.window.entities.entity.delete.copy.title.many.delete.n.entities = delete { $slot1 } entities?
-
-journal.window.entities.entity.delete.copy.title.many.erase.n.entities.now = erase { $slot1 } entities now?
-
 journal.window.entities.entity.delete.copy.voice.unknown.what.your.journal.keeps.about.its = what your journal keeps about its voice, if anything
 
 journal.window.entities.entity.delete.copy.voice.what.your.journal.keeps.about.its = what your journal keeps about its voice
-
-journal.window.entities.entity.view.status.e.g.value1 = e.g.{ $slot1 }{ $value1 }
-
-journal.window.entities.entity.view.status.e.g.value1.and.value2 = e.g.{ $slot1 }{ $value1 }{ $slot2 }and{ $slot3 }{ $value2 }
-
-journal.window.entities.entity.view.status.finding.entities.matching.value1 = finding entities matching "{ $value1 }"…
-
-journal.window.entities.entity.view.status.finding.value1.entities = finding{ $slot1 }{ $value1 }{ $slot2 }entities…
-
-journal.window.entities.entity.view.status.finding.value1.entities.matching.value2 = finding{ $slot1 }{ $value1 }{ $slot2 }entities matching "{ $value2 }"…
-
-journal.window.entities.entity.view.status.hid.value1.entities = hid{ $slot1 }{ $value1 }{ $slot2 }entities.
-
-journal.window.entities.entity.view.status.in.value1 = in{ $slot1 }{ $value1 }
-
-journal.window.entities.entity.view.status.in.value1.and.value2 = in{ $slot1 }{ $value1 }{ $slot2 }and{ $slot3 }{ $value2 }
-
-journal.window.entities.entity.view.status.kept.value1.pairs.separate = kept{ $slot1 }{ $value1 }{ $slot2 }pairs separate.
-
-journal.window.entities.entity.view.status.last.mentioned.value1 = Last mentioned:{ $slot1 }{ $value1 }
-
-journal.window.entities.entity.view.status.merged.value1.of.value2.pairs.value3 = merged{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }{ $slot4 }pairs.{ $slot5 }{ $value3 }
-
-journal.window.entities.entity.view.status.merged.value1.pairs = merged{ $slot1 }{ $value1 }{ $slot2 }pairs.
-
-journal.window.entities.entity.view.status.merging.of.value1 = merging… 0 of{ $slot1 }{ $value1 }
-
-journal.window.entities.entity.view.status.merging.value1.of.value2 = merging…{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
-
-journal.window.entities.entity.view.status.put.back.value1.entities = put back{ $slot1 }{ $value1 }{ $slot2 }entities.
-
-journal.window.entities.entity.view.status.value1.are.still.listed = { $value1 }{ $slot1 }are still listed.
-
-journal.window.entities.entity.view.status.value1.couldn.t.be.merged = { $value1 }{ $slot1 }couldn't be merged.
-
-journal.window.entities.facet.membership.count.facet = 1 facet
-
-journal.window.entities.facet.membership.count.value1.facets = { $value1 }{ $slot1 }facets
 
 journal.window.entities.field.label.alternative.names.akas = alternative names (AKAs)
 
@@ -5766,8 +6834,6 @@ journal.window.entities.field.placeholder.e.g.lead.engineer.on.the = e.g., lead 
 journal.window.entities.field.placeholder.enter.description = enter description…
 
 journal.window.entities.field.placeholder.search.entities = search entities…
-
-journal.window.entities.field.placeholder.search.value1.entities = search{ $slot1 }{ $value1 }{ $slot2 }entities
 
 journal.window.entities.field.placeholder.type.a.name.to.find.it = type a name to find it
 
@@ -5799,8 +6865,6 @@ journal.window.entities.link.label.edit = edit
 
 journal.window.entities.link.label.in.all.facets = in all facets →
 
-journal.window.entities.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
-
 journal.window.entities.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
 journal.window.entities.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
@@ -5814,8 +6878,6 @@ journal.window.entities.message.it.s.in.the.trash.you = it's in the trash. you c
 journal.window.entities.message.it.s.still.in.the.trash = it's still in the trash. you can try again from there.
 
 journal.window.entities.message.it.s.still.in.your.journal = it's still in your journal.
-
-journal.window.entities.message.they.erase.date.unless.you.recover = they erase { $slot1 } unless you recover them.
 
 journal.window.entities.message.they.may.already.be.back.in = they may already be back in your journal. reload to check.
 
@@ -6187,25 +7249,13 @@ journal.window.entities.state.edit.unavailable = unavailable
 
 journal.window.entities.text.couldn.t.hide.them = couldn't hide them.
 
-journal.window.entities.text.couldn.t.hide.them.a.record = couldn't hide them: a record in your journal can't be read ({ $value1 }).
-
-journal.window.entities.text.hid.value1.of.value2.value3 = hid{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }.{ $slot4 }{ $value3 }
-
 journal.window.entities.text.hiding.stopped.partway.undo.puts.back = hiding stopped partway. undo puts back everything it hid.
-
-journal.window.entities.text.hiding.value1.of.value2 = hiding…{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
 
 journal.window.entities.text.loading = loading…
 
 journal.window.entities.text.loading.entities = loading entities…
 
-journal.window.entities.text.putting.back.value1.of.value2 = putting back…{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
-
-journal.window.entities.text.undo.stopped.after.putting.back.value1 = undo stopped after putting back{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }. the rest are still under hidden.
-
 journal.window.entities.text.undo.stopped.before.putting.any.back = undo stopped before putting any back. they're still under hidden.
-
-journal.window.entities.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
 
 journal.window.entities.title.couldn.t.erase.those = couldn't erase those
 
@@ -6213,31 +7263,13 @@ journal.window.entities.title.couldn.t.move.that.to.the = couldn't move that to 
 
 journal.window.entities.title.couldn.t.move.those.to.the = couldn't move those to the trash
 
-journal.window.entities.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
-
 journal.window.entities.title.couldn.t.recover.those = couldn't recover those
 
 journal.window.entities.title.delete.this.entity = delete this entity?
 
 journal.window.entities.title.erase.this.entity.now = erase this entity now?
 
-journal.window.entities.title.erased.done.of.n = erased { $slot1 } of { $slot2 }
-
-journal.window.entities.title.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal
-
-journal.window.entities.title.moved.done.of.n.to.the = moved { $slot1 } of { $slot2 } to the trash
-
-journal.window.entities.title.moved.n.things.to.the.trash = moved { $slot1 } { $slot2 } to the trash
-
 journal.window.entities.title.moved.to.the.trash = moved to the trash
-
-journal.window.entities.title.n.things.recovered = { $slot1 } { $slot2 } recovered
-
-journal.window.entities.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
-
-journal.window.entities.title.noun.recovered = { $slot1 } recovered
-
-journal.window.entities.title.recovered.done.of.n = recovered { $slot1 } of { $slot2 }
 
 journal.window.entities.title.your.journal.didn.t.answer = your journal didn't answer
 
@@ -6245,17 +7277,9 @@ journal.window.entities.tooltip.add.to.facet = Add to facet
 
 journal.window.entities.tooltip.cannot.hide.yourself = cannot hide yourself
 
-journal.window.entities.tooltip.click.to.view.in.value1 = Click to view in{ $slot1 }{ $value1 }
-
 journal.window.entities.tooltip.entity.is.hidden.and.detached.from = entity is hidden and detached from this facet
 
-journal.window.entities.tooltip.facet.value1 = facet:{ $slot1 }{ $value1 }
-
 journal.window.entities.tooltip.has.voiceprint = Has voiceprint
-
-journal.window.entities.tooltip.last.mentioned.value1 = last mentioned{ $slot1 }{ $value1 }
-
-journal.window.entities.tooltip.last.mentioned.value1.variant2 = Last mentioned:{ $slot1 }{ $value1 }
 
 journal.window.entities.tooltip.this.entity.is.hidden = this entity is hidden
 
@@ -6263,15 +7287,7 @@ journal.window.entities.tooltip.this.is.you = this is you
 
 journal.window.entities.tooltip.this.is.your.entity.in.this = This is your entity in this facet
 
-journal.window.entities.tooltip.type.value1 = type:{ $slot1 }{ $value1 }
-
 journal.window.entities.tooltip.unhide.this.entity = unhide this entity
-
-journal.window.entities.tooltip.value1.mention.value2.days.detected.in = { $value1 }{ $slot1 }mention{ $value2 }: days detected in the last 30 days
-
-journal.window.entities.visible.text.also.known.as.value1 = also known as:{ $slot1 }{ $value1 }
-
-journal.window.entities.visible.text.also.known.as.value1.variant2 = Also known as:{ $slot1 }{ $value1 }
 
 journal.window.entities.visible.text.attach.to = attach to
 
@@ -6289,15 +7305,11 @@ journal.window.entities.visible.text.connections = connections
 
 journal.window.entities.visible.text.couldn.t.load.that.page.of = couldn't load that page of entities.
 
-journal.window.entities.visible.text.couldn.t.load.this.group = couldn't load this group.{ $slot1 }
-
 journal.window.entities.visible.text.description = description
 
 journal.window.entities.visible.text.detach = detach
 
 journal.window.entities.visible.text.detached = detached
-
-journal.window.entities.visible.text.detected.entities = detected entities
 
 journal.window.entities.visible.text.dots.are.the.facets.a.name = dots are the facets a name appears in.
 
@@ -6306,8 +7318,6 @@ journal.window.entities.visible.text.each.pair.below.becomes.one.entity = each p
 journal.window.entities.visible.text.edit.entity = edit entity
 
 journal.window.entities.visible.text.entities = entities
-
-journal.window.entities.visible.text.entities.in.value1 = entities in{ $slot1 }{ $value1 }
 
 journal.window.entities.visible.text.facets = facets
 
@@ -6321,33 +7331,15 @@ journal.window.entities.visible.text.hidden = hidden
 
 journal.window.entities.visible.text.hide = hide
 
-journal.window.entities.visible.text.hide.value1 = hide{ $slot1 }{ $value1 }
-
 journal.window.entities.visible.text.hiding = hiding…
 
-journal.window.entities.visible.text.hiding.is.paused.value1 = hiding is paused:{ $slot1 }{ $value1 }.
-
-journal.window.entities.visible.text.hiding.value1.of.value2 = hiding…{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
-
 journal.window.entities.visible.text.how.does.this.entity.relate.to = (how does this entity relate to this facet?)
-
-journal.window.entities.visible.text.keep.value1.separate = keep{ $slot1 }{ $value1 }{ $slot2 }separate
-
-journal.window.entities.visible.text.last.mentioned.value1 = last mentioned{ $slot1 }{ $value1 }
-
-journal.window.entities.visible.text.last.mentioned.value1.variant2 = Last mentioned:{ $slot1 }{ $value1 }
 
 journal.window.entities.visible.text.loading = loading…
 
 journal.window.entities.visible.text.loading.entities = loading entities…
 
 journal.window.entities.visible.text.loading.this.entity = loading this entity…
-
-journal.window.entities.visible.text.merge.pair = merge 1 pair?
-
-journal.window.entities.visible.text.merge.value1 = merge{ $slot1 }{ $value1 }
-
-journal.window.entities.visible.text.merge.value1.pairs = merge{ $slot1 }{ $value1 }{ $slot2 }pairs?
 
 journal.window.entities.visible.text.more.about.hidden = more about hidden
 
@@ -6358,8 +7350,6 @@ journal.window.entities.visible.text.name.is.required = name is required
 journal.window.entities.visible.text.names.shaped.like.codes.file.names = names shaped like codes, file names or request numbers. none has a note.
 
 journal.window.entities.visible.text.no.description.click.to.add = no description. click to add…
-
-journal.window.entities.visible.text.no.entities.match.value1 = no entities match "{ $value1 }".
 
 journal.window.entities.visible.text.no.entities.match.your.search = no entities match your search.
 
@@ -6372,8 +7362,6 @@ journal.window.entities.visible.text.not.attached.to.any.facets.yet = not attach
 journal.window.entities.visible.text.not.now = not now
 
 journal.window.entities.visible.text.nothing.here = nothing here.
-
-journal.window.entities.visible.text.of = of
 
 journal.window.entities.visible.text.pairs.that.might.be.the.same = pairs that might be the same person or thing. a merge can't be undone.
 
@@ -6393,10 +7381,6 @@ journal.window.entities.visible.text.saving = saving…
 
 journal.window.entities.visible.text.select.a.facet.to.add.entities = Select a facet to add entities to your journal.
 
-journal.window.entities.visible.text.select.all.value1 = select all{ $slot1 }{ $value1 }
-
-journal.window.entities.visible.text.showing = showing
-
 journal.window.entities.visible.text.still.working = still working…
 
 journal.window.entities.visible.text.they.move.to.hidden.where.you = they move to hidden, where you can unhide them. connected agents can't reach them. your own entity is never in this group.
@@ -6411,27 +7395,13 @@ journal.window.entities.visible.text.unhiding = unhiding…
 
 journal.window.entities.visible.text.unticked.ones.stay.as.they.are = unticked ones stay as they are.
 
-journal.window.entities.visible.text.value1.merges.into.value2 = { $value1 }{ $slot1 }merges into{ $slot2 }{ $value2 }
-
-journal.window.entities.visible.text.value1.more.pairs.leave.the.list = { $value1 }{ $slot1 }more pairs leave the list without merging: each includes an entity merged away above.
-
-journal.window.entities.visible.text.value1.of.value2.entities = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }entities
-
-journal.window.entities.visible.text.value1.of.value2.ticked = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }ticked
-
-journal.window.entities.visible.text.value1.value2.of.value3 = { $value1 }–{ $value2 }{ $slot1 }of{ $slot2 }{ $value3 }
-
 journal.window.entities.visible.text.worth.a.look = worth a look
 
 journal.window.entities.visible.text.you = you
 
 journal.window.entities.voice.invalid.key = invalid voice sample key
 
-journal.window.entities.window.explanation.a.record.in.your.journal.can = a record in your journal can't be read ({ $value1 })
-
 journal.window.entities.window.explanation.btn.btn.secondary.btn.sm.ent = btn btn-secondary btn-sm ent-unhide-btn
-
-journal.window.entities.window.explanation.couldn.t.be.merged = 1 couldn't be merged.
 
 journal.window.entities.window.explanation.couldn.t.keep.it.separate.it = couldn't keep it separate. it's still listed.
 
@@ -6445,45 +7415,17 @@ journal.window.entities.window.explanation.couldn.t.search.for.a.merge = couldn'
 
 journal.window.entities.window.explanation.failed.to.load.observations = failed to load observations
 
-journal.window.entities.window.explanation.is.still.listed = 1 is still listed.
-
-journal.window.entities.window.explanation.it.may.have.come.back.without = it may have come back without all its facets
-
-journal.window.entities.window.explanation.kept.pair.separate = kept 1 pair separate.
-
-journal.window.entities.window.explanation.kept.value1.of.value2.pairs.separate = kept{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }{ $slot4 }pairs separate.{ $slot5 }{ $value3 }
-
 journal.window.entities.window.explanation.look.like.an.id = look like an ID
 
 journal.window.entities.window.explanation.looks.like.an.id = looks like an ID
 
-journal.window.entities.window.explanation.put.back.entity = put back 1 entity.
-
-journal.window.entities.window.explanation.put.back.value1.of.value2.value3 = put back{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }.{ $slot4 }{ $value3 }
-
-journal.window.entities.window.explanation.some.may.have.come.back.without = some may have come back without all their facets
-
-journal.window.entities.window.explanation.the.rest.wasn.t.hidden = the rest wasn't hidden.
-
-journal.window.entities.window.explanation.the.rest.weren.t.hidden = the rest weren't hidden.
-
 journal.window.entities.window.explanation.this.entity.couldn.t.be.loaded = this entity couldn't be loaded, so it can't be edited.
-
-journal.window.entities.window.explanation.this.name.looks.like.an.id = this name looks like an ID.{ $slot1 }
 
 journal.window.entities.window.explanation.undo.puts.it.back.facets.included = undo puts it back, facets included. it's also under hidden whenever you want it.
 
 journal.window.entities.window.explanation.undo.puts.them.back.facets.included = undo puts them back, facets included. they're also under hidden whenever you want them.
 
-journal.window.entities.window.explanation.value1.records.in.your.journal.can = { $value1 }{ $slot1 }records in your journal can't be read ({ $value2 })
-
-journal.window.entities.window.explanation.value1.were.already.hidden.or.gone = { $slot1 }{ $value1 }{ $slot2 }were already hidden or gone.
-
-journal.window.entities.window.explanation.was.already.hidden.or.gone = { $slot1 }1 was already hidden or gone.
-
 journal.window.entities.window.state.text.couldn.t.attach.entity = couldn't attach entity
-
-journal.window.entities.window.state.text.couldn.t.be.put.back.it = 1 couldn't be put back; it's still under hidden.
 
 journal.window.entities.window.state.text.couldn.t.detach.entity = couldn't detach entity
 
@@ -6507,11 +7449,7 @@ journal.window.entities.window.state.text.failed.to.save = Failed to save
 
 journal.window.entities.window.state.text.finding.entities = finding entities…
 
-journal.window.entities.window.state.text.hid.entity = hid 1 entity.
-
 journal.window.entities.window.state.text.loading.this.entity = loading this entity…
-
-journal.window.entities.window.state.text.merged.pair = merged 1 pair.
 
 journal.window.entities.window.state.text.next.page = next page
 
@@ -7392,8 +8330,6 @@ journal.window.handoff.spl.outcome.guidance.network.error = The service could no
 journal.window.handoff.spl.outcome.guidance.pending = Keep the approval page open while the request finishes.
 
 journal.window.handoff.spl.outcome.guidance.relay.identity.conflict = this journal is already set up under a different identity. reach out to support to reset it, then try again.
-
-journal.window.handoff.spl.outcome.guidance.relay.rejected = the relay couldn't finish setting up your private network (error { $slot1 }).
 
 journal.window.handoff.spl.outcome.guidance.relay.rotation.unsupported = this journal's security key changed and can't be re-registered automatically yet. reach out to support.
 
@@ -8653,10 +9589,6 @@ journal.window.link.wrong.journal.heading = this link can't be opened here.
 
 journal.window.local.access.consent.needed = opening local access lets any account on this computer, and any program running here, open your journal without asking. confirm to turn it on.
 
-journal.window.local.access.detail.other = open your journal from the journal app on a mac, or run { $slot1 } in a terminal.
-
-journal.window.local.access.detail.windows = if this journal is yours, open it from the journal app, or run { $slot1 } in a terminal.
-
 journal.window.local.access.heading = open your journal
 
 journal.window.local.access.invalid.open = say whether local access is open: { $slot1 } or { $slot2 }.
@@ -9353,11 +10285,7 @@ journal.window.map.window.explanation.your.value1.said.location.was.interrupted 
 
 journal.window.map.window.explanation.your.watch.gives.only.approximate.location = your watch gives only approximate location, so its readings name the town, not the building.
 
-journal.window.more.agents.connected = { $count }{ $slot1 }connected
-
 journal.window.more.coverage.since = since{ $slot1 }{ $date }
-
-journal.window.more.entities.kept = { $count }{ $slot1 }kept
 
 journal.window.more.field.label.filter.views = filter views
 
@@ -9367,13 +10295,9 @@ journal.window.more.group.runs = how it runs
 
 journal.window.more.group.shape = what you shape
 
-journal.window.more.imports.many = { $count }{ $slot1 }imports
-
 journal.window.more.page.heading.more = more
 
 journal.window.more.suggestions.pending = { $count }{ $slot1 }to review
-
-journal.window.more.text.import = 1 import
 
 journal.window.more.text.no.devices.yet = no devices yet
 
@@ -9385,8 +10309,6 @@ journal.window.more.text.nothing.to.review = nothing to review
 
 journal.window.more.text.nothing.yet = nothing yet
 
-journal.window.more.text.to.review = { $slot1 }to review
-
 journal.window.more.tooltip.always.in.the.side.rail = always in the side rail
 
 journal.window.more.visible.text.couldn.t.save.that.try.again = couldn't save that. try again.
@@ -9397,11 +10319,7 @@ journal.window.more.visible.text.no.views.match.that = no views match that.
 
 journal.window.more.window.explanation.fix.and.tidy.what.it.keeps = fix and tidy what it keeps
 
-journal.window.more.window.explanation.pin.value1.to.the.side.rail = pin{ $slot1 }{ $value1 }{ $slot2 }to the side rail
-
 journal.window.more.window.explanation.set.it.up.and.keep.it = set it up and keep it running
-
-journal.window.more.window.explanation.unpin.value1.from.the.side.rail = unpin{ $slot1 }{ $value1 }{ $slot2 }from the side rail
 
 journal.window.more.window.explanation.what.your.journal.keeps = what your journal keeps
 
@@ -9418,8 +10336,6 @@ journal.window.network.accessible.name.devices = devices
 journal.window.network.accessible.name.how.your.devices.reach.your.journal = how your devices reach your journal
 
 journal.window.network.address.home.address.hostname.unsupported = this needs an ip address — to reach your journal by name from anywhere, turn on your private network
-
-journal.window.network.address.home.address.invalid = use the address your journal is reachable at, with port { $slot1 }: either one on your own network, like 192.168.1.44:{ $slot2 }, or a public address you've exported.
 
 journal.window.network.button.label.cancel.edit = cancel edit
 
@@ -9466,8 +10382,6 @@ journal.window.network.delivery.never = nothing added yet
 journal.window.network.delivery.pair.image = pair QR
 
 journal.window.network.delivery.unknown = delivery unavailable
-
-journal.window.network.delivery.visible.text.added.value1.ago = added{ $slot1 }{ $value1 }{ $slot2 }ago
 
 journal.window.network.disclosure.label.device.details = device details
 
@@ -9577,12 +10491,6 @@ journal.window.network.visible.text.device.details.haven.t.been.shared = device 
 
 journal.window.network.visible.text.device.id = device id
 
-journal.window.network.visible.text.forget = forget
-
-journal.window.network.visible.text.forget.value1.it.will.need.to = forget{ $slot1 }{ $value1 }? it will need to pair again to add anything.
-
-journal.window.network.visible.text.it.will.need.to.pair.again = ? it will need to pair again to add anything.
-
 journal.window.network.visible.text.journal = journal
 
 journal.window.network.visible.text.last.added = last added
@@ -9619,12 +10527,6 @@ journal.window.network.window.explanation.link.pairing.link.clipboard.write.fail
 
 journal.window.network.window.explanation.private.network.isn.t.on.yet = private network isn't on yet
 
-journal.window.network.window.explanation.that.device.couldn.t.be.forgotten = that device couldn't be forgotten.{ $slot1 }
-
-journal.window.network.window.explanation.that.device.couldn.t.be.forgotten.variant2 = that device couldn't be forgotten. your journal may not be reachable.{ $slot1 }
-
-journal.window.network.window.explanation.that.device.couldn.t.be.removed = that device couldn't be removed. your journal may not be reachable.{ $slot1 }
-
 journal.window.network.window.explanation.timed.out.waiting.for.your.private = timed out waiting for your private network.
 
 journal.window.network.window.explanation.use.a.shorter.name.without.control = use a shorter name without control characters.
@@ -9650,8 +10552,6 @@ journal.window.network.window.state.text.reported.name = reported name
 journal.window.network.window.state.text.setting.up.your.private.network = setting up your private network…
 
 journal.window.network.window.state.text.this.device = this device
-
-journal.window.network.window.state.text.unpair.label = unpair '{ $slot1 }'?
 
 journal.window.search.count.day.one = { $count }{ $slot1 }day
 
@@ -9817,8 +10717,6 @@ journal.window.shared.api.malformed.response = Malformed server response
 
 journal.window.shared.api.request.failed = Request failed
 
-journal.window.shared.api.visible.text.request.failed.http.value1 = Request failed (HTTP{ $slot1 }{ $value1 })
-
 journal.window.shared.api.window.explanation.couldn.t.finish.that.request = couldn't finish that request.
 
 journal.window.shared.app.disclosure.label.show.details = show details
@@ -9828,8 +10726,6 @@ journal.window.shared.app.label.try.now = Try now
 journal.window.shared.app.notification.title = Notification
 
 journal.window.shared.app.request.failed = Request failed
-
-journal.window.shared.app.title.value1.background.task = { $value1 }{ $slot1 }background task
 
 journal.window.shared.app.visible.text.click.to.copy = (click to copy)
 
@@ -9929,18 +10825,6 @@ journal.window.shared.date.format.source.watch = your watch
 
 journal.window.shared.date.format.time.unavailable = time unavailable
 
-journal.window.shared.date.format.visible.text.value1.hr = { $value1 }{ $slot1 }hr
-
-journal.window.shared.date.format.visible.text.value1.hr.value2.min = { $value1 }{ $slot1 }hr{ $slot2 }{ $value2 }{ $slot3 }min
-
-journal.window.shared.date.format.visible.text.value1.imported = { $value1 }{ $slot1 }· imported
-
-journal.window.shared.date.format.visible.text.value1.min = { $value1 }{ $slot1 }min
-
-journal.window.shared.date.format.visible.text.value1.min.value2.sec = { $value1 }{ $slot1 }min{ $slot2 }{ $value2 }{ $slot3 }sec
-
-journal.window.shared.date.format.visible.text.value1.sec = { $value1 }{ $slot1 }sec
-
 journal.window.shared.date.nav.accessible.name.change.date.level = change date level
 
 journal.window.shared.date.nav.accessible.name.go.to.today = go to today
@@ -9956,8 +10840,6 @@ journal.window.shared.date.nav.accessible.name.previous.day = previous day
 journal.window.shared.date.nav.days.counting = still counting days…
 
 journal.window.shared.date.nav.days.loading = loading days…
-
-journal.window.shared.date.nav.label.week.of.value1.value2 = week of{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }
 
 journal.window.shared.date.nav.months.label.april = April
 
@@ -9991,27 +10873,15 @@ journal.window.shared.date.nav.visible.text.today = today
 
 journal.window.shared.date.nav.visible.text.try.again = try again
 
-journal.window.shared.date.nav.visible.text.week.of.value1.value2 = week of{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }
-
 journal.window.shared.date.nav.week.current = This week
 
 journal.window.shared.date.nav.week.previous = Last week
-
-journal.window.shared.date.nav.window.explanation.couldn.t.count.day.still.trying = couldn't count 1 day. still trying.
-
-journal.window.shared.date.nav.window.explanation.couldn.t.count.value1.days.still = couldn't count{ $slot1 }{ $value1 }{ $slot2 }days. still trying.
 
 journal.window.shared.date.nav.window.explanation.couldn.t.load.which.days.have = couldn't load which days have material.
 
 journal.window.shared.date.nav.window.explanation.couldn.t.load.which.months.have = couldn't load which months have material.
 
-journal.window.shared.day.grid.accessible.label.value1.calendar = { $value1 }{ $slot1 }calendar
-
 journal.window.shared.day.grid.range.cleared = range cleared
-
-journal.window.shared.day.grid.rollup.pending = , rollup pending
-
-journal.window.shared.day.grid.visible.text.finishes.the.range.from.value1 = finishes the range from{ $slot1 }{ $value1 }
 
 journal.window.shared.day.grid.visible.text.less = less
 
@@ -10024,8 +10894,6 @@ journal.window.shared.day.grid.visible.text.open = open →
 journal.window.shared.day.grid.visible.text.pending.rollup = pending rollup
 
 journal.window.shared.day.grid.visible.text.yes = yes
-
-journal.window.shared.day.grid.window.explanation.range.starts.value1.pick.the.last = range starts{ $slot1 }{ $value1 }. pick the last day.
 
 journal.window.shared.diagnostic.console.reason.code = reason code
 
@@ -10055,8 +10923,6 @@ journal.window.shared.gate.drawer.window.explanation.pick.statements.where.only.
 
 journal.window.shared.gate.drawer.window.explanation.teach.a.few.more.of.your = teach a few more of your longer statements.
 
-journal.window.shared.gate.drawer.window.explanation.value1.longer.statements.so.far = { $value1 }{ $slot1 }longer statements so far
-
 journal.window.shared.gate.drawer.window.explanation.voice.pattern.is.still.too.spread = voice pattern is still too spread out
 
 journal.window.shared.gate.drawer.window.explanation.you.ve.taught.enough.to.save = you've taught enough to save your voice.
@@ -10075,13 +10941,9 @@ journal.window.shared.question.visible.text.cancel = cancel
 
 journal.window.shared.question.visible.text.name = name
 
-journal.window.shared.report.error.status.text.journal.value1 = journal{ $slot1 }{ $value1 }
-
 journal.window.shared.report.error.status.text.your.versions = your versions
 
 journal.window.shared.report.error.window.explanation.nothing.leaves.this.journal.until.you = nothing leaves this journal until you send the form on the support website.
-
-journal.window.shared.router.tooltip.value1.journal = { $value1 }{ $slot1 }- journal
 
 journal.window.shared.shell.boot.accessible.name.about = about
 
@@ -10092,8 +10954,6 @@ journal.window.shared.shell.boot.button.label.try.again = try again
 journal.window.shared.shell.boot.section.heading.couldn.t.load.this.section = couldn't load this section
 
 journal.window.shared.shell.boot.tooltip.connecting = connecting
-
-journal.window.shared.shell.boot.tooltip.value1.journal = { $value1 }{ $slot1 }- journal
 
 journal.window.shared.shell.boot.visible.text.more = more
 
@@ -10108,8 +10968,6 @@ journal.window.shared.status.pane.accessible.label.browser.notifications.enabled
 journal.window.shared.status.pane.accessible.label.enable.browser.notifications = enable browser notifications
 
 journal.window.shared.status.pane.accessible.label.notifications.blocked.update.in.browser.settings = notifications blocked. update in browser settings
-
-journal.window.shared.status.pane.accessible.label.value1.value2.unread = { $value1 },{ $slot1 }{ $value2 }{ $slot2 }unread
 
 journal.window.shared.status.pane.automatic.decline = no thanks
 
@@ -10133,10 +10991,6 @@ journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your = a d
 
 journal.window.shared.status.pane.status.text.a.device.needs.attention = a device needs attention
 
-journal.window.shared.status.pane.status.text.and = and{ $slot1 }
-
-journal.window.shared.status.pane.status.text.more.need.attention = { $slot1 }more need attention
-
 journal.window.shared.status.pane.status.text.update.or.restart.it.on.that = update or restart it on that device, then a valid upload clears this.
 
 journal.window.shared.status.pane.tooltip.browser.notifications.enabled = browser notifications enabled
@@ -10149,8 +11003,6 @@ journal.window.shared.status.pane.update.just.now = updated just now
 
 journal.window.shared.status.pane.visible.text.a.security.update.is.installed.restart = a security update is installed. restart your journal to finish it.
 
-journal.window.shared.status.pane.visible.text.connected.for.value1 = connected for{ $slot1 }{ $value1 }
-
 journal.window.shared.status.pane.visible.text.couldn.t.check.for.security.updates = couldn't check for security updates.
 
 journal.window.shared.status.pane.visible.text.device.status.is.unavailable.right.now = device status is unavailable right now.
@@ -10159,13 +11011,7 @@ journal.window.shared.status.pane.visible.text.devices.are.adding.to.your.journa
 
 journal.window.shared.status.pane.visible.text.hide.details = hide details
 
-journal.window.shared.status.pane.visible.text.is.installed.and.starts.the.next = { $slot1 }is installed and starts the next time your journal does
-
-journal.window.shared.status.pane.visible.text.is.missing.a.security.fix = { $slot1 }is missing a security fix
-
 journal.window.shared.status.pane.visible.text.just.now = just now
-
-journal.window.shared.status.pane.visible.text.last.rejected.value1.ago = last rejected{ $slot1 }{ $value1 }{ $slot2 }ago
 
 journal.window.shared.status.pane.visible.text.no.devices.are.running.the.solstone = no devices are running the solstone app yet. set one up to start your journal.
 
@@ -10179,49 +11025,23 @@ journal.window.shared.status.pane.visible.text.nothing.held.back.nothing.new = n
 
 journal.window.shared.status.pane.visible.text.notifications = notifications
 
-journal.window.shared.status.pane.visible.text.one.of.your.devices = one of your devices
-
 journal.window.shared.status.pane.visible.text.quiet.notifications = quiet notifications
 
 journal.window.shared.status.pane.visible.text.show.details = show details
 
 journal.window.shared.status.pane.visible.text.solstone.app.install.linux.packages = solstone.app/install#linux-packages
 
-journal.window.shared.status.pane.visible.text.the.solstone.app.on = the solstone app on{ $slot1 }
-
 journal.window.shared.status.pane.visible.text.under.a.minute = under a minute
 
 journal.window.shared.status.pane.visible.text.unknown = unknown
 
-journal.window.shared.status.pane.visible.text.up.to.date = { $slot1 }· up to date
-
-journal.window.shared.status.pane.visible.text.update.available.v = update available (v
-
 journal.window.shared.status.pane.visible.text.update.status.unknown = update status unknown
 
-journal.window.shared.status.pane.visible.text.update.to = { $slot1 }(update to{ $slot2 }
-
-journal.window.shared.status.pane.visible.text.value1.ago = { $value1 }{ $slot1 }ago
-
-journal.window.shared.status.pane.visible.text.value1.needs.attention = { $value1 }{ $slot1 }needs attention
-
-journal.window.shared.status.pane.visible.text.value1.uploads.turned.away = { $value1 }{ $slot1 }uploads turned away
-
 journal.window.shared.status.pane.visible.text.view.device.health = view device health →
-
-journal.window.shared.status.pane.visible.text.your.journal.is.missing.a.security = your journal is missing a security fix
 
 journal.window.shared.status.pane.window.explanation.a.device.hasn.t.added.to = a device hasn't added to your journal recently.
 
 journal.window.shared.status.pane.window.explanation.a.device.needs.attention = a device needs attention
-
-journal.window.shared.status.pane.window.explanation.devices.haven.t.added.to.your = { $slot1 }devices haven't added to your journal recently:{ $slot2 }
-
-journal.window.shared.status.pane.window.explanation.hasn.t.added.to.your.journal = { $slot1 }hasn't added to your journal in{ $slot2 }
-
-journal.window.shared.status.pane.window.explanation.hasn.t.added.to.your.journal.variant2 = { $slot1 }hasn't added to your journal recently.
-
-journal.window.shared.status.pane.window.explanation.installed.from.a.package.to.get = installed from a package. to get updates through your system's updater, add the solstone repository:{ $slot1 }
 
 journal.window.shared.status.pane.window.explanation.installed.from.a.package.updates.come = installed from a package. updates come through your system's updater.
 
@@ -10233,13 +11053,7 @@ journal.window.shared.status.pane.window.explanation.once.a.day.your.journal.che
 
 journal.window.shared.status.pane.window.explanation.update.your.journal.automatically = update your journal automatically?
 
-journal.window.shared.status.pane.window.explanation.upload.turned.away = 1 upload turned away
-
-journal.window.shared.status.pane.window.explanation.what.it.adds.hasn.t.reached = what it adds hasn't reached your journal since{ $slot1 }
-
 journal.window.shared.status.pane.window.explanation.what.it.adds.isn.t.reaching = what it adds isn't reaching your journal.
-
-journal.window.shared.status.pane.window.explanation.what.it.adds.isn.t.reaching.variant2 = what it adds isn't reaching your journal.{ $slot1 }
 
 journal.window.shared.websocket.label.a.device.hasn.t.added.recently = a device hasn't added recently
 
@@ -10263,15 +11077,11 @@ journal.window.shared.websocket.label.show.details = Show details
 
 journal.window.shared.websocket.message.last.reconnect.attempt.failed = last reconnect attempt failed.
 
-journal.window.shared.websocket.message.last.reconnect.attempt.failed.variant2 = last reconnect attempt failed.{ $slot1 }
-
 journal.window.shared.websocket.message.live.updates.connected = live updates connected
 
 journal.window.shared.websocket.message.reconnecting.some.features.may.be.delayed = reconnecting. some features may be delayed
 
 journal.window.shared.websocket.title.connection.lost = connection lost
-
-journal.window.shared.websocket.window.explanation.no.reconnect.attempts.recorded.yet = no reconnect attempts recorded yet.
 
 journal.window.shell.error.pinned.must.be.a.boolean = pinned must be a boolean
 
@@ -10405,8 +11215,6 @@ journal.window.speakers.accessible.name.segments = segments
 
 journal.window.speakers.accessible.name.sort.voices = sort voices
 
-journal.window.speakers.accessible.name.speaker = speaker
-
 journal.window.speakers.attribution.attribution.response.a.required.field.is.missing = a required field is missing.
 
 journal.window.speakers.attribution.attribution.response.detail.attribution.is.not.medium.confidence = attribution is not medium confidence
@@ -10507,11 +11315,7 @@ journal.window.speakers.button.label.look.for.new.voices = look for new voices
 
 journal.window.speakers.button.label.needs.review = needs review
 
-journal.window.speakers.button.label.show.all = show all
-
 journal.window.speakers.button.label.show.sentences.and.details = show sentences and details
-
-journal.window.speakers.button.label.voices = voices →
 
 journal.window.speakers.copy.action.not.now = not now
 
@@ -10535,19 +11339,7 @@ journal.window.speakers.copy.correct.propagate.offer = these two can be looked u
 
 journal.window.speakers.copy.correct.scope = This fixes this one statement.
 
-journal.window.speakers.copy.create.row = add "{ $slot1 }" as someone new
-
-journal.window.speakers.copy.discovery.degraded.template = some voice samples could not be used ({ $slot1 })
-
 journal.window.speakers.copy.discovery.error = couldn't look for new voices right now.
-
-journal.window.speakers.copy.evidence.meeting.many = in your meeting notes on { $slot1 } of those days
-
-journal.window.speakers.copy.evidence.meeting.one = in your meeting notes that day
-
-journal.window.speakers.copy.evidence.screen.many = on screen in { $slot1 } of these conversations
-
-journal.window.speakers.copy.evidence.screen.one = on screen in 1 of these conversations
 
 journal.window.speakers.copy.exit.not.now = not now
 
@@ -10571,13 +11363,7 @@ journal.window.speakers.copy.grid.unit.one = segment to name
 
 journal.window.speakers.copy.grid.unit.other = segments to name
 
-journal.window.speakers.copy.keep.separate.body = { $slot1 } is already in your journal. if this is someone else, they will stay separate and never be mixed.
-
 journal.window.speakers.copy.keep.separate.confirm = yes, someone new
-
-journal.window.speakers.copy.keep.separate.decline = no, that's { $slot1 }
-
-journal.window.speakers.copy.keep.separate.title = different from { $slot1 }?
 
 journal.window.speakers.copy.load.error = couldn't load this voice. try again.
 
@@ -10633,8 +11419,6 @@ journal.window.speakers.copy.overview.owner.cohesion.label = consistency
 
 journal.window.speakers.copy.overview.owner.help.label = teach my voice
 
-journal.window.speakers.copy.overview.owner.progress.suffix = longer statements
-
 journal.window.speakers.copy.overview.owner.progress.unknown = learning progress unavailable
 
 journal.window.speakers.copy.overview.owner.refreshed.prefix = refreshed
@@ -10663,11 +11447,7 @@ journal.window.speakers.copy.overview.quality.missing.label = segments not proce
 
 journal.window.speakers.copy.overview.quality.prebootstrap = your voice is still learning
 
-journal.window.speakers.copy.overview.quality.ready.template = speaker labels, last { $slot1 } days
-
 journal.window.speakers.copy.overview.quality.skipped.label = set aside for now
-
-journal.window.speakers.copy.overview.quality.teaching.label = teaching changes
 
 journal.window.speakers.copy.overview.quality.teaching.zero = no recent teaching changes
 
@@ -10685,15 +11465,11 @@ journal.window.speakers.copy.overview.your.voice.learning = not confirmed yet
 
 journal.window.speakers.copy.owner.build.failed = couldn't save your voice. try again in a moment.
 
-journal.window.speakers.copy.owner.candidate.body.template = this voice is in { $slot1 } statements in your journal. play a few samples before you decide.
-
 journal.window.speakers.copy.owner.candidate.effect = if it's you, past conversations show your lines as "you". activities from today and the last 7 days get their people and story rewritten to match, and older ones stay as written.
 
 journal.window.speakers.copy.owner.candidate.title = is this your voice?
 
 journal.window.speakers.copy.owner.confirm.label = yes, that's me
-
-journal.window.speakers.copy.owner.cooldown.template = that voice won't be offered again. your journal looks for your voice again after { $slot1 }, or you can teach it now.
 
 journal.window.speakers.copy.owner.identity.needed = add your name in settings so your journal can tell which voice is yours.
 
@@ -10702,8 +11478,6 @@ journal.window.speakers.copy.owner.identity.needed.label = add my name
 journal.window.speakers.copy.owner.not.ready.needs.more = your journal looks for your voice each day and asks you when it finds one. you can also teach it now.
 
 journal.window.speakers.copy.owner.not.ready.short.or.mixed = so far your statements are mostly short or mixed with other voices, so teaching your voice helps most.
-
-journal.window.speakers.copy.owner.recordings.template = { $slot1 } recordings with audio so far
 
 journal.window.speakers.copy.owner.redo.body = mark statements that are yours, then update your voice. if they don't match your saved voice closely enough, nothing changes.
 
@@ -10723,10 +11497,6 @@ journal.window.speakers.copy.owner.reject.label = no, that's not me
 
 journal.window.speakers.copy.owner.relabel.done = past conversations now show which lines are yours.
 
-journal.window.speakers.copy.owner.relabel.incomplete.template = past conversations are updated, except { $slot1 } recordings that couldn't be updated.
-
-journal.window.speakers.copy.owner.relabel.running.template = updating past conversations: { $slot1 } of { $slot2 } recordings
-
 journal.window.speakers.copy.owner.relabel.scope = activities from today and the last 7 days get their people and story rewritten to match, and older ones stay as written. new conversations show your lines as "you" from now on.
 
 journal.window.speakers.copy.owner.relabel.started = past conversations are being updated to show which lines are yours.
@@ -10735,14 +11505,6 @@ journal.window.speakers.copy.owner.relabel.waiting = past conversations will upd
 
 journal.window.speakers.copy.owner.reveal.close.label = continue
 
-journal.window.speakers.copy.owner.reveal.evidence.template = { $slot1 } evidence
-
-journal.window.speakers.copy.owner.reveal.statements.template = { $slot1 } statements taught
-
-journal.window.speakers.copy.owner.reveal.streams.template = appears in { $slot1 } places
-
-journal.window.speakers.copy.owner.reveal.streams.template.one = appears in 1 place
-
 journal.window.speakers.copy.owner.reveal.title = your voice is confirmed
 
 journal.window.speakers.copy.owner.teach.body = pick longer statements that are yours. they keep your voice separate from other speakers.
@@ -10750,8 +11512,6 @@ journal.window.speakers.copy.owner.teach.body = pick longer statements that are 
 journal.window.speakers.copy.owner.teach.busy = voice update is busy; try the next statement in a moment
 
 journal.window.speakers.copy.owner.teach.empty = nothing from the last two weeks is ready to teach yet
-
-journal.window.speakers.copy.owner.teach.exhausted.body.template = { $slot1 } of { $slot2 } longer statements taught
 
 journal.window.speakers.copy.owner.teach.exhausted.title = that's all for now
 
@@ -10772,8 +11532,6 @@ journal.window.speakers.copy.owner.teach.partial = some recent recordings couldn
 journal.window.speakers.copy.owner.teach.pause.label = pause
 
 journal.window.speakers.copy.owner.teach.paused = teaching paused
-
-journal.window.speakers.copy.owner.teach.progress.template = { $slot1 } of { $slot2 } longer statements
 
 journal.window.speakers.copy.owner.teach.refused.title = not ready yet
 
@@ -10797,25 +11555,11 @@ journal.window.speakers.copy.owner.undo.failed = couldn't remove your voice. try
 
 journal.window.speakers.copy.owner.undo.label = remove my voice
 
-journal.window.speakers.copy.owner.undo.running.template = returning past conversations to unnamed voices: { $slot1 } of { $slot2 } recordings
-
 journal.window.speakers.copy.play.from.here.label = play from here
 
 journal.window.speakers.copy.preview.back = back
 
 journal.window.speakers.copy.preview.body.fresh = everywhere this voice has shown up, in every conversation, now and from here on.
-
-journal.window.speakers.copy.preview.body.has.voice = { $slot1 } already has a voice in your journal. this will be kept as another way they sound.
-
-journal.window.speakers.copy.preview.confirm = yes, this is { $slot1 }
-
-journal.window.speakers.copy.preview.facts = { $slot1 } statements across { $slot2 } conversations, all in your journal. you can undo this.
-
-journal.window.speakers.copy.preview.title = this voice becomes { $slot1 }
-
-journal.window.speakers.copy.receipt.body = every conversation with this voice now reads { $slot1 }.
-
-journal.window.speakers.copy.receipt.title = { $slot1 }'s voice is in your journal now
 
 journal.window.speakers.copy.receipt.undo = undo
 
@@ -10827,13 +11571,7 @@ journal.window.speakers.copy.search.error = couldn't search your people. try aga
 
 journal.window.speakers.copy.search.label = someone else
 
-journal.window.speakers.copy.search.no.results = no one in your journal matches "{ $slot1 }"
-
 journal.window.speakers.copy.search.placeholder = search your people
-
-journal.window.speakers.copy.sheet.lede.many = this voice has shown up in { $slot1 } conversations, all kept in your journal. say who this is and they will be recognized from now on.
-
-journal.window.speakers.copy.sheet.lede.one = this voice has shown up in 1 conversation, kept in your journal. say who this is and they will be recognized from now on.
 
 journal.window.speakers.copy.sheet.title = someone keeps showing up
 
@@ -10851,19 +11589,41 @@ journal.window.speakers.copy.tr.not.in.new.voices = this voice isn't in new voic
 
 journal.window.speakers.copy.undo.done = undone. this voice is back in new voices.
 
-journal.window.speakers.copy.undo.partial = undo restored part of this voice. { $slot1 } changed back; { $slot2 } stayed as they are. try again.
-
 journal.window.speakers.copy.view.voice.samples = view voice samples
 
-journal.window.speakers.disclosure.label.unnamed.voices.across.your.journal = unnamed voices across your journal (
+journal.window.speakers.day.discovery.pattern.count = { $count_quantity ->
+        [one] { $count } recurring voice pattern doesn't match anyone you've named. listen to a few samples and name them.
+       *[other] { $count } recurring voice patterns don't match anyone you've named. listen to a few samples and name them.
+    }
 
-journal.window.speakers.disclosure.label.voices.still.using.a.placeholder.name = voices still using a placeholder name (
-
-journal.window.speakers.disclosure.label.voices.without.a.name.yet = voices without a name yet (
+journal.window.speakers.day.discovery.unnamed.count = { $count_quantity ->
+        [one] unnamed voices across your journal ({ $count })
+       *[other] unnamed voices across your journal ({ $count })
+    }
 
 journal.window.speakers.disclosure.label.why.not.yet = why not yet?
 
 journal.window.speakers.discovery.not.ran = nothing has looked for new voices yet. use "look for new voices" above to start.
+
+journal.window.speakers.discovery.sample.count = { $count_quantity ->
+        [one] { $count } sample
+       *[other] { $count } samples
+    }
+
+journal.window.speakers.discovery.segment.count = { $count_quantity ->
+        [one] { $count } segment
+       *[other] { $count } segments
+    }
+
+journal.window.speakers.discovery.unlabeled.count = { $count_quantity ->
+        [one] voices without a name yet ({ $count })
+       *[other] voices without a name yet ({ $count })
+    }
+
+journal.window.speakers.discovery.unused.samples = { $samples_quantity ->
+        [one] some voice samples could not be used ({ $samples })
+       *[other] some voice samples could not be used ({ $samples })
+    }
 
 journal.window.speakers.error.configured.owner.identity.is.not.admitted = configured owner identity is not admitted
 
@@ -10903,6 +11663,16 @@ journal.window.speakers.error.your.owner.voice.couldn.t.be.loaded.because.your.c
 
 journal.window.speakers.field.placeholder.find.a.voice.by.name = find a voice by name
 
+journal.window.speakers.grid.all.named.count = { $quantity ->
+        [one] 1 segment, all named
+       *[other] { $count } segments, all named
+    }
+
+journal.window.speakers.grid.to.name.count = { $quantity ->
+        [one] 1 segment to name
+       *[other] { $count } segments to name
+    }
+
 journal.window.speakers.heading.couldn.t.load.review = couldn't load review
 
 journal.window.speakers.heading.couldn.t.load.segments = couldn't load segments
@@ -10923,11 +11693,98 @@ journal.window.speakers.known.count.segment.one = { $count }{ $slot1 }segment
 
 journal.window.speakers.known.count.segment.other = { $count }{ $slot1 }segments
 
+journal.window.speakers.known.placeholder.count = { $count_quantity ->
+        [one] voices still using a placeholder name ({ $count })
+       *[other] voices still using a placeholder name ({ $count })
+    }
+
+journal.window.speakers.known.search.empty = no known voice matches "{ $query }"
+
+journal.window.speakers.known.show.all.count = { $count_quantity ->
+        [one] show all { $count } voices
+       *[other] show all { $count } voices
+    }
+
 journal.window.speakers.notice.couldn.t.load.voice.samples = couldn't load voice samples.
 
 journal.window.speakers.option.label.assign = assign…
 
 journal.window.speakers.option.label.correct = correct…
+
+journal.window.speakers.owner.cooldown.until.day = that voice won't be offered again. your journal looks for your voice again after { $retry_day }, or you can teach it now.
+
+journal.window.speakers.owner.recordings.audio.count = { $recordings_quantity ->
+        [one] { $recordings } recordings with audio so far
+       *[other] { $recordings } recordings with audio so far
+    }
+
+journal.window.speakers.owner.relabel.incomplete = { $count_quantity ->
+        [one] past conversations are updated, except { $count } recordings that couldn't be updated.
+       *[other] past conversations are updated, except { $count } recordings that couldn't be updated.
+    }
+
+journal.window.speakers.owner.relabel.progress = { $completed_quantity ->
+        [one] updating past conversations: { $completed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } recordings
+       *[other] updating past conversations: { $completed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } recordings
+    }
+
+journal.window.speakers.owner.relabel.undo.progress = { $completed_quantity ->
+        [one] returning past conversations to unnamed voices: { $completed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } recordings
+       *[other] returning past conversations to unnamed voices: { $completed } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } recordings
+    }
+
+journal.window.speakers.owner.reveal.evidence.tier = { $evidence_tier } evidence
+
+journal.window.speakers.owner.reveal.stream.count = { $streams_quantity ->
+        [one] appears in 1 place
+       *[other] appears in { $streams } places
+    }
+
+journal.window.speakers.owner.status.error = couldn't load owner status: { $detail }
+
+journal.window.speakers.owner.teaching.exhausted.progress = { $statements_quantity ->
+        [one] { $statements } of { $required_quantity ->
+        [one] { $required }
+       *[other] { $required }
+    } longer statements taught
+       *[other] { $statements } of { $required_quantity ->
+        [one] { $required }
+       *[other] { $required }
+    } longer statements taught
+    }
+
+journal.window.speakers.owner.teaching.progress = { $statements_quantity ->
+        [one] { $statements } of { $required_quantity ->
+        [one] { $required }
+       *[other] { $required }
+    } longer statements
+       *[other] { $statements } of { $required_quantity ->
+        [one] { $required }
+       *[other] { $required }
+    } longer statements
+    }
+
+journal.window.speakers.owner.teaching.statements = { $statements_quantity ->
+        [one] { $statements } statements taught
+       *[other] { $statements } statements taught
+    }
+
+journal.window.speakers.owner.voice.sample.count = { $statements_quantity ->
+        [one] this voice is in { $statements } statements in your journal. play a few samples before you decide.
+       *[other] this voice is in { $statements } statements in your journal. play a few samples before you decide.
+    }
 
 journal.window.speakers.owner.write.owner.voice.error.detail.audio.sha256.must.be.a.non = audio_sha256 must be a non-empty hex hash
 
@@ -10995,7 +11852,106 @@ journal.window.speakers.owner.write.owner.voice.response.that.voice.couldn.t.be.
 
 journal.window.speakers.owner.write.owner.voice.response.there.s.no.saved.voice.to = there's no saved voice to undo.
 
+journal.window.speakers.quality.buckets.empty = none right now: { $empty_categories }
+
+journal.window.speakers.quality.progress.statements = { $count_quantity ->
+        [one] { $count } longer statements
+       *[other] { $count } longer statements
+    }
+
+journal.window.speakers.quality.statement.denominator = { $count_quantity ->
+        [one] across { $count } statement
+       *[other] across { $count } statements
+    }
+
+journal.window.speakers.quality.teaching.count = { $count_quantity ->
+        [one] { $count } teaching changes
+       *[other] { $count } teaching changes
+    }
+
+journal.window.speakers.quality.window.days = { $days_quantity ->
+        [one] speaker labels, last { $days } days
+       *[other] speaker labels, last { $days } days
+    }
+
+journal.window.speakers.sample.ordinal = sample { $sample_number }
+
 journal.window.speakers.section.heading.ready.to.review = ready to review
+
+journal.window.speakers.segment.attributed.total = { $attributed_quantity ->
+        [one] { $attributed }/{ $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } attributed
+       *[other] { $attributed }/{ $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } attributed
+    }
+
+journal.window.speakers.segment.meeting.matching.prompt = { $count_quantity ->
+        [one] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
+       *[other] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
+    }
+
+journal.window.speakers.segment.review.badge = { $quantity ->
+        [one] { $count } to review
+       *[other] { $count } to review
+    }
+
+journal.window.speakers.segment.speaker.count = { $count_quantity ->
+        [one] { $count } speaker
+       *[other] { $count } speakers
+    }
+
+journal.window.speakers.segment.speakers = { $speakers_quantity ->
+        [one] { $start_time } - { $end_time }, { $speakers } speaker
+       *[other] { $start_time } - { $end_time }, { $speakers } speakers
+    }
+
+journal.window.speakers.segment.speakers.and.review = { $speakers_quantity ->
+        [one] { $start_time } - { $end_time }, { $speakers } speaker, { $review_quantity ->
+        [one] { $needs_review } to review
+       *[other] { $needs_review } to review
+    }
+       *[other] { $start_time } - { $end_time }, { $speakers } speakers, { $review_quantity ->
+        [one] { $needs_review } to review
+       *[other] { $needs_review } to review
+    }
+    }
+
+journal.window.speakers.segment.visible.total = { $visible_quantity ->
+        [one] { $visible } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+       *[other] { $visible } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    }
+    }
+
+journal.window.speakers.segments.show.more = { $shown_quantity ->
+        [one] load more segments ({ $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    })
+       *[other] load more segments ({ $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    })
+    }
+
+journal.window.speakers.sentences.visible.range = { $shown_quantity ->
+        [one] sentences ({ $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    })
+       *[other] sentences ({ $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    })
+    }
 
 journal.window.speakers.status.text.no.name.yet = no name yet
 
@@ -11004,8 +11960,6 @@ journal.window.speakers.status.text.no.transcript = (no transcript)
 journal.window.speakers.status.text.not.yet.named = not yet named
 
 journal.window.speakers.status.text.play.from.here = play from here
-
-journal.window.speakers.status.text.sample.value1 = sample{ $slot1 }{ $value1 }
 
 journal.window.speakers.status.text.set.aside = set aside
 
@@ -11067,10 +12021,6 @@ journal.window.speakers.tooltip.back.s = back 5s
 
 journal.window.speakers.tooltip.playback.speed = playback speed
 
-journal.window.speakers.visible.text.across = across
-
-journal.window.speakers.visible.text.attributed = attributed
-
 journal.window.speakers.visible.text.couldn.t.load.audio.the.file = couldn't load audio. the file may be missing or in an unsupported format
 
 journal.window.speakers.visible.text.couldn.t.load.this.audio = couldn't load this audio
@@ -11079,59 +12029,94 @@ journal.window.speakers.visible.text.counted.in.segments = counted in segments
 
 journal.window.speakers.visible.text.failed.to.load.speakers = Failed to load speakers
 
-journal.window.speakers.visible.text.load.more.segments.value1.of.value2 = load more segments ({ $value1 }{ $slot1 }of{ $slot2 }{ $value2 })
-
 journal.window.speakers.visible.text.loading = loading…
 
 journal.window.speakers.visible.text.loading.new.voices = loading new voices…
 
 journal.window.speakers.visible.text.loading.speakers = loading speakers…
 
-journal.window.speakers.visible.text.match.anyone.you.ve.named.listen = match anyone you've named. listen to a few samples and name them.
-
-journal.window.speakers.visible.text.named.speakers.but.their.voices.can = named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
-
 journal.window.speakers.visible.text.needs.review = needs review
 
 journal.window.speakers.visible.text.no.audio.file.available = no audio file available
 
-journal.window.speakers.visible.text.no.known.voice.matches = no known voice matches "
-
 journal.window.speakers.visible.text.no.sentences.match.this.filter = no sentences match this filter
-
-journal.window.speakers.visible.text.none.right.now = none right now:
 
 journal.window.speakers.visible.text.not.yet.identified = not yet identified
 
-journal.window.speakers.visible.text.of = of
-
 journal.window.speakers.visible.text.owner.voiceprint = Owner voiceprint
-
-journal.window.speakers.visible.text.recurring.voice.pattern = recurring voice pattern
 
 journal.window.speakers.visible.text.select.a.segment.from.the.list = select a segment from the list to review speaker assignments
 
-journal.window.speakers.visible.text.speaker = speaker
-
 journal.window.speakers.visible.text.speakers.haven.t.been.identified.yet = speakers haven't been identified yet. assign a few sentences to improve voice matching.
-
-journal.window.speakers.visible.text.this.meeting.has = this meeting has
-
-journal.window.speakers.visible.text.to.review = to review
 
 journal.window.speakers.visible.text.unassigned = unassigned
 
 journal.window.speakers.visible.text.unknown.speaker = Unknown speaker
 
-journal.window.speakers.window.explanation.couldn.t.analyze.voice.patterns.value1 = couldn't analyze voice patterns:{ $slot1 }{ $value1 }
+journal.window.speakers.voice.analysis.error = couldn't analyze voice patterns: { $detail }
+
+journal.window.speakers.who.conversations = { $count_quantity ->
+        [one] this voice has shown up in 1 conversation, kept in your journal. say who this is and they will be recognized from now on.
+       *[other] this voice has shown up in { $count } conversations, all kept in your journal. say who this is and they will be recognized from now on.
+    }
+
+journal.window.speakers.who.create.named.person = add "{ $person_name }" as someone new
+
+journal.window.speakers.who.evidence.meeting.notes = { $count_quantity ->
+        [one] in your meeting notes that day
+       *[other] in your meeting notes on { $count } of those days
+    }
+
+journal.window.speakers.who.evidence.on.screen = { $count_quantity ->
+        [one] on screen in 1 of these conversations
+       *[other] on screen in { $count } of these conversations
+    }
+
+journal.window.speakers.who.identify.confirm.first.name = yes, this is { $first_name }
+
+journal.window.speakers.who.identify.preview.existing.voice = { $person_name } already has a voice in your journal. this will be kept as another way they sound.
+
+journal.window.speakers.who.identify.preview.heading = this voice becomes { $person_name }
+
+journal.window.speakers.who.identify.receipt.conversations = every conversation with this voice now reads { $person_name }.
+
+journal.window.speakers.who.identify.receipt.heading = { $person_name }'s voice is in your journal now
+
+journal.window.speakers.who.keep.separate.decline = no, that's { $person_name }
+
+journal.window.speakers.who.keep.separate.heading = different from { $person_name }?
+
+journal.window.speakers.who.keep.separate.reason = { $person_name } is already in your journal. if this is someone else, they will stay separate and never be mixed.
+
+journal.window.speakers.who.preview.fact.count = { $statements_quantity ->
+        [one] { $statements } statements across { $conversations_quantity ->
+        [one] { $conversations }
+       *[other] { $conversations }
+    } conversations, all in your journal. you can undo this.
+       *[other] { $statements } statements across { $conversations_quantity ->
+        [one] { $conversations }
+       *[other] { $conversations }
+    } conversations, all in your journal. you can undo this.
+    }
+
+journal.window.speakers.who.search.no.person = no one in your journal matches "{ $query }"
+
+journal.window.speakers.who.undo.partial.count = { $restored_quantity ->
+        [one] undo restored part of this voice. { $restored } changed back; { $skipped_quantity ->
+        [one] { $skipped }
+       *[other] { $skipped }
+    } stayed as they are. try again.
+       *[other] undo restored part of this voice. { $restored } changed back; { $skipped_quantity ->
+        [one] { $skipped }
+       *[other] { $skipped }
+    } stayed as they are. try again.
+    }
 
 journal.window.speakers.window.explanation.couldn.t.load.known.voices = couldn't load known voices
 
 journal.window.speakers.window.explanation.couldn.t.load.more.segments = couldn't load more segments
 
 journal.window.speakers.window.explanation.couldn.t.load.new.voices.right = couldn't load new voices right now.
-
-journal.window.speakers.window.explanation.couldn.t.load.owner.status.value1 = couldn't load owner status:{ $slot1 }{ $value1 }
 
 journal.window.speakers.window.explanation.couldn.t.refresh.review.showing.last = couldn't refresh review. showing last known state.
 
@@ -11153,8 +12138,6 @@ journal.window.speakers.window.explanation.no.speakers.discovered.today = no spe
 
 journal.window.speakers.window.explanation.nothing.has.looked.for.new.voices = nothing has looked for new voices yet.
 
-journal.window.speakers.window.explanation.sentences.value1.of.value2 = sentences ({ $value1 }{ $slot1 }of{ $slot2 }{ $value2 })
-
 journal.window.speakers.window.explanation.something.went.wrong.try.again = something went wrong. try again
 
 journal.window.speakers.window.explanation.that.speaker.review.couldn.t.be = that speaker review couldn't be loaded.
@@ -11167,10 +12150,6 @@ journal.window.speakers.window.state.text.attribution.confirmed = Attribution co
 
 journal.window.speakers.window.state.text.context.match = context match
 
-journal.window.speakers.window.state.text.doesn.t = doesn't
-
-journal.window.speakers.window.state.text.don.t = don't
-
 journal.window.speakers.window.state.text.just.now = just now
 
 journal.window.speakers.window.state.text.looking.for.new.voices = looking for new voices…
@@ -11178,8 +12157,6 @@ journal.window.speakers.window.state.text.looking.for.new.voices = looking for n
 journal.window.speakers.window.state.text.only.speaker = only speaker
 
 journal.window.speakers.window.state.text.setting.match = setting match
-
-journal.window.speakers.window.state.text.to.review = { $slot1 }to review
 
 journal.window.speakers.window.state.text.voice.match = voice match
 
@@ -11455,6 +12432,12 @@ journal.window.thinking.brain.register.mismatch = the service's measurement{ $sl
 
 journal.window.thinking.brain.unsupported = confidential processing isn't on windows yet
 
+journal.window.thinking.budget.choice.tokens = { $token_budget } tokens
+
+journal.window.thinking.budget.endpoint.current = thinking room { $token_budget }
+
+journal.window.thinking.budget.key.current = thinking budget { $token_budget }
+
 journal.window.thinking.button.label.cancel = cancel
 
 journal.window.thinking.button.label.check.again = check again
@@ -11507,6 +12490,8 @@ journal.window.thinking.button.label.try.starting.local.again = try starting loc
 
 journal.window.thinking.button.label.turn.on.local = turn on local
 
+journal.window.thinking.chatgpt.account.signed.in = signed in to ChatGPT as { $account_email }
+
 journal.window.thinking.column.heading.hour = hour
 
 journal.window.thinking.column.heading.older.days = older days
@@ -11514,6 +12499,10 @@ journal.window.thinking.column.heading.older.days = older days
 journal.window.thinking.column.heading.recent.days = recent days
 
 journal.window.thinking.column.heading.thoughts = thoughts
+
+journal.window.thinking.confidential.attestation.checked = confidential processing is ready · reachable { $checked_at }
+
+journal.window.thinking.confidential.attestation.failed.detail.legacy = { $attestation_detail }
 
 journal.window.thinking.copy.a.chatgpt.usage.limit.was.reached = a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings.
 
@@ -11534,8 +12523,6 @@ journal.window.thinking.copy.any.openai.compatible.url.your.server = any OpenAI-
 journal.window.thinking.copy.available = available
 
 journal.window.thinking.copy.bring.your.own.model.sol.pbc = bring your own model. { $slot1 } is never in the path. your key or sign-in stays in your journal.
-
-journal.window.thinking.copy.budget.tokens = { $slot1 } tokens
 
 journal.window.thinking.copy.can.t.reach.confidential.processing.right = can't reach confidential processing right now. nothing is being sent.
 
@@ -11561,17 +12548,11 @@ journal.window.thinking.copy.checking = checking
 
 journal.window.thinking.copy.checking.local.setup = checking local setup
 
-journal.window.thinking.copy.checking.model.with.your.key = checking { $slot1 } with your key…
-
 journal.window.thinking.copy.checking.the.hardware = checking the hardware…
 
 journal.window.thinking.copy.checking.the.model.before.using.it = checking the model before using it.
 
 journal.window.thinking.copy.checking.the.selected.model.and.your = checking the selected model and your journal's computer.
-
-journal.window.thinking.copy.checking.whether.model.reads.images = checking whether { $slot1 } reads images…
-
-journal.window.thinking.copy.checking.your.key.with.provider = checking your key with { $slot1 }…
 
 journal.window.thinking.copy.claude.key = Claude key
 
@@ -11580,8 +12561,6 @@ journal.window.thinking.copy.clear.key = Clear Key
 journal.window.thinking.copy.confidential.processing = confidential processing
 
 journal.window.thinking.copy.confidential.processing.is.available = confidential processing is available.
-
-journal.window.thinking.copy.confidential.processing.is.ready.reachable.checked = confidential processing is ready · reachable { $slot1 }
 
 journal.window.thinking.copy.confidential.processing.isn.t.active.for = confidential processing isn't active for your sign-in anymore, so your journal isn't sending your thinking to it. the services portal shows how to get it back, and your journal picks it up again by itself.
 
@@ -11611,8 +12590,6 @@ journal.window.thinking.copy.couldn.t.finish.the.download.for = couldn't finish 
 
 journal.window.thinking.copy.couldn.t.load.your.chatgpt.models = couldn't load your ChatGPT models. reload this page to try again.
 
-journal.window.thinking.copy.couldn.t.reach.provider.check.your = couldn't reach { $slot1 }. check your connection
-
 journal.window.thinking.copy.couldn.t.reach.the.endpoint = couldn't reach the endpoint
 
 journal.window.thinking.copy.couldn.t.reach.your.journal.just = couldn't reach your journal just now. still checking…
@@ -11634,12 +12611,6 @@ journal.window.thinking.copy.couldn.t.verify.the.service.nothing = couldn't veri
 journal.window.thinking.copy.default = default
 
 journal.window.thinking.copy.downloading = downloading
-
-journal.window.thinking.copy.endpoint.saved.but.model.didn.t = endpoint saved, but { $slot1 } didn't name the color of a test image, so screen and photo descriptions may fail or come out wrong. if it's meant to read images, try another model, then save again.
-
-journal.window.thinking.copy.endpoint.saved.but.model.didn.t.variant2 = endpoint saved, but { $slot1 } didn't answer in the structured form processing asks for, so most processing will fail. some servers can't do this with every model: try another model or server, then save again.
-
-journal.window.thinking.copy.endpoint.saved.couldn.t.check.whether = endpoint saved. couldn't check whether { $slot1 } reads images: { $slot2 }.
 
 journal.window.thinking.copy.finish.signing.in = finish signing in
 
@@ -11680,8 +12651,6 @@ journal.window.thinking.copy.it.rejected.the.request = it rejected the request
 journal.window.thinking.copy.it.sent.back.nothing.usable = it sent back nothing usable
 
 journal.window.thinking.copy.it.will.start.when.your.journal = it will start when your journal's computer is ready.
-
-journal.window.thinking.copy.keep.using.current = keep using { $slot1 }
 
 journal.window.thinking.copy.leave.room.for.the.model.to = leave room for the model to think
 
@@ -11729,8 +12698,6 @@ journal.window.thinking.copy.manage.usage = Manage usage
 
 journal.window.thinking.copy.manage.usage.variant2 = Manage usage ↗
 
-journal.window.thinking.copy.message = { $slot1 }
-
 journal.window.thinking.copy.model.id = model id
 
 journal.window.thinking.copy.needs.attention = needs attention
@@ -11761,8 +12728,6 @@ journal.window.thinking.copy.operated.by.sol.pbc = operated by { $slot1 }
 
 journal.window.thinking.copy.pair.a.device = pair a device
 
-journal.window.thinking.copy.paste.your.provider.key = paste your { $slot1 } key
-
 journal.window.thinking.copy.pick.a.model.first = pick a model first.
 
 journal.window.thinking.copy.pick.another.provider = pick another provider
@@ -11775,27 +12740,13 @@ journal.window.thinking.copy.processing.checks.the.endpoint.works.before = proce
 
 journal.window.thinking.copy.processing.runs.at.the.endpoint.you = processing runs at the endpoint you set. your server, your rules
 
-journal.window.thinking.copy.processing.will.run.right.on.your = processing will run right on your journal's computer. your { $slot1 } setup stays saved. switch back anytime.
-
-journal.window.thinking.copy.processing.will.use.your.own.model = processing will use your own model. { $slot1 } is still here.
-
 journal.window.thinking.copy.processing.with = processing with
-
-journal.window.thinking.copy.provider.couldn.t.be.checked = { $slot1 } couldn't be checked
-
-journal.window.thinking.copy.provider.didn.t.accept.it = { $slot1 } didn't accept it
-
-journal.window.thinking.copy.provider.doesn.t.offer.model.to = { $slot1 } doesn't offer "{ $slot2 }" to this key. check the spelling, or try another model id.
-
-journal.window.thinking.copy.provider.says.it.s.out.of = { $slot1 } says it's out of quota right now
 
 journal.window.thinking.copy.recovering = recovering
 
 journal.window.thinking.copy.refresh = Refresh
 
 journal.window.thinking.copy.remember.this.model = remember this model
-
-journal.window.thinking.copy.remembered.label.confidential.processing.stays.on = remembered { $slot1 }. confidential processing stays on.
 
 journal.window.thinking.copy.resolving = resolving
 
@@ -11822,8 +12773,6 @@ journal.window.thinking.copy.sign.out = sign out
 journal.window.thinking.copy.signed.in = signed in
 
 journal.window.thinking.copy.signed.in.to.chatgpt = signed in to ChatGPT
-
-journal.window.thinking.copy.signed.in.to.chatgpt.as.email = signed in to ChatGPT as { $slot1 }
 
 journal.window.thinking.copy.signed.out.of.chatgpt.continue.with = signed out of ChatGPT. continue with ChatGPT to sign in again.
 
@@ -11889,21 +12838,15 @@ journal.window.thinking.copy.thinking = thinking
 
 journal.window.thinking.copy.thinking.budget = thinking budget
 
-journal.window.thinking.copy.thinking.budget.budget = thinking budget { $slot1 }
-
 journal.window.thinking.copy.thinking.may.improve.results.and.it = thinking may improve results, and it can use up your ChatGPT usage faster. processing is tuned to work well without it.
 
 journal.window.thinking.copy.thinking.may.improve.results.and.it.variant2 = thinking may improve results, and it costs more with your provider. processing is tuned to work well without it.
 
 journal.window.thinking.copy.thinking.room = thinking room
 
-journal.window.thinking.copy.thinking.room.budget = thinking room { $slot1 }
-
 journal.window.thinking.copy.thinking.works.on.what.goes.into = thinking works on what goes into your journal, and no device is paired to add to it yet.
 
 journal.window.thinking.copy.this.chatgpt.account.can.t.be = this ChatGPT account can't be used for processing. start over with ChatGPT to use another account, or pick another provider.
-
-journal.window.thinking.copy.this.key.didn.t.work.reason = this key didn't work: { $slot1 }. paste a different key, or fix it with { $slot2 } and check again.
 
 journal.window.thinking.copy.this.local.model.isn.t.supported = this local model isn't supported on your journal's computer.
 
@@ -11929,15 +12872,11 @@ journal.window.thinking.copy.turn.on.confidential.processing = turn on confident
 
 journal.window.thinking.copy.turning.it.on.didn.t.finish = turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.
 
-journal.window.thinking.copy.type.the.model.id.exactly.as = type the model id exactly as { $slot1 } lists it. your journal checks it with { $slot2 } before saving, and you can change it anytime.
-
 journal.window.thinking.copy.unavailable = unavailable
 
 journal.window.thinking.copy.usage.limit.reached = usage limit reached
 
 journal.window.thinking.copy.use.a.different.key = use a different key
-
-journal.window.thinking.copy.use.an.openai.api.key.this = use an OpenAI API key. this connects to OpenAI itself. for another OpenAI-compatible provider, use { $slot1 }.
 
 journal.window.thinking.copy.use.this.lane = Use This Lane
 
@@ -11948,8 +12887,6 @@ journal.window.thinking.copy.use.your.chatgpt.plan.you.sign = use your ChatGPT p
 journal.window.thinking.copy.using.chatgpt.manage = using ChatGPT · manage →
 
 journal.window.thinking.copy.using.chatgpt.plan = Using ChatGPT plan
-
-journal.window.thinking.copy.using.model.a.key.you.added = using { $slot1 }. a key you added, stays in your journal, never shared
 
 journal.window.thinking.copy.validating = validating...
 
@@ -12001,17 +12938,9 @@ journal.window.thinking.copy.your.journal.was.busy.try.again = your journal was 
 
 journal.window.thinking.copy.your.journal.was.busy.with.other = your journal was busy with other work
 
-journal.window.thinking.copy.your.key.works.but.model.didn = your key works, but { $slot1 } didn't answer: { $slot2 }.
-
 journal.window.thinking.copy.your.own.endpoint = your own endpoint
 
-journal.window.thinking.copy.your.own.key.provider = your own key · { $slot1 }
-
 journal.window.thinking.copy.your.own.model = your own model
-
-journal.window.thinking.copy.your.provider.key.works.checked.when = your { $slot1 } key works, checked { $slot2 }
-
-journal.window.thinking.copy.your.questions.are.processed.by.provider = your questions are processed by { $slot1 }, stored only briefly for processing, and never used for training.
 
 journal.window.thinking.copy.your.sign.in.doesn.t.have = your sign-in doesn't have confidential processing. the services portal shows how to get it.
 
@@ -12024,6 +12953,24 @@ journal.window.thinking.disclosure.label.exact.ids = exact ids
 journal.window.thinking.disclosure.label.processing.details = processing details
 
 journal.window.thinking.disclosure.label.show.the.numbers = show the numbers
+
+journal.window.thinking.endpoint.model.image.checking = checking whether { $model_name } reads images…
+
+journal.window.thinking.endpoint.model.image.not.read = endpoint saved, but { $model_name } didn't name the color of a test image, so screen and photo descriptions may fail or come out wrong. if it's meant to read images, try another model, then save again.
+
+journal.window.thinking.endpoint.model.image.unchecked = { $reason ->
+        [unreachable] endpoint saved. couldn't check whether { $model_name } reads images: couldn't reach the endpoint.
+        [timeout] endpoint saved. couldn't check whether { $model_name } reads images: it didn't answer in time.
+        [busy] endpoint saved. couldn't check whether { $model_name } reads images: your journal was busy with other work.
+        [key] endpoint saved. couldn't check whether { $model_name } reads images: it didn't accept the key.
+        [rejected] endpoint saved. couldn't check whether { $model_name } reads images: it rejected the request.
+        [unusable] endpoint saved. couldn't check whether { $model_name } reads images: it sent back nothing usable.
+       *[other] endpoint saved. couldn't check whether { $model_name } reads images: something went wrong.
+    }
+
+journal.window.thinking.endpoint.model.image.unchecked.legacy = endpoint saved. couldn't check whether { $model_name } reads images: { $failure_reason }.
+
+journal.window.thinking.endpoint.model.schema.not.followed = endpoint saved, but { $model_name } didn't answer in the structured form processing asks for, so most processing will fail. some servers can't do this with every model: try another model or server, then save again.
 
 journal.window.thinking.error.confidential.platform = confidential processing isn't available yet where your journal lives.
 
@@ -12051,7 +12998,77 @@ journal.window.thinking.field.label.provider = provider
 
 journal.window.thinking.field.label.served.model = served model
 
+journal.window.thinking.glance.byo.model = using { $model_name }. a key you added, stays in your journal, never shared
+
+journal.window.thinking.glance.byo.provider = your own key · { $provider_name }
+
+journal.window.thinking.glance.lane.confirmed.elapsed = { $lane_label } · last confirmed { $elapsed } ago
+
+journal.window.thinking.glance.lane.details = { $lane_label }: { $failure_detail }
+
 journal.window.thinking.heading.couldn.t.load.thinking.settings = Couldn't load thinking settings
+
+journal.window.thinking.keys.checking.provider = checking your key with { $provider_name }…
+
+journal.window.thinking.keys.failed.by.reason = { $reason ->
+        [rejected] this key didn't work: { $provider_name } didn't accept it. paste a different key, or fix it with { $provider_name } and check again.
+        [quota] this key didn't work: { $provider_name } says it's out of quota right now. paste a different key, or fix it with { $provider_name } and check again.
+        [network] this key didn't work: couldn't reach { $provider_name }. check your connection. paste a different key, or fix it with { $provider_name } and check again.
+        [chatgpt-signed-out] this key didn't work: signed out of ChatGPT. continue with ChatGPT to sign in again.. paste a different key, or fix it with { $provider_name } and check again.
+        [chatgpt-ineligible] this key didn't work: this ChatGPT account can't be used for processing. start over with ChatGPT to use another account, or pick another provider.. paste a different key, or fix it with { $provider_name } and check again.
+        [chatgpt-no-model] this key didn't work: your ChatGPT account no longer offers the model you picked. pick another.. paste a different key, or fix it with { $provider_name } and check again.
+        [chatgpt-model-missing] this key didn't work: pick a model first.. paste a different key, or fix it with { $provider_name } and check again.
+        [chatgpt-refused] this key didn't work: couldn't save that choice. try again in a moment.. paste a different key, or fix it with { $provider_name } and check again.
+       *[other] this key didn't work: { $provider_name } couldn't be checked. paste a different key, or fix it with { $provider_name } and check again.
+    }
+
+journal.window.thinking.keys.failed.legacy = this key didn't work: { $failure_reason }. paste a different key, or fix it with { $provider_name } and check again.
+
+journal.window.thinking.keys.in.use.manage = using { $provider_name } key · manage →
+
+journal.window.thinking.keys.label.provider = your { $provider_name } key
+
+journal.window.thinking.keys.manage.provider = manage { $provider_name } key →
+
+journal.window.thinking.keys.model.absent = { $provider_name } doesn't offer "{ $model_name }" to this key. check the spelling, or try another model id.
+
+journal.window.thinking.keys.model.checking = checking { $model_name } with your key…
+
+journal.window.thinking.keys.model.failed.by.reason = { $reason ->
+        [rejected] your key works, but { $model_name } didn't answer: { $provider_name } didn't accept it.
+        [quota] your key works, but { $model_name } didn't answer: { $provider_name } says it's out of quota right now.
+        [network] your key works, but { $model_name } didn't answer: couldn't reach { $provider_name }. check your connection.
+        [chatgpt-signed-out] your key works, but { $model_name } didn't answer: signed out of ChatGPT. continue with ChatGPT to sign in again..
+        [chatgpt-ineligible] your key works, but { $model_name } didn't answer: this ChatGPT account can't be used for processing. start over with ChatGPT to use another account, or pick another provider..
+        [chatgpt-no-model] your key works, but { $model_name } didn't answer: your ChatGPT account no longer offers the model you picked. pick another..
+        [chatgpt-model-missing] your key works, but { $model_name } didn't answer: pick a model first..
+        [chatgpt-refused] your key works, but { $model_name } didn't answer: couldn't save that choice. try again in a moment..
+       *[other] your key works, but { $model_name } didn't answer: { $provider_name } couldn't be checked.
+    }
+
+journal.window.thinking.keys.model.provider.instructions = type the model id exactly as { $provider_name } lists it. your journal checks it with { $provider_name } before saving, and you can change it anytime.
+
+journal.window.thinking.keys.model.restored = remembered { $model_name }. confidential processing stays on.
+
+journal.window.thinking.keys.model.unresponsive.legacy = your key works, but { $model_name } didn't answer: { $failure_reason }.
+
+journal.window.thinking.keys.openai.endpoint.option = use an OpenAI API key. this connects to OpenAI itself. for another OpenAI-compatible provider, use { $endpoint_button }.
+
+journal.window.thinking.keys.paste.provider = paste your { $provider_name } key
+
+journal.window.thinking.keys.provider.processing.terms = your questions are processed by { $provider_name }, stored only briefly for processing, and never used for training. { $terms_link }
+
+journal.window.thinking.keys.provider.processing.terms.legacy = your questions are processed by { $provider_name }, stored only briefly for processing, and never used for training.
+
+journal.window.thinking.keys.reason.network = couldn't reach { $provider_name }. check your connection
+
+journal.window.thinking.keys.reason.quota = { $provider_name } says it's out of quota right now
+
+journal.window.thinking.keys.reason.rejected = { $provider_name } didn't accept it
+
+journal.window.thinking.keys.reason.unknown = { $provider_name } couldn't be checked
+
+journal.window.thinking.keys.verified.provider = your { $provider_name } key works, checked { $checked_at }
 
 journal.window.thinking.label.thinking.events = thinking events
 
@@ -12059,7 +13076,11 @@ journal.window.thinking.label.tool.calls = tool calls
 
 journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = your journal must verify the service before anything is sent. if it can't verify, it doesn't send.
 
+journal.window.thinking.lane.check.failed.keep.active = couldn't check local setup. you can still use { $active_lane }.
+
 journal.window.thinking.lane.claims.no.content.is.retained.no.human = no content is retained · no human reviews it · nothing is used to train
+
+journal.window.thinking.lane.current.can.continue = you can still use { $active_lane }.
 
 journal.window.thinking.lane.description.model.requests.stay.on.your.journal = model requests stay on your journal's computer.
 
@@ -12071,6 +13092,8 @@ journal.window.thinking.lane.early.access.the.services.portal.shows.how.to = the
 
 journal.window.thinking.lane.egress.when.it.s.on.the.thinking = when it's on, the thinking leaves your device. your journal itself never leaves.
 
+journal.window.thinking.lane.endpoint.check = check the endpoint in { $active_lane }, then try again.
+
 journal.window.thinking.lane.heading.confidential.processing = confidential processing
 
 journal.window.thinking.lane.label.confidential.processing = confidential processing
@@ -12081,35 +13104,39 @@ journal.window.thinking.lane.label.your.own.model = your own model
 
 journal.window.thinking.lane.mechanism.sol.pbc.runs.the.model.itself = { $slot1 } runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.
 
+journal.window.thinking.lane.retry.or.use.active = try again, or use { $active_lane }.
+
 journal.window.thinking.lane.sub.on.your.journal.s.computer = on your journal's computer
 
 journal.window.thinking.lane.sub.operated.by.sol.pbc = operated by { $slot1 }
 
 journal.window.thinking.lane.sub.your.key.or.your.own.endpoint = your key, or your own endpoint
 
+journal.window.thinking.lane.switch.byo = processing will use your own model. { $saved_setup } is still here.
+
+journal.window.thinking.lane.switch.keep.current = keep using { $current_setup }
+
+journal.window.thinking.lane.switch.local = processing will run right on your journal's computer. your { $current_setup } setup stays saved. switch back anytime.
+
+journal.window.thinking.lane.unsupported.keep.active = your journal's computer doesn't have a supported GPU, so a local model would be too slow to use. you can still use { $active_lane }.
+
 journal.window.thinking.link.label.minimum.requirements = minimum requirements ↗
+
+journal.window.thinking.local.hardware.gpu.required = your journal's computer can't run a local model yet. it needs a supported GPU.
+
+journal.window.thinking.local.requirements.or.own.model = { $requirements_link } or use { $own_model_button }
 
 journal.window.thinking.notice.check.again.after.the.local.service = check again after the local service settles.
 
-journal.window.thinking.notice.check.the.endpoint.in.value1.then = check the endpoint in{ $slot1 }{ $value1 }, then try again.
-
 journal.window.thinking.notice.choose.another.thinking.option = choose another thinking option.
-
-journal.window.thinking.notice.couldn.t.check.local.setup.you = couldn't check local setup. you can still use{ $slot1 }{ $value1 }.
 
 journal.window.thinking.notice.finish.local.setup.before.turning.on = finish local setup before turning on local thinking.
 
 journal.window.thinking.notice.local.thinking.will.stay.in.your = local thinking will stay in your journal once the model is ready.
 
-journal.window.thinking.notice.try.again.or.use.value1 = try again, or use{ $slot1 }{ $value1 }.
-
 journal.window.thinking.notice.try.checking.again.in.a.moment = try checking again in a moment.
 
-journal.window.thinking.notice.you.can.still.use.value1 = you can still use{ $slot1 }{ $value1 }.
-
 journal.window.thinking.notice.you.re.pointed.at.your.own = you're pointed at your own endpoint. clear it to run the bundled model
-
-journal.window.thinking.notice.your.journal.s.computer.doesn.t = your journal's computer doesn't have a supported GPU, so a local model would be too slow to use. you can still use{ $slot1 }{ $value1 }.
 
 journal.window.thinking.option.label.all = all
 
@@ -12119,7 +13146,79 @@ journal.window.thinking.option.label.gemini = Gemini
 
 journal.window.thinking.option.label.gpt = GPT
 
+journal.window.thinking.pace.counted.through = counted through { $through_time }.
+
+journal.window.thinking.pace.counted.through.with.thoughts = { $thoughts_quantity ->
+        [one] counted through { $through_time }. this hour so far: { $thoughts_count } thought.
+       *[other] counted through { $through_time }. this hour so far: { $thoughts_count } thoughts.
+    }
+
+journal.window.thinking.pace.day.summary = { $day_quantity ->
+        [one] { $period }: { $day_count } thought in a typical hour, { $thoughts_quantity ->
+        [one] { $thoughts_count } thought
+       *[other] { $thoughts_count } thoughts
+    } over { $hours_quantity ->
+        [one] { $hours_count } hour
+       *[other] { $hours_count } hours
+    } of thinking, { $older_share } about older days
+       *[other] { $period }: { $day_count } thoughts in a typical hour, { $thoughts_quantity ->
+        [one] { $thoughts_count } thought
+       *[other] { $thoughts_count } thoughts
+    } over { $hours_quantity ->
+        [one] { $hours_count } hour
+       *[other] { $hours_count } hours
+    } of thinking, { $older_share } about older days
+    }
+
+journal.window.thinking.pace.first.hour.thoughts = { $thoughts_quantity ->
+        [one] your journal is thinking: { $thoughts_count } thought so far this hour. its pace shows here once the hour is over.
+       *[other] your journal is thinking: { $thoughts_count } thoughts so far this hour. its pace shows here once the hour is over.
+    }
+
+journal.window.thinking.pace.glance.typical.thoughts = { $thoughts_quantity ->
+        [one] { $thoughts_count } thought in a typical hour of thinking over the last 24 hours →
+       *[other] { $thoughts_count } thoughts in a typical hour of thinking over the last 24 hours →
+    }
+
+journal.window.thinking.pace.hour.summary = { $thoughts_quantity ->
+        [one] { $period }: { $thoughts_count } thought, { $older_quantity ->
+        [one] { $older_count }
+       *[other] { $older_count }
+    } about older days
+       *[other] { $period }: { $thoughts_count } thoughts, { $older_quantity ->
+        [one] { $older_count }
+       *[other] { $older_count }
+    } about older days
+    }
+
+journal.window.thinking.pace.none.finished.hours = { $hours_quantity ->
+        [one] nothing finished in the last { $hours_count } hour.
+       *[other] nothing finished in the last { $hours_count } hours.
+    }
+
+journal.window.thinking.pace.period.none.finished = { $period }: nothing finished
+
+journal.window.thinking.pace.thinking.hours = { $hours_quantity ->
+        [one] in a typical hour of thinking. your journal finished thinking in { $finished_quantity ->
+        [one] { $finished_count }
+       *[other] { $finished_count }
+    } of the last { $hours_count } hour.
+       *[other] in a typical hour of thinking. your journal finished thinking in { $finished_quantity ->
+        [one] { $finished_count }
+       *[other] { $finished_count }
+    } of the last { $hours_count } hours.
+    }
+
+journal.window.thinking.pace.typical.level = typical { $level }
+
+journal.window.thinking.pace.unfinished.share = { $share } of what your journal ran
+
 journal.window.thinking.provider.local = Local
+
+journal.window.thinking.runs.all.completed = { $runs_quantity ->
+        [one] all { $runs_count } run on this day completed.
+       *[other] all { $runs_count } runs on this day completed.
+    }
 
 journal.window.thinking.runs.column.facet = facet
 
@@ -12133,15 +13232,89 @@ journal.window.thinking.runs.column.runtime = runtime
 
 journal.window.thinking.runs.column.status = status
 
+journal.window.thinking.runs.confirmation.time = last confirmed { $confirmation_time }
+
+journal.window.thinking.runs.day.none.in.facet = { $runs_quantity ->
+        [one] { $runs_count } run on this day, none in { $facet_name }.
+       *[other] { $runs_count } runs on this day, none in { $facet_name }.
+    }
+
+journal.window.thinking.runs.facet.all.completed = { $runs_quantity ->
+        [one] all { $runs_count } run in { $facet_name } on this day completed.
+       *[other] all { $runs_count } runs in { $facet_name } on this day completed.
+    }
+
+journal.window.thinking.runs.failed.total = { $failed_quantity ->
+        [one] { $failed_count } failed
+       *[other] { $failed_count } failed
+    }
+
+journal.window.thinking.runs.filter.failed.only = failed runs only
+
+journal.window.thinking.runs.group.summary.model = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run on { $model_name }.
+       *[other] { $runs_count } { $talent_name } runs on { $model_name }.
+    }
+
+journal.window.thinking.runs.group.summary.model.duration = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run on { $model_name }, { $duration }.
+       *[other] { $runs_count } { $talent_name } runs on { $model_name }, { $duration } each.
+    }
+
+journal.window.thinking.runs.group.summary.status = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run { $status }.
+       *[other] { $runs_count } { $talent_name } runs { $status }.
+    }
+
+journal.window.thinking.runs.group.summary.status.duration = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run { $status }, { $duration }.
+       *[other] { $runs_count } { $talent_name } runs { $status }, { $duration } each.
+    }
+
+journal.window.thinking.runs.group.summary.status.model = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run { $status } on { $model_name }.
+       *[other] { $runs_count } { $talent_name } runs { $status } on { $model_name }.
+    }
+
+journal.window.thinking.runs.group.summary.status.model.duration = { $runs_quantity ->
+        [one] { $runs_count } { $talent_name } run { $status } on { $model_name }, { $duration }.
+       *[other] { $runs_count } { $talent_name } runs { $status } on { $model_name }, { $duration } each.
+    }
+
+journal.window.thinking.runs.group.total.and.failed = { $runs_quantity ->
+        [one] { $runs_count } run · { $failed_quantity ->
+        [one] { $failed_count }
+       *[other] { $failed_count }
+    } failed
+       *[other] { $runs_count } runs · { $failed_quantity ->
+        [one] { $failed_count }
+       *[other] { $failed_count }
+    } failed
+    }
+
+journal.window.thinking.runs.none.for.facet = no run on this day carries { $facet_name }.
+
+journal.window.thinking.runs.show.more = { $next_quantity ->
+        [one] show { $next_count } more run · { $remaining_quantity ->
+        [one] { $remaining_count }
+       *[other] { $remaining_count }
+    } left
+       *[other] show { $next_count } more runs · { $remaining_quantity ->
+        [one] { $remaining_count }
+       *[other] { $remaining_count }
+    } left
+    }
+
 journal.window.thinking.runs.status.failed = failed
 
 journal.window.thinking.runs.status.unknown = unknown
 
-journal.window.thinking.runs.visible.text.last.confirmed.value1 = last confirmed{ $slot1 }{ $value1 }
+journal.window.thinking.runs.talent.exact.id = exact id: { $talent_id }
 
-journal.window.thinking.runs.visible.text.last.confirmed.value1.ago = { $slot1 }· last confirmed{ $slot2 }{ $value1 }{ $slot3 }ago
-
-journal.window.thinking.runs.visible.text.on.value1 = { $slot1 }on{ $slot2 }{ $value1 }
+journal.window.thinking.runs.total = { $runs_quantity ->
+        [one] { $runs_count } run
+       *[other] { $runs_count } runs
+    }
 
 journal.window.thinking.section.heading.claude = Claude
 
@@ -12173,23 +13346,15 @@ journal.window.thinking.status.text.add.a.key.or.endpoint = add a key or endpoin
 
 journal.window.thinking.status.text.continue.in.browser = continue in browser →
 
-journal.window.thinking.status.text.counted.through.value1 = counted through{ $slot1 }{ $value1 }.
-
-journal.window.thinking.status.text.counted.through.value1.this.hour.so = counted through{ $slot1 }{ $value1 }. this hour so far:{ $slot2 }{ $value2 }.
-
 journal.window.thinking.status.text.details = details →
 
 journal.window.thinking.status.text.downloading.the.local.model = downloading the local model.
 
 journal.window.thinking.status.text.error = error
 
-journal.window.thinking.status.text.in.a.typical.hour.of.thinking = in a typical hour of thinking. your journal finished thinking in{ $slot1 }{ $value1 }{ $slot2 }of the last{ $slot3 }{ $value2 }.
-
 journal.window.thinking.status.text.manage = manage →
 
 journal.window.thinking.status.text.manage.endpoint = manage endpoint →
-
-journal.window.thinking.status.text.manage.value1.key = manage{ $slot1 }{ $value1 }{ $slot2 }key →
 
 journal.window.thinking.status.text.no.busy.hour.yet = no busy hour yet
 
@@ -12198,8 +13363,6 @@ journal.window.thinking.status.text.not.available = not available
 journal.window.thinking.status.text.not.in.use.while.confidential.processing = not in use while confidential processing is on.
 
 journal.window.thinking.status.text.not.in.use.while.your.own = not in use while your own endpoint is set.
-
-journal.window.thinking.status.text.nothing.finished.in.the.last.value1 = nothing finished in the last{ $slot1 }{ $value1 }.
 
 journal.window.thinking.status.text.of.the.thinking.was.about.older = of the thinking was about older days
 
@@ -12239,19 +13402,11 @@ journal.window.thinking.status.text.use.a.google.ai.studio.key = use a Google AI
 
 journal.window.thinking.status.text.using.endpoint.manage = using endpoint · manage →
 
-journal.window.thinking.status.text.using.value1.key.manage = using{ $slot1 }{ $value1 }{ $slot2 }key · manage →
-
-journal.window.thinking.status.text.value1.of.what.your.journal.ran = { $value1 }{ $slot1 }of what your journal ran
-
 journal.window.thinking.status.text.you.can.switch.back.anytime = you can switch back anytime.
 
 journal.window.thinking.status.text.you.re.pointed.at.your.own = you're pointed at your own endpoint. clear it to run the bundled model
 
 journal.window.thinking.status.text.your.journal.hasn.t.finished.any = your journal hasn't finished any thinking in the last 30 days. once it does, its pace shows here.
-
-journal.window.thinking.status.text.your.journal.is.thinking.value1.so = your journal is thinking:{ $slot1 }{ $value1 }{ $slot2 }so far this hour. its pace shows here once the hour is over.
-
-journal.window.thinking.status.text.your.value1.key = your{ $slot1 }{ $value1 }{ $slot2 }key
 
 journal.window.thinking.sub.bundled.local.thinking.isn.t.available = bundled local thinking isn't available where your journal lives.
 
@@ -12443,10 +13598,6 @@ journal.window.thinking.visible.text.all = all
 
 journal.window.thinking.visible.text.all.runs.for.this.day = all runs for this day
 
-journal.window.thinking.visible.text.all.value1.value2.in.value3.on = all{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }{ $slot3 }in{ $slot4 }{ $value3 }{ $slot5 }on this day completed.
-
-journal.window.thinking.visible.text.all.value1.value2.on.this.day = all{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }{ $slot3 }on this day completed.
-
 journal.window.thinking.visible.text.busiest.hour = busiest hour
 
 journal.window.thinking.visible.text.catching.up = catching up
@@ -12469,8 +13620,6 @@ journal.window.thinking.visible.text.didn.t.finish = didn't finish
 
 journal.window.thinking.visible.text.each.thought.is.one.run.your = each thought is one run your journal finished, counted in the hour it finished.
 
-journal.window.thinking.visible.text.exact.id.value1 = exact id:{ $slot1 }{ $value1 }
-
 journal.window.thinking.visible.text.it.needs.supported.hardware = it needs supported hardware.
 
 journal.window.thinking.visible.text.loading.current.template = loading current template…
@@ -12490,8 +13639,6 @@ journal.window.thinking.visible.text.minimum.requirements = minimum requirements
 journal.window.thinking.visible.text.no.failed.runs.match.this.view = no failed runs match this view
 
 journal.window.thinking.visible.text.no.request.text.was.saved.for = no request text was saved for this run.
-
-journal.window.thinking.visible.text.no.run.on.this.day.carries = no run on this day carries{ $slot1 }{ $value1 }.
 
 journal.window.thinking.visible.text.no.runs.in.this.facet.on = no runs in this facet on this day
 
@@ -12523,8 +13670,6 @@ journal.window.thinking.visible.text.show.all.facets = show all facets
 
 journal.window.thinking.visible.text.show.all.runs = show all runs
 
-journal.window.thinking.visible.text.show.value1.more.run.value2.value3 = show{ $slot1 }{ $value1 }{ $slot2 }more run{ $value2 }{ $slot3 }·{ $slot4 }{ $value3 }{ $slot5 }left
-
 journal.window.thinking.visible.text.still.working = still working…
 
 journal.window.thinking.visible.text.stored.text = stored text
@@ -12545,27 +13690,13 @@ journal.window.thinking.visible.text.try.again = try again
 
 journal.window.thinking.visible.text.typical.hour = typical hour
 
-journal.window.thinking.visible.text.typical.value1 = typical{ $slot1 }{ $value1 }
-
 journal.window.thinking.visible.text.use.a.google.ai.studio.key = use a Google AI Studio key.
 
 journal.window.thinking.visible.text.use.an.anthropic.api.key = use an Anthropic API key.
 
 journal.window.thinking.visible.text.use.an.openai.api.key = use an OpenAI API key.
 
-journal.window.thinking.visible.text.value1.failed = { $value1 }{ $slot1 }failed
-
-journal.window.thinking.visible.text.value1.in.a.typical.hour.of = { $value1 }{ $slot1 }in a typical hour of thinking over the last 24 hours →
-
-journal.window.thinking.visible.text.value1.run.value2 = { $value1 }{ $slot1 }run{ $value2 }
-
-journal.window.thinking.visible.text.value1.run.value2.value3.failed = { $value1 }{ $slot1 }run{ $value2 }{ $slot2 }·{ $slot3 }{ $value3 }{ $slot4 }failed
-
-journal.window.thinking.visible.text.value1.value2.on.this.day.none = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }on this day, none in{ $slot3 }{ $value3 }.
-
 journal.window.thinking.visible.text.you.re.pointed.at.your.own = you're pointed at your own endpoint. clear it to run the bundled model
-
-journal.window.thinking.visible.text.your.journal.s.computer.can.t = your journal's computer can't run a local model yet. it needs a supported GPU.{ $slot1 }
 
 journal.window.thinking.window.explanation.checking.whether.your.journal.s.computer = checking whether your journal's computer can run a local model.
 
@@ -12635,10 +13766,6 @@ journal.window.thinking.window.explanation.that.run.isn.t.available = that run i
 
 journal.window.thinking.window.explanation.tool.call.did.not.complete = tool call did not complete
 
-journal.window.thinking.window.explanation.value1.value2.in.a.typical.hour = { $value1 }:{ $slot1 }{ $value2 }{ $slot2 }in a typical hour,{ $slot3 }{ $value3 }{ $slot4 }over{ $slot5 }{ $value4 }{ $slot6 }of thinking,{ $slot7 }{ $value5 }{ $slot8 }about older days
-
-journal.window.thinking.window.explanation.value1.value2.value3.about.older.days = { $value1 }:{ $slot1 }{ $value2 },{ $slot2 }{ $value3 }{ $slot3 }about older days
-
 journal.window.thinking.window.explanation.your.journal.s.computer.can.t = your journal's computer can't run local thinking
 
 journal.window.thinking.window.explanation.your.journal.s.computer.can.t.variant2 = your journal's computer can't run local thinking. choose another way when you're ready. your journal keeps everything until then.
@@ -12657,8 +13784,6 @@ journal.window.thinking.window.state.text.couldn.t.check = couldn't check
 
 journal.window.thinking.window.state.text.did.not.complete = did not complete
 
-journal.window.thinking.window.state.text.each = { $slot1 }each
-
 journal.window.thinking.window.state.text.endpoint.cleared = endpoint cleared
 
 journal.window.thinking.window.state.text.endpoint.saved = endpoint saved
@@ -12667,8 +13792,6 @@ journal.window.thinking.window.state.text.entity.detection = entity detection
 
 journal.window.thinking.window.state.text.entity.facts = entity facts
 
-journal.window.thinking.window.state.text.failed.runs.only = { $slot1 }failed runs only
-
 journal.window.thinking.window.state.text.just.now = just now
 
 journal.window.thinking.window.state.text.not.active = not active
@@ -12676,8 +13799,6 @@ journal.window.thinking.window.state.text.not.active = not active
 journal.window.thinking.window.state.text.not.ready = not ready
 
 journal.window.thinking.window.state.text.not.yet = not yet
-
-journal.window.thinking.window.state.text.or.use = { $slot1 }or use{ $slot2 }
 
 journal.window.thinking.window.state.text.possible.names = possible names
 
@@ -12702,54 +13823,35 @@ journal.window.time.duration.day.count = { $quantity ->
        *[other] { $count } days
     }
 
-journal.window.time.duration.day.one = { $value }{ $slot1 }day
-
-journal.window.time.duration.day.other = { $value }{ $slot1 }days
-
 journal.window.time.duration.hour.count = { $quantity ->
         [one] { $count } hour
        *[other] { $count } hours
     }
-
-journal.window.time.duration.hour.one = { $value }{ $slot1 }hour
-
-journal.window.time.duration.hour.other = { $value }{ $slot1 }hours
 
 journal.window.time.duration.minute.count = { $quantity ->
         [one] { $count } minute
        *[other] { $count } minutes
     }
 
-journal.window.time.duration.minute.one = { $value }{ $slot1 }minute
-
-journal.window.time.duration.minute.other = { $value }{ $slot1 }minutes
-
 journal.window.time.duration.month.count = { $quantity ->
         [one] { $count } month
        *[other] { $count } months
     }
-
-journal.window.time.duration.month.one = { $value }{ $slot1 }month
-
-journal.window.time.duration.month.other = { $value }{ $slot1 }months
 
 journal.window.time.duration.second.count = { $quantity ->
         [one] { $count } second
        *[other] { $count } seconds
     }
 
-journal.window.time.duration.second.one = { $value }{ $slot1 }second
-
-journal.window.time.duration.second.other = { $value }{ $slot1 }seconds
-
 journal.window.time.duration.week.count = { $quantity ->
         [one] { $count } week
        *[other] { $count } weeks
     }
 
-journal.window.time.duration.week.one = { $value }{ $slot1 }week
-
-journal.window.time.duration.week.other = { $value }{ $slot1 }weeks
+journal.window.view.activities.date.count = { $quantity ->
+        [one] 1 activity
+       *[other] { $count } activities
+    }
 
 journal.window.view.activities.date.none = no activities
 
@@ -12774,6 +13876,11 @@ journal.window.view.backup.description = an encrypted copy of your journal that 
 journal.window.view.backup.label = backup
 
 journal.window.view.backup.source = your own storage, or storage { $slot1 } operates
+
+journal.window.view.body.date.count = { $quantity ->
+        [one] 1 reading
+       *[other] { $count } readings
+    }
 
 journal.window.view.body.date.none = no readings
 
@@ -12817,6 +13924,11 @@ journal.window.view.import.label = import
 
 journal.window.view.import.source = files you bring in
 
+journal.window.view.map.date.count = { $quantity ->
+        [one] 1 record
+       *[other] { $count } records
+    }
+
 journal.window.view.map.date.none = no location
 
 journal.window.view.map.date.one = record
@@ -12853,6 +13965,11 @@ journal.window.view.sources.label = sources
 
 journal.window.view.sources.source = your paired devices
 
+journal.window.view.speakers.date.count = { $quantity ->
+        [one] 1 segment
+       *[other] { $count } segments
+    }
+
 journal.window.view.speakers.date.none = no segments
 
 journal.window.view.speakers.date.one = segment
@@ -12881,6 +13998,11 @@ journal.window.view.thinking.label = thinking
 
 journal.window.view.thinking.source = on your journal's computer, on confidential processing operated by { $slot1 }, or with your own model
 
+journal.window.view.transcripts.date.count = { $quantity ->
+        [one] 1 segment
+       *[other] { $count } segments
+    }
+
 journal.window.view.transcripts.date.none = no segments
 
 journal.window.view.transcripts.date.one = segment
@@ -12899,17 +14021,9 @@ journal.window.view.year.label = year
 
 journal.window.view.year.source = counted from what your journal keeps
 
-journal.window.year.copy.cell.label.week.of.from.days = { $slot1 }, week of { $slot2 }: { $slot3 }
-
-journal.window.year.copy.day.day = day
-
-journal.window.year.copy.day.days = days
-
 journal.window.year.copy.days.days = days
 
 journal.window.year.copy.days.lede.each.square.is.a.day.colored = each square is a day, colored by the count you choose below.
-
-journal.window.year.copy.days.none.nothing.of.this.kind.in.year = nothing of this kind in { $slot1 }.
 
 journal.window.year.copy.empty.action.see.your.sources = see your sources
 
@@ -12921,13 +14035,7 @@ journal.window.year.copy.error.this.didn.t.load = this didn't load.
 
 journal.window.year.copy.find.find.a.place.or.a.name = find a place or a name
 
-journal.window.year.copy.find.none.nothing.in.year.has.that.name = nothing in { $slot1 } has that name.
-
 journal.window.year.copy.layer.label.what.to.count = what to count
-
-journal.window.year.copy.name.name = name
-
-journal.window.year.copy.name.names = names
 
 journal.window.year.copy.names.unavailable.names.aren.t.listed.your.journal = names aren't listed: your journal couldn't check which ones to leave out.
 
@@ -12935,33 +14043,17 @@ journal.window.year.copy.other.names.other.names = other names
 
 journal.window.year.copy.peek.hint.choose.a.row.or.a.week = choose a row, or a week on it, to see its days.
 
-journal.window.year.copy.place.place = place
-
-journal.window.year.copy.place.places = places
-
 journal.window.year.copy.places.places = places
 
 journal.window.year.copy.places.unavailable.places.aren.t.listed.the.place = places aren't listed: the place names that come with your journal couldn't be read.
 
 journal.window.year.copy.retry.try.again = try again
 
-journal.window.year.copy.row.start.start.at.first = start at { $slot1 }
-
-journal.window.year.copy.row.summary.days.in.year.first.to.last = { $slot1 } in { $slot2 }, { $slot3 } to { $slot4 }, across { $slot5 }.
-
-journal.window.year.copy.row.summary.one.day.in.year.first = 1 day in { $slot1 }, { $slot2 }.
-
-journal.window.year.copy.section.count.count = { $slot1 }
-
 journal.window.year.copy.step.label.other.years = other years
 
 journal.window.year.copy.switch.label.how.to.see.this.year = how to see this year
 
 journal.window.year.copy.threads.lede.each.row.is.a.place.or = each row is a place or a name your journal found. each square is a week, colored by how many days that week the place or name appears on. rows are in the order they first appear.
-
-journal.window.year.copy.threads.none.listed.nothing.listed.for.year = nothing listed for { $slot1 }.
-
-journal.window.year.copy.threads.none.no.places.or.names.in.year = no places or names in { $slot1 }.
 
 journal.window.year.copy.threads.threads = threads
 
@@ -12971,15 +14063,7 @@ journal.window.year.copy.week.after.the.later.week.with.days.on = the later week
 
 journal.window.year.copy.week.before.the.earlier.week.with.days.on = the earlier week with days on this row
 
-journal.window.year.copy.week.days.days.of.this.week = { $slot1 } of this week:
-
-journal.window.year.copy.week.of.week.of.from.to.to = week of { $slot1 } to { $slot2 }
-
-journal.window.year.copy.week.week = week
-
-journal.window.year.copy.week.weeks = weeks
-
-journal.window.year.copy.year.none.nothing.to.show.here.for.year = nothing to show here for { $slot1 }.
+journal.window.year.days.empty = nothing of this kind in { $year }.
 
 journal.window.year.months.label.apr = Apr
 
@@ -13019,6 +14103,44 @@ journal.window.year.source.or.date.unit.label.record = record
 
 journal.window.year.source.or.date.unit.label.records = records
 
+journal.window.year.thread.cell.week.days = { $days_quantity ->
+        [one] { $thread_name }, week of { $week_start }: { $days_count } day
+       *[other] { $thread_name }, week of { $week_start }: { $days_count } days
+    }
+
+journal.window.year.thread.days.in.year = { $days_quantity ->
+        [one] 1 day in { $year }, { $first_day }.
+       *[other] { $days_count } days in { $year }, { $first_day } to { $last_day }, across { $weeks_quantity ->
+        [one] { $weeks_count } week.
+       *[other] { $weeks_count } weeks.
+    }
+    }
+
+journal.window.year.thread.empty = no places or names in { $year }.
+
+journal.window.year.thread.find.empty = nothing in { $year } has that name.
+
+journal.window.year.thread.group.name.count = { $total_quantity ->
+        [one] { $total_count } name
+       *[other] { $total_count } names
+    }
+
+journal.window.year.thread.group.place.count = { $total_quantity ->
+        [one] { $total_count } place
+       *[other] { $total_count } places
+    }
+
+journal.window.year.thread.jump.to.first.day = start at { $first_day }
+
+journal.window.year.thread.list.empty = nothing listed for { $year }.
+
+journal.window.year.thread.week.day.links = { $days_quantity ->
+        [one] { $days_count } day of this week: { $day_links }
+       *[other] { $days_count } days of this week: { $day_links }
+    }
+
+journal.window.year.thread.week.range = week of { $start_day } to { $end_day }
+
 journal.window.year.type.labels.company.companies = companies
 
 journal.window.year.type.labels.organization.organizations = organizations
@@ -13030,6 +14152,8 @@ journal.window.year.type.labels.place.named.places = named places
 journal.window.year.type.labels.project.projects = projects
 
 journal.window.year.type.labels.tool.tools = tools
+
+journal.window.year.view.empty = nothing to show here for { $year }.
 
 journal.window.year.year.invalid = that year couldn't be used.
 

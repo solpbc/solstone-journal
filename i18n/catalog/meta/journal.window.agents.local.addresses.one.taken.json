@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. local addresses one taken.",
+  "context": "Journal window. Agents window. local addresses one taken.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9721fde189cb227a8bca7151b6c67bfade401f0addbcc570adcd8c7d68365109",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

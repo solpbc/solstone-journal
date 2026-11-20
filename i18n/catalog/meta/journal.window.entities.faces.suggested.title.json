@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces suggested title.",
+  "context": "Journal window. Entities view. faces suggested title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b96b24c78d6f796bf140973009f72d6e3b0cefeab433477f213c0bdc5b3f9076",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

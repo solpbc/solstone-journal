@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. pace period none finished.",
+  "context": "Journal window. Thinking view. pace period none finished.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "period",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac1a851f7f24b6154d18390a0ec73c6fd2d0fd1ec43f5bed0c503e9846fcd288",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

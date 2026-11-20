@@ -43,4 +43,32 @@ function readCopyTable(file) {
   return resolve(JSON.parse(fs.readFileSync(file, 'utf8')));
 }
 
-module.exports = { loadWindowCatalog, journalContext, runWithJournalCatalog, readCopyTable };
+// The markup renderer uses text nodes, fragments, and small inline elements.
+function markupNode(tag = '') {
+  function escapeText(value) {
+    return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  }
+  let body = '';
+  return {
+    attrs: {},
+    className: '',
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    append(...parts) {
+      for (const part of parts) body += typeof part === 'string' ? escapeText(part) : part.outerHTML;
+    },
+    appendChild(part) { this.append(part); return part; },
+    set textContent(value) { body = escapeText(value); },
+    get innerHTML() { return body; },
+    set innerHTML(value) { body = String(value); },
+    get outerHTML() {
+      const attrs = Object.entries(this.attrs);
+      if (this.className) attrs.unshift(['class', this.className]);
+      for (const name of ['target', 'rel']) if (this[name]) attrs.push([name, this[name]]);
+      const suffix = attrs.map(([name, value]) =>
+        ` ${name}="${escapeText(value).replaceAll('"', '&quot;')}"`).join('');
+      return tag ? `<${tag}${suffix}>${body}</${tag}>` : body;
+    },
+  };
+}
+
+module.exports = { loadWindowCatalog, journalContext, runWithJournalCatalog, readCopyTable, markupNode };

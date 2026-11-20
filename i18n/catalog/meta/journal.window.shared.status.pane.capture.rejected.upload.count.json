@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane capture rejected upload count.",
+  "context": "Journal window. Journal window shell. shared status pane capture rejected upload count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e9738ed73b071a113044643eaa35533b122a6bc55d546e856dab2b657881cd1b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

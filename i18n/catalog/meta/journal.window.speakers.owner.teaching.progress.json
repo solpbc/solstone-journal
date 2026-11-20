@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. owner teaching progress.",
+  "context": "Journal window. Speakers view. owner teaching progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "statements_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "statements",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "required_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "38b4f32aa91c6e9d265d0dfa1746f46658e07fe5bdeca5920ea0d801be18914f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "statements_quantity",
+    "type": "cardinal"
+  }
+}

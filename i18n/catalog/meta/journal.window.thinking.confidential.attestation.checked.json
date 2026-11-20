@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. confidential attestation checked.",
+  "context": "Journal window. Thinking view. confidential attestation checked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f2438c4b2b6c9c5427d82d298a957d692007164d25cd3bfdfd7b8a6c2c2965c5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys model checking.",
+  "context": "Journal window. Thinking view. keys model checking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "de4355a7477461e5b5b1e68d0c7febaf1d59021c985f11128d33d72afe126577",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

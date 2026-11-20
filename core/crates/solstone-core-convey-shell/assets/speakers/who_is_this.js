@@ -6,14 +6,8 @@
 
   const COPY = {
     SHEET_TITLE: 'SPK_SHEET_TITLE',
-    SHEET_LEDE_MANY: 'SPK_SHEET_LEDE_MANY',
-    SHEET_LEDE_ONE: 'SPK_SHEET_LEDE_ONE',
     SHELF_CANDIDATES: 'SPK_SHELF_CANDIDATES',
     SHELF_NO_EVIDENCE: 'SPK_SHELF_NO_EVIDENCE',
-    EVIDENCE_SCREEN_MANY: 'SPK_EVIDENCE_SCREEN_MANY',
-    EVIDENCE_SCREEN_ONE: 'SPK_EVIDENCE_SCREEN_ONE',
-    EVIDENCE_MEETING_MANY: 'SPK_EVIDENCE_MEETING_MANY',
-    EVIDENCE_MEETING_ONE: 'SPK_EVIDENCE_MEETING_ONE',
     SHELF_MENTIONS: 'SPK_SHELF_MENTIONS',
     ANCHOR: 'SPK_ANCHOR',
     ANCHOR_HAS_VOICE: 'SPK_ANCHOR_HAS_VOICE',
@@ -21,24 +15,12 @@
     SEARCH_PLACEHOLDER: 'SPK_SEARCH_PLACEHOLDER',
     THIS_IS_ME: 'SPK_THIS_IS_ME',
     THIS_IS_ME_GUIDANCE: 'SPK_THIS_IS_ME_GUIDANCE',
-    SEARCH_NO_RESULTS: 'SPK_SEARCH_NO_RESULTS',
-    CREATE_ROW: 'SPK_CREATE_ROW',
     NEAR_MATCH_BAND: 'SPK_NEAR_MATCH_BAND',
-    KEEP_SEPARATE_TITLE: 'SPK_KEEP_SEPARATE_TITLE',
-    KEEP_SEPARATE_BODY: 'SPK_KEEP_SEPARATE_BODY',
     KEEP_SEPARATE_CONFIRM: 'SPK_KEEP_SEPARATE_CONFIRM',
-    KEEP_SEPARATE_DECLINE: 'SPK_KEEP_SEPARATE_DECLINE',
-    PREVIEW_TITLE: 'SPK_PREVIEW_TITLE',
     PREVIEW_BODY_FRESH: 'SPK_PREVIEW_BODY_FRESH',
-    PREVIEW_BODY_HAS_VOICE: 'SPK_PREVIEW_BODY_HAS_VOICE',
-    PREVIEW_FACTS: 'SPK_PREVIEW_FACTS',
-    PREVIEW_CONFIRM: 'SPK_PREVIEW_CONFIRM',
     PREVIEW_BACK: 'SPK_PREVIEW_BACK',
-    RECEIPT_TITLE: 'SPK_RECEIPT_TITLE',
-    RECEIPT_BODY: 'SPK_RECEIPT_BODY',
     RECEIPT_UNDO: 'SPK_RECEIPT_UNDO',
     UNDO_DONE: 'SPK_UNDO_DONE',
-    UNDO_PARTIAL: 'SPK_UNDO_PARTIAL',
     EXIT_NOT_PERSON: 'SPK_EXIT_NOT_PERSON',
     EXIT_NOT_NOW: 'SPK_EXIT_NOT_NOW',
     NOT_PERSON_DONE: 'SPK_NOT_PERSON_DONE',
@@ -55,18 +37,12 @@
   const FOCUSABLE_SELECTOR = 'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
   const UNDO_CATEGORIES = ['labels', 'corrections', 'voiceprints', 'tracker', 'sentinel', 'entity'];
 
-  function templateText(template, values) {
-    return String(template ?? '').replace(/\{([a-z_]+)\}/g, (_match, key) => {
-      const value = values && Object.prototype.hasOwnProperty.call(values, key)
-        ? values[key]
-        : '';
-      return String(value ?? '');
-    });
+  function speakerCountArgs(name, count, display = String(count)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(count)], [name, display]];
   }
 
-  function copyText(copy, key, values) {
-    const text = copy && copy[key] ? copy[key] : '';
-    return values ? templateText(text, values) : String(text);
+  function copyText(copy, key) {
+    return String(copy?.[key] || '');
   }
 
   function clear(node) {
@@ -383,10 +359,7 @@
       }
       const facts = this.presence?.facts || {};
       const conversationCount = positiveCount(facts.conversation_count);
-      const ledeKey = conversationCount === 1 ? COPY.SHEET_LEDE_ONE : COPY.SHEET_LEDE_MANY;
-      append(body, textEl(this.doc, 'p', 'spk-who-lede', copyText(this.copy, ledeKey, {
-        count: conversationCount,
-      })));
+      append(body, textEl(this.doc, 'p', 'spk-who-lede', window.JournalI18n.render('journal.window.speakers.who.conversations', speakerCountArgs('count', conversationCount))));
       this.renderSamples(body, facts.samples || []);
       const candidates = this.presence?.candidates || {};
       const coPresence = Array.isArray(candidates.co_presence) ? candidates.co_presence : [];
@@ -481,15 +454,11 @@
     evidenceLine(candidate) {
       const screen = positiveCount(candidate?.screen_conversations);
       if (screen > 0) {
-        return copyText(this.copy, screen === 1 ? COPY.EVIDENCE_SCREEN_ONE : COPY.EVIDENCE_SCREEN_MANY, {
-          count: screen,
-        });
+        return window.JournalI18n.render('journal.window.speakers.who.evidence.on.screen', speakerCountArgs('count', screen));
       }
       const meetings = positiveCount(candidate?.meeting_days);
       if (meetings > 0) {
-        return copyText(this.copy, meetings === 1 ? COPY.EVIDENCE_MEETING_ONE : COPY.EVIDENCE_MEETING_MANY, {
-          count: meetings,
-        });
+        return window.JournalI18n.render('journal.window.speakers.who.evidence.meeting.notes', speakerCountArgs('count', meetings));
       }
       return '';
     }
@@ -597,13 +566,9 @@
         quiet: true,
       })));
       if (!this.mainState.people.length) {
-        append(this.searchResults, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.no'), copyText(this.copy, COPY.SEARCH_NO_RESULTS, {
-          query: this.mainState.query,
-        })));
+        append(this.searchResults, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.no'), window.JournalI18n.render('journal.window.speakers.who.search.no.person', [['query', this.mainState.query]])));
       }
-      append(this.searchResults, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), copyText(this.copy, COPY.CREATE_ROW, {
-        query: this.mainState.query,
-      }), () => this.resolveCreateName(this.mainState.query)));
+      append(this.searchResults, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', this.mainState.query]]), () => this.resolveCreateName(this.mainState.query)));
     }
 
     renderExitActions(body) {
@@ -651,21 +616,12 @@
     renderPreview() {
       const target = this.previewTarget;
       const body = this.renderFrame('spk-who-preview-state');
-      this.dialog.querySelector('.spk-who-title').textContent = copyText(this.copy, COPY.PREVIEW_TITLE, {
-        name: target.name,
-      });
-      append(body, textEl(this.doc, 'p', 'spk-who-preview-body', copyText(this.copy, target.has_voice ? COPY.PREVIEW_BODY_HAS_VOICE : COPY.PREVIEW_BODY_FRESH, {
-        name: target.name,
-      })));
+      this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.identify.preview.heading', [['person_name', target.name]]);
+      append(body, textEl(this.doc, 'p', 'spk-who-preview-body', target.has_voice ? window.JournalI18n.render('journal.window.speakers.who.identify.preview.existing.voice', [['person_name', target.name]]) : copyText(this.copy, COPY.PREVIEW_BODY_FRESH)));
       const facts = this.presence?.facts || {};
-      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.preview'), copyText(this.copy, COPY.PREVIEW_FACTS, {
-        statements: positiveCount(facts.statement_count),
-        conversations: positiveCount(facts.conversation_count),
-      })));
+      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.preview'), window.JournalI18n.render('journal.window.speakers.who.preview.fact.count', [...speakerCountArgs('statements', positiveCount(facts.statement_count)), ...speakerCountArgs('conversations', positiveCount(facts.conversation_count))])));
       const actions = el(this.doc, 'div', 'spk-who-actions');
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn'), copyText(this.copy, COPY.PREVIEW_CONFIRM, {
-        first_name: firstName(target.name),
-      }), () => this.commitPreview()));
+      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn'), window.JournalI18n.render('journal.window.speakers.who.identify.confirm.first.name', [['first_name', firstName(target.name)]]), () => this.commitPreview()));
       append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.preview'), copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
       append(body, actions);
       this.focusInitial('preview');
@@ -749,9 +705,7 @@
         quiet: true,
       })));
       if (options.allowCreate) {
-        append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), copyText(this.copy, COPY.CREATE_ROW, {
-          query: options.createName,
-        }), () => this.renderKeepSeparate(options.createName, shown)));
+        append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', options.createName]]), () => this.renderKeepSeparate(options.createName, shown)));
       }
       append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.preview'), copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
       this.focusInitial('candidates');
@@ -760,12 +714,8 @@
     renderKeepSeparate(name, matches) {
       const top = matches[0];
       const body = this.renderFrame('spk-who-keep-state');
-      this.dialog.querySelector('.spk-who-title').textContent = copyText(this.copy, COPY.KEEP_SEPARATE_TITLE, {
-        name: top.name,
-      });
-      append(body, textEl(this.doc, 'p', 'spk-who-keep-body', copyText(this.copy, COPY.KEEP_SEPARATE_BODY, {
-        name: top.name,
-      })));
+      this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.keep.separate.heading', [['person_name', top.name]]);
+      append(body, textEl(this.doc, 'p', 'spk-who-keep-body', window.JournalI18n.render('journal.window.speakers.who.keep.separate.reason', [['person_name', top.name]])));
       const actions = el(this.doc, 'div', 'spk-who-actions');
       append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn.variant2'), copyText(this.copy, COPY.KEEP_SEPARATE_CONFIRM), () => {
         this.enterPreview({
@@ -774,9 +724,7 @@
           reviewed_near_match_entity_ids: matches.map((match) => match.entity_id),
         });
       }));
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.keep'), copyText(this.copy, COPY.KEEP_SEPARATE_DECLINE, {
-        name: top.name,
-      }), () => {
+      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.keep'), window.JournalI18n.render('journal.window.speakers.who.keep.separate.decline', [['person_name', top.name]]), () => {
         this.enterPreview({
           mode: 'attach',
           entity_id: top.entity_id,
@@ -850,12 +798,8 @@
     renderReceipt(result, partialMessage) {
       this.receiptResult = result;
       const body = this.renderFrame('spk-who-receipt-state');
-      this.dialog.querySelector('.spk-who-title').textContent = copyText(this.copy, COPY.RECEIPT_TITLE, {
-        name: result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '',
-      });
-      append(body, textEl(this.doc, 'p', 'spk-who-receipt-body', copyText(this.copy, COPY.RECEIPT_BODY, {
-        name: result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '',
-      })));
+      this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.identify.receipt.heading', [['person_name', result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '']]);
+      append(body, textEl(this.doc, 'p', 'spk-who-receipt-body', window.JournalI18n.render('journal.window.speakers.who.identify.receipt.conversations', [['person_name', result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '']])));
       if (partialMessage) {
         append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.error.spk'), partialMessage));
       }
@@ -881,10 +825,7 @@
           await this.refreshFullyRestoredUndo(result);
           return;
         }
-        this.renderReceipt(this.receiptResult, copyText(this.copy, COPY.UNDO_PARTIAL, {
-          restored: summary.restored,
-          skipped: summary.skipped,
-        }));
+        this.renderReceipt(this.receiptResult, window.JournalI18n.render('journal.window.speakers.who.undo.partial.count', [...speakerCountArgs('restored', summary.restored), ...speakerCountArgs('skipped', summary.skipped)]));
       } catch (error) {
         this.logError(error, { context: 'speakers-who-is-this:undo' });
         this.renderLoadError(() => this.undoReceipt());
@@ -977,7 +918,6 @@
   const SpeakersWhoIsThis = {
     init,
     summarizeUndoReport,
-    templateText,
   };
   global.SpeakersWhoIsThis = SpeakersWhoIsThis;
   if (typeof module !== 'undefined' && module.exports) {

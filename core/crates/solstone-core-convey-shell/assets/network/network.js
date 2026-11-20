@@ -254,13 +254,13 @@
 
     function networkLineKey() {
       const body = ceremony.material;
-      if (ceremony.sameMachine) return 'PAIR_THIS_COMPUTER_LINE';
-      if (body?.relay === true) return 'PAIR_RELAY_LINE';
-      return body?.home_address_is_public ? 'PAIR_PUBLIC_ADDRESS_LINE' : 'PAIR_NETWORK_LINE';
+      if (ceremony.sameMachine) return 'journal.window.network.pair.this.computer.expiry';
+      if (body?.relay === true) return 'journal.window.network.pair.relay.expiry';
+      return body?.home_address_is_public ? 'journal.window.network.pair.public.address.expiry' : 'journal.window.network.pair.network.expiry';
     }
 
     function renderNetworkLine(seconds) {
-      elements.networkLine.textContent = copy(networkLineKey()).replace('{time}', formatExpiry(seconds));
+      elements.networkLine.textContent = global.JournalI18n.render(networkLineKey(), [['remaining_time', formatExpiry(seconds)]]);
     }
 
     // Only a direct link encodes addresses; a relay link's list is empty and
@@ -283,7 +283,7 @@
         || ceremony.material?.device_label?.trim()
         || '';
       elements.successHeading.textContent = label
-        ? copy('SUCCESS_HEADING').replace('{label}', label)
+        ? global.JournalI18n.render('journal.window.network.pair.success.named.device', [['device_name', label]])
         : copy('SUCCESS_HEADING_UNNAMED');
       // The journal can't see the device's answer. On this computer only some
       // solstone apps ask at all, so that note is conditional.
@@ -733,7 +733,7 @@
     if (group === 'never') return global.JournalI18n.render('journal.window.network.delivery.never');
     if (group === 'unknown') return global.JournalI18n.render('journal.window.network.delivery.unknown');
     const elapsed = elapsedSince(client.last_accepted_ingest_at, nowMs);
-    return elapsed === null ? global.JournalI18n.render('journal.window.network.delivery.earlier') : global.JournalI18n.render('journal.window.network.delivery.visible.text.added.value1.ago', [['value1', String(global.relativeTime(elapsed))]]);
+    return elapsed === null ? global.JournalI18n.render('journal.window.network.delivery.earlier') : global.relativeTime(elapsed, 'journal.window.network.delivery.elapsed');
   }
 
   function connectionLineLabel(client) {
@@ -743,7 +743,8 @@
 
   function checkInLabel(client, nowMs) {
     const elapsed = elapsedSince(client.last_seen_at, nowMs);
-    return elapsed === null ? 'never' : `${global.relativeTime(elapsed)} ago`;
+    return elapsed === null ? global.JournalI18n.render('journal.window.network.delivery.checkin.never')
+      : global.relativeTime(elapsed, 'journal.window.shared.status.pane.age.elapsed');
   }
 
   /// A journal segment key names a day and the second the segment opened. The

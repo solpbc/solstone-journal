@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection again action.",
+  "context": "Journal window. Agents view. connection again action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16a289eb16a6763586f63701612aee833c5aaccea19849e3193ee0cb2ed798e1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

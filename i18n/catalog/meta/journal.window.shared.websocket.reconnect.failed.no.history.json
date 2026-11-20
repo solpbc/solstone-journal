@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. shared websocket reconnect failed no history.",
+  "context": "Journal window. Journal window. shared websocket reconnect failed no history.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "097ee5450fe5f82a8b27ee215ef0a94719f2e8fae7e129a286eb410e480f2e98",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

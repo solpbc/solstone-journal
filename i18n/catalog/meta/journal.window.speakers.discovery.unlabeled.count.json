@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers discovery unlabeled count.",
+  "context": "Journal window. Journal view. speakers discovery unlabeled count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c2ceac95c4066e37b8b09f26ba484ffc3bc7c61447b05c01812aacc898181779",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

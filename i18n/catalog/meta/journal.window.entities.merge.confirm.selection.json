@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. merge confirm selection.",
+  "context": "Journal window. Entities view. merge confirm selection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2c0912d9f2b5243faa001148daf673b316e546ed93d1ce32c37702028e26ba0f",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "selected_quantity",
+    "type": "cardinal"
+  }
+}

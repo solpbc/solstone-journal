@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. connections evidence show more.",
+  "context": "Journal window. Entities view. connections evidence show more.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "686e68ed848cbd70adc9ae679d10075a40bac0286c14d30508ed562f98a77cab",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shown_quantity",
+    "type": "cardinal"
+  }
+}

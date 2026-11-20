@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who keep separate reason.",
+  "context": "Journal window. Speakers view. who keep separate reason.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca9d4b7b8690aa7a27188dc1f45471b5525c7a7164496825256c4c55b5efac24",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

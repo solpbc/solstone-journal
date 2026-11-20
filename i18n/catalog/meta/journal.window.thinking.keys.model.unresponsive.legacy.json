@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view. keys model unresponsive legacy.",
+  "context": "Journal window. Thinking view. keys model unresponsive legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    },
+    {
+      "name": "failure_reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "082fad42127fe7dcef10278610d186e2ad22745d2371bdd1f0b6372a8513219e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

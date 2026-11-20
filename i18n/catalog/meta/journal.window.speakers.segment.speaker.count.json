@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers segment speaker count.",
+  "context": "Journal window. Journal view. speakers segment speaker count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "833ab1c47e38693da5b4fcecf648d53e1af1b9aa2041ec9631b2eb58190dfec0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

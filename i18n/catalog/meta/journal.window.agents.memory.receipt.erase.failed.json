@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. memory receipt erase failed.",
+  "context": "Journal window. Agents window. memory receipt erase failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efd1de00c6e43d02124f94594345f070a4da59014389b52400aed6488d9a7eab",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

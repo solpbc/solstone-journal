@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who search no person.",
+  "context": "Journal window. Speakers view. who search no person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "218fc11de47db82b1d0037439a45343d8b16668d3d165de2671d3ad6b92e35d8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

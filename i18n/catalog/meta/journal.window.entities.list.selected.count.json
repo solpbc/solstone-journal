@@ -1,0 +1,39 @@
+{
+  "description": "Entities view. list selected count.",
+  "context": "Journal window. Entities view. list selected count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "021f5b92741f32be597bd032de2e4dadb1fccf7baf5994d0897758386b29e9b3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "selected_quantity",
+    "type": "cardinal"
+  }
+}

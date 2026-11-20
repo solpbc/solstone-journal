@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. agents connection agents on this device and through.",
+  "context": "Journal window. Journal window. agents connection agents on this device and through.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba9e5ce7ddcce0977291f04b224d18e3e91c389d322cc5bf87a0a2f02c97bb05",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

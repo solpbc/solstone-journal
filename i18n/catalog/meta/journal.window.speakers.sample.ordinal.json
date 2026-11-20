@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. sample ordinal.",
+  "context": "Journal window. Speakers view. sample ordinal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sample_number",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7ce358511cbd89026e6969d565e25826e39888b08ad0e24c82d8298e8662c49",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

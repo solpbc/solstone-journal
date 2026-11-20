@@ -425,10 +425,10 @@
     }
     const currentEntries = visibleEntries().map(cloneEntry);
     const newestEntry = currentEntries[currentEntries.length - 1];
-    const template = window.CONVEY_COPY.CONSOLE_SNAPSHOT_HEADING;
+    const count = currentEntries.length;
     window.convey.reportError({
       source: 'manual',
-      heading: template.replace('{count}', String(currentEntries.length)),
+      heading: window.JournalI18n.render('journal.window.shared.console.snapshot.message.count', [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]]),
       apiError: newestEntry?.detail?.apiError || null,
       consoleEntries: currentEntries,
       customDetail: '',

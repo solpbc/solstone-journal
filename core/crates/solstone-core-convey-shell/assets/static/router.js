@@ -505,7 +505,9 @@
     }
     if (controller.signal.aborted) return true;
     window.solShellChrome?.markCurrent?.(name);
-    document.title = window.JournalI18n.render('journal.window.shared.router.tooltip.value1.journal', [['value1', String(app.label)]]);
+    document.title = window.JournalI18n.render('journal.window.chrome.view.document.title', [
+      ['view', String(app.name || '')], ['fallback_label', String(app.label)]
+    ]);
     settleAfterMove(mode, app.label);
     return true;
   }

@@ -656,8 +656,13 @@ fn copy(locale: &str, name: &str) -> String {
         .unwrap_or_default()
 }
 fn validate_home_address(value: &str, expected_port: u16, locale: &str) -> Result<String, String> {
-    let invalid_copy =
-        || copy(locale, "HOME_ADDRESS_INVALID").replace("{port}", &expected_port.to_string());
+    let invalid_copy = || {
+        window_catalog::strings(
+            locale,
+            "journal.window.network.address.home.invalid.port",
+            [("port", &expected_port.to_string())],
+        )
+    };
     let cleaned = value.trim();
     if cleaned.is_empty() || cleaned.contains("://") || cleaned.contains('/') {
         return Err(invalid_copy());

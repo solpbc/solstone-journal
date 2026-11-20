@@ -1,0 +1,34 @@
+{
+  "description": "Entities view. connections row attendance.",
+  "context": "Journal window. Entities view. connections row attendance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "531cb0315595565046cfb9ea66f5556891dc3a1bd8a5179843aeb0e3ab28b7c6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

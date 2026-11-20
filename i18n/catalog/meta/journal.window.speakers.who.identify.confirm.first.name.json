@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who identify confirm first name.",
+  "context": "Journal window. Speakers view. who identify confirm first name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a649dd5646e18befdf8b10e2419a723aa6e4a778d04ff54b14dfb67948a7de1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. merge pair confirm heading.",
+  "context": "Journal window. Entities view. merge pair confirm heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "pairs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pairs",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "38c852e2a35e85698f6017a715546956b38517c26a3db48a32cb501283d7a1ef",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "pairs_quantity",
+    "type": "cardinal"
+  }
+}

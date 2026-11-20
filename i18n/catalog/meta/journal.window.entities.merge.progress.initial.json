@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. merge progress initial.",
+  "context": "Journal window. Entities view. merge progress initial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c7eaac3396c248d6ebe3d000fa3427ed4c85c2f5a164d4e0ea93338929cb9284",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

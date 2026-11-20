@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. list heading facet.",
+  "context": "Journal window. Entities view. list heading facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46a7ee390701f0bb4c0dfe0a628aa46aacc65369eeff5d662fd96998070ca8a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

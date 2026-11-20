@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. pair code scope your domain.",
+  "context": "Journal window. Agents window. pair code scope your domain.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d45b2899779405c6ecd67ae617a11da04fd5c9e033319b3a9631850ef7db6d26",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

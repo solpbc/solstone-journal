@@ -1,0 +1,30 @@
+{
+  "description": "Network window. delivery elapsed hour.",
+  "context": "Journal window. Network window. delivery elapsed hour.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d34f1b2b4e540a46ca15431d23e5d84d022992022b5ef73021e318141fb54d7d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

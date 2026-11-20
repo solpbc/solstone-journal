@@ -6,7 +6,7 @@
 // that every refusal offers a next step, and that only a chosen photo reaches
 // a list. Wording and look are voice-check's and design QA's, not this file's.
 
-const { readCopyTable } = require('./journal_catalog_dom.js');
+const { journalContext, readCopyTable } = require('./journal_catalog_dom.js');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -136,9 +136,6 @@ module.exports = async function facesCases(manifestDir) {
       ENT_COPY: copy,
       currentDetailEntity: {id: 'ada'},
       console,
-      entityTrustFormat(template, values) {
-        return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value ?? '')), String(template || ''));
-      },
       parseYYYYMMDD(day) { return new Date(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8))); },
       selectEntityScope() {},
       apiJson(url, init = {}) {
@@ -147,7 +144,9 @@ module.exports = async function facesCases(manifestDir) {
         return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
       },
     };
-    vm.createContext(context);
+    journalContext(context);
+    const copyHelpers = workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal'));
+    vm.runInContext(copyHelpers, context);
     vm.runInContext(`${block}\nthis.api = {openFacesPanel, resetFacesPanel, facesPanel, entityPhotoThumb, facesMergeReason, renderFacetPhotoHint};`, context, {filename: 'entities-faces.js'});
     return {context, section, list, calls, api: context.api, doc};
   }

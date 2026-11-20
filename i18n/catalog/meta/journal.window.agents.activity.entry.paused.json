@@ -1,0 +1,25 @@
+{
+  "description": "Agents view. activity entry paused.",
+  "context": "Journal window. Agents view. activity entry paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "tool_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7264ae3372f88e395feae65da23846d38d81adc70291607f8e65a63e9763d6bb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

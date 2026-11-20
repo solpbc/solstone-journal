@@ -1,0 +1,16 @@
+{
+  "description": "Agents window. memories empty pairing.",
+  "context": "Journal window. Agents window. memories empty pairing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8367bb64d30d851ff46b7ca96f4decc94d2af8ead49d2cab1471488e3970ea89",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

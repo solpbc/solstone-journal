@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. byo relay unreachable address.",
+  "context": "Journal window. Agents window. byo relay unreachable address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "server_address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "94c52ae8a2affbb8d5b458cf374557749980b98fba3d5bf061b890704e5b5249",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

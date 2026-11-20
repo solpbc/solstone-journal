@@ -1,0 +1,30 @@
+{
+  "description": "Entities view deletion. marked many k couldn t be moved and.",
+  "context": "Journal window. Entities view deletion. marked many k couldn t be moved and.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining",
+      "type": "string"
+    },
+    {
+      "name": "remaining_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c427a4194edc1194b6f11b3445f45a376a2404c39e2c999fcffe48e7091c2155",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "remaining_quantity",
+    "type": "cardinal"
+  }
+}

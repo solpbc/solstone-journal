@@ -1,0 +1,28 @@
+{
+  "description": "Journal window shell. shared day grid range anchor.",
+  "context": "Journal window. Journal window shell. shared day grid range anchor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca7c70485a1c4f87ef1bec104deb7120b63d91398d32df1f6c6898fed2cbaab8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "description": "Journal view. speakers segment attributed total.",
+  "context": "Journal window. Journal view. speakers segment attributed total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "attributed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "attributed",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "26753ac90ce87780f3e6a062b25e9e483e58e50c0408d9ff68c0816b6b8ea176",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "attributed_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Network window. unpair named device.",
+  "context": "Journal window. Network window. unpair named device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3df4ba85c9ad961ce0804e1032a13af0b2f89e9e63e627cc3df469a5c4f303d4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

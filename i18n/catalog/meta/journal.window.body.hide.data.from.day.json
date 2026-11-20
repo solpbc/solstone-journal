@@ -1,0 +1,21 @@
+{
+  "description": "Body view. hide data from day.",
+  "context": "Journal window. Body view. hide data from day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76e457d57eca5e6331e4b08c6b291e0cc73f1b360b998083f4fded17c1791ebf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

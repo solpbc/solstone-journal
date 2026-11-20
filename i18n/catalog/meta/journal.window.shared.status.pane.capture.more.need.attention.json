@@ -1,0 +1,30 @@
+{
+  "description": "Journal window. shared status pane capture more need attention.",
+  "context": "Journal window. Journal window. shared status pane capture more need attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cf93a1488e53f989c39bbc5aae1fca8559926ad8105f39e08b12d9381208d227",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

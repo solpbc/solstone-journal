@@ -1,0 +1,45 @@
+{
+  "description": "Thinking view. Complete model validation failure by outcome and provider.",
+  "context": "Journal window. Thinking view. Complete model validation failure by outcome and provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "provider_name",
+      "type": "string"
+    },
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "a3bad0f72ee29368afe2d74205dfbb10a1ff77a94d83608bb77021fd1098c09d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "reason",
+    "type": "string",
+    "enum_values": [
+      "rejected",
+      "quota",
+      "network",
+      "chatgpt-signed-out",
+      "chatgpt-ineligible",
+      "chatgpt-no-model",
+      "chatgpt-model-missing",
+      "chatgpt-refused",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

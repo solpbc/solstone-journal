@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. observation none with entity.",
+  "context": "Journal window. Entities view. observation none with entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "431a9afab795ae1e8b0cd7c4225220586fbe4bddf3d192a380169f543db93b14",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

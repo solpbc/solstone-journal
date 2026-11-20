@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view. keys verified provider.",
+  "context": "Journal window. Thinking view. keys verified provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    },
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9a23db3566e2d8a0da3b641f334fa3f3cb76763525f6ce18d8ede844ea41f71",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

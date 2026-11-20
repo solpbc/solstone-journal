@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys manage provider.",
+  "context": "Journal window. Thinking view. keys manage provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17077deb242815b4700f2405ff775e378f8d834c25b3d392baf1195e4516d899",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

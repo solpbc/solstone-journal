@@ -1,0 +1,25 @@
+{
+  "description": "Journal window. shared date nav cell date and count.",
+  "context": "Journal window. Journal window. shared date nav cell date and count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day_label",
+      "type": "string"
+    },
+    {
+      "name": "quantity_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b289d8cc7eb83a0dfcac455041feec7da684733f8a9204cc5817c8e3ded0226f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

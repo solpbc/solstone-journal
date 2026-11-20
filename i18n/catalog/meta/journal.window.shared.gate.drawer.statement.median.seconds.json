@@ -1,0 +1,21 @@
+{
+  "description": "Journal window shell. shared gate drawer statement median seconds.",
+  "context": "Journal window. Journal window shell. shared gate drawer statement median seconds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "observed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "020df127820ba6b995357b1a493dae66aa75953edcab235c30ec3d052e34ed7d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

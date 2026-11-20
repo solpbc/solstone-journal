@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view. endpoint model image unchecked legacy.",
+  "context": "Journal window. Thinking view. endpoint model image unchecked legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "model_name",
+      "type": "string"
+    },
+    {
+      "name": "failure_reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76fc8a72d4cc180b17b01eb6b5bdf42e389d7937fd4e3cefbf1461f84eeb0f4b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

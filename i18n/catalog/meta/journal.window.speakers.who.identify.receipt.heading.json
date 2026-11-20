@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who identify receipt heading.",
+  "context": "Journal window. Speakers view. who identify receipt heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e76a4080c655dd7c55db38d73fa2bb72aaff25e7c267efea6aefb30904836375",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

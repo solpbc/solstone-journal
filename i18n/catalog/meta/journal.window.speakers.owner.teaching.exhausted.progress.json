@@ -1,0 +1,39 @@
+{
+  "description": "Speakers view. owner teaching exhausted progress.",
+  "context": "Journal window. Speakers view. owner teaching exhausted progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "statements_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "statements",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "required_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d39c29b9e1784e2a718af65f85a2d33eb134f6f8c2b0f9b6b74012eab2aac0de",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "statements_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Entities view. detected hidden in facet.",
+  "context": "Journal window. Entities view. detected hidden in facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hidden_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hidden",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e97cde0d860f66e1e34c50a9ec4acaf036ba0aface414b93e3e2c62f440c1f16",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "hidden_quantity",
+    "type": "cardinal"
+  }
+}

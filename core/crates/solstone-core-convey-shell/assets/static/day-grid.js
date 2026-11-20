@@ -338,8 +338,9 @@
     const label = normalized === 0 && activity > 0 && activityUnit
       ? nav.countLabel(activity, activityUnit)
       : nav.countLabel(normalized, unit);
-    const suffix = pending ? window.JournalI18n.render('journal.window.shared.day.grid.rollup.pending') : '';
-    return `${displayDay(day, today)}: ${label}${suffix}`;
+    return window.JournalI18n.render(pending ? 'journal.window.shared.day.grid.cell.date.and.pending.count' : 'journal.window.shared.day.grid.cell.date.and.count', [
+      ['day_label', displayDay(day, today)], ['quantity_label', label]
+    ]);
   }
 
   function buildCells(data, config) {
@@ -516,7 +517,7 @@
   function renderBlock(block, config) {
     const row = document.createElement('section');
     row.className = 'daygrid-year-block';
-    row.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.day.grid.accessible.label.value1.calendar', [['value1', String(block.year)]]));
+    row.setAttribute('aria-label', window.JournalI18n.render('journal.window.shared.day.grid.calendar.year', [['year', String(block.year)]]));
 
     const grid = document.createElement('div');
     grid.className = 'daygrid-year-grid';
@@ -655,7 +656,7 @@
       previewDay = day;
       selectedRange = null;
       syncRangeClasses();
-      announce(window.JournalI18n.render('journal.window.shared.day.grid.window.explanation.range.starts.value1.pick.the.last', [['value1', String(displayDay(day, config.today))]]));
+      announce(window.JournalI18n.render('journal.window.shared.day.grid.range.start', [['start_day', String(displayDay(day, config.today))]]));
     }
 
     function commitRange(range) {
@@ -729,7 +730,7 @@
       if (config.mode === 'select' && selectionAnchor) {
         const hint = document.createElement('span');
         hint.className = 'daygrid-peek-hint';
-        hint.textContent = window.JournalI18n.render('journal.window.shared.day.grid.visible.text.finishes.the.range.from.value1', [['value1', String(displayDay(selectionAnchor, config.today))]]);
+        hint.textContent = window.JournalI18n.render('journal.window.shared.day.grid.range.anchor', [['start_day', String(displayDay(selectionAnchor, config.today))]]);
         peek.appendChild(hint);
       }
       if (cell.matches('a[href]')) {

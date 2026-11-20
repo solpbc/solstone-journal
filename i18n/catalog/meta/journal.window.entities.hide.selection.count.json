@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. hide selection count.",
+  "context": "Journal window. Entities view. hide selection count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selected_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "selected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6ab97e54927b7297ecd75b47fe5e1845ce0bff1249f3860ab8fec2ccbf3139ad",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "selected_quantity",
+    "type": "cardinal"
+  }
+}

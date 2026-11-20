@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. memory agent saved lead.",
+  "context": "Journal window. Agents window. memory agent saved lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f49ed5c7f47765d2c53b5993134c4dc95a142df84f38c90e9fda1806e45dfd2a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

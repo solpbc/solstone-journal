@@ -1,0 +1,16 @@
+{
+  "description": "Entities view deletion. noun recovered.",
+  "context": "Journal window. Entities view deletion. noun recovered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bcf7beda9cbf4f1b7caa17f0aba5ad9899b62d3f90de6e2f77b02eefb0c2208",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

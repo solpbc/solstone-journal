@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers day discovery unnamed count.",
+  "context": "Journal window. Journal view. speakers day discovery unnamed count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8c2683a334769884cc53ba3a8c17e2dff1b6f186e00a227ae9735fa55e2e5dec",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

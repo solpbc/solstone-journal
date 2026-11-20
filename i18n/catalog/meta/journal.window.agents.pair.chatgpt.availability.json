@@ -1,0 +1,16 @@
+{
+  "description": "Agents view. pair chatgpt availability.",
+  "context": "Journal window. Agents view. pair chatgpt availability.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "194ef1ab6bc43f3427c59017cec0b1b352e3da7aefe9b62f509b0951aaee165d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

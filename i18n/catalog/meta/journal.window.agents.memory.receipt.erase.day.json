@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. memory receipt erase day.",
+  "context": "Journal window. Agents window. memory receipt erase day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "erase_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95cca20c84e398570f05737d8385c6ae1a4146d5f97e0a4d61915c53e6ae813c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

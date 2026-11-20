@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. connection status heading.",
+  "context": "Journal window. Agents window. connection status heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5d65974bbff9bf78112960cd5ecdcc14df6b528f62336ce3a70ee09d23ab9154",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

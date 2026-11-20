@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. byo host ready.",
+  "context": "Journal window. Agents view. byo host ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "domain",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3fc4d883ff4b56d01223fd79ae60bc24444bdda9cb8fa2dd2e9d9640627993f2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

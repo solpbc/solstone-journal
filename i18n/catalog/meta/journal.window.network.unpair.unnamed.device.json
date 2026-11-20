@@ -1,0 +1,16 @@
+{
+  "description": "Network window. unpair unnamed device.",
+  "context": "Journal window. Network window. unpair unnamed device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06f9ca305646e0090a0a8bdd06acc7a9dda8405b060dc51c6105e04091686321",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

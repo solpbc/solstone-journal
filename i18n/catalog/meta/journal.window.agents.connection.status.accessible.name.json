@@ -1,0 +1,21 @@
+{
+  "description": "Agents window. connection status accessible name.",
+  "context": "Journal window. Agents window. connection status accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d18eb6d4401cd4e235b5d133b947093836c21326dcb05f6d2e63cfe2d4fb83c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

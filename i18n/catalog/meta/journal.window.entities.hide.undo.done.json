@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. hide undo done.",
+  "context": "Journal window. Entities view. hide undo done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "restored_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "restored",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "708f088a3676974cdcbe66c2b89c628c91c6d6b5c719b11da66e6dc7a922278a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "restored_quantity",
+    "type": "cardinal"
+  }
+}

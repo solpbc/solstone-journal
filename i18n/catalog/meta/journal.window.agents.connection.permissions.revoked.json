@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection permissions revoked.",
+  "context": "Journal window. Agents view. connection permissions revoked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c46140a5e6695a5b8ce0883ecce3819bde8ad05545915903033dd3e5df9ce306",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

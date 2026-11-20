@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. owner reveal stream count.",
+  "context": "Journal window. Speakers view. owner reveal stream count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "streams_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "streams",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9ff26173c863f8ed989a993e9984ba23b3d32800d539935b538d9357aaa665ce",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "streams_quantity",
+    "type": "cardinal"
+  }
+}

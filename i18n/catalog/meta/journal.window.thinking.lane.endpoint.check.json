@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. lane endpoint check.",
+  "context": "Journal window. Thinking view. lane endpoint check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "active_lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b08152fb0e7100424ff22d11471538aac0d6baddd3dec134498e8771d24b2915",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

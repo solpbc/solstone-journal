@@ -1,0 +1,30 @@
+{
+  "description": "Speakers view. quality window days.",
+  "context": "Journal window. Speakers view. quality window days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1d4d96d0d48ae427cdbf5bc891ab698e7b5f35bfacd3f977f48b2447a5733d55",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

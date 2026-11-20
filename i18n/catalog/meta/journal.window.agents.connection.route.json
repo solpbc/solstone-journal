@@ -1,0 +1,33 @@
+{
+  "description": "Agents view. connection route.",
+  "context": "Journal window. Agents view. connection route.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "route",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "0bf050ef2d41fcda280f42381af831ee74afd9d700acca9ab726dee08874f081",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "route",
+    "type": "string",
+    "enum_values": [
+      "local",
+      "lan",
+      "relay",
+      "byo",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

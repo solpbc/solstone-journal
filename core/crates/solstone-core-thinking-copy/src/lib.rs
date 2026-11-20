@@ -4,9 +4,8 @@
 //! The Thinking view and setup share journal-window messages.
 
 use serde::Serialize;
-use serde::ser::{SerializeMap, Serializer};
 use serde_json::Value;
-use solstone_core_window_catalog::{ENGLISH, resolve_table, text};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, text};
 
 pub use solstone_core_assets::Platform;
 
@@ -85,27 +84,36 @@ pub fn confidential_lane_detail(locale: &str) -> ConfidentialLaneDetail {
 #[derive(Clone, Copy)]
 enum CopyValue {
     String(&'static str),
+    LegacyTemplate(&'static str, &'static [(&'static str, &'static str)]),
     Object(&'static [(&'static str, CopyValue)]),
     Lanes,
     ConfidentialLaneDetail,
 }
 
-impl Serialize for CopyValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+impl CopyValue {
+    fn localized(self, locale: &str) -> Value {
         match self {
-            Self::String(value) => serializer.serialize_str(value),
-            Self::Object(entries) => {
-                let mut map = serializer.serialize_map(Some(entries.len()))?;
-                for (key, value) in *entries {
-                    map.serialize_entry(key, value)?;
-                }
-                map.end()
+            Self::String(value) if value.trim_start_matches('!').starts_with("journal.window.") => {
+                Value::String(text(locale, value))
             }
-            Self::Lanes => LANE_IDS.serialize(serializer),
-            Self::ConfidentialLaneDetail => CONFIDENTIAL_DETAIL_IDS.serialize(serializer),
+            Self::String(value) => Value::String(value.to_owned()),
+            // Existing clients can still read the former template-shaped fields.
+            Self::LegacyTemplate(id, bindings) => {
+                let args: Vec<_> = bindings
+                    .iter()
+                    .map(|&(name, placeholder)| (name, CatalogValue::String(placeholder)))
+                    .collect();
+                Value::String(render(locale, id, &args))
+            }
+            Self::Object(entries) => Value::Object(
+                entries
+                    .iter()
+                    .map(|&(key, copy)| (key.to_owned(), copy.localized(locale)))
+                    .collect(),
+            ),
+            Self::Lanes => serde_json::to_value(lanes(locale)).expect("Thinking lanes are JSON"),
+            Self::ConfidentialLaneDetail => serde_json::to_value(confidential_lane_detail(locale))
+                .expect("Thinking lane detail is JSON"),
         }
     }
 }
@@ -356,8 +364,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "verified",
-                        CopyValue::String(
-                            "journal.window.thinking.copy.confidential.processing.is.ready.reachable.checked",
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.confidential.attestation.checked",
+                            &[("checked_at", "{checked}")],
                         ),
                     ),
                     (
@@ -489,12 +498,16 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 CopyValue::Object(&[
                     (
                         "value",
-                        CopyValue::String("journal.window.thinking.copy.your.own.key.provider"),
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.glance.byo.provider",
+                            &[("provider_name", "{provider}")],
+                        ),
                     ),
                     (
                         "detail",
-                        CopyValue::String(
-                            "journal.window.thinking.copy.using.model.a.key.you.added",
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.glance.byo.model",
+                            &[("model_name", "{model}")],
                         ),
                     ),
                 ]),
@@ -544,8 +557,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "detail",
-                        CopyValue::String(
-                            "journal.window.thinking.copy.confidential.processing.is.ready.reachable.checked",
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.confidential.attestation.checked",
+                            &[("checked_at", "{checked}")],
                         ),
                     ),
                 ]),
@@ -582,7 +596,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "detail",
-                        CopyValue::String("journal.window.thinking.copy.message"),
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.confidential.attestation.failed.detail.legacy",
+                            &[("attestation_detail", "{message}")],
+                        ),
                     ),
                 ]),
             ),
@@ -707,8 +724,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "strip",
-                        CopyValue::String(
-                            "journal.window.thinking.copy.signed.in.to.chatgpt.as.email",
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.chatgpt.account.signed.in",
+                            &[("account_email", "{email}")],
                         ),
                     ),
                     (
@@ -913,7 +931,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "openai_card",
-                CopyValue::String("journal.window.thinking.copy.use.an.openai.api.key.this"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.openai.endpoint.option",
+                    &[("endpoint_button", "{endpoint}")],
+                ),
             ),
             // One thinking setting for the whole "your own model" lane. The key
             // lanes ask the provider to think. On the owner's own endpoint, off
@@ -932,7 +953,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "choice",
-                        CopyValue::String("journal.window.thinking.copy.budget.tokens"),
+                        CopyValue::LegacyTemplate(
+                            "journal.window.thinking.budget.choice.tokens",
+                            &[("token_budget", "{budget}")],
+                        ),
                     ),
                     (
                         "saved",
@@ -943,8 +967,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         CopyValue::Object(&[
                             (
                                 "state",
-                                CopyValue::String(
-                                    "journal.window.thinking.copy.thinking.budget.budget",
+                                CopyValue::LegacyTemplate(
+                                    "journal.window.thinking.budget.key.current",
+                                    &[("token_budget", "{budget}")],
                                 ),
                             ),
                             (
@@ -970,8 +995,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         CopyValue::Object(&[
                             (
                                 "state",
-                                CopyValue::String(
-                                    "journal.window.thinking.copy.thinking.room.budget",
+                                CopyValue::LegacyTemplate(
+                                    "journal.window.thinking.budget.endpoint.current",
+                                    &[("token_budget", "{budget}")],
                                 ),
                             ),
                             (
@@ -1000,7 +1026,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "paste_title",
-                CopyValue::String("journal.window.thinking.copy.paste.your.provider.key"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.paste.provider",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "key_hint",
@@ -1008,8 +1037,9 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "terms",
-                CopyValue::String(
-                    "journal.window.thinking.copy.your.questions.are.processed.by.provider",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.provider.processing.terms.legacy",
+                    &[("provider_name", "{provider}")],
                 ),
             ),
             (
@@ -1036,24 +1066,30 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "endpoint_image_checking",
-                CopyValue::String(
-                    "journal.window.thinking.copy.checking.whether.model.reads.images",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.endpoint.model.image.checking",
+                    &[("model_name", "{model}")],
                 ),
             ),
             (
                 "endpoint_image_not_read",
-                CopyValue::String("journal.window.thinking.copy.endpoint.saved.but.model.didn.t"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.endpoint.model.image.not.read",
+                    &[("model_name", "{model}")],
+                ),
             ),
             (
                 "endpoint_schema_not_followed",
-                CopyValue::String(
-                    "journal.window.thinking.copy.endpoint.saved.but.model.didn.t.variant2",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.endpoint.model.schema.not.followed",
+                    &[("model_name", "{model}")],
                 ),
             ),
             (
                 "endpoint_image_unchecked",
-                CopyValue::String(
-                    "journal.window.thinking.copy.endpoint.saved.couldn.t.check.whether",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.endpoint.model.image.unchecked.legacy",
+                    &[("model_name", "{model}"), ("failure_reason", "{reason}")],
                 ),
             ),
             (
@@ -1090,12 +1126,16 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "checking_key",
-                CopyValue::String("journal.window.thinking.copy.checking.your.key.with.provider"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.checking.provider",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "key_ok_strip",
-                CopyValue::String(
-                    "journal.window.thinking.copy.your.provider.key.works.checked.when",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.verified.provider",
+                    &[("provider_name", "{provider}"), ("checked_at", "{when}")],
                 ),
             ),
             (
@@ -1108,25 +1148,41 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "key_failed",
-                CopyValue::String("journal.window.thinking.copy.this.key.didn.t.work.reason"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.failed.legacy",
+                    &[
+                        ("failure_reason", "{reason}"),
+                        ("provider_name", "{provider}"),
+                    ],
+                ),
             ),
             (
                 "reason_rejected",
-                CopyValue::String("journal.window.thinking.copy.provider.didn.t.accept.it"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.reason.rejected",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "reason_quota",
-                CopyValue::String("journal.window.thinking.copy.provider.says.it.s.out.of"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.reason.quota",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "reason_network",
-                CopyValue::String(
-                    "journal.window.thinking.copy.couldn.t.reach.provider.check.your",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.reason.network",
+                    &[("provider_name", "{provider}")],
                 ),
             ),
             (
                 "reason_unknown",
-                CopyValue::String("journal.window.thinking.copy.provider.couldn.t.be.checked"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.reason.unknown",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "model_heading",
@@ -1134,7 +1190,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "model_sub",
-                CopyValue::String("journal.window.thinking.copy.type.the.model.id.exactly.as"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.model.provider.instructions",
+                    &[("provider_name", "{provider}")],
+                ),
             ),
             (
                 "model_label",
@@ -1142,7 +1201,10 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "custom_not_found",
-                CopyValue::String("journal.window.thinking.copy.provider.doesn.t.offer.model.to"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.model.absent",
+                    &[("provider_name", "{provider}"), ("model_name", "{model}")],
+                ),
             ),
             (
                 "model_save",
@@ -1154,17 +1216,24 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "model_saving",
-                CopyValue::String("journal.window.thinking.copy.checking.model.with.your.key"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.model.checking",
+                    &[("model_name", "{model}")],
+                ),
             ),
             (
                 "model_saved_restore",
-                CopyValue::String(
-                    "journal.window.thinking.copy.remembered.label.confidential.processing.stays.on",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.model.restored",
+                    &[("model_name", "{label}")],
                 ),
             ),
             (
                 "probe_failed_save",
-                CopyValue::String("journal.window.thinking.copy.your.key.works.but.model.didn"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.keys.model.unresponsive.legacy",
+                    &[("model_name", "{model}"), ("failure_reason", "{reason}")],
+                ),
             ),
         ]),
     ),
@@ -1189,16 +1258,23 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "cancel",
-                CopyValue::String("journal.window.thinking.copy.keep.using.current"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.lane.switch.keep.current",
+                    &[("current_setup", "{current}")],
+                ),
             ),
             (
                 "to_local_note",
-                CopyValue::String("journal.window.thinking.copy.processing.will.run.right.on.your"),
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.lane.switch.local",
+                    &[("current_setup", "{current}")],
+                ),
             ),
             (
                 "to_byo_note",
-                CopyValue::String(
-                    "journal.window.thinking.copy.processing.will.use.your.own.model",
+                CopyValue::LegacyTemplate(
+                    "journal.window.thinking.lane.switch.byo",
+                    &[("saved_setup", "{setup}")],
                 ),
             ),
             (
@@ -1727,9 +1803,7 @@ pub fn thinking_copy_payload() -> Value {
 }
 
 pub fn localized_thinking_copy_payload(locale: &str) -> Value {
-    let mut value = serde_json::to_value(THINKING_COPY_PAYLOAD).expect("Thinking copy is JSON");
-    resolve_table(locale, &mut value);
-    value
+    THINKING_COPY_PAYLOAD.localized(locale)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

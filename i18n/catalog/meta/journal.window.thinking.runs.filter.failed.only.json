@@ -1,0 +1,16 @@
+{
+  "description": "Journal window. thinking runs filter failed only.",
+  "context": "Journal window. Journal window. thinking runs filter failed only.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ca5707b5bc2cb70d9e4993ed79389edcb016abeea78fd20e85a054ce031af0c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces not them.",
+  "context": "Journal window. Entities view. faces not them.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ebdafad960f263411e7f57e2d62e3b5ec0701dc332c0ce0f5b2bde0e18c3f2d9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

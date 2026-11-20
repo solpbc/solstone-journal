@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys in use manage.",
+  "context": "Journal window. Thinking view. keys in use manage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d2d17b84804384a9a71d3e6be80ef6cf5efe2b5d3189e5114a3d47d9d5b6a6e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

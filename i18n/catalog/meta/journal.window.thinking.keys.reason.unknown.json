@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys reason unknown.",
+  "context": "Journal window. Thinking view. keys reason unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75456b34d6507643a6334111ef62504d8d217f11060a55eee7f6b47a7c22d682",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

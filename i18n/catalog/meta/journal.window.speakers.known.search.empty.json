@@ -1,0 +1,21 @@
+{
+  "description": "Journal view. speakers known search empty.",
+  "context": "Journal window. Journal view. speakers known search empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dfa5a2e70d8c720521ca946e7ff3aba4fc1202c6d9efa33cf0177b1739270072",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

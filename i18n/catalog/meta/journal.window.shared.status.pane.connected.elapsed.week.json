@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane connected elapsed week.",
+  "context": "Journal window. Journal window shell. shared status pane connected elapsed week.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c2d0dee3138649c73bbeee447fbdcfe31a6ebcc1d7f52c7f68725337569d50cd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Thinking view. keys model absent.",
+  "context": "Journal window. Thinking view. keys model absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    },
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f35c0a9425bf245a20b29e338882896b60d3372b62a6ee969ab9a28512b77ad1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

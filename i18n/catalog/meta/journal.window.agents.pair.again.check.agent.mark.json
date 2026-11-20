@@ -1,0 +1,25 @@
+{
+  "description": "Agents window. pair again check agent mark.",
+  "context": "Journal window. Agents window. pair again check agent mark.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "agent_key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85a5e0dbfb533eb2fecf844b9c3da8f7cad919360c3b60c9df0dc1b6f9b98a21",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

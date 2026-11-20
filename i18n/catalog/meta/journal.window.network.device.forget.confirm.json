@@ -1,0 +1,21 @@
+{
+  "description": "Network view confirmation before forgetting a device identified by its displayed name.",
+  "context": "Journal window. Network view confirmation before forgetting a device identified by its displayed name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a3492b4f72f619bf0f86cbb42c9b42953bf3ba3b0725ce636ce39f95552313e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

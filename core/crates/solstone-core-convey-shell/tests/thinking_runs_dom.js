@@ -102,6 +102,11 @@ class Element {
   }
 
   appendChild(child) {
+    if (typeof child === 'string') {
+      const text = new Element();
+      text.textContent = child;
+      child = text;
+    }
     child.parent = this;
     this.children.push(child);
     return child;
@@ -2425,7 +2430,7 @@ async function main() {
   assert.strictEqual(thinking.state.chatgpt.screen, 'panel', 'finish sign in transitions to panel');
   assert.strictEqual(nodes.get('chatgptRedirectUrl').value, '', 'redirect url field is cleared');
   assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null, 'sessionStorage cleared on finish');
-  assert.strictEqual(nodes.get('chatgptStrip').textContent, 'SENTINEL_STRIP_owner@example.com', 'strip shows email sentinel');
+  assert.strictEqual(nodes.get('chatgptStrip').textContent, 'signed in to ChatGPT as owner@example.com', 'the strip shows the account email');
 
   // 6. Two overlapping refreshes: only the later body is applied
   const slowRefresh = deferred();
@@ -2999,7 +3004,7 @@ async function main() {
   };
   thinking.state.pendingSwitchTarget = 'local';
   thinking.renderLaneSwitch();
-  assert.strictEqual(nodes.get('switchNote').textContent, 'SENTINEL_TO_LOCAL_SENTINEL_CHATGPT_LABEL');
+  assert.strictEqual(nodes.get('switchNote').textContent, "processing will run right on your journal's computer. your SENTINEL_CHATGPT_LABEL setup stays saved. switch back anytime.");
 
   // 28. Start over with window.open returning null -> SENTINEL_POPUP_BLOCKED and apiCalls has no sign-out
   window.open = () => null;
@@ -3842,7 +3847,7 @@ async function main() {
       endpoint_schema_not_followed: 'endpoint_schema_not_followed:{model}',
       endpoint_image_unchecked: 'endpoint_image_unchecked:{model}:{reason}',
       endpoint_reason_unreachable: 'endpoint_reason_unreachable',
-      endpoint_reason_timeout: 'endpoint_reason_timeout',
+      endpoint_reason_timeout: "it didn't answer in time",
       endpoint_reason_busy: 'endpoint_reason_busy',
       endpoint_reason_key: 'endpoint_reason_key',
       endpoint_reason_rejected: 'endpoint_reason_rejected',
@@ -3877,7 +3882,7 @@ async function main() {
     assert.strictEqual(clearFromLocalBtn.disabled, false, 'clearFromLocal button restored');
     assert.strictEqual(clearBtn.getAttribute('aria-disabled'), null, 'clear button usable again');
     assert.strictEqual(clearFromLocalBtn.getAttribute('aria-disabled'), null, 'clearFromLocal button usable again');
-    assert(!statusNode.textContent.includes('endpoint_image_checking'), 'checking text cleared');
+    assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"), 'checking text cleared');
   };
 
   let checkCalls = 0;
@@ -3921,7 +3926,7 @@ async function main() {
       );
       assert.strictEqual(
         statusNode.textContent,
-        'endpoint_image_checking:model-sentinel',
+        "checking whether model-sentinel reads images…",
         'status shows checking message during check'
       );
       checkRecordedBeforeCheck = {
@@ -3967,9 +3972,9 @@ async function main() {
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(checkCalls, checkCallsBefore1 + 1, 'check called once');
   assert.strictEqual(window.location.hash, '#main', 'leaves form on read');
-  assert(!statusNode.textContent.includes('endpoint_image_checking'));
-  assert(!statusNode.textContent.includes('endpoint_image_not_read'));
-  assert(!statusNode.textContent.includes('endpoint_image_unchecked'));
+  assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"));
+  assert(!statusNode.textContent.includes("didn't name the color of a test image"));
+  assert(!statusNode.textContent.includes("couldn't check whether model-sentinel reads images"));
 
   // Case 2: not_applicable
   resetForm();
@@ -3977,9 +3982,9 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#main', 'leaves form on not_applicable');
-  assert(!statusNode.textContent.includes('endpoint_image_checking'));
-  assert(!statusNode.textContent.includes('endpoint_image_not_read'));
-  assert(!statusNode.textContent.includes('endpoint_image_unchecked'));
+  assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"));
+  assert(!statusNode.textContent.includes("didn't name the color of a test image"));
+  assert(!statusNode.textContent.includes("couldn't check whether model-sentinel reads images"));
 
   // Case 3: not_read
   resetForm();
@@ -3989,7 +3994,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup', 'stays on form on not_read');
-  assert(statusNode.textContent.includes('endpoint_image_not_read:model-sentinel'));
+  assert(statusNode.textContent.includes("endpoint saved, but model-sentinel didn't name the color of a test image"));
   assert.strictEqual(statusNode.dataset.tone, 'error');
   assert(checkRecordedBeforeCheck.putProviders > 0, 'PUT providers ran before check');
   assert(
@@ -4006,8 +4011,8 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup', 'stays on form when schema refused');
-  assert(statusNode.textContent.includes('endpoint_schema_not_followed:model-sentinel'));
-  assert(!statusNode.textContent.includes('endpoint_image_not_read'));
+  assert(statusNode.textContent.includes("endpoint saved, but model-sentinel didn't answer in the structured form"));
+  assert(!statusNode.textContent.includes("didn't name the color of a test image"));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 3c: both checks fail, both lines show
@@ -4017,8 +4022,8 @@ async function main() {
     schema_check: { status: 'not_followed' },
   });
   await thinking.saveLocalEndpoint();
-  assert(statusNode.textContent.includes('endpoint_schema_not_followed:model-sentinel'));
-  assert(statusNode.textContent.includes('endpoint_image_not_read:model-sentinel'));
+  assert(statusNode.textContent.includes("endpoint saved, but model-sentinel didn't answer in the structured form"));
+  assert(statusNode.textContent.includes("endpoint saved, but model-sentinel didn't name the color of a test image"));
 
   // Case 4: unchecked with reason timeout
   resetForm();
@@ -4028,7 +4033,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup', 'stays on timeout');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_timeout'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: it didn't answer in time."));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 5: unchecked with reason unavailable and with reason other
@@ -4040,7 +4045,7 @@ async function main() {
     await thinking.saveLocalEndpoint();
     assertButtonsRestoredAndNoChecking();
     assert.strictEqual(window.location.hash, '#byo-setup');
-    assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+    assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
     assert.strictEqual(statusNode.dataset.tone, 'error');
   }
 
@@ -4054,7 +4059,7 @@ async function main() {
     await thinking.saveLocalEndpoint();
     assertButtonsRestoredAndNoChecking();
     assert.strictEqual(window.location.hash, '#byo-setup');
-    assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+    assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
     assert.strictEqual(statusNode.dataset.tone, 'error');
   }
 
@@ -4064,7 +4069,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 8: unknown status Read
@@ -4073,7 +4078,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 8b: an unknown status never borrows the reason that rode along with it
@@ -4082,8 +4087,8 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
-  assert(!statusNode.textContent.includes('endpoint_reason_timeout'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
+  assert(!statusNode.textContent.includes("it didn't answer in time"));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 9: apiJson returns non-JSON failure (throw with no status, or status 200 and a non-object)
@@ -4092,7 +4097,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   resetForm();
@@ -4100,7 +4105,7 @@ async function main() {
   await thinking.saveLocalEndpoint();
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
-  assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+  assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   // Case 10: thrown check (status 500, status 418 with reason_code provider_key_invalid, status 403, rejected fetch)
@@ -4129,7 +4134,7 @@ async function main() {
     await thinking.saveLocalEndpoint();
     assertButtonsRestoredAndNoChecking();
     assert.strictEqual(window.location.hash, '#byo-setup');
-    assert(statusNode.textContent.includes('endpoint_image_unchecked:model-sentinel:endpoint_reason_other'));
+    assert(statusNode.textContent.includes("endpoint saved. couldn't check whether model-sentinel reads images: something went wrong."));
     assert(!statusNode.textContent.includes('not_applicable'));
     assert.strictEqual(statusNode.dataset.tone, 'error');
   }
@@ -4158,9 +4163,9 @@ async function main() {
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
   assert(statusNode.textContent.includes('UNLOGGED_SENTINEL'));
-  assert(!statusNode.textContent.includes('endpoint_image_checking'));
-  assert(!statusNode.textContent.includes('endpoint_image_not_read'));
-  assert(!statusNode.textContent.includes('endpoint_image_unchecked'));
+  assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"));
+  assert(!statusNode.textContent.includes("didn't name the color of a test image"));
+  assert(!statusNode.textContent.includes("couldn't check whether model-sentinel reads images"));
   assert.strictEqual(statusNode.dataset.tone, 'error');
 
   resetForm();
@@ -4175,8 +4180,8 @@ async function main() {
   assertButtonsRestoredAndNoChecking();
   assert.strictEqual(window.location.hash, '#byo-setup');
   assert(statusNode.textContent.includes('UNLOGGED_SENTINEL'));
-  assert(statusNode.textContent.includes('endpoint_image_not_read:model-sentinel'));
-  assert(!statusNode.textContent.includes('endpoint_image_checking'));
+  assert(statusNode.textContent.includes("endpoint saved, but model-sentinel didn't name the color of a test image"));
+  assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"));
   assert.strictEqual(statusNode.dataset.tone, 'error');
   saveHandler = null;
 
@@ -4236,7 +4241,7 @@ async function main() {
     );
     assert.strictEqual(
       statusNode.textContent,
-      'endpoint_image_checking:model-sentinel',
+      "checking whether model-sentinel reads images…",
       'status is checking key while pending'
     );
 
@@ -4255,8 +4260,8 @@ async function main() {
       null,
       'clearFromLocal usable after leave'
     );
-    assert(!statusNode.textContent.includes('endpoint_image_not_read'));
-    assert(!statusNode.textContent.includes('endpoint_image_checking'));
+    assert(!statusNode.textContent.includes("didn't name the color of a test image"));
+    assert(!statusNode.textContent.includes("checking whether model-sentinel reads images"));
     assert.strictEqual(
       showViewCount,
       showViewCountAtLeave,

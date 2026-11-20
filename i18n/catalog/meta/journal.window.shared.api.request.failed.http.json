@@ -1,0 +1,28 @@
+{
+  "description": "Journal window shell. shared api request failed http.",
+  "context": "Journal window. Journal window shell. shared api request failed http.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "http_status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "56efdea1dd57a5daa65c29102e281423b70c3f802be03a555f8f1b2b0a818223",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

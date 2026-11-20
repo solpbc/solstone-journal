@@ -1,0 +1,28 @@
+{
+  "description": "Journal window shell. shared report error journal version.",
+  "context": "Journal window. Journal window shell. shared report error journal version.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cd9acaa3bc2fc70da36865e031228f2f87b6dcc77647e25200080e6eb012d2e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

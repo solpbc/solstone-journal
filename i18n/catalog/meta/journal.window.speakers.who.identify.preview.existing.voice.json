@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who identify preview existing voice.",
+  "context": "Journal window. Speakers view. who identify preview existing voice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0042c21a400d8633bee22027230da4515381a79fbacb58757c885222eee4a172",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

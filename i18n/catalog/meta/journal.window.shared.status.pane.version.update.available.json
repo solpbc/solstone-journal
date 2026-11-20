@@ -1,0 +1,33 @@
+{
+  "description": "Journal window shell. shared status pane version update available.",
+  "context": "Journal window. Journal window shell. shared status pane version update available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current_version",
+      "type": "string"
+    },
+    {
+      "name": "available_version",
+      "type": "string"
+    },
+    {
+      "name": "notice_start",
+      "type": "string"
+    },
+    {
+      "name": "notice_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "765158e8300debe1e42898d5e8a3040c31e544f4f4a30f73059da33b28ce75d5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

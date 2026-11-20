@@ -1,0 +1,38 @@
+{
+  "description": "Thinking view. runs group summary model.",
+  "context": "Journal window. Thinking view. runs group summary model.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "runs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "runs_count",
+      "type": "string"
+    },
+    {
+      "name": "talent_name",
+      "type": "string"
+    },
+    {
+      "name": "model_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9cf047c78a54c39ed3d4de383cc3207637c0b240faff5e350556551487963d07",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "runs_quantity",
+    "type": "cardinal"
+  }
+}

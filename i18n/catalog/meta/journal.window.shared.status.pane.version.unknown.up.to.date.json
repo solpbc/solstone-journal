@@ -1,0 +1,16 @@
+{
+  "description": "Journal window shell. shared status pane version unknown up to date.",
+  "context": "Journal window. Journal window shell. shared status pane version unknown up to date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bcae82da721386e43ee19aec8e87e7af70b828f3e4e4a8bbc7b852a7a8534ca9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

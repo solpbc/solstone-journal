@@ -344,14 +344,14 @@
   }
 
 	  function reconnectAttemptDetails() {
-	    if (!reconnectAttempts.length) return window.JournalI18n.render('journal.window.shared.websocket.window.explanation.no.reconnect.attempts.recorded.yet');
+	    if (!reconnectAttempts.length) return window.JournalI18n.render('journal.window.shared.websocket.reconnect.failed.no.history');
 	    const formatTime = ts => {
 	      if (window.JournalClock) {
 	        return window.JournalClock.formatInstant(ts, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 	      }
 	      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 	    };
-	    return 'recent attempts: ' + reconnectAttempts.map(formatTime).join(', ');
+	    return window.JournalI18n.render('journal.window.shared.websocket.reconnect.failed.history', [['attempt_times', reconnectAttempts.map(formatTime).join(', ')]]);
 	  }
 
 	  function enterDisconnectSecondPhase() {
@@ -377,7 +377,7 @@
 	          label: window.JournalI18n.render('journal.window.shared.websocket.label.show.details'),
 	          onClick: (notification) => {
 	            window.AppServices?.notifications?.update(notification.id, {
-	              message: window.JournalI18n.render('journal.window.shared.websocket.message.last.reconnect.attempt.failed.variant2') + reconnectAttemptDetails()
+	              message: reconnectAttemptDetails()
 	            });
 	          },
 	          dismiss: false

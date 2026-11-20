@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. detected hide failed.",
+  "context": "Journal window. Entities view. detected hide failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "896917db0937dd17fbee191f0bd2d508bfb1850bee07ac97990fe971bfbff7d3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

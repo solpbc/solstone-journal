@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. glance byo provider.",
+  "context": "Journal window. Thinking view. glance byo provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7653f9ecabd234e4a59723e1d7aa6cd884c4e4c7ede105d2bdd5da18caa6cac6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. faces possible lede.",
+  "context": "Journal window. Entities view. faces possible lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "564f406238062085832dbd49d299c524e3f62ddfeaa41297d64bad2e131ec7ac",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

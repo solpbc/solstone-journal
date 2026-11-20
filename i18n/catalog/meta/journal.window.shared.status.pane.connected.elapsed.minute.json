@@ -1,0 +1,30 @@
+{
+  "description": "Journal window shell. shared status pane connected elapsed minute.",
+  "context": "Journal window. Journal window shell. shared status pane connected elapsed minute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0e2bfcbbfa7f75dad84036b50c91e11af29b50abbd53ad8b2b9200e79b87d377",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

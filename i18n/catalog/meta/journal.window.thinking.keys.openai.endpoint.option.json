@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys openai endpoint option.",
+  "context": "Journal window. Thinking view. keys openai endpoint option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint_button",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "459bf522f4641e46006526ac79ab1c4148024476af32250517cd35454daea4bb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "description": "Journal window shell. more pin action pin.",
+  "context": "Journal window. Journal window shell. more pin action pin.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "view_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "99504a69e94cf603bb8574baaa73e91a6e2dd60326ebbccd7da09be8aaef6741",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "agents",
+      "activities",
+      "backup",
+      "body",
+      "curation",
+      "entities",
+      "health",
+      "home",
+      "import",
+      "map",
+      "more",
+      "network",
+      "search",
+      "settings",
+      "sources",
+      "speakers",
+      "stats",
+      "support",
+      "thinking",
+      "transcripts",
+      "year",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

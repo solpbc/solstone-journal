@@ -1,0 +1,30 @@
+{
+  "description": "Journal window. speakers grid all named count.",
+  "context": "Journal window. Journal window. speakers grid all named count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9882f848529c3246bee0b474804c158f9e4a07f4d8363a6a0cdcf2d1e09e5289",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

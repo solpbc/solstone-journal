@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection request tool.",
+  "context": "Journal window. Agents view. connection request tool.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "tool_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95e274f9025441f16e1d65fe9912f7ab8ec696276ea1d54826f2c75656fe8d57",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

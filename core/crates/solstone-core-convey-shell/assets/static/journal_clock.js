@@ -318,10 +318,7 @@
 
   function noteText(customLabel) {
     const lbl = typeof customLabel === 'string' && customLabel ? customLabel : _label;
-    const template =
-      (typeof window !== 'undefined' && window.CONVEY_COPY && window.CONVEY_COPY.ZONE_TIME) || '';
-    if (!template) return '';
-    return template.replace('{label}', lbl);
+    return window.JournalI18n?.render('journal.window.chrome.zone.time', [['label', lbl]]) || '';
   }
 
   function zoneNoteText() {

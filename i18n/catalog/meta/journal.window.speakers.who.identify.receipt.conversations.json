@@ -1,0 +1,21 @@
+{
+  "description": "Speakers view. who identify receipt conversations.",
+  "context": "Journal window. Speakers view. who identify receipt conversations.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8319eaaab830864a82095101fd3cb2731a936013fe5b815f92ccc52bff53d284",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

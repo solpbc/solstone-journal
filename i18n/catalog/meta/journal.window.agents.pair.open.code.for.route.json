@@ -1,0 +1,33 @@
+{
+  "description": "Agents view. pair open code for route.",
+  "context": "Journal window. Agents view. pair open code for route.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "route",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "bb879cb0171271f665a8a09581f9d9efc89d03326f2bccaa6d22b3bf1464ab0b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "route",
+    "type": "string",
+    "enum_values": [
+      "local",
+      "relay",
+      "lan",
+      "byo",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

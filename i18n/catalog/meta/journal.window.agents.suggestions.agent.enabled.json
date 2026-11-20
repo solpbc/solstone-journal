@@ -1,0 +1,28 @@
+{
+  "description": "Agents window. suggestions agent enabled.",
+  "context": "Journal window. Agents window. suggestions agent enabled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d9b2d7918d1548db6f3badfed90ea1bdacb19eef3473ee33e486fde4be518d5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Agents view. connection request waiting.",
+  "context": "Journal window. Agents view. connection request waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1eac33fa39b0a15f4a80457c802725a6188843cc9844ff4c6164e3640feb7cb6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

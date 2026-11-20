@@ -1,0 +1,21 @@
+{
+  "description": "Thinking view. keys label provider.",
+  "context": "Journal window. Thinking view. keys label provider.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "provider_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "51225a93a002dd761a36ffbb8472e38fbfcf76f8a35e39a50965d991d073f1fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

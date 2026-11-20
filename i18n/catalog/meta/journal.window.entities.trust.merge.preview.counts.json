@@ -1,0 +1,66 @@
+{
+  "description": "Entities view. trust merge preview counts.",
+  "context": "Journal window. Entities view. trust merge preview counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "voice_samples_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "voice_samples",
+      "type": "string"
+    },
+    {
+      "name": "voice_total",
+      "type": "string"
+    },
+    {
+      "name": "notes",
+      "type": "string"
+    },
+    {
+      "name": "speaker_labels",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    },
+    {
+      "name": "voice_total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "notes_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "speaker_labels_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activities_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "51e2556d1ad7157aaaa736497a4e6be412c99da6cd95da374fa34706a4787026",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "voice_samples_quantity",
+    "type": "cardinal"
+  }
+}

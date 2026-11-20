@@ -1,0 +1,30 @@
+{
+  "description": "Journal view. speakers quality teaching count.",
+  "context": "Journal window. Journal view. speakers quality teaching count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "59edd8afb19b2ece73e9ad24bb3678cd7f96eb26a96a2788da8720878e91abd1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

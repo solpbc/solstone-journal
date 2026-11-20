@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-const { readCopyTable } = require('./journal_catalog_dom.js');
+const { journalContext, readCopyTable } = require('./journal_catalog_dom.js');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +20,7 @@ module.exports = async function(manifestDir) {
   const calls = [];
   const entity = {id:'person',type:'Person'};
   const context = {document:doc, ENT_COPY:copy, currentDetailEntity:entity, ctx:{disposed:false},
-    entityTrustFormat:(s,v) => Object.entries(v).reduce((t,[k,x]) => t.replaceAll('{'+k+'}',x),s),
+    groupedCount: value => String(value),
     entityErrorMessage:(_e,fallback) => fallback,
     apiJson:async (url, init={}) => {
       calls.push({url,init});
@@ -30,7 +30,9 @@ module.exports = async function(manifestDir) {
       }
       return {total:samples.length,items:samples,cursor:null};
     }};
-  vm.createContext(context);
+  journalContext(context);
+  vm.runInContext(workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal')), context);
+  vm.runInContext(workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate(')), context);
   vm.runInContext(workspace.slice(workspace.indexOf('let voiceSamplesRequest ='), workspace.indexOf('function openFacesPanel(')),context);
   vm.runInContext(workspace.slice(workspace.indexOf('function renderJournalEntityMergePreview('),workspace.indexOf('async function commitJournalEntityMerge(')),context);
   context.renderJournalEntityMergePreview('source','target','Target',{aliases_added:0,emails_added:0,voiceprints_added:4,voiceprints_target_total:6,notes_on_source:2,speaker_labels:3,activity_records:1});

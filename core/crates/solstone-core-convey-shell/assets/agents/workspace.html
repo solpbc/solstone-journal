@@ -61,7 +61,6 @@
   'use strict';
   // Owner copy for deleting a memory: the dialog, its erase step and the receipt.
   const TRASH_COPY = {
-    noun: {memory: window.JournalI18n.render('journal.window.agents.trash.copy.memory.memory')},
     move: {
       title: window.JournalI18n.renderEnglish('journal.window.agents.title.delete.this.memory'),
       reach: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and.variant2'),
@@ -76,13 +75,13 @@
     },
     buttons: {eraseNow: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.agents.trash.copy.cancel.cancel'), moveToTrash: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.agents.trash.copy.back.back'), recover: window.JournalI18n.render('journal.window.agents.trash.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.agents.trash.copy.open.trash.open.trash')},
     receipt: {
-      moved: {title: window.JournalI18n.render('journal.window.agents.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.agents.message.erases.date.unless.you.recover.it')},
-      recovered: {title: window.JournalI18n.render('journal.window.agents.title.noun.recovered'), message: window.JournalI18n.render('journal.window.agents.message.it.s.back.in.your.journal')},
-      erased: {title: window.JournalI18n.render('journal.window.agents.title.noun.erased.from.your.journal')},
-      recoverFailed: {title: window.JournalI18n.render('journal.window.agents.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.agents.message.it.s.still.in.the.trash')},
+      moved: {title: window.JournalI18n.render('journal.window.agents.title.moved.to.the.trash')},
+      recovered: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.recovered'), message: window.JournalI18n.render('journal.window.agents.message.it.s.back.in.your.journal')},
+      erased: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.erased')},
+      recoverFailed: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.recovery.failed'), message: window.JournalI18n.render('journal.window.agents.message.it.s.still.in.the.trash')},
       moveRefused: {title: window.JournalI18n.render('journal.window.agents.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.agents.message.it.s.still.in.your.journal')},
-      eraseRefused: {title: window.JournalI18n.render('journal.window.agents.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.agents.message.it.s.still.in.your.journal')},
-      eraseFailed: {title: window.JournalI18n.render('journal.window.agents.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.agents.message.it.s.in.the.trash.you')},
+      eraseRefused: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.erase.failed'), message: window.JournalI18n.render('journal.window.agents.message.it.s.still.in.your.journal')},
+      eraseFailed: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.erase.failed'), message: window.JournalI18n.render('journal.window.agents.message.it.s.in.the.trash.you')},
       noAnswerMove: {title: window.JournalI18n.render('journal.window.agents.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.agents.message.it.may.already.be.in.the')},
       noAnswerErase: {title: window.JournalI18n.render('journal.window.agents.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.agents.message.it.may.already.be.erased.reload')},
       noAnswerRecover: {title: window.JournalI18n.render('journal.window.agents.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.agents.message.it.may.already.be.back.in')},
@@ -99,10 +98,12 @@
   }
   function trashReceipt(kind, fill = {}, buttons = []) {
     const copy = TRASH_COPY.receipt[kind];
-    const put = value => value.replace('{noun}', TRASH_COPY.noun.memory).replace('{date}', fill.date || '');
     const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
-    const notice = {app: 'agents', icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert', title: put(copy.title), dismissible: true, buttons};
-    if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+    const notice = {app: 'agents', icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert', title: copy.title, dismissible: true, buttons};
+    if (copy.message) notice.message = copy.message;
+    if (kind === 'moved' && fill.date) {
+      notice.message = window.JournalI18n.render('journal.window.agents.memory.receipt.erase.day', [['erase_day', fill.date]]);
+    }
     if (fill.message) notice.message = fill.message;
     // A refused or failed card stays until the owner dismisses it.
     if (settled) notice.autoDismiss = 10000;
@@ -301,7 +302,7 @@
       const labels = Object.fromEntries(state.permission_kinds.map(kind => [kind.word, kind.label]));
       const categories = grantedWords(read).map(word => labels[word] || word).join(', ');
       if (read.scope.kind === 'whole_journal') {
-        return window.JournalI18n.render('journal.window.agents.window.explanation.value1.across.your.whole.journal', [['value1', categories]]);
+        return window.JournalI18n.render('journal.window.agents.permission.whole.journal.categories', [['categories', categories]]);
       }
       const count = read.scope.ids.length;
       const id = count === 1 ? 'journal.window.agents.permission.facet.one' : 'journal.window.agents.permission.facet.many';
@@ -310,27 +311,30 @@
     function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? window.JournalI18n.render('journal.window.agents.window.explanation.paired.in.your.browser.it.can') : window.JournalI18n.render('journal.window.agents.window.explanation.a.key.you.created.anyone.holding'); }
     // A paused agent stays paired, with its memories and its choices. Nothing is served until the owner resumes it.
     function pausedChip(connection) { return connection.paused ? `<span class="chip paused">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.paused')}</span>` : ''; }
-    function triedLine(connection) {
-      const tried = connection.paused_attempts;
-      if (!tried?.count) return '';
-      return `tried ${triedTimes(tried.count)} since, latest ${esc(formatAgentTimestamp(tried.last_at))}`;
+    function pauseAttempts(attempts, detail = false) {
+      const count = attempts?.count;
+      if (!count) return '';
+      return window.JournalI18n.renderHtml(detail
+        ? 'journal.window.agents.connection.pause.attempts.detail'
+        : 'journal.window.agents.connection.pause.attempts.summary', [
+        ['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)],
+        ['attempted_at', formatAgentTimestamp(attempts.last_at)]
+      ]);
     }
-    function triedTimes(count) { return count === 1 ? 'once' : `${esc(count)} times`; }
     function pausedRowLine(connection) {
       const why = connection.paused.by === 'idle' ? window.JournalI18n.render('journal.window.agents.window.explanation.paused.after.days.unused') : window.JournalI18n.render('journal.window.agents.window.state.text.paused.by.you');
-      const tried = triedLine(connection);
+      const tried = pauseAttempts(connection.paused_attempts);
       return `<small>${why}${tried ? ` · ${tried}` : ''}</small>`;
     }
     function pausedCard(connection) {
-      const name = esc(connection.name);
       const since = formatMemoryInstant(connection.paused.since, {month: 'short', day: 'numeric'});
       const why = connection.paused.by === 'idle'
-        ? window.JournalI18n.renderHtml('journal.window.agents.window.explanation.value1.paused.on.value2.because.it', [['value1', connection.name], ['value2', since]])
-        : window.JournalI18n.renderHtml('journal.window.agents.window.explanation.you.paused.value1.on.value2', [['value1', connection.name], ['value2', since]]);
+        ? window.JournalI18n.renderHtml('journal.window.agents.paused.by.idle.details', [['agent_name', connection.name], ['pause_day', since]])
+        : window.JournalI18n.renderHtml('journal.window.agents.paused.by.owner.details', [['agent_name', connection.name], ['pause_day', since]]);
       const tried = connection.paused_attempts?.count
-        ? `<p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.has.tried')} ${triedTimes(connection.paused_attempts.count)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.since.then.most.recently')} ${esc(formatAgentTimestamp(connection.paused_attempts.last_at))}. <a class="link" href="#" data-activity-connection="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.link.label.see.what.it.tried')}</a></p>${connection.paused.by === 'idle' ? `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.if.you.haven.t.been.using')} ${name}${window.JournalI18n.renderHtml('journal.window.agents.visible.text.disconnect.it.rather.than.resuming.it')}</p>` : ''}`
+        ? `<p>${pauseAttempts(connection.paused_attempts, true)} <a class="link" href="#" data-activity-connection="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.link.label.see.what.it.tried')}</a></p>${connection.paused.by === 'idle' ? `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.connection.paused.disconnect.instead', [['agent_name', connection.name]])}</p>` : ''}`
         : `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.hasn.t.tried.to.reach')}</p>`;
-      return `<section class="card pad section paused-card" data-paused="${esc(connection.paused.by)}"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.paused')}</h2><p>${why} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.stays.connected.with.its.memories')}</p>${tried}<div class="button-row"><button class="btn primary" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="false">${window.JournalI18n.renderHtml('journal.window.agents.button.label.resume')} ${name}</button></div></section>`;
+      return `<section class="card pad section paused-card" data-paused="${esc(connection.paused.by)}"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.paused')}</h2><p>${why} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.stays.connected.with.its.memories')}</p>${tried}<div class="button-row"><button class="btn primary" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="false">${window.JournalI18n.renderHtml('journal.window.agents.connection.resume.named', [['agent_name', connection.name]])}</button></div></section>`;
     }
     function formatAgentTimestamp(ts) {
       if (!ts) return '';
@@ -346,7 +350,14 @@
       }
       return new Date(ts).toLocaleTimeString();
     }
-    function lastRequestCopy(connection, separator = ' · ') { if (!connection.last_request_at) return ''; return `${separator}${connection.activity_complete ? 'last' : window.JournalI18n.render('journal.window.agents.window.state.text.latest.found')} ${esc(formatAgentTimestamp(connection.last_request_at))}`; }
+    function weeklyRequests(connection, detail = false) {
+      const view = detail ? 'detail' : connection.kind === 'bearer' ? 'key' : 'row';
+      const coverage = connection.activity_complete ? 'complete' : 'partial';
+      const count = connection.requests_this_week;
+      const args = [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]];
+      if (connection.last_request_at) args.push(['last_request', formatAgentTimestamp(connection.last_request_at)]);
+      return window.JournalI18n.renderHtml(`journal.window.agents.connection.activity.${view}.${coverage}${connection.last_request_at ? '.last' : ''}`, args);
+    }
     // ---- your own: agents on this device --------------------------------------------------------
     function ownState() {
       if (!hasDoor()) return 'soon';
@@ -409,18 +420,29 @@
       };
       const addresses = lanAddresses().map(addrRow).join('');
       const taken = lanTaken().map(address => address.url);
-      const takenNotice = taken.length === 1 && lan === 'on'
-        ? `<div class="notice error"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.something.else.on.this.device.is')} ${esc(taken[0])}. an agent that uses that address reaches whatever is there, not your journal. that may be a journal under another login on this device, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through ${esc(taken[0])}${window.JournalI18n.renderHtml('journal.window.agents.visible.text.and.close.any.that.is.open')}</p></div>`
-        : taken.length ? `<div class="notice error"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.something.else.on.this.device.is')} ${taken.length === 1 ? window.JournalI18n.renderHtml('journal.window.agents.window.state.text.this.address') : window.JournalI18n.renderHtml('journal.window.agents.window.state.text.these.addresses')}. an agent that uses one reaches whatever is there, not your journal. that may be a journal under another login on this device, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through ${taken.map(esc).join(' or ')}. if one is open, close it.</p></div>` : '';
+      let takenNotice = '';
+      if (taken.length) {
+        const directlyNamed = taken.length === 1 && lan === 'on';
+        const locale = window.JournalI18n.formatLocale;
+        const addresses = locale
+          ? new Intl.ListFormat(locale, { type: 'disjunction' }).format(taken)
+          : taken.join(' or ');
+        const warning = directlyNamed
+          ? window.JournalI18n.renderHtml('journal.window.agents.local.taken.address.warning', [['address', taken[0]]])
+          : window.JournalI18n.renderHtml('journal.window.agents.local.taken.addresses.warning', [
+            ['quantity', window.JournalI18n.cardinalQuantity(taken.length)], ['addresses', addresses]
+          ]);
+        takenNotice = `<div class="notice error"><p>${warning}</p></div>`;
+      }
       const caFingerprint = String(state?.lan_door?.ca_fingerprint || '').replaceAll(':', ' ');
-      const trust = caFingerprint ? `<details><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.let.an.agent.on.your.network')}</summary><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.download.your.journal.s.public.lan')}</p><p><code class="fp">${esc(caFingerprint)}</code></p><p><a class="link" href="/app/agents/api/lan-door/ca.pem" download="solstone-lan-ca.pem">${window.JournalI18n.renderHtml('journal.window.agents.link.label.download.the.public.ca.certificate')}</a></p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.when.starting.claude.code.set')} <code>NODE_EXTRA_CA_CERTS</code> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.to.that.file.for.codex.cli')} <code>CODEX_CA_CERTIFICATE</code> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.to.it.keep.tls.verification.on')}</p></details>` : '';
+      const trust = caFingerprint ? `<details><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.let.an.agent.on.your.network')}</summary><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.download.your.journal.s.public.lan')}</p><p><code class="fp">${esc(caFingerprint)}</code></p><p><a class="link" href="/app/agents/api/lan-door/ca.pem" download="solstone-lan-ca.pem">${window.JournalI18n.renderHtml('journal.window.agents.link.label.download.the.public.ca.certificate')}</a></p><p>${inlineHtml('journal.window.agents.network.certificate.agent.variables', [], { claude_variable: inlineText('code', 'NODE_EXTRA_CA_CERTS'), codex_variable: inlineText('code', 'CODEX_CA_CERTIFICATE') })}</p></details>` : '';
       const fp = fingerprint() ? `<details><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.certificate.fingerprint')}</summary><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.s.certificate.for.these')}</p><p><code class="fp">${esc(fingerprint())}</code></p></details>` : '';
       const about = `<details><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.about.these.addresses')}</summary><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.these.addresses.can.change.when.this')}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.any.device.on.a.network.this')}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.if.another.device.can.t.reach')}</p></details>`;
       const lanAgents = state.connections.some(connection => connection.kind === 'oauth' && connection.door === 'lan');
       let inner;
       if (lan === 'off') {
         const preview = lanAddresses().length ? `<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.when.it.s.on.agents.use')}</p><div class="addr-preview">${lanAddresses().map(address => `<dl class="lane-row"><dt>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.address')}</dt><dd><code>${esc(address.url)}</code></dd></dl>`).join('')}</div>` : '';
-        inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.off'), false)}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.turn.this.on.for.agents.on')}${lanAgents ? window.JournalI18n.render('journal.window.agents.window.explanation.the.ones.you.connected.this.way') : ''}</p>${preview}`;
+        inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.off'), false)}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.turn.this.on.for.agents.on')}${lanAgents ? ' ' + window.JournalI18n.render('journal.window.agents.connection.the.ones.you.connected.this.way') : ''}</p>${preview}`;
       } else if (lan === 'on') {
         inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.on'), true)}${addresses}${takenNotice}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.on.other.devices.on.your')}</p><p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.a.key.you.created.doesn.t')}</p>${trust}${fp}${about}`;
       } else if (lan === 'invalid') {
@@ -434,7 +456,7 @@
       } else if (lan === 'tls') {
         inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.on.but.your.journal.s.certificate'), true)}${addresses}<div class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.can.t.read.or')}</p></div>${check}`;
       } else if (lan === 'port') {
-        inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.on.but.something.else.has.value1', [['value1', String(lanAddresses().length > 1 ? window.JournalI18n.render('journal.window.agents.window.explanation.one.of.your.journal.s.addresses') : window.JournalI18n.render('journal.window.agents.window.state.text.the.address'))]]), true)}${addresses}${takenNotice}${check}`;
+        inner = `${row(window.JournalI18n.render(lanAddresses().length > 1 ? 'journal.window.agents.local.addresses.one.taken' : 'journal.window.agents.local.address.taken'), true)}${addresses}${takenNotice}${check}`;
       } else if (lan === 'bindfail') {
         inner = `${row(window.JournalI18n.render('journal.window.agents.status.text.on.but.your.journal.couldn.t'), true)}${addresses}<div class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.couldn.t.open.its')}</p></div>${check}`;
       } else if (lan === 'retrying') {
@@ -458,7 +480,9 @@
     const BYO_RELAY_COPY = {
       relay_ok: () => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.ok.connected.to.your.server'),
       relay_connecting: () => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.connecting.connecting.to.your.server'),
-      relay_unreachable: (b) => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.unreachable.your.journal.can.t.reach.your', [[window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.unreachable.value1'), String(b.relay?.address || window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.unreachable.that.address'))]]),
+      relay_unreachable: (b) => b.relay?.address
+        ? window.JournalI18n.render('journal.window.agents.byo.relay.unreachable.address', [['server_address', String(b.relay.address)]])
+        : window.JournalI18n.render('journal.window.agents.byo.relay.unreachable.unknown'),
       relay_auth_refused: () => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.auth.refused.your.server.didn.t.accept.your'),
       relay_forward_refused: () => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.forward.refused.your.server.didn.t.let.your'),
       relay_host_key_changed: () => window.JournalI18n.render('journal.window.agents.byo.relay.copy.relay.host.key.your.server.s.identity.changed.since'),
@@ -477,7 +501,7 @@
     };
     // These verdicts can come from a CAA record on a parent name, so the fix named is always the record at this exact name.
     const BYO_CAA_MISMATCH = ['issuewild', 'extra_issue', 'other_ca', 'account_uri', 'validation_method'];
-    function byoCaaMismatchLine(host) { return window.JournalI18n.render('journal.window.agents.window.explanation.the.caa.record.that.applies.to', [['value1', String(host)], ['value2', String(host)], ['value3', String(host)]]); }
+    function byoCaaMismatchLine(host) { return window.JournalI18n.render('journal.window.agents.byo.dns.caa.applies.to.domain', [['domain', String(host)]]); }
     function byoNonPublic(addr) {
       const a = String(addr).toLowerCase();
       if (a.includes(':')) return a === '::1' || a.startsWith('fc') || a.startsWith('fd') || a.startsWith('fe8') || a.startsWith('fe9') || a.startsWith('fea') || a.startsWith('feb');
@@ -488,12 +512,15 @@
       const lines = [];
       const addrs = (dns?.addresses || b.dns_addresses || []).join(', ');
       const diags = dns?.diagnostics || b.diagnostics || [];
-      if (diags.includes('address_mismatch')) lines.push(window.JournalI18n.render('journal.window.agents.window.explanation.this.name.points.at.value1.it', [['value1', String(addrs || window.JournalI18n.render('journal.window.agents.window.state.text.no.address.yet'))], ['value2', String(b.relay?.address || window.JournalI18n.render('journal.window.agents.window.state.text.your.server'))]]));
+      if (diags.includes('address_mismatch')) lines.push(window.JournalI18n.render('journal.window.agents.byo.dns.address.mismatch.detail', [['resolved_addresses', String(addrs || window.JournalI18n.render('journal.window.agents.window.state.text.no.address.yet'))], ['relay_address', String(b.relay?.address || window.JournalI18n.render('journal.window.agents.window.state.text.your.server'))]]));
       if (diags.includes('non_public_address')) {
         const all = dns?.addresses || b.dns_addresses || [];
         const bad = all.filter(byoNonPublic);
-        const lead = bad.length < all.length ? window.JournalI18n.render('journal.window.agents.window.explanation.this.name.also.points.at') : window.JournalI18n.render('journal.window.agents.window.explanation.this.name.points.at');
-        lines.push(window.JournalI18n.render('journal.window.agents.window.explanation.value1.value2.which.isn.t.on', [['value1', String(lead)], ['value2', String(bad.join(', ') || window.JournalI18n.render('journal.window.agents.window.state.text.an.address'))]]));
+        const mixed = bad.length < all.length;
+        const id = bad.length
+          ? (mixed ? 'journal.window.agents.byo.dns.address.nonpublic.also' : 'journal.window.agents.byo.dns.address.nonpublic.only')
+          : (mixed ? 'journal.window.agents.byo.dns.address.nonpublic.also.unknown' : 'journal.window.agents.byo.dns.address.nonpublic.only.unknown');
+        lines.push(window.JournalI18n.render(id, bad.length ? [['addresses', bad.join(', ')]] : []));
       }
       return lines;
     }
@@ -573,8 +600,8 @@
           const outsideLine = outside && BYO_OUTSIDE_COPY[outside] ? `<p class="${outside === 'outside_ok' ? 'note' : 'notice'}">${esc(BYO_OUTSIDE_COPY[outside])}</p>` : '';
           const trouble = byoRelayTrouble(b) ? `<div class="notice error"><p>${esc(BYO_RELAY_COPY[BYO_RELAY_STATE_CODE[b.relay.state]](b))}</p>${b.relay.state === 'host_key_changed' ? `<button class="btn sm" data-action="byo-relay-trust-again">${window.JournalI18n.renderHtml('journal.window.agents.button.label.trust.it.again')}</button>` : ''}</div>` : '';
           const readyHtml = ready
-            ? `<p><span class="tag on">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.ready')}</span> <strong>${esc(host)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.is.ready')}</strong> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.anywhere.can.reach.your.journal')} <code>${esc(byoEndpoint())}</code>. ${window.JournalI18n.renderHtml('journal.window.agents.byo.unconnected')}</p><div class="button-row"><button class="btn primary" data-action="connect">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect.an.agent')}</button><button class="btn sm" data-action="byo-outside-check">${window.JournalI18n.renderHtml('journal.window.agents.button.label.check.again')}</button></div>`
-            : `<p class="onlab">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.turning.on')} ${esc(host)}</p>`;
+            ? `<p><span class="tag on">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.ready')}</span> <strong>${window.JournalI18n.renderHtml('journal.window.agents.byo.host.ready', [['domain', host]])}</strong> ${inlineHtml('journal.window.agents.byo.host.agent.address', [], { agent_endpoint: inlineText('code', byoEndpoint()) })} ${window.JournalI18n.renderHtml('journal.window.agents.byo.unconnected')}</p><div class="button-row"><button class="btn primary" data-action="connect">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect.an.agent')}</button><button class="btn sm" data-action="byo-outside-check">${window.JournalI18n.renderHtml('journal.window.agents.button.label.check.again')}</button></div>`
+            : `<p class="onlab">${window.JournalI18n.renderHtml('journal.window.agents.byo.host.enabling', [['domain', host]])}</p>`;
           step4 = `${trouble}${readyHtml}${legsHtml}${outsideLine}${ready ? '' : `<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.you.can.leave.this.page.while')}</p>`}<div class="button-row"><button class="btn danger" data-action="byo-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off')}</button></div>`;
         }
       }
@@ -613,7 +640,9 @@
       const protection = `<details data-disclosure="relay-detail"><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.how.this.is.protected')}</summary><p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.relay.sol.pbc.runs.sees')}</p></details>`;
       const portal = url => `<div class="hand"><a class="link" href="${esc(url || PORTAL)}" target="_blank" rel="noopener">${window.JournalI18n.renderHtml('journal.window.agents.link.label.manage.solstone.me.in.the.services')}</a></div>`;
       const nextFormatted = state.owner_state?.next_attempt_at ? formatAgentTimestamp(state.owner_state.next_attempt_at) : '';
-      const next = nextFormatted ? ` ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.next.check')} <span data-next-attempt>${esc(nextFormatted)}</span>.` : '';
+      const checkTime = inlineText('span', nextFormatted);
+      checkTime.setAttribute('data-next-attempt', '');
+      const next = nextFormatted ? ' ' + inlineHtml('journal.window.agents.status.next.check.at', [], { check_time: checkTime }) : '';
       if (me === 'off') return `<div class="lane-body"><ul class="trust"><li data-disclosure="relay">${relay}</li><li>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.is.eight.random.characters')}</li></ul>${protection}<div class="hand"><button class="btn primary" data-action="turn-on">${window.JournalI18n.renderHtml('journal.window.agents.button.label.set.up.solstone.me')}</button><span class="meta">${window.JournalI18n.renderEnglishHtml('journal.window.agents.visible.text.you.approve.it.in.the.services')}</span></div></div>`;
       if (me === 'turnedoff') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.off'), false)}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.connected.through.solstone.me.can')}</p>${about}</div>`;
       if (me === 'approve') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.setting.up'), false)}<p class="note">${window.JournalI18n.renderEnglishHtml('journal.window.agents.visible.text.waiting.for.you.to.approve.solstone')}</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" data-solstone-outside href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">${window.JournalI18n.renderEnglishHtml('journal.window.agents.link.label.continue.to.approve')}</a>` : ''}</div></div>`;
@@ -659,9 +688,9 @@
       const lan = lanState();
       if (lan === 'port' || lanTaken().length) return ['r', window.JournalI18n.render('journal.window.agents.window.explanation.something.else.on.this.device.is.variant2')];
       const [tone, sentence, neither] = base;
-      if (lan === 'on') return neither ? ['g', window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.your.network.can.reach')] : [tone, window.JournalI18n.render('journal.window.agents.window.explanation.value1.agents.on.your.network.can', [['value1', String(sentence)]])];
+      if (lan === 'on') return neither ? ['g', window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.your.network.can.reach')] : [tone, sentence + ' ' + window.JournalI18n.render('journal.window.agents.lane.local.also.reachable')];
       if (lan === 'off' || lan === 'invalid') return [tone, sentence];
-      return neither ? ['a', window.JournalI18n.render('journal.window.agents.window.explanation.your.journal.s.addresses.on.your')] : [tone === 'g' ? 'a' : tone, window.JournalI18n.render('journal.window.agents.window.explanation.value1.your.journal.s.addresses.on', [['value1', String(sentence)]])];
+      return neither ? ['a', window.JournalI18n.render('journal.window.agents.window.explanation.your.journal.s.addresses.on.your')] : [tone === 'g' ? 'a' : tone, sentence + ' ' + window.JournalI18n.render('journal.window.agents.lane.local.addresses.closed')];
     }
     function segment(id, name, desc, disclosure, cls, [tagCls, tagText]) {
       return `<button class="seg${lane === id ? ' is' : ''}${id === 'own' && !hasDoor() ? ' soon' : ''}" role="radio" aria-checked="${lane === id}" data-lane="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${esc(name)}</span><span class="tag ${tagCls}">${esc(tagText)}</span></span><span class="segdesc">${esc(desc)}</span><span class="${cls}">${esc(disclosure)}</span></button>`;
@@ -671,22 +700,30 @@
       const rows = state.connections;
       const head = `<div class="sh"><h2 tabindex="-1" data-agents-heading>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.your.agents')}</h2>${rows.length ? `<button class="btn primary" data-action="connect">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect.an.agent')}</button>` : ''}</div>`;
       if (!rows.length) return `<section class="section">${head}<div class="list empty"><h3>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.no.agents.connected.yet')}</h3><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.connect.one.to.let.it.search')}</p><button class="btn primary" data-action="connect">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect.an.agent')}</button></div></section>`;
-      return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}${pausedChip(connection)}</strong>${connection.paused ? pausedRowLine(connection) : `<small>${connection.kind === 'bearer' ? window.JournalI18n.renderHtml('journal.window.agents.window.state.text.a.key.you.created') : ''}${connection.activity_complete ? '' : window.JournalI18n.renderHtml('journal.window.agents.window.state.text.at.least')}${esc(connection.requests_this_week)} ${connection.requests_this_week === 1 ? window.JournalI18n.renderHtml('journal.window.agents.visible.text.request') : window.JournalI18n.renderHtml('journal.window.agents.activity.requests')} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.this.week')}${lastRequestCopy(connection)}</small>`}<small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>${waitingLink(connection, 'ag-sugg')}`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">${window.JournalI18n.renderHtml('journal.window.agents.link.label.recent.activity')}</a> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.what.your.agents.asked.and.what')}</p></section>`;
+      return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}${pausedChip(connection)}</strong>${connection.paused ? pausedRowLine(connection) : `<small>${weeklyRequests(connection)}</small>`}<small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>${waitingLink(connection, 'ag-sugg')}`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">${window.JournalI18n.renderHtml('journal.window.agents.link.label.recent.activity')}</a> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.what.your.agents.asked.and.what')}</p></section>`;
+    }
+    function unreadableSupport() {
+      const link = inlineText('a', window.JournalI18n.render('journal.window.agents.link.label.tell.support'));
+      link.className = 'link';
+      link.setAttribute('href', 'https://support.solstone.app/');
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+      return inlineHtml('journal.window.agents.connection.unreadable.support', [], { support_link: link });
     }
     function home() {
       const [tone, sentence] = statusLine();
-      const lanes = `<section class="lanes"><p class="sectlab">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.how.your.agents.reach.your.journal')}</p><p class="secthint">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.whichever.way.an.agent.uses.it')}</p><div class="seg3" role="radiogroup" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.how.your.agents.reach.your.journal')}">${segment('own', window.JournalI18n.render('journal.window.agents.lane.own'), hasLan() ? window.JournalI18n.render('journal.window.agents.window.explanation.by.default.agents.on.this.device') : window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.this.device.reach.your', [['value1', String(hasDoor() ? window.JournalI18n.render('journal.window.agents.lane.default') : '')]]), window.JournalI18n.render('journal.window.agents.window.explanation.sol.pbc.is.never.in.the'), 'byob', ownTag())}${segment('byo', window.JournalI18n.render('journal.window.agents.lane.byo'), window.JournalI18n.render('journal.window.agents.window.explanation.agents.anywhere.reach.your.journal.at'), window.JournalI18n.render('journal.window.agents.window.explanation.sol.pbc.is.never.in.the'), 'byob', byoTag())}${segment('me', 'solstone.me', window.JournalI18n.render('journal.window.agents.window.explanation.agents.anywhere.like.claude.on.the'), window.JournalI18n.render('journal.window.agents.window.explanation.operated.by.sol.pbc'), 'oper', meTag())}</div>${lane === 'own' ? ownBody() : lane === 'byo' ? byoBody() : meBody()}</section>`;
+      const lanes = `<section class="lanes"><p class="sectlab">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.how.your.agents.reach.your.journal')}</p><p class="secthint">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.whichever.way.an.agent.uses.it')}</p><div class="seg3" role="radiogroup" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.how.your.agents.reach.your.journal')}">${segment('own', window.JournalI18n.render('journal.window.agents.lane.own'), hasLan() ? window.JournalI18n.render('journal.window.agents.window.explanation.by.default.agents.on.this.device') : (window.JournalI18n.render('journal.window.agents.lane.local.reaches.directly') + (hasDoor() ? ' ' + window.JournalI18n.render('journal.window.agents.lane.local.reaches.directly.default') : '')), window.JournalI18n.render('journal.window.agents.window.explanation.sol.pbc.is.never.in.the'), 'byob', ownTag())}${segment('byo', window.JournalI18n.render('journal.window.agents.lane.byo'), window.JournalI18n.render('journal.window.agents.window.explanation.agents.anywhere.reach.your.journal.at'), window.JournalI18n.render('journal.window.agents.window.explanation.sol.pbc.is.never.in.the'), 'byob', byoTag())}${segment('me', 'solstone.me', window.JournalI18n.render('journal.window.agents.window.explanation.agents.anywhere.like.claude.on.the'), window.JournalI18n.render('journal.window.agents.window.explanation.operated.by.sol.pbc'), 'oper', meTag())}</div>${lane === 'own' ? ownBody() : lane === 'byo' ? byoBody() : meBody()}</section>`;
       const moveOffNotice = (byoReady() && (meState() === 'on' || meState() === 'renewal')) ? (() => {
         const relayConns = (state.connections || []).filter(c => c.door === 'relay');
         if (!relayConns.length) return '';
         const names = relayConns.map(c => c.name).join(', ');
-        return `<section class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.you.also.have.solstone.me.on')} ${relayConns.length} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agent')}${relayConns.length === 1 ? '' : 's'} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.connect')}${relayConns.length === 1 ? 's' : ''} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.through.it')} ${esc(names)}. ${window.JournalI18n.renderHtml('journal.window.agents.move.byo.detail')}</p><div class="button-row">${relayConns.map(c => `<button class="btn sm" data-move-byo="${esc(c.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect')} ${esc(c.name)} ${window.JournalI18n.renderHtml('journal.window.agents.button.label.at.your.domain')}</button>`).join('')}<button class="btn sm" data-action="me-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off.solstone.me')}</button></div><p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.solstone.me.address.stays.yours')}</p></section>`;
+        return `<section class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.move.byo.relay.agents.count', [['quantity', window.JournalI18n.cardinalQuantity(relayConns.length)], ['agents', String(relayConns.length)], ['agent_names', names]])} ${window.JournalI18n.renderHtml('journal.window.agents.move.byo.detail')}</p><div class="button-row">${relayConns.map(c => `<button class="btn sm" data-move-byo="${esc(c.id)}">${window.JournalI18n.renderHtml('journal.window.agents.move.byo.connect.named', [['agent_name', c.name]])}</button>`).join('')}<button class="btn sm" data-action="me-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off.solstone.me')}</button></div><p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.solstone.me.address.stays.yours')}</p></section>`;
       })() : '';
-      const notices = (state.replay_notices || []).filter(notice => !notice.dismissed).map(notice => `<section class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.disconnected')} ${esc(notice.name)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.on')} ${esc(notice.door)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.because.the.token.it.uses.to')}</p><button class="btn sm" data-action="dismiss-replay" data-notice="${esc(notice.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.dismiss')}</button></section>`).join('');
+      const notices = (state.replay_notices || []).filter(notice => !notice.dismissed).map(notice => `<section class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.replay.disconnected', [['agent_name', notice.name], ['connection_route', notice.door]])}</p><button class="btn sm" data-action="dismiss-replay" data-notice="${esc(notice.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.dismiss')}</button></section>`).join('');
       const replaced = state.sme_account?.replaced;
-      const back = replaced ? `<section class="notice success" data-sme-replaced><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.solstone.me.address')} ${esc(replaced.address)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.came.back.to.this.journal.on')} ${esc(formatAgentTimestamp(replaced.replaced_at))}. if that wasn't you, tell support in the services portal. if an agent can't reach your journal, connect it again with a new pairing code.</p><button class="btn sm" data-action="dismiss-sme-replaced">${window.JournalI18n.renderHtml('journal.window.agents.button.label.dismiss')}</button></section>` : '';
+      const back = replaced ? `<section class="notice success" data-sme-replaced><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.solstone.me.address.returned', [['address', replaced.address], ['returned_at', formatAgentTimestamp(replaced.replaced_at)]])}</p><button class="btn sm" data-action="dismiss-sme-replaced">${window.JournalI18n.renderHtml('journal.window.agents.button.label.dismiss')}</button></section>` : '';
       // When the journal can't read what it keeps about its agents, it refuses every agent rather than guess.
-      const unreadable = state.agent_state_unreadable ? `<section class="notice error" data-agent-state-unreadable><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.can.t.read.its')} <a class="link" href="https://support.solstone.app/" target="_blank" rel="noopener noreferrer">${window.JournalI18n.renderHtml('journal.window.agents.link.label.tell.support')}</a>.</p><button class="btn sm" data-action="reload">${window.JournalI18n.renderHtml('journal.window.agents.button.label.try.again')}</button></section>` : '';
+      const unreadable = state.agent_state_unreadable ? `<section class="notice error" data-agent-state-unreadable><p>${unreadableSupport()}</p><button class="btn sm" data-action="reload">${window.JournalI18n.renderHtml('journal.window.agents.button.label.try.again')}</button></section>` : '';
       return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.is.always.private.only')}</p><h1 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.page.heading.agents')}</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${unreadable}${lanes}${moveOffNotice}${back}${notices}${agentsList()}`;
     }
 
@@ -713,19 +750,51 @@
       if (connectWay === 'relay') return meEndpoint();
       return doorAddress();
     }
-    function command(text) { return `<code${text.length <= 32 ? ' class="cmd"' : ''}>${esc(text)}</code> <button class="btn sm" data-copy="${esc(text)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.copy')}</button>`; }
+    function inlineHtml(id, args, fixed, elements = {}) {
+      const contents = document.createElement('span');
+      contents.append(...window.JournalI18n.renderMarkup(id, args, { fixed, elements }));
+      return contents.innerHTML;
+    }
+    function inlineText(tag, text) {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      return node;
+    }
+    function commandNodes(text) {
+      const code = inlineText('code', text);
+      if (text.length <= 32) code.className = 'cmd';
+      const copy = inlineText('button', window.JournalI18n.render('journal.window.agents.button.label.copy'));
+      copy.className = 'btn sm';
+      copy.setAttribute('data-copy', text);
+      return { command: code, copy_button: copy };
+    }
     // The one thing to do in the agent. Each ends with the agent opening your journal's page in the browser.
     function agentHint(agent, address) {
       if (connectWay === 'local' && !state.local_agent_helpers) return window.JournalI18n.render('journal.window.agents.window.explanation.use.this.address.only.for.an');
-      if (agent === 'tiles') return window.JournalI18n.render('journal.window.agents.window.explanation.with.the.solstone.plugin.installed.tiles', [['value1', String(command('/mcp-auth solstone__journal'))]]);
+      if (agent === 'tiles') return inlineHtml('journal.window.agents.pair.tiles.authenticate', [], commandNodes('/mcp-auth solstone__journal'));
       // The path that reaches chats and dots. A server added in the desktop app's own settings is Codex configuration.
-      if (agent === 'chatgpt') return `${window.JournalI18n.renderHtml('journal.window.agents.visible.text.on.chatgpt.com.open')} <strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.plugins')}</strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.choose')} <strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.add')}</strong> › <strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.add.custom.mcp.server')}</strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.paste.the.address.choose')} <strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.oauth')}</strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.then')} <strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.create.as.a.plugin')}</strong>. it then works in your chats, and in a dot if you use one. an MCP server added in ChatGPT's desktop app settings works only in Codex.`;
+      if (agent === 'chatgpt') {
+        const elements = Object.fromEntries(["plugins", "add", "custom_server", "authorization", "create_plugin"].map(name => [name, document.createElement('strong')]));
+        return inlineHtml('journal.window.agents.pair.chatgpt.add.server', [], {}, elements)
+          + ' ' + window.JournalI18n.renderHtml('journal.window.agents.pair.chatgpt.availability');
+      }
       // The directory listing matches solstone.me addresses only, so another door is always a custom connector.
       if (agent === 'claude') return connectWay === 'relay' ? window.JournalI18n.render('journal.window.agents.window.explanation.in.claude.if.solstone.is.in') : window.JournalI18n.render('journal.window.agents.window.explanation.in.claude.add.the.address.as');
-      if (agent === 'claude-code' && address) return `${window.JournalI18n.renderHtml('journal.window.agents.visible.text.run')} ${command(`claude mcp add --transport http journal "${address}"`)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.then.in.claude.code.type')} <code>/mcp</code>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.choose')} <code>journal</code> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.and.authenticate')}`;
-      if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url "${address}"`)} then ${command('codex mcp login journal')}`;
-      if (agent === 'gemini-cli' && address) return `${window.JournalI18n.renderHtml('journal.window.agents.visible.text.run')} ${command(`gemini mcp add --transport http journal "${address}"`)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.then.in.gemini.cli.type')} <code>/mcp auth journal</code>.`;
-      if (agent === 'grok-build' && address) return `${window.JournalI18n.renderHtml('journal.window.agents.visible.text.run')} ${command(`grok mcp add --scope project --transport http journal "${address}"`)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.then.in.grok.build.type')} <code>/mcps</code>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.choose')} <code>journal</code> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.and.press')} <code>i</code> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.to.authenticate')}`;
+      if (agent === 'claude-code' && address) return inlineHtml('journal.window.agents.pair.claude.code.configure', [], {
+        ...commandNodes(`claude mcp add --transport http journal "${address}"`), menu_command: inlineText('code', '/mcp'), server: inlineText('code', 'journal')
+      });
+      if (agent === 'codex' && address) {
+        const login = commandNodes('codex mcp login journal');
+        return inlineHtml('journal.window.agents.pair.codex.configure', [], {
+          ...commandNodes(`codex mcp add journal --url "${address}"`), login_command: login.command, copy_login_button: login.copy_button
+        });
+      }
+      if (agent === 'gemini-cli' && address) return inlineHtml('journal.window.agents.pair.gemini.cli.configure', [], {
+        ...commandNodes(`gemini mcp add --transport http journal "${address}"`), login_command: inlineText('code', '/mcp auth journal')
+      });
+      if (agent === 'grok-build' && address) return inlineHtml('journal.window.agents.pair.grok.build.configure', [], {
+        ...commandNodes(`grok mcp add --scope project --transport http journal "${address}"`), menu_command: inlineText('code', '/mcps'), server: inlineText('code', 'journal'), login_key: inlineText('code', 'i')
+      });
       return window.JournalI18n.render('journal.window.agents.window.explanation.add.the.address.where.your.agent');
     }
     const WATCH_ENDED = {
@@ -737,7 +806,6 @@
       if (!watch || watch.phase === 'waiting') return `<p class="watch meta" role="status" data-connect-phase="waiting"><span class="sdot a pulse" aria-hidden="true"></span>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.waiting.for.your.agent.this.updates')}</p>`;
       return `<p class="watch meta" role="status" data-connect-phase="entered"><span class="sdot g" aria-hidden="true"></span>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.this.code.is.no.longer.open')}</p>`;
     }
-    function doorName(door) { return {local: window.JournalI18n.render('journal.window.agents.window.state.text.on.the.device.running.your.journal'), lan: window.JournalI18n.render('journal.window.agents.window.state.text.on.your.network'), relay: window.JournalI18n.render('journal.window.agents.window.state.text.through.solstone.me'), byo: window.JournalI18n.render('journal.window.agents.window.state.text.through.your.own.domain')}[door] || ''; }
     function requestSummary(entry) {
       const args = entry.request?.arguments || {};
       const text = Object.entries(args).map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`).join(' · ');
@@ -746,14 +814,28 @@
     // The trust moment: the agent just connected, here is what it may see, and here is what it asks for, as it asks.
     function connectedDialog() {
       const connection = watch.connection;
-      const name = esc(connection.name);
       const close = `<button class="btn sm" style="float:right" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.close')}</button>`;
-      if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.connect.an.agent')}" data-connect-phase="gone">${close}<h2 tabindex="-1">${name} ${window.JournalI18n.renderHtml('journal.window.agents.section.heading.was.disconnected')}</h2><p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.can.t.read.your.journal')}</p><div class="button-row"><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.done')}</button></div></article></div>`;
+      if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.connect.an.agent')}" data-connect-phase="gone">${close}<h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.connection.former.heading', [['agent_name', connection.name]])}</h2><p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.can.t.read.your.journal')}</p><div class="button-row"><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.done')}</button></div></article></div>`;
       const requests = watch.requests || [];
-      const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.used')} ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
-      const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.nothing.yet.ask')} ${name} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.something.it.can.find.in.your')}</p></div>`;
-      const more = requests.length > 5 ? `<p class="foot">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.and')} ${requests.length - 5} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.more')}</p>` : '';
-      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} ${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.is.connected')}" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2 tabindex="-1">${name}${watch.again ? `${keyMark(connection.memory_source)}${window.JournalI18n.renderHtml('journal.window.agents.access.connected.again')}` : window.JournalI18n.renderHtml('journal.window.agents.window.state.text.is.connected')}</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.connects')} ${doorName(connection.door)}.${watch.again && memorySummaryFor(connection.memory_source)?.count ? window.JournalI18n.render('journal.window.agents.window.explanation.it.can.recall.its.value1', [['value1', String(esc(memoriesWord(memorySummaryFor(connection.memory_source).count)))]]) : ''}</p><dl class="lane-row"><dt>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.may.see')}</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : window.JournalI18n.render('journal.window.agents.status.text.checking'))}</dd></dl><h3 class="section" data-request-list-heading>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.what.it.has.asked.for')}</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.records.each.request.you')}</p><div class="button-row"><button class="btn" data-action="open-connection">${window.JournalI18n.renderHtml('journal.window.agents.button.label.change.what.it.may.see')}</button><button class="btn" data-action="open-activity">${window.JournalI18n.renderHtml('journal.window.agents.button.label.see.all.its.activity')}</button><button class="btn primary" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.done')}</button></div></article></div>`;
+      const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>${window.JournalI18n.renderHtml('journal.window.agents.connection.request.tool', [['tool_name', entry.tool]])}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
+      const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> ${window.JournalI18n.renderHtml('journal.window.agents.connection.request.waiting', [['agent_name', connection.name]])}</p></div>`;
+      const more = requests.length > 5 ? `<p class="foot">${window.JournalI18n.renderHtml('journal.window.agents.connection.request.more.count', [['quantity', window.JournalI18n.cardinalQuantity(requests.length - 5)], ['count', String(requests.length - 5)]])}</p>` : '';
+      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.connection.status.accessible.name', [['agent_name', connection.name]])}" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2 tabindex="-1">${connectedHeading(connection, watch.again)}</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>${window.JournalI18n.renderHtml('journal.window.agents.connection.route', [['route', connection.door || 'other']])}${watch.again && memorySummaryFor(connection.memory_source)?.count ? ' ' + window.JournalI18n.render('journal.window.agents.memory.recall.count', [
+       ['quantity', window.JournalI18n.cardinalQuantity(memorySummaryFor(connection.memory_source).count)],
+       ['count', String(memorySummaryFor(connection.memory_source).count)]
+     ]) : ''}</p><dl class="lane-row"><dt>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.may.see')}</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : window.JournalI18n.render('journal.window.agents.status.text.checking'))}</dd></dl><h3 class="section" data-request-list-heading>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.what.it.has.asked.for')}</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.records.each.request.you')}</p><div class="button-row"><button class="btn" data-action="open-connection">${window.JournalI18n.renderHtml('journal.window.agents.button.label.change.what.it.may.see')}</button><button class="btn" data-action="open-activity">${window.JournalI18n.renderHtml('journal.window.agents.button.label.see.all.its.activity')}</button><button class="btn primary" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.done')}</button></div></article></div>`;
+    }
+    function connectedHeading(connection, again) {
+      const args = [['agent_name', connection.name]];
+      if (again && connection.memory_source) {
+        return inlineHtml('journal.window.agents.connection.status.again.heading.with.key', args, { agent_key: keyMarker(connection.memory_source) });
+      }
+      return window.JournalI18n.renderHtml(again ? 'journal.window.agents.connection.status.again.heading' : 'journal.window.agents.connection.status.heading', args);
+    }
+    function pairingExpiry(timestamp) {
+      const clock = inlineText('span', formatAgentTime(timestamp));
+      clock.setAttribute('data-expiry-time', '');
+      return inlineHtml('journal.window.agents.pair.code.expiry.clock', [], { expiry_time: clock });
     }
     function connectDialog() {
       if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
@@ -762,10 +844,13 @@
       if (choices.length === 1) connectWay = choices[0][0];
       else if (connectWay && !choices.some(([id]) => id === connectWay)) connectWay = null;
 
-      const againName = againTarget ? `${esc(againTarget.name)}${keyMark(againTarget.source)}` : '';
+      const againName = againTarget ? [['agent_name', againTarget.name]] : [];
+      const againHeading = () => againTarget.source
+        ? inlineHtml('journal.window.agents.pair.again.heading.marked', againName, { agent_key: keyMarker(againTarget.source) })
+        : window.JournalI18n.renderHtml('journal.window.agents.pair.again.heading', againName);
       const againLive = againTarget && !String(againTarget.agent).startsWith('source:');
       const close = againTarget
-        ? `<button class="btn sm" style="float:right" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.close')}</button><h2 tabindex="-1" data-again-target>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect')} ${againName} ${window.JournalI18n.renderHtml('journal.window.agents.section.heading.again')}</h2><p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.keeps.its.memories')}${againLive ? window.JournalI18n.render('journal.window.agents.window.explanation.and.what.it.may.see.the') : ''}.</p>`
+        ? `<button class="btn sm" style="float:right" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.close')}</button><h2 tabindex="-1" data-again-target>${againHeading()}</h2><p class="meta">${window.JournalI18n.renderHtml(againLive ? 'journal.window.agents.pair.again.replaces.current' : 'journal.window.agents.pair.again.keeps.memories')}</p>`
         : `<button class="btn sm" style="float:right" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.close')}</button><h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect.an.agent')}</h2>`;
       if (!choices.length) {
         connectWay = null;
@@ -786,7 +871,6 @@
         addresses.push(`<div class="addr"><span>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.an.agent.anywhere.through.solstone.me')}</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.copy')}</button></div></div>`);
       }
 
-      const doorLabel = {local: window.JournalI18n.render('journal.window.agents.window.explanation.the.device.running.your.journal'), relay: 'solstone.me', lan: window.JournalI18n.render('journal.window.agents.connection.network'), byo: window.JournalI18n.render('journal.window.agents.connection.domain')};
       const openPairingKind = !state.pairing
         ? 'none'
         : !state.pairing.door
@@ -805,22 +889,21 @@
       } else if (openPairingKind === 'doorless') {
         openMsg = `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.open.code.no.longer.works')}</p>`;
       } else if (openPairingKind === 'other') {
-        const otherDoor = doorLabel[state.pairing.door] || window.JournalI18n.render('journal.window.agents.window.state.text.another.address');
-        openMsg = `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.open.code.is.for')} ${otherDoor}. make a new one for this agent. it replaces the open one.</p>`;
+        openMsg = `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.pair.open.code.for.route', [['route', state.pairing.door]])}</p>`;
       }
 
       const codeSuffix = {
-        local: window.JournalI18n.renderEnglish('journal.window.agents.window.state.text.this.code.works.only.for.an.variant2'),
-        relay: window.JournalI18n.renderEnglish('journal.window.agents.window.state.text.this.code.works.only.through.solstone'),
-        lan: window.JournalI18n.renderEnglish('journal.window.agents.window.state.text.this.code.works.only.for.an'),
-        byo: window.JournalI18n.renderEnglish('journal.window.agents.window.state.text.this.code.works.only.at.your'),
+        local: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.this.device'),
+        relay: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.private.link'),
+        lan: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.your.network'),
+        byo: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.your.domain'),
       }[pairingCode?.door] || '';
 
       const ended = watch && WATCH_ENDED[watch.phase];
       const code = pairingCode && ended
         ? `<div><div class="notice" role="status" data-connect-phase="${watch.phase}"><p>${ended}</p></div><button class="btn primary" data-action="new-code">${window.JournalI18n.renderHtml('journal.window.agents.button.label.make.a.new.code')}</button></div>`
         : pairingCode
-        ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.works.once.expires.at')} <span data-expiry-time>${esc(formatAgentTime(pairingCode.expires_at))}</span>.${codeSuffix}</p><button class="btn sm" data-action="new-code">${window.JournalI18n.renderHtml('journal.window.agents.button.label.make.a.new.code')}</button>${watchLine()}</div>`
+        ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">${pairingExpiry(pairingCode.expires_at)}${codeSuffix ? ' ' + codeSuffix : ''}</p><button class="btn sm" data-action="new-code">${window.JournalI18n.renderHtml('journal.window.agents.button.label.make.a.new.code')}</button>${watchLine()}</div>`
         : `<div>${openMsg}<button class="btn primary" data-action="new-code">${window.JournalI18n.renderHtml('journal.window.agents.button.label.make.a.pairing.code')}</button><p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.it.works.once.and.expires.after')}</p></div>`;
 
       const step1 = `<div class="mstep"><span class="n">1</span><div><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.make.a.pairing.code.first.your')}</p>${code}</div></div>`;
@@ -830,7 +913,9 @@
       const step2 = `<div class="mstep"><span class="n">2</span><div><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.in.your.agent.add.your.journal')}</p>${picks}${addresses.length ? addresses.join('') : `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.none.of.the.ways.an.agent')}</p>`}<p class="meta hint" data-agent-hint="${agentChoice || 'none'}">${agentHint(agentChoice, addresses.length ? firstAddress() : '')}</p>${connectWay === 'lan' ? `<p class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.a.key.you.created.doesn.t')}</p>` : ''}</div></div>`;
       const where = `<details><summary>${window.JournalI18n.renderHtml('journal.window.agents.disclosure.label.certificate.fingerprint')}</summary><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.s.certificate.for.these')}</p><p><code class="fp">${esc(fingerprint())}</code></p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.browser.shows.it.in.the')}</p></details>`;
       const permissionStep = againTarget
-        ? window.JournalI18n.renderHtml('journal.window.agents.window.explanation.enter.the.code.on.that.page', [['value1', '{agent}']]).replace('{agent}', () => againName)
+        ? (againTarget.source
+          ? inlineHtml('journal.window.agents.pair.again.check.agent.mark', [['agent_name', againTarget.name]], { agent_key: keyMarker(againTarget.source) })
+          : window.JournalI18n.renderHtml('journal.window.agents.pair.again.check.agent', [['agent_name', againTarget.name]]))
         : window.JournalI18n.renderHtml('journal.window.agents.window.explanation.choose.what.the.agent.may.see');
       const step3 = connectWay === 'lan'
         ? `<div class="mstep"><span class="n">3</span><div><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.browser.on.that.device.opens')} ${permissionStep}</p>${fingerprint() ? where : ''}</div></div>`
@@ -841,11 +926,11 @@
       if (kind === 'memory-delete') return deleteMemoryDialog();
       if (kind === 'lan-off') {
         const own = ownState() === 'on', me = meState() === 'on' || meState() === 'renewal';
-        const keep = own && me ? window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.this.device.and.through') : own ? window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.this.device.keep.working') : me ? window.JournalI18n.render('journal.window.agents.window.explanation.agents.through.solstone.me.keep.working') : '';
+        const keep = own && me ? ' ' + window.JournalI18n.render('journal.window.agents.connection.agents.on.this.device.and.through') : own ? ' ' + window.JournalI18n.render('journal.window.agents.connection.agents.on.this.device.keep.working') : me ? ' ' + window.JournalI18n.render('journal.window.agents.connection.agents.through.solstone.me.keep.working') : '';
         return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.turn.off.agents.on.your.network')}"><h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.section.heading.turn.off.agents.on.your.network')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.you.connected.on.your.network')}${keep}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.ones.you.connected.are.kept')}</p><div class="button-row"><button class="btn danger" data-action="lan-door-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off')}</button><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.keep.it.on')}</button></div></article></div>`;
       }
       const body = kind === 'me-off'
-        ? `<h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.section.heading.turn.off.solstone.me')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.connected.through.solstone.me.stop')}${ownState() === 'on' ? window.JournalI18n.render('journal.window.agents.window.explanation.agents.on.this.device.keep.working') : ''}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.and.your.agents.are')}</p><div class="button-row"><button class="btn danger" data-action="turn-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off')}</button><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.keep.it.on')}</button></div>`
+        ? `<h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.section.heading.turn.off.solstone.me')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.connected.through.solstone.me.stop')}${ownState() === 'on' ? ' ' + window.JournalI18n.render('journal.window.agents.connection.agents.on.this.device.keep.working') : ''}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.and.your.agents.are')}</p><div class="button-row"><button class="btn danger" data-action="turn-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off')}</button><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.keep.it.on')}</button></div>`
         : `<h2 tabindex="-1">${window.JournalI18n.renderHtml('journal.window.agents.section.heading.turn.off.agents.on.this.device')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.on.this.device.stop.reaching')}</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.ones.you.connected.are.kept')}</p><div class="button-row"><button class="btn danger" data-action="door-off">${window.JournalI18n.renderHtml('journal.window.agents.button.label.turn.off')}</button><button class="btn" data-close-modal>${window.JournalI18n.renderHtml('journal.window.agents.button.label.keep.it.on')}</button></div>`;
       return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${window.JournalI18n.renderHtml(kind === 'me-off' ? 'journal.window.agents.section.heading.turn.off.solstone.me' : 'journal.window.agents.window.explanation.turn.off.agents.on.this.device')}">${body}</article></div>`;
     }
@@ -862,11 +947,10 @@
 
 
     function connectionPage(connection) {
-      const name = esc(connection.name);
-      const pause = connection.paused ? '' : `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.pause')}</h2><p>${name} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.stays.connected.with.its.memories.and')}</p><div class="button-row"><button class="btn" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="true">${window.JournalI18n.renderHtml('journal.window.agents.button.label.pause')} ${name}</button></div></section>`;
+      const pause = connection.paused ? '' : `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.pause')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.pause.description', [['agent_name', connection.name]])}</p><div class="button-row"><button class="btn" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="true">${window.JournalI18n.renderHtml('journal.window.agents.connection.pause.named', [['agent_name', connection.name]])}</button></div></section>`;
       // Re-pairing is the owner's act: a code made here is for this agent, and nothing else links two pairings.
-      const again = connection.kind === 'oauth' ? `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect.it.again')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.set')} ${name} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.up.again.or.moved.it.to')}</p><div class="button-row"><button class="btn" data-again="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect')} ${name} ${window.JournalI18n.renderHtml('journal.window.agents.button.label.again')}</button></div></section>` : '';
-      return frame(connection.name, `${laneChip(connection)}${pausedChip(connection)}${esc(connectionAccessCopy(connection))}`, `<a class="back" href="#" data-route="home">${window.JournalI18n.renderHtml('journal.window.agents.link.label.agents')}</a>${connection.paused ? pausedCard(connection) : ''}${memoriesCard(connection)}${suggestionsCard(connection)}<section class="card pad section"><div class="section-head"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.what')} ${esc(connection.name)} ${window.JournalI18n.renderHtml('journal.window.agents.section.heading.may.see')}</h2></div><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.narrow.or.widen.at.any.time')} ${esc(connection.name)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.sees.the.change.the.next.time')}</p><p>${esc(permissionLine(connection.permission))}.</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.every.connected.agent.can.save.and')}</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.save')}</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.its.activity')}</h2><button class="btn" data-activity-connection="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.see.recent.requests')}</button></div><p>${connection.activity_complete ? '' : window.JournalI18n.renderHtml('journal.window.agents.window.state.text.at.least')}${esc(connection.requests_this_week)} ${connection.requests_this_week === 1 ? window.JournalI18n.renderHtml('journal.window.agents.visible.text.request') : window.JournalI18n.renderHtml('journal.window.agents.activity.requests')} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.this.week')}${lastRequestCopy(connection, '; ')}.</p></section>${pause}${again}<section class="card pad section"><h2>${connection.kind === 'bearer' ? window.JournalI18n.renderHtml('journal.window.agents.access.revoke') : window.JournalI18n.renderHtml('journal.window.agents.access.disconnect')}</h2><p>${esc(connection.name)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.loses.access.on.its.next.request')}${connection.kind !== 'bearer' && memorySummaryFor(connection.memory_source)?.count ? window.JournalI18n.render('journal.window.agents.window.explanation.to.bring.it.back.with.its') : ''}</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.rename')}</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? window.JournalI18n.renderHtml('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.renderHtml('journal.window.agents.access.disconnect')}</button></div></section>`, keyMark(connection.memory_source));
+      const again = connection.kind === 'oauth' ? `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect.it.again')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.again.instructions', [['agent_name', connection.name]])}</p><div class="button-row"><button class="btn" data-again="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.connection.again.action', [['agent_name', connection.name]])}</button></div></section>` : '';
+      return frame(connection.name, `${laneChip(connection)}${pausedChip(connection)}${esc(connectionAccessCopy(connection))}`, `<a class="back" href="#" data-route="home">${window.JournalI18n.renderHtml('journal.window.agents.link.label.agents')}</a>${connection.paused ? pausedCard(connection) : ''}${memoriesCard(connection)}${suggestionsCard(connection)}<section class="card pad section"><div class="section-head"><h2>${window.JournalI18n.renderHtml('journal.window.agents.connection.permissions.heading', [['agent_name', connection.name]])}</h2></div><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.narrow.or.widen.at.any.time')} ${window.JournalI18n.renderHtml('journal.window.agents.connection.permissions.change', [['agent_name', connection.name]])}</p><p>${esc(permissionLine(connection.permission))}.</p><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.every.connected.agent.can.save.and')}</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.save')}</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.its.activity')}</h2><button class="btn" data-activity-connection="${esc(connection.key)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.see.recent.requests')}</button></div><p>${weeklyRequests(connection, true)}</p></section>${pause}${again}<section class="card pad section"><h2>${connection.kind === 'bearer' ? window.JournalI18n.renderHtml('journal.window.agents.access.revoke') : window.JournalI18n.renderHtml('journal.window.agents.access.disconnect')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.permissions.revoked', [['agent_name', connection.name]])}${connection.kind !== 'bearer' && memorySummaryFor(connection.memory_source)?.count ? ' ' + window.JournalI18n.render('journal.window.agents.connection.to.bring.it.back.with.its') : ''}</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.rename')}</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? window.JournalI18n.renderHtml('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.renderHtml('journal.window.agents.access.disconnect')}</button></div></section>`, keyMark(connection.memory_source));
     }
 
     // ---- what an agent saved -----------------------------------------------------------------------
@@ -874,20 +958,33 @@
     // Corrections an agent suggested wait in the journal's suggestions page; the agent's row and page
     // link there, and its page holds the switch. Nothing an agent suggests changes the journal on its own.
     function suggestionsHref(connection) { return `/app/curation/?agent=${encodeURIComponent(connection.memory_source || '')}`; }
-    function waitingLine(connection) { const n = Number(connection.pending_suggestions) || 0; return n === 1 ? window.JournalI18n.render('journal.window.agents.window.explanation.suggestion.from.value1.is.waiting', [['value1', String(esc(connection.name))]]) : window.JournalI18n.render('journal.window.agents.window.explanation.value1.suggestions.from.value2.are.waiting', [['value1', String(esc(n))], ['value2', String(esc(connection.name))]]); }
+    function waitingLine(connection) {
+      const n = Number(connection.pending_suggestions) || 0;
+      return window.JournalI18n.renderHtml('journal.window.agents.suggestions.waiting.count', [
+        ['quantity', window.JournalI18n.cardinalQuantity(n)], ['count', String(n)], ['agent_name', connection.name]
+      ]);
+    }
     function waitingLink(connection, cls) { return (Number(connection.pending_suggestions) || 0) > 0 && connection.memory_source ? `<a class="${cls}" href="${esc(suggestionsHref(connection))}" data-suggestions-link="${esc(connection.kind)}:${esc(connection.id)}">${waitingLine(connection)}</a>` : ''; }
     function suggestionsCard(connection) {
       const on = connection.suggestions_enabled !== false;
       const name = esc(connection.name);
-      const sub = on ? window.JournalI18n.render('journal.window.agents.window.explanation.value1.can.suggest.a.fix.when', [['value1', String(name)]]) : window.JournalI18n.render('journal.window.agents.window.explanation.value1.is.told.suggestions.are.off', [['value1', String(name)]]);
+      const sub = on ? window.JournalI18n.render('journal.window.agents.suggestions.agent.enabled', [['agent_name', String(name)]]) : window.JournalI18n.render('journal.window.agents.suggestions.agent.disabled', [['agent_name', String(name)]]);
       const link = waitingLink(connection, 'link');
       return `<section class="card pad section" data-suggestions-card><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.suggestions')}</h2><div class="onoff"><p><span class="onlab">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.can.suggest.corrections')}</span><br><span class="onsub">${esc(sub)}</span></p><button class="sw${on ? '' : ' off'}" role="switch" aria-checked="${on}" aria-label="${name} ${window.JournalI18n.renderHtml('journal.window.agents.accessible.name.can.suggest.corrections')}" data-suggestions-switch="${esc(connection.kind)}:${esc(connection.id)}"><i></i></button></div>${link ? `<p class="waiting">${link}</p>` : ''}</section>`;
     }
-    function keyMark(source) { return source ? `<span class="key" title="agent-memory-${esc(source)}"> · ${esc(String(source).slice(0, 4))}</span>` : ''; }
+    function keyMarker(source) {
+      const mark = inlineText('span', ' · ' + String(source).slice(0, 4));
+      mark.className = 'key';
+      mark.title = 'agent-memory-' + source;
+      return mark;
+    }
+    function keyMark(source) { return source ? keyMarker(source).outerHTML : ''; }
     function memorySummaryFor(source) { return (memorySummary?.agents || []).find(agent => agent.source === source) || null; }
     function connectionFor(source) { return (state?.connections || []).find(connection => connection.memory_source === source) || null; }
     function memoryAgentName(source) { return connectionFor(source)?.name || memorySummaryFor(source)?.label || window.JournalI18n.render('journal.window.agents.window.state.text.an.earlier.agent'); }
-    function memoriesWord(count) { return `${count} ${count === 1 ? 'memory' : 'memories'}`; }
+    function memoriesWord(n) {
+      return window.JournalI18n.render('journal.window.agents.memory.label.count', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['count', String(n)]]);
+    }
     function memoryCountLine(source) {
       const count = memorySummaryFor(source)?.count || 0;
       return count ? `<small class="mems">${esc(memoriesWord(count))}</small>` : '';
@@ -897,7 +994,15 @@
       const earlier = (memorySummary?.agents || []).filter(agent => agent.count > 0 && !connectionFor(agent.source));
       if (!earlier.length) return '';
       earlier.sort((a, b) => String(b.latest_at || '').localeCompare(String(a.latest_at || '')));
-      return `<section class="section later"><div class="sh"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.earlier.agents')}</h2></div><div class="list">${earlier.map(agent => `<button class="ag-row" data-memories="${esc(agent.source)}"><span class="m"><strong>${esc(agent.label || window.JournalI18n.render('journal.window.agents.status.text.an.earlier.agent'))}${keyMark(agent.source)}</strong><small>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.no.longer.connected')} ${esc(memoriesWord(agent.count))}${agent.latest_at ? window.JournalI18n.renderHtml('journal.window.agents.memories.latest', [['date', formatMemoryInstant(agent.latest_at, {month: 'short', day: 'numeric', year: 'numeric'})]]) : ''}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div></section>`;
+      return `<section class="section later"><div class="sh"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.earlier.agents')}</h2></div><div class="list">${earlier.map(agent => `<button class="ag-row" data-memories="${esc(agent.source)}"><span class="m"><strong>${esc(agent.label || window.JournalI18n.render('journal.window.agents.status.text.an.earlier.agent'))}${keyMark(agent.source)}</strong><small>${earlierAgentMemories(agent)}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div></section>`;
+    }
+    function earlierAgentMemories(agent) {
+      const args = [['quantity', window.JournalI18n.cardinalQuantity(agent.count)], ['count', String(agent.count)]];
+      if (agent.latest_at) {
+        args.push(['day', formatMemoryInstant(agent.latest_at, {month: 'short', day: 'numeric', year: 'numeric'})]);
+        return window.JournalI18n.renderHtml('journal.window.agents.memory.disconnected.count.latest', args);
+      }
+      return window.JournalI18n.renderHtml('journal.window.agents.memory.disconnected.count', args);
     }
     function memoryPlace(memory) { return `${memory.day}/${memory.stream}/${memory.segment}`; }
     function formatMemoryInstant(ts, options) {
@@ -927,7 +1032,7 @@
       if (page && (page.complete === false || page.memories.some(memory => memory.unreadable))) return `<div class="notice" data-memories-partial><p>${page.memories.some(memory => !memory.unreadable) ? window.JournalI18n.render('journal.window.agents.window.explanation.your.journal.couldn.t.read.all') : window.JournalI18n.render('journal.window.agents.window.explanation.your.journal.couldn.t.read.these')}</p></div>`;
       return '';
     }
-    function noMemoriesLine(connection) { return window.JournalI18n.render('journal.window.agents.window.explanation.no.memories.in.your.journal.from', [['value1', String(connection.kind === 'bearer' ? 'key' : 'pairing')]]); }
+    function noMemoriesLine(connection) { return window.JournalI18n.render(connection.kind === 'bearer' ? 'journal.window.agents.memories.empty.key' : 'journal.window.agents.memories.empty.pairing'); }
     function memoriesCard(connection) {
       const source = connection.memory_source;
       if (!source) return '';
@@ -935,7 +1040,7 @@
       const count = memorySummaryFor(source)?.count || 0;
       const rows = (page?.memories || []).slice(0, 3);
       const more = count > rows.length || page?.next;
-      const see = rows.length && more ? `<button class="btn" data-memories="${esc(source)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.see.all')}${count ? ` ${count}` : ''}</button>` : '';
+      const see = rows.length && more ? `<button class="btn" data-memories="${esc(source)}">${count ? window.JournalI18n.renderHtml('journal.window.agents.memory.see.all.count', [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]]) : window.JournalI18n.renderHtml('journal.window.agents.button.label.see.all')}</button>` : '';
       const head = `<div class="section-head"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.its.memories')}</h2>${see}</div>`;
       if (page?.failed) return `<section class="card pad" data-memories-failed>${head}<p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.couldn.t.read.its')}</p><div class="button-row"><button class="btn" data-memories-retry="${esc(source)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.try.again')}</button></div></section>`;
       if (!rows.length) return `<section class="card pad">${head}${page?.complete === false ? memoriesTrouble(page) : `<p tabindex="-1" data-memories-none>${noMemoriesLine(connection)}</p>`}</section>`;
@@ -947,7 +1052,10 @@
       const name = memoryAgentName(source);
       const page = memoryPages.get(source);
       const back = connection ? `<a class="back" href="#" data-connection="${esc(connection.kind)}:${esc(connection.id)}">← ${esc(connection.name)}${keyMark(source)}</a>` : `<a class="back" href="#" data-route="home">${window.JournalI18n.renderHtml('journal.window.agents.link.label.agents')}</a>`;
-      const lead = connection ? window.JournalI18n.render('journal.window.agents.window.explanation.what.value1.saved.in.its.own', [['value1', String(esc(name))]]) : window.JournalI18n.render('journal.window.agents.window.explanation.value1.value2.is.no.longer.connected', [['value1', String(esc(name))], ['value2', String(keyMark(source))]]);
+      const lead = connection
+        ? window.JournalI18n.renderHtml('journal.window.agents.memory.agent.saved.lead', [['agent_name', name]])
+        : source ? inlineHtml('journal.window.agents.memory.agent.disconnected.lead.marked', [['agent_name', name]], { agent_key: keyMarker(source) })
+          : window.JournalI18n.renderHtml('journal.window.agents.memory.agent.disconnected.lead', [['agent_name', name]]);
       const memories = page?.memories || [];
       const readWhole = page && !page.failed && page.complete !== false;
       const gone = readWhole && route.target && !memories.some(memory => memory.day === route.target.day && memory.segment === route.target.segment);
@@ -960,8 +1068,8 @@
       const list = groups.map(group => `<h3 class="day">${esc(formatMemoryDay(group.day))}</h3><div class="list">${group.memories.map(memory => memoryRow(memory)).join('')}</div>`).join('');
       const none = readWhole && !memories.length ? `<p tabindex="-1" data-memories-none>${connection ? noMemoriesLine(connection) : window.JournalI18n.render('journal.window.agents.window.explanation.none.of.its.memories.are.left')}</p>` : '';
       const older = page?.next ? `<div class="button-row"><button class="btn" data-memories-older="1">${window.JournalI18n.renderHtml('journal.window.agents.button.label.show.older')}</button></div>` : '';
-      const again = connection ? '' : `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect.it.again')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.connect')} ${esc(name)} ${window.JournalI18n.renderHtml('journal.window.agents.visible.text.again.from.here.and.it.can')}</p><div class="button-row"><button class="btn primary" data-again="source:${esc(source)}">${window.JournalI18n.renderHtml('journal.window.agents.button.label.connect')} ${esc(name)} ${window.JournalI18n.renderHtml('journal.window.agents.button.label.again')}</button></div></section>`;
-      return frame(window.JournalI18n.render('journal.window.agents.status.text.value1.s.memories', [['value1', String(name)]]), lead, `${back}${again}${gone ? `<div class="notice" data-memory-gone><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.that.memory.isn.t.in.your')}</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
+      const again = connection ? '' : `<section class="card pad section"><h2>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.connect.it.again')}</h2><p>${window.JournalI18n.renderHtml('journal.window.agents.connection.memory.again.instructions', [['agent_name', name]])}</p><div class="button-row"><button class="btn primary" data-again="source:${esc(source)}">${window.JournalI18n.renderHtml('journal.window.agents.connection.again.action', [['agent_name', name]])}</button></div></section>`;
+      return frame(window.JournalI18n.render('journal.window.agents.memories.agent.heading', [['agent_name', String(name)]]), lead, `${back}${again}${gone ? `<div class="notice" data-memory-gone><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.that.memory.isn.t.in.your')}</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
     }
     async function loadMemories(source, {more = false} = {}) {
       const existing = memoryPages.get(source);
@@ -1098,15 +1206,20 @@
 
     // An agent is named in activity by its name and short key, never by the id its software chose.
     function entryLine(entry) {
-      const who = entry.name ? `${esc(entry.name)}${keyMark(entry.memory_source)}` : esc(entry.agent_identity);
-      return entry.paused ? `${who} tried ${esc(entry.tool)} while paused` : `${who} used ${esc(entry.tool)}`;
+      const key = entry.name && entry.memory_source ? keyMarker(entry.memory_source) : null;
+      const voice = entry.paused ? 'paused' : 'used';
+      const id = `journal.window.agents.activity.entry.${voice}${key ? '.with.key' : ''}`;
+      const args = [['agent_name', String(entry.name || entry.agent_identity)], ['tool_name', String(entry.tool)]];
+      return key ? inlineHtml(id, args, { agent_key: key }) : window.JournalI18n.renderHtml(id, args);
     }
     const outcomeLabel = {stored:'stored',replayed:window.JournalI18n.render('journal.window.agents.window.state.text.already.stored'),deleted:window.JournalI18n.render('journal.window.agents.window.state.text.original.deleted'),served:'served',empty:window.JournalI18n.render('journal.window.agents.window.state.text.nothing.matched'),refused:'refused',error:window.JournalI18n.render('journal.window.agents.window.state.text.couldn.t.complete'),uncertain:window.JournalI18n.render('journal.window.agents.window.state.text.unknown.ending')};
     function activityPage() {
       const entries = activity?.entries || [];
       const counts = activity?.counts || {};
-      const atLeast = activity && !activity.examination_complete ? window.JournalI18n.render('journal.window.agents.window.state.text.at.least') : '';
-      return frame(window.JournalI18n.render('journal.window.agents.status.text.activity'), window.JournalI18n.render('journal.window.agents.status.text.what.your.agents.asked.and.how'), `<a class="back" href="#" data-route="home">${window.JournalI18n.renderHtml('journal.window.agents.link.label.agents')}</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">${window.JournalI18n.renderHtml('journal.window.agents.field.label.how.it.ended')}</label><select id="a-outcome"><option value="">${window.JournalI18n.renderHtml('journal.window.agents.option.label.any.way')}</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">${window.JournalI18n.renderHtml('journal.window.agents.field.label.what.it.did')}</label><select id="a-tool"><option value="">${window.JournalI18n.renderHtml('journal.window.agents.option.label.any.tool')}</option>${['save_memory','recall_memory','list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity','list_activities','get_activity_sources','get_week'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">${window.JournalI18n.renderHtml('journal.window.agents.button.label.apply')}</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</time><span class="row-main"><span class="quote">${entryLine(entry)}</span><small>${esc(entry.reason || window.JournalI18n.render('journal.window.agents.status.text.open.for.request.and.result.details'))}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.nothing.matches.these.filters')}</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.only.the.first.matching.requests.are')}</div>` : ''}`);
+      const summaryCount = value => activity && !activity.examination_complete
+        ? window.JournalI18n.renderHtml('journal.window.agents.activity.summary.count.partial', [['quantity', window.JournalI18n.cardinalQuantity(value)], ['count', String(value)]])
+        : esc(value);
+      return frame(window.JournalI18n.render('journal.window.agents.status.text.activity'), window.JournalI18n.render('journal.window.agents.status.text.what.your.agents.asked.and.how'), `<a class="back" href="#" data-route="home">${window.JournalI18n.renderHtml('journal.window.agents.link.label.agents')}</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${summaryCount(counts[key] || 0)}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">${window.JournalI18n.renderHtml('journal.window.agents.field.label.how.it.ended')}</label><select id="a-outcome"><option value="">${window.JournalI18n.renderHtml('journal.window.agents.option.label.any.way')}</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">${window.JournalI18n.renderHtml('journal.window.agents.field.label.what.it.did')}</label><select id="a-tool"><option value="">${window.JournalI18n.renderHtml('journal.window.agents.option.label.any.tool')}</option>${['save_memory','recall_memory','list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity','list_activities','get_activity_sources','get_week'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">${window.JournalI18n.renderHtml('journal.window.agents.button.label.apply')}</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</time><span class="row-main"><span class="quote">${entryLine(entry)}</span><small>${esc(entry.reason || window.JournalI18n.render('journal.window.agents.status.text.open.for.request.and.result.details'))}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>${window.JournalI18n.renderHtml('journal.window.agents.section.heading.nothing.matches.these.filters')}</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.only.the.first.matching.requests.are')}</div>` : ''}`);
     }
 
     function activityDetail(entry) {
@@ -1518,7 +1631,7 @@
         else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
         else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
         else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
-        else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (await window.SolQuestion.ask({ message: window.JournalI18n.render('journal.window.agents.message.value1.what.it.already.read.stays', [['value1', String(kind === 'bearer' ? window.JournalI18n.render('journal.window.agents.window.state.text.revoke.this.key') : window.JournalI18n.render('journal.window.agents.window.state.text.disconnect.this.agent'))]]), action: kind === 'bearer' ? window.JournalI18n.render('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.render('journal.window.agents.window.state.text.disconnect.agent'), signal: ctx.signal, opener: () => findKey(view, busy) }) && !ctx.disposed) { const order = state.connections.map(item => rowKey(item.kind, item.id)); const at = order.indexOf(rowKey(kind, id)); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); landing = [order[at + 1], order[at - 1], '[data-agents-heading]']; route = {name:'home'}; await reload(true); } }
+        else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (await window.SolQuestion.ask({ message: window.JournalI18n.render(kind === 'bearer' ? 'journal.window.agents.connection.revoke.key.confirmation' : 'journal.window.agents.connection.disconnect.agent.confirmation'), action: kind === 'bearer' ? window.JournalI18n.render('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.render('journal.window.agents.window.state.text.disconnect.agent'), signal: ctx.signal, opener: () => findKey(view, busy) }) && !ctx.disposed) { const order = state.connections.map(item => rowKey(item.kind, item.id)); const at = order.indexOf(rowKey(kind, id)); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); landing = [order[at + 1], order[at - 1], '[data-agents-heading]']; route = {name:'home'}; await reload(true); } }
         else if (target.dataset.rename) { const id = target.dataset.rename; const name = await window.SolQuestion.ask({ message: window.JournalI18n.render('journal.window.agents.message.name.this.key'), action: window.JournalI18n.render('journal.window.agents.window.state.text.save.name'), value: route.connection.name, signal: ctx.signal, opener: () => findKey(view, busy) }); if (name && !ctx.disposed) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(id)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
       } catch (error) { notify(error.message || window.JournalI18n.render('journal.window.agents.status.text.that.change.did.not.finish')); }
       finally { markBusy(busy, target, false); }

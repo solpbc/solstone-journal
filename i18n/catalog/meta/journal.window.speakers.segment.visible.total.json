@@ -1,0 +1,39 @@
+{
+  "description": "Journal view. speakers segment visible total.",
+  "context": "Journal window. Journal view. speakers segment visible total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "visible_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "visible",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bf5d4978cc2d127839e1ca8bd8bebf4c41d45974288a475ec71b3ed6e4405a68",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "visible_quantity",
+    "type": "cardinal"
+  }
+}
