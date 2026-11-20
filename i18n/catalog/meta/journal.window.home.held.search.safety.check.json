@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held search safety check.",
+  "context": "Journal window. Home window. held search safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15f5a6d6d5715b926e61bfb9f3e88a64607bbc23900a110bb26f0a605c9a2fd6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

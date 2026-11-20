@@ -1,0 +1,25 @@
+{
+  "description": "Home window. download thinking progress.",
+  "context": "Journal window. Home window. download thinking progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "downloaded_gb",
+      "type": "string"
+    },
+    {
+      "name": "total_gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75665457b65d517b7a58f2d8c07afa53a91ca198a090f8b4a7d31e83f7917c29",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

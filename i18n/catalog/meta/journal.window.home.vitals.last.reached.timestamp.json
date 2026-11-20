@@ -1,0 +1,21 @@
+{
+  "description": "Home window. vitals last reached timestamp.",
+  "context": "Journal window. Home window. vitals last reached timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "last_reached_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1af39f4a574ee0066779c40ca0a94683bd52de41d12dfc2b4c811bef0541f732",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

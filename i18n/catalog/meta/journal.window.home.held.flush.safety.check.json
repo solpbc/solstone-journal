@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held flush safety check.",
+  "context": "Journal window. Home window. held flush safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d85b6be76b66a43820fc33bfc82752162e58833d98532136b9adaf40b2324ef0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

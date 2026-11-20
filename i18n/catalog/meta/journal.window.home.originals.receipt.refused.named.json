@@ -1,0 +1,25 @@
+{
+  "description": "Home originals. receipt refused named.",
+  "context": "Journal window. Home originals. receipt refused named.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "original_name",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4bed3610df64a40606d7c0abcca021bbfd0d9742d629e8c750f9b2ab7d84eb23",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

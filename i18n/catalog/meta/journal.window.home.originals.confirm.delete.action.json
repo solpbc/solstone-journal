@@ -1,0 +1,26 @@
+{
+  "description": "Home originals. confirm delete action.",
+  "context": "Journal window. Home originals. confirm delete action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7e13bbb02eb547c0bda3a0be72abae5dc0c39f68c7b78bd743f16c63f5e3ee31",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

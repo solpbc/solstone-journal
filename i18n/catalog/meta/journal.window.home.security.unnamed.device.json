@@ -1,0 +1,21 @@
+{
+  "description": "Home security banner when the paired device name is unknown.",
+  "context": "Journal window. Home security banner when the paired device name is unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82c74c6cdde5d1d79fffdb20f200f982f8bc789ca936130c4a71f51bcbe37233",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

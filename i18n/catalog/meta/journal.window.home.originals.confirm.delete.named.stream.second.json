@@ -1,0 +1,16 @@
+{
+  "description": "Home originals restricted disclosure confirm delete named stream, sentence 2.",
+  "context": "Journal window. Home originals restricted disclosure confirm delete named stream, sentence 2.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb575aa178e4a20e11e2841a1fff34f28816c8086ebeebec3900038756467514",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

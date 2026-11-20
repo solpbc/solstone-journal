@@ -1,0 +1,16 @@
+{
+  "description": "Home window. narrative coverage clock.",
+  "context": "Journal window. Home window. narrative coverage clock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "382a50990eab5bddbacb67d2ead409e97374c61efb97154a68640e601a17538b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Home originals. receipt space after erase.",
+  "context": "Journal window. Home originals. receipt space after erase.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "erase_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6de2e8996a3a66d64724710926b91e0d423403f0a448ddfeafd7d0ec0c219ed8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

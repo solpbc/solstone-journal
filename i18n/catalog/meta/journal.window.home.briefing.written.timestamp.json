@@ -1,0 +1,21 @@
+{
+  "description": "Home window. briefing written timestamp.",
+  "context": "Journal window. Home window. briefing written timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "written_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e17d1f3f7b8a021c34a6a30357db1c0f141f3bb9688b3771240b5ffaad7fd6e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

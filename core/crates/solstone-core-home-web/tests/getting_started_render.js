@@ -558,7 +558,7 @@ async function runTests() {
       firstMinutesPayload: {
         window_open: true,
         devices_known: true,
-        devices: [{ name: 'TestDevice', state: st, last_added_label: '2 minutes ago' }],
+        devices: [{ name: 'TestDevice', state: st, last_added_label: '2 minutes ago', last_added_age: { unit: 'minute', count: 2 } }],
         checks: { phone: false, thinking: true },
       },
       agentsPayload: { connections: [] },

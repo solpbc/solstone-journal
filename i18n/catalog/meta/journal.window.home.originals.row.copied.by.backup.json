@@ -1,0 +1,30 @@
+{
+  "description": "Home originals. row copied by backup.",
+  "context": "Journal window. Home originals. row copied by backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "original_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ec453045c9dd3bd36fa1a86583a224e82e4b3687c2d0f6a3932dab3ecaba11eb",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

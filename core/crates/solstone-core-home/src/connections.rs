@@ -91,6 +91,10 @@ pub fn build_connections_card_in(
         let object = card.as_object_mut().expect("ok card is an object");
         object.insert("horizon_day".to_owned(), Value::String(horizon.day));
         object.insert(
+            "horizon_earlier_days".to_owned(),
+            Value::from(horizon.earlier_days),
+        );
+        object.insert(
             "horizon_note".to_owned(),
             Value::String(connections_horizon_note(locale, horizon.earlier_days)),
         );
@@ -399,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn populated_card_with_horizon_adds_two_keys() {
+    fn populated_card_exposes_horizon_day_and_count() {
         let horizon = ConnectionsHorizon {
             day: "20260301".to_owned(),
             earlier_days: 3,
@@ -410,7 +414,8 @@ mod tests {
             Some(horizon),
         );
         assert_eq!(card["state"], "ok");
-        assert_eq!(card.as_object().unwrap().len(), 7);
+        assert_eq!(card.as_object().unwrap().len(), 8);
+        assert_eq!(card["horizon_earlier_days"], 3);
         assert_eq!(card["horizon_day"], "20260301");
         assert_eq!(
             card["horizon_note"],

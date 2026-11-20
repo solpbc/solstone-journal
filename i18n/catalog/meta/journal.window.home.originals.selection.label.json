@@ -1,0 +1,21 @@
+{
+  "description": "Home window. originals selection label.",
+  "context": "Journal window. Home window. originals selection label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checkbox",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7b7328bca8da2c84c2da721a95d355b4762370651df3fba34b2a1b3807cddb0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

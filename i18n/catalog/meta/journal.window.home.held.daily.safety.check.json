@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held daily safety check.",
+  "context": "Journal window. Home window. held daily safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7ab63cf7eb44d8c4bd39fa79de6ea07bbb057a63e5a8d66ed447d3c7a3b2908",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

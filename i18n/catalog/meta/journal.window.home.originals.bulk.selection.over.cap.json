@@ -1,0 +1,25 @@
+{
+  "description": "Home originals. bulk selection over cap.",
+  "context": "Journal window. Home originals. bulk selection over cap.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selected_count",
+      "type": "string"
+    },
+    {
+      "name": "selection_limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7775d48b30ea918220651db02d15c34cde241e39c59bf2bcabeae026bc2bc3c1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

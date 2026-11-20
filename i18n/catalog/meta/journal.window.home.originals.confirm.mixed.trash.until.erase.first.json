@@ -1,0 +1,35 @@
+{
+  "description": "Home originals restricted disclosure confirm mixed trash until erase, sentence 1.",
+  "context": "Journal window. Home originals restricted disclosure confirm mixed trash until erase, sentence 1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "retention_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e726b37ab6b401b1d65fb49d1f1a02d3ac17588d9d45c52fa2cb336c4ca45bf8",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

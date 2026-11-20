@@ -1,0 +1,30 @@
+{
+  "description": "Home facet duration shown by itself in abbreviated units.",
+  "context": "Journal window. Home facet duration shown by itself in abbreviated units.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "13f75684a13ea7706ea2aae209d076f32ac3b049079677c699d3c2649700f240",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

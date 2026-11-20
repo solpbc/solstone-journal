@@ -1,0 +1,21 @@
+{
+  "description": "Home originals. receipt refused reason.",
+  "context": "Journal window. Home originals. receipt refused reason.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "32a8d89f1c9eb4cea45311ee3883418bc17d9a3de69f5cbdc155ccf640e0634a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

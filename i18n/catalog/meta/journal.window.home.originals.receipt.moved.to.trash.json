@@ -1,0 +1,30 @@
+{
+  "description": "Home originals. receipt moved to trash.",
+  "context": "Journal window. Home originals. receipt moved to trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "original_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "34ebbd3643eaace32287cd04fcd98a6366f83a74c8ecc45d3b52d52510ace5bf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

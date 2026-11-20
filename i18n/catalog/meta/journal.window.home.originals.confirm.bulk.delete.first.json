@@ -1,0 +1,21 @@
+{
+  "description": "Home originals restricted disclosure confirm bulk delete, sentence 1.",
+  "context": "Journal window. Home originals restricted disclosure confirm bulk delete, sentence 1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "original_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1301fec51a4987609a3ccbe80036305316ad41d9e6c8b17a42b61b5a32e7e49e",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

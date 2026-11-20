@@ -1,0 +1,30 @@
+{
+  "description": "Home Connections coverage. Earlier days with no same-place connections built yet.",
+  "context": "Journal window. Home Connections coverage. Earlier days with no same-place connections built yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "earlier_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "83877a5007c992bf75c2cd21557b5e8ee21ed3b4307e940a84897cad3dfd7f5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

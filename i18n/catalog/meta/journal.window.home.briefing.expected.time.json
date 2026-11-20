@@ -1,0 +1,16 @@
+{
+  "description": "Home window. briefing expected time.",
+  "context": "Journal window. Home window. briefing expected time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fa935ac583b6897727874bff88d51721663deea4d77cb5ee56aa52676b92a00",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

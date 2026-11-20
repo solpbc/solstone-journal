@@ -1,0 +1,16 @@
+{
+  "description": "Home originals restricted disclosure confirm bulk trash, sentence 3.",
+  "context": "Journal window. Home originals restricted disclosure confirm bulk trash, sentence 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b673d484a5ad3a27b6aba552fe026dffca5f0807792eb6d5ad91397f8819531",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

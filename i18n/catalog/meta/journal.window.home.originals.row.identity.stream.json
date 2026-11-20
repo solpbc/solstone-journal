@@ -1,0 +1,25 @@
+{
+  "description": "Home originals. row identity stream.",
+  "context": "Journal window. Home originals. row identity stream.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date_and_time",
+      "type": "string"
+    },
+    {
+      "name": "stream_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b89b5d8aeb6bbd76fbb49eee645794f1090299b317b7abd4b3add485696ff0f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

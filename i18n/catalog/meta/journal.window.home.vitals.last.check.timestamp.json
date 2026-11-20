@@ -1,0 +1,21 @@
+{
+  "description": "Home window. vitals last check timestamp.",
+  "context": "Journal window. Home window. vitals last check timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c639911e1c41a042317253ac52ac981330cea94c8f8915016b3816d3f3f05059",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

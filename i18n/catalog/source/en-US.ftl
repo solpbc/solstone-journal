@@ -639,6 +639,117 @@ journal.window.home.attention.agent.errors.count = { $quantity ->
        *[other] { $count } agent errors today. ask what happened
     }
 
+journal.window.home.body.activity.line = { $arrangement ->
+       *[untimed-no-distance-no-source-intact] { $activity }.
+        [untimed-no-distance-no-source-part-removed] { $activity }, part of it removed.
+        [untimed-no-distance-logged-intact] { $activity }, which you logged.
+        [untimed-no-distance-logged-part-removed] { $activity }, which you logged, part of it removed.
+        [untimed-no-distance-recorded-intact] { $activity }, from { $source_names }.
+        [untimed-no-distance-recorded-part-removed] { $activity }, from { $source_names }, part of it removed.
+        [untimed-distance-no-source-intact] { $activity }, { $distance }.
+        [untimed-distance-no-source-part-removed] { $activity }, { $distance }, part of it removed.
+        [untimed-distance-logged-intact] { $activity }, { $distance }, which you logged.
+        [untimed-distance-logged-part-removed] { $activity }, { $distance }, which you logged, part of it removed.
+        [untimed-distance-recorded-intact] { $activity }, { $distance }, from { $source_names }.
+        [untimed-distance-recorded-part-removed] { $activity }, { $distance }, from { $source_names }, part of it removed.
+        [start-no-distance-no-source-intact] { $activity }, from { $started_at }.
+        [start-no-distance-no-source-part-removed] { $activity }, from { $started_at }, part of it removed.
+        [start-no-distance-logged-intact] { $activity }, from { $started_at }, which you logged.
+        [start-no-distance-logged-part-removed] { $activity }, from { $started_at }, which you logged, part of it removed.
+        [start-no-distance-recorded-intact] { $activity }, from { $started_at }, from { $source_names }.
+        [start-no-distance-recorded-part-removed] { $activity }, from { $started_at }, from { $source_names }, part of it removed.
+        [start-distance-no-source-intact] { $activity }, from { $started_at }, { $distance }.
+        [start-distance-no-source-part-removed] { $activity }, from { $started_at }, { $distance }, part of it removed.
+        [start-distance-logged-intact] { $activity }, from { $started_at }, { $distance }, which you logged.
+        [start-distance-logged-part-removed] { $activity }, from { $started_at }, { $distance }, which you logged, part of it removed.
+        [start-distance-recorded-intact] { $activity }, from { $started_at }, { $distance }, from { $source_names }.
+        [start-distance-recorded-part-removed] { $activity }, from { $started_at }, { $distance }, from { $source_names }, part of it removed.
+        [range-no-distance-no-source-intact] { $activity }, { $started_at } to { $ended_at }.
+        [range-no-distance-no-source-part-removed] { $activity }, { $started_at } to { $ended_at }, part of it removed.
+        [range-no-distance-logged-intact] { $activity }, { $started_at } to { $ended_at }, which you logged.
+        [range-no-distance-logged-part-removed] { $activity }, { $started_at } to { $ended_at }, which you logged, part of it removed.
+        [range-no-distance-recorded-intact] { $activity }, { $started_at } to { $ended_at }, from { $source_names }.
+        [range-no-distance-recorded-part-removed] { $activity }, { $started_at } to { $ended_at }, from { $source_names }, part of it removed.
+        [range-distance-no-source-intact] { $activity }, { $started_at } to { $ended_at }, { $distance }.
+        [range-distance-no-source-part-removed] { $activity }, { $started_at } to { $ended_at }, { $distance }, part of it removed.
+        [range-distance-logged-intact] { $activity }, { $started_at } to { $ended_at }, { $distance }, which you logged.
+        [range-distance-logged-part-removed] { $activity }, { $started_at } to { $ended_at }, { $distance }, which you logged, part of it removed.
+        [range-distance-recorded-intact] { $activity }, { $started_at } to { $ended_at }, { $distance }, from { $source_names }.
+        [range-distance-recorded-part-removed] { $activity }, { $started_at } to { $ended_at }, { $distance }, from { $source_names }, part of it removed.
+    }
+
+journal.window.home.briefing.expected.time = yesterday is usually written up by 10 am.
+
+journal.window.home.briefing.late.hour.count = { $quantity ->
+       [one] it's { $hours }h late.
+      *[other] it's { $hours }h late.
+    }
+
+journal.window.home.briefing.written.timestamp = written at { $written_at }
+
+journal.window.home.connections.events.count = { $quantity ->
+        [one] 1 event
+       *[other] { $count } events
+    }
+
+journal.window.home.connections.evidence.transcription = transcribed as “{ $label }”
+
+journal.window.home.connections.horizon.day = connections from time in the same place go back only to { $day }.
+
+journal.window.home.connections.horizon.earlier.days = { $quantity ->
+        [one] one earlier day is still in your journal; those connections haven't been built yet.
+       *[other] the { $earlier_days } earlier days are still in your journal; those connections haven't been built yet.
+    }
+
+journal.window.home.connections.mentions.count = { $quantity ->
+        [one] 1 name mentioned in your journal
+       *[other] { $count } names mentioned in your journal
+    }
+
+journal.window.home.connections.moments.count = { $quantity ->
+        [one] 1 moment
+       *[other] { $count } moments
+    }
+
+journal.window.home.connections.moments.recent.count = { $quantity ->
+        [one] 1 moment · most recently { $day }
+       *[other] { $count } moments · most recently { $day }
+    }
+
+journal.window.home.device.last.added.day = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } day ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } days ago.
+    }
+
+journal.window.home.device.last.added.hour = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } hour ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } hours ago.
+    }
+
+journal.window.home.device.last.added.minute = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } minute ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } minutes ago.
+    }
+
+journal.window.home.device.last.added.month = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } month ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } months ago.
+    }
+
+journal.window.home.device.last.added.second = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } second ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } seconds ago.
+    }
+
+journal.window.home.device.last.added.week = { $quantity ->
+       [one] the solstone app on { $name } last added to your journal { $count } week ago.
+      *[other] the solstone app on { $name } last added to your journal { $count } weeks ago.
+    }
+
+journal.window.home.download.speech.progress = downloading the speech model · { $downloaded_gb } GB of { $total_gb } GB
+
+journal.window.home.download.thinking.progress = downloading the local model · { $downloaded_gb } GB of { $total_gb } GB
+
 journal.window.home.health.attention.count = { $quantity ->
         [one] 1 thing needs your attention
        *[other] { $count } things need your attention
@@ -690,6 +801,32 @@ journal.window.home.health.upload.devices = { $quantity ->
        *[other] your journal couldn't accept uploads from { $count } devices: { $devices }.
     }
 
+journal.window.home.held.activity.safety.check = activity processing is on hold for a safety check.
+
+journal.window.home.held.all.safety.check = all queued work is on hold for a safety check.
+
+journal.window.home.held.daily.safety.check = daily processing is on hold for a safety check.
+
+journal.window.home.held.flush.safety.check = finishing activities is on hold for a safety check.
+
+journal.window.home.held.queued.safety.check = queued processing is on hold for a safety check.
+
+journal.window.home.held.search.safety.check = search updates is on hold for a safety check.
+
+journal.window.home.held.segment.safety.check = segment processing is on hold for a safety check.
+
+journal.window.home.held.weekly.safety.check = weekly reflection is on hold for a safety check.
+
+journal.window.home.narrative.coverage.batch = based on { $processed_segments } of { $batch_segments } processed segments and { $processed_activities } of { $batch_activities } activity entries in this batch.
+
+journal.window.home.narrative.coverage.clock = this is processing time, not when the activity happened.
+
+journal.window.home.narrative.coverage.overlap = entries may overlap; this isn't a whole-day summary.
+
+journal.window.home.narrative.coverage.started = processing window starts at { $start_time }.
+
+journal.window.home.narrative.updated.timestamp = updated at { $updated_at }
+
 journal.window.home.needs.devices.named = { $quantity ->
         [one] { $count } devices aren't reaching your journal: { $names }.
        *[other] { $count } devices aren't reaching your journal: { $names }.
@@ -740,6 +877,209 @@ journal.window.home.night.gap.runs.lost.documents = { $quantity ->
        *[other] { $count } document runs couldn't start.
     }
 
+journal.window.home.originals.bulk.limit = choose up to { $selection_limit } items at a time. nothing was deleted.
+
+journal.window.home.originals.bulk.selection.count = { $quantity ->
+    [one] 1 selected
+   *[other] { $selected_count } selected
+    }
+
+journal.window.home.originals.bulk.selection.over.cap = { $selected_count } selected. one action covers up to { $selection_limit }.
+
+journal.window.home.originals.card.page.total = { $quantity ->
+    [one] on this page: 1 original · { $size }
+   *[other] on this page: { $original_count } originals · { $size }
+    }
+
+journal.window.home.originals.confirm.bulk.delete.first = this deletes { $original_count } originals.
+
+journal.window.home.originals.confirm.bulk.delete.third = nothing else goes with them.
+
+journal.window.home.originals.confirm.bulk.trash.third = they wait in the trash, then the trash erases them and their space comes back.
+
+journal.window.home.originals.confirm.bulk.trash.until.erase.first = this moves { $original_count } originals to the trash.
+
+journal.window.home.originals.confirm.bulk.trash.until.erase.fourth = you can recover them until then.
+
+journal.window.home.originals.confirm.bulk.trash.until.erase.third = { $days_quantity ->
+    [one] the trash erases them after 1 day, and their space comes back then.
+   *[other] the trash erases them after { $retention_days } days, and their space comes back then.
+    }
+
+journal.window.home.originals.confirm.delete.action = { $quantity ->
+    [one] delete it
+   *[other] delete them
+    }
+
+journal.window.home.originals.confirm.delete.default.stream.first = { $quantity ->
+    [one] this deletes 1 original from { $date_and_time }.
+   *[other] this deletes { $original_count } originals from { $date_and_time }.
+    }
+
+journal.window.home.originals.confirm.delete.heading = { $quantity ->
+    [one] delete this original?
+   *[other] delete these originals?
+    }
+
+journal.window.home.originals.confirm.delete.named.stream.first = { $quantity ->
+    [one] this deletes 1 original from { $date_and_time } · { $stream_name }.
+   *[other] this deletes { $original_count } originals from { $date_and_time } · { $stream_name }.
+    }
+
+journal.window.home.originals.confirm.delete.named.stream.fourth = it can't be undone.
+
+journal.window.home.originals.confirm.delete.named.stream.second = your backup has a copy that can't be checked from here.
+
+journal.window.home.originals.confirm.delete.named.stream.third = { $quantity ->
+    [one] nothing else goes with it.
+   *[other] nothing else goes with them.
+    }
+
+journal.window.home.originals.confirm.mixed.delete.first = { $quantity ->
+    [one] the one it deletes was copied off your device by your backup.
+   *[other] the ones it deletes were copied off your device by your backup.
+    }
+
+journal.window.home.originals.confirm.mixed.delete.third = { $quantity ->
+    [one] deleting it can't be undone.
+   *[other] deleting them can't be undone.
+    }
+
+journal.window.home.originals.confirm.mixed.summary = this deletes { $deleted_count } of these originals and moves { $trashed_count } to the trash. nothing else goes with them.
+
+journal.window.home.originals.confirm.mixed.trash.first = { $quantity ->
+    [one] the one it moves to the trash waits there, then the trash erases it and its space comes back.
+   *[other] the ones it moves to the trash wait there, then the trash erases them and their space comes back.
+    }
+
+journal.window.home.originals.confirm.mixed.trash.until.erase.first = { $quantity ->
+    [one] the one it moves to the trash is erased after { $days_quantity ->
+    [one] 1 day
+   *[other] { $retention_days } days
+    }, and its space comes back then.
+   *[other] the ones it moves to the trash are erased after { $days_quantity ->
+    [one] 1 day
+   *[other] { $retention_days } days
+    }, and their space comes back then.
+    }
+
+journal.window.home.originals.confirm.trash.named.stream.third = { $quantity ->
+    [one] it waits in the trash, then the trash erases it and its space comes back.
+   *[other] they wait in the trash, then the trash erases them and their space comes back.
+    }
+
+journal.window.home.originals.confirm.trash.until.erase.default.stream.first = { $quantity ->
+    [one] this moves 1 original from { $date_and_time } to the trash.
+   *[other] this moves { $original_count } originals from { $date_and_time } to the trash.
+    }
+
+journal.window.home.originals.confirm.trash.until.erase.named.stream.first = { $quantity ->
+    [one] this moves 1 original from { $date_and_time } · { $stream_name } to the trash.
+   *[other] this moves { $original_count } originals from { $date_and_time } · { $stream_name } to the trash.
+    }
+
+journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth = { $quantity ->
+    [one] you can recover it until then.
+   *[other] you can recover them until then.
+    }
+
+journal.window.home.originals.confirm.trash.until.erase.named.stream.third = { $quantity ->
+    [one] the trash erases it after { $days_quantity ->
+    [one] 1 day
+   *[other] { $retention_days } days
+    }, and its space comes back then.
+   *[other] the trash erases them after { $days_quantity ->
+    [one] 1 day
+   *[other] { $retention_days } days
+    }, and their space comes back then.
+    }
+
+journal.window.home.originals.heading.count = { $quantity ->
+        [one] originals · 1 item
+       *[other] originals · { $count } items
+    }
+
+journal.window.home.originals.page.item.range = items { $first_item }–{ $last_item } of { $total_items }
+
+journal.window.home.originals.receipt.deleted = { $quantity ->
+    [one] deleted 1 original.
+   *[other] deleted { $original_count } originals.
+    }
+
+journal.window.home.originals.receipt.kept = { $quantity ->
+    [one] kept 1 for now.
+   *[other] kept { $original_count } for now.
+    }
+
+journal.window.home.originals.receipt.moved.to.trash = { $quantity ->
+    [one] moved 1 original to the trash.
+   *[other] moved { $original_count } originals to the trash.
+    }
+
+journal.window.home.originals.receipt.none.deleted = { $quantity ->
+    [one] it couldn't be deleted. nothing was deleted.
+   *[other] they couldn't be deleted. nothing was deleted.
+    }
+
+journal.window.home.originals.receipt.not.kept = { $quantity ->
+    [one] 1 more couldn't be taken off the list, so it stays.
+   *[other] { $remaining_count } more couldn't be taken off the list, so they stay.
+    }
+
+journal.window.home.originals.receipt.not.removed = { $quantity ->
+    [one] 1 more couldn't be deleted.
+   *[other] { $remaining_count } more couldn't be deleted.
+    }
+
+journal.window.home.originals.receipt.refused.named = { $original_name }: { $reason }
+
+journal.window.home.originals.receipt.refused.reason = { $reason }
+
+journal.window.home.originals.receipt.space.after.erase = { $quantity ->
+    [one] it's erased { $erase_day }, and its space comes back then. you can erase it sooner from the trash.
+   *[other] they're erased { $erase_day }, and their space comes back then. you can erase them sooner from the trash.
+    }
+
+journal.window.home.originals.receipt.space.without.erase.day = { $quantity ->
+    [one] its space comes back when it's erased from the trash.
+   *[other] their space comes back when they're erased from the trash.
+    }
+
+journal.window.home.originals.review.unfinished = review originals · unfinished deletions need review
+
+journal.window.home.originals.row.contents.count = { $quantity ->
+    [one] 1 original · { $size }
+   *[other] { $original_count } originals · { $size }
+    }
+
+journal.window.home.originals.row.copied.by.backup = { $quantity ->
+    [one] 1 original copied off your device by your backup.
+   *[other] { $original_count } originals copied off your device by your backup.
+    }
+
+journal.window.home.originals.row.copied.by.backup.detail = { $quantity ->
+    [one] there's no way to check it's still there.
+   *[other] there's no way to check they're still there.
+    }
+
+journal.window.home.originals.row.identity.stream = { $date_and_time } · { $stream_name }
+
+journal.window.home.originals.row.marked.by.retention = { $quantity ->
+    [one] 1 original marked by your retention settings.
+   *[other] { $original_count } originals marked by your retention settings.
+    }
+
+journal.window.home.originals.row.marked.by.retention.detail = this part of the list rebuilds every day.
+
+journal.window.home.originals.row.nothing.else.goes = { $quantity ->
+    [one] nothing else goes with it.
+   *[other] nothing else goes with them.
+    }
+
+journal.window.home.originals.selection.label = { $checkbox } select this item
+
+journal.window.home.security.unnamed.device = the solstone app on one of your devices is missing a security fix. update it to { $version } or later.
+
 journal.window.home.time.ago.day = { $quantity ->
         [one] { $count } day ago
        *[other] { $count } days ago
@@ -769,6 +1109,46 @@ journal.window.home.time.ago.week = { $quantity ->
         [one] { $count } week ago
        *[other] { $count } weeks ago
     }
+
+journal.window.home.today.activity.count = { $quantity ->
+        [one] 1 activity
+       *[other] { $activity_count } activities
+    }
+
+journal.window.home.today.activity.preview.count = { $quantity ->
+        [one] { $preview_count } of { $activity_count } activities
+       *[other] { $preview_count } of { $activity_count } activities
+    }
+
+journal.window.home.today.duration.hour.and.minute.count = { $quantity ->
+       [one] { $hours }h { $minute_quantity ->
+       [one] { $minutes }m
+      *[other] { $minutes }m
+    }
+      *[other] { $hours }h { $minute_quantity ->
+       [one] { $minutes }m
+      *[other] { $minutes }m
+    }
+    }
+
+journal.window.home.today.duration.hour.count = { $quantity ->
+       [one] { $hours }h
+      *[other] { $hours }h
+    }
+
+journal.window.home.today.duration.minute.count = { $quantity ->
+       [one] { $minutes }m
+      *[other] { $minutes }m
+    }
+
+journal.window.home.today.facets.measured.count = { $quantity ->
+        [one] time in each facet · measured for { $measured_count } of 1 activity
+       *[other] time in each facet · measured for { $measured_count } of { $activity_count } activities
+    }
+
+journal.window.home.vitals.last.check.timestamp = last check: { $checked_at }.
+
+journal.window.home.vitals.last.reached.timestamp = last reached your journal { $last_reached_at }
 
 journal.window.home.week.card.first.due.friday = your first week comes on friday.
 
@@ -6377,45 +6757,21 @@ journal.window.home.body.account.mindfulness = mindfulness
 
 journal.window.home.body.account.sleep = sleep
 
-journal.window.home.body.logged = which you logged
-
-journal.window.home.body.source = from{ $slot1 }{ $sources }
-
 journal.window.home.body.sources.and = { $start }{ $slot1 }and{ $slot2 }{ $last }
 
-journal.window.home.body.time.start = from{ $slot1 }{ $start }
-
-journal.window.home.body.time.start.end = { $start }{ $slot1 }to{ $slot2 }{ $end }
-
 journal.window.home.body.time.with.day = { $time }{ $slot1 }on{ $slot2 }{ $day }
-
-journal.window.home.briefing.late = yesterday is usually written up by 10 am. it's{ $slot1 }{ $hours }h late.
 
 journal.window.home.button.label.show.all = show all →
 
 journal.window.home.button.label.try.again = Try again
 
-journal.window.home.connections.event.many = { $count }{ $slot1 }events
-
-journal.window.home.connections.event.one = 1 event
-
-journal.window.home.connections.moment.many = { $count }{ $slot1 }moments
-
-journal.window.home.connections.moment.one = 1 moment
-
-journal.window.home.connections.moment.recent = { $moments }{ $slot1 }· most recently{ $slot2 }{ $day }
-
 journal.window.home.device.paired = the solstone app on{ $slot1 }{ $name }{ $slot2 }is paired.
-
-journal.window.home.device.paired.added = the solstone app on{ $slot1 }{ $name }{ $slot2 }last added to your journal{ $slot3 }{ $duration }.
 
 journal.window.home.device.paired.awaiting = the solstone app on{ $slot1 }{ $name }{ $slot2 }is paired. what you share with it arrives in your journal about every 5 minutes.
 
 journal.window.home.disclosure.label.review.originals = review originals
 
 journal.window.home.disclosure.label.what.this.summary.covers = what this summary covers
-
-journal.window.home.download.quantity = { $slot1 }·{ $slot2 }{ $done }{ $slot3 }GB of{ $slot4 }{ $total }{ $slot5 }GB
 
 journal.window.home.first.segment.arrived = your first segment, from{ $slot1 }{ $time }, has arrived.
 
@@ -6449,24 +6805,6 @@ journal.window.home.health.unavailable.headline = your devices' status is unclea
 
 journal.window.home.health.unnamed.idle.issue = the solstone app on one of your devices hasn't added anything to your journal recently.
 
-journal.window.home.held.activity = activity processing
-
-journal.window.home.held.all = all queued work
-
-journal.window.home.held.daily = daily processing
-
-journal.window.home.held.flush = finishing activities
-
-journal.window.home.held.queued = queued processing
-
-journal.window.home.held.reason = { $scope }{ $slot1 }is on hold for a safety check.
-
-journal.window.home.held.search = search updates
-
-journal.window.home.held.segment = segment processing
-
-journal.window.home.held.weekly = weekly reflection
-
 journal.window.home.link.label.all.connections = all connections →
 
 journal.window.home.link.label.cancel.on.the.thinking.page = cancel on the thinking page →
@@ -6482,10 +6820,6 @@ journal.window.home.link.label.other.agents.and.pairing.codes = other agents and
 journal.window.home.link.label.pair.a.device = pair a device →
 
 journal.window.home.link.label.try.again.on.the.thinking.page = try again on the thinking page →
-
-journal.window.home.narrative.scope = based on{ $slot1 }{ $segments }{ $slot2 }of{ $slot3 }{ $expectedsegments }{ $slot4 }processed segments and{ $slot5 }{ $activities }{ $slot6 }of{ $slot7 }{ $expectedactivities }{ $slot8 }activity entries in this batch. entries may overlap; this isn't a whole-day summary.
-
-journal.window.home.narrative.scope.since = { $slot1 }processing window starts at{ $slot2 }{ $time }. this is processing time, not when the activity happened.
 
 journal.window.home.needs.device.one = { $name }{ $slot1 }isn't reaching your journal.
 
@@ -6525,12 +6859,6 @@ journal.window.home.originals.copy.bulk.keep = keep selected
 
 journal.window.home.originals.copy.bulk.select.all = select this page
 
-journal.window.home.originals.copy.bulk.selected.many = { $slot1 } selected
-
-journal.window.home.originals.copy.bulk.selected.one = 1 selected
-
-journal.window.home.originals.copy.bulk.selected.over.cap = { $slot1 } selected. one action covers up to { $slot2 }.
-
 journal.window.home.originals.copy.card.empty = nothing is waiting on you.
 
 journal.window.home.originals.copy.card.heading = originals waiting on you
@@ -6543,59 +6871,11 @@ journal.window.home.originals.copy.card.support = contact support for help
 
 journal.window.home.originals.copy.card.too.large = this item's deletion details are too large to review here.
 
-journal.window.home.originals.copy.card.total.many = on this page: { $slot1 } originals · { $slot2 }
-
-journal.window.home.originals.copy.card.total.one = on this page: 1 original · { $slot1 }
-
 journal.window.home.originals.copy.card.unavailable = the list couldn't be loaded.
-
-journal.window.home.originals.copy.confirm.body.offload.many = this deletes { $slot1 } originals from { $slot2 } · { $slot3 }. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.
-
-journal.window.home.originals.copy.confirm.body.offload.one = this deletes 1 original from { $slot1 } · { $slot2 }. your backup has a copy that can't be checked from here. nothing else goes with it. it can't be undone.
-
-journal.window.home.originals.copy.confirm.body.offload.selected = this deletes { $slot1 } originals. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.
-
-journal.window.home.originals.copy.confirm.body.policy.many = this moves { $slot1 } originals from { $slot2 } · { $slot3 } to the trash. nothing else goes with them. the trash erases them after { $slot4 }, and their space comes back then. you can recover them until then.
-
-journal.window.home.originals.copy.confirm.body.policy.many.nodays = this moves { $slot1 } originals from { $slot2 } · { $slot3 } to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.
-
-journal.window.home.originals.copy.confirm.body.policy.one = this moves 1 original from { $slot1 } · { $slot2 } to the trash. nothing else goes with it. the trash erases it after { $slot3 }, and its space comes back then. you can recover it until then.
-
-journal.window.home.originals.copy.confirm.body.policy.one.nodays = this moves 1 original from { $slot1 } · { $slot2 } to the trash. nothing else goes with it. it waits in the trash, then the trash erases it and its space comes back. you can recover it until then.
-
-journal.window.home.originals.copy.confirm.body.policy.selected = this moves { $slot1 } originals to the trash. nothing else goes with them. the trash erases them after { $slot2 }, and their space comes back then. you can recover them until then.
-
-journal.window.home.originals.copy.confirm.body.policy.selected.nodays = this moves { $slot1 } originals to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.
 
 journal.window.home.originals.copy.confirm.cancel = cancel
 
-journal.window.home.originals.copy.confirm.days.many = { $slot1 } days
-
-journal.window.home.originals.copy.confirm.days.one = 1 day
-
-journal.window.home.originals.copy.confirm.go.many = delete them
-
-journal.window.home.originals.copy.confirm.go.one = delete it
-
 journal.window.home.originals.copy.confirm.go.trash = move to trash
-
-journal.window.home.originals.copy.confirm.heading.many = delete these originals?
-
-journal.window.home.originals.copy.confirm.heading.one = delete this original?
-
-journal.window.home.originals.copy.confirm.mixed.lead = this deletes { $slot1 } of these originals and moves { $slot2 } to the trash. nothing else goes with them.
-
-journal.window.home.originals.copy.confirm.mixed.offload.many = the ones it deletes were copied off your device by your backup. your backup has a copy that can't be checked from here. deleting them can't be undone.
-
-journal.window.home.originals.copy.confirm.mixed.offload.one = the one it deletes was copied off your device by your backup. your backup has a copy that can't be checked from here. deleting it can't be undone.
-
-journal.window.home.originals.copy.confirm.mixed.policy.many = the ones it moves to the trash are erased after { $slot1 }, and their space comes back then. you can recover them until then.
-
-journal.window.home.originals.copy.confirm.mixed.policy.many.nodays = the ones it moves to the trash wait there, then the trash erases them and their space comes back. you can recover them until then.
-
-journal.window.home.originals.copy.confirm.mixed.policy.one = the one it moves to the trash is erased after { $slot1 }, and its space comes back then. you can recover it until then.
-
-journal.window.home.originals.copy.confirm.mixed.policy.one.nodays = the one it moves to the trash waits there, then the trash erases it and its space comes back. you can recover it until then.
 
 journal.window.home.originals.copy.confirm.recover.body = this finishes every deletion that stopped partway. any original it hadn't deleted yet goes back in its segment. the rest stay deleted, and those your retention settings marked are in the trash.
 
@@ -6603,29 +6883,9 @@ journal.window.home.originals.copy.confirm.recover.go = finish them
 
 journal.window.home.originals.copy.confirm.recover.heading = finish the deletions that stopped?
 
-journal.window.home.originals.copy.done.clause.deleted.many = deleted { $slot1 } originals.
-
-journal.window.home.originals.copy.done.clause.deleted.one = deleted 1 original.
-
 journal.window.home.originals.copy.done.clause.halted = it stopped there.
 
-journal.window.home.originals.copy.done.clause.kept.many = kept { $slot1 } for now.
-
-journal.window.home.originals.copy.done.clause.kept.one = kept 1 for now.
-
-journal.window.home.originals.copy.done.clause.not.kept.many = { $slot1 } more couldn't be taken off the list, so they stay.
-
-journal.window.home.originals.copy.done.clause.not.kept.one = 1 more couldn't be taken off the list, so it stays.
-
-journal.window.home.originals.copy.done.clause.not.removed.many = { $slot1 } more couldn't be deleted.
-
-journal.window.home.originals.copy.done.clause.not.removed.one = 1 more couldn't be deleted.
-
 journal.window.home.originals.copy.done.clause.nothing.deleted = nothing was deleted.
-
-journal.window.home.originals.copy.done.clause.trashed.many = moved { $slot1 } originals to the trash.
-
-journal.window.home.originals.copy.done.clause.trashed.one = moved 1 original to the trash.
 
 journal.window.home.originals.copy.done.declined.failed = it couldn't be taken off the list, so it stays. nothing was deleted.
 
@@ -6646,24 +6906,6 @@ journal.window.home.originals.copy.done.recovered = the deletions that had stopp
 journal.window.home.originals.copy.done.recovered.leftover = some finished. at least one deletion that stopped is still waiting.
 
 journal.window.home.originals.copy.done.recovered.none = there was nothing left to finish.
-
-journal.window.home.originals.copy.done.refused.item = { $slot1 }: { $slot2 }
-
-journal.window.home.originals.copy.done.refused.item.unnamed = { $slot1 }
-
-journal.window.home.originals.copy.done.refused.none.many = they couldn't be deleted. nothing was deleted.
-
-journal.window.home.originals.copy.done.refused.none.one = it couldn't be deleted. nothing was deleted.
-
-journal.window.home.originals.copy.done.space.many = they're erased { $slot1 }, and their space comes back then. you can erase them sooner from the trash.
-
-journal.window.home.originals.copy.done.space.many.nodate = their space comes back when they're erased from the trash.
-
-journal.window.home.originals.copy.done.space.one = it's erased { $slot1 }, and its space comes back then. you can erase it sooner from the trash.
-
-journal.window.home.originals.copy.done.space.one.nodate = its space comes back when it's erased from the trash.
-
-journal.window.home.originals.copy.done.too.many = choose up to { $slot1 } items at a time. nothing was deleted.
 
 journal.window.home.originals.copy.done.unknown = deleting stopped before what happened could be confirmed. it's unclear what was deleted and what wasn't.
 
@@ -6695,39 +6937,11 @@ journal.window.home.originals.copy.operation.unavailable = the current result co
 
 journal.window.home.originals.copy.operation.unknown = it's unclear what was deleted and what wasn't.
 
-journal.window.home.originals.copy.page.range = items { $slot1 }–{ $slot2 } of { $slot3 }
-
 journal.window.home.originals.copy.page.selection = selection applies to this page and clears when you change pages.
 
 journal.window.home.originals.copy.row.delete = delete originals
 
-journal.window.home.originals.copy.row.identity = { $slot1 } · { $slot2 }
-
 journal.window.home.originals.copy.row.keep = keep for now
-
-journal.window.home.originals.copy.row.kept.many = nothing else goes with them.
-
-journal.window.home.originals.copy.row.kept.one = nothing else goes with it.
-
-journal.window.home.originals.copy.row.origin.offload.many = { $slot1 } originals copied off your device by your backup. there's no way to check they're still there.
-
-journal.window.home.originals.copy.row.origin.offload.one = 1 original copied off your device by your backup. there's no way to check it's still there.
-
-journal.window.home.originals.copy.row.origin.policy.many = { $slot1 } originals marked by your retention settings. this part of the list rebuilds every day.
-
-journal.window.home.originals.copy.row.origin.policy.one = 1 original marked by your retention settings. this part of the list rebuilds every day.
-
-journal.window.home.originals.copy.row.what.many = { $slot1 } originals · { $slot2 }
-
-journal.window.home.originals.copy.row.what.one = 1 original · { $slot1 }
-
-journal.window.home.originals.failed.review = { $slot1 }· unfinished deletions need review
-
-journal.window.home.originals.heading.many = originals ·{ $slot1 }{ $count }{ $slot2 }items
-
-journal.window.home.originals.heading.one = originals · 1 item
-
-journal.window.home.originals.select.item = { $slot1 }select this item
 
 journal.window.home.response.briefing.invalid = Malformed briefing response
 
@@ -6775,22 +6989,6 @@ journal.window.home.text.service.status.is.unavailable = service status is unava
 
 journal.window.home.text.the.backup.key.couldn.t.open = the backup key couldn't open your backup destination. check backup in health.
 
-journal.window.home.today.activity.many = { $total }{ $slot1 }activities
-
-journal.window.home.today.activity.one = 1 activity
-
-journal.window.home.today.activity.preview = { $shown }{ $slot1 }of{ $slot2 }{ $total }{ $slot3 }activities
-
-journal.window.home.today.duration.hours = { $hours }h
-
-journal.window.home.today.duration.hours.minutes = { $hours }h{ $slot1 }{ $minutes }m
-
-journal.window.home.today.duration.minutes = { $minutes }m
-
-journal.window.home.today.facets.measured.many = time in each facet · measured for{ $slot1 }{ $measured }{ $slot2 }of{ $slot3 }{ $total }{ $slot4 }activities
-
-journal.window.home.today.facets.measured.one = time in each facet · measured for{ $slot1 }{ $measured }{ $slot2 }of 1 activity
-
 journal.window.home.visible.text.add.your.phone = add your phone
 
 journal.window.home.visible.text.and.authenticate = and authenticate.
@@ -6816,8 +7014,6 @@ journal.window.home.visible.text.from.your.devices.and.apps = from your devices 
 journal.window.home.visible.text.hasn.t.been.written.out.yet = hasn't been written out yet.
 
 journal.window.home.visible.text.it.appears.here.as.text = it appears here as text.
-
-journal.window.home.visible.text.last.reached.your.journal = last reached your journal
 
 journal.window.home.visible.text.leave.out.of.this.week = leave out of this week
 
@@ -6869,11 +7065,7 @@ journal.window.home.visible.text.then.type = then type
 
 journal.window.home.visible.text.this.isn.t.right = this isn't right
 
-journal.window.home.visible.text.transcribed.as = transcribed as “
-
 journal.window.home.visible.text.try.again = try again
-
-journal.window.home.visible.text.updated.at = updated at
 
 journal.window.home.visible.text.waiting.for.the.next.segment.this = waiting for the next segment. this can take a few minutes.
 
@@ -6881,13 +7073,9 @@ journal.window.home.visible.text.was.written.out = was written out.
 
 journal.window.home.visible.text.what.this.summary.covers.wasn.t = what this summary covers wasn't saved with it.
 
-journal.window.home.visible.text.written.at = written at
-
 journal.window.home.visible.text.yesterday.is.being.written.up = yesterday is being written up…
 
 journal.window.home.visible.text.your.journal.keeps.everything.until.you = your journal keeps everything until you do.
-
-journal.window.home.vitals.last.check = { $slot1 }last check:{ $slot2 }{ $stamp }.
 
 journal.window.home.vitals.last.known = last known:{ $slot1 }{ $issue }
 
@@ -7027,25 +7215,13 @@ journal.window.home.window.explanation.finish.setting.up.local.thinking = finish
 
 journal.window.home.window.explanation.finish.setting.up.your.own.model = finish setting up your own model
 
-journal.window.home.window.explanation.name.mentioned.in.your.journal = 1 name mentioned in your journal
-
-journal.window.home.window.explanation.names.mentioned.in.your.journal = { $slot1 }names mentioned in your journal
-
 journal.window.home.window.explanation.no.narrative.yet.one.will.appear = no narrative yet. one will appear after some audio goes into your journal.
-
-journal.window.home.window.explanation.one.of.your.devices = one of your devices
-
-journal.window.home.window.explanation.part.of.it.removed = part of it removed
 
 journal.window.home.window.explanation.queued.work.status.is.unavailable.right = queued work status is unavailable right now.
 
 journal.window.home.window.explanation.reload.to.try.again = reload to try again.
 
 journal.window.home.window.explanation.service.status.is.unavailable.right.now = service status is unavailable right now.
-
-journal.window.home.window.explanation.thing.needs.your.attention = 1 thing needs your attention
-
-journal.window.home.window.explanation.things.need.your.attention = { $slot1 }things need your attention
 
 journal.window.home.window.explanation.this.is.where.your.day.comes = this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.
 
@@ -7060,8 +7236,6 @@ journal.window.home.window.explanation.yesterday.shows.here.once.you.choose = ye
 journal.window.home.window.explanation.yesterday.shows.here.once.your.own = yesterday shows here once your own model is set up.
 
 journal.window.home.window.explanation.yesterday.shows.here.the.morning.after = yesterday shows here the morning after something goes into your journal.
-
-journal.window.home.window.explanation.yesterday.wasn.t.written.up = yesterday wasn't written up.{ $slot1 }
 
 journal.window.home.window.explanation.your.first.day.shows.here.by = your first day shows here by 10 am, after your journal's first night.
 

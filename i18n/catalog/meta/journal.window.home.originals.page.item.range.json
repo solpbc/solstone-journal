@@ -1,0 +1,29 @@
+{
+  "description": "Home originals. page item range.",
+  "context": "Journal window. Home originals. page item range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_item",
+      "type": "string"
+    },
+    {
+      "name": "last_item",
+      "type": "string"
+    },
+    {
+      "name": "total_items",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9000771ba154c799e667db485847c994f43e6597a9b5353567784c5ade15bf95",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

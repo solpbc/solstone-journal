@@ -1,0 +1,21 @@
+{
+  "description": "Home window. narrative updated timestamp.",
+  "context": "Journal window. Home window. narrative updated timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "updated_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0f878744186e3d2e42132838129f7ea230ff71b6a335234bf274057e110d131",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

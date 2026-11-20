@@ -1,0 +1,21 @@
+{
+  "description": "Home window. connections evidence transcription.",
+  "context": "Journal window. Home window. connections evidence transcription.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7627eca0307ce4d8b58a7d69a97e8e842395c5db5e32a739342d64da71e54a22",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

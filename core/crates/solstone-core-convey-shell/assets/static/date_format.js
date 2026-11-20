@@ -11,29 +11,33 @@
     window.JournalI18n.render('journal.window.date.weekdays.friday'),
     window.JournalI18n.render('journal.window.date.weekdays.saturday')
   ];
-  const WEEKDAYS_SHORT = [
-    window.JournalI18n.render('journal.window.date.weekdays.short.sun'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.mon'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.tue'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.wed'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.thu'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
-    window.JournalI18n.render('journal.window.date.weekdays.short.sat')
+  const WEEKDAYS_SHORT_IDS = [
+    'journal.window.date.weekdays.short.sun',
+    'journal.window.date.weekdays.short.mon',
+    'journal.window.date.weekdays.short.tue',
+    'journal.window.date.weekdays.short.wed',
+    'journal.window.date.weekdays.short.thu',
+    'journal.window.date.weekdays.short.fri',
+    'journal.window.date.weekdays.short.sat'
   ];
-  const MONTHS_SHORT = [
-    window.JournalI18n.render('journal.window.date.months.short.jan'),
-    window.JournalI18n.render('journal.window.date.months.short.feb'),
-    window.JournalI18n.render('journal.window.date.months.short.mar'),
-    window.JournalI18n.render('journal.window.date.months.short.apr'),
-    window.JournalI18n.render('journal.window.date.months.short.may'),
-    window.JournalI18n.render('journal.window.date.months.short.jun'),
-    window.JournalI18n.render('journal.window.date.months.short.jul'),
-    window.JournalI18n.render('journal.window.date.months.short.aug'),
-    window.JournalI18n.render('journal.window.date.months.short.sep'),
-    window.JournalI18n.render('journal.window.date.months.short.oct'),
-    window.JournalI18n.render('journal.window.date.months.short.nov'),
-    window.JournalI18n.render('journal.window.date.months.short.dec')
+
+  const WEEKDAYS_SHORT = WEEKDAYS_SHORT_IDS.map(id => window.JournalI18n.render(id));
+  const MONTHS_SHORT_IDS = [
+    'journal.window.date.months.short.jan',
+    'journal.window.date.months.short.feb',
+    'journal.window.date.months.short.mar',
+    'journal.window.date.months.short.apr',
+    'journal.window.date.months.short.may',
+    'journal.window.date.months.short.jun',
+    'journal.window.date.months.short.jul',
+    'journal.window.date.months.short.aug',
+    'journal.window.date.months.short.sep',
+    'journal.window.date.months.short.oct',
+    'journal.window.date.months.short.nov',
+    'journal.window.date.months.short.dec'
   ];
+
+  const MONTHS_SHORT = MONTHS_SHORT_IDS.map(id => window.JournalI18n.render(id));
 
   function parseDay(dateString) {
     dateString = String(dateString || '');
@@ -97,10 +101,16 @@
   // Always an anchored date. `formatDateShort` deliberately collapses the last
   // week to a bare weekday, which loses its anchor in a list that is not in
   // date order — and a bare "Tuesday" is not enough to decide a deletion on.
-  function formatDateFull(dateString, now) {
+  function formatDateFull(dateString, { sourceEnglish = false } = {}) {
     const parsed = parseDay(dateString);
     if (!parsed) return dateString;
-    let label = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
+    const weekday = sourceEnglish
+      ? window.JournalI18n.renderEnglish(WEEKDAYS_SHORT_IDS[parsed.getDay()])
+      : WEEKDAYS_SHORT[parsed.getDay()];
+    const month = sourceEnglish
+      ? window.JournalI18n.renderEnglish(MONTHS_SHORT_IDS[parsed.getMonth()])
+      : MONTHS_SHORT[parsed.getMonth()];
+    let label = `${weekday} ${month} ${parsed.getDate()}`;
     const thisYear = currentJournalYear();
     if (parsed.getFullYear() !== thisYear) {
       label += ` '${String(parsed.getFullYear()).slice(-2)}`;
@@ -119,17 +129,17 @@
     apple_health: 'Apple Health',
     oura: 'Oura',
     strava: 'Strava',
-    ics: window.JournalI18n.render('journal.window.shared.date.format.import.ics'),
-    document: window.JournalI18n.render('journal.window.shared.date.format.import.document'),
-    image: window.JournalI18n.render('journal.window.shared.date.format.import.image'),
-    audio: window.JournalI18n.render('journal.window.shared.date.format.import.audio'),
+    ics: 'journal.window.shared.date.format.import.ics',
+    document: 'journal.window.shared.date.format.import.document',
+    image: 'journal.window.shared.date.format.import.image',
+    audio: 'journal.window.shared.date.format.import.audio',
     // import catalog
     chatgpt: 'ChatGPT',
     claude: 'Claude',
     gemini: 'Gemini',
-    journal_archive: window.JournalI18n.render('journal.window.shared.date.format.import.journal.archive'),
+    journal_archive: 'journal.window.shared.date.format.import.journal.archive',
     kindle: 'Kindle',
-    obsidian: window.JournalI18n.render('journal.window.shared.date.format.import.obsidian'),
+    obsidian: 'journal.window.shared.date.format.import.obsidian',
     evernote: 'Evernote',
   };
 
@@ -157,26 +167,29 @@
     }
   }
 
-  function dottedFallback(raw) {
-    if (!raw || raw === '_default') return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
+  function dottedFallback(raw, render) {
+    if (!raw || raw === '_default') return render('journal.window.shared.date.format.source.unknown');
     // Exactly one dot with a name on each side, the shape the journal's own
     // table reads; anything else is unknown there too.
     const parts = raw.split('.');
-    if (parts.length !== 2 || parts.some(part => part === '')) return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
+    if (parts.length !== 2 || parts.some(part => part === '')) return render('journal.window.shared.date.format.source.unknown');
     if (parts[0] === 'import' && parts.length === 2) {
       const branded = Object.prototype.hasOwnProperty.call(IMPORT_SOURCE_LABELS, parts[1])
         ? IMPORT_SOURCE_LABELS[parts[1]]
         : parts[1].replace(/[_-]+/g, ' ').trim().toLowerCase();
-      return window.JournalI18n.render('journal.window.shared.date.format.visible.text.value1.imported', [['value1', String(branded)]]);
+      const label = branded.startsWith('journal.window.') && Object.hasOwn(IMPORT_SOURCE_LABELS, parts[1])
+        ? render(branded)
+        : branded;
+      return render('journal.window.shared.date.format.visible.text.value1.imported', [['value1', label]]);
     }
     if (parts.length === 2) {
       const qualifier = parts[1];
-      if (qualifier === 'tmux') return window.JournalI18n.render('journal.window.shared.date.format.source.terminal');
-      if (qualifier === 'watch') return window.JournalI18n.render('journal.window.shared.date.format.source.watch');
-      if (qualifier === 'mobile' || qualifier === 'phone') return window.JournalI18n.render('journal.window.shared.date.format.source.phone');
-      if (qualifier === 'browser') return window.JournalI18n.render('journal.window.shared.date.format.source.browser');
+      if (qualifier === 'tmux') return render('journal.window.shared.date.format.source.terminal');
+      if (qualifier === 'watch') return render('journal.window.shared.date.format.source.watch');
+      if (qualifier === 'mobile' || qualifier === 'phone') return render('journal.window.shared.date.format.source.phone');
+      if (qualifier === 'browser') return render('journal.window.shared.date.format.source.browser');
     }
-    return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
+    return render('journal.window.shared.date.format.source.unknown');
   }
 
   // A complete table replaces any table; a partial one replaces a partial
@@ -236,12 +249,13 @@
     return Boolean(raw) && raw !== '_default' && !hasStreamLabel(raw) && !settledRereadStreams.has(raw);
   }
 
-  function formatStreamLabel(stream) {
+  function formatStreamLabel(stream, { sourceEnglish = false } = {}) {
+    const render = sourceEnglish ? window.JournalI18n.renderEnglish : window.JournalI18n.render;
     const raw = String(stream || '').trim();
-    if (!raw || raw === '_default') return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
+    if (!raw || raw === '_default') return render('journal.window.shared.date.format.source.unknown');
     if (hasStreamLabel(raw)) return streamLabelsTable.labels[raw];
-    if (!streamLabelsTable || fallbackStreams.has(raw)) return dottedFallback(raw);
-    return window.JournalI18n.render('journal.window.shared.date.format.source.unknown');
+    if (!streamLabelsTable || fallbackStreams.has(raw)) return dottedFallback(raw, render);
+    return render('journal.window.shared.date.format.source.unknown');
   }
 
   // Reads the table. Resolves true when the read answered (complete or
@@ -313,11 +327,12 @@
   // The same segment prefix on the page's own clock. `formatSegmentTime` is
   // 24-hour and always carries seconds, which is right inside a disclosure and
   // wrong on a row that sits under a "10:55 PM". G1-202.
-  function formatSegmentTimeOfDay(segment, { omitMissing = false } = {}) {
+  function formatSegmentTimeOfDay(segment, { omitMissing = false, sourceEnglish = false } = {}) {
     const clock = parseSegmentClock(segment);
     if (!clock) return omitMissing ? null : window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
+    const locale = sourceEnglish ? undefined : window.JournalI18n.formatLocale;
     return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]), Number(clock[3]))
-      .toLocaleString(globalThis.window?.JournalI18n?.formatLocale, { hour: 'numeric', minute: '2-digit' });
+      .toLocaleString(locale, { hour: 'numeric', minute: '2-digit' });
   }
 
   function formatTimestamp(timestamp) {

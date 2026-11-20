@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held activity safety check.",
+  "context": "Journal window. Home window. held activity safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e3ba5860bb103d85e7be4d265992171d70f06057d002b8f3449bfaf58171c59",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

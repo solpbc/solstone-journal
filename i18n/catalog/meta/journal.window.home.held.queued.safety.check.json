@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held queued safety check.",
+  "context": "Journal window. Home window. held queued safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5a137f994750cbb00a73bf6837b409ebdc9f0dc91d20abc5a5a03c6ec539d69",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

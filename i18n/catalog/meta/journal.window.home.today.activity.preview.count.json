@@ -1,0 +1,34 @@
+{
+  "description": "Home window. today activity preview count.",
+  "context": "Journal window. Home window. today activity preview count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "preview_count",
+      "type": "string"
+    },
+    {
+      "name": "activity_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "836cf2a6dad13166433ef79b7d88eb5fc1c1ac5fa25ad07291dac7d3b156d50b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

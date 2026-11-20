@@ -1,0 +1,35 @@
+{
+  "description": "Home originals restricted disclosure confirm trash until erase named stream, sentence 3.",
+  "context": "Journal window. Home originals restricted disclosure confirm trash until erase named stream, sentence 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "retention_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c33a9acedfbf77f87796a65954519d238559ae36dbd4489b54b8f83f38f499b5",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held weekly safety check.",
+  "context": "Journal window. Home window. held weekly safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e94f53675644dc06e261989e8a7ef1659deb991e6479f64fcca17dc88f1446e8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

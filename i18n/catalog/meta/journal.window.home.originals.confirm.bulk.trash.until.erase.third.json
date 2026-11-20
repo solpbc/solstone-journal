@@ -1,0 +1,30 @@
+{
+  "description": "Home originals restricted disclosure confirm bulk trash until erase, sentence 3.",
+  "context": "Journal window. Home originals restricted disclosure confirm bulk trash until erase, sentence 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "retention_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "25022e7e36dd644c508a4541685a232efbdde1dca5254d824bfad53de106b6f9",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

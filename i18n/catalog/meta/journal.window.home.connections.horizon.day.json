@@ -1,0 +1,21 @@
+{
+  "description": "Home Connections coverage. Earliest day with same-place connections.",
+  "context": "Journal window. Home Connections coverage. Earliest day with same-place connections.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26b972c50cddfe93f87a93f03cf660998b745811572165b88d9d5944c749b29f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

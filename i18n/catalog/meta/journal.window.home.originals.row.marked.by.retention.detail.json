@@ -1,0 +1,16 @@
+{
+  "description": "Home originals. row marked by retention detail.",
+  "context": "Journal window. Home originals. row marked by retention detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bece6d85710367118b978e1032a9b3fccfd618ba13721ad65bdce81d003ac0ca",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

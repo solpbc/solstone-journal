@@ -1,0 +1,21 @@
+{
+  "description": "Home originals. bulk limit.",
+  "context": "Journal window. Home originals. bulk limit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "selection_limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d1a8511d5812f39c03bb0a9bd8497532569aa4f204cb8df241dba0d3ede32d8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

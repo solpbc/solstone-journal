@@ -93,6 +93,10 @@ pub(crate) fn render_count(locale: &str, id: &str, count: i64) -> String {
 
 pub(crate) fn relative_time_ago(seconds: f64, locale: &str) -> String {
     let (unit, count) = relative_time_parts(seconds);
+    render_relative_age(unit, count, locale)
+}
+
+pub(crate) fn render_relative_age(unit: &str, count: i64, locale: &str) -> String {
     render_count(
         locale,
         &format!("journal.window.home.time.ago.{unit}"),

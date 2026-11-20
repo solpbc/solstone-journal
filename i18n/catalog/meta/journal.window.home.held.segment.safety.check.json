@@ -1,0 +1,16 @@
+{
+  "description": "Home window. held segment safety check.",
+  "context": "Journal window. Home window. held segment safety check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a61299bc02b050c14b502f55f1afaaafa40866469476ad8aebfdd8ccd9dbc2c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

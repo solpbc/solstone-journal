@@ -1,0 +1,16 @@
+{
+  "description": "Home window. narrative coverage overlap.",
+  "context": "Journal window. Home window. narrative coverage overlap.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca389512fdcdeabd0ab287947e4ffdaac132c48b19627ebe53071078c7f04c2d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

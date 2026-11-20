@@ -1,0 +1,25 @@
+{
+  "description": "Home window. download speech progress.",
+  "context": "Journal window. Home window. download speech progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "downloaded_gb",
+      "type": "string"
+    },
+    {
+      "name": "total_gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "676f0046da5ab63b3511c23934e18277868cf94afb3f0679ff37b98b45b54207",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

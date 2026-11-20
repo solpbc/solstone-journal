@@ -1,0 +1,33 @@
+{
+  "description": "Home window. narrative coverage batch.",
+  "context": "Journal window. Home window. narrative coverage batch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "processed_segments",
+      "type": "string"
+    },
+    {
+      "name": "batch_segments",
+      "type": "string"
+    },
+    {
+      "name": "processed_activities",
+      "type": "string"
+    },
+    {
+      "name": "batch_activities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2e7d25bc2f442efcf7161b00c9da5b1f5620b582145950a8d8889f167a21d33",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

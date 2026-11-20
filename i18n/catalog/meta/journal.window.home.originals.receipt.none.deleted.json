@@ -1,0 +1,26 @@
+{
+  "description": "Home originals. receipt none deleted.",
+  "context": "Journal window. Home originals. receipt none deleted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a4ee850761e28ef7e2fb950688a509f8b5e718df6f6282fd9bdc56e3c5d74a72",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

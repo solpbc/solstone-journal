@@ -1,0 +1,21 @@
+{
+  "description": "Home window. narrative coverage started.",
+  "context": "Journal window. Home window. narrative coverage started.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1c3a6c474075d774d85d01fb21ae5d9138c2ddaaf97748c268c306bfbc830b64",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

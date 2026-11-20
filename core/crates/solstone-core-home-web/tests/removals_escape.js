@@ -46,7 +46,9 @@ class Select {
 }
 
 class Element {
-  constructor() {
+  constructor(tag) {
+    this.tag = tag;
+    this.attributes = new Map();
     this.children = [];
     this.controls = [];
     this.selects = [];
@@ -58,7 +60,20 @@ class Element {
     return child;
   }
 
+  append(...children) {
+    this.children.push(...children);
+  }
+
+  get outerHTML() {
+    const type = this.type ? ' type="' + escaped(this.type) + '"' : '';
+    const attrs = Array.from(this.attributes, ([name, value]) => ' ' + name + '="' + escaped(value) + '"').join('');
+    return '<' + this.tag + type + attrs + '>';
+  }
+
   get innerHTML() {
+    if (this.tag === 'span') {
+      return this.children.map(child => typeof child === 'string' ? escaped(child) : child.outerHTML).join('');
+    }
     return this._innerHTML;
   }
 
@@ -80,7 +95,7 @@ class Element {
 
   querySelector() { return null; }
 
-  setAttribute() {}
+  setAttribute(name, value) { this.attributes.set(name, value); }
 }
 
 function flush() {
@@ -92,14 +107,79 @@ async function settle() {
   await flush();
 }
 
-function copyTable(source) {
-  const [entries] = source
-    .split('const COPY = Object.freeze({\n')[1]
-    .split('  });\n\n  const LIST_URL');
-  const context = vm.createContext({ window: {} });
-  loadWindowCatalog(context);
-  return vm.runInContext('Object.freeze({' + entries + '})', context);
-}
+// Expected English from the pre-rebuild Originals view.
+const ORIGINALS_ENGLISH = Object.freeze(Object.fromEntries(Object.entries({
+  "card.empty": "nothing is waiting on you.",
+  "card.unavailable": "the list couldn't be loaded.",
+  "card.too_large": "this item's deletion details are too large to review here.",
+  "operation.stopping": "stop requested. waiting for the work to finish.",
+  "operation.stop": "stop deleting",
+  "operation.held": "deleting hasn't fully finished.",
+  "operation.completed": "deletion finished.",
+  "operation.unknown": "it's unclear what was deleted and what wasn't.",
+  "row.origin_policy_one": "1 original marked by your retention settings. this part of the list rebuilds every day.",
+  "row.origin_policy_many": "{n} originals marked by your retention settings. this part of the list rebuilds every day.",
+  "row.origin_offload_one": "1 original copied off your device by your backup. there's no way to check it's still there.",
+  "row.origin_offload_many": "{n} originals copied off your device by your backup. there's no way to check they're still there.",
+  "row.what_many": "{n} originals · {size}",
+  "row.kept_one": "nothing else goes with it.",
+  "row.kept_many": "nothing else goes with them.",
+  "bulk.selected_one": "1 selected",
+  "bulk.selected_many": "{n} selected",
+  "bulk.selected_over_cap": "{n} selected. one action covers up to {max}.",
+  "confirm.heading_one": "delete this original?",
+  "confirm.heading_many": "delete these originals?",
+  "confirm.days_one": "1 day",
+  "confirm.days_many": "{n} days",
+  "confirm.body_policy_one": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. the trash erases it after {days}, and its space comes back then. you can recover it until then.",
+  "confirm.body_policy_many": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
+  "confirm.body_policy_one_nodays": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. it waits in the trash, then the trash erases it and its space comes back. you can recover it until then.",
+  "confirm.body_policy_many_nodays": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
+  "confirm.body_offload_one": "this deletes 1 original from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with it. it can't be undone.",
+  "confirm.body_offload_many": "this deletes {n} originals from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
+  "confirm.body_policy_selected": "this moves {n} originals to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
+  "confirm.body_policy_selected_nodays": "this moves {n} originals to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
+  "confirm.body_offload_selected": "this deletes {n} originals. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
+  "confirm.mixed_lead": "this deletes {o} of these originals and moves {p} to the trash. nothing else goes with them.",
+  "confirm.mixed_offload_one": "the one it deletes was copied off your device by your backup. your backup has a copy that can't be checked from here. deleting it can't be undone.",
+  "confirm.mixed_policy_many": "the ones it moves to the trash are erased after {days}, and their space comes back then. you can recover them until then.",
+  "confirm.mixed_policy_many_nodays": "the ones it moves to the trash wait there, then the trash erases them and their space comes back. you can recover them until then.",
+  "confirm.go_trash": "move to trash",
+  "confirm.go_one": "delete it",
+  "confirm.go_many": "delete them",
+  "confirm.recover.heading": "finish the deletions that stopped?",
+  "confirm.recover.body": "this finishes every deletion that stopped partway. any original it hadn't deleted yet goes back in its segment. the rest stay deleted, and those your retention settings marked are in the trash.",
+  "done.clause_deleted_one": "deleted 1 original.",
+  "done.clause_deleted_many": "deleted {n} originals.",
+  "done.clause_trashed_one": "moved 1 original to the trash.",
+  "done.clause_trashed_many": "moved {n} originals to the trash.",
+  "done.space_one": "it's erased {erase}, and its space comes back then. you can erase it sooner from the trash.",
+  "done.space_many": "they're erased {erase}, and their space comes back then. you can erase them sooner from the trash.",
+  "done.space_one_nodate": "its space comes back when it's erased from the trash.",
+  "done.space_many_nodate": "their space comes back when they're erased from the trash.",
+  "done.open_trash": "open trash",
+  "done.clause_not_removed_one": "1 more couldn't be deleted.",
+  "done.clause_not_removed_many": "{m} more couldn't be deleted.",
+  "done.clause_halted": "it stopped there.",
+  "done.refused_none_one": "it couldn't be deleted. nothing was deleted.",
+  "done.refused_none_many": "they couldn't be deleted. nothing was deleted.",
+  "done.refused_item": "{name}: {reason}",
+  "done.refused_item_unnamed": "{reason}",
+  "done.unknown": "deleting stopped before what happened could be confirmed. it's unclear what was deleted and what wasn't.",
+  "done.kept_policy": "kept for now. it'll be back the next time this part of the list rebuilds.",
+  "done.too_many": "choose up to {n} items at a time. nothing was deleted.",
+  "done.declined_failed": "it couldn't be taken off the list, so it stays. nothing was deleted.",
+  "done.clause_kept_many": "kept {n} for now.",
+  "done.clause_not_kept_one": "1 more couldn't be taken off the list, so it stays.",
+  "done.clause_nothing_deleted": "nothing was deleted.",
+  "done.declined_unknown": "nothing was deleted. it's unclear whether it's still on the list.",
+  "done.recovered": "the deletions that had stopped are now finished.",
+  "done.recovered_none": "there was nothing left to finish.",
+  "done.recovered_leftover": "some finished. at least one deletion that stopped is still waiting.",
+  "done.recover_failed": "they couldn't be finished. what's left is still there.",
+  "done.recover_unknown": "finishing stopped before what happened could be confirmed. it's unclear what was completed.",
+  "failed.body": "a deletion you started stopped partway. finishing it puts back any original it hadn't deleted yet, and the rest stay deleted."
+}).map(([key, value]) => [key, escaped(value)])));
 
 // The stream label comes from the one shared formatter, not a second copy of
 // its rule here: this restated the old strip-the-punctuation transform and went
@@ -168,7 +248,7 @@ async function boot(source, lists, responses, labels = null, options = {}) {
     readyState: 'complete',
     addEventListener(type, listener) { (listeners[type] = listeners[type] || []).push(listener); },
     removeEventListener(type, listener) { listeners[type] = (listeners[type] || []).filter(item => item !== listener); },
-    createElement() { return new Element(); },
+    createElement(tag) { return new Element(tag); },
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
@@ -349,7 +429,7 @@ async function assertStaysOff(source, pathname) {
     readyState: 'complete',
     addEventListener(type, listener) { (listeners[type] = listeners[type] || []).push(listener); },
     removeEventListener() {},
-    createElement() { return new Element(); },
+    createElement(tag) { return new Element(tag); },
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   const context = vm.createContext({ document, Promise, setImmediate, window, Set });
@@ -366,7 +446,7 @@ async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
   const source = fs.readFileSync(path.join(manifestDir, 'assets/removals.js'), 'utf8');
-  const copy = copyTable(source);
+  const copy = ORIGINALS_ENGLISH;
   await reviewTransportCases(source);
   await assertStaysOff(source, '/app/home/');
   await assertStaysOff(source, '/app/home/week/20261019');
@@ -989,7 +1069,7 @@ function deferred() {
 }
 
 async function asyncReceiving(source) {
-  const copy = copyTable(source);
+  const copy = ORIGINALS_ENGLISH;
   const gen = '9007199254740993';
   const base = { state: 'list.ready', review_context: 'opaque-original', removals: [marked('typed', 'offload', 1, '_default'), marked('policy', 'policy', 1, '_default')] };
   const effect = { outcome: { targets: [{ removed: ['chronicle/<raw>.flac'], not_removed: [{ entry: 'policy.flac', reason: '<unproven>' }] }], halted: null } };

@@ -6,110 +6,6 @@
   // and the list goes with home.
   let reportHomeReady = function () {};
   let originalsCtx = null;
-  const COPY = Object.freeze({
-    "card.heading": window.JournalI18n.render('journal.window.home.originals.copy.card.heading'),
-    "card.subhead": window.JournalI18n.render('journal.window.home.originals.copy.card.subhead'),
-    "card.empty": window.JournalI18n.render('journal.window.home.originals.copy.card.empty'),
-    "card.unavailable": window.JournalI18n.render('journal.window.home.originals.copy.card.unavailable'),
-    "card.loading": window.JournalI18n.render('journal.window.home.originals.copy.card.loading'),
-    "card.too_large": window.JournalI18n.render('journal.window.home.originals.copy.card.too.large'),
-    "card.support": window.JournalI18n.render('journal.window.home.originals.copy.card.support'),
-    "page.range": window.JournalI18n.render('journal.window.home.originals.copy.page.range'),
-    "page.selection": window.JournalI18n.render('journal.window.home.originals.copy.page.selection'),
-    "operation.submitting": window.JournalI18n.render('journal.window.home.originals.copy.operation.submitting'),
-    "operation.running": window.JournalI18n.render('journal.window.home.originals.copy.operation.running'),
-    "operation.stop_pending": window.JournalI18n.render('journal.window.home.originals.copy.operation.stop.pending'),
-    "operation.stopping": window.JournalI18n.render('journal.window.home.originals.copy.operation.stopping'),
-    "operation.stop": window.JournalI18n.render('journal.window.home.originals.copy.operation.stop'),
-    "operation.held": window.JournalI18n.render('journal.window.home.originals.copy.operation.held'),
-    "operation.completed": window.JournalI18n.render('journal.window.home.originals.copy.operation.completed'),
-    "operation.refused": window.JournalI18n.render('journal.window.home.originals.copy.operation.refused'),
-    "operation.unknown": window.JournalI18n.render('journal.window.home.originals.copy.operation.unknown'),
-    "operation.unavailable": window.JournalI18n.render('journal.window.home.originals.copy.operation.unavailable'),
-    "operation.record_unavailable": window.JournalI18n.render('journal.window.home.originals.copy.operation.record.unavailable'),
-    "card.total_one": window.JournalI18n.render('journal.window.home.originals.copy.card.total.one'),
-    "card.total_many": window.JournalI18n.render('journal.window.home.originals.copy.card.total.many'),
-    "row.identity": window.JournalI18n.render('journal.window.home.originals.copy.row.identity'),
-    "row.origin_policy_one": window.JournalI18n.render('journal.window.home.originals.copy.row.origin.policy.one'),
-    "row.origin_policy_many": window.JournalI18n.render('journal.window.home.originals.copy.row.origin.policy.many'),
-    "row.origin_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.row.origin.offload.one'),
-    "row.origin_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.row.origin.offload.many'),
-    "row.what_one": window.JournalI18n.render('journal.window.home.originals.copy.row.what.one'),
-    "row.what_many": window.JournalI18n.render('journal.window.home.originals.copy.row.what.many'),
-    "row.kept_one": window.JournalI18n.render('journal.window.home.originals.copy.row.kept.one'),
-    "row.kept_many": window.JournalI18n.render('journal.window.home.originals.copy.row.kept.many'),
-    "row.delete": window.JournalI18n.render('journal.window.home.originals.copy.row.delete'),
-    "row.keep": window.JournalI18n.render('journal.window.home.originals.copy.row.keep'),
-    "bulk.select_all": window.JournalI18n.render('journal.window.home.originals.copy.bulk.select.all'),
-    "bulk.clear": window.JournalI18n.render('journal.window.home.originals.copy.bulk.clear'),
-    "bulk.selected_one": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.one'),
-    "bulk.selected_many": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.many'),
-    "bulk.selected_over_cap": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.over.cap'),
-    "bulk.delete": window.JournalI18n.render('journal.window.home.originals.copy.bulk.delete'),
-    "bulk.keep": window.JournalI18n.render('journal.window.home.originals.copy.bulk.keep'),
-    "confirm.heading_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.heading.one'),
-    "confirm.heading_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.heading.many'),
-    "confirm.days_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.days.one'),
-    "confirm.days_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.days.many'),
-    "confirm.body_policy_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.one'),
-    "confirm.body_policy_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.many'),
-    "confirm.body_policy_one_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.one.nodays'),
-    "confirm.body_policy_many_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.many.nodays'),
-    "confirm.body_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.one'),
-    "confirm.body_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.many'),
-    "confirm.body_policy_selected": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.selected'),
-    "confirm.body_policy_selected_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.selected.nodays'),
-    "confirm.body_offload_selected": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.selected'),
-    "confirm.mixed_lead": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.lead'),
-    "confirm.mixed_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.offload.one'),
-    "confirm.mixed_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.offload.many'),
-    "confirm.mixed_policy_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.one'),
-    "confirm.mixed_policy_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.many'),
-    "confirm.mixed_policy_one_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.one.nodays'),
-    "confirm.mixed_policy_many_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.many.nodays'),
-    "confirm.go_trash": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.trash'),
-    "confirm.go_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.one'),
-    "confirm.go_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.many'),
-    "confirm.cancel": window.JournalI18n.render('journal.window.home.originals.copy.confirm.cancel'),
-    "confirm.recover.heading": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.heading'),
-    "confirm.recover.body": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.body'),
-    "confirm.recover.go": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.go'),
-    "done.clause_deleted_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.deleted.one'),
-    "done.clause_deleted_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.deleted.many'),
-    "done.clause_trashed_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.trashed.one'),
-    "done.clause_trashed_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.trashed.many'),
-    "done.space_one": window.JournalI18n.render('journal.window.home.originals.copy.done.space.one'),
-    "done.space_many": window.JournalI18n.render('journal.window.home.originals.copy.done.space.many'),
-    "done.space_one_nodate": window.JournalI18n.render('journal.window.home.originals.copy.done.space.one.nodate'),
-    "done.space_many_nodate": window.JournalI18n.render('journal.window.home.originals.copy.done.space.many.nodate'),
-    "done.open_trash": window.JournalI18n.render('journal.window.home.originals.copy.done.open.trash'),
-    "done.clause_not_removed_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.removed.one'),
-    "done.clause_not_removed_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.removed.many'),
-    "done.clause_halted": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.halted'),
-    "done.refused_none_one": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.none.one'),
-    "done.refused_none_many": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.none.many'),
-    "done.refused_item": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.item'),
-    "done.refused_item_unnamed": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.item.unnamed'),
-    "done.unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.unknown'),
-    "done.kept_policy": window.JournalI18n.render('journal.window.home.originals.copy.done.kept.policy'),
-    "done.kept_offload": window.JournalI18n.render('journal.window.home.originals.copy.done.kept.offload'),
-    "done.too_many": window.JournalI18n.render('journal.window.home.originals.copy.done.too.many'),
-    "done.declined_failed": window.JournalI18n.render('journal.window.home.originals.copy.done.declined.failed'),
-    "done.clause_kept_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.kept.one'),
-    "done.clause_kept_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.kept.many'),
-    "done.clause_not_kept_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.kept.one'),
-    "done.clause_not_kept_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.kept.many'),
-    "done.clause_nothing_deleted": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.nothing.deleted'),
-    "done.declined_unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.declined.unknown'),
-    "done.recovered": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered'),
-    "done.recovered_none": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered.none'),
-    "done.recovered_leftover": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered.leftover'),
-    "done.recover_failed": window.JournalI18n.render('journal.window.home.originals.copy.done.recover.failed'),
-    "done.recover_unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.recover.unknown'),
-    "failed.badge": window.JournalI18n.render('journal.window.home.originals.copy.failed.badge'),
-    "failed.body": window.JournalI18n.render('journal.window.home.originals.copy.failed.body'),
-    "failed.finish": window.JournalI18n.render('journal.window.home.originals.copy.failed.finish')
-  });
 
   const LIST_URL = '/app/home/api/removals';
   const APPROVE_URL = '/app/home/api/approve';
@@ -153,22 +49,14 @@
     })[char]);
   }
 
-  function interpolate(template, values) {
-    return template.replace(/\{([^}]+)\}/g, function (_, name) {
-      return escapeHtml(values?.[name] ?? '');
-    });
+  const { renderHtml, renderEnglishHtml, cardinalQuantity } = window.JournalI18n;
+
+  function quantity(count) {
+    return ['quantity', cardinalQuantity(count)];
   }
 
-  function copy(key, values) {
-    return interpolate(COPY[key], values);
-  }
-
-  function cardinality(count) {
-    return Number(count) === 1 ? 'one' : 'many';
-  }
-
-  function copyForCount(prefix, count, values) {
-    return copy(prefix + '_' + cardinality(count), values);
+  function originalCount(count) {
+    return ['original_count', String(count)];
   }
 
   function request(url, options) {
@@ -203,9 +91,9 @@
     return window.JournalFormat.day(window.JournalClock.dayKey(instant)).toLowerCase();
   }
 
-  function streamLabel(stream) {
+  function streamLabel(stream, { sourceEnglish = false } = {}) {
     if (stream === '_default') return null;
-    return typeof stream === 'string' ? window.JournalFormat.stream(stream) : null;
+    return typeof stream === 'string' ? window.JournalFormat.stream(stream, { sourceEnglish }) : null;
   }
 
   // The list is a deletion decision, so every row carries an anchored date
@@ -214,16 +102,16 @@
   // apart before anything is deleted. G1-30. The clock is the page's own:
   // seconds are noise on a decision made by the day, and a second convention
   // made the list read like a log file. G1-202.
-  function identityLabel(row) {
-    const date = window.JournalFormat.dayFull(row.day);
-    const time = window.JournalFormat.segmentTimeOfDay(row.dir, { omitMissing: true });
+  function identityLabel(row, { sourceEnglish = false } = {}) {
+    const date = window.JournalFormat.dayFull(row.day, { sourceEnglish });
+    const time = window.JournalFormat.segmentTimeOfDay(row.dir, { omitMissing: true, sourceEnglish });
     return time === null ? date : date + ' ' + time;
   }
 
   function identityText(row) {
     const stream = streamLabel(row.stream);
     if (stream === null) return escapeHtml(identityLabel(row));
-    return copy("row.identity", { date: identityLabel(row), stream: stream });
+    return renderHtml('journal.window.home.originals.row.identity.stream', [['date_and_time', identityLabel(row)], ['stream_name', stream]]);
   }
 
   // The label now names the source the way the owner would say it, so the
@@ -233,10 +121,6 @@
     const key = row && typeof row.stream === 'string' && row.stream !== '_default' ? row.stream : null;
     const title = key ? ' title="' + escapeHtml(key) + '"' : '';
     return '<p class="removals-card-identity" data-removal-identity' + title + '>' + text + '</p>';
-  }
-
-  function copyWithoutDefaultStream(key, values) {
-    return interpolate(COPY[key].replace(' · {stream}', ''), values);
   }
 
   function rowCount(row) {
@@ -259,18 +143,31 @@
   // clauses are shared, not per-row: listNoteHtml() states them once above the
   // list. The row keeps only what actually differs between rows, which is the
   // date and stream, the count and size, and its own two actions.
+  function selectionLabel(id, checked) {
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.setAttribute('data-removal-select', '');
+    checkbox.setAttribute('data-mark-id', id);
+    if (checked) checkbox.setAttribute('checked', '');
+    const label = document.createElement('span');
+    label.append(...window.JournalI18n.renderMarkup('journal.window.home.originals.selection.label', [], {
+      fixed: { checkbox }
+    }));
+    return label.innerHTML;
+  }
+
   function markedRow(row) {
     const count = rowCount(row);
-    const checked = selected.has(row.id) ? ' checked' : '';
+    const checked = selected.has(row.id);
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row), row)
-      + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + `>${window.JournalI18n.renderHtml('journal.window.home.originals.select.item')}</label>`
-      + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
+      + '<label class="removals-select">' + selectionLabel(row.id, checked) + '</label>'
+      + '<p class="removals-card-what">' + renderHtml('journal.window.home.originals.row.contents.count', [quantity(count), originalCount(count), ['size', String(row.size ?? '')]]) + '</p>'
       + '<button type="button" data-removal-action="approve" data-mark-id="' + escapeHtml(row.id) + '">'
-      + copy("row.delete")
+      + renderHtml('journal.window.home.originals.copy.row.delete')
       + '</button>'
       + '<button type="button" data-removal-action="decline" data-mark-id="' + escapeHtml(row.id) + '">'
-      + copy("row.keep")
+      + renderHtml('journal.window.home.originals.copy.row.keep')
       + '</button>'
       + '</article>';
   }
@@ -278,9 +175,9 @@
   function failedRow(row) {
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row), row)
-      + '<p class="removals-card-failed-badge">' + copy("failed.badge") + '</p>'
+      + '<p class="removals-card-failed-badge">' + renderHtml('journal.window.home.originals.copy.failed.badge') + '</p>'
       + '<p class="removals-card-failed-body">'
-      + copy("failed.body")
+      + renderHtml('journal.window.home.originals.copy.failed.body')
       + '</p>'
       + '</article>';
   }
@@ -328,9 +225,9 @@
       originals[key] += rowCount(row);
     });
     const notes = [];
-    if (present.policy) notes.push(copyForCount('row.origin_policy', originals.policy, { n: originals.policy }));
-    if (present.offload) notes.push(copyForCount('row.origin_offload', originals.offload, { n: originals.offload }));
-    notes.push(copyForCount('row.kept', originals.policy + originals.offload));
+    if (present.policy) notes.push(renderHtml('journal.window.home.originals.row.marked.by.retention', [quantity(originals.policy), originalCount(originals.policy)]) + ' ' + renderHtml('journal.window.home.originals.row.marked.by.retention.detail'));
+    if (present.offload) notes.push(renderEnglishHtml('journal.window.home.originals.row.copied.by.backup', [quantity(originals.offload), originalCount(originals.offload)]) + ' ' + renderEnglishHtml('journal.window.home.originals.row.copied.by.backup.detail', [quantity(originals.offload)]));
+    notes.push(renderHtml('journal.window.home.originals.row.nothing.else.goes', [quantity(originals.policy + originals.offload)]));
     return '<p class="removals-card-origin" data-removals-note>' + notes.join(' ') + '</p>';
   }
 
@@ -345,21 +242,21 @@
     const count = n === 0
       ? ''
       : '<span>' + (n > MAX_SELECTED_MARKS
-        ? copy('bulk.selected_over_cap', { n: n, max: MAX_SELECTED_MARKS })
-        : copyForCount('bulk.selected', n, { n: n })) + '</span>';
+        ? renderHtml('journal.window.home.originals.bulk.selection.over.cap', [['selected_count', String(n)], ['selection_limit', String(MAX_SELECTED_MARKS)]])
+        : renderHtml('journal.window.home.originals.bulk.selection.count', [quantity(n), ['selected_count', String(n)]])) + '</span>';
     return '<div class="removals-card-toolbar">'
-      + '<button type="button" data-removal-action="select-all">' + copy("bulk.select_all") + '</button>'
-      + '<button type="button" data-removal-action="clear-selection">' + copy("bulk.clear") + '</button>'
+      + '<button type="button" data-removal-action="select-all">' + renderHtml('journal.window.home.originals.copy.bulk.select.all') + '</button>'
+      + '<button type="button" data-removal-action="clear-selection">' + renderHtml('journal.window.home.originals.copy.bulk.clear') + '</button>'
       + count
-      + '<button type="button" data-removal-action="delete-selected"' + disabled + '>' + copy("bulk.delete") + '</button>'
-      + '<button type="button" data-removal-action="keep-selected"' + disabled + '>' + copy("bulk.keep") + '</button>'
+      + '<button type="button" data-removal-action="delete-selected"' + disabled + '>' + renderHtml('journal.window.home.originals.copy.bulk.delete') + '</button>'
+      + '<button type="button" data-removal-action="keep-selected"' + disabled + '>' + renderHtml('journal.window.home.originals.copy.bulk.keep') + '</button>'
       + '</div>';
   }
 
   function finishHtml() {
     if (!rows.some(function (row) { return row.state === 'failed'; })) return '';
     return '<p class="removals-card-finish"><button type="button" data-removal-action="finish">'
-      + copy("failed.finish")
+      + renderHtml('journal.window.home.originals.copy.failed.finish')
       + '</button></p>';
   }
 
@@ -367,46 +264,111 @@
     if (!confirmation) return '';
     if (confirmation.kind === 'recover') {
       return '<section class="removals-card-confirm" role="dialog">'
-        + '<h3>' + copy("confirm.recover.heading") + '</h3>'
-        + '<p>' + copy("confirm.recover.body") + '</p>'
-        + '<button type="button" data-removal-action="confirm-finish">' + copy("confirm.recover.go") + '</button>'
-        + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
+        + '<h3>' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.heading') + '</h3>'
+        + '<p>' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.body') + '</p>'
+        + '<button type="button" data-removal-action="confirm-finish">' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.go') + '</button>'
+        + '<button type="button" data-removal-action="cancel">' + renderHtml('journal.window.home.originals.copy.confirm.cancel') + '</button>'
         + '</section>';
     }
     const confirmRows = confirmation.rows;
-    const days = trashDays === null ? null : copyForCount('confirm.days', trashDays, { n: trashDays });
-    // A policy key with its day count, or its form without a number.
-    const policyKey = function (key) { return days === null ? key + '_nodays' : key; };
-    if (confirmRows.length === 1) {
-      const row = confirmRows[0];
-      const count = rowCount(row);
-      const stream = streamLabel(row.stream);
-      const policy = origin(row) === 'policy';
-      const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-      const values = { n: count, date: identityLabel(row), stream: stream, days: days };
-      const key = policy ? policyKey(bodyKey) : bodyKey;
-      const body = stream === null ? copyWithoutDefaultStream(key, values) : copy(key, values);
-      return confirmSection(copyForCount('confirm.heading', count), [body],
-        policy ? copy('confirm.go_trash') : copyForCount('confirm.go', count), policy);
+    if (confirmRows.length === 1) return confirmSingleRow(confirmRows[0]);
+    return confirmSelectedRows(confirmRows);
+  }
+
+  function retentionDaysArgs() {
+    return [
+      ['days_quantity', cardinalQuantity(trashDays)],
+      ['retention_days', String(trashDays)]
+    ];
+  }
+
+  function confirmSingleRow(row) {
+    const count = rowCount(row);
+    const numbered = [quantity(count)];
+    const source = { sourceEnglish: true };
+    const scope = [quantity(count), originalCount(count), ['date_and_time', identityLabel(row, source)]];
+    const stream = streamLabel(row.stream, source);
+    if (stream !== null) scope.push(['stream_name', stream]);
+    const policy = origin(row) === 'policy';
+    const heading = renderEnglishHtml('journal.window.home.originals.confirm.delete.heading', numbered);
+    const nothingElse = renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.third', numbered);
+    if (policy) {
+      const move = stream === null
+        ? 'journal.window.home.originals.confirm.trash.until.erase.default.stream.first'
+        : 'journal.window.home.originals.confirm.trash.until.erase.named.stream.first';
+      const erase = trashDays === null
+        ? renderEnglishHtml('journal.window.home.originals.confirm.trash.named.stream.third', numbered)
+        : renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.third',
+          [...numbered, ...retentionDaysArgs()]);
+      const sentences = [
+        renderEnglishHtml(move, scope), nothingElse, erase,
+        renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', numbered)
+      ];
+      return confirmSection(heading, [sentences.join(' ')],
+        renderEnglishHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
     }
-    // Counted by origin over the selection, as the note above the list counts them.
+    const remove = stream === null
+      ? 'journal.window.home.originals.confirm.delete.default.stream.first'
+      : 'journal.window.home.originals.confirm.delete.named.stream.first';
+    const sentences = [
+      renderEnglishHtml(remove, scope),
+      renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.second'),
+      nothingElse,
+      renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
+    ];
+    return confirmSection(heading, [sentences.join(' ')],
+      renderEnglishHtml('journal.window.home.originals.confirm.delete.action', numbered), false);
+  }
+
+  function confirmSelectedRows(confirmRows) {
     const byOrigin = { policy: 0, offload: 0 };
-    confirmRows.forEach(function (row) { byOrigin[origin(row)] += rowCount(row); });
+    confirmRows.forEach(row => { byOrigin[origin(row)] += rowCount(row); });
     const n = byOrigin.policy + byOrigin.offload;
-    const heading = copy("confirm.heading_many");
+    const selectedRows = [quantity(confirmRows.length)];
+    const heading = renderEnglishHtml('journal.window.home.originals.confirm.delete.heading', selectedRows);
     if (byOrigin.offload === 0) {
-      return confirmSection(heading, [copy(policyKey('confirm.body_policy_selected'), { n: n, days: days })],
-        copy('confirm.go_trash'), true);
+      const erase = trashDays === null
+        ? renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.third')
+        : renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.third', retentionDaysArgs());
+      const sentences = [
+        renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.first', [originalCount(n)]),
+        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.third'),
+        erase,
+        renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.fourth')
+      ];
+      return confirmSection(heading, [sentences.join(' ')],
+        renderEnglishHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
     }
+    const unavailable = renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.second');
+    const go = renderEnglishHtml('journal.window.home.originals.confirm.delete.action', selectedRows);
     if (byOrigin.policy === 0) {
-      return confirmSection(heading, [copy('confirm.body_offload_selected', { n: n })], copy("confirm.go_many"), false);
+      const sentences = [
+        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.first', [originalCount(n)]),
+        unavailable,
+        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.third'),
+        renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
+      ];
+      return confirmSection(heading, [sentences.join(' ')], go, false);
     }
-    // Both kinds: part of it can't be undone, so it keeps the warning look.
+    const offload = [
+      renderEnglishHtml('journal.window.home.originals.confirm.mixed.delete.first', [quantity(byOrigin.offload)]),
+      unavailable,
+      renderEnglishHtml('journal.window.home.originals.confirm.mixed.delete.third', [quantity(byOrigin.offload)])
+    ];
+    const erase = trashDays === null
+      ? renderEnglishHtml('journal.window.home.originals.confirm.mixed.trash.first', [quantity(byOrigin.policy)])
+      : renderEnglishHtml('journal.window.home.originals.confirm.mixed.trash.until.erase.first',
+        [quantity(byOrigin.policy), ...retentionDaysArgs()]);
+    const policy = [
+      erase,
+      renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', [quantity(byOrigin.policy)])
+    ];
     return confirmSection(heading, [
-      copy('confirm.mixed_lead', { o: byOrigin.offload, p: byOrigin.policy }),
-      copyForCount('confirm.mixed_offload', byOrigin.offload),
-      copy(policyKey('confirm.mixed_policy_' + cardinality(byOrigin.policy)), { days: days })
-    ], copy("confirm.go_many"), false);
+      renderEnglishHtml('journal.window.home.originals.confirm.mixed.summary', [
+        ['deleted_count', String(byOrigin.offload)], ['trashed_count', String(byOrigin.policy)]
+      ]),
+      offload.join(' '), policy.join(' ')
+    ], go, false);
   }
 
   // A move to the trash is reversible, so its dialog isn't the warning box and
@@ -416,14 +378,14 @@
       + '<h3>' + heading + '</h3>'
       + paragraphs.map(function (text) { return '<p>' + text + '</p>'; }).join('')
       + '<button type="button" data-removal-action="confirm"' + (toTrash ? ' class="removals-go-trash"' : '') + '>' + go + '</button>'
-      + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
+      + '<button type="button" data-removal-action="cancel">' + renderHtml('journal.window.home.originals.copy.confirm.cancel') + '</button>'
       + '</section>';
   }
 
   function pagesHtml() {
     return `<nav class="removals-card-pages" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.originals.pages')}"><button type="button" data-removal-action="previous"`
       + (previousOffsets.length === 0 ? ' disabled' : '') + `>${window.JournalI18n.renderHtml('journal.window.home.visible.text.previous')}</button><span>`
-      + copy('page.range', { first: pageOffset + 1, last: pageOffset + rows.length, total: totalRows })
+      + renderHtml('journal.window.home.originals.page.item.range', [['first_item', String(pageOffset + 1)], ['last_item', String(pageOffset + rows.length)], ['total_items', String(totalRows)]])
       + '</span><button type="button" data-removal-action="next"'
       + (nextOffset === null ? ' disabled' : '') + `>${window.JournalI18n.renderHtml('journal.window.home.visible.text.next')}</button></nav>`;
   }
@@ -431,31 +393,31 @@
   function render() {
     if (!card || retired || mountedRoot !== document.querySelector('[data-home-root]')) return;
     renderGeneration += 1;
-    const heading = '<h2 class="pulse-section-header">' + copy("card.heading") + '</h2><p>' + copy("card.subhead") + '</p>';
+    const heading = '<h2 class="pulse-section-header">' + renderHtml('journal.window.home.originals.copy.card.heading') + '</h2><p>' + renderHtml('journal.window.home.originals.copy.card.subhead') + '</p>';
     if (listState === 'list.empty') {
       card.innerHTML = '<section class="removals-card">' + heading
-        + '<p>' + copy("card.empty") + '</p>' + outcomeHtml + operationHtml() + '</section>';
+        + '<p>' + renderHtml('journal.window.home.originals.copy.card.empty') + '</p>' + outcomeHtml + operationHtml() + '</section>';
     } else if (listState === 'list.ready') {
       const totals = total();
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p class="removals-card-total">'
-        + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
-        + '</p><details class="removals-review"' + (expanded ? ' open' : '') + `><summary>${window.JournalI18n.renderHtml('journal.window.home.disclosure.label.review.originals')}` + (rows.some(row => row.state === 'failed') ? window.JournalI18n.renderHtml('journal.window.home.originals.failed.review') : '') + '</summary>'
-        + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">' + copy('page.selection') + '</p>' + cardRows()
+        + renderHtml('journal.window.home.originals.card.page.total', [quantity(totals.count), originalCount(totals.count), ['size', formatBytes(totals.bytes)]])
+        + '</p><details class="removals-review"' + (expanded ? ' open' : '') + `><summary>${window.JournalI18n.renderHtml(rows.some(row => row.state === 'failed') ? 'journal.window.home.originals.review.unfinished' : 'journal.window.home.disclosure.label.review.originals')}</summary>`
+        + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">' + renderHtml('journal.window.home.originals.copy.page.selection') + '</p>' + cardRows()
         + pagesHtml()
         + finishHtml() + '</details>' + confirmationHtml() + outcomeHtml + operationHtml() + '</section>';
     } else if (listState === 'list.review_too_large') {
       card.innerHTML = '<section class="removals-card">' + heading
         + rows.map(row => identity(identityText(row), row)).join('')
-        + '<p data-removals-list-unavailable>' + copy('card.too_large') + '</p>'
-        + '<p><a href="/app/support/">' + copy('card.support') + '</a></p>'
+        + '<p data-removals-list-unavailable>' + renderHtml('journal.window.home.originals.copy.card.too.large') + '</p>'
+        + '<p><a href="/app/support/">' + renderHtml('journal.window.home.originals.copy.card.support') + '</a></p>'
         + pagesHtml() + outcomeHtml + operationHtml() + '</section>';
     } else if (listState === 'list.loading') {
       card.innerHTML = '<section class="removals-card">' + heading
-        + '<p role="status">' + copy('card.loading') + '</p>' + operationHtml() + '</section>';
+        + '<p role="status">' + renderHtml('journal.window.home.originals.copy.card.loading') + '</p>' + operationHtml() + '</section>';
     } else {
       card.innerHTML = '<section class="removals-card">' + heading
-        + '<p data-removals-list-unavailable>' + copy("card.unavailable") + '</p>' + outcomeHtml + operationHtml() + '</section>';
+        + '<p data-removals-list-unavailable>' + renderHtml('journal.window.home.originals.copy.card.unavailable') + '</p>' + outcomeHtml + operationHtml() + '</section>';
     }
     wire();
     const focus = card.querySelector('.removals-card-confirm');
@@ -466,9 +428,9 @@
     const items = Array.isArray(response.refusals) ? response.refusals : [];
     return items.reduce(function (rendered, item) {
       if (item.state === 'refusal.item_named') {
-        rendered.push('<li>' + copy("done.refused_item", { name: item.name, reason: item.reason }) + '</li>');
+        rendered.push('<li>' + renderHtml('journal.window.home.originals.receipt.refused.named', [['original_name', String(item.name ?? '')], ['reason', String(item.reason ?? '')]]) + '</li>');
       } else if (item.state === 'refusal.item_unnamed') {
-        rendered.push('<li>' + copy("done.refused_item_unnamed", { reason: item.reason }) + '</li>');
+        rendered.push('<li>' + renderHtml('journal.window.home.originals.receipt.refused.reason', [['reason', String(item.reason ?? '')]]) + '</li>');
       }
       return rendered;
     }, []);
@@ -487,12 +449,12 @@
     const notRemoved = Number(response.not_removed_count) || 0;
     const clauses = [
       removed > 0
-        ? copyForCount('done.clause_deleted', removed, { n: removed })
-        : copyForCount('done.refused_none', selectionOriginals(rows)),
+        ? renderHtml('journal.window.home.originals.receipt.deleted', [quantity(removed), originalCount(removed)])
+        : renderHtml('journal.window.home.originals.receipt.none.deleted', [quantity(selectionOriginals(rows))]),
       notRemoved > 0
-        ? copyForCount('done.clause_not_removed', notRemoved, { m: notRemoved })
+        ? renderHtml('journal.window.home.originals.receipt.not.removed', [quantity(notRemoved), ['remaining_count', String(notRemoved)]])
         : '',
-      response.halted ? copy("done.clause_halted") : ''
+      response.halted ? renderHtml('journal.window.home.originals.copy.done.clause.halted') : ''
     ].filter(Boolean);
     setOutcome('<p>' + clauses.join(' ') + '</p>' + refusalList(items));
   }
@@ -502,9 +464,9 @@
     const kept = Number(response.declined_count) || 0;
     const notKept = (Number(response.refused_count) || 0) + (Number(response.unavailable_count) || 0);
     const clauses = [
-      copyForCount('done.clause_kept', kept, { n: kept }),
-      notKept > 0 ? copyForCount('done.clause_not_kept', notKept, { m: notKept }) : '',
-      copy("done.clause_nothing_deleted")
+      renderHtml('journal.window.home.originals.receipt.kept', [quantity(kept), originalCount(kept)]),
+      notKept > 0 ? renderHtml('journal.window.home.originals.receipt.not.kept', [quantity(notKept), ['remaining_count', String(notKept)]]) : '',
+      renderHtml('journal.window.home.originals.copy.done.clause.nothing.deleted')
     ].filter(Boolean);
     setOutcome('<p>' + clauses.join(' ') + '</p>');
   }
@@ -515,18 +477,18 @@
     const decline = context.action === 'decline';
     const originals = selectionOriginals(rows);
     const nothingRan = decline
-      ? copy("done.declined_failed")
-      : copyForCount('done.refused_none', originals);
+      ? renderHtml('journal.window.home.originals.copy.done.declined.failed')
+      : renderHtml('journal.window.home.originals.receipt.none.deleted', [quantity(originals)]);
     const anyOffload = rows.some(function (row) { return origin(row) === 'offload'; });
     switch (response.state) {
       case 'outcome.unknown':
-        setOutcome('<p>' + copy(decline ? "done.declined_unknown" : "done.unknown") + '</p>');
+        setOutcome('<p>' + renderHtml(decline ? 'journal.window.home.originals.copy.done.declined.unknown' : 'journal.window.home.originals.copy.done.unknown') + '</p>');
         break;
       case 'approve.refused_before_start':
-        setOutcome('<p>' + copyForCount('done.refused_none', originals) + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.receipt.none.deleted', [quantity(originals)]) + '</p>');
         break;
       case 'approve.refused_after_start':
-        setOutcome('<p>' + copyForCount('done.refused_none', originals) + '</p>' + refusalList(items));
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.receipt.none.deleted', [quantity(originals)]) + '</p>' + refusalList(items));
         break;
       case 'approve.deleted':
       case 'approve.partial':
@@ -534,23 +496,23 @@
         approveOutcome(response, rows, items);
         break;
       case 'declined.done':
-        setOutcome('<p>' + copy(anyOffload ? "done.kept_offload" : "done.kept_policy") + '</p>');
+        setOutcome('<p>' + renderHtml(anyOffload ? 'journal.window.home.originals.copy.done.kept.offload' : 'journal.window.home.originals.copy.done.kept.policy') + '</p>');
         break;
       case 'tool.unavailable':
       case 'approve.policy_keeps':
         setOutcome('<p>' + nothingRan + '</p>');
         break;
       case 'request.too_large':
-        setOutcome('<p>' + copy("done.too_many", { n: MAX_SELECTED_MARKS }) + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.bulk.limit', [['selection_limit', String(MAX_SELECTED_MARKS)]]) + '</p>');
         break;
       case 'declined.partial':
         declinedPartialOutcome(response);
         break;
       case 'declined.refused':
-        setOutcome('<p>' + copy("done.declined_failed") + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.declined.failed') + '</p>');
         break;
       case 'declined.unknown':
-        setOutcome('<p>' + copy("done.declined_unknown") + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.declined.unknown') + '</p>');
         break;
       case 'request.invalid':
         setOutcome('');
@@ -564,22 +526,22 @@
 
   function showRecoverOutcome(response, trustworthy) {
     if (response.state === 'outcome.unknown') {
-      setOutcome('<p>' + copy("done.recover_unknown") + '</p>');
+      setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.recover.unknown') + '</p>');
     } else if (response.state === 'tool.unavailable') {
-      setOutcome('<p>' + copy("done.recover_failed") + '</p>');
+      setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.recover.failed') + '</p>');
     } else if (!trustworthy) {
-      setOutcome('<p>' + copy("done.recover_unknown") + '</p>');
+      setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.recover.unknown') + '</p>');
     } else {
       const leftover = response.state === 'recover.failed' || rows.some(function (row) {
         return row.state === 'failed';
       });
       const finished = Number(response.finished_count) || 0;
       if (leftover) {
-        setOutcome('<p>' + copy(finished > 0 ? "done.recovered_leftover" : "done.recover_failed") + '</p>');
+        setOutcome('<p>' + renderHtml(finished > 0 ? 'journal.window.home.originals.copy.done.recovered.leftover' : 'journal.window.home.originals.copy.done.recover.failed') + '</p>');
       } else if (response.state === 'recover.done') {
-        setOutcome('<p>' + copy("done.recovered") + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.recovered') + '</p>');
       } else if (response.state === 'recover.none') {
-        setOutcome('<p>' + copy("done.recovered_none") + '</p>');
+        setOutcome('<p>' + renderHtml('journal.window.home.originals.copy.done.recovered.none') + '</p>');
       } else {
         setOutcome('');
       }
@@ -645,11 +607,11 @@
   function operationHtml() {
     const action = activeAction;
     if (!action || action.kind !== 'approve') return '';
-    let key = 'operation.' + action.phase;
-    if (!action.settled && action.cancellationRequested) key = 'operation.stopping';
-    else if (!action.settled && action.stopInFlight) key = 'operation.stop_pending';
-    let html = '<p>' + copy(key) + '</p>';
-    if (action.observationUnavailable) html += '<p>' + copy('operation.unavailable') + '</p>';
+    let key = action.phase;
+    if (!action.settled && action.cancellationRequested) key = 'stopping';
+    else if (!action.settled && action.stopInFlight) key = 'stop.pending';
+    let html = '<p>' + renderHtml('journal.window.home.originals.copy.operation.' + key) + '</p>';
+    if (action.observationUnavailable) html += '<p>' + renderHtml('journal.window.home.originals.copy.operation.unavailable') + '</p>';
     const targets = action.report?.outcome?.targets;
     let toTrashOnly = false;
     if (Array.isArray(targets) && targets.every(target => Array.isArray(target.removed) && Array.isArray(target.not_removed))) {
@@ -658,33 +620,33 @@
       const removed = targets.flatMap(target => target.removed);
       const trashed = targets.flatMap(target => Array.isArray(target.trashed) ? target.trashed : []);
       if (removed.length) {
-        html += '<p>' + copyForCount('done.clause_deleted', removed.length, { n: removed.length }) + '</p>';
+        html += '<p>' + renderHtml('journal.window.home.originals.receipt.deleted', [quantity(removed.length), originalCount(removed.length)]) + '</p>';
         html += '<ul>' + removed.map(name => '<li>' + escapeHtml(name) + '</li>').join('') + '</ul>';
       }
       if (trashed.length) {
-        html += '<p>' + copyForCount('done.clause_trashed', trashed.length, { n: trashed.length }) + '</p>';
+        html += '<p>' + renderHtml('journal.window.home.originals.receipt.moved.to.trash', [quantity(trashed.length), originalCount(trashed.length)]) + '</p>';
         html += '<ul>' + trashed.map(name => '<li>' + escapeHtml(name) + '</li>').join('') + '</ul>';
         const erase = eraseDate(action.report?.trash?.erase_at);
         html += '<p data-removal-space>' + (erase
-          ? copyForCount('done.space', trashed.length, { erase: erase })
-          : copy('done.space_' + cardinality(trashed.length) + '_nodate')) + '</p>';
+          ? renderHtml('journal.window.home.originals.receipt.space.after.erase', [quantity(trashed.length), ['erase_day', erase]])
+          : renderHtml('journal.window.home.originals.receipt.space.without.erase.day', [quantity(trashed.length)])) + '</p>';
       }
       const refusals = targets.flatMap(target => target.not_removed);
       if (refusals.length) {
-        html += '<p>' + copyForCount('done.clause_not_removed', refusals.length, { m: refusals.length }) + '</p>';
-        html += '<ul>' + refusals.map(item => '<li>' + copy('done.refused_item', { name: item.entry, reason: item.reason }) + '</li>').join('') + '</ul>';
+        html += '<p>' + renderHtml('journal.window.home.originals.receipt.not.removed', [quantity(refusals.length), ['remaining_count', String(refusals.length)]]) + '</p>';
+        html += '<ul>' + refusals.map(item => '<li>' + renderHtml('journal.window.home.originals.receipt.refused.named', [['original_name', String(item.entry ?? '')], ['reason', String(item.reason ?? '')]]) + '</li>').join('') + '</ul>';
       }
       if (trashed.length) {
-        html += '<p><a href="' + TRASH_URL + '" data-removal-open-trash>' + copy('done.open_trash') + '</a></p>';
+        html += '<p><a href="' + TRASH_URL + '" data-removal-open-trash>' + renderHtml('journal.window.home.originals.copy.done.open.trash') + '</a></p>';
       }
       toTrashOnly = trashed.length > 0 && removed.length === 0 && refusals.length === 0
-        && !action.observationUnavailable && (key === 'operation.running' || key === 'operation.completed');
+        && !action.observationUnavailable && (key === 'running' || key === 'completed');
     } else {
-      html += '<p>' + copy('operation.record_unavailable') + '</p>';
+      html += '<p>' + renderHtml('journal.window.home.originals.copy.operation.record.unavailable') + '</p>';
     }
     if (action.generation && !action.settled) {
       html += '<button type="button" data-removal-action="stop"'
-        + (action.stopInFlight || action.cancellationRequested ? ' disabled' : '') + '>' + copy('operation.stop') + '</button>';
+        + (action.stopInFlight || action.cancellationRequested ? ' disabled' : '') + '>' + renderHtml('journal.window.home.originals.copy.operation.stop') + '</button>';
     }
     // A result that only moved originals to the trash takes the neutral box.
     return '<section class="removals-card-outcome' + (toTrashOnly ? ' removals-card-outcome--trash' : '')
@@ -852,7 +814,7 @@
   }
 
   function tooManySelected() {
-    setOutcome('<p>' + copy("done.too_many", { n: MAX_SELECTED_MARKS }) + '</p>');
+    setOutcome('<p>' + renderHtml('journal.window.home.originals.bulk.limit', [['selection_limit', String(MAX_SELECTED_MARKS)]]) + '</p>');
     render();
   }
 

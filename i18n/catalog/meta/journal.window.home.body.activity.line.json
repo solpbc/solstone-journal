@@ -1,0 +1,84 @@
+{
+  "description": "Home yesterday. One body activity with optional time, distance, provenance and partial-removal clause.",
+  "context": "Journal window. Home yesterday. One body activity with optional time, distance, provenance and partial-removal clause.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "arrangement",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "started_at",
+      "type": "string"
+    },
+    {
+      "name": "ended_at",
+      "type": "string"
+    },
+    {
+      "name": "distance",
+      "type": "string"
+    },
+    {
+      "name": "source_names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "34be59d570af0b82f61a0c01b16a9df637f21f1b7a760b8c069bc35b03304534",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "arrangement",
+    "type": "string",
+    "enum_values": [
+      "untimed-no-distance-no-source-intact",
+      "untimed-no-distance-no-source-part-removed",
+      "untimed-no-distance-logged-intact",
+      "untimed-no-distance-logged-part-removed",
+      "untimed-no-distance-recorded-intact",
+      "untimed-no-distance-recorded-part-removed",
+      "untimed-distance-no-source-intact",
+      "untimed-distance-no-source-part-removed",
+      "untimed-distance-logged-intact",
+      "untimed-distance-logged-part-removed",
+      "untimed-distance-recorded-intact",
+      "untimed-distance-recorded-part-removed",
+      "start-no-distance-no-source-intact",
+      "start-no-distance-no-source-part-removed",
+      "start-no-distance-logged-intact",
+      "start-no-distance-logged-part-removed",
+      "start-no-distance-recorded-intact",
+      "start-no-distance-recorded-part-removed",
+      "start-distance-no-source-intact",
+      "start-distance-no-source-part-removed",
+      "start-distance-logged-intact",
+      "start-distance-logged-part-removed",
+      "start-distance-recorded-intact",
+      "start-distance-recorded-part-removed",
+      "range-no-distance-no-source-intact",
+      "range-no-distance-no-source-part-removed",
+      "range-no-distance-logged-intact",
+      "range-no-distance-logged-part-removed",
+      "range-no-distance-recorded-intact",
+      "range-no-distance-recorded-part-removed",
+      "range-distance-no-source-intact",
+      "range-distance-no-source-part-removed",
+      "range-distance-logged-intact",
+      "range-distance-logged-part-removed",
+      "range-distance-recorded-intact",
+      "range-distance-recorded-part-removed"
+    ],
+    "enum_default": "untimed-no-distance-no-source-intact"
+  }
+}

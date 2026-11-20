@@ -1,0 +1,16 @@
+{
+  "description": "Home window. originals review unfinished.",
+  "context": "Journal window. Home window. originals review unfinished.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb610c73ae93c380d1fe1f278bd78ffc00546e0bb6b7f41016df804fd1d77003",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

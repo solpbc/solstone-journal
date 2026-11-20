@@ -1,0 +1,26 @@
+{
+  "description": "Home originals restricted disclosure confirm trash named stream, sentence 3.",
+  "context": "Journal window. Home originals restricted disclosure confirm trash named stream, sentence 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "47cec60321d8de1bcff48bc2115f6f705eb5e6732d623d597b5cf74d0c0f31a1",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -243,7 +243,7 @@ fn project_first_minutes_in(input: &FirstMinutesInput, locale: &str) -> Value {
             name: String,
             platform: Option<String>,
             state: &'static str,
-            last_added_label: Option<String>,
+            last_added_age: Option<(&'static str, i64)>,
             parsed_time: Option<i64>,
             original_index: usize,
         }
@@ -293,16 +293,16 @@ fn project_first_minutes_in(input: &FirstMinutesInput, locale: &str) -> Value {
                     .and_then(|ts| solstone_core_time::parse_rfc3339(ts).ok())
                     .map(|dt| dt.timestamp().as_millisecond());
 
-                let last_added_label = parsed_time.map(|delivery_ms| {
+                let last_added_age = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
-                    crate::formatting::relative_time_ago(seconds, locale)
+                    crate::formatting::relative_time_parts(seconds)
                 });
 
                 raw_devices.push(RawDevice {
                     name,
                     platform,
                     state,
-                    last_added_label,
+                    last_added_age,
                     parsed_time,
                     original_index: idx,
                 });
@@ -350,16 +350,16 @@ fn project_first_minutes_in(input: &FirstMinutesInput, locale: &str) -> Value {
                     .and_then(|ts| solstone_core_time::parse_rfc3339(ts).ok())
                     .map(|dt| dt.timestamp().as_millisecond());
 
-                let last_added_label = parsed_time.map(|delivery_ms| {
+                let last_added_age = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
-                    crate::formatting::relative_time_ago(seconds, locale)
+                    crate::formatting::relative_time_parts(seconds)
                 });
 
                 raw_devices.push(RawDevice {
                     name,
                     platform,
                     state,
-                    last_added_label,
+                    last_added_age,
                     parsed_time,
                     original_index: idx,
                 });
@@ -388,8 +388,10 @@ fn project_first_minutes_in(input: &FirstMinutesInput, locale: &str) -> Value {
                     "platform": d.platform,
                     "state": d.state,
                 });
-                if let Some(lbl) = d.last_added_label {
-                    obj["last_added_label"] = Value::String(lbl);
+                if let Some((unit, count)) = d.last_added_age {
+                    obj["last_added_label"] =
+                        Value::String(crate::formatting::render_relative_age(unit, count, locale));
+                    obj["last_added_age"] = serde_json::json!({"unit": unit, "count": count});
                 }
                 obj
             })
@@ -1175,11 +1177,19 @@ mod tests {
         assert_eq!(devs[0]["platform"], "android");
         assert_eq!(devs[0]["state"], "quiet");
         assert_eq!(devs[0]["last_added_label"], "5 minutes ago");
+        assert_eq!(
+            devs[0]["last_added_age"],
+            serde_json::json!({"unit":"minute","count":5})
+        );
 
         assert_eq!(devs[1]["name"], "Device A");
         assert_eq!(devs[1]["platform"], "ios");
         assert_eq!(devs[1]["state"], "receiving");
         assert_eq!(devs[1]["last_added_label"], "10 minutes ago");
+        assert_eq!(
+            devs[1]["last_added_age"],
+            serde_json::json!({"unit":"minute","count":10})
+        );
 
         // C has no time, D has no time; clients order first (C), then unassessed (D)
         assert_eq!(devs[2]["name"], "Device C");

@@ -1,0 +1,34 @@
+{
+  "description": "Home first minutes. When the paired app last added material, in minutes.",
+  "context": "Journal window. Home first minutes. When the paired app last added material, in minutes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "40ed81f4ca2ce7974a273a850447a8cb6c3915012b801d801b7ff8a68ec09027",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

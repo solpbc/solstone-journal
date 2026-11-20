@@ -1,0 +1,25 @@
+{
+  "description": "Home originals. confirm mixed summary.",
+  "context": "Journal window. Home originals. confirm mixed summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "deleted_count",
+      "type": "string"
+    },
+    {
+      "name": "trashed_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03d4cc27b565167b22e7d6146100092427a846820bee63cb3d63b9dc339e663a",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}
