@@ -4940,6 +4940,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-time",
  "solstone-core-transcribe",
+ "solstone-core-window-catalog",
  "temp-env",
  "tempfile",
  "toml_edit",

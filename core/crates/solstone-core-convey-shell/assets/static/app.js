@@ -955,8 +955,9 @@ window.AppServices = {
 
       // Browser notification if permitted
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(notif.title, {
-          body: notif.message,
+        const display = this._windowCopy(notif);
+        new Notification(display.title, {
+          body: display.message,
           tag: `${notif.app}-${notif.id}`
         });
       }
@@ -1102,8 +1103,32 @@ window.AppServices = {
         : [];
     },
 
+    _describeCopyId(notice) {
+      const prefix = 'observe.describe:';
+      if (notice?.app !== 'thinking' || notice.action !== '/app/thinking'
+          || typeof notice.key !== 'string' || !notice.key.startsWith(prefix)) return null;
+      const code = notice.key.slice(prefix.length);
+      const messages = {
+        provider_key_invalid: 'journal.window.describe.notification.blocked.provider.key.invalid',
+        provider_key_missing: 'journal.window.describe.notification.blocked.provider.key.missing',
+        chatgpt_sign_in_required: 'journal.window.describe.notification.blocked.chatgpt.sign.in.required',
+        chatgpt_not_eligible: 'journal.window.describe.notification.blocked.chatgpt.not.eligible',
+        confidential_access_ended: 'journal.window.describe.notification.blocked.confidential.access.ended',
+      };
+      return Object.hasOwn(messages, code) ? messages[code] : null;
+    },
+
+    _windowCopy(notice) {
+      const message = this._describeCopyId(notice);
+      return message ? {
+        ...notice,
+        title: window.JournalI18n.render('journal.window.describe.notification.blocked.title'),
+        message: window.JournalI18n.render(message),
+      } : notice;
+    },
+
     _countBadge(count) {
-      return count > 1 ? `${count} segments` : null;
+      return count > 1 ? window.JournalI18n.render('journal.window.shared.app.notification.segments', [['count', String(count)]]) : null;
     },
 
     /**
@@ -1136,7 +1161,7 @@ window.AppServices = {
      * @returns {Array} Array of notification objects
      */
     getHistory() {
-      return [...this._history].reverse();
+      return this._history.map(notice => this._windowCopy(notice)).reverse();
     },
 
     /**
@@ -1154,6 +1179,7 @@ window.AppServices = {
         timestamp: notif.timestamp
       };
 
+      if (this._describeCopyId(notif)) historyEntry.key = notif.key;
       this._history.push(historyEntry);
 
       // Cap at 10 items
@@ -1228,11 +1254,11 @@ window.AppServices = {
 
         if (!card) {
           // New card - create and animate
-          card = this._createCard(n);
+          card = this._createCard(this._windowCopy(n));
           this._container.appendChild(card);
         } else {
           // Existing card - update content (no animation)
-          this._updateCard(card, n);
+          this._updateCard(card, this._windowCopy(n));
         }
       });
 

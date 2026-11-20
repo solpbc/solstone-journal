@@ -16000,3 +16000,17 @@ journal.window.import.window.explanation.value1.of.value2.value3.ready.to = { $v
 journal.window.import.window.explanation.value1.pages.could.not.be.extracted = { $value1 }{ $slot1 }pages could not be extracted
 
 journal.window.import.window.explanation.value1.put.together.from.sleep.stages = { $value1 }{ $slot1 }put together from sleep stages
+
+journal.window.describe.notification.blocked.chatgpt.not.eligible = this ChatGPT account can't be used for thinking. pick another provider on the thinking page
+
+journal.window.describe.notification.blocked.chatgpt.sign.in.required = signed out of ChatGPT. sign in again on the thinking page
+
+journal.window.describe.notification.blocked.confidential.access.ended = confidential processing isn't active for this journal. open the thinking page to see why
+
+journal.window.describe.notification.blocked.provider.key.invalid = your AI provider turned down your key. check it on the thinking page
+
+journal.window.describe.notification.blocked.provider.key.missing = your AI provider needs a key. add one on the thinking page
+
+journal.window.describe.notification.blocked.title = screen descriptions are waiting
+
+journal.window.shared.app.notification.segments = { $count }{ $slot1 }segments

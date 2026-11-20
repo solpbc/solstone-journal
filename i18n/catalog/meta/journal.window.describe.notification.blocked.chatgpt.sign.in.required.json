@@ -1,0 +1,16 @@
+{
+  "description": "Describe notification in the journal's describe view.",
+  "context": "Journal window, describe view. Describe notification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d4e3c18c4afa23a49d793b9e9b90fc1e1a668c7ab7ffe2995a82f92fd5bfff9",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

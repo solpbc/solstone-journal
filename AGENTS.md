@@ -455,7 +455,8 @@ This includes Entities window responses from `solstone-core-entities` and
 `solstone-core-entity`, status copy from `solstone-core-system-health` and
 `solstone-core-system`, Home window responses from `solstone-core-home`, and
 Home and Map display copy from `solstone-core-location`. The same catalog
-supplies the Describe category names shown in Settings.
+supplies the Describe category names shown in Settings and the live notices
+from `solstone-core-describe`.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
 For localized copy, use `JournalI18n.render` for JavaScript text and
 `JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages

@@ -8,6 +8,7 @@ use serde_json::json;
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_format::paths::relative_to_journal;
 use solstone_core_format::segment::{is_date_key, segment_key};
+use solstone_core_window_catalog::{ENGLISH, text};
 
 /// Best-effort live callosum notification for blocked work the owner has to
 /// fix. Any other reason, or none, sends nothing: the run is still deferred,
@@ -21,13 +22,13 @@ pub fn blocked(journal: &Path, work_key: &str, reason_code: Option<&str>) {
 
 fn blocked_row(work_key: &str, reason_code: Option<&str>) -> Option<serde_json::Value> {
     let code = reason_code?;
-    let message = owner_fix(code)?;
+    let message = text(ENGLISH, owner_fix_message(code)?);
     Some(json!({
         "tract": "notification",
         "event": "show",
         "app": "thinking",
         "icon": "eye",
-        "title": "screen descriptions are waiting",
+        "title": text(ENGLISH, "journal.window.describe.notification.blocked.title"),
         "message": message,
         "action": "/app/thinking",
         "key": format!("observe.describe:{code}"),
@@ -40,18 +41,22 @@ fn blocked_row(work_key: &str, reason_code: Option<&str>) -> Option<serde_json::
 /// Every other reason returns `None` and stays quiet: loading, installing, a
 /// busy or unreachable engine, and usage limits, which providers also report
 /// for short rate limits that clear on their own.
-fn owner_fix(reason_code: &str) -> Option<&'static str> {
+fn owner_fix_message(reason_code: &str) -> Option<&'static str> {
     Some(match reason_code {
         "provider_key_invalid" => {
-            "your AI provider turned down your key. check it on the thinking page"
+            "journal.window.describe.notification.blocked.provider.key.invalid"
         }
-        "provider_key_missing" => "your AI provider needs a key. add one on the thinking page",
-        "chatgpt_sign_in_required" => "signed out of ChatGPT. sign in again on the thinking page",
+        "provider_key_missing" => {
+            "journal.window.describe.notification.blocked.provider.key.missing"
+        }
+        "chatgpt_sign_in_required" => {
+            "journal.window.describe.notification.blocked.chatgpt.sign.in.required"
+        }
         "chatgpt_not_eligible" => {
-            "this ChatGPT account can't be used for thinking. pick another provider on the thinking page"
+            "journal.window.describe.notification.blocked.chatgpt.not.eligible"
         }
         "confidential_access_ended" => {
-            "confidential processing isn't active for this journal. open the thinking page to see why"
+            "journal.window.describe.notification.blocked.confidential.access.ended"
         }
         _ => return None,
     })

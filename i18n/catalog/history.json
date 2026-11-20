@@ -16790,6 +16790,78 @@
       "selector": null
     },
     {
+      "id": "journal.window.describe.notification.blocked.chatgpt.not.eligible",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e636861746770742e6e6f742e656c696769626c65",
+      "namespace": "journal.window.describe.notification.blocked.chatgpt.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.chatgpt.sign.in.required",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e636861746770742e7369676e2e696e2e7265717569726564",
+      "namespace": "journal.window.describe.notification.blocked.chatgpt.sign.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.confidential.access.ended",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e636f6e666964656e7469616c2e6163636573732e656e646564",
+      "namespace": "journal.window.describe.notification.blocked.confidential.access",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.provider.key.invalid",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e70726f76696465722e6b65792e696e76616c6964",
+      "namespace": "journal.window.describe.notification.blocked.provider.key",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.provider.key.missing",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e70726f76696465722e6b65792e6d697373696e67",
+      "namespace": "journal.window.describe.notification.blocked.provider.key",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e64657363726962652e6e6f74696669636174696f6e2e626c6f636b65642e7469746c65",
+      "namespace": "journal.window.describe.notification.blocked",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.accessible.label.dismiss",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e61636365737369626c652e6c6162656c2e6469736d697373",
       "namespace": "journal.window.entities.accessible.label",
@@ -86943,6 +87015,32 @@
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shared.app.notification.segments",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e6170702e6e6f74696669636174696f6e2e7365676d656e7473",
+      "namespace": "journal.window.shared.app.notification",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "whitespace",
+          "value": " "
+        }
+      ],
       "selector": null
     },
     {

@@ -8626,6 +8626,48 @@
       "locales": []
     },
     {
+      "id": "journal.window.describe.notification.blocked.chatgpt.not.eligible",
+      "source": "4a9e5db7e5a248098b93a90c8333773020b1ff16f6b3bf5af528e187cfd97da6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.chatgpt.sign.in.required",
+      "source": "6d4e3c18c4afa23a49d793b9e9b90fc1e1a668c7ab7ffe2995a82f92fd5bfff9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.confidential.access.ended",
+      "source": "08df740b7629a59233daf798b92b025f8e50bc404204cae733273aeff3d21f2c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.provider.key.invalid",
+      "source": "e5328ba859dc2c4bea71e3f2f2785ff259cc428b821563bde490221426304a5a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.provider.key.missing",
+      "source": "ac8b3bf00a997a3ab9f8a88cbb2cab535a91fee7281ddf46419e93c24ea41c87",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.describe.notification.blocked.title",
+      "source": "b93bbb29e3c05df896c085cd8afa7563dd9278de09201de40ae96883b9f3d6cc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.accessible.label.dismiss",
       "source": "9dbaf882187a75810fa21e17d2e888e82f540e910cf17ef6b8524ba577ad9149",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -40844,6 +40886,13 @@
       "source": "b5f21f15d2f30f05a04cb3951a5fd0a03fd8f0e515f0924c3ed1f1ae3a76ef1f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.shared.app.notification.segments",
+      "source": "c77fbb220713d1846d0c09948c8e9b1c27024f9a724379ffc4ee84a93d7a21b5",
+      "contract": "19e7d110b0675a598f9a9e24dfeb3bbb9e32c316ba52b9871ff2708989a5ef3e",
+      "protected": "98c54c4bf11b4826a41f1cb2562e8d7b1ab8216daa067bde968b38c7562b6aee",
       "locales": []
     },
     {

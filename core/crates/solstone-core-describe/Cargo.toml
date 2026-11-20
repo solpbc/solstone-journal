@@ -28,6 +28,7 @@ solstone-core-cli-boundary.workspace = true
 solstone-core-local.workspace = true
 solstone-core-assets.workspace = true
 solstone-core-callosum.workspace = true
+solstone-core-window-catalog.workspace = true
 solstone-core-time.workspace = true
 base64 = "0.22.1"
 jiff.workspace = true
