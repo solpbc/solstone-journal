@@ -51,7 +51,6 @@ enum Matcher {
 enum Shape {
     Bare,
     Timed,
-    TimedRecurring,
     Block,
     ExportBlock,
     ExportTimed,
@@ -296,16 +295,10 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule!(
             48,
             "dated_bold_speaker",
+            Turns,
+            Transcripts,
             "MacWhisper Markdown dated bullet and bold speaker turns",
-            TimedRecurring,
-            r"^[-*]\s+[0-9]{4}-[0-9]{2}-[0-9]{2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$"
-        ),
-        rule!(
-            49,
-            "clock_speaker",
-            "Unbracketed HH:MM:SS clock and capitalized speaker turns",
-            TimedRecurring,
-            r"^[0-9]{1,2}:[0-5][0-9]:[0-5][0-9] +(?P<speaker>(?:\*\*)?[\p{Lu}\p{Extended_Pictographic}](?:[^:：]{0,58}[^:：\s])?)[:：](?:\*\*)?\s+(?P<body>\S.*)$"
+            |e| exports::dated_bold_speaker(e.lines)
         ),
         rule!(
             50,
@@ -383,7 +376,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "bracketed_speaker",
             "Generic bracketed clock or HH:MM:SS range and speaker",
             Timed,
-            r"^(?:\*\*)?\[(?:[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?\s*[-–—]\s*[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?|[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?)\]\s*(?P<speaker>[^:：]{1,60})[:：](?:\*\*)?\s+(?P<body>\S.*)$",
+            r"^(?:\*\*)?\[(?:(?P<range_clock>[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?)\s*[-–—]\s*[0-9]{1,2}:[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,3})?|(?P<clock>[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?))\]\s*(?P<speaker>[^:：]{1,60})[:：](?:\*\*)?\s+(?P<body>\S.*)$",
             true
         ),
         rule!(
@@ -391,14 +384,14 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "clock_dash_speaker",
             "Generic clock–speaker log",
             Timed,
-            r"^[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?\s+[-–—]\s+(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
+            r"^(?P<clock>[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?(?: ?[aApP][mM])?)\s+[-–—]\s+(?P<speaker>[^:：]{1,60})[:：]\s+(?P<body>\S.*)$"
         ),
         rule!(
             61,
             "stacked_speaker_time",
             "Generic speaker/time block, including Otter and text rendered from documents",
             Block,
-            r"^(?:\*\*)?(?P<speaker>[^*:]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?\d{1,2}:\d{2}(?::\d{2})?\)?:?$",
+            r"^(?:\*\*)?(?P<speaker>[^*:]{1,60}?)(?:\*\*)?\s+(?:[-–—]\s+|\()?(?P<clock>\d{1,2}:\d{2}(?::\d{2})?)\)?:?$",
             true
         ),
         rule!(
@@ -406,14 +399,14 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "clock_then_speaker",
             "Generic time-first stacked speaker blocks",
             Block,
-            r"^\d{1,2}:\d{2}(?::\d{2})?\s+[-–—]\s+(?P<speaker>[^():]{1,60}?)(?:\s+\([^()]+\))?:?$"
+            r"^(?P<clock>\d{1,2}:\d{2}(?::\d{2})?)\s+[-–—]\s+(?P<speaker>[^():]{1,60}?)(?:\s+\([^()]+\))?:?$"
         ),
         rule!(
             63,
             "speaker_parenthesized_clock",
             "Generic speaker label with parenthesized clock",
             Timed,
-            r"^(?P<speaker>[^:]{1,60}?)\s+\*?\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)\*?:(?:\s+(?P<body>\S.*)|\s*)$"
+            r"^(?P<speaker>[^:]{1,60}?)\s+\*?\(\s*(?P<clock>\d{1,2}:\d{2}(?::\d{2})?)\s*\)\*?:(?:\s+(?P<body>\S.*)|\s*)$"
         ),
         rule!(
             64,
@@ -792,16 +785,20 @@ fn nonblank<'a>(lines: &'a [&'a str]) -> impl Iterator<Item = &'a str> {
 
 fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     let mut speakers = Vec::new();
+    let mut clocks = Vec::new();
+    let mut range_turns = 0usize;
+    let mut single_clock_turns = 0usize;
+    let mut round_5_clocks = 0usize;
+    let mut round_15_wall_clocks = 0usize;
+    let mut sentence_turns = 0usize;
+    let mut turn_has_sentence = false;
     let mut unmatched = 0;
     let mut matched = 0;
     let mut continuations = 0;
     let mut in_turn = false;
     let mut block_has_body = true;
-    let generic = matches!(shape, Bare | Timed | TimedRecurring | Block);
-    let header = if matches!(
-        shape,
-        Bare | Timed | TimedRecurring | Block | RoleLine | RoleBlock
-    ) {
+    let generic = matches!(shape, Bare | Timed | Block);
+    let header = if matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) {
         exports::meeting_header(lines)
     } else {
         exports::Header::default()
@@ -818,22 +815,45 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     let mut numeric_bodies = 0usize;
     for line in nonblank(lines).skip(header.rows) {
         let captured = regex.captures(line);
+        let block_clock = if shape == Block {
+            captured
+                .as_ref()
+                .and_then(|c| c.name("clock"))
+                .and_then(|m| parse_clock_seconds(m.as_str()))
+        } else {
+            None
+        };
         let speaker = captured
             .as_ref()
             .and_then(|c| c.name("speaker"))
-            .and_then(|m| speaker_label(m.as_str()))
-            .filter(|label| {
-                !(shape == TimedRecurring
-                    && label
-                        .split_once(' ')
-                        .is_some_and(|(first, _)| first.eq_ignore_ascii_case("from")))
-            });
-        let evidence = (shape == Offset && captured.is_some()) || speaker.is_some();
+            .and_then(|m| speaker_label(m.as_str()));
+        let evidence = (shape == Offset && captured.is_some())
+            || (speaker.is_some() && (shape != Block || block_clock.is_some()));
         if evidence {
             if matches!(shape, Block | ExportBlock | RoleBlock) && !block_has_body {
                 return false;
             }
+            if in_turn && turn_has_sentence {
+                sentence_turns += 1;
+            }
             matched += 1;
+            if let Some(secs) = block_clock {
+                clocks.push(secs);
+            } else if shape == Timed {
+                if let Some(range) = captured.as_ref().and_then(|c| c.name("range_clock")) {
+                    let base = range.as_str().split('.').next().unwrap_or_default();
+                    if let Some(secs) = parse_clock_seconds(base) {
+                        clocks.push(secs);
+                        range_turns += 1;
+                    }
+                } else if let Some(clock) = captured.as_ref().and_then(|c| c.name("clock")) {
+                    single_clock_turns += 1;
+                    let (round_5, round_15_wall) = schedule_clock_flags(clock.as_str());
+                    round_5_clocks += usize::from(round_5);
+                    round_15_wall_clocks += usize::from(round_15_wall);
+                }
+            }
+            turn_has_sentence = false;
             if let Some(body) = captured.as_ref().and_then(|c| c.name("body")) {
                 if header.summary_words != 0 {
                     turn_words += body.as_str().split_whitespace().count();
@@ -841,6 +861,7 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 if shape == Bare && is_numeric_value(body.as_str()) {
                     numeric_bodies += 1;
                 }
+                turn_has_sentence = has_sentence(body.as_str());
             }
             if let Some(speaker) = speaker {
                 if shape == Bare && all_language_labels {
@@ -874,10 +895,8 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 continue;
             }
             let existing_heading = matches!(shape, Block | RoleBlock) && line.starts_with("# ");
-            let short_heading = matches!(
-                shape,
-                Bare | Timed | TimedRecurring | Block | RoleLine | RoleBlock
-            ) && short_title(line);
+            let short_heading =
+                matches!(shape, Bare | Timed | Block | RoleLine | RoleBlock) && short_title(line);
             if !has_title && (existing_heading || short_heading) {
                 has_title = true;
                 allow_underline = short_heading && markdown_title(line).is_none();
@@ -887,9 +906,7 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
             // exchange following a prose preamble to a transcript.
             return false;
         } else if !is_export_notice(line) {
-            if matches!(shape, Bare | Timed | TimedRecurring | Block | RoleLine)
-                && markdown_title(line).is_some()
-            {
+            if matches!(shape, Bare | Timed | Block | RoleLine) && markdown_title(line).is_some() {
                 return false;
             }
             unmatched += 1;
@@ -899,11 +916,17 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
             if let Some(speaker) = pending_body.take() {
                 utterances.insert((speaker, line));
             }
+            if matches!(shape, Bare | Timed | Block) && !line.starts_with('#') {
+                turn_has_sentence |= has_sentence(line);
+            }
             if matches!(shape, Block | ExportBlock | RoleBlock) && !line.starts_with('#') {
                 block_has_body = true;
                 continuations += 1;
             }
         }
+    }
+    if in_turn && turn_has_sentence {
+        sentence_turns += 1;
     }
     let distinct: HashSet<_> = speakers.iter().collect();
     if matches!(shape, Bare | RoleLine)
@@ -944,21 +967,38 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
     match shape {
         Offset => matched >= 3 && unmatched <= matched / 4,
         ExportBlock => distinct.len() >= 2 && matched >= 2 && continuations <= matched * 4,
-        ExportTimed => distinct.len() >= 2 && matched >= 2 && unmatched <= matched,
+        ExportTimed => {
+            distinct.len() >= 2
+                && matched >= 2
+                && unmatched <= matched
+                && !distinct.iter().all(|speaker| reserved_label(speaker))
+        }
         Block => {
             distinct.len() >= 2
                 && matched >= 3
                 && interleaves
                 && block_has_body
                 && continuations <= matched * 4
+                && is_recording_offset_clocks(&clocks)
+                && sentence_turns * 2 >= matched
+                && sentence_turns >= 2
         }
-        Timed => matched >= 3 && distinct.len() >= 2 && interleaves && unmatched <= matched,
-        TimedRecurring => {
+        Timed => {
+            let range_ok = range_turns == 0
+                || (range_turns == matched
+                    && is_recording_offset_clocks(&clocks)
+                    && sentence_turns * 2 >= matched
+                    && sentence_turns >= 2);
+            let schedule_like = single_clock_turns > 0
+                && single_clock_turns == matched
+                && (round_15_wall_clocks == matched
+                    || round_5_clocks == matched && sentence_turns == 0);
             matched >= 3
                 && distinct.len() >= 2
-                && distinct.len() < matched
                 && interleaves
                 && unmatched <= matched
+                && range_ok
+                && !schedule_like
         }
         RoleBlock => {
             distinct.len() >= 2
@@ -969,7 +1009,11 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
         }
         RoleLine => distinct.len() >= 2 && matched >= 3 && interleaves && unmatched <= matched / 3,
         Bare => {
-            if (!interview && all_language_labels) || numeric_bodies * 5 >= matched * 4 {
+            if (!interview && all_language_labels)
+                || numeric_bodies * 5 >= matched * 4
+                || sentence_turns < 2
+                || sentence_turns * 3 < matched
+            {
                 return false;
             }
             let mut counts = HashMap::new();
@@ -987,6 +1031,108 @@ fn line_shape(lines: &[&str], regex: &Regex, shape: Shape) -> bool {
                 && unmatched <= matched / 3
         }
     }
+}
+
+pub(super) fn parse_clock_seconds(text: &str) -> Option<u64> {
+    let parse_part = |part: &str, min_len: usize, max_len: usize| -> Option<u64> {
+        ((min_len..=max_len).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| part.parse::<u64>().ok())
+            .flatten()
+    };
+    let mut parts = text.split(':');
+    let first = parse_part(parts.next()?, 1, 3)?;
+    let second = parse_part(parts.next()?, 2, 2)?;
+    match (parts.next(), parts.next()) {
+        (None, None) if second < 60 => first.checked_mul(60)?.checked_add(second),
+        (Some(third), None) => {
+            let third = parse_part(third, 2, 2)?;
+            (second < 60 && third < 60)
+                .then(|| {
+                    first
+                        .checked_mul(3600)?
+                        .checked_add(second.checked_mul(60)?)?
+                        .checked_add(third)
+                })
+                .flatten()
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn is_recording_offset_clocks(clocks: &[u64]) -> bool {
+    clocks.len() >= 2
+        && clocks[0] < 60
+        && clocks.windows(2).all(|pair| pair[1] >= pair[0])
+        && clocks.last() > clocks.first()
+        && clocks.iter().any(|&secs| secs % 5 != 0)
+}
+
+pub(super) fn schedule_clock_flags(text: &str) -> (bool, bool) {
+    let stripped = text
+        .trim()
+        .trim_matches(|c: char| !c.is_ascii_digit() && c != ':' && c != '.')
+        .split('.')
+        .next()
+        .unwrap_or_default();
+    let parts: Vec<_> = stripped.split(':').collect();
+    match parts.as_slice() {
+        [first, second] => match (first.parse::<u64>(), second.parse::<u64>()) {
+            (Ok(h), Ok(m)) if m < 60 => (m % 5 == 0, h >= 1 && m % 15 == 0),
+            _ => (false, false),
+        },
+        [first, second, third] => {
+            match (
+                first.parse::<u64>(),
+                second.parse::<u64>(),
+                third.parse::<u64>(),
+            ) {
+                (Ok(h), Ok(m), Ok(s)) if m < 60 && s < 60 => {
+                    (s == 0 && m % 5 == 0, h >= 1 && s == 0 && m % 15 == 0)
+                }
+                _ => (false, false),
+            }
+        }
+        _ => (false, false),
+    }
+}
+
+pub(super) fn has_sentence(line: &str) -> bool {
+    let trimmed = line
+        .trim()
+        .trim_end_matches(['"', '\'', '”', '’', ')', ']']);
+    if let Some(last) = trimmed.chars().last()
+        && matches!(last, '.' | '?' | '!' | '…' | '。' | '？' | '！')
+        && trimmed
+            .chars()
+            .rev()
+            .nth(1)
+            .is_some_and(char::is_alphanumeric)
+        && trimmed.chars().any(char::is_alphabetic)
+    {
+        return true;
+    }
+    let words: Vec<_> = trimmed.split_whitespace().collect();
+    words.windows(2).any(|pair| {
+        let word = pair[0].trim_end_matches(['"', '\'', '”', '’', ')', ']']);
+        let Some(punct) = word.chars().last() else {
+            return false;
+        };
+        let stem = &word[..word.len() - punct.len_utf8()];
+        let next_starts_upper = pair[1]
+            .trim_start_matches(['"', '\'', '“', '‘', '('])
+            .chars()
+            .next()
+            .is_some_and(char::is_uppercase);
+        match punct {
+            '?' | '!' | '…' | '？' | '！' => stem.chars().any(char::is_alphabetic),
+            '.' | '。' => {
+                stem.chars().count() >= 3
+                    && stem.chars().all(char::is_alphabetic)
+                    && next_starts_upper
+            }
+            _ => false,
+        }
+    })
 }
 
 fn is_numeric_value(body: &str) -> bool {
@@ -1247,7 +1393,26 @@ fn colon_title_ok(line: &str) -> bool {
                 word.trim_matches(|c: char| !c.is_alphanumeric())
                     .to_ascii_lowercase()
                     .as_str(),
-                "note" | "notes" | "summary" | "pasted" | "excerpt"
+                "note"
+                    | "notes"
+                    | "summary"
+                    | "pasted"
+                    | "excerpt"
+                    | "plan"
+                    | "plans"
+                    | "schedule"
+                    | "itinerary"
+                    | "agenda"
+                    | "roster"
+                    | "timetable"
+                    | "shifts"
+                    | "changelog"
+                    | "log"
+                    | "logs"
+                    | "checklist"
+                    | "tasks"
+                    | "todo"
+                    | "todos"
             )
         })
         && !reserved_label(&lower_prefix)
@@ -1314,6 +1479,65 @@ fn reserved_label(label: &str) -> bool {
             | "lap"
             | "stop"
             | "end"
+            | "added"
+            | "changed"
+            | "deprecated"
+            | "removed"
+            | "fixed"
+            | "security"
+            | "updated"
+            | "improved"
+            | "refactored"
+            | "reverted"
+            | "resolved"
+            | "bugfix"
+            | "hotfix"
+            | "breaking"
+            | "chore"
+            | "opened"
+            | "closed"
+            | "merged"
+            | "deployed"
+            | "released"
+            | "started"
+            | "stopped"
+            | "passed"
+            | "failed"
+            | "pass"
+            | "fail"
+            | "blocked"
+            | "pending"
+            | "done"
+            | "completed"
+            | "skipped"
+            | "retried"
+            | "alert"
+            | "notice"
+            | "critical"
+            | "fatal"
+            | "success"
+            | "home"
+            | "away"
+            | "before"
+            | "after"
+            | "input"
+            | "output"
+            | "expected"
+            | "actual"
+            | "buy"
+            | "sell"
+            | "debit"
+            | "credit"
+            | "income"
+            | "expense"
+            | "win"
+            | "loss"
+            | "problem"
+            | "solution"
+            | "cause"
+            | "fix"
+            | "issue"
+            | "resolution"
     )
 }
 

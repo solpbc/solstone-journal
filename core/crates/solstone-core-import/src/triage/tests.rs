@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 6);
+    assert_eq!(found.ruleset_version, 7);
     let shuffled = RULES
         .iter()
         .rev()
@@ -1432,20 +1432,14 @@ fn meeting_whisper_and_timed_narration_layouts_classify_as_transcripts() {
     let macwhisper_three_turn = concat!(
         "# Studio sync\n\n",
         "**Sonia**\n",
-        "*01:12*\n",
+        "*00:12*\n",
         "Did the stoneware clay arrive?\n\n",
         "**Devon**\n",
-        "*01:28*\n",
+        "*00:28*\n",
         "Two pallets are sitting by the loading door.\n\n",
         "**Sonia**\n",
-        "*01:45*\n",
+        "*00:45*\n",
         "I will wheel them into the damp room.\n",
-    );
-    let bare_clock_turns = concat!(
-        "Meeting: Greenhouse Roof Kickoff - 2026-10-05 10:00 AM\n\n",
-        "00:00:01 Speaker 1 (Sonia): Good morning everyone, thanks for joining.\n",
-        "00:00:15 Speaker 2 (Devon): Morning Sonia, glad to get started.\n",
-        "00:00:24 Speaker 1 (Sonia): Let us walk through the timber schedule first.\n",
     );
     let single_speaker_whisper = concat!(
         "# Transcription: Orchard Episode 19\n\n",
@@ -1486,7 +1480,6 @@ fn meeting_whisper_and_timed_narration_layouts_classify_as_transcripts() {
             macwhisper_three_turn,
             "macwhisper_stacked",
         ),
-        ("bare-clock.txt", bare_clock_turns, "clock_speaker"),
         (
             "whisper-solo.md",
             single_speaker_whisper,
@@ -1501,6 +1494,258 @@ fn meeting_whisper_and_timed_narration_layouts_classify_as_transcripts() {
             "timed-blocks.md",
             timed_narration_paragraphs,
             "timed_transcript_narration",
+        ),
+    ] {
+        expected(name, text, Kind::Transcripts, &[rule]);
+    }
+}
+
+#[test]
+fn schedules_changelogs_and_match_logs_stay_notes() {
+    let plan = concat!(
+        "Offsite plan: Denver in May\n\n",
+        "Lena  9:00\n",
+        "opens with the budget\n\n",
+        "Hugo  9:30\n",
+        "supplier review\n\n",
+        "Lena  10:15\n",
+        "wrap up\n",
+    );
+    let sched = concat!(
+        "# Monday\n\n",
+        "**Lena**\n",
+        "*09:00*\n",
+        "Budget review\n\n",
+        "**Hugo**\n",
+        "*09:30*\n",
+        "Supplier call\n\n",
+        "**Lena**\n",
+        "*10:15*\n",
+        "Wrap up\n",
+    );
+    let tasks = concat!(
+        "09:00:00 Lena (lead): opens the shop\n",
+        "09:30:00 Hugo (ops): checks deliveries\n",
+        "10:00:00 Lena (lead): calls supplier\n",
+        "10:30:00 Hugo (ops): packs orders\n",
+    );
+    let changelog = concat!(
+        "- 2026-08-05 01:00:05 **Fixed**: the login loop on slow links.\n",
+        "- 2026-08-06 01:00:18 **Added**: export to CSV.\n",
+        "- 2026-08-07 01:00:34 **Fixed**: a crash on empty input.\n",
+        "- 2026-08-08 01:00:49 **Added**: dark mode.\n",
+    );
+    let match_log = concat!(
+        "Home: won 3-1 against Leeds\n",
+        "Away: lost 0-2 at Hull\n",
+        "Home: drew 1-1 with York\n",
+        "Away: won 2-0 at Bath\n",
+        "Home: won 4-0 against Hove\n",
+        "Away: drew 0-0 at Ryde\n",
+    );
+    let plan_without_title = plan.split_once("\n\n").unwrap().1;
+    let plan_title_over_recording = concat!(
+        "Offsite plan: Denver in May\n\n",
+        "Sonia Cho  0:03\n",
+        "Welcome back to the studio.\n\n",
+        "Devon Cruz  0:11\n",
+        "Let us check the kiln log.\n\n",
+        "Sonia Cho  0:19\n",
+        "The glaze test finished overnight.\n",
+    );
+
+    for (name, text) in [
+        ("plan.md", plan),
+        ("sched.md", sched),
+        ("t.txt", tasks),
+        ("cl.md", changelog),
+        ("s.txt", match_log),
+        ("plan-body.md", plan_without_title),
+        ("plan-title.md", plan_title_over_recording),
+    ] {
+        expect_review_file(name, text, Kind::Notes, "note_default");
+        expected(name, text, Kind::Notes, &["note_default"]);
+    }
+}
+
+#[test]
+fn additional_schedules_rosters_changelogs_and_logs_stay_notes() {
+    let agenda_plain = concat!(
+        "Friday agenda\n\n",
+        "Lena  09:00\n",
+        "Opens with the budget review.\n\n",
+        "Hugo  09:30\n",
+        "Walks through the supplier options.\n\n",
+        "Lena  10:15\n",
+        "Wraps up with next steps.\n",
+    );
+    let midnight_shifts = concat!(
+        "# Night shift\n\n",
+        "**Lena**\n",
+        "*00:00*\n",
+        "Server room patrol\n\n",
+        "**Hugo**\n",
+        "*00:30*\n",
+        "Loading dock check\n",
+    );
+    let afternoon_agenda = concat!(
+        "# Tuesday workshop\n\n",
+        "**Lena**\n",
+        "*13:00*\n",
+        "Opens with the quarterly budget review.\n\n",
+        "**Hugo**\n",
+        "*13:30*\n",
+        "Presents the updated supplier shortlist.\n\n",
+        "**Lena**\n",
+        "*14:15*\n",
+        "Closes with action owners and dates.\n",
+    );
+    let range_roster = concat!(
+        "[09:00:00 - 09:30:00] Lena: budget review\n",
+        "[09:30:00 - 10:00:00] Hugo: supplier call\n",
+        "[10:00:00 - 10:30:00] Lena: wrap up\n",
+        "[10:30:00 - 11:00:00] Hugo: send notes\n",
+    );
+    let same_day_changelog = concat!(
+        "- 2026-08-05 14:10:02 **Added**: dark theme toggle.\n",
+        "- 2026-08-05 14:10:15 **Fixed**: crash when opening empty folder.\n",
+        "- 2026-08-05 14:10:29 **Changed**: default sort order to newest first.\n",
+        "- 2026-08-05 14:10:44 **Fixed**: broken link in settings footer.\n",
+    );
+    let reverse_changelog = concat!(
+        "- 2026-08-08 16:40:12 **Parser**: Support nested quote blocks.\n",
+        "- 2026-08-07 11:20:05 **Indexer**: Skip zero-byte lock files.\n",
+        "- 2026-08-06 09:15:44 **Parser**: Handle UTF-16 BOM cleanly.\n",
+        "- 2026-08-05 18:02:31 **Indexer**: Compact stale tombstones on startup.\n",
+    );
+    let ops_incident = concat!(
+        "14:00:02 Gateway: upstream returned 502 on health check\n",
+        "14:00:15 Database: replica lag rose to 14 seconds\n",
+        "14:00:29 Gateway: shifted traffic to secondary pool\n",
+        "14:00:41 Database: replica caught up and lag cleared\n",
+    );
+    let signal_changelog = concat!(
+        "[2026-08-05 09:00:00] Fixed: login loop on slow links\n",
+        "[2026-08-06 09:00:00] Added: export to CSV\n",
+        "[2026-08-07 09:00:00] Fixed: crash on empty input\n",
+        "[2026-08-08 09:00:00] Added: dark mode\n",
+    );
+    let meeting_agenda = concat!(
+        "# Offsite plan\n",
+        "Date: 2026-08-05\n",
+        "Attendees: Lena, Hugo\n\n",
+        "09:00:00 Lena (lead): opens the shop\n",
+        "09:30:00 Hugo (ops): checks deliveries\n",
+        "10:00:00 Lena (lead): calls supplier\n",
+        "10:30:00 Hugo (ops): packs orders\n",
+    );
+    let meeting_agenda_punctuated = concat!(
+        "# Offsite plan\n",
+        "Date: 2026-08-05\n",
+        "Attendees: Lena, Hugo\n\n",
+        "09:00:00 Lena (lead): Opens the shop.\n",
+        "09:30:00 Hugo (ops): Checks deliveries.\n",
+        "10:00:00 Lena (lead): Calls the supplier.\n",
+        "10:30:00 Hugo (ops): Packs the orders.\n",
+    );
+    let clock_dash_agenda = concat!(
+        "09:00 - Lena: Opens with the budget.\n",
+        "09:30 - Hugo: Runs the supplier review.\n",
+        "10:15 - Lena: Wraps up with next steps.\n",
+    );
+    let time_first_roster = concat!(
+        "09:00 - Lena\n",
+        "opens with the budget\n\n",
+        "09:30 - Hugo\n",
+        "supplier review\n\n",
+        "10:15 - Lena\n",
+        "wrap up\n",
+    );
+    let pair_chores = concat!(
+        "Lena: book the conference room\n",
+        "Hugo: send the revised draft\n",
+        "Lena: check the Q3 budget\n",
+        "Hugo: confirm the catering count\n",
+        "Lena: update the onboarding wiki\n",
+        "Hugo: call the venue manager\n",
+    );
+    let expected_actual = concat!(
+        "**Expected:** The export writes one UTF-8 file.\n",
+        "**Actual:** The export writes two files with a BOM.\n",
+        "**Expected:** Timestamps stay in UTC.\n",
+        "**Actual:** Timestamps shift to local offset.\n",
+        "**Expected:** Empty lines are preserved.\n",
+        "**Actual:** Trailing blank lines are trimmed.\n",
+    );
+    let home_away_punctuated = concat!(
+        "Home: Won 3-1 against Leeds.\n",
+        "Away: Lost 0-2 at Hull.\n",
+        "Home: Drew 1-1 with York.\n",
+        "Away: Won 2-0 at Bath.\n",
+        "Home: Won 4-0 against Hove.\n",
+        "Away: Drew 0-0 at Ryde.\n",
+    );
+
+    for (name, text) in [
+        ("agenda-plain.txt", agenda_plain),
+        ("midnight-shifts.md", midnight_shifts),
+        ("afternoon-agenda.md", afternoon_agenda),
+        ("range-roster.txt", range_roster),
+        ("same-day-changelog.md", same_day_changelog),
+        ("reverse-changelog.md", reverse_changelog),
+        ("ops-incident.log", ops_incident),
+        ("signal-changelog.md", signal_changelog),
+        ("meeting-agenda.md", meeting_agenda),
+        ("meeting-agenda-punctuated.md", meeting_agenda_punctuated),
+        ("clock-dash-agenda.txt", clock_dash_agenda),
+        ("time-first-roster.txt", time_first_roster),
+        ("pair-chores.txt", pair_chores),
+        ("expected-actual.md", expected_actual),
+        ("home-away-punctuated.txt", home_away_punctuated),
+    ] {
+        expected(name, text, Kind::Notes, &["note_default"]);
+    }
+}
+
+#[test]
+fn midnight_recordings_headed_clocks_and_partial_punctuation_stay_transcripts() {
+    let midnight_dated_bold = concat!(
+        "- 2026-08-05 23:59:45 **Speaker 1**: Ready to close out the late shift?\n",
+        "- 2026-08-06 00:00:05 **Speaker 2**: Yes, all kiln temperatures dropped on schedule.\n",
+        "- 2026-08-06 00:00:22 **Speaker 1**: Great, let us log the reading and lock up.\n",
+        "- 2026-08-06 00:00:39 **Speaker 2**: Done, see you at eight tomorrow.\n",
+    );
+    let headed_clock_meeting = concat!(
+        "Meeting: Greenhouse Roof Kickoff\n",
+        "Date: 2026-10-05\n\n",
+        "00:00:01 Speaker 1 (Sonia): Good morning everyone, thanks for joining.\n",
+        "00:00:15 Speaker 2 (Devon): Morning Sonia, glad to get started.\n",
+        "00:00:24 Speaker 1 (Sonia): Let us walk through the timber schedule first.\n",
+    );
+    let casual_partial_punctuation = concat!(
+        "Lena: hey are you coming?\n",
+        "Hugo: yeah leaving now\n",
+        "Lena: cool bring the keys\n",
+        "Hugo: got them\n",
+        "Lena: need anything else?\n",
+        "Hugo: nah see you in ten\n",
+    );
+
+    for (name, text, rule) in [
+        (
+            "midnight-dated-bold.md",
+            midnight_dated_bold,
+            "dated_bold_speaker",
+        ),
+        (
+            "headed-clock-meeting.txt",
+            headed_clock_meeting,
+            "meeting_export_turns",
+        ),
+        (
+            "casual-partial.txt",
+            casual_partial_punctuation,
+            "bare_speaker",
         ),
     ] {
         expected(name, text, Kind::Transcripts, &[rule]);
