@@ -62,18 +62,18 @@ use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_EXISTS, ERROR_LOCK_VIOLATION, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, ERROR_LOCK_VIOLATION, GENERIC_READ, GENERIC_WRITE,
+    INVALID_HANDLE_VALUE,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
-    CREATE_NEW, CreateDirectoryW, CreateFileW, CreateHardLinkW, DeleteFileW,
-    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_ID_INFO, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo,
-    GetFileInformationByHandleEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
-    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, OPEN_ALWAYS, OPEN_EXISTING,
-    UnlockFileEx,
+    CREATE_NEW, CreateDirectoryW, CreateFileW, DeleteFileW, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FILE_LIST_DIRECTORY,
+    FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
+    FileAttributeTagInfo, FileIdInfo, GetFileInformationByHandleEx, LOCKFILE_EXCLUSIVE_LOCK,
+    LOCKFILE_FAIL_IMMEDIATELY, LockFileEx, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    MoveFileExW, OPEN_ALWAYS, OPEN_EXISTING, UnlockFileEx,
 };
 #[cfg(windows)]
 use windows_sys::Win32::System::Com::CoTaskMemFree;
@@ -1522,9 +1522,9 @@ impl SecureDir {
         #[cfg(windows)]
         {
             // Windows does not provide a reliably documented directory-handle
-            // flush guarantee. File contents are flushed before publication and
-            // replacement uses MOVEFILE_WRITE_THROUGH; this is intentionally not
-            // presented as an equivalent to Unix directory fsync.
+            // flush guarantee. File contents are flushed before publication, and
+            // publication and replacement use MOVEFILE_WRITE_THROUGH; this is
+            // intentionally not presented as an equivalent to Unix directory fsync.
             Ok(())
         }
     }
@@ -3745,13 +3745,28 @@ fn write_stage(
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
-fn create_hard_link_windows(new_path: &Path, existing_path: &Path) -> Result<(), io::Error> {
-    let new_wide =
-        windows_wide_nul(new_path).map_err(|error| io::Error::other(error.to_string()))?;
-    let existing_wide =
-        windows_wide_nul(existing_path).map_err(|error| io::Error::other(error.to_string()))?;
-    // SAFETY: both paths are NUL terminated and the security descriptor is intentionally inherited.
-    if unsafe { CreateHardLinkW(new_wide.as_ptr(), existing_wide.as_ptr(), std::ptr::null()) } == 0
+fn move_file_no_replace_windows(
+    source_path: &Path,
+    destination_path: &Path,
+) -> Result<(), io::Error> {
+    let source =
+        windows_wide_nul(source_path).map_err(|error| io::Error::other(error.to_string()))?;
+    let destination =
+        windows_wide_nul(destination_path).map_err(|error| io::Error::other(error.to_string()))?;
+    // SAFETY: both paths are NUL terminated and refer to the same namespace directory.
+    // Omitting MOVEFILE_REPLACE_EXISTING preserves atomic create-only semantics on
+    // Windows without creating and immediately deleting a second hard link: unlinking
+    // a freshly closed hard-linked stage while a minifilter opens a DataScan section
+    // causes NTFS to retain a System kernel handle on the surviving link until cache
+    // teardown, which rejects the immediately following replacing rename with
+    // ERROR_ACCESS_DENIED.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
     {
         return Err(io::Error::last_os_error());
     }
@@ -3764,18 +3779,17 @@ fn publish_prepared(namespace: &SecureDir, stage: Stage) -> Result<(), PublishPr
     let name = stage.name.clone();
     let stage_path = namespace.path.join(&name);
     let record_path = namespace.path.join("record");
-    let linked = create_hard_link_windows(&record_path, &stage_path);
+    let moved = move_file_no_replace_windows(&stage_path, &record_path);
     drop(stage);
-    match linked {
+    match moved {
         Ok(()) => {
-            delete_file_windows(&stage_path, "remove published record stage")
-                .map_err(PublishPreparedError::Identity)?;
             hit(FaultPoint::PreparedDirectorySync).map_err(PublishPreparedError::Identity)?;
             namespace.sync().map_err(PublishPreparedError::Identity)
         }
         Err(error)
             if error.kind() == io::ErrorKind::AlreadyExists
-                || error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) =>
+                || error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32)
+                || error.raw_os_error() == Some(ERROR_ALREADY_EXISTS as i32) =>
         {
             delete_file_windows(&stage_path, "remove losing record stage")
                 .map_err(PublishPreparedError::Identity)?;
@@ -6790,10 +6804,11 @@ mod windows_tests {
         assert!(path.as_os_str().encode_wide().count() > 260);
         let file = create_new_file(&path, "long record stage").unwrap();
         drop(file);
-        let linked = deep.join("record");
-        create_hard_link_windows(&linked, &path).unwrap();
+        let published = deep.join("record");
+        move_file_no_replace_windows(&path, &published).unwrap();
+        assert!(!path.exists() && published.exists());
         let opened = open_windows_file(
-            &linked,
+            &published,
             GENERIC_READ,
             OPEN_EXISTING,
             FILE_FLAG_OPEN_REPARSE_POINT,
@@ -6801,9 +6816,105 @@ mod windows_tests {
         )
         .unwrap();
         drop(opened);
-        delete_file_windows(&path, "delete long stage").unwrap();
-        delete_file_windows(&linked, "delete long record").unwrap();
-        assert!(!path.exists() && !linked.exists());
+        delete_file_windows(&published, "delete long record").unwrap();
+        assert!(!path.exists() && !published.exists());
+    }
+
+    #[test]
+    fn windows_publish_prepared_preserves_existing_record_and_removes_losing_stage() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\no-replace";
+        let provider = open_provider(&fixture.owner, true).expect("open provider");
+        let name = namespace_name(PlatformTag::Windows, &fixture.root_token(root));
+        let namespace = open_namespace(&provider, &name, true).expect("open namespace");
+
+        let winner = IdentityRecord {
+            state: LifecycleState::Prepared,
+            generation: Generation::new(1).expect("generation"),
+            id: generate_id().expect("winner id"),
+            platform: PlatformTag::Windows,
+            root_token: fixture.root_token(root),
+            journal_token: JournalToken::from_raw_absolute(token_bytes(r"C:\solstone\winner"))
+                .expect("winner journal token"),
+        };
+        let winner_stage =
+            write_stage(&namespace, StageKind::Prepared, &winner).expect("write winner stage");
+        publish_prepared(&namespace, winner_stage).expect("publish winning prepared record");
+        let record_path = namespace.path.join("record");
+        let winner_bytes = fs::read(&record_path).expect("read winning record");
+
+        let loser = IdentityRecord {
+            state: LifecycleState::Prepared,
+            generation: Generation::new(1).expect("generation"),
+            id: generate_id().expect("loser id"),
+            platform: PlatformTag::Windows,
+            root_token: fixture.root_token(root),
+            journal_token: JournalToken::from_raw_absolute(token_bytes(r"C:\solstone\loser"))
+                .expect("loser journal token"),
+        };
+        let loser_stage =
+            write_stage(&namespace, StageKind::Prepared, &loser).expect("write loser stage");
+        let loser_stage_path = namespace.path.join(&loser_stage.name);
+        let outcome = publish_prepared(&namespace, loser_stage);
+
+        assert!(
+            matches!(outcome, Err(PublishPreparedError::AlreadyExists)),
+            "expected AlreadyExists when record already exists, got {outcome:?}"
+        );
+        assert_eq!(
+            fs::read(&record_path).expect("re-read winning record"),
+            winner_bytes
+        );
+        assert!(
+            !loser_stage_path.exists(),
+            "losing prepared stage must be cleaned up"
+        );
+    }
+
+    #[test]
+    fn windows_repeated_and_concurrent_first_admission_converges() {
+        use std::sync::{Arc, Barrier};
+
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+
+        for i in 0..16 {
+            let root = format!(r"C:\solstone\first-admit-{i}");
+            let journal = format!(r"C:\solstone\journal-{i}");
+            let admission = admit_setup(fixture.request(&root, &journal))
+                .unwrap_or_else(|error| panic!("first admission {i} failed: {error}"));
+            assert_eq!(admission.binding().generation, Generation::new(1).unwrap());
+            drop(admission);
+        }
+
+        let race_root = r"C:\solstone\concurrent-first-admit";
+        let race_journal = r"C:\solstone\concurrent-journal";
+        let barrier = Arc::new(Barrier::new(4));
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                let request = fixture.request(race_root, race_journal);
+                thread::spawn(move || {
+                    barrier.wait();
+                    admit_setup(request)
+                        .expect("concurrent first admission")
+                        .binding()
+                        .clone()
+                })
+            })
+            .collect();
+        let bindings: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("admission thread"))
+            .collect();
+        for binding in &bindings[1..] {
+            assert_eq!(binding.id, bindings[0].id);
+            assert_eq!(binding.generation, Generation::new(1).unwrap());
+            assert_eq!(binding.namespace, bindings[0].namespace);
+        }
     }
 
     #[test]
