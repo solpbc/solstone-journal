@@ -1,0 +1,30 @@
+{
+  "description": "Backlog verdict when pending days exist and no work is set aside. count is the number of pending days.",
+  "context": "Journal window. Backlog verdict when pending days exist and no work is set aside. count is the number of pending days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9345a97eeea24dcde2de740153e2d4efe5eaa8e451383b48cbbe5e8d33be328a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

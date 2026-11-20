@@ -210789,67 +210789,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.day.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.day\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.day.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ days",
-      "message_id": "journal.window.system.health.backlog.age.day.many",
+      "message_id": "journal.window.system.health.backlog.age.day",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day.many\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.day.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.day.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day",
-      "message_id": "journal.window.system.health.backlog.age.day.one",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day.one\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
       "target": "classic"
     },
     {
@@ -210857,67 +210833,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.hour.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.hour",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ hours",
-      "message_id": "journal.window.system.health.backlog.age.hour.many",
+      "message_id": "journal.window.system.health.backlog.age.hour",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour.many\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.hour.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 hour",
-      "message_id": "journal.window.system.health.backlog.age.hour.one",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour.one\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
       "target": "classic"
     },
     {
@@ -210925,97 +210877,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.minute.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.minute",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ minutes",
-      "message_id": "journal.window.system.health.backlog.age.minute.many",
+      "message_id": "journal.window.system.health.backlog.age.minute",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute.many\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.minute.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 minute",
-      "message_id": "journal.window.system.health.backlog.age.minute.one",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute.one\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.unknown\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.unknown",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "unknown",
-      "message_id": "journal.window.system.health.backlog.age.unknown",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.unknown\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
       "target": "classic"
     },
     {
@@ -211661,67 +211559,55 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.pending.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "pending_days": "sample",
+        "pending_quantity": 0,
+        "stuck_days": "sample",
+        "stuck_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ more days are still catching up",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.plural",
+      "logical_expected": "⁨sample⁩ days need a hand. ⁨sample⁩ more days are still catching up.",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.pending.plural\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", [[\"pending_days\", \"sample\"], [\"pending_quantity\", 0], [\"stuck_days\", \"sample\"], [\"stuck_quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.pending.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 more day is still catching up",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.singular",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.pending.singular\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
       "target": "classic"
     },
     {
@@ -211729,67 +211615,55 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.stuck.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 1,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 1
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "pending_days": "sample",
+        "pending_quantity": 0,
+        "stuck_days": "sample",
+        "stuck_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ days need a hand",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.plural",
+      "logical_expected": "1 day needs a hand. ⁨sample⁩ more days are still catching up.",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.stuck.plural\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", [[\"pending_days\", \"sample\"], [\"pending_quantity\", 0], [\"stuck_days\", \"sample\"], [\"stuck_quantity\", 1]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.stuck.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day needs a hand",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.singular",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.stuck.singular\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
       "target": "classic"
     },
     {
@@ -211797,67 +211671,99 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 1
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending.only.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.pending.only.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "pending_days": "sample",
+        "pending_quantity": 1,
+        "stuck_days": "sample",
+        "stuck_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ days need a hand. 1 more day is still catching up.",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", [[\"pending_days\", \"sample\"], [\"pending_quantity\", 1], [\"stuck_days\", \"sample\"], [\"stuck_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ days are still catching up.",
-      "message_id": "journal.window.system.health.backlog.verdict.pending.only.plural",
+      "message_id": "journal.window.system.health.backlog.verdict.pending",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending.only.plural\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending.only.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.pending.only.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day is still catching up.",
-      "message_id": "journal.window.system.health.backlog.verdict.pending.only.singular",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending.only.singular\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
       "target": "classic"
     },
     {
@@ -211865,37 +211771,87 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck.only.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.day\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.stuck.only.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.stale.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "caught up except ⁨sample⁩ days that need a hand.",
-      "message_id": "journal.window.system.health.backlog.verdict.stuck.only.plural",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ days ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.day",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck.only.plural\", [[\"n\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.day\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.hour\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.stale.hour",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ hours ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.hour",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.hour\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
       "target": "classic"
     },
     {
@@ -211906,12 +211862,12 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck.only.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172_plural",
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.unknown\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e_plural",
         "gettext_unsigned_quantity": null,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.stuck.only.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
+        "message_id": "journal.window.system.health.backlog.verdict.stale.unknown",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
         "signed_quantity": null
       },
       "cardinal": "en",
@@ -211920,12 +211876,56 @@
       "folder": null,
       "inputs": {},
       "locale": "en-US",
-      "logical_expected": "caught up except 1 day that needs a hand.",
-      "message_id": "journal.window.system.health.backlog.verdict.stuck.only.singular",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was unknown ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.unknown",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck.only.singular\", [])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.unknown\", [])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.stuck",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "caught up except ⁨sample⁩ days that need a hand.",
+      "message_id": "journal.window.system.health.backlog.verdict.stuck",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
       "target": "classic"
     },
     {
@@ -211966,64 +211966,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.behind.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.index.behind.count\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.index.behind.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.index.behind.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "count": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "search is catching up with ⁨sample⁩ changes in your journal.",
-      "message_id": "journal.window.system.health.index.behind.many",
+      "message_id": "journal.window.system.health.index.behind.count",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.many\", [[\"count\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.count\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.behind.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.index.behind.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "search is catching up with 1 change in your journal.",
-      "message_id": "journal.window.system.health.index.behind.one",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.one\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
       "target": "classic"
     },
     {
@@ -212394,64 +212370,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.retained.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.index.retained.count\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.index.retained.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.index.retained.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "count": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "search still shows ⁨sample⁩ entries that are no longer in your journal.",
-      "message_id": "journal.window.system.health.index.retained.many",
+      "message_id": "journal.window.system.health.index.retained.count",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.many\", [[\"count\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.count\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.retained.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.index.retained.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "search still shows 1 entry that is no longer in your journal.",
-      "message_id": "journal.window.system.health.index.retained.one",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.one\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
       "target": "classic"
     },
     {
@@ -464371,67 +464323,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.day.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.day\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.day.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "⁨sample⁩ days",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ days",
-      "message_id": "journal.window.system.health.backlog.age.day.many",
+      "message_id": "journal.window.system.health.backlog.age.day",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day.many\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.day.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.day.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 day",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day",
-      "message_id": "journal.window.system.health.backlog.age.day.one",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.day.one\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
       "target": "rust"
     },
     {
@@ -464439,67 +464367,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.hour.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.hour",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "⁨sample⁩ hours",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ hours",
-      "message_id": "journal.window.system.health.backlog.age.hour.many",
+      "message_id": "journal.window.system.health.backlog.age.hour",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour.many\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.hour.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.hour.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 hour",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 hour",
-      "message_id": "journal.window.system.health.backlog.age.hour.one",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.hour.one\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
       "target": "rust"
     },
     {
@@ -464507,97 +464411,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.minute.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.age.minute",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "⁨sample⁩ minutes",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ minutes",
-      "message_id": "journal.window.system.health.backlog.age.minute.many",
+      "message_id": "journal.window.system.health.backlog.age.minute",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute.many\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.minute.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.minute.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 minute",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 minute",
-      "message_id": "journal.window.system.health.backlog.age.minute.one",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.minute.one\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.age.unknown\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.age.unknown",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "unknown",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "unknown",
-      "message_id": "journal.window.system.health.backlog.age.unknown",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.age.unknown\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
       "target": "rust"
     },
     {
@@ -465243,67 +465093,55 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.pending.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ more days are still catching up",
+      "expected": "⁨sample⁩ days need a hand. ⁨⁨sample⁩ more days are still catching up.⁩",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "pending_days": "sample",
+        "pending_quantity": 0,
+        "stuck_days": "sample",
+        "stuck_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ more days are still catching up",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.plural",
+      "logical_expected": "⁨sample⁩ days need a hand. ⁨⁨sample⁩ more days are still catching up.⁩",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.pending.plural\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", &[(\"pending_days\", Value::String(\"sample\")), (\"pending_quantity\", Value::Cardinal(0)), (\"stuck_days\", Value::String(\"sample\")), (\"stuck_quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.pending.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 more day is still catching up",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 more day is still catching up",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.pending.singular",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.pending.singular\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
       "target": "rust"
     },
     {
@@ -465311,67 +465149,55 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.stuck.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 1,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 1
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ days need a hand",
+      "expected": "1 day needs a hand. ⁨⁨sample⁩ more days are still catching up.⁩",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "pending_days": "sample",
+        "pending_quantity": 0,
+        "stuck_days": "sample",
+        "stuck_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ days need a hand",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.plural",
+      "logical_expected": "1 day needs a hand. ⁨⁨sample⁩ more days are still catching up.⁩",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.stuck.plural\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", &[(\"pending_days\", Value::String(\"sample\")), (\"pending_quantity\", Value::Cardinal(0)), (\"stuck_days\", Value::String(\"sample\")), (\"stuck_quantity\", Value::Cardinal(1))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed.stuck.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 day needs a hand",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day needs a hand",
-      "message_id": "journal.window.system.health.backlog.verdict.mixed.stuck.singular",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed.stuck.singular\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
       "target": "rust"
     },
     {
@@ -465379,67 +465205,99 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "stuck_days",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "pending_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stuck_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "pending_quantity",
+            "type": "cardinal",
+            "value": 1
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending.only.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.mixed\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.pending.only.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.mixed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ days need a hand. ⁨1 more day is still catching up.⁩",
+      "folder": null,
+      "inputs": {
+        "pending_days": "sample",
+        "pending_quantity": 1,
+        "stuck_days": "sample",
+        "stuck_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ days need a hand. ⁨1 more day is still catching up.⁩",
+      "message_id": "journal.window.system.health.backlog.verdict.mixed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.mixed\", &[(\"pending_days\", Value::String(\"sample\")), (\"pending_quantity\", Value::Cardinal(1)), (\"stuck_days\", Value::String(\"sample\")), (\"stuck_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "⁨sample⁩ days are still catching up.",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ days are still catching up.",
-      "message_id": "journal.window.system.health.backlog.verdict.pending.only.plural",
+      "message_id": "journal.window.system.health.backlog.verdict.pending",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending.only.plural\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.pending.only.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.pending.only.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "1 day is still catching up.",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "1 day is still catching up.",
-      "message_id": "journal.window.system.health.backlog.verdict.pending.only.singular",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.pending.only.singular\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
       "target": "rust"
     },
     {
@@ -465447,37 +465305,87 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "n",
+            "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck.only.plural\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.day\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.stuck.only.plural",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.backlog.verdict.stale.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "caught up except ⁨sample⁩ days that need a hand.",
+      "expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ days ago.",
       "folder": null,
       "inputs": {
-        "n": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "caught up except ⁨sample⁩ days that need a hand.",
-      "message_id": "journal.window.system.health.backlog.verdict.stuck.only.plural",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ days ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.day",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck.only.plural\", &[(\"n\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.day\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.hour\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.stale.hour",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ hours ago.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was ⁨sample⁩ hours ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.hour",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.hour\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
       "target": "rust"
     },
     {
@@ -465488,26 +465396,70 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck.only.singular\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172_plural",
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stale.unknown\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e_plural",
         "gettext_unsigned_quantity": null,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.backlog.verdict.stuck.only.singular",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
+        "message_id": "journal.window.system.health.backlog.verdict.stale.unknown",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
         "signed_quantity": null
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "caught up except 1 day that needs a hand.",
+      "expected": "it's unclear whether your journal is caught up; the last update was unknown ago.",
       "folder": null,
       "inputs": {},
       "locale": "en-US",
-      "logical_expected": "caught up except 1 day that needs a hand.",
-      "message_id": "journal.window.system.health.backlog.verdict.stuck.only.singular",
+      "logical_expected": "it's unclear whether your journal is caught up; the last update was unknown ago.",
+      "message_id": "journal.window.system.health.backlog.verdict.stale.unknown",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck.only.singular\", &[])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stale.unknown\", &[])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.system.health.backlog.verdict.stuck\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.system.health.backlog.verdict.stuck",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "caught up except ⁨sample⁩ days that need a hand.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "caught up except ⁨sample⁩ days that need a hand.",
+      "message_id": "journal.window.system.health.backlog.verdict.stuck",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.backlog.verdict.stuck\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
       "target": "rust"
     },
     {
@@ -465548,64 +465500,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.behind.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.index.behind.count\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.index.behind.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.index.behind.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "search is catching up with ⁨sample⁩ changes in your journal.",
       "folder": null,
       "inputs": {
-        "count": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "search is catching up with ⁨sample⁩ changes in your journal.",
-      "message_id": "journal.window.system.health.index.behind.many",
+      "message_id": "journal.window.system.health.index.behind.count",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.many\", &[(\"count\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.count\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.behind.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.index.behind.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "search is catching up with 1 change in your journal.",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "search is catching up with 1 change in your journal.",
-      "message_id": "journal.window.system.health.index.behind.one",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.behind.one\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
       "target": "rust"
     },
     {
@@ -465976,64 +465904,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.retained.many\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.system.health.index.retained.count\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.system.health.index.retained.many",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-        "signed_quantity": null
+        "message_id": "journal.window.system.health.index.retained.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
       "expected": "search still shows ⁨sample⁩ entries that are no longer in your journal.",
       "folder": null,
       "inputs": {
-        "count": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "search still shows ⁨sample⁩ entries that are no longer in your journal.",
-      "message_id": "journal.window.system.health.index.retained.many",
+      "message_id": "journal.window.system.health.index.retained.count",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.many\", &[(\"count\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.count\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.system.health.index.retained.one\u0004m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.system.health.index.retained.one",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "search still shows 1 entry that is no longer in your journal.",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "search still shows 1 entry that is no longer in your journal.",
-      "message_id": "journal.window.system.health.index.retained.one",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.system.health.index.retained.one\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
       "target": "rust"
     },
     {

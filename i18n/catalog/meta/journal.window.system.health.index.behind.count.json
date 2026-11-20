@@ -1,0 +1,30 @@
+{
+  "description": "Search status for outstanding updates. count is the number that have yet to be indexed.",
+  "context": "Journal window. Search status for outstanding updates. count is the number that have yet to be indexed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "af557cb5b31fbbf47b6c1a04cadb3304cc9d94014b860dd3f9980e6fecfec070",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

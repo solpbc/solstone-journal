@@ -1,0 +1,30 @@
+{
+  "description": "Whole stale backlog verdict. count is the time since the last usable summary in days.",
+  "context": "Journal window. Whole stale backlog verdict. count is the time since the last usable summary in days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ca0b69473a767302ed2351e8ff3b617e25b35ee905aeaee70cfd4c01d9d2ff30",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

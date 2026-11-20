@@ -1,0 +1,30 @@
+{
+  "description": "Summary age shown as an independent interval. count is the elapsed number of days.",
+  "context": "Journal window. Summary age shown as an independent interval. count is the elapsed number of days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ca1337f118be123c08129ccdbadc88b33dc93aed1b1f6bf4c64aee6e8b95db86",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

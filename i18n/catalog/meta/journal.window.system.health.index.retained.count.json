@@ -1,0 +1,30 @@
+{
+  "description": "Search status for entries it could not yet remove. count is the number of retained entries.",
+  "context": "Journal window. Search status for entries it could not yet remove. count is the number of retained entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f2c551951e248c5da38ee70dd0758bac9622b75af11c5f41dc76a0da612bc9d0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

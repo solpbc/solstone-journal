@@ -1,0 +1,39 @@
+{
+  "description": "Backlog notice when work is both set aside and pending. stuck_days and pending_days are separate counts with independent selectors.",
+  "context": "Journal window. Backlog notice when work is both set aside and pending. stuck_days and pending_days are separate counts with independent selectors.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stuck_days",
+      "type": "string"
+    },
+    {
+      "name": "pending_days",
+      "type": "string"
+    },
+    {
+      "name": "stuck_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pending_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ff4cf821d93488602a57a2952748308b1a9e89a9edd49eca429a79484d8d761e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "stuck_quantity",
+    "type": "cardinal"
+  }
+}

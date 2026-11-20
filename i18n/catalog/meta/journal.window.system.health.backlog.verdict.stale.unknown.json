@@ -1,0 +1,16 @@
+{
+  "description": "Fallback backlog verdict when an already classified stale summary has no usable elapsed time.",
+  "context": "Journal window. Fallback backlog verdict when an already classified stale summary has no usable elapsed time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52a9f257c50c1255b0eea4521f4192bade8f729c14554b15707174a6f26708fc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

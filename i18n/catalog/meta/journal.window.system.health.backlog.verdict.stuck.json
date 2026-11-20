@@ -1,0 +1,30 @@
+{
+  "description": "Backlog verdict when days are set aside and no other work is pending. count is the number of set-aside days.",
+  "context": "Journal window. Backlog verdict when days are set aside and no other work is pending. count is the number of set-aside days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "11b92466b66d06a598b946305a744012ca7322a039561691de265736e14d7f62",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

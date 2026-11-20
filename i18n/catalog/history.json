@@ -103442,12 +103442,44 @@
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.age.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e646179",
+      "namespace": "journal.window.system.health.backlog.age",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.age.day.many",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6d616e79",
       "namespace": "journal.window.system.health.backlog.age.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.day",
       "format_intent": "text",
       "arguments": [
         {
@@ -103472,20 +103504,52 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6461792e6f6e65",
       "namespace": "journal.window.system.health.backlog.age.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.day",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.age.hour",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f7572",
+      "namespace": "journal.window.system.health.backlog.age",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.age.hour.many",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6d616e79",
       "namespace": "journal.window.system.health.backlog.age.hour",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.hour",
       "format_intent": "text",
       "arguments": [
         {
@@ -103510,20 +103574,52 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e686f75722e6f6e65",
       "namespace": "journal.window.system.health.backlog.age.hour",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.hour",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.age.minute",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e757465",
+      "namespace": "journal.window.system.health.backlog.age",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.age.minute.many",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6d616e79",
       "namespace": "journal.window.system.health.backlog.age.minute",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.minute",
       "format_intent": "text",
       "arguments": [
         {
@@ -103548,8 +103644,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e6d696e7574652e6f6e65",
       "namespace": "journal.window.system.health.backlog.age.minute",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.age.minute",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -103560,8 +103656,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e6167652e756e6b6e6f776e",
       "namespace": "journal.window.system.health.backlog.age",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.stale.unknown",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -103839,12 +103935,58 @@
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.verdict.mixed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d69786564",
+      "namespace": "journal.window.system.health.backlog.verdict",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "stuck_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pending_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stuck_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pending_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "stuck_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.verdict.mixed.pending.plural",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e706c7572616c",
       "namespace": "journal.window.system.health.backlog.verdict.mixed.pending",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.mixed",
       "format_intent": "text",
       "arguments": [
         {
@@ -103869,8 +104011,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e70656e64696e672e73696e67756c6172",
       "namespace": "journal.window.system.health.backlog.verdict.mixed.pending",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.mixed",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -103881,8 +104023,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e706c7572616c",
       "namespace": "journal.window.system.health.backlog.verdict.mixed.stuck",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.mixed",
       "format_intent": "text",
       "arguments": [
         {
@@ -103907,20 +104049,52 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6d697865642e737475636b2e73696e67756c6172",
       "namespace": "journal.window.system.health.backlog.verdict.mixed.stuck",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.mixed",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.verdict.pending",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e67",
+      "namespace": "journal.window.system.health.backlog.verdict",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.verdict.pending.only.plural",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e706c7572616c",
       "namespace": "journal.window.system.health.backlog.verdict.pending.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.pending",
       "format_intent": "text",
       "arguments": [
         {
@@ -103945,6 +104119,82 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e70656e64696e672e6f6e6c792e73696e67756c6172",
       "namespace": "journal.window.system.health.backlog.verdict.pending.only",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.pending",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.system.health.backlog.verdict.stale.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e646179",
+      "namespace": "journal.window.system.health.backlog.verdict.stale",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.system.health.backlog.verdict.stale.hour",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e686f7572",
+      "namespace": "journal.window.system.health.backlog.verdict.stale",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.system.health.backlog.verdict.stale.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e7374616c652e756e6b6e6f776e",
+      "namespace": "journal.window.system.health.backlog.verdict.stale",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
@@ -103953,12 +104203,44 @@
       "selector": null
     },
     {
+      "id": "journal.window.system.health.backlog.verdict.stuck",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b",
+      "namespace": "journal.window.system.health.backlog.verdict",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.system.health.backlog.verdict.stuck.only.plural",
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e706c7572616c",
       "namespace": "journal.window.system.health.backlog.verdict.stuck.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.stuck",
       "format_intent": "text",
       "arguments": [
         {
@@ -103988,8 +104270,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e737475636b2e6f6e6c792e73696e67756c6172",
       "namespace": "journal.window.system.health.backlog.verdict.stuck.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.stuck",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -104008,12 +104290,44 @@
       "selector": null
     },
     {
-      "id": "journal.window.system.health.index.behind.many",
-      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
+      "id": "journal.window.system.health.index.behind.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e636f756e74",
       "namespace": "journal.window.system.health.index.behind",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.system.health.index.behind.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6d616e79",
+      "namespace": "journal.window.system.health.index.behind",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.system.health.index.behind.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -104043,8 +104357,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e626568696e642e6f6e65",
       "namespace": "journal.window.system.health.index.behind",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.index.behind.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -104195,12 +104509,44 @@
       "selector": null
     },
     {
-      "id": "journal.window.system.health.index.retained.many",
-      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
+      "id": "journal.window.system.health.index.retained.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e636f756e74",
       "namespace": "journal.window.system.health.index.retained",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.system.health.index.retained.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6d616e79",
+      "namespace": "journal.window.system.health.index.retained",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.system.health.index.retained.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -104230,8 +104576,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e696e6465782e72657461696e65642e6f6e65",
       "namespace": "journal.window.system.health.index.retained",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.index.retained.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],

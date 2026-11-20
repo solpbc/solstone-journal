@@ -3,6 +3,28 @@
 
 //! Read-only schema and folds for per-day thinking health logs.
 
+use solstone_core_window_catalog::{Value as CatalogValue, render};
+
+fn cardinal_quantity(count: u64) -> CatalogValue<'static> {
+    // The displayed quantity remains exact. Only its grammatical category
+    // uses a representative within the compiler's signed 32-bit range.
+    let value = i32::try_from(count)
+        .map(i64::from)
+        .unwrap_or_else(|_| 1_000_000 + (count % 1_000_000) as i64);
+    CatalogValue::Cardinal(value)
+}
+
+fn render_count(locale: &str, id: &str, count: u64) -> String {
+    render(
+        locale,
+        id,
+        &[
+            ("count", CatalogValue::String(&count.to_string())),
+            ("quantity", cardinal_quantity(count)),
+        ],
+    )
+}
+
 mod work_readiness;
 pub use work_readiness::{
     SET_ASIDE_CLOSE_SHARE, SegmentReadiness, day_segments_ready, day_unpublished_segments,

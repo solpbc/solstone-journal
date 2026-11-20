@@ -1,0 +1,30 @@
+{
+  "description": "Summary age shown as an independent interval. count is the elapsed number of hours.",
+  "context": "Journal window. Summary age shown as an independent interval. count is the elapsed number of hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7e72b7080653131e34481931c82bd378bda1a5d492e038056ca257f5e526bb10",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

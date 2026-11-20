@@ -9569,19 +9569,20 @@ journal.window.support.report.review.disclosure = make a report here, or use "re
 
 journal.window.support.requests.link = track requests
 
-journal.window.system.health.backlog.age.day.many = { $n }{ $slot1 }days
+journal.window.system.health.backlog.age.day = { $quantity ->
+        [one] 1 day
+       *[other] { $count } days
+    }
 
-journal.window.system.health.backlog.age.day.one = 1 day
+journal.window.system.health.backlog.age.hour = { $quantity ->
+        [one] 1 hour
+       *[other] { $count } hours
+    }
 
-journal.window.system.health.backlog.age.hour.many = { $n }{ $slot1 }hours
-
-journal.window.system.health.backlog.age.hour.one = 1 hour
-
-journal.window.system.health.backlog.age.minute.many = { $n }{ $slot1 }minutes
-
-journal.window.system.health.backlog.age.minute.one = 1 minute
-
-journal.window.system.health.backlog.age.unknown = unknown
+journal.window.system.health.backlog.age.minute = { $quantity ->
+        [one] 1 minute
+       *[other] { $count } minutes
+    }
 
 journal.window.system.health.backlog.day.a.chatgpt.usage.limit.was.reached.check.usage.and.app.limits.in.chatgpt = a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings
 
@@ -9625,27 +9626,45 @@ journal.window.system.health.backlog.verdict.all.caught.up = your journal's all 
 
 journal.window.system.health.backlog.verdict.caught.up = your journal's caught up.
 
-journal.window.system.health.backlog.verdict.mixed.pending.plural = { $n }{ $slot1 }more days are still catching up
+journal.window.system.health.backlog.verdict.mixed = { $stuck_quantity ->
+        [one] 1 day needs a hand. { $pending_quantity ->
+                [one] 1 more day is still catching up.
+               *[other] { $pending_days } more days are still catching up.
+            }
+       *[other] { $stuck_days } days need a hand. { $pending_quantity ->
+                [one] 1 more day is still catching up.
+               *[other] { $pending_days } more days are still catching up.
+            }
+    }
 
-journal.window.system.health.backlog.verdict.mixed.pending.singular = 1 more day is still catching up
+journal.window.system.health.backlog.verdict.pending = { $quantity ->
+        [one] 1 day is still catching up.
+       *[other] { $count } days are still catching up.
+    }
 
-journal.window.system.health.backlog.verdict.mixed.stuck.plural = { $n }{ $slot1 }days need a hand
+journal.window.system.health.backlog.verdict.stale.day = { $quantity ->
+        [one] it's unclear whether your journal is caught up; the last update was 1 day ago.
+       *[other] it's unclear whether your journal is caught up; the last update was { $count } days ago.
+    }
 
-journal.window.system.health.backlog.verdict.mixed.stuck.singular = 1 day needs a hand
+journal.window.system.health.backlog.verdict.stale.hour = { $quantity ->
+        [one] it's unclear whether your journal is caught up; the last update was 1 hour ago.
+       *[other] it's unclear whether your journal is caught up; the last update was { $count } hours ago.
+    }
 
-journal.window.system.health.backlog.verdict.pending.only.plural = { $n }{ $slot1 }days are still catching up.
+journal.window.system.health.backlog.verdict.stale.unknown = it's unclear whether your journal is caught up; the last update was unknown ago.
 
-journal.window.system.health.backlog.verdict.pending.only.singular = 1 day is still catching up.
-
-journal.window.system.health.backlog.verdict.stuck.only.plural = caught up except{ $slot1 }{ $n }{ $slot2 }days that need a hand.
-
-journal.window.system.health.backlog.verdict.stuck.only.singular = caught up except 1 day that needs a hand.
+journal.window.system.health.backlog.verdict.stuck = { $quantity ->
+        [one] caught up except 1 day that needs a hand.
+       *[other] caught up except { $count } days that need a hand.
+    }
 
 journal.window.system.health.backlog.verdict.unclear.now = it's unclear whether your journal is caught up right now.
 
-journal.window.system.health.index.behind.many = search is catching up with{ $slot1 }{ $count }{ $slot2 }changes in your journal.
-
-journal.window.system.health.index.behind.one = search is catching up with 1 change in your journal.
+journal.window.system.health.index.behind.count = { $quantity ->
+        [one] search is catching up with 1 change in your journal.
+       *[other] search is catching up with { $count } changes in your journal.
+    }
 
 journal.window.system.health.index.building = search is still being built.
 
@@ -9671,9 +9690,10 @@ journal.window.system.health.index.repair = search stopped updating and needs a 
 
 journal.window.system.health.index.repeated.rebuild = search has had to rebuild itself more than once this week, which can mean the disk is failing.
 
-journal.window.system.health.index.retained.many = search still shows{ $slot1 }{ $count }{ $slot2 }entries that are no longer in your journal.
-
-journal.window.system.health.index.retained.one = search still shows 1 entry that is no longer in your journal.
+journal.window.system.health.index.retained.count = { $quantity ->
+        [one] search still shows 1 entry that is no longer in your journal.
+       *[other] search still shows { $count } entries that are no longer in your journal.
+    }
 
 journal.window.system.health.index.unreadable = search can't read its index right now.
 

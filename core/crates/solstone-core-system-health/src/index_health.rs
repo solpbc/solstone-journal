@@ -7,7 +7,7 @@
 //! doctor) reads this value; none derives its own. It measures the index against
 //! the disk through the read-only status and never writes.
 
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_window_catalog::{ENGLISH, text};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,8 @@ use solstone_core_indexer_store::db::IndexBuildLifecycle;
 use solstone_core_indexer_store::status::{
     ClassificationProgress, IndexDatabase, IndexStatus, inspect_index,
 };
+
+use crate::render_count;
 
 use crate::indexing_observation::{IndexingObservations, read_indexing_observations};
 
@@ -550,14 +552,11 @@ pub fn retained_text(retained: usize) -> String {
 }
 
 fn retained_text_in(retained: usize, locale: &str) -> String {
-    match retained {
-        1 => text(locale, "journal.window.system.health.index.retained.one"),
-        n => strings(
-            locale,
-            "journal.window.system.health.index.retained.many",
-            [("count", &n.to_string())],
-        ),
-    }
+    render_count(
+        locale,
+        "journal.window.system.health.index.retained.count",
+        retained as u64,
+    )
 }
 
 /// The behind line. A classification pass with nothing pending on disk reads
@@ -568,14 +567,14 @@ pub fn behind_text(pending: usize) -> String {
 }
 
 fn behind_text_in(pending: usize, locale: &str) -> String {
-    match pending {
-        0 => text(locale, "journal.window.system.health.index.catching.up"),
-        1 => text(locale, "journal.window.system.health.index.behind.one"),
-        n => strings(
+    if pending == 0 {
+        text(locale, "journal.window.system.health.index.catching.up")
+    } else {
+        render_count(
             locale,
-            "journal.window.system.health.index.behind.many",
-            [("count", &n.to_string())],
-        ),
+            "journal.window.system.health.index.behind.count",
+            pending as u64,
+        )
     }
 }
 
