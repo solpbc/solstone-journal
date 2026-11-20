@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts display timeline segment start in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display timeline segment start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b097a25b8f85d1c3869aee6efd81c5b6cca5dcb25606af2c58c3612fa45a4206",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

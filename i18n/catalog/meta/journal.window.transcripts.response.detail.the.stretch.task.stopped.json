@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts response detail in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a72611c38b45c3cfd983a47db1b64f416f27c9834347058c84eb136b3ce2f85",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

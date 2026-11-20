@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts audio warning history in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts audio warning history.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48887a362c4034a47564308a62f38a267a814f1f996166907a629267ee5aa424",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

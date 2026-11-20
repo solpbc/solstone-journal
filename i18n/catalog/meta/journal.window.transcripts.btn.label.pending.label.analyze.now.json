@@ -1,0 +1,16 @@
+{
+  "description": "btn label pending label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. btn label pending label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e8f6950836334aab4d1ce579693be639d9a7b8ce37bde96fe3f7b8fcb5e75d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

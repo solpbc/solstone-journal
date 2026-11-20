@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display warning file unknown in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display warning file unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c10d73d723e5c7333d05166234cdc81c11d79c90e9909155ddc880fa1c08e028",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

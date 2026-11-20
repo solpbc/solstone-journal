@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts response speaker picker in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response speaker picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa98e82ff93d03ed829aff9a8288a7e8b95e069037232487621d12dc40b082a8",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

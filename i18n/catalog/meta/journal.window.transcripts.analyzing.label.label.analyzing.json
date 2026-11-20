@@ -1,0 +1,16 @@
+{
+  "description": "analyzing label label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. analyzing label label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a9ce2db2ac9d186f73bf78311a5c5704442aa1dda399dcbbd9f14ac8c6db07f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

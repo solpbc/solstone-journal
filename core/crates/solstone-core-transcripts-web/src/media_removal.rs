@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
+use solstone_core_convey_http::window_catalog::{strings, text};
 use solstone_core_retention::{RawReleaseClass, recorded_original_deletions};
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -19,6 +20,7 @@ pub(crate) struct MediaRemoval {
 /// Why a segment's original media is missing. `in_trash` says whether a
 /// trash item holds a missing original, by its bare name.
 pub(crate) fn compute_media_removal(
+    locale: &str,
     dir: &Path,
     purged: &BTreeMap<String, bool>,
     missing_referenced_files: &BTreeMap<String, BTreeSet<String>>,
@@ -43,9 +45,14 @@ pub(crate) fn compute_media_removal(
     );
     let reason = |modality: &str, in_trash: bool| {
         if in_trash {
-            in_trash_reason(modality)
+            in_trash_reason(locale, modality)
         } else {
-            reason_for_modality(modality, missing_referenced_files.get(modality), &recorded)
+            reason_for_modality(
+                locale,
+                modality,
+                missing_referenced_files.get(modality),
+                &recorded,
+            )
         }
     };
 
@@ -58,70 +65,106 @@ pub(crate) fn compute_media_removal(
 }
 
 /// A missing original a trash item holds, which the owner can still recover.
-fn in_trash_reason(modality: &str) -> String {
+fn in_trash_reason(locale: &str, modality: &str) -> String {
     match modality {
-        "audio" => "this segment's original audio is in the trash".to_owned(),
-        _ => "this segment's original screen media is in the trash".to_owned(),
+        "audio" => text(
+            locale,
+            "journal.window.transcripts.media.original.audio.waiting",
+        ),
+        _ => text(
+            locale,
+            "journal.window.transcripts.media.original.screen.waiting",
+        ),
     }
 }
 
 fn reason_for_modality(
+    locale: &str,
     modality: &str,
     missing: Option<&BTreeSet<String>>,
     recorded: &BTreeMap<String, RawReleaseClass>,
 ) -> String {
     let what = match modality {
-        "audio" => "this segment's original audio",
-        "screen" => "this segment's original screen media",
+        "audio" => text(locale, "journal.window.transcripts.media.original.audio"),
+        "screen" => text(locale, "journal.window.transcripts.media.original.screen"),
         _ => return String::new(),
     };
 
     let Some(missing) = missing else {
-        return format!("{what} is no longer in your journal");
+        return strings(
+            locale,
+            "journal.window.transcripts.media.removal.unavailable",
+            [("what", &what)],
+        );
     };
 
     if missing.is_empty() {
-        return format!("{what} is no longer in your journal");
+        return strings(
+            locale,
+            "journal.window.transcripts.media.removal.unavailable",
+            [("what", &what)],
+        );
     }
 
     let mut classes = BTreeSet::new();
     for name in missing {
         if name.contains('/') || name.contains('\\') {
-            return format!("{what} is no longer in your journal");
+            return strings(
+                locale,
+                "journal.window.transcripts.media.removal.unavailable",
+                [("what", &what)],
+            );
         }
         match recorded.get(name) {
             Some(class) => {
                 classes.insert(*class);
             }
             None => {
-                return format!("{what} is no longer in your journal");
+                return strings(
+                    locale,
+                    "journal.window.transcripts.media.removal.unavailable",
+                    [("what", &what)],
+                );
             }
         }
     }
 
     let collected: Vec<_> = classes.iter().copied().collect();
     match collected.as_slice() {
-        [RawReleaseClass::Policy] => {
-            format!("you deleted {what} after your retention settings marked it")
-        }
-        [RawReleaseClass::Offload] => {
-            format!("you deleted {what} after your backup copied it")
-        }
-        [RawReleaseClass::Owner] => {
-            format!("you deleted {what}")
-        }
-        [RawReleaseClass::OwnerVoice] => {
-            format!("your journal deleted {what} after saving your words")
-        }
+        [RawReleaseClass::Policy] => strings(
+            locale,
+            "journal.window.transcripts.media.removal.policy",
+            [("what", &what)],
+        ),
+        [RawReleaseClass::Offload] => strings(
+            locale,
+            "journal.window.transcripts.media.removal.offload",
+            [("what", &what)],
+        ),
+        [RawReleaseClass::Owner] => strings(
+            locale,
+            "journal.window.transcripts.media.removal.owner",
+            [("what", &what)],
+        ),
+        [RawReleaseClass::OwnerVoice] => strings(
+            locale,
+            "journal.window.transcripts.media.removal.owner.voice",
+            [("what", &what)],
+        ),
         [RawReleaseClass::Import] if modality == "audio" => {
-            "the recording wasn't kept when you imported it".to_owned()
+            text(locale, "journal.window.transcripts.media.removal.import")
         }
-        _ => format!("{what} is no longer in your journal"),
+        _ => strings(
+            locale,
+            "journal.window.transcripts.media.removal.unavailable",
+            [("what", &what)],
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use solstone_core_convey_http::window_catalog::ENGLISH;
     use solstone_core_retention::marks::{Approval, RemovalClass};
 
     #[test]
@@ -135,7 +178,7 @@ mod tests {
                 .iter()
                 .map(|(name, class)| ((*name).to_owned(), *class))
                 .collect::<BTreeMap<_, _>>();
-            super::reason_for_modality("audio", Some(&missing), &recorded)
+            super::reason_for_modality(ENGLISH, "audio", Some(&missing), &recorded)
         };
         let generic = reason(&[]);
         let owner = reason(&[("120000_300.m4a", RawReleaseClass::Owner)]);
@@ -150,8 +193,9 @@ mod tests {
         ]
         .into_iter()
         .collect::<BTreeMap<_, _>>();
-        let mixed = super::reason_for_modality("audio", Some(&both), &recorded);
-        let generic_both = super::reason_for_modality("audio", Some(&both), &BTreeMap::new());
+        let mixed = super::reason_for_modality(ENGLISH, "audio", Some(&both), &recorded);
+        let generic_both =
+            super::reason_for_modality(ENGLISH, "audio", Some(&both), &BTreeMap::new());
         assert_eq!(mixed, generic_both);
     }
 

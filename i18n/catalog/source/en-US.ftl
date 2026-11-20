@@ -13316,3 +13316,1079 @@ journal.window.settings.vision.detail.redact.may.contain.at.most.rules = redact 
 journal.window.settings.vision.detail.redact.must.be.a.list.of = redact must be a list of strings
 
 journal.window.settings.vision.detail.unknown.category = Unknown category:{ $slot1 }{ $name }
+
+journal.window.transcripts.accessible.label.current.time = current time
+
+journal.window.transcripts.accessible.label.day.timeline = day timeline (
+
+journal.window.transcripts.accessible.label.detail.timeline = detail timeline (
+
+journal.window.transcripts.accessible.label.screenshot.viewer = screenshot viewer
+
+journal.window.transcripts.accessible.label.segment = segment{ $slot1 }
+
+journal.window.transcripts.accessible.label.transcript.entries.value1.items = transcript entries,{ $slot1 }{ $value1 }{ $slot2 }items
+
+journal.window.transcripts.accessible.label.transcript.entries.value1.of.value2.shown = transcript entries,{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }{ $slot4 }shown
+
+journal.window.transcripts.accessible.name.body.context.events = body context events
+
+journal.window.transcripts.accessible.name.close = close
+
+journal.window.transcripts.accessible.name.copy.stream.id = copy stream id
+
+journal.window.transcripts.accessible.name.day.timeline = day timeline
+
+journal.window.transcripts.accessible.name.items = items
+
+journal.window.transcripts.accessible.name.play.from = play from
+
+journal.window.transcripts.accessible.name.transcript.entries = transcript entries,
+
+journal.window.transcripts.analysis.observed = { $kind }{ $slot1 }observed
+
+journal.window.transcripts.analysis.request.failed = analysis request failed
+
+journal.window.transcripts.analysis.state.analyzing = analyzing
+
+journal.window.transcripts.analysis.state.pending = pending
+
+journal.window.transcripts.analyzing.label.label.analyzing = analyzing…
+
+journal.window.transcripts.audio.warning.capture = audio may be incomplete for this segment.{ $slot1 }{ $stage }:{ $slot2 }{ $domain }{ $slot3 }({ $code })
+
+journal.window.transcripts.audio.warning.history = an earlier audio copy attempt had a problem. the latest copy completed.
+
+journal.window.transcripts.audio.warning.incomplete = audio may be incomplete for this segment.
+
+journal.window.transcripts.audio.warning.remix = audio may be incomplete for this segment.{ $slot1 }{ $stage }:{ $slot2 }{ $state }
+
+journal.window.transcripts.awaiting.thinking.label.label.awaiting.thinking = awaiting thinking
+
+journal.window.transcripts.body.context = body context
+
+journal.window.transcripts.body.count.entry.many = { $count }{ $slot1 }entries
+
+journal.window.transcripts.body.count.entry.one = { $count }{ $slot1 }entry
+
+journal.window.transcripts.body.entries.present = { $count }{ $slot1 }entries present
+
+journal.window.transcripts.body.full.day = full day
+
+journal.window.transcripts.body.hidden.copy.hidden.you.hid.this.day.s.body = you hid this day's body data.
+
+journal.window.transcripts.body.hour = hour
+
+journal.window.transcripts.body.hours.more = and{ $slot1 }{ $count }{ $slot2 }more hours
+
+journal.window.transcripts.body.no.data.suffix = { $slot1 }· no body data
+
+journal.window.transcripts.body.section.brief = brief
+
+journal.window.transcripts.body.section.events = events
+
+journal.window.transcripts.body.section.sources = sources
+
+journal.window.transcripts.body.sleep.many = { $count }{ $slot1 }sleep sessions
+
+journal.window.transcripts.body.sleep.one = 1 sleep session
+
+journal.window.transcripts.body.workout.many = { $count }{ $slot1 }workouts
+
+journal.window.transcripts.body.workout.one = 1 workout
+
+journal.window.transcripts.btn.label.failed.label.try.again = try again
+
+journal.window.transcripts.btn.label.pending.label.analyze.now = analyze now
+
+journal.window.transcripts.btn.title.audio.transcribe.this.segment.s.audio.and = transcribe this segment's audio and add the words to your journal.
+
+journal.window.transcripts.btn.title.image.describe.this.segment.s.photos.and = describe this segment's photos and add the descriptions to your journal.
+
+journal.window.transcripts.btn.title.label.process.this.segment.and.add.the = process this segment and add the results to your journal.
+
+journal.window.transcripts.btn.title.screen.describe.this.segment.s.screen.and = describe this segment's screen and add the descriptions to your journal.
+
+journal.window.transcripts.button.label.close = close
+
+journal.window.transcripts.button.label.open.details = open details
+
+journal.window.transcripts.consent.stretch.copy.arriving.anything.still.arriving.from.a.device = anything still arriving from a device
+
+journal.window.transcripts.consent.stretch.copy.audio.audio = audio
+
+journal.window.transcripts.consent.stretch.copy.body.body.data = body data
+
+journal.window.transcripts.consent.stretch.copy.bounds.this.erases.everything.in.your.journal = this erases everything in your journal from { $slot1 } to { $slot2 }.
+
+journal.window.transcripts.consent.stretch.copy.bounds.this.moves.everything.in.your.journal = this moves everything in your journal from { $slot1 } to { $slot2 }.
+
+journal.window.transcripts.consent.stretch.copy.import.running.anything.from.an.import.that.s = anything from an import that's still running
+
+journal.window.transcripts.consent.stretch.copy.imported.things.you.imported = things you imported
+
+journal.window.transcripts.consent.stretch.copy.in.trash.anything.from.then.that.s.already = anything from then that's already in the trash, which keeps its own date
+
+journal.window.transcripts.consent.stretch.copy.inflight.to.move.those.delete.this.stretch = to move those, delete this stretch again once they're done.
+
+journal.window.transcripts.consent.stretch.copy.kinds.that.s.kinds = that's { $slot1 }.
+
+journal.window.transcripts.consent.stretch.copy.location.location = location
+
+journal.window.transcripts.consent.stretch.copy.made.the.entities.you.re.tending.and = the entities you're tending, and what your journal wrote about them, which may still mention it
+
+journal.window.transcripts.consent.stretch.copy.made.the.entities.you.re.tending.and.variant2 = the entities you're tending, and what your journal wrote about them, which aren't erased and may still mention it
+
+journal.window.transcripts.consent.stretch.copy.madebody.activities.summaries.and.entities.made.from = activities, summaries and entities made from it, which may still mention it
+
+journal.window.transcripts.consent.stretch.copy.madebody.activities.summaries.and.entities.made.from.variant2 = activities, summaries and entities made from it, which aren't erased and may still mention it
+
+journal.window.transcripts.consent.stretch.copy.madechanges.activities.made.from.it.drop.it = activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. detected entities drop it too, and any voice samples from it leave your known voices.
+
+journal.window.transcripts.consent.stretch.copy.memories.memories.your.agents.saved.about.that = memories your agents saved about that time
+
+journal.window.transcripts.consent.stretch.copy.other.other.things.in.your.journal = other things in your journal
+
+journal.window.transcripts.consent.stretch.copy.processing.anything.your.journal.is.still.working = anything your journal is still working on
+
+journal.window.transcripts.consent.stretch.copy.reach.it.all.leaves.your.journal.now = it all leaves your journal now and can't be recovered.
+
+journal.window.transcripts.consent.stretch.copy.reach.it.all.leaves.your.journal.now.variant2 = it all leaves your journal now and waits in the trash as one thing, then it's erased. you can recover it until then.
+
+journal.window.transcripts.consent.stretch.copy.screen.screen = screen
+
+journal.window.transcripts.consent.stretch.copy.stayslead.these.stay.in.your.journal = these stay in your journal:
+
+journal.window.transcripts.consent.stretch.copy.title.delete.a.stretch.of.time = delete a stretch of time?
+
+journal.window.transcripts.consent.stretch.copy.title.erase.this.stretch.of.time.now = erase this stretch of time now?
+
+journal.window.transcripts.consent.stretch.copy.whole.day.whole.day.body.data.like.a = whole-day body data, like a day's sleep score or readiness score, for a day this doesn't fully cover
+
+journal.window.transcripts.consent.stretch.copy.zone.times.are.in.your.journal.s = times are in your journal's time zone, { $slot1 }.
+
+journal.window.transcripts.consent.trash.copy.analysis.analysis.stored.with.it = analysis stored with it
+
+journal.window.transcripts.consent.trash.copy.audio.audio = audio
+
+journal.window.transcripts.consent.trash.copy.erase.if.it.s.the.last.segment = if it's the last segment from its import, the import, any file it kept and any of its segments in the trash are erased with it.
+
+journal.window.transcripts.consent.trash.copy.erase.if.these.include.the.last.segments = if these include the last segments from an import, the import, any file it kept and any of its segments in the trash are erased with them.
+
+journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and = detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.
+
+journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment.s.own = this erases each segment's own:
+
+journal.window.transcripts.consent.trash.copy.erasenow.erase.now = erase now
+
+journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and = they leave your journal now and can't be recovered.
+
+journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them = activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
+
+journal.window.transcripts.consent.trash.copy.erasetitle.erase.n.segments.now = erase { $slot1 } segments now?
+
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.
+
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.
+
+journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from = it's the last segment from { $slot1 }, so that file and its row in your import history are erased with it.
+
+journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from.variant2 = it's the last segment from { $slot1 }, so that file and its row in your import history go to the trash with it.
+
+journal.window.transcripts.consent.trash.copy.label.label.stays.in.your.journal.because = { $slot1 } stays in your journal, because other segments still come from it. to remove it, delete its import on the import page.
+
+journal.window.transcripts.consent.trash.copy.label.label.the.file.it.came.from = { $slot1 }, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.
+
+journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 }, so that file and its row in your import history are erased too.
+
+journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 }, so that file and its row in your import history go to the trash too.
+
+journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own = this erases the segment's own:
+
+journal.window.transcripts.consent.trash.copy.lead.this.moves.the.segment.s.own = this moves the segment's own:
+
+journal.window.transcripts.consent.trash.copy.location.location = location
+
+journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from = it's the last segment from its import, so the { $slot1 } files it kept and its row in your import history are erased with it.
+
+journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so the { $slot1 } files it kept and its row in your import history go to the trash with it.
+
+journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay = the files its import kept stay in your journal, because other segments still come from them. to remove them, delete the import.
+
+journal.window.transcripts.consent.trash.copy.many.the.files.j.imports.kept.stay = the files { $slot1 } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
+
+journal.window.transcripts.consent.trash.copy.many.the.import.s.w.other.segments = the import's { $slot1 } other segments in the trash are erased with it.
+
+journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash = their original media in the trash is erased with them.
+
+journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 } imports, so the files they kept and their rows in your import history are erased too.
+
+journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 } imports, so the files they kept and their rows in your import history go to the trash too.
+
+journal.window.transcripts.consent.trash.copy.manymany.w.other.segments.from.those.imports = { $slot1 } other segments from those imports in the trash are erased too.
+
+journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 } imports, so their rows in your import history are erased too.
+
+journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 } imports, so their rows in your import history go to the trash too.
+
+journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in = 1 other segment from those imports in the trash is erased too.
+
+journal.window.transcripts.consent.trash.copy.more.and.n.more = and { $slot1 } more
+
+journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment = if it's the last segment from its import, the import and any file it kept go to the trash with it.
+
+journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments = if these include the last segments from an import, the import and any file it kept go to the trash with them.
+
+journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and = detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.
+
+journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s.own = this moves each segment's own:
+
+journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and = they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.
+
+journal.window.transcripts.consent.trash.copy.movestays.activities.made.from.them.drop.them = activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
+
+journal.window.transcripts.consent.trash.copy.movetitle.delete.n.segments = delete { $slot1 } segments?
+
+journal.window.transcripts.consent.trash.copy.movetotrash.move.to.trash = move to trash
+
+journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from = it's the last segment from its import, so its row in your import history is erased with it.
+
+journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so its row in your import history goes to the trash with it.
+
+journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from = it's the last segment from its import, so the file it kept and its row in your import history are erased with it.
+
+journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so the file it kept and its row in your import history go to the trash with it.
+
+journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash = its original media in the trash is erased with it.
+
+journal.window.transcripts.consent.trash.copy.one.the.file.import.kept.stays.in = the file 1 import kept stays in your journal, because other segments still come from it. to remove it, delete the import on the import page.
+
+journal.window.transcripts.consent.trash.copy.one.the.file.it.came.from.stays = the file it came from stays in your journal, because other segments still come from it. to remove it, delete the import.
+
+journal.window.transcripts.consent.trash.copy.one.the.import.s.other.segment.in = the import's other segment in the trash is erased with it.
+
+journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the = this includes the last of the segments from 1 import, so the file it kept and its row in your import history are erased too.
+
+journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the.variant2 = this includes the last of the segments from 1 import, so the file it kept and its row in your import history go to the trash too.
+
+journal.window.transcripts.consent.trash.copy.onemany.w.other.segments.from.that.import = { $slot1 } other segments from that import in the trash are erased too.
+
+journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the = this includes the last of the segments from 1 import, so its row in your import history is erased too.
+
+journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the.variant2 = this includes the last of the segments from 1 import, so its row in your import history goes to the trash too.
+
+journal.window.transcripts.consent.trash.copy.oneone.other.segment.from.that.import.in = 1 other segment from that import in the trash is erased too.
+
+journal.window.transcripts.consent.trash.copy.openimport.open.the.import = open the import
+
+journal.window.transcripts.consent.trash.copy.photo.photo = photo
+
+journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and = it leaves your journal now and can't be recovered.
+
+journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2 = it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.
+
+journal.window.transcripts.consent.trash.copy.screen.screen.frames = screen frames
+
+journal.window.transcripts.consent.trash.copy.screenshot.screenshot = screenshot
+
+journal.window.transcripts.consent.trash.copy.size.current.raw.media.size.size = current raw media size: { $slot1 }
+
+journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it = activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose.
+
+journal.window.transcripts.consent.trash.copy.title.delete.segment = delete segment?
+
+journal.window.transcripts.consent.trash.copy.title.erase.this.segment.now = erase this segment now?
+
+journal.window.transcripts.consent.trash.copy.transcript.transcript = transcript
+
+journal.window.transcripts.consent.trash.copy.unknown.any.file.its.import.kept.stays = any file its import kept stays in your journal, because other segments still come from it. to remove it, delete the import.
+
+journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from = it's the last segment from its import, so any file it kept and its row in your import history are erased with it.
+
+journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so any file it kept and its row in your import history go to the trash with it.
+
+journal.window.transcripts.data.state.suffix.failed.analysis.failed = analysis failed
+
+journal.window.transcripts.data.state.suffix.pending.analysis.pending = analysis pending
+
+journal.window.transcripts.date.last.weekday = Last{ $slot1 }{ $weekday }
+
+journal.window.transcripts.date.narrow.friday = F
+
+journal.window.transcripts.date.narrow.monday = M
+
+journal.window.transcripts.date.narrow.saturday = S
+
+journal.window.transcripts.date.narrow.sunday = S
+
+journal.window.transcripts.date.narrow.thursday = T
+
+journal.window.transcripts.date.narrow.tuesday = T
+
+journal.window.transcripts.date.narrow.wednesday = W
+
+journal.window.transcripts.date.next.week = next week
+
+journal.window.transcripts.date.previous.week = previous week
+
+journal.window.transcripts.date.today = today
+
+journal.window.transcripts.date.today.narrow = T
+
+journal.window.transcripts.date.years = Years
+
+journal.window.transcripts.date.yesterday = yesterday
+
+journal.window.transcripts.day.load.error.status = day data failed:{ $slot1 }{ $status }
+
+journal.window.transcripts.day.load.retry = Try again
+
+journal.window.transcripts.disclosure.label.recent.raw.signal.rows = recent raw signal rows
+
+journal.window.transcripts.field.label.segments.in.this.range = segments in this range
+
+journal.window.transcripts.granola.copy.attendees.attendees = attendees
+
+journal.window.transcripts.granola.copy.calendar.calendar.event = calendar event
+
+journal.window.transcripts.granola.copy.heading.granola.s.notes.on.this.meeting = { $slot1 }'s notes on this meeting
+
+journal.window.transcripts.granola.copy.notranscript.granola.has.no.transcript.for.this = { $slot1 } has no transcript for this meeting.
+
+journal.window.transcripts.granola.copy.open.open.in.granola = open in { $slot1 }
+
+journal.window.transcripts.granola.copy.privatenotes.your.notes = your notes
+
+journal.window.transcripts.granola.copy.speakerassistive.as.granola.labelled.the.speaker = as { $slot1 } labelled the speaker
+
+journal.window.transcripts.granola.copy.summary.summary = summary
+
+journal.window.transcripts.kind.audio.and.screen = audio and screen
+
+journal.window.transcripts.kind.audio.plus.screen = audio + screen
+
+journal.window.transcripts.kind.desktop.activity = desktop activity
+
+journal.window.transcripts.kind.location = location
+
+journal.window.transcripts.kind.pages = pages
+
+journal.window.transcripts.kind.photos = photos
+
+journal.window.transcripts.link.label.more.in.body = more in body
+
+journal.window.transcripts.link.label.open.full.body.day = open full body day
+
+journal.window.transcripts.location.reading.many = { $time }{ $slot1 }·{ $slot2 }{ $count }{ $slot3 }readings
+
+journal.window.transcripts.location.reading.one = { $time }{ $slot1 }· 1 reading
+
+journal.window.transcripts.location.show.many = show{ $slot1 }{ $count }{ $slot2 }location segments
+
+journal.window.transcripts.media.audio.duration = segment audio ·{ $slot1 }{ $duration }
+
+journal.window.transcripts.media.audio.format.unsupported = Format not supported
+
+journal.window.transcripts.media.audio.label = segment audio
+
+journal.window.transcripts.media.original.audio = this segment's original audio
+
+journal.window.transcripts.media.original.audio.waiting = this segment's original audio is in the trash
+
+journal.window.transcripts.media.original.screen = this segment's original screen media
+
+journal.window.transcripts.media.original.screen.waiting = this segment's original screen media is in the trash
+
+journal.window.transcripts.media.pending.duration = duration{ $slot1 }{ $value }
+
+journal.window.transcripts.media.pending.raw.media = raw media{ $slot1 }{ $value }
+
+journal.window.transcripts.media.removal.import = the recording wasn't kept when you imported it
+
+journal.window.transcripts.media.removal.offload = you deleted{ $slot1 }{ $what }{ $slot2 }after your backup copied it
+
+journal.window.transcripts.media.removal.owner = you deleted{ $slot1 }{ $what }
+
+journal.window.transcripts.media.removal.owner.voice = your journal deleted{ $slot1 }{ $what }{ $slot2 }after saving your words
+
+journal.window.transcripts.media.removal.policy = you deleted{ $slot1 }{ $what }{ $slot2 }after your retention settings marked it
+
+journal.window.transcripts.media.removal.unavailable = { $what }{ $slot1 }is no longer in your journal
+
+journal.window.transcripts.media.screen.activity = screen activity
+
+journal.window.transcripts.media.screen.image = screen image
+
+journal.window.transcripts.media.size.audio = audio{ $slot1 }{ $size }
+
+journal.window.transcripts.media.size.photo = photo{ $slot1 }{ $size }
+
+journal.window.transcripts.media.size.screen = screen{ $slot1 }{ $size }
+
+journal.window.transcripts.media.trash.copy.desc.you.can.recover.it.there.until = you can recover it there until it's erased.
+
+journal.window.transcripts.media.trash.copy.link.open.trash = open trash
+
+journal.window.transcripts.media.video.error.code = code{ $slot1 }{ $code }
+
+journal.window.transcripts.notice.age.days = { $count }d
+
+journal.window.transcripts.notice.age.hours = { $count }h
+
+journal.window.transcripts.notice.age.minutes = { $count }m
+
+journal.window.transcripts.option.label.choose.a.segment = choose a segment
+
+journal.window.transcripts.owner.desc.no.observations.were.found.for.this = no observations were found for this day
+
+journal.window.transcripts.owner.desc.now.pick.a.block.in.the = now pick a block in the detail column to read it
+
+journal.window.transcripts.owner.desc.pick.part.of.the.day.on = pick part of the day on the left, then a block in detail to read it
+
+journal.window.transcripts.owner.desc.reload.to.try.again = reload to try again.
+
+journal.window.transcripts.owner.desc.something.went.wrong.decoding.the.screen = something went wrong decoding the screen data. try selecting the segment again.
+
+journal.window.transcripts.owner.desc.something.went.wrong.loading.the.transcript = something went wrong loading the transcript. try selecting the segment again, or refresh the page.
+
+journal.window.transcripts.owner.desc.this.segment.has.no.audio.content = this segment has no audio content
+
+journal.window.transcripts.owner.desc.this.segment.has.no.imported.mentra = this segment has no imported { $slot1 } telemetry
+
+journal.window.transcripts.owner.desc.this.segment.has.no.page.content = this segment has no page content
+
+journal.window.transcripts.owner.desc.this.segment.has.no.photos = this segment has no photos
+
+journal.window.transcripts.owner.desc.this.segment.has.no.screen.observations = this segment has no screen observations
+
+journal.window.transcripts.owner.desc.this.segment.has.no.transcript.content = this segment has no transcript content
+
+journal.window.transcripts.owner.desc.try.again.in.a.moment = try again in a moment
+
+journal.window.transcripts.owner.heading.couldn.t.load.body.context = couldn't load body context
+
+journal.window.transcripts.owner.heading.couldn.t.load.screen.entries = couldn't load screen entries
+
+journal.window.transcripts.owner.heading.couldn.t.load.this.segment = couldn't load this segment
+
+journal.window.transcripts.owner.heading.no.audio.entries = no audio entries
+
+journal.window.transcripts.owner.heading.no.page.entries = no page entries
+
+journal.window.transcripts.owner.heading.no.photos = no photos
+
+journal.window.transcripts.owner.heading.no.screen.entries = no screen entries
+
+journal.window.transcripts.owner.heading.no.signal.context = no signal context
+
+journal.window.transcripts.owner.heading.no.transcript.entries = no transcript entries
+
+journal.window.transcripts.owner.heading.nothing.here = nothing here
+
+journal.window.transcripts.owner.heading.transcripts.couldn.t.be.loaded = transcripts couldn't be loaded.
+
+journal.window.transcripts.owner.heading.your.day.at.a.glance = your day at a glance
+
+journal.window.transcripts.owner.status.or.action.couldn.t.copy.stream.id = couldn't copy stream id
+
+journal.window.transcripts.owner.status.or.action.stream.id.copied = stream id copied
+
+journal.window.transcripts.photo.copy.captionlabel.your.note = your note
+
+journal.window.transcripts.photo.copy.descriptionlabel.generated.description = generated description
+
+journal.window.transcripts.photo.copy.label.photo = photo
+
+journal.window.transcripts.photo.copy.noprocessing.thinking.isn.t.set.up.yet = thinking isn't set up yet, so this photo hasn't been described.
+
+journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking = set up thinking
+
+journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described = this photo couldn't be described. the photo stays in your journal.
+
+journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = no date in photo · placed at import time
+
+journal.window.transcripts.photo.copy.viewerlabel.photo.viewer = photo viewer
+
+journal.window.transcripts.response.detail.day.not.found = Day not found
+
+journal.window.transcripts.response.detail.day.stream.and.segment.name.one = day, stream and segment name one segment
+
+journal.window.transcripts.response.detail.failed.to.create.analysis.marker.detail = Failed to create analysis marker:{ $slot1 }{ $detail }
+
+journal.window.transcripts.response.detail.failed.to.start.analysis.detail = Failed to start analysis:{ $slot1 }{ $detail }
+
+journal.window.transcripts.response.detail.file.not.found = File not found
+
+journal.window.transcripts.response.detail.invalid.day.format = Invalid day format
+
+journal.window.transcripts.response.detail.invalid.delete.body = Invalid delete body
+
+journal.window.transcripts.response.detail.invalid.month.format = Invalid month format
+
+journal.window.transcripts.response.detail.invalid.segment.in.the.set = Invalid segment in the set
+
+journal.window.transcripts.response.detail.invalid.segment.key.format = Invalid segment key format
+
+journal.window.transcripts.response.detail.invalid.segment.path = Invalid segment path
+
+journal.window.transcripts.response.detail.invalid.stream.format = Invalid stream format
+
+journal.window.transcripts.response.detail.invalid.stretch.body = Invalid stretch body
+
+journal.window.transcripts.response.detail.modality.must.be.audio.screen.or = modality must be { $slot1 }
+
+journal.window.transcripts.response.detail.raw.media.is.no.longer.available = Raw media is no longer available
+
+journal.window.transcripts.response.detail.saying.who.said.a.line.needs = saying who said a line needs the owner
+
+journal.window.transcripts.response.detail.segment.directory.not.found = Segment directory not found
+
+journal.window.transcripts.response.detail.segment.modality.is.already.analyzed = Segment modality is already analyzed
+
+journal.window.transcripts.response.detail.segment.not.found = Segment not found
+
+journal.window.transcripts.response.detail.source.and.sentence.id.name.the = source and { $slot1 } name the line
+
+journal.window.transcripts.response.detail.speaker.is.kind.owner.kind.person = speaker is { $slot1 }, { $slot2 } or { $slot3 }
+
+journal.window.transcripts.response.detail.the.delete.task.stopped = the delete task stopped
+
+journal.window.transcripts.response.detail.the.preview.task.stopped = the preview task stopped
+
+journal.window.transcripts.response.detail.the.stretch.holds.no.segment = the stretch holds no segment
+
+journal.window.transcripts.response.detail.the.stretch.task.stopped = the stretch task stopped
+
+journal.window.transcripts.response.detail.unregistered.media.extension = Unregistered media extension
+
+journal.window.transcripts.response.detail.workout.not.found = Workout not found
+
+journal.window.transcripts.response.error.analysis.couldn.t.run.because.the = analysis couldn't run because the raw media is no longer available.
+
+journal.window.transcripts.response.error.choose.days.or.less = choose 31 days or less.
+
+journal.window.transcripts.response.error.nothing.from.that.time.could.go = nothing from that time could go to the trash.
+
+journal.window.transcripts.response.error.one.of.those.values.couldn.t = one of those values couldn't be used.
+
+journal.window.transcripts.response.error.only.you.can.say.who.said = only you can say who said a line.
+
+journal.window.transcripts.response.error.reason.nothing.was.deleted = { $reason }. nothing was deleted.
+
+journal.window.transcripts.response.error.that.action.isn.t.available.in = that action isn't available in the current state.
+
+journal.window.transcripts.response.error.that.day.couldn.t.be.used = that day couldn't be used.
+
+journal.window.transcripts.response.error.that.delete.couldn.t.be.read = that delete couldn't be read, so nothing was deleted.
+
+journal.window.transcripts.response.error.that.file.couldn.t.be.read = that file couldn't be read.
+
+journal.window.transcripts.response.error.that.file.isn.t.available = that file isn't available.
+
+journal.window.transcripts.response.error.that.month.couldn.t.be.used = that month couldn't be used.
+
+journal.window.transcripts.response.error.that.path.couldn.t.be.used = that path couldn't be used.
+
+journal.window.transcripts.response.error.that.request.didn.t.finish = that request didn't finish.
+
+journal.window.transcripts.response.error.that.segment.or.stream.couldn.t = that segment or stream couldn't be used.
+
+journal.window.transcripts.response.error.that.stretch.couldn.t.be.read = that stretch couldn't be read, so nothing was deleted.
+
+journal.window.transcripts.response.error.that.workout.isn.t.in.your = that workout isn't in your journal.
+
+journal.window.transcripts.response.error.the.end.has.to.be.after = the end has to be after the start.
+
+journal.window.transcripts.response.error.who.said.that.line.couldn.t = who said that line couldn't be saved.
+
+journal.window.transcripts.response.error.your.journal.couldn.t.finish.that = your journal couldn't finish that delete. reload to check.
+
+journal.window.transcripts.response.error.your.journal.couldn.t.move.that = your journal couldn't move that to the trash, so nothing was deleted.
+
+journal.window.transcripts.response.error.your.journal.couldn.t.move.that.variant2 = your journal couldn't move that to the trash.
+
+journal.window.transcripts.response.error.your.journal.couldn.t.read.what = your journal couldn't read what that delete would take.
+
+journal.window.transcripts.response.set.member.failed = your journal couldn't move it to the trash.
+
+journal.window.transcripts.response.set.member.held = { $reason }.
+
+journal.window.transcripts.response.set.member.missing = that segment isn't in your journal.
+
+journal.window.transcripts.screenshot.copy.j1.screenshot = screenshot
+
+journal.window.transcripts.screenshot.copy.j3.the.text.in.this.screenshot.isn = the text in this screenshot isn't searchable yet. today's screenshots come first, then earlier ones.
+
+journal.window.transcripts.screenshot.copy.j4.screenshots = screenshots
+
+journal.window.transcripts.screenshot.copy.j5.screenshot = screenshot
+
+journal.window.transcripts.screenshot.copy.j6.action.set.up.thinking = set up thinking
+
+journal.window.transcripts.screenshot.copy.j6.thinking.isn.t.set.up.yet = thinking isn't set up yet, so the text in this screenshot can't be made searchable.
+
+journal.window.transcripts.screenshot.copy.j7.the.text.in.this.screenshot.couldn = the text in this screenshot couldn't be made searchable. the screenshot stays in your journal.
+
+journal.window.transcripts.section.heading.body.context = body context
+
+journal.window.transcripts.section.heading.location = location
+
+journal.window.transcripts.section.heading.transcripts = transcripts
+
+journal.window.transcripts.signals.calendar.seen = { $slot1 }· seen{ $slot2 }{ $count }x
+
+journal.window.transcripts.signals.no = no
+
+journal.window.transcripts.signals.row.accuracy = accuracy
+
+journal.window.transcripts.signals.row.button = button
+
+journal.window.transcripts.signals.row.camera = camera
+
+journal.window.transcripts.signals.row.camera.resolution = camera resolution
+
+journal.window.transcripts.signals.row.charging = charging
+
+journal.window.transcripts.signals.row.latest = latest
+
+journal.window.transcripts.signals.row.latitude = latitude
+
+journal.window.transcripts.signals.row.level = level
+
+journal.window.transcripts.signals.row.longitude = longitude
+
+journal.window.transcripts.signals.row.microphone = microphone
+
+journal.window.transcripts.signals.row.raw.rows = raw rows
+
+journal.window.transcripts.signals.row.speaker = speaker
+
+journal.window.transcripts.signals.row.unique.events = unique events
+
+journal.window.transcripts.signals.row.updates = updates
+
+journal.window.transcripts.signals.row.video.recording = video recording
+
+journal.window.transcripts.signals.row.wifi = wifi
+
+journal.window.transcripts.signals.section.calendar.snapshot = calendar snapshot
+
+journal.window.transcripts.signals.section.device.capabilities = device capabilities
+
+journal.window.transcripts.signals.section.glasses.battery = glasses battery
+
+journal.window.transcripts.signals.section.location = location
+
+journal.window.transcripts.signals.yes = yes
+
+journal.window.transcripts.speaker.copy.action.unavailable = speaker change unavailable
+
+journal.window.transcripts.speaker.copy.already.correct = already set
+
+journal.window.transcripts.speaker.copy.assign.label = add speaker
+
+journal.window.transcripts.speaker.copy.change.label = change speaker
+
+journal.window.transcripts.speaker.copy.confidence.high = high confidence
+
+journal.window.transcripts.speaker.copy.confidence.unknown = confidence unavailable
+
+journal.window.transcripts.speaker.copy.correct.busy = speaker files are busy
+
+journal.window.transcripts.speaker.copy.correct.retry = retry speaker change
+
+journal.window.transcripts.speaker.copy.hedge.maybe = maybe { $slot1 }?
+
+journal.window.transcripts.speaker.copy.hedge.probable = probably { $slot1 }
+
+journal.window.transcripts.speaker.copy.line.changed = this line has changed since it was shown. reload to see it as it is now.
+
+journal.window.transcripts.speaker.copy.line.only = this line only
+
+journal.window.transcripts.speaker.copy.line.only.body = your answer is for this line, not its voice. to teach your journal a voice, or tidy up the voices it knows, go to { $slot1 }.
+
+journal.window.transcripts.speaker.copy.line.only.link = speakers
+
+journal.window.transcripts.speaker.copy.line.owner = your journal doesn't know which person is you yet, so it can't mark lines as yours.
+
+journal.window.transcripts.speaker.copy.line.person = that person can't be chosen. pick someone else, or someone you don't know.
+
+journal.window.transcripts.speaker.copy.line.refused = that answer couldn't be saved
+
+journal.window.transcripts.speaker.copy.line.source = this line can't take an answer about who said it
+
+journal.window.transcripts.speaker.copy.line.unreadable = your earlier answers about who spoke here can't be read, so this one wasn't saved
+
+journal.window.transcripts.speaker.copy.margin.acoustic = close voice match
+
+journal.window.transcripts.speaker.copy.margin.owner = close owner match
+
+journal.window.transcripts.speaker.copy.no.embedding = voice sample unavailable
+
+journal.window.transcripts.speaker.copy.owner.identity.required = set your identity before tagging yourself
+
+journal.window.transcripts.speaker.copy.owner.name = you
+
+journal.window.transcripts.speaker.copy.owner.set = your answer
+
+journal.window.transcripts.speaker.copy.owner.too.close = that voice is too close to yours to save there
+
+journal.window.transcripts.speaker.copy.owner.unknown.chip = someone you don't know
+
+journal.window.transcripts.speaker.copy.picker.empty = no people in your journal yet
+
+journal.window.transcripts.speaker.copy.picker.guess = back to your journal's guess
+
+journal.window.transcripts.speaker.copy.picker.no.results = no matching people
+
+journal.window.transcripts.speaker.copy.picker.owner = me
+
+journal.window.transcripts.speaker.copy.picker.search.placeholder = find a person
+
+journal.window.transcripts.speaker.copy.picker.title = choose speaker
+
+journal.window.transcripts.speaker.copy.picker.unknown = someone i don't know
+
+journal.window.transcripts.speaker.copy.propagation.dismiss = dismiss
+
+journal.window.transcripts.speaker.copy.someone.else = teach this voice…
+
+journal.window.transcripts.speaker.copy.unknown.chip = unknown voice
+
+journal.window.transcripts.speaker.copy.voice.assistive = one unnamed voice wherever this number appears
+
+journal.window.transcripts.speaker.copy.voice.chip = voice { $slot1 }
+
+journal.window.transcripts.speaker.copy.voice.named.assistive = matches a voice you named
+
+journal.window.transcripts.speaker.copy.voice.named.count = { $slot1 } sentences now show this name
+
+journal.window.transcripts.speaker.copy.voice.named.one = 1 sentence now shows this name
+
+journal.window.transcripts.speaker.copy.voice.scope = everywhere this voice appears
+
+journal.window.transcripts.speaker.copy.voice.scope.note = there's no undo
+
+journal.window.transcripts.speaker.warning.ambiguous = speaker label source is ambiguous for this segment
+
+journal.window.transcripts.speaker.warning.unavailable = speaker labels are unavailable for this segment
+
+journal.window.transcripts.speaker.warning.unreadable = your answers about who spoke can't be read, so no one is named in this segment
+
+journal.window.transcripts.status.text.hide.location.segments = hide location segments
+
+journal.window.transcripts.status.text.raw.json = raw { $slot1 }
+
+journal.window.transcripts.status.text.raw.json.value1 = raw { $slot1 },{ $slot2 }{ $value1 }
+
+journal.window.transcripts.status.text.screen.image = screen image
+
+journal.window.transcripts.status.text.untitled.event = Untitled event
+
+journal.window.transcripts.stretch.copy.alone.it.erases.date.unless.you.recover = it erases { $slot1 } unless you recover it.
+
+journal.window.transcripts.stretch.copy.backwards.the.end.has.to.be.after = the end has to be after the start.
+
+journal.window.transcripts.stretch.copy.button.delete.a.stretch.of.time = delete a stretch of time
+
+journal.window.transcripts.stretch.copy.buttonlabel.delete.a.stretch.of.time.starting = delete a stretch of time, starting { $slot1 }
+
+journal.window.transcripts.stretch.copy.checking.checking.what.s.in.your.journal = checking what's in your journal from then…
+
+journal.window.transcripts.stretch.copy.emptyleft.nothing.from.that.time.can.go = nothing from that time can go to the trash.
+
+journal.window.transcripts.stretch.copy.emptynone.your.journal.has.nothing.from.that = your journal has nothing from that time.
+
+journal.window.transcripts.stretch.copy.failed.couldn.t.check.what.s.in = couldn't check what's in your journal from then.
+
+journal.window.transcripts.stretch.copy.from.from = from
+
+journal.window.transcripts.stretch.copy.heading.this.segment.is.in.the.trash = this segment is in the trash
+
+journal.window.transcripts.stretch.copy.message.it.erases.date.unless.you.recover = it erases { $slot1 } unless you recover it.
+
+journal.window.transcripts.stretch.copy.message.it.s.back.in.your.journal = it's back in your journal.
+
+journal.window.transcripts.stretch.copy.message.it.s.still.moving.into.the = it's still moving into the trash. try again from there once it's done.
+
+journal.window.transcripts.stretch.copy.message.nothing.from.that.time.could.go = nothing from that time could go to the trash.
+
+journal.window.transcripts.stretch.copy.message.part.of.it.comes.from.an = part of it comes from an import that's in the trash. recover that first.
+
+journal.window.transcripts.stretch.copy.message.some.of.it.couldn.t.be = some of it couldn't be moved and is still in your journal. delete this stretch again to move the rest.
+
+journal.window.transcripts.stretch.copy.retry.try.again = try again
+
+journal.window.transcripts.stretch.copy.stretch.it.went.with.everything.from.bounds = it went with everything from { $slot1 }, and it comes back only with all of it. it erases { $slot2 } unless you recover it.
+
+journal.window.transcripts.stretch.copy.title.bounds.recovered = { $slot1 } recovered
+
+journal.window.transcripts.stretch.copy.title.couldn.t.recover.that = couldn't recover that
+
+journal.window.transcripts.stretch.copy.title.couldn.t.recover.that.yet = couldn't recover that yet
+
+journal.window.transcripts.stretch.copy.title.erased.bounds.from.your.journal = erased { $slot1 } from your journal
+
+journal.window.transcripts.stretch.copy.title.moved.bounds.to.the.trash = moved { $slot1 } to the trash
+
+journal.window.transcripts.stretch.copy.title.nothing.was.moved = nothing was moved
+
+journal.window.transcripts.stretch.copy.to.to = to
+
+journal.window.transcripts.stretch.copy.toolong.choose.days.or.less = choose 31 days or less.
+
+journal.window.transcripts.tab.names = names
+
+journal.window.transcripts.tab.screen.text = screen text
+
+journal.window.transcripts.tab.signals = signals
+
+journal.window.transcripts.tab.transcript = transcript
+
+journal.window.transcripts.text.loading.body.context = loading body context…
+
+journal.window.transcripts.text.loading.screen.entries = loading screen entries…
+
+journal.window.transcripts.text.loading.segment = loading segment…
+
+journal.window.transcripts.text.loading.this.day = loading this day…
+
+journal.window.transcripts.timeline.midnight = midnight
+
+journal.window.transcripts.timeline.segment.start = segment{ $slot1 }{ $time }
+
+journal.window.transcripts.tooltip.close.esc = close (esc)
+
+journal.window.transcripts.tooltip.delete.segment = delete segment
+
+journal.window.transcripts.tooltip.drag.to.adjust.end = drag to adjust end
+
+journal.window.transcripts.tooltip.drag.to.adjust.start = drag to adjust start
+
+journal.window.transcripts.tooltip.min = { $slot1 }min
+
+journal.window.transcripts.tooltip.next.frame.right.arrow = next frame (right arrow)
+
+journal.window.transcripts.tooltip.previous.frame.left.arrow = previous frame (left arrow)
+
+journal.window.transcripts.trash.copy.back.back = back
+
+journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = this is already being moved or erased. reload in a minute to check.
+
+journal.window.transcripts.trash.copy.cancel.cancel = cancel
+
+journal.window.transcripts.trash.copy.delete.delete = delete
+
+journal.window.transcripts.trash.copy.done.done = done
+
+journal.window.transcripts.trash.copy.eraseimporting.this.wasn.t.erased.because.it = this wasn't erased because it's still importing. try again once it's done.
+
+journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again = this wasn't erased. try again.
+
+journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = this wasn't moved because it's still importing. try again once it's done.
+
+journal.window.transcripts.trash.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
+
+journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
+
+journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
+
+journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = it may already be in the trash. reload to check.
+
+journal.window.transcripts.trash.copy.message.it.s.back.in.your.journal = it's back in your journal.
+
+journal.window.transcripts.trash.copy.message.it.s.in.the.trash.you = it's in the trash. you can try again from there.
+
+journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash = it's still in the trash. you can try again from there.
+
+journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal = it's still in your journal.
+
+journal.window.transcripts.trash.copy.message.they.erase.date.unless.you.recover = they erase { $slot1 } unless you recover them.
+
+journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = they may already be back in your journal. reload to check.
+
+journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = they may already be erased. reload to check.
+
+journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = they may already be in the trash. reload to check.
+
+journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = they're back in your journal.
+
+journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash = they're still in the trash. you can try again from there.
+
+journal.window.transcripts.trash.copy.noneerasedmany.look.for.them.below.or.in = look for them below or in the trash.
+
+journal.window.transcripts.trash.copy.noneerasedone.look.for.it.below.or.in = look for it below or in the trash.
+
+journal.window.transcripts.trash.copy.nonestillmany.k.are.still.in.your.journal = { $slot1 } are still in your journal, marked below.
+
+journal.window.transcripts.trash.copy.nonestillone.k.is.still.in.your.journal = { $slot1 } is still in your journal, marked below.
+
+journal.window.transcripts.trash.copy.opentrash.open.trash = open trash
+
+journal.window.transcripts.trash.copy.other.this.wasn.t.moved.try.again = this wasn't moved. try again.
+
+journal.window.transcripts.trash.copy.parterasedmany.the.others.weren.t.erased.look = the others weren't erased. look for them below or in the trash.
+
+journal.window.transcripts.trash.copy.parterasedone.the.other.wasn.t.erased.look = the other wasn't erased. look for it below or in the trash.
+
+journal.window.transcripts.trash.copy.partrecoveredmany.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
+
+journal.window.transcripts.trash.copy.partrecoveredone.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
+
+journal.window.transcripts.trash.copy.pickrange.start.end = { $slot1 } – { $slot2 }
+
+journal.window.transcripts.trash.copy.recover.recover = recover
+
+journal.window.transcripts.trash.copy.segment.segment = segment
+
+journal.window.transcripts.trash.copy.segments.segments = segments
+
+journal.window.transcripts.trash.copy.select.select = select
+
+journal.window.transcripts.trash.copy.selectall.select.all = select all
+
+journal.window.transcripts.trash.copy.selected.n.selected = { $slot1 } selected
+
+journal.window.transcripts.trash.copy.stillmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are still in your journal, marked below.
+
+journal.window.transcripts.trash.copy.stillone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is still in your journal, marked below.
+
+journal.window.transcripts.trash.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
+
+journal.window.transcripts.trash.copy.title.couldn.t.erase.those = couldn't erase those
+
+journal.window.transcripts.trash.copy.title.couldn.t.move.that.to.the = couldn't move that to the trash
+
+journal.window.transcripts.trash.copy.title.couldn.t.move.those.to.the = couldn't move those to the trash
+
+journal.window.transcripts.trash.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
+
+journal.window.transcripts.trash.copy.title.couldn.t.recover.those = couldn't recover those
+
+journal.window.transcripts.trash.copy.title.erased.done.of.n = erased { $slot1 } of { $slot2 }
+
+journal.window.transcripts.trash.copy.title.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal
+
+journal.window.transcripts.trash.copy.title.moved.done.of.n.to.the = moved { $slot1 } of { $slot2 } to the trash
+
+journal.window.transcripts.trash.copy.title.moved.n.things.to.the.trash = moved { $slot1 } { $slot2 } to the trash
+
+journal.window.transcripts.trash.copy.title.moved.to.the.trash = moved to the trash
+
+journal.window.transcripts.trash.copy.title.n.things.recovered = { $slot1 } { $slot2 } recovered
+
+journal.window.transcripts.trash.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
+
+journal.window.transcripts.trash.copy.title.noun.recovered = { $slot1 } recovered
+
+journal.window.transcripts.trash.copy.title.recovered.done.of.n = recovered { $slot1 } of { $slot2 }
+
+journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer = your journal didn't answer
+
+journal.window.transcripts.visible.text.an.earlier.audio.copy.attempt.had = an earlier audio copy attempt had a problem.
+
+journal.window.transcripts.visible.text.analysis.errored.for.this.segment = analysis errored for this segment
+
+journal.window.transcripts.visible.text.analysis.request.failed = analysis request failed
+
+journal.window.transcripts.visible.text.audio = audio
+
+journal.window.transcripts.visible.text.audio.may.be.incomplete.for.this = audio may be incomplete for this segment.
+
+journal.window.transcripts.visible.text.audio.variant2 = audio:
+
+journal.window.transcripts.visible.text.body.context = body context
+
+journal.window.transcripts.visible.text.body.data.present = body data present.
+
+journal.window.transcripts.visible.text.day = day
+
+journal.window.transcripts.visible.text.day.rhythm = day rhythm
+
+journal.window.transcripts.visible.text.decoding.key.frames.value1.value2.value3 = Decoding key frames{ $slot1 }{ $value1 }/{ $value2 }{ $slot2 }({ $value3 }%)…
+
+journal.window.transcripts.visible.text.detail = detail
+
+journal.window.transcripts.visible.text.import = import
+
+journal.window.transcripts.visible.text.loading.screen.entries = loading screen entries…
+
+journal.window.transcripts.visible.text.loading.this.day = loading this day…
+
+journal.window.transcripts.visible.text.location.for.this.day.couldn.t = location for this day couldn't be loaded.
+
+journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in = more deduped calendar events hidden in this compact view
+
+journal.window.transcripts.visible.text.no.body.context.in.this.window = no body context in this window.
+
+journal.window.transcripts.visible.text.nothing.in.this.range = nothing in this range
+
+journal.window.transcripts.visible.text.now = now
+
+journal.window.transcripts.visible.text.pages = pages:
+
+journal.window.transcripts.visible.text.possible.name = (possible name:
+
+journal.window.transcripts.visible.text.rendering.screen.entries = Rendering screen entries…
+
+journal.window.transcripts.visible.text.screen = screen
+
+journal.window.transcripts.visible.text.screen.variant2 = screen:
+
+journal.window.transcripts.visible.text.show.fewer.entries = show fewer entries
+
+journal.window.transcripts.visible.text.show.full.output = show full output
+
+journal.window.transcripts.visible.text.show.less.output = show less output
+
+journal.window.transcripts.visible.text.show.the.rest.of.this.block = show the rest of this block ({ $value1 }{ $slot1 }more) →
+
+journal.window.transcripts.visible.text.sleep = sleep
+
+journal.window.transcripts.visible.text.still.working = still working…
+
+journal.window.transcripts.visible.text.transcripts = transcripts
+
+journal.window.transcripts.visible.text.value1.source.value2 = { $value1 }{ $slot1 }source:{ $slot2 }{ $value2 }
+
+journal.window.transcripts.visible.text.warning.details.unavailable = warning details unavailable
+
+journal.window.transcripts.visible.text.workout = workout
+
+journal.window.transcripts.visible.text.your.browser.does.not.support.audio = Your browser does not support audio.
+
+journal.window.transcripts.warning.age = { $age }{ $slot1 }ago
+
+journal.window.transcripts.warning.count.many = { $count }{ $slot1 }warnings during processing
+
+journal.window.transcripts.warning.count.one = 1 warning during processing
+
+journal.window.transcripts.warning.detail.label = warning
+
+journal.window.transcripts.warning.file.unknown = unknown file
+
+journal.window.transcripts.warning.time.unknown = time unknown
+
+journal.window.transcripts.window.explanation.audio.may.be.incomplete.for.this = audio may be incomplete for this segment.
+
+journal.window.transcripts.window.explanation.body.context.unavailable.for.this.day = body context unavailable for this day window.
+
+journal.window.transcripts.window.explanation.body.data.present.for.this.day = body data present for this day.
+
+journal.window.transcripts.window.explanation.body.during.this.hour = body during this hour
+
+journal.window.transcripts.window.explanation.body.during.this.segment = body during this segment
+
+journal.window.transcripts.window.explanation.failed.to.fetch.ranges = Failed to fetch ranges
+
+journal.window.transcripts.window.explanation.no.compact.body.context.in.this = no compact body context in this day window.
+
+journal.window.transcripts.window.explanation.photos.and.button.presses = photos and button presses
+
+journal.window.transcripts.window.explanation.show.location.segment = show 1 location segment
+
+journal.window.transcripts.window.explanation.this.segment.holds.location.only = this segment holds location only.
+
+journal.window.transcripts.window.explanation.this.segment.holds.location.only.reading = this segment holds location only: 1 reading.
+
+journal.window.transcripts.window.explanation.this.segment.holds.location.only.value1 = this segment holds location only:{ $slot1 }{ $value1 }{ $slot2 }readings.

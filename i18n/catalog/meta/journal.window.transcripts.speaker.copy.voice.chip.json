@@ -1,0 +1,23 @@
+{
+  "description": "Transcripts response speaker picker in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response speaker picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae671cfd9a938788cf87e6431a11aa67fd251742b383382aed3cfbd50297dde4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{number}"
+    }
+  ]
+}

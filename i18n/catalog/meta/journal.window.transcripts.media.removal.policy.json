@@ -1,0 +1,33 @@
+{
+  "description": "Transcripts media removal policy in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media removal policy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "what",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d6f2756fcc9a2109c3fb51d066c6755e7d1e965edc6cd1e4e1e29cb061530c6",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

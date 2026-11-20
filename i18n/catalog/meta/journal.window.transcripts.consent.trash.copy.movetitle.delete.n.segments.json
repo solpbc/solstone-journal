@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy moveTitle in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy moveTitle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "078377895614c0ef8174361f523b61c163eb85c282a3046e0ff564224deecd8a",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

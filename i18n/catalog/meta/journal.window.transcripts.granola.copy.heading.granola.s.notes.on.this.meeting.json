@@ -1,0 +1,23 @@
+{
+  "description": "granola copy heading in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a92a94e7b40c5f1afbedf2fddcf176bdab7a9bbda12c1c5c653877a8f7564f0",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

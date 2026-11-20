@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy lead in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b9d31e4021d57883b52d8aa76c6266f31d69e3f390394cff324ee01359005457",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

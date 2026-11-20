@@ -1,0 +1,23 @@
+{
+  "description": "Transcripts response detail in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7c7545f715d06019fd4bf5771d822eadba6949e3b62ec4c369104b822a1235c",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "audio, screen, or image"
+    }
+  ]
+}

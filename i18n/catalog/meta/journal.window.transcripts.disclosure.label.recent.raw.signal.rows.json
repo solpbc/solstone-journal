@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2071ab39e1e39c53eb209410076789201515d3a0303f3d3b7f8a8b9e20ecd8c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

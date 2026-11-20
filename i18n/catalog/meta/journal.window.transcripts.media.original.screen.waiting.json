@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media original screen waiting in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media original screen waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d0ceb43f3f14dd74950ad34547fc989cb284881750af5699f208287983224ab",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "btn title image in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. btn title image.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59165c7307e5a10cb0e36340d3dc7dd79e95e63bdad7dc3b75b334b1a58d9f98",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

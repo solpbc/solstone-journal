@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9001f0f605e83de04a35093a08c66862a08677a3f5bab7eb9a5ecef1243ff49",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

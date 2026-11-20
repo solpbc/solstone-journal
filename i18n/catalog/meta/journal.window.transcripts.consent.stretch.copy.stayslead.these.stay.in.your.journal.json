@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy staysLead in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy staysLead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "764150f9ce3b29d4016ced0e9776d631f89b8a935f94ba798de5bf5e5758e8e5",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

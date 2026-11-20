@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display warning time unknown in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display warning time unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd42ea72971f6fa789180e85040c69892fb1abddcb823feb46e0531512eb8602",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

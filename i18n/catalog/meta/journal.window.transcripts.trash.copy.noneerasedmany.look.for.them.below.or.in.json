@@ -1,0 +1,16 @@
+{
+  "description": "trash copy noneErasedMany in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy noneErasedMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "577ed526944a6d20e212fb4ec743a9ea3cd726e1d47ce87cc864f17fd32b3473",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

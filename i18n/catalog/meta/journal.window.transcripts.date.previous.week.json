@@ -1,0 +1,16 @@
+{
+  "description": "Shared calendar previous week action accessible name in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Shared calendar previous week action accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46b2eddf1fe71c956318403d1c614ad29d7c520e12e6f082080f324767ed4e02",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "photo copy unavailable in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. photo copy unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca949c25c6614866726a0a1117bce6bb5b287999bdf0e884b1e1e8058303ba14",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

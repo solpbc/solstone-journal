@@ -1,0 +1,23 @@
+{
+  "description": "trash copy stillMany in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy stillMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "179dd70bac5c153c267e248c45c8403b8bd93f1e8c282dfa38d45316f4103b6a",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    }
+  ]
+}

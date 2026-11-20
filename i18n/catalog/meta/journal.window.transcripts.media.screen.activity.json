@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media screen activity in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media screen activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4e6d674e0b6e94cae166db9e8cb54fa42cbfa13ec7952714a6d3969616d4261",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

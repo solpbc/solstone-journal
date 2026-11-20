@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display kind desktop activity in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display kind desktop activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "904a75187655bb56b861230985dbc890cd38f5313c75509417bb09126008e276",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

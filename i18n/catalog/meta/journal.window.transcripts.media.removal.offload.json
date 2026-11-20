@@ -1,0 +1,33 @@
+{
+  "description": "Transcripts media removal offload in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media removal offload.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "what",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f657175489fbb470d552ff809c125eb86e152d48bbc58950bea56fd0fd9d9b9",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts media removal unavailable in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media removal unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "what",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b662d05c58dcb9fff37a7c3f72be346fcd6b953bf3a387f940cdb67cccfd031",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

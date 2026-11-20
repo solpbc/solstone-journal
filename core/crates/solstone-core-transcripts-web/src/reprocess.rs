@@ -11,6 +11,7 @@ use std::sync::Arc;
 #[cfg(unix)]
 use std::time::Duration;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
@@ -18,6 +19,10 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, strings, text},
+};
 use solstone_core_system_health::{DataState, derive_modality_state};
 use solstone_core_time::Precision;
 
@@ -148,34 +153,78 @@ impl SenseChild for ProcessChild {
 }
 
 pub(crate) async fn reprocess_segment(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     #[cfg(windows)] context: Option<axum::extract::Extension<crate::SenseLaunchContext>>,
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day("Invalid day format", StatusCode::BAD_REQUEST);
+        return invalid_day(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.day.format",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     if !valid_key(&key) {
-        return invalid_segment("Invalid segment key format", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.key.format",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     if !valid_stream(&stream) {
-        return invalid_segment("Invalid stream format", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.stream.format",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     let day_dir = state.journal_root.join("chronicle").join(&day);
     if !day_dir.is_dir() {
-        return invalid_day("Day not found", StatusCode::NOT_FOUND);
+        return invalid_day(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.day.not.found",
+            ),
+            StatusCode::NOT_FOUND,
+        );
     }
     let segment_dir =
         crate::segment_media::physical_segment_dir(&state.journal_root, &day, &stream, &key);
     if !segment_dir.is_dir() {
-        return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.segment.not.found",
+            ),
+            StatusCode::NOT_FOUND,
+        );
     }
     // valid_day/valid_stream/valid_key exclude a `..` path component, so this
     // is defense in depth for a future validator regression, not reachable now;
     // retention also refuses per-entry removals outside the journal.
     if segment_dir.strip_prefix(&day_dir).is_err() {
-        return invalid_segment("Invalid segment path", StatusCode::FORBIDDEN);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.path",
+            ),
+            StatusCode::FORBIDDEN,
+        );
     }
     let modality = serde_json::from_slice::<Value>(&body)
         .ok()
@@ -190,8 +239,14 @@ pub(crate) async fn reprocess_segment(
     else {
         return legacy_error_response(
             "invalid_request_value",
-            "one of those values couldn't be used.",
-            "modality must be audio, screen, or image",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.one.of.those.values.couldn.t",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.modality.must.be.audio.screen.or",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -200,16 +255,28 @@ pub(crate) async fn reprocess_segment(
     if signals.state == DataState::Analyzed {
         return legacy_error_response(
             "invalid_operation_for_state",
-            "that action isn't available in the current state.",
-            "Segment modality is already analyzed",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.action.isn.t.available.in",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.segment.modality.is.already.analyzed",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
     if signals.state == DataState::Purged || !signals.has_raw {
         return legacy_error_response(
             "raw_media_not_available",
-            "analysis couldn't run because the raw media is no longer available.",
-            "Raw media is no longer available",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.analysis.couldn.t.run.because.the",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.raw.media.is.no.longer.available",
+            ),
             StatusCode::BAD_REQUEST,
         );
     }
@@ -236,16 +303,30 @@ pub(crate) async fn reprocess_segment(
         Ok(Err(CreateMarkerError::Io(error))) => {
             return legacy_error_response(
                 "file_read_failed",
-                "that file couldn't be read.",
-                format!("Failed to create analysis marker: {error}"),
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.file.couldn.t.be.read",
+                ),
+                strings(
+                    locale,
+                    "journal.window.transcripts.response.detail.failed.to.create.analysis.marker.detail",
+                    [("detail", &error.to_string())],
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
         Err(error) => {
             return legacy_error_response(
                 "file_read_failed",
-                "that file couldn't be read.",
-                format!("Failed to create analysis marker: {error}"),
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.file.couldn.t.be.read",
+                ),
+                strings(
+                    locale,
+                    "journal.window.transcripts.response.detail.failed.to.create.analysis.marker.detail",
+                    [("detail", &error.to_string())],
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -266,8 +347,15 @@ pub(crate) async fn reprocess_segment(
             let _ = fs::remove_file(&marker.path);
             return legacy_error_response(
                 "file_read_failed",
-                "that file couldn't be read.",
-                format!("Failed to start analysis: {error}"),
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.file.couldn.t.be.read",
+                ),
+                strings(
+                    locale,
+                    "journal.window.transcripts.response.detail.failed.to.start.analysis.detail",
+                    [("detail", &error.to_string())],
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -633,14 +721,25 @@ fn data_state(
     states
 }
 
-fn invalid_day(detail: &str, status: StatusCode) -> Response {
-    legacy_error_response("invalid_day", "that day couldn't be used.", detail, status)
+fn invalid_day(locale: &str, detail: String, status: StatusCode) -> Response {
+    legacy_error_response(
+        "invalid_day",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+        ),
+        detail,
+        status,
+    )
 }
 
-fn invalid_segment(detail: &str, status: StatusCode) -> Response {
+fn invalid_segment(locale: &str, detail: String, status: StatusCode) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "that segment or stream couldn't be used.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+        ),
         detail,
         status,
     )

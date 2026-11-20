@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts tab signals in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts tab signals.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f92fe10ff233a07134eb841c999d4dccba5abf28d59dabaaebfbd9d9c348210",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

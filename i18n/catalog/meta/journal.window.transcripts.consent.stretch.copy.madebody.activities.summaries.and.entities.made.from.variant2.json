@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy madeBody in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy madeBody.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "274677e30afe782a075e2c54a500067cb5c0fb574449084951d0415276813cd6",
+  "max_length": 123,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

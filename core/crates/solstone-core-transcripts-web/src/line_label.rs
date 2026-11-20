@@ -14,12 +14,17 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_speaker_resolve::owner_line_labels::{
     LineSpeaker, OwnerLine, OwnerLineLabelError, remove_owner_line_labels, set_owner_line_labels,
 };
@@ -40,6 +45,7 @@ struct Target {
 
 #[allow(clippy::result_large_err)]
 fn target(
+    locale: &str,
     root: &Path,
     headers: &HeaderMap,
     (day, stream, key): (String, String, String),
@@ -48,8 +54,14 @@ fn target(
     if headers.get(ACTOR_HEADER).and_then(|v| v.to_str().ok()) != Some(ACTOR_OWNER) {
         return Err(legacy_error_response(
             "owner_line_owner_only",
-            "only you can say who said a line.",
-            "saying who said a line needs the owner",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.only.you.can.say.who.said",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.saying.who.said.a.line.needs",
+            ),
             StatusCode::FORBIDDEN,
         ));
     }
@@ -58,7 +70,13 @@ fn target(
         || matches!(stream.as_str(), "." | "..")
         || !crate::segment::valid_key(&key)
     {
-        return Err(invalid("day, stream and segment name one segment"));
+        return Err(invalid(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.day.stream.and.segment.name.one",
+            ),
+        ));
     }
     let body = serde_json::from_slice::<Value>(body)
         .ok()
@@ -70,7 +88,13 @@ fn target(
             .filter(|source| !source.is_empty()),
         body.get("sentence_id").and_then(Value::as_i64),
     ) else {
-        return Err(invalid("source and sentence_id name the line"));
+        return Err(invalid(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.source.and.sentence.id.name.the",
+            ),
+        ));
     };
     let line = OwnerLine {
         segment_dir: root
@@ -88,16 +112,19 @@ fn target(
     })
 }
 
-fn invalid(detail: &str) -> Response {
+fn invalid(locale: &str, detail: String) -> Response {
     legacy_error_response(
         "owner_line_invalid",
-        "who said that line couldn't be saved.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.who.said.that.line.couldn.t",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
 
-fn store_refused(error: &OwnerLineLabelError) -> Response {
+fn store_refused(locale: &str, error: &OwnerLineLabelError) -> Response {
     let status = match error {
         OwnerLineLabelError::NoLines => StatusCode::BAD_REQUEST,
         OwnerLineLabelError::Lock(_) | OwnerLineLabelError::MergeRecoveryPending => {
@@ -108,7 +135,10 @@ fn store_refused(error: &OwnerLineLabelError) -> Response {
     };
     legacy_error_response(
         error.reason_code(),
-        "who said that line couldn't be saved.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.who.said.that.line.couldn.t",
+        ),
         error.to_string(),
         status,
     )
@@ -148,13 +178,15 @@ fn think_again(root: &Path, target: &Target) -> Map<String, Value> {
 }
 
 pub(crate) async fn set_line_label(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(path): RoutePath<(String, String, String)>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     let root = state.journal_root.as_path();
-    let target = match target(root, &headers, path, &body) {
+    let target = match target(locale, root, &headers, path, &body) {
         Ok(target) => target,
         Err(response) => return response,
     };
@@ -165,32 +197,40 @@ pub(crate) async fn set_line_label(
     else {
         return legacy_error_response(
             "owner_line_speaker_invalid",
-            "who said that line couldn't be saved.",
-            "speaker is {\"kind\":\"owner\"}, {\"kind\":\"person\",\"id\":...} or {\"kind\":\"unknown\"}",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.who.said.that.line.couldn.t",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.speaker.is.kind.owner.kind.person",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
     match set_owner_line_labels(root, std::slice::from_ref(&target.line), &speaker) {
         Ok(_) => Json(think_again(root, &target)).into_response(),
-        Err(error) => store_refused(&error),
+        Err(error) => store_refused(locale, &error),
     }
 }
 
 pub(crate) async fn remove_line_label(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(path): RoutePath<(String, String, String)>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     let root = state.journal_root.as_path();
-    let target = match target(root, &headers, path, &body) {
+    let target = match target(locale, root, &headers, path, &body) {
         Ok(target) => target,
         Err(response) => return response,
     };
     match remove_owner_line_labels(root, std::slice::from_ref(&target.line)) {
         Ok(0) => Json(serde_json::json!({"ok": true, "asked": false})).into_response(),
         Ok(_) => Json(think_again(root, &target)).into_response(),
-        Err(error) => store_refused(&error),
+        Err(error) => store_refused(locale, &error),
     }
 }
 

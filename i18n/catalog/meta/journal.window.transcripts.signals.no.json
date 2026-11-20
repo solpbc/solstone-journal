@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals no in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals no.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8dbceb8ebdc7b8420d0634a2f68c24f3a6780ba66dbd31a1d3dcd42e8a39510",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "photo copy viewerLabel in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. photo copy viewerLabel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a963de387bd28e0bbc8c71b3a09f7c392c27d0658a31d830e63669cd62e3bed",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

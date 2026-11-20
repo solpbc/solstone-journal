@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row latest in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row latest.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "587afacdc6b28937f1e3d0608ee30864762db2bf6d8c091c0bc3160561e9474d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

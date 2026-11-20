@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "082fc79119bbbadd18f8d174e9081cb52d04afb1b63ce83a6657491ce91e60a8",
+  "max_length": 138,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{label}"
+    }
+  ]
+}

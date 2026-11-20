@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts body section brief in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body section brief.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf602c1ae10f5efc7892b0ae95a9c8c57532aae57132cf61e699b1d8ec0f0b5f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

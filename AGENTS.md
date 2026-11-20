@@ -449,7 +449,8 @@ Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
 `solstone-core-backup-web`, `solstone-core-facets-web`,
 `solstone-core-health-web`, `solstone-core-home-web`, `solstone-core-map-web`,
 `solstone-core-records-web`, `solstone-core-settings-web`,
-`solstone-core-stats-web` and `solstone-core-support-web`.
+`solstone-core-stats-web`, `solstone-core-support-web` and
+`solstone-core-transcripts-web`.
 This includes Entities window responses from `solstone-core-entities` and
 `solstone-core-entity`, status copy from `solstone-core-system-health` and
 `solstone-core-system`, Home window responses from `solstone-core-home`, and

@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts display media size screen in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display media size screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05af6f840ab28e14022b7d93902b1b38ecbaebbbb821ed6ba4b5e664ac90e4e1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

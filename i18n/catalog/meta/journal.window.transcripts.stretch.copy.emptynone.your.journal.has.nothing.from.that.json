@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy emptyNone in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy emptyNone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35f7a52cc9b2f0d2b78d63c5ebda27bef5754bd41e0045d5746f6676bd392161",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

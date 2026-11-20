@@ -1,0 +1,16 @@
+{
+  "description": "Owner desc in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Owner desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5c669cec802e7e59d4e4f9c83db30245fc812deb46b9c00681e7b4673f9a6a4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

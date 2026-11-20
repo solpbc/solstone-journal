@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy arriving in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy arriving.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7949f1064a14d75556a7ce7ffb313e65eae8c1601c694ceec0768a55fb3e07f3",
+  "max_length": 67,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

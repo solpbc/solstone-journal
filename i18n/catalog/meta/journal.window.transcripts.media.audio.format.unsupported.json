@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media audio format unsupported in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media audio format unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7594a4fedf69d36dd2dcb597cbe5db009d3326fc37b345c5f2e986cc667dbab",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

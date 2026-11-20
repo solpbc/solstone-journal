@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts display media size audio in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display media size audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "619b9b3e68a20b4302bc54d4d4f413d8af02384f882111f22db171d94387ec8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

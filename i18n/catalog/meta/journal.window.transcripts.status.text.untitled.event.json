@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7377c3ee2127d28d1e7f9e2230b852d64dcbaec44dc845b9cf018bf9a427962",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

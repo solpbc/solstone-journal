@@ -1,0 +1,16 @@
+{
+  "description": "screenshot copy J6 in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. screenshot copy J6.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34b313a9ad8605321543105ff56c95db7cd62e706c05c5a41441394900cd2658",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

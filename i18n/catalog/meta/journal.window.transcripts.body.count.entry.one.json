@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts body count entry one in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body count entry one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0be8bd0fb4c2fea396a4003171281e048184fe03276420091cd1e30ed5fe80f7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

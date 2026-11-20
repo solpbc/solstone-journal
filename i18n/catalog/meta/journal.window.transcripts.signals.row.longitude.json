@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row longitude in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row longitude.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42bed214aeacfe6f0a0252883fb35c2a23a732f31e1a49953968c4d4a35a92f8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

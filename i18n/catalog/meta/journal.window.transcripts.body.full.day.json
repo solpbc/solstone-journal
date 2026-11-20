@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts body full day in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body full day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "366a91503372a8c7bfdf8a61ded99a14a855bc60b1061d101f1b03ff01744a31",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

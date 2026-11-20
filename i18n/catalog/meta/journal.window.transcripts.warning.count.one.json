@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts warning count one in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts warning count one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "589d34815d7c0c26790a8d814f59053f101da1adbd2000e13e943dfe2cd8e351",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

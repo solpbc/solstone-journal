@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts speaker warning ambiguous in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts speaker warning ambiguous.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b260d97e73bc7b38592e9f6c49ec3400042d1f34c1facf6577985a11d6b9f32",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

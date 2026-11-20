@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy tooLong in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy tooLong.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "548cae03e5ed2e217a030f5a7504901f475fffc5073d20a9080f73c7504360a5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

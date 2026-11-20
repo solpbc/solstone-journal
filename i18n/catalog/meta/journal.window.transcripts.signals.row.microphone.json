@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row microphone in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row microphone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76b7cbfbff10c1c6babbf77e285d245d8ff706e905fefe3edf62039fc29b896b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

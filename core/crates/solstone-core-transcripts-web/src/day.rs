@@ -4,12 +4,17 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::json;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_system_health::{DaySegment, FilesystemSegmentSource, TimeRange, scan_day};
 
 use crate::attach::{
@@ -19,18 +24,20 @@ use crate::attach::{
 use crate::{AppState, TranscriptError, legacy_error_response};
 
 pub(crate) async fn ranges(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsRanges,
         move || {
-            let prepared = match checked_prepare(&journal_root, &day, now) {
+            let prepared = match checked_prepare(locale, &journal_root, &day, now) {
                 Ok(value) => value,
                 Err(response) => return response,
             };
@@ -41,18 +48,20 @@ pub(crate) async fn ranges(
 }
 
 pub(crate) async fn segments(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsSegments,
         move || {
-            let prepared = match checked_prepare(&journal_root, &day, now) {
+            let prepared = match checked_prepare(locale, &journal_root, &day, now) {
                 Ok(value) => value,
                 Err(response) => return response,
             };
@@ -63,18 +72,20 @@ pub(crate) async fn segments(
 }
 
 pub(crate) async fn day(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsDay,
         move || {
-            let prepared = match checked_prepare(&journal_root, &day, now) {
+            let prepared = match checked_prepare(locale, &journal_root, &day, now) {
                 Ok(value) => value,
                 Err(response) => return response,
             };
@@ -155,20 +166,31 @@ pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
     }
 }
 #[allow(clippy::result_large_err)]
-fn checked_prepare(root: &Path, day: &str, now: Timestamp) -> Result<PreparedDay, Response> {
+fn checked_prepare(
+    locale: &str,
+    root: &Path,
+    day: &str,
+    now: Timestamp,
+) -> Result<PreparedDay, Response> {
     if !valid_day(day) {
-        return Err(invalid_day());
+        return Err(invalid_day(locale));
     }
-    prepare_day(root, day, now).map_err(|error| error.response())
+    prepare_day(root, day, now).map_err(|error| error.response(locale))
 }
 pub(crate) fn valid_day(day: &str) -> bool {
     day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
-pub(crate) fn invalid_day() -> Response {
+pub(crate) fn invalid_day(locale: &str) -> Response {
     legacy_error_response(
         "invalid_day",
-        "that day couldn't be used.",
-        "Day not found",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+        ),
+        text(
+            locale,
+            "journal.window.transcripts.response.detail.day.not.found",
+        ),
         StatusCode::NOT_FOUND,
     )
     .into_response()

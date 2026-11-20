@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals section calendar snapshot in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals section calendar snapshot.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38ea28da290140925b8987d7879376eac56e462225bbbb40b956d3e63ef83611",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

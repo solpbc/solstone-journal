@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1c02f1079dcd46411e096bd6cc04e942a3107af935b1dadbc6fb545d26aa5a5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

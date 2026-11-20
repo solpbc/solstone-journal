@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts day load error status in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts day load error status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b697936f5c9de04e92d01d547f2020fe3f0d8f97181bc0ebb2e418447afc1984",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "granola copy calendar in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a608f119c93c29c04aac8afcf3eca3b3afb6d3f382057dc2e0b4679670016d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

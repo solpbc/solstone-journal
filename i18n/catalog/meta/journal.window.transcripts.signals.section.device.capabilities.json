@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals section device capabilities in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals section device capabilities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c01c3978a5bfe5c4fb44c988daea59b8d6e0a4da375624509f7eeb6e3e3515b0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

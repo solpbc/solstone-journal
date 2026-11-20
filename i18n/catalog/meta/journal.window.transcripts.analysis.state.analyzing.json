@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display analysis state analyzing in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display analysis state analyzing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d63985ad915ac8a0f00fed2579d574cae2bbe7d72ade70e23e3dd856801807d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

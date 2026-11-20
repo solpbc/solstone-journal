@@ -1,0 +1,16 @@
+{
+  "description": "photo copy noProcessingAction in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. photo copy noProcessingAction.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "89fbef159ed303c9cf8f003d4e5391ca5a647242e54273e095f01608b802f82a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

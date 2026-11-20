@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row camera resolution in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row camera resolution.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "50ce5c6e0598926a819fe39483a7c5a714708e4477b0c2e8975e49e09fbf80d6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

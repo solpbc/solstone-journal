@@ -1,0 +1,23 @@
+{
+  "description": "Status text in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a7900824bb04b67a8933ded2fcb16913ec6fa01a874c01c6d18e1c9df5eb94f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

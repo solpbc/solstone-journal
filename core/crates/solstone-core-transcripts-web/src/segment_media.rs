@@ -136,6 +136,7 @@ impl SegmentMedia {
     }
     pub(crate) fn media_removal(
         &self,
+        locale: &str,
         journal_root: &Path,
         segment_rel: &str,
         dir: &Path,
@@ -148,6 +149,7 @@ impl SegmentMedia {
             solstone_core_retention::original_trash::in_trash(journal_root, segment_rel, name)
         };
         crate::media_removal::compute_media_removal(
+            locale,
             dir,
             &purged,
             &self.missing_referenced_files,

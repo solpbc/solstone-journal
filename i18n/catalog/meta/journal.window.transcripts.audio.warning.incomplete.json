@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts audio warning incomplete in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts audio warning incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65a7ec68ccecf2cabfaad4cc149e346190ae689b7860bb09ee8ff69f26a93844",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

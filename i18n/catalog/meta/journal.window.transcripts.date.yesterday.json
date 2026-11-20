@@ -1,0 +1,16 @@
+{
+  "description": "Relative day heading in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Relative day heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "823def133635a3b0d655bb9f2266d6a236e2057253451dc6445efda1a59b2579",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

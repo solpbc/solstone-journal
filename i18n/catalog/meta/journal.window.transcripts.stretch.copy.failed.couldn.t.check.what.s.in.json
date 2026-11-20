@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy failed in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32547c160814ab6d79d694dcf001a8154b2ad5220eaf7437901b6eec23f4191e",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

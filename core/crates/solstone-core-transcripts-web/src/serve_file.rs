@@ -5,11 +5,16 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use solstone_core_convey_http::media::{
     MediaBody, ParsedRange, media_response, mime_type, parse_range,
+};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
 };
 use solstone_core_journal_io::paths::contained_path;
 
@@ -17,15 +22,23 @@ use crate::day::valid_day;
 use crate::{AppState, legacy_error_response};
 
 pub(crate) async fn serve_file(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath((day, rel_path)): RoutePath<(String, String)>,
     headers: HeaderMap,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
         return error(
             "invalid_day",
-            "that day couldn't be used.",
-            "Day not found",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.day.not.found",
+            ),
             StatusCode::NOT_FOUND,
         );
     }
@@ -36,7 +49,10 @@ pub(crate) async fn serve_file(
         Err(_) => {
             return error(
                 "invalid_path",
-                "that path couldn't be used.",
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.path.couldn.t.be.used",
+                ),
                 "",
                 StatusCode::FORBIDDEN,
             );
@@ -58,16 +74,16 @@ pub(crate) async fn serve_file(
             } else {
                 return error(
                     "file_not_found",
-                    "that file isn't available.",
-                    "File not found",
+                    text(locale, "journal.window.transcripts.response.error.that.file.isn.t.available"),
+                    text(locale, "journal.window.transcripts.response.detail.file.not.found"),
                     StatusCode::NOT_FOUND,
                 );
             };
             let Some(mime) = mime_type(&path) else {
                 return error(
                     "invalid_request_value",
-                    "one of those values couldn't be used.",
-                    "Unregistered media extension",
+                    text(locale, "journal.window.transcripts.response.error.one.of.those.values.couldn.t"),
+                    text(locale, "journal.window.transcripts.response.detail.unregistered.media.extension"),
                     StatusCode::BAD_REQUEST,
                 );
             };
@@ -76,8 +92,8 @@ pub(crate) async fn serve_file(
                 Err(_) => {
                     return error(
                         "file_not_found",
-                        "that file isn't available.",
-                        "File not found",
+                        text(locale, "journal.window.transcripts.response.error.that.file.isn.t.available"),
+                        text(locale, "journal.window.transcripts.response.detail.file.not.found"),
                         StatusCode::NOT_FOUND,
                     );
                 }
@@ -88,8 +104,8 @@ pub(crate) async fn serve_file(
             let Ok(total) = usize::try_from(total) else {
                 return error(
                     "file_not_found",
-                    "that file isn't available.",
-                    "File not found",
+                    text(locale, "journal.window.transcripts.response.error.that.file.isn.t.available"),
+                    text(locale, "journal.window.transcripts.response.detail.file.not.found"),
                     StatusCode::NOT_FOUND,
                 );
             };
@@ -109,15 +125,15 @@ pub(crate) async fn serve_file(
                         ),
                         Err(_) => error(
                             "file_not_found",
-                            "that file isn't available.",
-                            "File not found",
+                            text(locale, "journal.window.transcripts.response.error.that.file.isn.t.available"),
+                            text(locale, "journal.window.transcripts.response.detail.file.not.found"),
                             StatusCode::NOT_FOUND,
                         ),
                     }
                 }
                 Some(ParsedRange::Unsatisfiable) => error(
                     "http_error",
-                    "that request didn't finish.",
+                    text(locale, "journal.window.transcripts.response.error.that.request.didn.t.finish"),
                     "",
                     StatusCode::RANGE_NOT_SATISFIABLE,
                 ),
@@ -125,8 +141,8 @@ pub(crate) async fn serve_file(
                     Ok(body) => media_response(StatusCode::OK, mime, &path, body, None),
                     Err(_) => error(
                         "file_not_found",
-                        "that file isn't available.",
-                        "File not found",
+                        text(locale, "journal.window.transcripts.response.error.that.file.isn.t.available"),
+                        text(locale, "journal.window.transcripts.response.detail.file.not.found"),
                         StatusCode::NOT_FOUND,
                     ),
                 },
@@ -140,6 +156,6 @@ fn open_interval(path: &Path, start: usize, length: usize) -> std::io::Result<Me
     MediaBody::from_reader(fs::File::open(path)?, start, length)
 }
 
-fn error(reason: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+fn error(reason: &str, message: String, detail: impl Into<String>, status: StatusCode) -> Response {
     legacy_error_response(reason, message, detail, status)
 }

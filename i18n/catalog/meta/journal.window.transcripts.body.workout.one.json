@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts body workout one in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body workout one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c360b8d83d43df72882485fef5d9091cdfca26f91cfdf378a980524e825c4bc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

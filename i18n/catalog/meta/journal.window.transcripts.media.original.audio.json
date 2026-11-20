@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media original audio in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media original audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb0baec4213e7b2ddf75a56b30516bfb2ff3ca63c89a3441edd8de0751b48875",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

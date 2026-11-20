@@ -1,0 +1,16 @@
+{
+  "description": "trash copy message in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f85300e3ccfb71c754c661f34617e004caed5293c461061217d548c454023051",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

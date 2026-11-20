@@ -5,10 +5,12 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
+use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::response_locale};
 use solstone_core_system_health::{FilesystemSegmentSource, list_location_only_segments};
 
 use crate::day::{invalid_day, valid_day};
@@ -33,11 +35,13 @@ pub(crate) fn location_reading_count(dir: &Path) -> Option<u64> {
 }
 
 pub(crate) async fn list_location_segments(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
@@ -53,7 +57,7 @@ pub(crate) async fn list_location_segments(
             .map_err(TranscriptError::health)
             {
                 Ok(rows) => rows,
-                Err(error) => return error.response(),
+                Err(error) => return error.response(locale),
             };
 
             let mut segments = Vec::new();

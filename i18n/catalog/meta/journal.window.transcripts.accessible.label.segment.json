@@ -1,0 +1,23 @@
+{
+  "description": "Accessible label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a3b2b5cbbd1a439ea80bb7697e9c0a8baf1afd7f628476773515af496771187",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

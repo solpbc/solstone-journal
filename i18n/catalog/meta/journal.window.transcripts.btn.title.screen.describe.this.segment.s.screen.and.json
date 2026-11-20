@@ -1,0 +1,16 @@
+{
+  "description": "btn title screen in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. btn title screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c52f7bd255a70799c9170e7fa7ad63cd0bde502fde2d3e82ac628a0234b655ab",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

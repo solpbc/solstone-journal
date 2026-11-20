@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfde9561597244dedf4f77f74b30daa40264cbb0cc8df7ebb428c483fa013d37",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

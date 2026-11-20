@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "601dc3f2a0b73d0b988bbf918dfc17339c80c947b13316efa48c9db9e1468243",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

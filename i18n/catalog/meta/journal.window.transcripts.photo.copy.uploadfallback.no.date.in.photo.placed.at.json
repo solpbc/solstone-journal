@@ -1,0 +1,16 @@
+{
+  "description": "photo copy uploadFallback in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. photo copy uploadFallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c23eb55d4c279fa7070f5bc36a98f7ab5ff674bf2a8680b15bcfc2f5a53d2927",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

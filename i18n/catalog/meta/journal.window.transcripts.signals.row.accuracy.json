@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row accuracy in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row accuracy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8f6e7c386ec5a48dc066faca26b77d322801acc9004a588935c2994d0d34550",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "btn title audio in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. btn title audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a8d6e0c1cabea1c42c027e088e0123be480885c0975b625700672e0f01cb182",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

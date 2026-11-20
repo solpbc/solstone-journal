@@ -1,0 +1,16 @@
+{
+  "description": "trash copy partErasedOne in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy partErasedOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6632f7b8b9cf781c28cda3fc0c2cb26529a273695a10b23454bd86cd73841f22",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

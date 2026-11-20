@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fea86957ff4e65544f27a8944780e9c3a49f250aa2ed8bce52b8dc942f7350d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

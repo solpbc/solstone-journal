@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media audio label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media audio label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b712288a6105d867fb4b6ca385555effd91c35d41541ed9f2e79346a3bd975f8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

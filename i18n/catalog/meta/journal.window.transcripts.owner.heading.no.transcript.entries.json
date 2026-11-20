@@ -1,0 +1,16 @@
+{
+  "description": "Owner heading in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Owner heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2124a5b410022e4496a8993a310df885e1798da1116fd2dd4b563b5582ef591",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

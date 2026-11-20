@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy to in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy to.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af581108edef02cf554e7e88d3ea6308272ef21fdba9eb1895b4be1d5fbc7181",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

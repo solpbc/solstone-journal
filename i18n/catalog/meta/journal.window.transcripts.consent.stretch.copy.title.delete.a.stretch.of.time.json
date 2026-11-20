@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy title in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28b28c02098c513c3bbf0c555655948b91641a209846d836446ab3843c11464a",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

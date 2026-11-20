@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row video recording in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row video recording.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80bf124ca10110641d225a53a14310907663a0d6cd9197bca5ff8f5407ae4e74",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

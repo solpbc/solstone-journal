@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::HttpBody;
 use axum::extract::{Path as RoutePath, State};
@@ -10,6 +11,7 @@ use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::json;
+use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::response_locale};
 
 use crate::day::{invalid_day, prepare_day, valid_day};
 use crate::{AppState, script_response, workspace_response};
@@ -21,14 +23,18 @@ pub(crate) async fn root(State(state): State<Arc<AppState>>) -> Response {
 
 /// The day an undated page opens on: the newest with segments, or else today
 /// on the journal's clock.
-pub(crate) async fn open_day(State(state): State<Arc<AppState>>) -> Response {
+pub(crate) async fn open_day(
+    selected_locale: Option<Extension<ResponseLocale>>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let locale = response_locale(selected_locale);
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsRoot,
         move || match open_day_from_journal(&journal_root, now) {
             Ok(day) => Json(json!({ "day": day })).into_response(),
-            Err(error) => error.response(),
+            Err(error) => error.response(locale),
         },
     )
     .await
@@ -71,11 +77,13 @@ fn page(state: &AppState) -> Response {
 }
 
 pub(crate) async fn day(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        invalid_day()
+        invalid_day(locale)
     } else {
         page(&state)
     }

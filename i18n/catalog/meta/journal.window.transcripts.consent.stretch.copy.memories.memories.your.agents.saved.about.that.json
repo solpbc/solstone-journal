@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy memories in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy memories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0fccf2c94119129376c313984e90ea8d66ed36b044f5c45c8e744f0e8ea9781",
+  "max_length": 72,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

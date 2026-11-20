@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
@@ -14,6 +15,10 @@ use jiff::Timestamp;
 use jiff::tz::{Offset, TimeZone};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{ENGLISH, response_locale, text},
+};
 use solstone_core_format::audio_archive::{
     AUDIO_ARCHIVE_PLACEMENT_FILENAME, AudioArchivePlacement,
 };
@@ -60,16 +65,18 @@ struct SegmentContext<'a> {
 }
 
 pub(crate) async fn segment_content(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     let now = state.clock.now();
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsSegment,
         move || match (
             in_trash(&journal_root, &day, &stream, &key),
-            prepare_segment(&journal_root, &day, &stream, &key, now),
+            prepare_segment_localized(locale, &journal_root, &day, &stream, &key, now),
         ) {
             // In the trash: what waits there, not an empty segment.
             (Some(trash), _) => Json(serde_json::json!({ "trash": trash })).into_response(),
@@ -116,8 +123,21 @@ fn in_trash(root: &Path, day: &str, stream: &str, key: &str) -> Option<Value> {
     Some(trash)
 }
 
+#[cfg(test)]
 #[allow(clippy::result_large_err)]
 fn prepare_segment(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    key: &str,
+    now: Timestamp,
+) -> Result<Value, Response> {
+    prepare_segment_localized(ENGLISH, root, day, stream, key, now)
+}
+
+#[allow(clippy::result_large_err)]
+fn prepare_segment_localized(
+    locale: &str,
     root: &Path,
     day: &str,
     stream: &str,
@@ -127,22 +147,46 @@ fn prepare_segment(
     if !valid_day(day) {
         return Err(legacy_error_response(
             "invalid_day",
-            "that day couldn't be used.",
-            "Invalid day format",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.day.format",
+            ),
             StatusCode::NOT_FOUND,
         ));
     }
     if !valid_stream(stream) {
-        return Err(invalid("Invalid stream format"));
+        return Err(invalid(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.stream.format",
+            ),
+        ));
     }
     if !valid_key(key) {
-        return Err(invalid("Invalid segment key format"));
+        return Err(invalid(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.key.format",
+            ),
+        ));
     }
     let dir = root
         .join("chronicle")
         .join(crate::segment_media::segment_rel(day, stream, key));
     if !dir.is_dir() {
-        return Err(invalid("Segment directory not found"));
+        return Err(invalid(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.segment.directory.not.found",
+            ),
+        ));
     }
     let markdown_only = markdown_only(&dir, stream);
     let zone = solstone_core_journal_config::owner_zone(root);
@@ -164,7 +208,10 @@ fn prepare_segment(
         .map_err(|error| {
             legacy_error_response(
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+                ),
                 error.to_string(),
                 StatusCode::NOT_FOUND,
             )
@@ -183,7 +230,10 @@ fn prepare_segment(
         .map_err(|error| {
             legacy_error_response(
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                text(
+                    locale,
+                    "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+                ),
                 error.to_string(),
                 StatusCode::NOT_FOUND,
             )
@@ -219,11 +269,11 @@ fn prepare_segment(
                         && placement_part_stems.contains(name.trim_end_matches(".jsonl")))
             })
     });
-    let mut speakers = load(&dir, root, now, has_audio_transcript);
+    let mut speakers = load(locale, &dir, root, now, has_audio_transcript);
     let mut warnings = std::mem::take(&mut speakers.warnings);
     let audio_capture = crate::audio_capture::read_audio_capture(&dir);
     if let Some(capture) = &audio_capture {
-        warnings.extend(crate::audio_capture::warnings(capture, now));
+        warnings.extend(crate::audio_capture::warnings(locale, capture, now));
     }
     let mut chunks = Vec::<Value>::new();
     let mut has_jsonl = BTreeMap::from([("audio".to_owned(), false), ("screen".to_owned(), false)]);
@@ -554,13 +604,14 @@ fn prepare_segment(
             "screen": media.purged("screen"),
         },
         "media_removal": media.media_removal(
+            locale,
             root,
             &solstone_core_retention::layout::segment_rel(day, stream, key),
             &dir,
         ),
         "data_state": data_state,
-        "signals": signals(&dir, &zone),
-        "transcripts_copy": copy_payload(),
+        "signals": signals(&dir, &zone, locale),
+        "transcripts_copy": copy_payload(locale),
         "speaker_labels": speakers.state,
         "warnings": warnings.len(),
         "warning_details": warnings,
@@ -1294,7 +1345,7 @@ fn browser_chunks(
     }
 }
 
-fn signals(dir: &Path, zone: &TimeZone) -> Value {
+fn signals(dir: &Path, zone: &TimeZone, locale: &str) -> Value {
     let path = dir.join("signals.jsonl");
     let empty = || json!({"events":[],"counts":{},"calendar":{"total":0,"unique":0,"events":[]}});
     let Ok(entries) = read_entries(&path) else {
@@ -1302,7 +1353,11 @@ fn signals(dir: &Path, zone: &TimeZone) -> Value {
     };
     let mut events = Vec::new();
     let mut counts = BTreeMap::<String, usize>::new();
-    let mut calendar = HashMap::<String, Value>::new();
+    let mut calendar = HashMap::<String, (Value, bool)>::new();
+    let untitled = text(
+        ENGLISH,
+        "journal.window.transcripts.status.text.untitled.event",
+    );
     for record in entries {
         let Some(kind) = record
             .get("event_type")
@@ -1332,7 +1387,23 @@ fn signals(dir: &Path, zone: &TimeZone) -> Value {
                 payload.get("dtStart"),
                 payload.get("dtEnd")
             );
-            let item = calendar.entry(identity).or_insert_with(|| json!({"title":payload.get("title").and_then(Value::as_str).filter(|value|!value.is_empty()).unwrap_or("Untitled event"),"dtStart":payload.get("dtStart").and_then(Value::as_str).unwrap_or_default(),"dtEnd":payload.get("dtEnd").and_then(Value::as_str).unwrap_or_default(),"timezone":payload.get("timezone").and_then(Value::as_str).unwrap_or_default(),"eventId":payload.get("eventId").and_then(Value::as_str).unwrap_or_default(),"seen_count":0,"first_seen":stamp,"last_seen":stamp}));
+            let (item, _) = calendar.entry(identity).or_insert_with(|| {
+                let title = payload
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty());
+                let item = json!({
+                    "title": title.unwrap_or(&untitled),
+                    "dtStart": payload.get("dtStart").and_then(Value::as_str).unwrap_or_default(),
+                    "dtEnd": payload.get("dtEnd").and_then(Value::as_str).unwrap_or_default(),
+                    "timezone": payload.get("timezone").and_then(Value::as_str).unwrap_or_default(),
+                    "eventId": payload.get("eventId").and_then(Value::as_str).unwrap_or_default(),
+                    "seen_count": 0,
+                    "first_seen": stamp,
+                    "last_seen": stamp,
+                });
+                (item, title.is_none())
+            });
             item["seen_count"] = json!(item["seen_count"].as_u64().unwrap_or(0) + 1);
             if !stamp.is_empty() {
                 item["last_seen"] = json!(stamp);
@@ -1350,12 +1421,25 @@ fn signals(dir: &Path, zone: &TimeZone) -> Value {
             )
     });
     let mut calendar = calendar.into_values().collect::<Vec<_>>();
-    calendar.sort_by(|left, right| {
+    calendar.sort_by(|(left, _), (right, _)| {
         left["dtStart"]
             .as_str()
             .cmp(&right["dtStart"].as_str())
             .then(left["title"].as_str().cmp(&right["title"].as_str()))
     });
+    let local_untitled = text(
+        locale,
+        "journal.window.transcripts.status.text.untitled.event",
+    );
+    let calendar: Vec<Value> = calendar
+        .into_iter()
+        .map(|(mut item, lacks_title)| {
+            if lacks_title {
+                item["title"] = json!(local_untitled);
+            }
+            item
+        })
+        .collect();
     json!({"events":events,"counts":counts,"calendar":{"total":counts.get("calendar_event").copied().unwrap_or(0),"unique":calendar.len(),"events":calendar}})
 }
 
@@ -1409,96 +1493,189 @@ fn audio_duration(entries: &[Map<String, Value>], key: &str) -> f64 {
 
 /// The transcript page's speaker strings, by key.
 const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
-    ("TR_SPEAKER_CHANGE_LABEL", "change speaker"),
-    ("TR_SPEAKER_ASSIGN_LABEL", "add speaker"),
-    ("TR_SPEAKER_PICKER_TITLE", "choose speaker"),
-    ("TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER", "find a person"),
-    ("TR_SPEAKER_PICKER_OWNER", "me"),
-    ("TR_SPEAKER_OWNER_NAME", "you"),
-    ("TR_SPEAKER_PICKER_EMPTY", "no people in your journal yet"),
-    ("TR_SPEAKER_SOMEONE_ELSE", "teach this voice…"),
-    ("TR_SPEAKER_PICKER_NO_RESULTS", "no matching people"),
-    ("TR_SPEAKER_UNKNOWN_CHIP", "unknown voice"),
-    ("TR_SPEAKER_VOICE_CHIP", "voice {number}"),
+    (
+        "TR_SPEAKER_CHANGE_LABEL",
+        "journal.window.transcripts.speaker.copy.change.label",
+    ),
+    (
+        "TR_SPEAKER_ASSIGN_LABEL",
+        "journal.window.transcripts.speaker.copy.assign.label",
+    ),
+    (
+        "TR_SPEAKER_PICKER_TITLE",
+        "journal.window.transcripts.speaker.copy.picker.title",
+    ),
+    (
+        "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER",
+        "journal.window.transcripts.speaker.copy.picker.search.placeholder",
+    ),
+    (
+        "TR_SPEAKER_PICKER_OWNER",
+        "journal.window.transcripts.speaker.copy.picker.owner",
+    ),
+    (
+        "TR_SPEAKER_OWNER_NAME",
+        "journal.window.transcripts.speaker.copy.owner.name",
+    ),
+    (
+        "TR_SPEAKER_PICKER_EMPTY",
+        "journal.window.transcripts.speaker.copy.picker.empty",
+    ),
+    (
+        "TR_SPEAKER_SOMEONE_ELSE",
+        "journal.window.transcripts.speaker.copy.someone.else",
+    ),
+    (
+        "TR_SPEAKER_PICKER_NO_RESULTS",
+        "journal.window.transcripts.speaker.copy.picker.no.results",
+    ),
+    (
+        "TR_SPEAKER_UNKNOWN_CHIP",
+        "journal.window.transcripts.speaker.copy.unknown.chip",
+    ),
+    (
+        "TR_SPEAKER_VOICE_CHIP",
+        "journal.window.transcripts.speaker.copy.voice.chip",
+    ),
     (
         "TR_SPEAKER_VOICE_ASSISTIVE",
-        "one unnamed voice wherever this number appears",
+        "journal.window.transcripts.speaker.copy.voice.assistive",
     ),
     (
         "TR_SPEAKER_VOICE_NAMED_ASSISTIVE",
-        "matches a voice you named",
+        "journal.window.transcripts.speaker.copy.voice.named.assistive",
     ),
-    ("TR_SPEAKER_VOICE_SCOPE", "everywhere this voice appears"),
-    ("TR_SPEAKER_VOICE_SCOPE_NOTE", "there's no undo"),
+    (
+        "TR_SPEAKER_VOICE_SCOPE",
+        "!journal.window.transcripts.speaker.copy.voice.scope",
+    ),
+    (
+        "TR_SPEAKER_VOICE_SCOPE_NOTE",
+        "!journal.window.transcripts.speaker.copy.voice.scope.note",
+    ),
     (
         "TR_SPEAKER_VOICE_NAMED_COUNT",
-        "{count} sentences now show this name",
+        "journal.window.transcripts.speaker.copy.voice.named.count",
     ),
     (
         "TR_SPEAKER_VOICE_NAMED_ONE",
-        "1 sentence now shows this name",
+        "journal.window.transcripts.speaker.copy.voice.named.one",
     ),
-    ("TR_SPEAKER_HEDGE_PROBABLE", "probably {name}"),
-    ("TR_SPEAKER_HEDGE_MAYBE", "maybe {name}?"),
-    ("TR_SPEAKER_CONFIDENCE_HIGH", "high confidence"),
-    ("TR_SPEAKER_CONFIDENCE_UNKNOWN", "confidence unavailable"),
-    ("TR_SPEAKER_MARGIN_OWNER", "close owner match"),
-    ("TR_SPEAKER_MARGIN_ACOUSTIC", "close voice match"),
+    (
+        "TR_SPEAKER_HEDGE_PROBABLE",
+        "journal.window.transcripts.speaker.copy.hedge.probable",
+    ),
+    (
+        "TR_SPEAKER_HEDGE_MAYBE",
+        "journal.window.transcripts.speaker.copy.hedge.maybe",
+    ),
+    (
+        "TR_SPEAKER_CONFIDENCE_HIGH",
+        "journal.window.transcripts.speaker.copy.confidence.high",
+    ),
+    (
+        "TR_SPEAKER_CONFIDENCE_UNKNOWN",
+        "journal.window.transcripts.speaker.copy.confidence.unknown",
+    ),
+    (
+        "TR_SPEAKER_MARGIN_OWNER",
+        "journal.window.transcripts.speaker.copy.margin.owner",
+    ),
+    (
+        "TR_SPEAKER_MARGIN_ACOUSTIC",
+        "journal.window.transcripts.speaker.copy.margin.acoustic",
+    ),
     (
         "TR_SPEAKER_ACTION_UNAVAILABLE",
-        "speaker change unavailable",
+        "journal.window.transcripts.speaker.copy.action.unavailable",
     ),
-    ("TR_SPEAKER_NO_EMBEDDING", "voice sample unavailable"),
-    ("TR_SPEAKER_CORRECT_RETRY", "retry speaker change"),
-    ("TR_SPEAKER_CORRECT_BUSY", "speaker files are busy"),
+    (
+        "TR_SPEAKER_NO_EMBEDDING",
+        "journal.window.transcripts.speaker.copy.no.embedding",
+    ),
+    (
+        "TR_SPEAKER_CORRECT_RETRY",
+        "journal.window.transcripts.speaker.copy.correct.retry",
+    ),
+    (
+        "TR_SPEAKER_CORRECT_BUSY",
+        "journal.window.transcripts.speaker.copy.correct.busy",
+    ),
     (
         "TR_SPEAKER_OWNER_TOO_CLOSE",
-        "that voice is too close to yours to save there",
+        "journal.window.transcripts.speaker.copy.owner.too.close",
     ),
     (
         "TR_SPEAKER_OWNER_IDENTITY_REQUIRED",
-        "set your identity before tagging yourself",
+        "journal.window.transcripts.speaker.copy.owner.identity.required",
     ),
-    ("TR_SPEAKER_ALREADY_CORRECT", "already set"),
-    ("TR_SPEAKER_PROPAGATION_DISMISS", "dismiss"),
-    ("TR_SPEAKER_PICKER_UNKNOWN", "someone i don't know"),
-    ("TR_SPEAKER_PICKER_GUESS", "back to your journal's guess"),
-    ("TR_SPEAKER_LINE_ONLY", "this line only"),
+    (
+        "TR_SPEAKER_ALREADY_CORRECT",
+        "journal.window.transcripts.speaker.copy.already.correct",
+    ),
+    (
+        "TR_SPEAKER_PROPAGATION_DISMISS",
+        "journal.window.transcripts.speaker.copy.propagation.dismiss",
+    ),
+    (
+        "TR_SPEAKER_PICKER_UNKNOWN",
+        "journal.window.transcripts.speaker.copy.picker.unknown",
+    ),
+    (
+        "TR_SPEAKER_PICKER_GUESS",
+        "journal.window.transcripts.speaker.copy.picker.guess",
+    ),
+    (
+        "TR_SPEAKER_LINE_ONLY",
+        "journal.window.transcripts.speaker.copy.line.only",
+    ),
     (
         "TR_SPEAKER_LINE_ONLY_BODY",
-        "your answer is for this line, not its voice. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
+        "journal.window.transcripts.speaker.copy.line.only.body",
     ),
-    ("TR_SPEAKER_LINE_ONLY_LINK", "speakers"),
-    ("TR_SPEAKER_OWNER_SET", "your answer"),
-    ("TR_SPEAKER_OWNER_UNKNOWN_CHIP", "someone you don't know"),
-    ("TR_SPEAKER_LINE_REFUSED", "that answer couldn't be saved"),
+    (
+        "TR_SPEAKER_LINE_ONLY_LINK",
+        "journal.window.transcripts.speaker.copy.line.only.link",
+    ),
+    (
+        "TR_SPEAKER_OWNER_SET",
+        "journal.window.transcripts.speaker.copy.owner.set",
+    ),
+    (
+        "TR_SPEAKER_OWNER_UNKNOWN_CHIP",
+        "journal.window.transcripts.speaker.copy.owner.unknown.chip",
+    ),
+    (
+        "TR_SPEAKER_LINE_REFUSED",
+        "journal.window.transcripts.speaker.copy.line.refused",
+    ),
     (
         "TR_SPEAKER_LINE_SOURCE",
-        "this line can't take an answer about who said it",
+        "journal.window.transcripts.speaker.copy.line.source",
     ),
     (
         "TR_SPEAKER_LINE_CHANGED",
-        "this line has changed since it was shown. reload to see it as it is now.",
+        "journal.window.transcripts.speaker.copy.line.changed",
     ),
     (
         "TR_SPEAKER_LINE_OWNER",
-        "your journal doesn't know which person is you yet, so it can't mark lines as yours.",
+        "journal.window.transcripts.speaker.copy.line.owner",
     ),
     (
         "TR_SPEAKER_LINE_PERSON",
-        "that person can't be chosen. pick someone else, or someone you don't know.",
+        "journal.window.transcripts.speaker.copy.line.person",
     ),
     (
         "TR_SPEAKER_LINE_UNREADABLE",
-        "your earlier answers about who spoke here can't be read, so this one wasn't saved",
+        "journal.window.transcripts.speaker.copy.line.unreadable",
     ),
 ];
 
-fn copy_payload() -> Value {
+fn copy_payload(locale: &str) -> Value {
     Value::Object(
         TRANSCRIPTS_COPY
             .iter()
-            .map(|(key, text)| ((*key).to_owned(), Value::String((*text).to_owned())))
+            .map(|(key, id)| ((*key).to_owned(), Value::String(text(locale, id))))
             .collect(),
     )
 }
@@ -1686,10 +1863,13 @@ pub(crate) fn valid_key(value: &str) -> bool {
         && !length.is_empty()
         && length.bytes().all(|byte| byte.is_ascii_digit())
 }
-fn invalid(detail: &str) -> Response {
+fn invalid(locale: &str, detail: String) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "that segment or stream couldn't be used.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+        ),
         detail,
         StatusCode::NOT_FOUND,
     )

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts response error in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d595a48c59b4e77dc936b88bc00dde40feaf744038db6712e79a87c73943b66",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

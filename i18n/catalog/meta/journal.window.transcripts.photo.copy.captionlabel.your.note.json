@@ -1,0 +1,16 @@
+{
+  "description": "photo copy captionLabel in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. photo copy captionLabel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee2d747bfc935ab6dedc8167053208c1398b323d223936d5253dc53beee85ae3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

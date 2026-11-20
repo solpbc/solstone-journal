@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts media audio duration in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media audio duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d7506be8fa6d4cf1acbebc397116ef369f1d8612f22144dbe27cfd29edc4f32",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

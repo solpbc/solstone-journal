@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts display analysis observed in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display analysis observed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "79ac264b2c7289b33f4522a5b433a850d7b79082fcc3f5c8fdcbe2a790929a15",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

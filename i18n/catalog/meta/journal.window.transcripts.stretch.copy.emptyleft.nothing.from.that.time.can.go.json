@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy emptyLeft in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy emptyLeft.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7730342ee5b9e6c81da95441f08191027b706a8d58722219435c327d8e650d48",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

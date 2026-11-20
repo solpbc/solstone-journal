@@ -1,0 +1,16 @@
+{
+  "description": "granola copy privateNotes in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy privateNotes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "537f1371740fe7555d429cfd24f8d34fd81f99ed90bf85333eba4ce405e50b68",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

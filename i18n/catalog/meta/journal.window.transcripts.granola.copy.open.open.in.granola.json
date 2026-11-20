@@ -1,0 +1,23 @@
+{
+  "description": "granola copy open in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e30ff7ce512e901190e33f9cbfe6b3f59cbc71fa88c59bf5e3c804b8e70f4d0b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

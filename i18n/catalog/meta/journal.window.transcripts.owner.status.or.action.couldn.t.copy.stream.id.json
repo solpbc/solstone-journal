@@ -1,0 +1,16 @@
+{
+  "description": "Owner status or action in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Owner status or action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cd88c23bd3838cdba2a8297d2f6dbcb142ef4683ba0303af62f2fba89606158",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

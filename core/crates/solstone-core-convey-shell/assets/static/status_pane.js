@@ -727,13 +727,13 @@ window.whenShellReady(() => {
         return `<a href="${escape(action)}" class="status-pane-history-item" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: 4px; text-decoration: none; color: inherit;">
           <span class="icon-slot" style="font-size: 16px; flex-shrink: 0;" aria-hidden="true">${resolveIcon(n.icon)}</span>
           <span style="font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escape(n.title)}</span>
-          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
+          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${escape(relativeAge)}</span>
         </a>`;
       } else {
         return `<div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px;">
           <span class="icon-slot" style="font-size: 16px; flex-shrink: 0;" aria-hidden="true">${resolveIcon(n.icon)}</span>
           <span style="font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escape(n.title)}</span>
-          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
+          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${escape(relativeAge)}</span>
         </div>`;
       }
     }).join('');

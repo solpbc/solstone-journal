@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row speaker in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row speaker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4996a49c82422d92e6c5534d0bf9ecdf443387a8ccc85b0273b942c016f1f956",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

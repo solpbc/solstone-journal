@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row button in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3776c1836e1a7cc238c03574a1a38e5409657a82e350e3142ae18979642f900",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

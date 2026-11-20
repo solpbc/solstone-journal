@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display analysis state pending in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display analysis state pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a40c6d8b35a2a3e33c86e6c2e2a88ee93c855070f6dffa0cc631ed0497fd2b0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

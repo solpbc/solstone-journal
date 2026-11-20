@@ -1,0 +1,16 @@
+{
+  "description": "Shared calendar narrow Tuesday column label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Shared calendar narrow Tuesday column label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f717c148edb59aa72adc58de1c09b355f27584f8145dc0bad1ab5763ede3e84b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

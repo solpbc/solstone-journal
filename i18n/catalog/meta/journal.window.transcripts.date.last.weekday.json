@@ -1,0 +1,28 @@
+{
+  "description": "Shared relative day heading in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Shared relative day heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d315cf89429e7828fe048ae0e1018826e2b7385c15987f814451d652668a40ef",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

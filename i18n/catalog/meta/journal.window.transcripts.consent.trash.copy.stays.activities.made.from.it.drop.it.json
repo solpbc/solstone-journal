@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stays in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy stays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f20cff6c42c8d65ecbda698795b2bc3147fd5eb4f6d5892b02a4669b56718e1",
+  "max_length": 202,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

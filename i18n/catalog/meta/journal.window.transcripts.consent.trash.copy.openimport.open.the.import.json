@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy openImport in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy openImport.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca560e844037d0069fbb1fbf4852bc44ee54cc817d5a459b96cdb7770962409c",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "btn title label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. btn title label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26d3b7838722f3ce7ed65612f2281dfda8bf3b414c45f2ef74e8d5ddf3ef4db6",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

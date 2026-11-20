@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts tab names in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts tab names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d73774a14f933e657359ef41818379601036126cc2c3bcaeaf2d67ca0d8b49f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

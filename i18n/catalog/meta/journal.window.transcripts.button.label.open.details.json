@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "763553b5ea4e59d839ad991d1b1b6a7e37526c9334ccb40fc82e280d12251c4e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

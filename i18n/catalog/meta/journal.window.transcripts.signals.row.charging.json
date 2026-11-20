@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row charging in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row charging.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0d514482011489ed9544980f107a887f20f4e5aa63e1665f0d0fea2815fcbf5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

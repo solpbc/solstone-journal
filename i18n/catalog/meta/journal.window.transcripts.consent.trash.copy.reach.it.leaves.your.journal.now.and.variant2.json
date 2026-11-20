@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy reach in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy reach.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d43b8213486c87107e7eb2f86f2de84cce5e669a11053dc2c67748fc3403dfd",
+  "max_length": 129,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

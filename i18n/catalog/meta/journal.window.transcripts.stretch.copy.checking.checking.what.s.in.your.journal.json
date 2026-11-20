@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy checking in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy checking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "869ed01ac92c594e8c1da4f34039d238c3a6e06a43819615c54f3d4c5ef7eca5",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

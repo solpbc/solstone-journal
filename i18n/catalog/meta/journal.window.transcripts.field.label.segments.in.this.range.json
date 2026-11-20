@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d361880f77d76f83e1318dd26c98bdc68777d5b9edb83bb55524b1918080f11",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

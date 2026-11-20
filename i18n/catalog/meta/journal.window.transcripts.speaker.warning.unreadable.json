@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts speaker warning unreadable in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts speaker warning unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f44c43d0c97d8725f196c14b70eda677e4e1bc3e681c1a9036531d6e1a9a941",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

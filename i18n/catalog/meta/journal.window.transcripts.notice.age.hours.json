@@ -1,0 +1,21 @@
+{
+  "description": "Transcripts and shared notice age hours in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts and shared notice age hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2c913e9b32eebcba877bca941a11ef3dfc3799e3c16e70f7fb47f14cf78c1f1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

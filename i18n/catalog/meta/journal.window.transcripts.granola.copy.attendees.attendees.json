@@ -1,0 +1,16 @@
+{
+  "description": "granola copy attendees in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy attendees.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf9a6bd6c64f16396ef7b595abc1be0228f0e2f2d12f532ceb1c8acb42b0a5ec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

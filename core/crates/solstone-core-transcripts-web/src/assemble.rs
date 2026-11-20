@@ -3,12 +3,17 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path as RoutePath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_format::content::body_hidden_days::read_hidden_days;
 use solstone_core_transcripts::{
     RangeError, Sources, TalentSource, cluster, cluster_period, cluster_range, cluster_span,
@@ -30,15 +35,23 @@ pub(crate) struct ReadQuery {
 }
 
 pub(crate) async fn api_read(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
     Query(query): Query<ReadQuery>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
         return legacy_error_response(
             "invalid_day",
-            "that day couldn't be used.",
-            "Day not found",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.day.not.found",
+            ),
             StatusCode::NOT_FOUND,
         );
     }
@@ -75,8 +88,8 @@ pub(crate) async fn api_read(
                         query.stream.as_deref(),
                     )
                     .map_err(|error| match error {
-                        RangeError::UnknownStream(detail) => invalid(&detail),
-                        RangeError::Invalid(_) => error_response(error),
+                        RangeError::UnknownStream(detail) => invalid(locale, &detail),
+                        RangeError::Invalid(_) => error_response(locale, error),
                     })
                 } else if let Some(segments) = query.segments.as_deref() {
                     let span = segments
@@ -92,7 +105,7 @@ pub(crate) async fn api_read(
                         query.stream.as_deref(),
                     ) {
                         Ok((markdown, _)) => Ok(markdown),
-                        Err(detail) => Err(invalid(&detail)),
+                        Err(detail) => Err(invalid(locale, &detail)),
                     }
                 } else if let Some(segment) = query.segment.as_deref() {
                     Ok(cluster_period(
@@ -115,18 +128,24 @@ pub(crate) async fn api_read(
     .await
 }
 
-fn invalid(detail: &str) -> Response {
+fn invalid(locale: &str, detail: &str) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "that segment or stream couldn't be used.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+        ),
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn error_response(error: impl std::fmt::Display) -> Response {
+fn error_response(locale: &str, error: impl std::fmt::Display) -> Response {
     legacy_error_response(
         "internal_error",
-        "that request didn't finish.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.request.didn.t.finish",
+        ),
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )

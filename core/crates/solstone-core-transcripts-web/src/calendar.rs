@@ -13,6 +13,10 @@ use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::{Value, json};
 use solstone_core_convey_http::server_timing;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_journal_io::{JournalRoot, day_dirs, day_path};
 use solstone_core_journal_stats_cli::load_fresh_day_cache;
 
@@ -64,15 +68,23 @@ pub(crate) async fn index(
 
 /// `complete: true` covers every change whose stream-marker bump committed before the read, and every change to a live day. A change on an older day whose producer committed but did not bump appears within about an hour of it while the calendar is in use.
 pub(crate) async fn stats(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     admitted: Option<Extension<Arc<JournalRoot>>>,
     RoutePath(month): RoutePath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_month(&month) {
         return legacy_error_response(
             "invalid_month",
-            "that month couldn't be used.",
-            "Invalid month format",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.month.couldn.t.be.used",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.month.format",
+            ),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -110,7 +122,7 @@ pub(crate) async fn stats(
                     }
                     match res {
                         Ok(counts) => Json(counts).into_response(),
-                        Err(err) => TranscriptError::display(err).response(),
+                        Err(err) => TranscriptError::display(err).response(locale),
                     }
                 },
             )

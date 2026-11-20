@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts media removal owner in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media removal owner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "what",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "539267e861369c350412de523c7e60e21413c2738262007461916880eb3678f2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

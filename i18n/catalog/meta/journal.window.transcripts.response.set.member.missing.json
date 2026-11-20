@@ -1,0 +1,16 @@
+{
+  "description": "Removal set member missing in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Removal set member missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85f17d47d2a23d220d4d0e5e0f6c478bbf2b2d651e6202ef296586d2351a8b7d",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

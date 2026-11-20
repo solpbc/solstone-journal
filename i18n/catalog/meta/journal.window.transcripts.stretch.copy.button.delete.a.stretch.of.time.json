@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy button in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "721e7de9f89a327d5179ca0795632717a823288686ef067596b14fb8aeb4d234",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media original audio waiting in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media original audio waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72cce07137ed786485d4754c956c2d7a5092ec85c64da4e3688966d1eeceb5be",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals section glasses battery in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals section glasses battery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0774126ad9f39a03d5bf904415a098f858577bc73ab2b2fd02ff1fbac20c9454",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

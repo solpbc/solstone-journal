@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row unique events in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row unique events.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dce03d2b9a468fd3a89e6ad5296a27515c2d5b07e6a7ead285b386602aa313b4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

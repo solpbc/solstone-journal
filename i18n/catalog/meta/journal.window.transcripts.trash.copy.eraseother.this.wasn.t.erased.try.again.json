@@ -1,0 +1,16 @@
+{
+  "description": "trash copy eraseOther in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy eraseOther.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c623ce6035821d8684a917a7250f3fffd74d7f1fff657d05d3fac330c773796a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

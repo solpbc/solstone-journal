@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display kind audio plus screen in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display kind audio plus screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd0828ae9266281b9880bd54ee2cd90d1354b4beb41c932d72fdb17f78143bb7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

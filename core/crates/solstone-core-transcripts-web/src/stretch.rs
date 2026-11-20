@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
@@ -15,6 +16,10 @@ use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_import::stretch_trash::{self, Refused};
 use solstone_core_removals::{Page, Surface};
 use solstone_core_trash::TrashError;
@@ -36,13 +41,20 @@ struct StretchBody {
 
 #[allow(clippy::result_large_err)]
 fn read_body(
+    locale: &str,
     body: &Bytes,
 ) -> Result<(jiff::civil::DateTime, jiff::civil::DateTime, bool, bool), Response> {
     let unreadable = || {
         legacy_error_response(
             "invalid_request",
-            "that stretch couldn't be read, so nothing was deleted.",
-            "Invalid stretch body",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.stretch.couldn.t.be.read",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.stretch.body",
+            ),
             StatusCode::BAD_REQUEST,
         )
     };
@@ -52,19 +64,37 @@ fn read_body(
     Ok((from, to, request.erase, request.backups))
 }
 
-fn refused(refused: Refused) -> Response {
+fn refused(locale: &str, refused: Refused) -> Response {
     let (code, message) = match refused {
-        Refused::Backwards => ("stretch_backwards", "the end has to be after the start."),
-        Refused::TooLong => ("stretch_too_long", "choose 31 days or less."),
+        Refused::Backwards => (
+            "stretch_backwards",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.the.end.has.to.be.after",
+            ),
+        ),
+        Refused::TooLong => (
+            "stretch_too_long",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.choose.days.or.less",
+            ),
+        ),
     };
-    legacy_error_response(code, message, message, StatusCode::BAD_REQUEST)
+    legacy_error_response(code, message.clone(), message, StatusCode::BAD_REQUEST)
 }
 
-fn stopped() -> Response {
+fn stopped(locale: &str) -> Response {
     legacy_error_response(
         "stretch_delete_failed",
-        "your journal couldn't finish that delete. reload to check.",
-        "the stretch task stopped",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.your.journal.couldn.t.finish.that",
+        ),
+        text(
+            locale,
+            "journal.window.transcripts.response.detail.the.stretch.task.stopped",
+        ),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -72,8 +102,13 @@ fn stopped() -> Response {
 /// What deleting a stretch would take: its bounds once whole segments are
 /// counted, the kinds of recording in it, what stays because it is still in
 /// flight, and what happens to each import. Reads only; counts no recordings.
-pub(crate) async fn preview_stretch(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
-    let (from, to, _, _) = match read_body(&body) {
+pub(crate) async fn preview_stretch(
+    selected_locale: Option<Extension<ResponseLocale>>,
+    State(state): State<Arc<AppState>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(selected_locale);
+    let (from, to, _, _) = match read_body(locale, &body) {
         Ok(read) => read,
         Err(response) => return response,
     };
@@ -91,18 +126,20 @@ pub(crate) async fn preview_stretch(State(state): State<Arc<AppState>>, body: By
             "in_trash": plan.in_trash,
         }))
         .into_response(),
-        Ok(Err(why)) => refused(why),
-        Err(_) => stopped(),
+        Ok(Err(why)) => refused(locale, why),
+        Err(_) => stopped(locale),
     }
 }
 
 /// Move a stretch of time to the trash as one thing, or erase it now.
 pub(crate) async fn delete_stretch(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let (from, to, erase, backups) = match read_body(&body) {
+    let locale = response_locale(selected_locale);
+    let (from, to, erase, backups) = match read_body(locale, &body) {
         Ok(read) => read,
         Err(response) => return response,
     };
@@ -130,19 +167,28 @@ pub(crate) async fn delete_stretch(
             "imports": outcome.imports,
         }))
         .into_response(),
-        Ok(Ok(Err(why))) => refused(why),
+        Ok(Ok(Err(why))) => refused(locale, why),
         Ok(Err(TrashError::Missing(_))) => legacy_error_response(
             "stretch_empty",
-            "nothing from that time could go to the trash.",
-            "the stretch holds no segment",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.nothing.from.that.time.could.go",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.the.stretch.holds.no.segment",
+            ),
             StatusCode::NOT_FOUND,
         ),
         Ok(Err(error)) => legacy_error_response(
             "stretch_delete_failed",
-            "your journal couldn't move that to the trash.",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.move.that.variant2",
+            ),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
-        Err(_) => stopped(),
+        Err(_) => stopped(locale),
     }
 }

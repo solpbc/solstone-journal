@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy body in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57d59a8242a6f59aa254c04c75cec929e761de9fd6bdb8a73682803e41e6079a",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

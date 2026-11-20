@@ -1343,7 +1343,7 @@ window.AppServices = {
           ${n.badge ? `<span class="notification-badge">${window.AppServices.escapeHtml(n.badge)}</span>` : ''}
 	        </div>
 	        <div class="notification-footer">
-	          <span class="notification-time">${relativeTime}</span>
+	          <span class="notification-time">${window.AppServices.escapeHtml(relativeTime)}</span>
 	        </div>
 	        ${n.autoDismiss ? `<div class="notification-countdown" style="animation-duration: ${n.autoDismiss}ms"></div>` : ''}
 	      `;
@@ -1468,13 +1468,13 @@ window.AppServices = {
      */
     _getRelativeTime(timestamp) {
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
-      if (seconds < 60) return 'now';
+      if (seconds < 60) return window.JournalI18n.render('journal.window.transcripts.visible.text.now');
       const minutes = Math.floor(seconds / 60);
-      if (minutes < 60) return `${minutes}m`;
+      if (minutes < 60) return window.JournalI18n.render('journal.window.transcripts.notice.age.minutes', [['count', String(minutes)]]);
       const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours}h`;
+      if (hours < 24) return window.JournalI18n.render('journal.window.transcripts.notice.age.hours', [['count', String(hours)]]);
       const days = Math.floor(hours / 24);
-      return `${days}d`;
+      return window.JournalI18n.render('journal.window.transcripts.notice.age.days', [['count', String(days)]]);
     }
   },
 

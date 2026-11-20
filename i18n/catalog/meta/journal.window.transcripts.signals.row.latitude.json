@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row latitude in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row latitude.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa6156256c131917c1e6dfc15d78ef105f0c109a9d459c30ee899b215e40d737",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

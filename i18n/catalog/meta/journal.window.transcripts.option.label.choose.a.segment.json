@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3daa1526de23bdded1d9be22f8ce3ecf1f7a8dc270ed451744588ef1a6b7756b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -2927,30 +2927,30 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   <p class="tr-day-zones" id="trDayZones" hidden></p>
   <div class="tr-card">
     <!-- Left timeline -->
-    <div id="trTimeline" class="tr-timeline" aria-label="day timeline">
-      <div class="tr-timeline-label">day</div>
+    <div id="trTimeline" class="tr-timeline" aria-label="{{journal.window.transcripts.accessible.name.day.timeline}}">
+      <div class="tr-timeline-label">{{journal.window.transcripts.visible.text.day}}</div>
       <div class="tr-grid" id="trGrid"></div>
       <div class="tr-labels" id="trLabels"></div>
       <div class="tr-segments" id="trSegments"></div>
-      <div class="tr-body-events" id="trBodyEvents" aria-label="body context events"></div>
+      <div class="tr-body-events" id="trBodyEvents" aria-label="{{journal.window.transcripts.accessible.name.body.context.events}}"></div>
       <div class="tr-sel-wrap" id="trSelWrap">
         <div class="tr-sel" data-handle="move">
-          <div class="tr-bumper tr-bumper-top" data-handle="start" title="drag to adjust start"></div>
-          <div class="tr-bumper tr-bumper-bottom" data-handle="end" title="drag to adjust end"></div>
+          <div class="tr-bumper tr-bumper-top" data-handle="start" title="{{journal.window.transcripts.tooltip.drag.to.adjust.start}}"></div>
+          <div class="tr-bumper tr-bumper-bottom" data-handle="end" title="{{journal.window.transcripts.tooltip.drag.to.adjust.end}}"></div>
         </div>
       </div>
       <div class="tr-timeline-legend">
-        <span><span class="tr-legend-dot" style="background: var(--success);"></span>audio</span>
-        <span><span class="tr-legend-dot" style="background: var(--warn);"></span>screen</span>
-        <span><span class="tr-legend-dot" style="background: var(--orange);"></span>import</span>
-        <span><span class="tr-legend-dot" style="background: var(--ink-soft);"></span>sleep</span>
-        <span><span class="tr-legend-dot" style="background: var(--danger);"></span>workout</span>
+        <span><span class="tr-legend-dot" style="background: var(--success);"></span>{{journal.window.transcripts.visible.text.audio}}</span>
+        <span><span class="tr-legend-dot" style="background: var(--warn);"></span>{{journal.window.transcripts.visible.text.screen}}</span>
+        <span><span class="tr-legend-dot" style="background: var(--orange);"></span>{{journal.window.transcripts.visible.text.import}}</span>
+        <span><span class="tr-legend-dot" style="background: var(--ink-soft);"></span>{{journal.window.transcripts.visible.text.sleep}}</span>
+        <span><span class="tr-legend-dot" style="background: var(--danger);"></span>{{journal.window.transcripts.visible.text.workout}}</span>
       </div>
     </div>
 
     <!-- Middle zoom timeline -->
     <div class="tr-zoom" id="trZoom">
-      <div class="tr-zoom-timeline-label">detail</div>
+      <div class="tr-zoom-timeline-label">{{journal.window.transcripts.visible.text.detail}}</div>
       <div class="tr-zoom-grid" id="trZoomGrid"></div>
       <div class="tr-zoom-labels" id="trZoomLabels"></div>
       <div class="tr-zoom-segments" id="trZoomSegments"></div>
@@ -2958,14 +2958,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     <!-- Right content panel -->
     <div class="tr-content" id="trContent">
-      <label class="tr-segment-picker" for="trSegmentPicker">segments in this range
-        <select id="trSegmentPicker" disabled><option value="">choose a segment</option></select>
+      <label class="tr-segment-picker" for="trSegmentPicker">{{journal.window.transcripts.field.label.segments.in.this.range}}
+        <select id="trSegmentPicker" disabled><option value="">{{journal.window.transcripts.option.label.choose.a.segment}}</option></select>
       </label>
       <div class="tr-header">
         <div>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <h2 class="tr-title">transcripts</h2>
-            <button type="button" id="trCopyStreamBtn" class="tr-copy-stream-btn" aria-label="copy stream id" style="display: none;">
+            <h2 class="tr-title">{{journal.window.transcripts.section.heading.transcripts}}</h2>
+            <button type="button" id="trCopyStreamBtn" class="tr-copy-stream-btn" aria-label="{{journal.window.transcripts.accessible.name.copy.stream.id}}" style="display: none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
             </button>
             <div id="trToast" class="tr-toast" role="status" aria-live="polite" hidden></div>
@@ -2974,7 +2974,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         </div>
         <span class="tr-head-actions">
           <button type="button" id="trSelectBtn" class="tr-pick-btn" hidden></button>
-          <button type="button" id="trDeleteBtn" class="tr-delete-btn" title="delete segment">
+          <button type="button" id="trDeleteBtn" class="tr-delete-btn" title="{{journal.window.transcripts.tooltip.delete.segment}}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -2994,8 +2994,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       <div class="tr-panel" id="trPanel">
         <div class="surface-state surface-state--loading" role="status">
           <div class="surface-state-spinner" aria-hidden="true"></div>
-          <span class="surface-state-text" data-role="loading-status">loading this day…</span>
-          <span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>
+          <span class="surface-state-text" data-role="loading-status">{{journal.window.transcripts.visible.text.loading.this.day}}</span>
+          <span class="surface-state-still" data-role="still-working" aria-hidden="true">{{journal.window.transcripts.visible.text.still.working}}</span>
         </div>
       </div>
       <!-- Select mode: the segments in this range, to delete several at once -->
@@ -3019,10 +3019,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 <aside id="trBodyPanel" class="tr-body-panel" aria-hidden="true" aria-labelledby="trBodyPanelTitle">
   <div class="tr-body-panel-header">
     <div>
-      <h3 id="trBodyPanelTitle">body context</h3>
+      <h3 id="trBodyPanelTitle">{{journal.window.transcripts.section.heading.body.context}}</h3>
       <p id="trBodyPanelRange"></p>
     </div>
-    <button type="button" id="trBodyPanelClose" class="tr-body-panel-close">close</button>
+    <button type="button" id="trBodyPanelClose" class="tr-body-panel-close">{{journal.window.transcripts.button.label.close}}</button>
   </div>
   <div id="trBodyPanelBody" class="tr-body-panel-body"></div>
 </aside>

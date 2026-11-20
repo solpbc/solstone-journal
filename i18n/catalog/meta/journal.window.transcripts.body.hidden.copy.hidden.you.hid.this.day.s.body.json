@@ -1,0 +1,16 @@
+{
+  "description": "body hidden copy hidden in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. body hidden copy hidden.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2fc3c312f918c43e1d6560215d2192a95ebf83c4a25a971e38353b5d7056bf5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

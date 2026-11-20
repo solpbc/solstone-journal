@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts day load retry in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts day load retry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9891f6406b299053df2920ccf6ce9a981c2082f553468be5730af3055545b078",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

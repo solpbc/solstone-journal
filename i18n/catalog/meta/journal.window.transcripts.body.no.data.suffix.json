@@ -1,0 +1,23 @@
+{
+  "description": "Transcripts body no data suffix in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body no data suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3ce0bec32c0de550657c60dc5bf20b0fefbf2341ca7a3365bc115299075c425",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts display kind pages in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts display kind pages.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "504bb1e51484b8eca5937f2dab5299e7206ffe556c4e9965ed2b6bab1064b8c2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

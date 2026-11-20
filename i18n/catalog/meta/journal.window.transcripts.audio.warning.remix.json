@@ -1,0 +1,37 @@
+{
+  "description": "Transcripts audio warning remix in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts audio warning remix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0c52884bd948c0c95a35493f68ceb5d21aa8363a78eba45b30c2a644e779bf09",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

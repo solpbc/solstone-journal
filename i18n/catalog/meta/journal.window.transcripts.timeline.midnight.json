@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts and shared timeline midnight in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts and shared timeline midnight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be026eb327e1d5ca7dc783c922628f68051aad9cac2f8dce7d435d43b9705cba",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

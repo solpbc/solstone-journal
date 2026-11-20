@@ -23,6 +23,15 @@
     window.JournalI18n.render('journal.window.date.weekdays.short.fri'),
     window.JournalI18n.render('journal.window.date.weekdays.short.sat')
   ];
+  const WEEKDAYS_NARROW = [
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.sunday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.monday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.tuesday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.wednesday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.thursday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.friday'),
+    window.JournalI18n.render('journal.window.transcripts.date.narrow.saturday')
+  ];
   const MONTHS = [
     window.JournalI18n.render('journal.window.shared.date.nav.months.label.january'),
     window.JournalI18n.render('journal.window.shared.date.nav.months.label.february'),
@@ -38,18 +47,18 @@
     window.JournalI18n.render('journal.window.shared.date.nav.months.label.december')
   ];
   const MONTHS_SHORT = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec'
+    window.JournalI18n.render('journal.window.date.months.short.jan'),
+    window.JournalI18n.render('journal.window.date.months.short.feb'),
+    window.JournalI18n.render('journal.window.date.months.short.mar'),
+    window.JournalI18n.render('journal.window.date.months.short.apr'),
+    window.JournalI18n.render('journal.window.date.months.short.may'),
+    window.JournalI18n.render('journal.window.date.months.short.jun'),
+    window.JournalI18n.render('journal.window.date.months.short.jul'),
+    window.JournalI18n.render('journal.window.date.months.short.aug'),
+    window.JournalI18n.render('journal.window.date.months.short.sep'),
+    window.JournalI18n.render('journal.window.date.months.short.oct'),
+    window.JournalI18n.render('journal.window.date.months.short.nov'),
+    window.JournalI18n.render('journal.window.date.months.short.dec')
   ];
 
   // While an index says it is still counting, re-read it on these delays and
@@ -224,10 +233,10 @@
     const target = dateFromDay(day);
     if (!target) return '';
     const delta = dayDelta(day, activeNow);
-    if (delta === 0) return 'Today';
-    if (delta === -1) return 'Yesterday';
-    if (delta === 1) return 'Tomorrow';
-    if (delta >= -6 && delta <= -2) return `Last ${WEEKDAYS[target.getDay()]}`;
+    if (delta === 0) return window.JournalI18n.render('journal.window.date.today');
+    if (delta === -1) return window.JournalI18n.render('journal.window.date.yesterday');
+    if (delta === 1) return window.JournalI18n.render('journal.window.date.tomorrow');
+    if (delta >= -6 && delta <= -2) return window.JournalI18n.render('journal.window.transcripts.date.last.weekday', [['weekday', WEEKDAYS[target.getDay()]]]);
 
     let label = `${WEEKDAYS[target.getDay()]}, ${MONTHS[target.getMonth()]} ${target.getDate()}`;
     if (target.getFullYear() !== nowYear(activeNow)) {
@@ -649,18 +658,21 @@
   }
 
   function renderShell() {
-    const stepLabel = isWeekStep() ? 'week' : 'day';
+    const previous = window.JournalI18n.renderHtml(isWeekStep()
+      ? 'journal.window.transcripts.date.previous.week' : 'journal.window.shared.date.nav.accessible.name.previous.day');
+    const next = window.JournalI18n.renderHtml(isWeekStep()
+      ? 'journal.window.transcripts.date.next.week' : 'journal.window.shared.date.nav.accessible.name.next.day');
     state.host.innerHTML =
       '<div class="date-nav-content" data-date-nav-root>' +
       '<div class="date-nav-content__bar">' +
-      `<button class="date-nav-content__arrow" type="button" data-date-nav-prev aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.previous')} ${stepLabel}">‹</button>` +
+      `<button class="date-nav-content__arrow" type="button" data-date-nav-prev aria-label="${previous}">‹</button>` +
       '<button class="date-nav-content__trigger" type="button" data-date-nav-trigger aria-haspopup="dialog" aria-expanded="false">' +
       '<span data-date-nav-label></span>' +
       '<svg class="date-nav-content__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<rect x="3" y="5" width="18" height="16" rx="3"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>' +
       '<span class="date-nav-content__warning" data-date-nav-warning aria-hidden="true" hidden>!</span>' +
       '</button>' +
-      `<button class="date-nav-content__arrow" type="button" data-date-nav-next aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.next')} ${stepLabel}">›</button>` +
+      `<button class="date-nav-content__arrow" type="button" data-date-nav-next aria-label="${next}">›</button>` +
       '</div>' +
       '<div class="date-nav-content__popover" data-date-nav-popover role="dialog" hidden>' +
       '<div class="date-nav-content__panelbar">' +
@@ -668,7 +680,7 @@
       `<button class="date-nav-content__panel-title" type="button" data-date-nav-title aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.change.date.level')}"></button>` +
       `<button class="date-nav-content__today" type="button" data-date-nav-today aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.go.to.today')}">` +
       `<span class="date-nav-content__today-full">${window.JournalI18n.renderHtml('journal.window.shared.date.nav.visible.text.today')}</span>` +
-      '<span class="date-nav-content__today-short" aria-hidden="true">T</span>' +
+      `<span class="date-nav-content__today-short" aria-hidden="true">${window.JournalI18n.renderHtml('journal.window.transcripts.date.today.narrow')}</span>` +
       '</button>' +
       `<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-next aria-label="${window.JournalI18n.renderHtml('journal.window.shared.date.nav.accessible.name.next')}">›</button>` +
       '</div>' +
@@ -879,7 +891,7 @@
   }
 
   function titleLabel() {
-    if (state.zoom === 'years') return 'Years';
+    if (state.zoom === 'years') return window.JournalI18n.render('journal.window.transcripts.date.years');
     if (state.zoom === 'months') return String(state.year);
     const date = new Date(Number(state.month.slice(0, 4)), Number(state.month.slice(4, 6)) - 1, 1);
     return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
@@ -1099,12 +1111,12 @@
     const row = document.createElement('div');
     row.className = 'date-nav-content__row date-nav-content__weekdays';
     row.setAttribute('role', 'row');
-    WEEKDAYS.forEach((name) => {
+    WEEKDAYS.forEach((name, index) => {
       const heading = document.createElement('span');
       heading.className = 'date-nav-content__weekday';
       heading.setAttribute('role', 'columnheader');
       heading.setAttribute('aria-label', name);
-      heading.textContent = name.charAt(0);
+      heading.textContent = WEEKDAYS_NARROW[index];
       row.appendChild(heading);
     });
     return row;

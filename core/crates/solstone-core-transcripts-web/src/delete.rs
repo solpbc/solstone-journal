@@ -11,6 +11,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
@@ -18,6 +19,10 @@ use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, strings, text},
+};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface, Unit};
 use solstone_core_retention::Target;
@@ -42,19 +47,35 @@ struct DeleteBody {
 }
 
 pub(crate) async fn delete_segment(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_day(&day) {
-        return invalid_day();
+        return invalid_day(locale);
     }
     if !valid_key(&key) {
-        return invalid_segment("Invalid segment key format", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.key.format",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     if !valid_stream(&stream) {
-        return invalid_segment("Invalid stream format", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.stream.format",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     let request: DeleteBody = if body.iter().all(u8::is_ascii_whitespace) {
         DeleteBody::default()
@@ -64,8 +85,14 @@ pub(crate) async fn delete_segment(
             Err(_) => {
                 return legacy_error_response(
                     "invalid_request",
-                    "that delete couldn't be read, so nothing was deleted.",
-                    "Invalid delete body",
+                    text(
+                        locale,
+                        "journal.window.transcripts.response.error.that.delete.couldn.t.be.read",
+                    ),
+                    text(
+                        locale,
+                        "journal.window.transcripts.response.detail.invalid.delete.body",
+                    ),
                     StatusCode::BAD_REQUEST,
                 );
             }
@@ -74,7 +101,14 @@ pub(crate) async fn delete_segment(
     let segment_dir =
         crate::segment_media::physical_segment_dir(&state.journal_root, &day, &stream, &key);
     if !segment_dir.is_dir() || is_tombstone_only(&segment_dir) {
-        return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.segment.not.found",
+            ),
+            StatusCode::NOT_FOUND,
+        );
     }
     let page = page_of(&stream);
     let surface = Surface::of_request(
@@ -122,11 +156,17 @@ pub(crate) async fn delete_segment(
             answer["search"] = json!(search);
             Json(answer).into_response()
         }
-        Ok(Err(error)) => trash_error(&error),
+        Ok(Err(error)) => trash_error(locale, &error),
         Err(_) => legacy_error_response(
             "segment_delete_failed",
-            "your journal couldn't finish that delete. reload to check.",
-            "the delete task stopped",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.finish.that",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.the.delete.task.stopped",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -155,15 +195,23 @@ struct SetSegment {
 /// own thing. One refused never stops the rest; a stop part-way through
 /// finishes when the journal starts again.
 pub(crate) async fn delete_segments(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     let Ok(request) = serde_json::from_slice::<SetBody>(&body) else {
         return legacy_error_response(
             "invalid_request",
-            "that delete couldn't be read, so nothing was deleted.",
-            "Invalid delete body",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.that.delete.couldn.t.be.read",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.delete.body",
+            ),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -173,7 +221,14 @@ pub(crate) async fn delete_segments(
             !valid_day(&segment.day) || !valid_stream(&segment.stream) || !valid_key(&segment.key)
         })
     {
-        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.in.the.set",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     let user_agent = headers
         .get(USER_AGENT)
@@ -210,7 +265,7 @@ pub(crate) async fn delete_segments(
             );
             if page_of(&segment.stream) != page || !dir.is_dir() || is_tombstone_only(&dir) {
                 failed.push(
-                    json!({"segment": segment, "key": "other", "reason": "that segment isn't in your journal."}),
+                    json!({"segment": segment, "key": "other", "reason": set_missing(locale)}),
                 );
                 continue;
             }
@@ -277,7 +332,7 @@ pub(crate) async fn delete_segments(
                         solstone_core_trash::SetResult::Refused(error) => failed.push(json!({
                             "segment": segment,
                             "key": solstone_core_import::import_trash::failure_key(error),
-                            "reason": set_reason(error),
+                            "reason": set_reason(locale, error),
                         })),
                     }
                 }
@@ -288,11 +343,17 @@ pub(crate) async fn delete_segments(
     .await;
     match outcome {
         Ok(Ok(payload)) => Json(payload).into_response(),
-        Ok(Err(error)) => trash_error(&error),
+        Ok(Err(error)) => trash_error(locale, &error),
         Err(_) => legacy_error_response(
             "segment_delete_failed",
-            "your journal couldn't finish that delete. reload to check.",
-            "the delete task stopped",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.finish.that",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.the.delete.task.stopped",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -306,9 +367,21 @@ struct PreviewBody {
 /// What deleting these segments would do to the imports that made them, for
 /// the delete dialog: which it takes whole with their uploads, and which it
 /// leaves. Reads only.
-pub(crate) async fn preview_imports(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
+pub(crate) async fn preview_imports(
+    selected_locale: Option<Extension<ResponseLocale>>,
+    State(state): State<Arc<AppState>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(selected_locale);
     let Ok(request) = serde_json::from_slice::<PreviewBody>(&body) else {
-        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.in.the.set",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     };
     if request.segments.is_empty()
         || request.segments.len() > SET_LIMIT
@@ -316,7 +389,14 @@ pub(crate) async fn preview_imports(State(state): State<Arc<AppState>>, body: By
             !valid_day(&segment.day) || !valid_stream(&segment.stream) || !valid_key(&segment.key)
         })
     {
-        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+        return invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.invalid.segment.in.the.set",
+            ),
+            StatusCode::BAD_REQUEST,
+        );
     }
     let root = state.journal_root.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -338,21 +418,39 @@ pub(crate) async fn preview_imports(State(state): State<Arc<AppState>>, body: By
         Ok(imports) => Json(json!({"imports": imports})).into_response(),
         Err(_) => legacy_error_response(
             "segment_preview_failed",
-            "your journal couldn't read what that delete would take.",
-            "the preview task stopped",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.read.what",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.the.preview.task.stopped",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
 /// Why one segment of a set didn't move, in words the owner can read.
-fn set_reason(error: &TrashError) -> String {
+fn set_missing(locale: &str) -> String {
+    text(
+        locale,
+        "journal.window.transcripts.response.set.member.missing",
+    )
+}
+
+fn set_reason(locale: &str, error: &TrashError) -> String {
     match error {
-        TrashError::Missing(_) | TrashError::NotInTrash => {
-            "that segment isn't in your journal.".to_owned()
-        }
-        TrashError::Held(reason) => format!("{reason}."),
-        _ => "your journal couldn't move it to the trash.".to_owned(),
+        TrashError::Missing(_) | TrashError::NotInTrash => set_missing(locale),
+        TrashError::Held(reason) => strings(
+            locale,
+            "journal.window.transcripts.response.set.member.held",
+            [("reason", reason)],
+        ),
+        _ => text(
+            locale,
+            "journal.window.transcripts.response.set.member.failed",
+        ),
     }
 }
 
@@ -460,20 +558,32 @@ fn trash_recording(
     })
 }
 
-fn trash_error(error: &TrashError) -> Response {
+fn trash_error(locale: &str, error: &TrashError) -> Response {
     match error {
-        TrashError::Missing(_) | TrashError::NotInTrash => {
-            invalid_segment("Segment not found", StatusCode::NOT_FOUND)
-        }
+        TrashError::Missing(_) | TrashError::NotInTrash => invalid_segment(
+            locale,
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.segment.not.found",
+            ),
+            StatusCode::NOT_FOUND,
+        ),
         TrashError::Held(reason) => legacy_error_response(
             "segment_delete_held",
-            format!("{reason}. nothing was deleted."),
+            strings(
+                locale,
+                "journal.window.transcripts.response.error.reason.nothing.was.deleted",
+                [("reason", reason)],
+            ),
             reason.clone(),
             StatusCode::CONFLICT,
         ),
         error => legacy_error_response(
             "segment_delete_failed",
-            "your journal couldn't move that to the trash, so nothing was deleted.",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.move.that",
+            ),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -570,19 +680,28 @@ pub(crate) fn valid_key(value: &str) -> bool {
         && length.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn invalid_day() -> Response {
+fn invalid_day(locale: &str) -> Response {
     legacy_error_response(
         "invalid_day",
-        "that day couldn't be used.",
-        "Invalid day format",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.day.couldn.t.be.used",
+        ),
+        text(
+            locale,
+            "journal.window.transcripts.response.detail.invalid.day.format",
+        ),
         StatusCode::BAD_REQUEST,
     )
 }
 
-fn invalid_segment(detail: &str, status: StatusCode) -> Response {
+fn invalid_segment(locale: &str, detail: String, status: StatusCode) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "that segment or stream couldn't be used.",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.segment.or.stream.couldn.t",
+        ),
         detail,
         status,
     )

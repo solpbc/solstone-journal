@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy many in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent trash copy many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9a559e72ed117c58fe4dc74bf4e1815d8547e8d56e7f2a6c3e98c3a80daada4",
+  "max_length": 153,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

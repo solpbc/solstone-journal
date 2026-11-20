@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts signals row wifi in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts signals row wifi.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87bb93b1dce758e941dae5e9a0c44104e3bacf097ae1700f2c762d825e539e84",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

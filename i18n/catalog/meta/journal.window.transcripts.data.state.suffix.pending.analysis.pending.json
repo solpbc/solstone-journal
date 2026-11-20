@@ -1,0 +1,16 @@
+{
+  "description": "data state suffix pending in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. data state suffix pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6fc450c9a7c3f93008618be1c85a6726cc133013b6c4759d04c52628227ce97",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

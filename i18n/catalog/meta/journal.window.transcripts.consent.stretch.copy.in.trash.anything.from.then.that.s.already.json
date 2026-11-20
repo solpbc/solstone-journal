@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy in_trash in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy in_trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "effdb8f03568aa7471abae114b8db8adb52c1f560f59e5912b1f915c6c800d43",
+  "max_length": 102,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

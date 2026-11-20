@@ -1,0 +1,28 @@
+{
+  "description": "Transcripts warning age in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts warning age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec1177230c010c0e9614ca098030575776499f6b7b7830cdc7ec71f665c14436",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "trash copy select in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy select.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b026761754f8b3ea0a3bc620eeaa9a8960cc983a3779dca4e73fb82807a0094",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

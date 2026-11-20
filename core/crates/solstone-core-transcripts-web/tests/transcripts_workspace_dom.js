@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
+const { journalContext, loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -526,7 +526,7 @@ function sourceTable(source, name) {
     if (source[end] === '{') depth++;
     else if (source[end] === '}' && --depth === 0) break;
   }
-  return vm.runInNewContext(`(${source.slice(open, end + 1)})`);
+  return vm.runInContext(`(${source.slice(open, end + 1)})`, journalContext({}));
 }
 const TRASH_COPY = sourceTable(scriptSource, 'TRASH_COPY');
 
@@ -2891,10 +2891,14 @@ test('receipt: every answer to a delete has its own card, and only a change take
 });
 
 // The speaker picker: the owner's answer for who said one line.
+const copyContext = journalContext({});
 const segmentCopy = Object.fromEntries(
   [...fs.readFileSync(path.join(crateDir, 'src/segment.rs'), 'utf8')
     .matchAll(/\(\s*"(TR_[A-Z_]+)",\s*"((?:[^"\\]|\\.)*)",?\s*\)/g)]
-    .map(([, key, text]) => [key, JSON.parse(`"${text}"`)]),
+    .map(([, key, id]) => [
+      key,
+      copyContext.window.JournalI18n.renderEnglish(id.replace(/^!/, ''))
+    ]),
 );
 assert.ok(segmentCopy.TR_SPEAKER_PICKER_GUESS, 'the transcript copy table is read');
 const PICKER_PEOPLE = [

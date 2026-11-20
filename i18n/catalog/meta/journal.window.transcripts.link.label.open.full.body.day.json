@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8c47fb0c54fe60be056e6a2e72680cfb082b6dcd56d74fb2bd1c56bda588cdf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

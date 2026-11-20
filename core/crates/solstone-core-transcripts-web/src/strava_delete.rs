@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
@@ -15,6 +16,10 @@ use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, strings, text},
+};
 use solstone_core_import::import_trash::Imports;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface};
@@ -37,23 +42,31 @@ fn valid_workout_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 20 && id.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn not_found() -> Response {
+fn not_found(locale: &str) -> Response {
     legacy_error_response(
         "strava_workout_not_found",
-        "that workout isn't in your journal.",
-        "Workout not found",
+        text(
+            locale,
+            "journal.window.transcripts.response.error.that.workout.isn.t.in.your",
+        ),
+        text(
+            locale,
+            "journal.window.transcripts.response.detail.workout.not.found",
+        ),
         StatusCode::NOT_FOUND,
     )
 }
 
 pub(crate) async fn delete_workout(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<Arc<AppState>>,
     RoutePath(activity_id): RoutePath<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if !valid_workout_id(&activity_id) {
-        return not_found();
+        return not_found(locale);
     }
     let request: DeleteBody = if body.iter().all(u8::is_ascii_whitespace) {
         DeleteBody::default()
@@ -63,8 +76,14 @@ pub(crate) async fn delete_workout(
             Err(_) => {
                 return legacy_error_response(
                     "invalid_request",
-                    "that delete couldn't be read, so nothing was deleted.",
-                    "Invalid delete body",
+                    text(
+                        locale,
+                        "journal.window.transcripts.response.error.that.delete.couldn.t.be.read",
+                    ),
+                    text(
+                        locale,
+                        "journal.window.transcripts.response.detail.invalid.delete.body",
+                    ),
                     StatusCode::BAD_REQUEST,
                 );
             }
@@ -129,23 +148,36 @@ pub(crate) async fn delete_workout(
             }
             Json(answer).into_response()
         }
-        Ok(Err(TrashError::Missing(_))) => not_found(),
+        Ok(Err(TrashError::Missing(_))) => not_found(locale),
         Ok(Err(TrashError::Held(reason))) => legacy_error_response(
             "strava_delete_held",
-            format!("{reason}. nothing was deleted."),
+            strings(
+                locale,
+                "journal.window.transcripts.response.error.reason.nothing.was.deleted",
+                [("reason", &reason)],
+            ),
             reason,
             StatusCode::CONFLICT,
         ),
         Ok(Err(error)) => legacy_error_response(
             "strava_delete_failed",
-            "your journal couldn't move that to the trash, so nothing was deleted.",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.move.that",
+            ),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
         Err(_) => legacy_error_response(
             "strava_delete_failed",
-            "your journal couldn't finish that delete. reload to check.",
-            "the delete task stopped",
+            text(
+                locale,
+                "journal.window.transcripts.response.error.your.journal.couldn.t.finish.that",
+            ),
+            text(
+                locale,
+                "journal.window.transcripts.response.detail.the.delete.task.stopped",
+            ),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }

@@ -1,0 +1,16 @@
+{
+  "description": "awaiting thinking label label in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. awaiting thinking label label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65ab43f6f3f17e5096a59c8683c1f0beb1a2cf9002a07ddd43784c93d8bc1de7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

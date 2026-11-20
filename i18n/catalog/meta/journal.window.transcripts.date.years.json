@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts and shared date years in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts and shared date years.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb39e492f79f620901d073da8b42a023fd03e88df4ba0b389e720b816be4af85",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

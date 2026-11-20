@@ -1,0 +1,33 @@
+{
+  "description": "Transcripts response detail in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "349ae48e1eab231a932c3865806cbe99f4d80f83a1675a1134af47aa142bbb11",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{\"kind\":\"owner\"}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{\"kind\":\"person\",\"id\":...}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{\"kind\":\"unknown\"}"
+    }
+  ]
+}

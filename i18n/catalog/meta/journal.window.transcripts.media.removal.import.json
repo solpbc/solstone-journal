@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts media removal import in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts media removal import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ffaf086273593772f8bcd88fedde9b2d62b7b8b346338983c76c5db88941e3f",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

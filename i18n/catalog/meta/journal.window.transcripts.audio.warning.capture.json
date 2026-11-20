@@ -1,0 +1,46 @@
+{
+  "description": "Transcripts audio warning capture in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts audio warning capture.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "domain",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0093f83070624939b392aa50d5201ab26862bf968ab2074af7ef74856e2d2f7b",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

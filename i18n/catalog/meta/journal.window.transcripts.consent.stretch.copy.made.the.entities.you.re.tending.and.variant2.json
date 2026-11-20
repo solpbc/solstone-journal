@@ -1,0 +1,16 @@
+{
+  "description": "Consent stretch copy made in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Consent stretch copy made.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35828a823ae9888bf304b34faac22fafbc6f3b1a4436001ba337bda03f169ebd",
+  "max_length": 143,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

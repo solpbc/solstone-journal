@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy heading in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0e493b73c2f20a7814830fc92ec237ab76e902af072209973460248f4f4f0c9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

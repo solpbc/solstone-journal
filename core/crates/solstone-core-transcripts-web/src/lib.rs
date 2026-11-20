@@ -218,10 +218,13 @@ impl TranscriptError {
     pub(crate) fn display(error: impl std::fmt::Display) -> Self {
         Self(error.to_string())
     }
-    pub(crate) fn response(self) -> Response {
+    pub(crate) fn response(self, locale: &str) -> Response {
         solstone_core_convey_http::envelope::error_envelope(
             "internal_error",
-            "that request didn't finish.",
+            solstone_core_convey_http::window_catalog::text(
+                locale,
+                "journal.window.transcripts.response.error.that.request.didn.t.finish",
+            ),
             self.0,
             StatusCode::INTERNAL_SERVER_ERROR,
         )

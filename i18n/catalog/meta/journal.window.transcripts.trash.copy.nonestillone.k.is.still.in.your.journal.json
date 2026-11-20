@@ -1,0 +1,23 @@
+{
+  "description": "trash copy noneStillOne in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. trash copy noneStillOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55223b15d6c93887d9dfd2120bea4370350402a9fd2f230f7f502cc5154895e6",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    }
+  ]
+}

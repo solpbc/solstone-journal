@@ -1,0 +1,23 @@
+{
+  "description": "granola copy speakerAssistive in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. granola copy speakerAssistive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4153a31d0930fd37f4ddb46a808b0924580dd3707a98dcd2165c393342fd4183",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

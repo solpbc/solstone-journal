@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts body sleep one in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. Transcripts body sleep one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f38016d1cbe8ab998bc51e1519193f1b0bf6c5728b44983b22c396459cb30582",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

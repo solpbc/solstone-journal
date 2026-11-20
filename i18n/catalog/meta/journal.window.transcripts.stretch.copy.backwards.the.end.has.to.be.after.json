@@ -1,0 +1,16 @@
+{
+  "description": "stretch copy backwards in the journal's transcripts view.",
+  "context": "Journal window, transcripts view. stretch copy backwards.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be809b433839ad8194dcadda228d274b947e4a44d0bf83eb2bf1ad1151e32b60",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
