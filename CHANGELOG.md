@@ -8,32 +8,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can let an agent see screenshots and ask for a picture from a specific moment on your screen.
-
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
-- your agents can read several journal entries, transcripts or activities in one call.
-- an agent can ask for daily summaries of body, places, photos, notes and people when it reads a week.
-- your agents can filter journal searches by date range, kind, facet, person, place or activity. photo and note results can include a preview and a link into your journal.
-- agents you allow to see photos now receive a smaller copy of each photo, without location or camera details, along with what your journal described in it.
-- profile pics is a new choice under entities for each agent you connect. it starts on, and agents you connected before keep receiving profile pics until you turn it off on the agents page.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- imported notes, documents, transcripts, screenshots and photos show their kinds on the transcripts page and in search. notes and documents show the day they belong to.
-- "photos of people" and "photo" are now "profile pics" and "profile pic", in settings and on a person's page.
-
 ### Fixed
 
-- search and week summaries show your agents a photo description or caption when available. document search previews can now show text from the document.
-- media offload on a large journal on linux or mac could stop at the computer's limit on open files and never finish. it now works through your older recordings in batches until it has proposed enough to bring your media back within your media budget. when the offload command stops while preparing proposals, it now says why.
-- search could miss words in long paragraphs and code blocks in markdown files. those words now show up in search.
-- photos you share or import now show their picture on the transcripts page, instead of text alone. click or tap a photo to open it larger.
-- photos now land on the day and time they were taken, in the time zone where they were taken, rather than the time you imported them or a date guessed from the filename. when a photo has no date inside it, your journal places it at import time and says so on the photo and its import page.
-- if you try to upload a HEIC or HEIF photo directly on the import page, your journal now tells you to add it through the solstone app on your phone or computer, or convert it to JPEG first.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -66,6 +48,32 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+
+## [2.0.86] - 2026-11-20
+
+### Added
+
+- you can let an agent see screenshots and ask for a picture from a specific moment on your screen.
+- agents you allow to see photos now receive the photo itself, as a smaller copy without location or camera details, along with your journal's description of it.
+- your agents can read several journal entries, transcripts or activities in one call.
+- an agent can ask for daily summaries of body, places, photos, notes and people when it reads a week.
+- your agents can now filter journal searches by person, place or activity, and by more than one kind at once. photo and note results can include a preview and a link into your journal.
+- profile pics is a new choice under entities for each agent you connect. it starts on, and agents you connected before keep receiving profile pics until you turn it off on the agents page.
+
+### Changed
+
+- imported notes, documents, transcripts, screenshots and photos show their kinds on the transcripts page and in search. notes and documents show the day they belong to.
+- "photos of people" and "photo" are now "profile pics" and "profile pic", in settings and on a person's page.
+- your journal now sorts more of the files you import: meeting transcripts, chat exports and caption files go to transcripts, lists such as schedules, changelogs and glossaries stay notes, and more of the screenshots you import as images are recognized as screenshots.
+
+### Fixed
+
+- search and week summaries show your agents a photo description or caption when available. document search previews can now show text from the document.
+- media offload on a large journal on linux or mac could stop at the computer's limit on open files and never finish. it now works through your older recordings in batches until it has proposed enough to bring your media back within your media budget. when the offload command stops while preparing proposals, it now says why.
+- search could miss words in long paragraphs and code blocks in markdown files. those words now show up in search.
+- photos you share or import now show their picture on the transcripts page, instead of text alone. click or tap a photo to open it larger.
+- photos now land on the day and time they were taken, in the time zone where they were taken, rather than the time you imported them or a date guessed from the filename. when a photo has no date inside it, your journal places it at import time and says so on the photo and its import page.
+- if you try to upload a HEIC or HEIF photo directly on the import page, your journal now tells you to add it through the solstone app on your phone or computer, or convert it to JPEG first.
 
 ## [2.0.85] - 2026-11-19
 
