@@ -1,0 +1,16 @@
+{
+  "description": "response invalid day in the journal's search view.",
+  "context": "Journal window, search view. response invalid day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "926800df1d9be9a7fdd4e4e523bb4963b77f271ffaaa7d0b0eaad503eef1a4b1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

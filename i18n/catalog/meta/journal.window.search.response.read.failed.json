@@ -1,0 +1,16 @@
+{
+  "description": "response read failed in the journal's search view.",
+  "context": "Journal window, search view. response read failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa223960e35bd2e1d7adc5189a8643ff83cd4d43be100e92001fe83c8e38717f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

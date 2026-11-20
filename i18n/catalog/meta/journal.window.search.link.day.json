@@ -1,0 +1,16 @@
+{
+  "description": "link day in the journal's search view.",
+  "context": "Journal window, search view. link day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58ea2b3af0caf3cc51915ee36b73a637fd19744c3c7bb864b0a4d1cbf6d91129",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

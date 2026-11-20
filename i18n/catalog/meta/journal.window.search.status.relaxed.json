@@ -1,0 +1,16 @@
+{
+  "description": "status relaxed in the journal's search view.",
+  "context": "Journal window, search view. status relaxed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92b9e0e388e201debabcb887827e41e7939ef696309980a58e6ab301fb0114b7",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

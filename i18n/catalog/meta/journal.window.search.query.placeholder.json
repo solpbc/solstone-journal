@@ -1,0 +1,16 @@
+{
+  "description": "query placeholder in the journal's search view.",
+  "context": "Journal window, search view. query placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e93a08d9ea02191a2854aa60aa23186c717636d19f8ef10648d8ad0512ee788",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

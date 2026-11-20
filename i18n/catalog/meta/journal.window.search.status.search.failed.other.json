@@ -1,0 +1,28 @@
+{
+  "description": "status search failed other in the journal's search view.",
+  "context": "Journal window, search view. status search failed other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1a34d4d5a167a22c0ab344f46c09b96956ee207c2d83f7b7d4c78a5fceb66fb7",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

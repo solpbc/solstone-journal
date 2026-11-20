@@ -1,0 +1,16 @@
+{
+  "description": "date through in the journal's search view.",
+  "context": "Journal window, search view. date through.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1a405fbab3e24fcc0ec763f6f6ad7184c36a95b744bd8e44259bd168e4bed2e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

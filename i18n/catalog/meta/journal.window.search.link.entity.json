@@ -1,0 +1,16 @@
+{
+  "description": "link entity in the journal's search view.",
+  "context": "Journal window, search view. link entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fcb4ada7045987867ae142ab15313ac11474ad11f977429558bcb4265b8a484",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

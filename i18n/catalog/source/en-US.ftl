@@ -7681,6 +7681,164 @@ journal.window.network.window.state.text.this.device = this device
 
 journal.window.network.window.state.text.unpair.label = unpair '{ $slot1 }'?
 
+journal.window.search.count.day.one = { $count }{ $slot1 }day
+
+journal.window.search.count.day.other = { $count }{ $slot1 }days
+
+journal.window.search.count.day.showing = showing the top{ $slot1 }{ $showing }{ $slot2 }of{ $slot3 }{ $total }{ $slot4 }matches for this day.
+
+journal.window.search.count.match.one = { $count }{ $slot1 }match
+
+journal.window.search.count.match.other = { $count }{ $slot1 }matches
+
+journal.window.search.count.summary = { $matches }{ $slot1 }across{ $slot2 }{ $days }.
+
+journal.window.search.date.from = from
+
+journal.window.search.date.invalid = choose an end date on or after the start date.
+
+journal.window.search.date.range = date range
+
+journal.window.search.date.through = through
+
+journal.window.search.entry.as.indexed = as last indexed
+
+journal.window.search.entry.close = close entry
+
+journal.window.search.entry.loading = loading entry…
+
+journal.window.search.entry.open = read matched entry
+
+journal.window.search.entry.reindexed = this file was indexed again after your search, so this may not match the result
+
+journal.window.search.entry.stored.record = the stored record
+
+journal.window.search.heading = search your journal
+
+journal.window.search.hit.names = names
+
+journal.window.search.intro = find words and phrases in your journal, then read the matched entry.
+
+journal.window.search.link.agents = open in agents
+
+journal.window.search.link.day = open that day →
+
+journal.window.search.link.entity = open entity
+
+journal.window.search.link.map = open on the map
+
+journal.window.search.link.transcript = open transcript
+
+journal.window.search.link.week = open that week →
+
+journal.window.search.paging.accessible.name = search result pages
+
+journal.window.search.paging.day = more from this day
+
+journal.window.search.paging.first = back to first results
+
+journal.window.search.paging.newer = newer matching days
+
+journal.window.search.paging.older = older matching days
+
+journal.window.search.query.label = words or phrase
+
+journal.window.search.query.placeholder = what would you like to find?
+
+journal.window.search.query.submit = search
+
+journal.window.search.response.agent.name = agent must be a bare talent name
+
+journal.window.search.response.date.format = { $field }{ $slot1 }must be { $slot2 }
+
+journal.window.search.response.date.real = { $field }{ $slot1 }must be a real day
+
+journal.window.search.response.date.reverse = { $slot1 } must be <= { $slot2 }
+
+journal.window.search.response.day.format = { $slot1 } must be { $slot2 }
+
+journal.window.search.response.entry.absent = this entry is no longer indexed. search again to refresh the results.
+
+journal.window.search.response.entry.invalid = invalid entry reference
+
+journal.window.search.response.entry.large = this entry is too long to display here.
+
+journal.window.search.response.file.not.found = that file isn't available.
+
+journal.window.search.response.file.read.failed = that file couldn't be read.
+
+journal.window.search.response.filter.agent = there is no agent named{ $slot1 }{ $name }. agents:{ $slot2 }{ $available }
+
+journal.window.search.response.filter.facet = there is no facet named{ $slot1 }{ $name }. facets:{ $slot2 }{ $available }
+
+journal.window.search.response.index.read.detail = the search index couldn't be read. try again.
+
+journal.window.search.response.invalid.day = that day couldn't be used.
+
+journal.window.search.response.invalid.path = that path couldn't be used.
+
+journal.window.search.response.invalid.value = one of those values couldn't be used.
+
+journal.window.search.response.read.agent.absent = no output of that kind was found for that day
+
+journal.window.search.response.read.bound = { $slot1 } must be { $slot2 } for { $slot3 } reads
+
+journal.window.search.response.read.entity = entity results have no file to read
+
+journal.window.search.response.read.entry.fields = an indexed entry requires { $slot1 }, { $slot2 }, and { $slot3 } from the same search result
+
+journal.window.search.response.read.failed = unable to read journal file
+
+journal.window.search.response.read.file.absent = journal file not found
+
+journal.window.search.response.read.mixed.entry = an indexed entry cannot be combined with { $slot1 }, { $slot2 }, or { $slot3 }
+
+journal.window.search.response.read.mixed.file = { $slot1 } cannot be combined with { $slot2 }, { $slot3 }, or { $slot4 }
+
+journal.window.search.response.read.required = { $slot1 } or { $slot2 } is required
+
+journal.window.search.response.read.suffix = strip the search-result { $slot1 } suffix before reading a path
+
+journal.window.search.response.search.failed = couldn't search your journal right now.
+
+journal.window.search.response.segment.invalid = invalid segment key
+
+journal.window.search.status.details = details
+
+journal.window.search.status.entry.failed = couldn't open this entry.{ $slot1 }{ $detail }
+
+journal.window.search.status.index.absent = your journal doesn't have a search index yet.
+
+journal.window.search.status.index.empty = there's nothing indexed yet.
+
+journal.window.search.status.index.locked = the search index is busy right now.
+
+journal.window.search.status.index.rebuilding = search is rebuilding, so older days may be missing for now.
+
+journal.window.search.status.index.unreadable = the search index couldn't be read.
+
+journal.window.search.status.initial = search your whole journal. quote an "exact phrase", or narrow to a day range above for faster results.
+
+journal.window.search.status.loading = searching your journal…
+
+journal.window.search.status.narrow = add words to narrow these matches.
+
+journal.window.search.status.none = no matches. try fewer words or a wider date range.
+
+journal.window.search.status.progress = still searching…{ $slot1 }{ $seconds }{ $slot2 }s.
+
+journal.window.search.status.progress.all.days = still searching…{ $slot1 }{ $seconds }{ $slot2 }s. a single day is usually much faster.
+
+journal.window.search.status.relaxed = nothing matched your exact search, so these are broader matches.
+
+journal.window.search.status.retry = try again
+
+journal.window.search.status.retry.sentence = try again.
+
+journal.window.search.status.search.failed.known = couldn't search your journal:{ $slot1 }{ $detail }
+
+journal.window.search.status.search.failed.other = couldn't search your journal.{ $slot1 }{ $detail }
+
 journal.window.shared.api.authentication.required = Authentication required
 
 journal.window.shared.api.malformed.response = Malformed server response

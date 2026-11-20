@@ -1,0 +1,37 @@
+{
+  "description": "response filter agent in the journal's search view.",
+  "context": "Journal window, search view. response filter agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "626a0f4a4176f9c0589430dcccf44a14b3a80771b2213b13c1646850dbb2beaf",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

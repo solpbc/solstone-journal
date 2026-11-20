@@ -1,0 +1,33 @@
+{
+  "description": "status progress all days in the journal's search view.",
+  "context": "Journal window, search view. status progress all days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b801c61ee898712717af1cb73e44cca4c82fcf39cc615c71d658388c4a3d55ad",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

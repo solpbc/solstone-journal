@@ -1,0 +1,28 @@
+{
+  "description": "count match one in the journal's search view.",
+  "context": "Journal window, search view. count match one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f8015aea68eee6bf5f67d6e32cadb92cc7d676a5527380abedcb47cb4ae7a55",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

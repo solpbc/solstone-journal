@@ -1,0 +1,16 @@
+{
+  "description": "entry open in the journal's search view.",
+  "context": "Journal window, search view. entry open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dee85452c4820b4713c4475a9d0f20c08253b5ceb3154866032b1bc37655b1a1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

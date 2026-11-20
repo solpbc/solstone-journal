@@ -1,0 +1,16 @@
+{
+  "description": "link transcript in the journal's search view.",
+  "context": "Journal window, search view. link transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fb73d21d47815f4b12545109b3dfb0e9745a06bb431363669f0b7731b52c75a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

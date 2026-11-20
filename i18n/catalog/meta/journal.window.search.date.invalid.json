@@ -1,0 +1,16 @@
+{
+  "description": "date invalid in the journal's search view.",
+  "context": "Journal window, search view. date invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8528a6fd9b47f2bfc658ee9bff4b17ae3c042c32a27e6366e3ec7ef6652f4dae",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

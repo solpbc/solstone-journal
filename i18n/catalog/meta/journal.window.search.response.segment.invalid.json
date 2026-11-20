@@ -1,0 +1,16 @@
+{
+  "description": "response segment invalid in the journal's search view.",
+  "context": "Journal window, search view. response segment invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "124b89c6375c6c55bb21e3bc52097e7d9b00bb0af5954d28b19d9146ade641ce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

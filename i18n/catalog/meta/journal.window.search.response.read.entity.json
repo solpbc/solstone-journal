@@ -1,0 +1,16 @@
+{
+  "description": "response read entity in the journal's search view.",
+  "context": "Journal window, search view. response read entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85457c5436c342efb9949896b002d31684c6d4f7536fe470dd96307b6b7d981c",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

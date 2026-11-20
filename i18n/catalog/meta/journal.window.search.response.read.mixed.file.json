@@ -1,0 +1,38 @@
+{
+  "description": "response read mixed file in the journal's search view.",
+  "context": "Journal window, search view. response read mixed file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c6d81c44118566421a372b0d260cfff9f3d12c0fd87d2efa947a927208d556b",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "path"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "agent"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "day"
+    },
+    {
+      "name": "slot4",
+      "kind": "accepted-input",
+      "value": "segment"
+    }
+  ]
+}

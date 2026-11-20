@@ -1,0 +1,16 @@
+{
+  "description": "status loading in the journal's search view.",
+  "context": "Journal window, search view. status loading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24446483bd8722f29968dab262e721646258f486fef1efb06e6f5dab5ca70eb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

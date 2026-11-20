@@ -1,0 +1,28 @@
+{
+  "description": "count match other in the journal's search view.",
+  "context": "Journal window, search view. count match other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "57a2083dd3e8ffd4121ab1bc46b4f21589bbd73cea878c174f8b8e03098808e6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

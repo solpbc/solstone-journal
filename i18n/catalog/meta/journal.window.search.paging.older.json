@@ -1,0 +1,16 @@
+{
+  "description": "paging older in the journal's search view.",
+  "context": "Journal window, search view. paging older.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84fe4a0da869f27308bf9d4ab9b1bacd0932bf18d44d3486c73fd6ddc43823bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

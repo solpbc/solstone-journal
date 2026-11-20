@@ -1,0 +1,16 @@
+{
+  "description": "link agents in the journal's search view.",
+  "context": "Journal window, search view. link agents.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74f0a514caf1c175e53e1c2f399835ab473ccdf3eaabcc402da44b5be2e6dc1d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

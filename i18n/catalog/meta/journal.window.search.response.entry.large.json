@@ -1,0 +1,16 @@
+{
+  "description": "response entry large in the journal's search view.",
+  "context": "Journal window, search view. response entry large.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1818ab00547a2c4d13cde4c0b8c564515e1d7ab972c7c6426b8a83e8e98677f",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
