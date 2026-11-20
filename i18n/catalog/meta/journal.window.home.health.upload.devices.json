@@ -1,0 +1,34 @@
+{
+  "description": "Device delivery issue. devices is the list of names and affected sources.",
+  "context": "Journal window. Device delivery issue. devices is the list of names and affected sources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "devices",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4c0ffde738f369f81575c99298d117f7d9e58230a67fff068dde7daea4985631",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

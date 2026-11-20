@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::formatting::{cardinal_quantity, render_count};
 use serde_json::{Value, json};
 use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, OwnerTierReason};
 use solstone_core_speaker_resolve::owner_voice::{NotYetReason, OwnerVoiceSetup};
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
 
 pub const SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED: &str = "owner_voice:not_established";
 pub const SOURCE_ID_OWNER_VOICE_CANDIDATE_READY: &str = "owner_voice:candidate_ready";
@@ -90,15 +91,19 @@ pub(crate) fn format_degraded_capture_line_in(capture: &Value, locale: &str) -> 
                 ),
                 // Nameless devices are counted, never listed: "an unnamed
                 // device, an unnamed device" told the owner nothing twice.
-                (many, _, _) if many > 1 && !named => strings(
+                (many, _, _) if many > 1 && !named => render_count(
                     locale,
-                    "journal.window.home.needs.device.many.unnamed",
-                    [("count", &many.to_string())],
+                    "journal.window.home.needs.devices.unnamed",
+                    many as i64,
                 ),
-                (many, labels, _) if many > 1 => strings(
+                (many, labels, _) if many > 1 => render(
                     locale,
-                    "journal.window.home.needs.device.many.named",
-                    [("count", &many.to_string()), ("names", &labels.join(", "))],
+                    "journal.window.home.needs.devices.named",
+                    &[
+                        ("count", CatalogValue::String(&many.to_string())),
+                        ("names", CatalogValue::String(&labels.join(", "))),
+                        ("quantity", cardinal_quantity(many as i64)),
+                    ],
                 ),
                 // Nothing here names a device. The sources it is refusing are
                 // still more than "something is wrong", so they keep the line.
@@ -163,10 +168,10 @@ fn failing_client_names(capture: &Value, locale: &str) -> (usize, Vec<String>, b
             locale,
             "journal.window.health.status.an.unnamed.device",
         )),
-        many => names.push(strings(
+        many => names.push(render_count(
             locale,
-            "journal.window.home.needs.device.unnamed.many",
-            [("count", &many.to_string())],
+            "journal.window.home.needs.devices.unnamed.count",
+            many as i64,
         )),
     }
     (count, names, named)

@@ -1,0 +1,30 @@
+{
+  "description": "Health glance headline. count is the number of issues that need attention.",
+  "context": "Journal window. Health glance headline. count is the number of issues that need attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "66cc640e0b261ad36423a888c969f0b7ef5e3de40f323a48b5de28078e934809",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

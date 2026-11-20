@@ -1,0 +1,30 @@
+{
+  "description": "Standalone relative duration. count is the displayed number of weeks.",
+  "context": "Journal window. Standalone relative duration. count is the displayed number of weeks.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6e5d1c027b7211c4c25c7b9abaf6ee25872acb94a1d0c49659d58b0066e61bfc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

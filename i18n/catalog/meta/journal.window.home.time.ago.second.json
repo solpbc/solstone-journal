@@ -1,0 +1,30 @@
+{
+  "description": "Relative age of a last observation. count is its number of elapsed seconds.",
+  "context": "Journal window. Relative age of a last observation. count is its number of elapsed seconds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ba0248e7b7c7295bf41ddb5d21928495ba4cb1910ccf8dc67d4dd23f89ff89b6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

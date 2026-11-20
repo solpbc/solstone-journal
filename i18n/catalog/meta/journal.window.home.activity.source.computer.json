@@ -1,0 +1,16 @@
+{
+  "description": "Activity source label. Refers to the device that captured this activity.",
+  "context": "Journal window. Activity source label. Refers to the device that captured this activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "47b7ab47c8581c528d1edd97ba8183e65fb5ef63e9608ddc5263e0f5d7fc54d6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

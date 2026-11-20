@@ -1,0 +1,30 @@
+{
+  "description": "Standalone relative duration. count is the displayed number of months.",
+  "context": "Journal window. Standalone relative duration. count is the displayed number of months.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fa83ab141bd5e92faa2b608f34baf481ba00b31be31e6c1a62dd92f2335f2e37",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

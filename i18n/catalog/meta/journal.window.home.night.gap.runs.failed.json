@@ -1,0 +1,34 @@
+{
+  "description": "Link to incomplete overnight work. label is a task name. count is the number of runs.",
+  "context": "Journal window. Link to incomplete overnight work. label is a task name. count is the number of runs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "15338d2632af71fcb7e4f6f581537d10c192b5ba12a01f05053632da6c91fef4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

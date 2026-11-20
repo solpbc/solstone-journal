@@ -1,0 +1,34 @@
+{
+  "description": "Home status for one quiet device. device is its name. count is the time without accepted activity in months.",
+  "context": "Journal window. Home status for one quiet device. device is its name. count is the time without accepted activity in months.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b449b7e85a9498900c71df19019fdc92c1ecd2e0cc57df9f50b340d29ebad9d9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

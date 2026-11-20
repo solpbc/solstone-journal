@@ -598,6 +598,232 @@ journal.window.health.work.inspection.stale = { $quantity ->
         } of { $total } days checked ({ $range }). last known progress, checked { $checked_at }.
     }
 
+journal.window.home.activity.source.browser = from your browser
+
+journal.window.home.activity.source.browser.named = from your browser ({ $device })
+
+journal.window.home.activity.source.computer = from your computer
+
+journal.window.home.activity.source.computer.named = from your computer ({ $device })
+
+journal.window.home.activity.source.ipad = from your ipad
+
+journal.window.home.activity.source.ipad.named = from your ipad ({ $device })
+
+journal.window.home.activity.source.iphone = from your iphone
+
+journal.window.home.activity.source.iphone.named = from your iphone ({ $device })
+
+journal.window.home.activity.source.mac = from your mac
+
+journal.window.home.activity.source.mac.named = from your mac ({ $device })
+
+journal.window.home.activity.source.phone = from your phone
+
+journal.window.home.activity.source.phone.named = from your phone ({ $device })
+
+journal.window.home.activity.source.tablet = from your tablet
+
+journal.window.home.activity.source.tablet.named = from your tablet ({ $device })
+
+journal.window.home.activity.source.terminal = from your terminal
+
+journal.window.home.activity.source.terminal.named = from your terminal ({ $device })
+
+journal.window.home.activity.source.watch = from your watch
+
+journal.window.home.activity.source.watch.named = from your watch ({ $device })
+
+journal.window.home.attention.agent.errors.count = { $quantity ->
+        [one] { $count } agent error today. ask what happened
+       *[other] { $count } agent errors today. ask what happened
+    }
+
+journal.window.home.health.attention.count = { $quantity ->
+        [one] 1 thing needs your attention
+       *[other] { $count } things need your attention
+    }
+
+journal.window.home.health.device.age = { $device } ({ $age })
+
+journal.window.home.health.device.sources = { $device } ({ $sources })
+
+journal.window.home.health.quiet.devices = { $quantity ->
+        [one] { $count } devices haven't added to your journal recently: { $devices }.
+       *[other] { $count } devices haven't added to your journal recently: { $devices }.
+    }
+
+journal.window.home.health.quiet.elapsed.day = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } day.
+       *[other] { $device } hasn't added to your journal in { $count } days.
+    }
+
+journal.window.home.health.quiet.elapsed.hour = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } hour.
+       *[other] { $device } hasn't added to your journal in { $count } hours.
+    }
+
+journal.window.home.health.quiet.elapsed.just.now = { $device } hasn't added to your journal in just now.
+
+journal.window.home.health.quiet.elapsed.minute = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } minute.
+       *[other] { $device } hasn't added to your journal in { $count } minutes.
+    }
+
+journal.window.home.health.quiet.elapsed.month = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } month.
+       *[other] { $device } hasn't added to your journal in { $count } months.
+    }
+
+journal.window.home.health.quiet.elapsed.second = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } second.
+       *[other] { $device } hasn't added to your journal in { $count } seconds.
+    }
+
+journal.window.home.health.quiet.elapsed.week = { $quantity ->
+        [one] { $device } hasn't added to your journal in { $count } week.
+       *[other] { $device } hasn't added to your journal in { $count } weeks.
+    }
+
+journal.window.home.health.upload.devices = { $quantity ->
+        [one] your journal couldn't accept uploads from { $devices }.
+       *[other] your journal couldn't accept uploads from { $count } devices: { $devices }.
+    }
+
+journal.window.home.needs.devices.named = { $quantity ->
+        [one] { $count } devices aren't reaching your journal: { $names }.
+       *[other] { $count } devices aren't reaching your journal: { $names }.
+    }
+
+journal.window.home.needs.devices.unnamed = { $quantity ->
+        [one] { $count } devices aren't reaching your journal.
+       *[other] { $count } devices aren't reaching your journal.
+    }
+
+journal.window.home.needs.devices.unnamed.count = { $quantity ->
+        [one] { $count } unnamed devices
+       *[other] { $count } unnamed devices
+    }
+
+journal.window.home.night.gap.additional = { $quantity ->
+        [one] …and { $count } more didn't finish.
+       *[other] …and { $count } more didn't finish.
+    }
+
+journal.window.home.night.gap.runs.failed = { $quantity ->
+        [one] the { $label } run didn't finish.
+       *[other] { $count } { $label } runs didn't finish.
+    }
+
+journal.window.home.night.gap.runs.failed.briefing = { $quantity ->
+        [one] the daily briefing run didn't finish.
+       *[other] { $count } daily briefing runs didn't finish.
+    }
+
+journal.window.home.night.gap.runs.failed.documents = { $quantity ->
+        [one] the document run didn't finish.
+       *[other] { $count } document runs didn't finish.
+    }
+
+journal.window.home.night.gap.runs.lost = { $quantity ->
+        [one] the { $label } run couldn't start.
+       *[other] { $count } { $label } runs couldn't start.
+    }
+
+journal.window.home.night.gap.runs.lost.briefing = { $quantity ->
+        [one] the daily briefing run couldn't start.
+       *[other] { $count } daily briefing runs couldn't start.
+    }
+
+journal.window.home.night.gap.runs.lost.documents = { $quantity ->
+        [one] the document run couldn't start.
+       *[other] { $count } document runs couldn't start.
+    }
+
+journal.window.home.time.ago.day = { $quantity ->
+        [one] { $count } day ago
+       *[other] { $count } days ago
+    }
+
+journal.window.home.time.ago.hour = { $quantity ->
+        [one] { $count } hour ago
+       *[other] { $count } hours ago
+    }
+
+journal.window.home.time.ago.minute = { $quantity ->
+        [one] { $count } minute ago
+       *[other] { $count } minutes ago
+    }
+
+journal.window.home.time.ago.month = { $quantity ->
+        [one] { $count } month ago
+       *[other] { $count } months ago
+    }
+
+journal.window.home.time.ago.second = { $quantity ->
+        [one] { $count } second ago
+       *[other] { $count } seconds ago
+    }
+
+journal.window.home.time.ago.week = { $quantity ->
+        [one] { $count } week ago
+       *[other] { $count } weeks ago
+    }
+
+journal.window.home.week.card.first.due.friday = your first week comes on friday.
+
+journal.window.home.week.card.first.due.monday = your first week comes on monday.
+
+journal.window.home.week.card.first.due.saturday = your first week comes on saturday.
+
+journal.window.home.week.card.first.due.sunday = your first week comes on sunday.
+
+journal.window.home.week.card.first.due.thursday = your first week comes on thursday.
+
+journal.window.home.week.card.first.due.tuesday = your first week comes on tuesday.
+
+journal.window.home.week.card.first.due.wednesday = your first week comes on wednesday.
+
+journal.window.home.week.card.next.due.friday = your next week comes on friday.
+
+journal.window.home.week.card.next.due.monday = your next week comes on monday.
+
+journal.window.home.week.card.next.due.saturday = your next week comes on saturday.
+
+journal.window.home.week.card.next.due.sunday = your next week comes on sunday.
+
+journal.window.home.week.card.next.due.thursday = your next week comes on thursday.
+
+journal.window.home.week.card.next.due.tuesday = your next week comes on tuesday.
+
+journal.window.home.week.card.next.due.wednesday = your next week comes on wednesday.
+
+journal.window.home.week.cell.accessible.left.out = { $weekday } { $day }, in your journal, no memory on this page
+
+journal.window.home.week.cell.accessible.memory = { $weekday } { $day }, a memory from this day
+
+journal.window.home.week.cell.accessible.not.ready = { $weekday } { $day }, wasn't ready in time
+
+journal.window.home.week.cell.accessible.nothing.shared = { $weekday } { $day }, nothing in your journal
+
+journal.window.home.week.cell.accessible.unknown = { $weekday } { $day },{ $legacy_space }
+
+journal.window.home.week.cell.accessible.unreadable = { $weekday } { $day }, couldn't be read
+
+journal.window.home.week.days.unready = { $quantity ->
+        [one] { $days } wasn't ready in time.
+       *[other] { $days } weren't ready in time.
+    }
+
+journal.window.home.week.intro.memories = { $quantity ->
+        [one] your week, a memory from one day.
+       *[other] your week, a memory from each of { $count } days.
+    }
+
+journal.window.home.week.navigation.next = { $week } →
+
+journal.window.home.week.navigation.previous = ← { $week }
+
 journal.window.not.found.detail = The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
 
 journal.window.not.found.heading = Not Found
@@ -6137,29 +6363,11 @@ journal.window.home.action.undo = undo
 
 journal.window.home.action.what.it.fixes = what it fixes ↗
 
-journal.window.home.activity.source.device.browser = browser
-
-journal.window.home.activity.source.device.computer = computer
-
-journal.window.home.activity.source.device.ipad = ipad
-
-journal.window.home.activity.source.device.iphone = iphone
-
-journal.window.home.activity.source.device.mac = mac
-
-journal.window.home.activity.source.device.phone = phone
-
-journal.window.home.activity.source.device.tablet = tablet
-
 journal.window.home.activity.source.phrase = from your{ $slot1 }{ $kind }
 
 journal.window.home.activity.source.phrase.named = from your{ $slot1 }{ $kind }{ $slot2 }({ $device })
 
 journal.window.home.activity.title.fallback = untitled activity
-
-journal.window.home.attention.agent.error.many = { $count }{ $slot1 }agent errors today. ask what happened
-
-journal.window.home.attention.agent.error.one = { $count }{ $slot1 }agent error today. ask what happened
 
 journal.window.home.attention.heading = waiting on you
 
@@ -6197,8 +6405,6 @@ journal.window.home.connections.moment.one = 1 moment
 
 journal.window.home.connections.moment.recent = { $moments }{ $slot1 }· most recently{ $slot2 }{ $day }
 
-journal.window.home.device.last.added.ago = { $duration }{ $slot1 }ago
-
 journal.window.home.device.paired = the solstone app on{ $slot1 }{ $name }{ $slot2 }is paired.
 
 journal.window.home.device.paired.added = the solstone app on{ $slot1 }{ $name }{ $slot2 }last added to your journal{ $slot3 }{ $duration }.
@@ -6219,10 +6425,6 @@ journal.window.home.first.segment.read = your first segment, from{ $slot1 }{ $ti
 
 journal.window.home.health.age.just.now = just now
 
-journal.window.home.health.attention.many = { $count }{ $slot1 }things need your attention
-
-journal.window.home.health.attention.one = 1 thing needs your attention
-
 journal.window.home.health.awaiting.first.headline = the solstone app on one of your devices hasn't added anything to your journal yet.
 
 journal.window.home.health.backlog.day.needs.help = a journal day needs a hand.
@@ -6237,10 +6439,6 @@ journal.window.home.health.no.eligible.headline = none of your devices have the 
 
 journal.window.home.health.not.yet.active.headline = the solstone app is adding to your journal.
 
-journal.window.home.health.quiet.many = { $count }{ $slot1 }devices haven't added to your journal recently:{ $slot2 }{ $devices }.
-
-journal.window.home.health.quiet.one.known = { $device }{ $slot1 }hasn't added to your journal in{ $slot2 }{ $age }.
-
 journal.window.home.health.quiet.one.unknown = { $device }{ $slot1 }hasn't added to your journal recently.
 
 journal.window.home.health.ready = everything's working
@@ -6250,10 +6448,6 @@ journal.window.home.health.residue.headline = nothing needs your attention right
 journal.window.home.health.unavailable.headline = your devices' status is unclear right now.
 
 journal.window.home.health.unnamed.idle.issue = the solstone app on one of your devices hasn't added anything to your journal recently.
-
-journal.window.home.health.upload.many = your journal couldn't accept uploads from{ $slot1 }{ $count }{ $slot2 }devices:{ $slot3 }{ $devices }.
-
-journal.window.home.health.upload.one = your journal couldn't accept uploads from{ $slot1 }{ $device }.
 
 journal.window.home.held.activity = activity processing
 
@@ -6293,13 +6487,7 @@ journal.window.home.narrative.scope = based on{ $slot1 }{ $segments }{ $slot2 }o
 
 journal.window.home.narrative.scope.since = { $slot1 }processing window starts at{ $slot2 }{ $time }. this is processing time, not when the activity happened.
 
-journal.window.home.needs.device.many.named = { $count }{ $slot1 }devices aren't reaching your journal:{ $slot2 }{ $names }.
-
-journal.window.home.needs.device.many.unnamed = { $count }{ $slot1 }devices aren't reaching your journal.
-
 journal.window.home.needs.device.one = { $name }{ $slot1 }isn't reaching your journal.
-
-journal.window.home.needs.device.unnamed.many = { $count }{ $slot1 }unnamed devices
 
 journal.window.home.needs.sources.failing = the solstone app on one of your devices is having trouble adding{ $slot1 }{ $sources }{ $slot2 }to your journal.
 
@@ -6319,16 +6507,6 @@ journal.window.home.needs.voice.unusable = your voice can't be set up from what'
 
 journal.window.home.night.briefing.not.written = yesterday wasn't written up.
 
-journal.window.home.night.gap.many.failed = { $count }{ $slot1 }{ $label }{ $slot2 }runs didn't finish.
-
-journal.window.home.night.gap.many.lost = { $count }{ $slot1 }{ $label }{ $slot2 }runs couldn't start.
-
-journal.window.home.night.gap.more = …and{ $slot1 }{ $count }{ $slot2 }more didn't finish.
-
-journal.window.home.night.gap.one.failed = the{ $slot1 }{ $label }{ $slot2 }run didn't finish.
-
-journal.window.home.night.gap.one.lost = the{ $slot1 }{ $label }{ $slot2 }run couldn't start.
-
 journal.window.home.night.notes.not.written = yesterday's notes weren't all written.
 
 journal.window.home.night.processing.did.not.finish = some overnight processing didn't finish.
@@ -6336,10 +6514,6 @@ journal.window.home.night.processing.did.not.finish = some overnight processing 
 journal.window.home.night.review.did.not.finish = the overnight review didn't finish.
 
 journal.window.home.night.status.unavailable = yesterday’s processing status is unavailable.
-
-journal.window.home.night.talent.daily.briefing = daily briefing
-
-journal.window.home.night.talent.document = document
 
 journal.window.home.night.work.did.not.finish = some overnight work didn't finish.
 
@@ -6721,15 +6895,9 @@ journal.window.home.week.card.empty = nothing from this week is showing.
 
 journal.window.home.week.card.first.choose = your first week comes once you choose where the thinking happens.
 
-journal.window.home.week.card.first.due = your first week comes on{ $slot1 }{ $weekday }.
-
 journal.window.home.week.card.next.choose = your next week comes once you choose where the thinking happens.
 
-journal.window.home.week.card.next.due = your next week comes on{ $slot1 }{ $weekday }.
-
 journal.window.home.week.card.unchecked = your week couldn't be checked.
-
-journal.window.home.week.cell.accessible.name = { $weekday }{ $slot1 }{ $day },{ $slot2 }{ $summary }
 
 journal.window.home.week.cell.left.out = in your journal, no memory on this page
 
@@ -6775,19 +6943,11 @@ journal.window.home.week.days.conjunction = { $leading }{ $slot1 }and{ $slot2 }{
 
 journal.window.home.week.days.from = from{ $slot1 }{ $days }.
 
-journal.window.home.week.days.not.ready.many = { $days }{ $slot1 }weren't ready in time.
-
-journal.window.home.week.days.not.ready.one = { $days }{ $slot1 }wasn't ready in time.
-
 journal.window.home.week.days.unreadable = something from{ $slot1 }{ $days }{ $slot2 }couldn't be read.
 
 journal.window.home.week.end = that's the week.
 
 journal.window.home.week.intro.empty = nothing from this week is on this page.
-
-journal.window.home.week.intro.many = your week, a memory from each of{ $slot1 }{ $count }{ $slot2 }days.
-
-journal.window.home.week.intro.one = your week, a memory from one day.
 
 journal.window.home.week.leave.out.apply.failed = couldn't leave this out. nothing changed.
 
@@ -9618,8 +9778,6 @@ journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.actio
 
 journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = your AI provider turned down your key. check it on the thinking page
 
-journal.window.system.health.backlog.verdict.age.stale.template = it's unclear whether your journal is caught up; the last update was{ $slot1 }{ $age }{ $slot2 }ago.
-
 journal.window.system.health.backlog.verdict.age.unknown = it's unclear whether your journal is caught up; the last update age is unknown.
 
 journal.window.system.health.backlog.verdict.all.caught.up = your journal's all caught up.
@@ -10985,25 +11143,55 @@ journal.window.thinking.window.state.text.under = under 1%
 
 journal.window.thinking.window.state.text.your.endpoint = your endpoint
 
+journal.window.time.duration.day.count = { $quantity ->
+        [one] { $count } day
+       *[other] { $count } days
+    }
+
 journal.window.time.duration.day.one = { $value }{ $slot1 }day
 
 journal.window.time.duration.day.other = { $value }{ $slot1 }days
+
+journal.window.time.duration.hour.count = { $quantity ->
+        [one] { $count } hour
+       *[other] { $count } hours
+    }
 
 journal.window.time.duration.hour.one = { $value }{ $slot1 }hour
 
 journal.window.time.duration.hour.other = { $value }{ $slot1 }hours
 
+journal.window.time.duration.minute.count = { $quantity ->
+        [one] { $count } minute
+       *[other] { $count } minutes
+    }
+
 journal.window.time.duration.minute.one = { $value }{ $slot1 }minute
 
 journal.window.time.duration.minute.other = { $value }{ $slot1 }minutes
+
+journal.window.time.duration.month.count = { $quantity ->
+        [one] { $count } month
+       *[other] { $count } months
+    }
 
 journal.window.time.duration.month.one = { $value }{ $slot1 }month
 
 journal.window.time.duration.month.other = { $value }{ $slot1 }months
 
+journal.window.time.duration.second.count = { $quantity ->
+        [one] { $count } second
+       *[other] { $count } seconds
+    }
+
 journal.window.time.duration.second.one = { $value }{ $slot1 }second
 
 journal.window.time.duration.second.other = { $value }{ $slot1 }seconds
+
+journal.window.time.duration.week.count = { $quantity ->
+        [one] { $count } week
+       *[other] { $count } weeks
+    }
 
 journal.window.time.duration.week.one = { $value }{ $slot1 }week
 

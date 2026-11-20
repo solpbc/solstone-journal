@@ -1,0 +1,30 @@
+{
+  "description": "Link to incomplete daily briefing work. count is the number of runs.",
+  "context": "Journal window. Link to incomplete daily briefing work. count is the number of runs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "064c9c40071bcd04dd5908c5ab98cd013ed7c25ea05d27a5003ad7bf5be0eb5e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

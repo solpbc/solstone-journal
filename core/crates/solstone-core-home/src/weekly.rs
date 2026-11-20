@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
@@ -571,13 +571,11 @@ fn format_week_intro_in(
         Some(text(locale, "journal.window.home.week.intro.empty"))
     } else if shown_memories == 0 {
         None
-    } else if shown_memories == 1 {
-        Some(text(locale, "journal.window.home.week.intro.one"))
     } else {
-        Some(strings(
+        Some(crate::formatting::render_count(
             locale,
-            "journal.window.home.week.intro.many",
-            [("count", &shown_memories.to_string())],
+            "journal.window.home.week.intro.memories",
+            shown_memories as i64,
         ))
     }
 }
@@ -1253,35 +1251,29 @@ pub fn page_model_in(
 
         present_states.insert(cell_state);
 
-        let phrase = match cell_state {
+        let accessible_status = match cell_state {
             "memory" => {
                 memory_day_names.push(weekday.clone());
-                "journal.window.home.week.cell.memory"
+                "memory"
             }
-            "not_on_page" => "journal.window.home.week.cell.left.out",
-            "nothing_shared" => "journal.window.home.week.cell.nothing.shared",
+            "not_on_page" => "left.out",
+            "nothing_shared" => "nothing.shared",
             "unreadable" => {
                 unreadable_day_names.push(weekday.clone());
-                "journal.window.home.week.cell.unreadable"
+                "unreadable"
             }
             "not_ready" => {
                 not_ready_day_names.push(weekday.clone());
-                "journal.window.home.week.cell.not.ready"
+                "not.ready"
             }
-            _ => "",
-        };
-
-        let phrase = if phrase.is_empty() {
-            String::new()
-        } else {
-            text(locale, phrase)
+            _ => "unknown",
         };
         cells.push(json!({
             "day": d.day,
             "state": cell_state,
             "day_number": day_num.to_string(),
             "weekday": short_weekday(date, locale),
-            "accessible_name": strings(locale, "journal.window.home.week.cell.accessible.name", [("weekday", &weekday), ("day", &day_num.to_string()), ("summary", &phrase)]),
+            "accessible_name": strings(locale, &format!("journal.window.home.week.cell.accessible.{accessible_status}"), [("weekday", &weekday), ("day", &day_num.to_string())]),
         }));
     }
 
@@ -1323,18 +1315,17 @@ pub fn page_model_in(
         ));
     }
     if !not_ready_day_names.is_empty() {
-        let id = if not_ready_day_names.len() == 1 {
-            "journal.window.home.week.days.not.ready.one"
-        } else {
-            "journal.window.home.week.days.not.ready.many"
-        };
-        from_parts.push(strings(
+        let count = not_ready_day_names.len() as i64;
+        from_parts.push(render(
             locale,
-            id,
-            [(
-                "days",
-                &format_days_conjunction(&not_ready_day_names, locale),
-            )],
+            "journal.window.home.week.days.unready",
+            &[
+                (
+                    "days",
+                    CatalogValue::String(&format_days_conjunction(&not_ready_day_names, locale)),
+                ),
+                ("quantity", crate::formatting::cardinal_quantity(count)),
+            ],
         ));
     }
 
@@ -1350,9 +1341,10 @@ pub fn page_model_in(
         && let Some(p_date) = week_day(p_stem)
     {
         (
-            Value::String(format!(
-                "← {}",
-                format_week_title(p_date, current_year, locale)
+            Value::String(strings(
+                locale,
+                "journal.window.home.week.navigation.previous",
+                [("week", &format_week_title(p_date, current_year, locale))],
             )),
             Value::String(format!("/app/home/week/{p_stem}")),
         )
@@ -1364,9 +1356,10 @@ pub fn page_model_in(
         && let Some(n_date) = week_day(n_stem)
     {
         (
-            Value::String(format!(
-                "{} →",
-                format_week_title(n_date, current_year, locale)
+            Value::String(strings(
+                locale,
+                "journal.window.home.week.navigation.next",
+                [("week", &format_week_title(n_date, current_year, locale))],
             )),
             Value::String(format!("/app/home/week/{n_stem}")),
         )
@@ -1563,16 +1556,9 @@ fn next_week_card(context: &HomeContext) -> Value {
     } else {
         let weekday =
             solstone_core_system::schedule::configured_weekly_day_name(context.journal_root());
-        strings(
+        text(
             locale,
-            "journal.window.home.week.card.next.due",
-            [(
-                "weekday",
-                &text(
-                    locale,
-                    &format!("journal.window.home.week.day.long.{weekday}"),
-                ),
-            )],
+            &format!("journal.window.home.week.card.next.due.{weekday}"),
         )
     };
 
@@ -1604,16 +1590,9 @@ fn first_card(context: &HomeContext) -> Value {
     } else {
         let weekday =
             solstone_core_system::schedule::configured_weekly_day_name(context.journal_root());
-        strings(
+        text(
             locale,
-            "journal.window.home.week.card.first.due",
-            [(
-                "weekday",
-                &text(
-                    locale,
-                    &format!("journal.window.home.week.day.long.{weekday}"),
-                ),
-            )],
+            &format!("journal.window.home.week.card.first.due.{weekday}"),
         )
     };
 

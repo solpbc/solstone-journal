@@ -1,0 +1,30 @@
+{
+  "description": "Link to incomplete document work. count is the number of runs.",
+  "context": "Journal window. Link to incomplete document work. count is the number of runs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f4bb4795c4ef5028f75a9f85508e0b45ede2eefeb6faf9ba06b71b6f83746553",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

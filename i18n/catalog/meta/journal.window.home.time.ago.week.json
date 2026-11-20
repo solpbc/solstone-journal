@@ -1,0 +1,30 @@
+{
+  "description": "Relative age of a last observation. count is its number of elapsed weeks.",
+  "context": "Journal window. Relative age of a last observation. count is its number of elapsed weeks.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "03cb92dd930031be720cc4293d5414e899bfa87d0cb1a10edf5d2e9dba23a776",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

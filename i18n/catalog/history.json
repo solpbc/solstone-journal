@@ -44869,12 +44869,76 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.activity.source.browser",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e62726f77736572",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.browser.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e62726f777365722e6e616d6564",
+      "namespace": "journal.window.home.activity.source.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.computer",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e636f6d7075746572",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.computer.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e636f6d70757465722e6e616d6564",
+      "namespace": "journal.window.home.activity.source.computer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.home.activity.source.device.browser",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e62726f77736572",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.browser",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44885,8 +44949,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e636f6d7075746572",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.computer",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44897,8 +44961,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e69706164",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.ipad",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44909,8 +44973,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e6970686f6e65",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.iphone",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44921,8 +44985,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e6d6163",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.mac",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44933,8 +44997,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e70686f6e65",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.phone",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -44945,10 +45009,138 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6465766963652e7461626c6574",
       "namespace": "journal.window.home.activity.source.device",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.activity.source.tablet",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.ipad",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e69706164",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.ipad.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e697061642e6e616d6564",
+      "namespace": "journal.window.home.activity.source.ipad",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.iphone",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6970686f6e65",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.iphone.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6970686f6e652e6e616d6564",
+      "namespace": "journal.window.home.activity.source.iphone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.mac",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6d6163",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.mac.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e6d61632e6e616d6564",
+      "namespace": "journal.window.home.activity.source.mac",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.phone",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e70686f6e65",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.phone.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e70686f6e652e6e616d6564",
+      "namespace": "journal.window.home.activity.source.phone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -45017,6 +45209,102 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.activity.source.tablet",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e7461626c6574",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.tablet.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e7461626c65742e6e616d6564",
+      "namespace": "journal.window.home.activity.source.tablet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.terminal",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e7465726d696e616c",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.terminal.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e7465726d696e616c2e6e616d6564",
+      "namespace": "journal.window.home.activity.source.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.watch",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e7761746368",
+      "namespace": "journal.window.home.activity.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.activity.source.watch.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e736f757263652e77617463682e6e616d6564",
+      "namespace": "journal.window.home.activity.source.watch",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.home.activity.title.fallback",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e61637469766974792e7469746c652e66616c6c6261636b",
       "namespace": "journal.window.home.activity.title",
@@ -45033,8 +45321,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e617474656e74696f6e2e6167656e742e6572726f722e6d616e79",
       "namespace": "journal.window.home.attention.agent.error",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.attention.agent.errors.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -45059,8 +45347,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e617474656e74696f6e2e6167656e742e6572726f722e6f6e65",
       "namespace": "journal.window.home.attention.agent.error",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.attention.agent.errors.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -45079,6 +45367,38 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.home.attention.agent.errors.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e617474656e74696f6e2e6167656e742e6572726f72732e636f756e74",
+      "namespace": "journal.window.home.attention.agent.errors",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.home.attention.heading",
@@ -45475,8 +45795,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6465766963652e6c6173742e61646465642e61676f",
       "namespace": "journal.window.home.device.last.added",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.time.ago.second",
       "format_intent": "text",
       "arguments": [
         {
@@ -45769,12 +46089,44 @@
       "selector": null
     },
     {
-      "id": "journal.window.home.health.attention.many",
-      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e617474656e74696f6e2e6d616e79",
+      "id": "journal.window.home.health.attention.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e617474656e74696f6e2e636f756e74",
       "namespace": "journal.window.home.health.attention",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.attention.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e617474656e74696f6e2e6d616e79",
+      "namespace": "journal.window.home.health.attention",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.health.attention.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -45799,8 +46151,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e617474656e74696f6e2e6f6e65",
       "namespace": "journal.window.home.health.attention",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.health.attention.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -45831,6 +46183,33 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.health.device.age",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e6465766963652e616765",
+      "namespace": "journal.window.home.health.device",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "age",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.home.health.device.setup",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e6465766963652e7365747570",
       "namespace": "journal.window.home.health.device",
@@ -45839,6 +46218,33 @@
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.health.device.sources",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e6465766963652e736f7572636573",
+      "namespace": "journal.window.home.health.device",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sources",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -45891,12 +46297,305 @@
       "selector": null
     },
     {
-      "id": "journal.window.home.health.quiet.many",
-      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e6d616e79",
+      "id": "journal.window.home.health.quiet.devices",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e64657669636573",
       "namespace": "journal.window.home.health.quiet",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "devices",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e646179",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.hour",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e686f7572",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.just.now",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6a7573742e6e6f77",
+      "namespace": "journal.window.home.health.quiet.elapsed.just",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.minute",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6d696e757465",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.month",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6d6f6e7468",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.second",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e7365636f6e64",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.elapsed.week",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e7765656b",
+      "namespace": "journal.window.home.health.quiet.elapsed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.quiet.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e6d616e79",
+      "namespace": "journal.window.home.health.quiet",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.health.quiet.devices",
       "format_intent": "text",
       "arguments": [
         {
@@ -45933,8 +46632,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e6f6e652e6b6e6f776e",
       "namespace": "journal.window.home.health.quiet.one",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.health.quiet.elapsed.second",
       "format_intent": "text",
       "arguments": [
         {
@@ -46041,12 +46740,51 @@
       "selector": null
     },
     {
-      "id": "journal.window.home.health.upload.many",
-      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e75706c6f61642e6d616e79",
+      "id": "journal.window.home.health.upload.devices",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e75706c6f61642e64657669636573",
       "namespace": "journal.window.home.health.upload",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "devices",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.health.upload.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e75706c6f61642e6d616e79",
+      "namespace": "journal.window.home.health.upload",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.health.upload.devices",
       "format_intent": "text",
       "arguments": [
         {
@@ -46088,8 +46826,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e75706c6f61642e6f6e65",
       "namespace": "journal.window.home.health.upload",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.health.upload.devices",
       "format_intent": "text",
       "arguments": [
         {
@@ -46445,8 +47183,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e6465766963652e6d616e792e6e616d6564",
       "namespace": "journal.window.home.needs.device.many",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.needs.devices.named",
       "format_intent": "text",
       "arguments": [
         {
@@ -46483,8 +47221,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e6465766963652e6d616e792e756e6e616d6564",
       "namespace": "journal.window.home.needs.device.many",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.needs.devices.unnamed",
       "format_intent": "text",
       "arguments": [
         {
@@ -46535,8 +47273,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e6465766963652e756e6e616d65642e6d616e79",
       "namespace": "journal.window.home.needs.device.unnamed",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.needs.devices.unnamed.count",
       "format_intent": "text",
       "arguments": [
         {
@@ -46555,6 +47293,109 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.home.needs.devices.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e6e616d6564",
+      "namespace": "journal.window.home.needs.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "names",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.needs.devices.unnamed",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e756e6e616d6564",
+      "namespace": "journal.window.home.needs.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.needs.devices.unnamed.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e756e6e616d65642e636f756e74",
+      "namespace": "journal.window.home.needs.devices.unnamed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.home.needs.sources.failing",
@@ -46731,12 +47572,44 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.night.gap.additional",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6164646974696f6e616c",
+      "namespace": "journal.window.home.night.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.home.night.gap.many.failed",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6d616e792e6661696c6564",
       "namespace": "journal.window.home.night.gap.many",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.failed",
       "format_intent": "text",
       "arguments": [
         {
@@ -46773,8 +47646,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6d616e792e6c6f7374",
       "namespace": "journal.window.home.night.gap.many",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.lost",
       "format_intent": "text",
       "arguments": [
         {
@@ -46811,8 +47684,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6d6f7265",
       "namespace": "journal.window.home.night.gap",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.additional",
       "format_intent": "text",
       "arguments": [
         {
@@ -46842,8 +47715,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6f6e652e6661696c6564",
       "namespace": "journal.window.home.night.gap.one",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.failed",
       "format_intent": "text",
       "arguments": [
         {
@@ -46873,8 +47746,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e6f6e652e6c6f7374",
       "namespace": "journal.window.home.night.gap.one",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.lost",
       "format_intent": "text",
       "arguments": [
         {
@@ -46898,6 +47771,212 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6661696c6564",
+      "namespace": "journal.window.home.night.gap.runs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.failed.briefing",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6661696c65642e6272696566696e67",
+      "namespace": "journal.window.home.night.gap.runs.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.failed.documents",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6661696c65642e646f63756d656e7473",
+      "namespace": "journal.window.home.night.gap.runs.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.lost",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6c6f7374",
+      "namespace": "journal.window.home.night.gap.runs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.lost.briefing",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6c6f73742e6272696566696e67",
+      "namespace": "journal.window.home.night.gap.runs.lost",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.night.gap.runs.lost.documents",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e6761702e72756e732e6c6f73742e646f63756d656e7473",
+      "namespace": "journal.window.home.night.gap.runs.lost",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.home.night.notes.not.written",
@@ -46952,8 +48031,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e74616c656e742e6461696c792e6272696566696e67",
       "namespace": "journal.window.home.night.talent.daily",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.failed.briefing",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -46964,8 +48043,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e696768742e74616c656e742e646f63756d656e74",
       "namespace": "journal.window.home.night.talent",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.night.gap.runs.failed.documents",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -48969,6 +50048,198 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.time.ago.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e646179",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.time.ago.hour",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e686f7572",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.time.ago.minute",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e6d696e757465",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.time.ago.month",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e6d6f6e7468",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.time.ago.second",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e7365636f6e64",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.time.ago.week",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e74696d652e61676f2e7765656b",
+      "namespace": "journal.window.home.time.ago",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.home.today.activity.many",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e746f6461792e61637469766974792e6d616e79",
       "namespace": "journal.window.home.today.activity",
@@ -49863,8 +51134,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e647565",
       "namespace": "journal.window.home.week.card.first",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.week.card.first.due.sunday",
       "format_intent": "text",
       "arguments": [
         {
@@ -49882,6 +51153,90 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.friday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e667269646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.monday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e6d6f6e646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.saturday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e7361747572646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.sunday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e73756e646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.thursday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e7468757273646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.tuesday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e74756573646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.first.due.wednesday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e66697273742e6475652e7765646e6573646179",
+      "namespace": "journal.window.home.week.card.first.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -49901,8 +51256,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e647565",
       "namespace": "journal.window.home.week.card.next",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.week.card.next.due.sunday",
       "format_intent": "text",
       "arguments": [
         {
@@ -49923,6 +51278,90 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.week.card.next.due.friday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e667269646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.monday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e6d6f6e646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.saturday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e7361747572646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.sunday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e73756e646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.thursday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e7468757273646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.tuesday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e74756573646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.card.next.due.wednesday",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e6e6578742e6475652e7765646e6573646179",
+      "namespace": "journal.window.home.week.card.next.due",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.home.week.card.unchecked",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e636172642e756e636865636b6564",
       "namespace": "journal.window.home.week.card",
@@ -49935,12 +51374,66 @@
       "selector": null
     },
     {
-      "id": "journal.window.home.week.cell.accessible.name",
-      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6e616d65",
+      "id": "journal.window.home.week.cell.accessible.left.out",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6c6566742e6f7574",
+      "namespace": "journal.window.home.week.cell.accessible.left",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.memory",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6d656d6f7279",
       "namespace": "journal.window.home.week.cell.accessible",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6e616d65",
+      "namespace": "journal.window.home.week.cell.accessible",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.week.cell.accessible.memory",
       "format_intent": "text",
       "arguments": [
         {
@@ -49977,6 +51470,120 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.not.ready",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6e6f742e7265616479",
+      "namespace": "journal.window.home.week.cell.accessible.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.nothing.shared",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e6e6f7468696e672e736861726564",
+      "namespace": "journal.window.home.week.cell.accessible.nothing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e756e6b6e6f776e",
+      "namespace": "journal.window.home.week.cell.accessible",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "legacy_space",
+          "kind": "whitespace",
+          "value": " "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.cell.accessible.unreadable",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e63656c6c2e61636365737369626c652e756e7265616461626c65",
+      "namespace": "journal.window.home.week.cell.accessible",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -50309,8 +51916,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e646179732e6e6f742e72656164792e6d616e79",
       "namespace": "journal.window.home.week.days.not.ready",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.week.days.unready",
       "format_intent": "text",
       "arguments": [
         {
@@ -50335,8 +51942,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e646179732e6e6f742e72656164792e6f6e65",
       "namespace": "journal.window.home.week.days.not.ready",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.week.days.unready",
       "format_intent": "text",
       "arguments": [
         {
@@ -50388,6 +51995,38 @@
       "selector": null
     },
     {
+      "id": "journal.window.home.week.days.unready",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e646179732e756e7265616479",
+      "namespace": "journal.window.home.week.days",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.home.week.end",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e656e64",
       "namespace": "journal.window.home.week",
@@ -50416,8 +52055,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e696e74726f2e6d616e79",
       "namespace": "journal.window.home.week.intro",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.week.intro.memories",
       "format_intent": "text",
       "arguments": [
         {
@@ -50443,12 +52082,44 @@
       "selector": null
     },
     {
-      "id": "journal.window.home.week.intro.one",
-      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e696e74726f2e6f6e65",
+      "id": "journal.window.home.week.intro.memories",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e696e74726f2e6d656d6f72696573",
       "namespace": "journal.window.home.week.intro",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.home.week.intro.one",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e696e74726f2e6f6e65",
+      "namespace": "journal.window.home.week.intro",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.home.week.intro.memories",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -50669,6 +52340,46 @@
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.navigation.next",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e6e617669676174696f6e2e6e657874",
+      "namespace": "journal.window.home.week.navigation",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "week",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.navigation.previous",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e6e617669676174696f6e2e70726576696f7573",
+      "namespace": "journal.window.home.week.navigation",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "week",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -103872,8 +105583,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e73797374656d2e6865616c74682e6261636b6c6f672e766572646963742e6167652e7374616c652e74656d706c617465",
       "namespace": "journal.window.system.health.backlog.verdict.age.stale",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.system.health.backlog.verdict.stale.hour",
       "format_intent": "text",
       "arguments": [
         {
@@ -113489,6 +115200,38 @@
       "selector": null
     },
     {
+      "id": "journal.window.time.duration.day.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e6461792e636f756e74",
+      "namespace": "journal.window.time.duration.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.time.duration.day.one",
       "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e6461792e6f6e65",
       "namespace": "journal.window.time.duration.day",
@@ -113539,6 +115282,38 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.time.duration.hour.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e686f75722e636f756e74",
+      "namespace": "journal.window.time.duration.hour",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.time.duration.hour.one",
@@ -113593,6 +115368,38 @@
       "selector": null
     },
     {
+      "id": "journal.window.time.duration.minute.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e6d696e7574652e636f756e74",
+      "namespace": "journal.window.time.duration.minute",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.time.duration.minute.one",
       "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e6d696e7574652e6f6e65",
       "namespace": "journal.window.time.duration.minute",
@@ -113643,6 +115450,38 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.time.duration.month.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e6d6f6e74682e636f756e74",
+      "namespace": "journal.window.time.duration.month",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.time.duration.month.one",
@@ -113697,6 +115536,38 @@
       "selector": null
     },
     {
+      "id": "journal.window.time.duration.second.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e7365636f6e642e636f756e74",
+      "namespace": "journal.window.time.duration.second",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.time.duration.second.one",
       "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e7365636f6e642e6f6e65",
       "namespace": "journal.window.time.duration.second",
@@ -113747,6 +115618,38 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.window.time.duration.week.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e74696d652e6475726174696f6e2e7765656b2e636f756e74",
+      "namespace": "journal.window.time.duration.week",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.time.duration.week.one",

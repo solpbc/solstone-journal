@@ -4,7 +4,7 @@
 //! Pure presentation helpers for the home surface.
 
 use serde_json::{Value, json};
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, text};
 
 pub fn format_date(day: &str) -> String {
     let Some(date) = solstone_core_time::parse_day(day) else {
@@ -33,49 +33,70 @@ pub fn relative_time(seconds: f64) -> String {
 }
 
 pub fn relative_time_in(seconds: f64, locale: &str) -> String {
+    let (unit, count) = relative_time_parts(seconds);
+    render_count(
+        locale,
+        &format!("journal.window.time.duration.{unit}.count"),
+        count,
+    )
+}
+
+pub(crate) fn relative_time_parts(seconds: f64) -> (&'static str, i64) {
     let seconds = if seconds.is_finite() && seconds >= 0.0 {
         seconds as i64
     } else {
         0
     };
     if seconds < 60 {
-        return time_count(locale, "second", seconds);
+        return ("second", seconds);
     }
     let minutes = seconds / 60;
     if minutes < 60 {
-        return time_count(locale, "minute", minutes);
+        return ("minute", minutes);
     }
     let hours = minutes / 60;
     if hours < 24 {
-        return time_count(locale, "hour", hours);
+        return ("hour", hours);
     }
     let days = hours / 24;
     if days < 7 {
-        return time_count(locale, "day", days);
+        return ("day", days);
     }
     if days < 28 {
-        return time_count(locale, "week", days / 7);
+        return ("week", days / 7);
     }
     if days < 60 {
-        return time_count(locale, "month", 1);
+        return ("month", 1);
     }
-    time_count(locale, "month", days / 30)
+    ("month", days / 30)
 }
 
-pub(crate) fn time_count(locale: &str, unit: &str, count: i64) -> String {
-    let form = if count == 1 { "one" } else { "other" };
-    strings(
+pub(crate) fn cardinal_quantity(count: i64) -> CatalogValue<'static> {
+    let quantity = if i32::try_from(count).is_ok() {
+        count
+    } else {
+        1_000_000 + (count.unsigned_abs() % 1_000_000) as i64
+    };
+    CatalogValue::Cardinal(quantity)
+}
+
+pub(crate) fn render_count(locale: &str, id: &str, count: i64) -> String {
+    render(
         locale,
-        &format!("journal.window.time.duration.{unit}.{form}"),
-        [("value", &count.to_string())],
+        id,
+        &[
+            ("count", CatalogValue::String(&count.to_string())),
+            ("quantity", cardinal_quantity(count)),
+        ],
     )
 }
 
 pub(crate) fn relative_time_ago(seconds: f64, locale: &str) -> String {
-    strings(
+    let (unit, count) = relative_time_parts(seconds);
+    render_count(
         locale,
-        "journal.window.home.device.last.added.ago",
-        [("duration", &relative_time_in(seconds, locale))],
+        &format!("journal.window.home.time.ago.{unit}"),
+        count,
     )
 }
 
@@ -312,31 +333,30 @@ pub fn format_gap_links_in(
         // Talent names are internal identifiers and can be namespaced with a
         // colon (e.g. "entities:detection"); sanitize both separators so the
         // raw identifier never leaks into owner-facing copy.
-        let label = singularize_talent_label(&name.replace(['_', ':'], " "), locale);
+        let label = name.replace(['_', ':'], " ");
         let lost = rows
             .iter()
             .all(|row| row.get("state").and_then(Value::as_str) == Some("request_lost"));
-        let text = match (count == 1, lost) {
-            (true, true) => strings(
+        let id = match (label.as_str(), lost) {
+            ("documents", true) => "journal.window.home.night.gap.runs.lost.documents",
+            ("documents", false) => "journal.window.home.night.gap.runs.failed.documents",
+            ("morning briefing", true) => "journal.window.home.night.gap.runs.lost.briefing",
+            ("morning briefing", false) => "journal.window.home.night.gap.runs.failed.briefing",
+            (_, true) => "journal.window.home.night.gap.runs.lost",
+            (_, false) => "journal.window.home.night.gap.runs.failed",
+        };
+        let text = if matches!(label.as_str(), "documents" | "morning briefing") {
+            render_count(locale, id, count as i64)
+        } else {
+            render(
                 locale,
-                "journal.window.home.night.gap.one.lost",
-                [("label", &label)],
-            ),
-            (true, false) => strings(
-                locale,
-                "journal.window.home.night.gap.one.failed",
-                [("label", &label)],
-            ),
-            (false, true) => strings(
-                locale,
-                "journal.window.home.night.gap.many.lost",
-                [("count", &count.to_string()), ("label", &label)],
-            ),
-            (false, false) => strings(
-                locale,
-                "journal.window.home.night.gap.many.failed",
-                [("count", &count.to_string()), ("label", &label)],
-            ),
+                id,
+                &[
+                    ("label", CatalogValue::String(&label)),
+                    ("count", CatalogValue::String(&count.to_string())),
+                    ("quantity", cardinal_quantity(count as i64)),
+                ],
+            )
         };
         let use_id = rows[0]
             .get("use_id")
@@ -361,7 +381,7 @@ pub fn format_gap_links_in(
             .unwrap_or(0)
             - failures.len() as i64;
         if more > 0 {
-            links.push(json!({"text":strings(locale, "journal.window.home.night.gap.more", [("count", &more.to_string())]),"href":format!("/app/thinking/#runs/{yesterday}")}));
+            links.push(json!({"text":render_count(locale, "journal.window.home.night.gap.additional", more),"href":format!("/app/thinking/#runs/{yesterday}")}));
         }
     }
     if !failures.is_empty() && !has_daily && !has_activity && !has_named_failures {
@@ -371,21 +391,6 @@ pub fn format_gap_links_in(
         links.push(json!({"text":text(locale, "journal.window.home.night.briefing.not.written"),"href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
     }
     links
-}
-
-/// A talent's internal identifier is occasionally already plural (e.g. the
-/// "documents" talent); the sentence template always appends "run"/"runs" on
-/// top, so an already-plural label produces "documents runs". Known cases are
-/// singularized for display only — the raw identifier (used for hrefs) is
-/// untouched.
-fn singularize_talent_label(label: &str, locale: &str) -> String {
-    match label {
-        "documents" => text(locale, "journal.window.home.night.talent.document"),
-        // The briefing's identifier keeps its old name; owners know it as the
-        // daily briefing.
-        "morning briefing" => text(locale, "journal.window.home.night.talent.daily.briefing"),
-        other => other.to_owned(),
-    }
 }
 
 fn round_half_even(value: f64) -> f64 {

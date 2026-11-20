@@ -1,0 +1,25 @@
+{
+  "description": "A device in the list of rejected uploads. sources lists the affected input sources.",
+  "context": "Journal window. A device in the list of rejected uploads. sources lists the affected input sources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "73d2afa0f654a5ccda0247400a6b9c16ea65993e83808061fc431a64fbddc8f8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

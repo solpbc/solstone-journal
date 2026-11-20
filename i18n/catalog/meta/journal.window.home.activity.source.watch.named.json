@@ -1,0 +1,21 @@
+{
+  "description": "Activity source label when several devices of this type were present. device is the owner-visible name.",
+  "context": "Journal window. Activity source label when several devices of this type were present. device is the owner-visible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a5ced638540d8924ab27a521aa1778e080e20de20858981e08208711a26eb5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

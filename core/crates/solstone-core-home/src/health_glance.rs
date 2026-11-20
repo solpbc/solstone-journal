@@ -3,15 +3,15 @@
 
 //! Pure health-glance projection.
 
+use jiff::Timestamp;
 use jiff::tz::Offset;
-use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 
-use crate::formatting::{relative_time_in, time_count};
+use crate::formatting::{cardinal_quantity, relative_time_in, relative_time_parts, render_count};
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line_in;
 use solstone_core_system_health::NotYet;
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
 
 const UNAVAILABLE_HEADLINE_ID: &str = "journal.window.home.health.unavailable.headline";
 const EMPTY_REGISTRY_HEADLINE_ID: &str = "journal.window.home.health.empty.registry.headline";
@@ -129,15 +129,11 @@ fn derive_glance(
             "amber"
         };
         let count = issues.len();
-        let headline = if count == 1 {
-            text(locale, "journal.window.home.health.attention.one")
-        } else {
-            strings(
-                locale,
-                "journal.window.home.health.attention.many",
-                [("count", &count.to_string())],
-            )
-        };
+        let headline = render_count(
+            locale,
+            "journal.window.home.health.attention.count",
+            count as i64,
+        );
         return json!({"verdict":"attention","severity":severity,"headline":headline,"last_observation":null,"cta":null,"issues":issues});
     }
     let disposition = capture_disposition(capture);
@@ -155,7 +151,7 @@ fn derive_glance(
     match disposition {
         CaptureDisposition::Quiet => {
             let summary = quiet_capture_summary(capture, now, locale);
-            json!({"verdict":"calm","severity":"neutral","headline":summary,"last_observation":last_observe,"cta":{"text":"view devices →","href":"/app/health/#registeredClientsCard"},"issues":[]})
+            json!({"verdict":"calm","severity":"neutral","headline":summary,"last_observation":last_observe,"cta":{"text":text(locale, "journal.window.home.health.devices.view"),"href":"/app/health/#registeredClientsCard"},"issues":[]})
         }
         CaptureDisposition::Active => {
             json!({"verdict":"ok","severity":"green","headline":text(locale, "journal.window.home.health.ready"),"last_observation":last_observe,"cta":null,"issues":[]})
@@ -317,7 +313,7 @@ fn backlog_issues(source: &BacklogSource, now: Timestamp, locale: &str) -> Vec<V
             )
             .unwrap();
             issues.push(json!({
-                "text": strings(locale, "journal.window.system.health.backlog.verdict.age.stale.template", [("age",&age(now - generated, locale))]),
+                "text": render_count(locale, "journal.window.system.health.backlog.verdict.stale.hour", (now - generated).as_secs().max(0) / 3600),
                 "severity": "amber",
                 "href": "/app/health"
             }));
@@ -403,26 +399,24 @@ fn capture_issue(capture: &Value, locale: &str) -> Option<Value> {
             if sources.is_empty() {
                 name.to_owned()
             } else {
-                format!("{name} ({})", sources.join(", "))
+                strings(
+                    locale,
+                    "journal.window.home.health.device.sources",
+                    [("device", &name), ("sources", &sources.join(", "))],
+                )
             }
         })
         .collect::<Vec<_>>();
-    let text = if affected.len() == 1 {
-        strings(
-            locale,
-            "journal.window.home.health.upload.one",
-            [("device", &labels[0])],
-        )
-    } else {
-        strings(
-            locale,
-            "journal.window.home.health.upload.many",
-            [
-                ("count", &affected.len().to_string()),
-                ("devices", &labels.join(", ")),
-            ],
-        )
-    };
+    let count = affected.len() as i64;
+    let text = render(
+        locale,
+        "journal.window.home.health.upload.devices",
+        &[
+            ("count", CatalogValue::String(&count.to_string())),
+            ("devices", CatalogValue::String(&labels.join(", "))),
+            ("quantity", cardinal_quantity(count)),
+        ],
+    );
     let severity = if affected.iter().any(|client| client["failing"] == true) {
         "red"
     } else {
@@ -434,42 +428,63 @@ fn capture_issue(capture: &Value, locale: &str) -> Option<Value> {
 /// strings are the single source for this sentence; home echoes them, in
 /// health's order (the quietest device first). X-03.
 fn quiet_capture_summary(capture: &Value, now: Timestamp, locale: &str) -> String {
-    let idle = idle_clients(capture, now, locale);
+    let idle = idle_clients(capture, now);
     match idle.as_slice() {
         [] => text(locale, UNNAMED_IDLE_ISSUE_ID),
-        [(name, Some(age))] => strings(
+        [(name, Some(seconds))] if *seconds < 45 => strings(
             locale,
-            "journal.window.home.health.quiet.one.known",
-            [("device", name), ("age", age)],
+            "journal.window.home.health.quiet.elapsed.just.now",
+            [("device", name)],
         ),
+        [(name, Some(seconds))] => {
+            let (unit, count) = relative_time_parts(*seconds as f64);
+            render(
+                locale,
+                &format!("journal.window.home.health.quiet.elapsed.{unit}"),
+                &[
+                    ("device", CatalogValue::String(name)),
+                    ("count", CatalogValue::String(&count.to_string())),
+                    ("quantity", cardinal_quantity(count)),
+                ],
+            )
+        }
         [(name, None)] => strings(
             locale,
             "journal.window.home.health.quiet.one.unknown",
             [("device", name)],
         ),
-        rows => strings(
-            locale,
-            "journal.window.home.health.quiet.many",
-            [
-                ("count", &rows.len().to_string()),
-                (
-                    "devices",
-                    &rows
-                        .iter()
-                        .map(|(name, age)| match age {
-                            Some(age) => format!("{name} ({age})"),
-                            None => name.clone(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
-            ],
-        ),
+        rows => {
+            let count = rows.len() as i64;
+            let devices = rows
+                .iter()
+                .map(|(name, seconds)| match seconds {
+                    Some(seconds) => strings(
+                        locale,
+                        "journal.window.home.health.device.age",
+                        [
+                            ("device", name),
+                            ("age", &format_idle_age(*seconds, locale)),
+                        ],
+                    ),
+                    None => name.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            render(
+                locale,
+                "journal.window.home.health.quiet.devices",
+                &[
+                    ("count", CatalogValue::String(&count.to_string())),
+                    ("devices", CatalogValue::String(&devices)),
+                    ("quantity", cardinal_quantity(count)),
+                ],
+            )
+        }
     }
 }
 // The names the owner sees decide the number the sentence is written in, so the
 // devices are collected before the line is composed rather than after.
-fn idle_clients(capture: &Value, now: Timestamp, locale: &str) -> Vec<(String, Option<String>)> {
+fn idle_clients(capture: &Value, now: Timestamp) -> Vec<(String, Option<i64>)> {
     let mut rows = capture
         .get("clients")
         .and_then(Value::as_array)
@@ -499,14 +514,7 @@ fn idle_clients(capture: &Value, now: Timestamp, locale: &str) -> Vec<(String, O
             .cmp(&left.1.unwrap_or(-1))
             .then_with(|| left.0.cmp(&right.0))
     });
-    rows.into_iter()
-        .map(|(name, seconds)| {
-            (
-                name,
-                seconds.map(|seconds| format_idle_age(seconds, locale)),
-            )
-        })
-        .collect()
+    rows
 }
 fn idle_seconds(client: &Value, now: Timestamp) -> Option<i64> {
     let last = client
@@ -553,19 +561,9 @@ fn parse_time(value: &str) -> Option<Timestamp> {
                 .and_then(|time| Offset::UTC.to_timestamp(time).ok())
         })
 }
-fn age(delta: SignedDuration, locale: &str) -> String {
-    let seconds = delta.as_secs().max(0);
-    let hours = seconds / 3600;
-    if hours >= 1 {
-        time_count(locale, "hour", hours)
-    } else {
-        let minutes = (seconds / 60).max(1);
-        time_count(locale, "minute", minutes)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use jiff::SignedDuration;
     use serde_json::json;
 
     use super::*;

@@ -1,0 +1,34 @@
+{
+  "description": "Needs-you notice. count includes all failing devices. names, when present, lists their labels.",
+  "context": "Journal window. Needs-you notice. count includes all failing devices. names, when present, lists their labels.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "names",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9c08b606b2014aee277262853a3c03ac7351d9f95b80ef1155d00c78255a1997",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

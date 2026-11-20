@@ -1,0 +1,30 @@
+{
+  "description": "Week reflection coverage. days is the formatted list of dates and quantity is their count.",
+  "context": "Journal window. Week reflection coverage. days is the formatted list of dates and quantity is their count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ec4cac9dfe5f2296bd233e3f775a8f62ac67c7dd0bf0a5a0456ec17580469fa6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

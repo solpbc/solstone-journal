@@ -1,0 +1,25 @@
+{
+  "description": "A device in the list of quiet devices. age is its formatted relative age.",
+  "context": "Journal window. A device in the list of quiet devices. age is its formatted relative age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "df0b219f3fe6b0025e102943e6a1dc8386193c0dff8171ea17be258ee4677073",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

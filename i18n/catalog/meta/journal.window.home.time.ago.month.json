@@ -1,0 +1,30 @@
+{
+  "description": "Relative age of a last observation. count is its number of elapsed months.",
+  "context": "Journal window. Relative age of a last observation. count is its number of elapsed months.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ec1ddee85e2bd7d056b3a883b07d99ff45542c8444fa432869fbd4ebc81c63cd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

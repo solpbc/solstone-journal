@@ -1,0 +1,30 @@
+{
+  "description": "Standalone relative duration. count is the displayed number of days.",
+  "context": "Journal window. Standalone relative duration. count is the displayed number of days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e02d62ec3470ff9e5638dbdf36808e7e1bf00caf00865c2ea156315e9e99c8b4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

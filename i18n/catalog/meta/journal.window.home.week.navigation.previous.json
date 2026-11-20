@@ -1,0 +1,21 @@
+{
+  "description": "Previous week reflection link. week is the title of its destination.",
+  "context": "Journal window. Previous week reflection link. week is the title of its destination.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "week",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e20d98a81e0669bceab8733e61f747b92e6f1767c84ec0ee7cb6780ba6172b8b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

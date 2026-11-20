@@ -1,0 +1,30 @@
+{
+  "description": "Week reflection introduction. count is the number of days with a displayed memory.",
+  "context": "Journal window. Week reflection introduction. count is the number of days with a displayed memory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a4a6d31cfc451b6e047c89cfec3fa250b222a5f8e6a55746bfc3bf084a3b2671",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

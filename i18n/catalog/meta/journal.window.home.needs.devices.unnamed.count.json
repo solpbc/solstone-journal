@@ -1,0 +1,30 @@
+{
+  "description": "Standalone count of devices without names in the list of affected devices.",
+  "context": "Journal window. Standalone count of devices without names in the list of affected devices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b47ed11e54fe910b078c8efa3046d50efd2fa8868ef545934e17a572575bccc4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

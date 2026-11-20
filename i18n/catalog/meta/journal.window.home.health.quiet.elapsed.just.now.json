@@ -1,0 +1,21 @@
+{
+  "description": "Home status for a device that became quiet shortly after recording. device is the displayed name.",
+  "context": "Journal window. Home status for a device that became quiet shortly after recording. device is the displayed name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a342a806bb1c527f21c71262465519f66a9c5af7bf0ca1eef512a0e564e13b87",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -33,7 +33,7 @@ use solstone_core_sol_link::client_status::{
 use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, resolve_owner_tier};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 use solstone_core_time::Precision;
-use solstone_core_window_catalog::{strings, text};
+use solstone_core_window_catalog::text;
 
 use crate::HomeContext;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
@@ -723,17 +723,14 @@ pub(crate) enum Attention {
 impl Attention {
     pub(crate) fn project(&self, locale: &str) -> Value {
         let (label, context) = match self {
-            Self::AgentErrors { count, context } => {
-                let id = if *count == 1 {
-                    "journal.window.home.attention.agent.error.one"
-                } else {
-                    "journal.window.home.attention.agent.error.many"
-                };
-                (
-                    strings(locale, id, [("count", &count.to_string())]),
-                    context,
-                )
-            }
+            Self::AgentErrors { count, context } => (
+                crate::formatting::render_count(
+                    locale,
+                    "journal.window.home.attention.agent.errors.count",
+                    *count as i64,
+                ),
+                context,
+            ),
             Self::RecentImport { context } => (
                 text(locale, "journal.window.home.attention.import.complete"),
                 context,

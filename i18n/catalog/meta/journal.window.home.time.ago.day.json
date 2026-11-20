@@ -1,0 +1,30 @@
+{
+  "description": "Relative age of a last observation. count is its number of elapsed days.",
+  "context": "Journal window. Relative age of a last observation. count is its number of elapsed days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dfc00d2afbf0e8b6fe7120594d351f2eb0f997664996d836263aec9a034f3e25",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

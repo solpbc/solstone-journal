@@ -1,0 +1,30 @@
+{
+  "description": "Standalone relative duration. count is the displayed number of minutes.",
+  "context": "Journal window. Standalone relative duration. count is the displayed number of minutes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1f26ef709391e91da080f2dad64fdea2508debc7ebed28f89ea568d1ea6dd2cc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -112,11 +112,7 @@ pub(crate) fn concurrent_source_labels_in(
                 false
             };
             let device = if show_parenthetical { this_id } else { None };
-            Some(source_phrase_in(
-                locale,
-                localized_device_word(locale, device_word).as_str(),
-                device,
-            ))
+            Some(device_source_in(locale, device_word, device))
         })
         .collect()
 }
@@ -142,19 +138,29 @@ fn source_phrase_in(locale: &str, kind: &str, device: Option<&str>) -> String {
     }
 }
 
-fn localized_device_word(locale: &str, word: DeviceWord) -> String {
-    let id = match word {
-        DeviceWord::Watch => "journal.window.sources.source.or.date.unit.label.watch",
-        DeviceWord::Terminal => "journal.window.sources.source.or.date.unit.label.terminal",
-        DeviceWord::Phone => "journal.window.home.activity.source.device.phone",
-        DeviceWord::Tablet => "journal.window.home.activity.source.device.tablet",
-        DeviceWord::Computer => "journal.window.home.activity.source.device.computer",
-        DeviceWord::Mac => "journal.window.home.activity.source.device.mac",
-        DeviceWord::Iphone => "journal.window.home.activity.source.device.iphone",
-        DeviceWord::Ipad => "journal.window.home.activity.source.device.ipad",
-        DeviceWord::Browser => "journal.window.home.activity.source.device.browser",
+fn device_source_in(locale: &str, word: DeviceWord, device: Option<&str>) -> String {
+    let kind = match word {
+        DeviceWord::Watch => "watch",
+        DeviceWord::Terminal => "terminal",
+        DeviceWord::Phone => "phone",
+        DeviceWord::Tablet => "tablet",
+        DeviceWord::Computer => "computer",
+        DeviceWord::Mac => "mac",
+        DeviceWord::Iphone => "iphone",
+        DeviceWord::Ipad => "ipad",
+        DeviceWord::Browser => "browser",
     };
-    text(locale, id)
+    match device {
+        Some(device) => strings(
+            locale,
+            &format!("journal.window.home.activity.source.{kind}.named"),
+            [("device", device)],
+        ),
+        None => text(
+            locale,
+            &format!("journal.window.home.activity.source.{kind}"),
+        ),
+    }
 }
 
 #[cfg(test)]

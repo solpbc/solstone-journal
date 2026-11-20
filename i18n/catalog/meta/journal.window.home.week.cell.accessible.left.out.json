@@ -1,0 +1,25 @@
+{
+  "description": "Calendar cell accessible name. weekday and day identify the calendar date.",
+  "context": "Journal window. Calendar cell accessible name. weekday and day identify the calendar date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ca87c25952e94b8dc66a4d6cfff19d7edf4c795a261458594459f3abcfe8521",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Week reflection letter. Says that the next week reflection comes on monday.",
+  "context": "Journal window. Week reflection letter. Says that the next week reflection comes on monday.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aca5bf68c62619ee67f4ec2bd9a731a1876d98fb74b1b5f475065b4d1c46f67c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
