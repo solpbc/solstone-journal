@@ -1032,6 +1032,7 @@ async function runTests() {
       console: console
     };
     vm.createContext(searchSandbox);
+    loadWindowCatalog(searchSandbox);
     vm.runInContext(searchScript, searchSandbox);
 
     if (typeof searchWin.renderHit !== 'function') {

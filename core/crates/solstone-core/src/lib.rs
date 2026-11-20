@@ -96,6 +96,7 @@ mod mcp_endpoint_public_surface_tests {
                 categories: [
                     AdmittedCategory::Transcripts,
                     AdmittedCategory::Entities,
+                    AdmittedCategory::ProfilePics,
                     AdmittedCategory::Facets,
                     AdmittedCategory::ScreenText,
                     AdmittedCategory::Body,
