@@ -7,7 +7,9 @@ use crate::plural;
 use crate::target::model::{Target, TargetBundle, TargetMessage};
 use crate::target::oracle;
 use crate::vocab::{Channel, FormatIntent, NumericStyle, ScalarType};
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use serde_json::{Map, Value as JsonValue, json};
+use std::collections::{HashMap, hash_map::Entry};
 
 #[derive(Clone, Debug)]
 pub struct TestCase {
@@ -87,6 +89,7 @@ pub fn generate_cases(
 
     for &tgt in targets {
         for bundle in bundles {
+            let mut rust_readers = HashMap::new();
             let own_reader = match tgt {
                 Target::Rust => "rust-api",
                 Target::Esm | Target::Classic => "fluent-js",
@@ -124,7 +127,13 @@ pub fn generate_cases(
                                     a.numeric_style == Some(NumericStyle::LocaleFormatted)
                                 });
                         let expected = if tgt == Target::Rust {
-                            rust_resource_expected(bundle, msg, &loc.tag, &inputs)?
+                            let reader = match rust_readers.entry(loc.tag.as_str()) {
+                                Entry::Occupied(entry) => entry.into_mut(),
+                                Entry::Vacant(entry) => {
+                                    entry.insert(rust_resource_reader(bundle, &loc.tag)?)
+                                }
+                            };
+                            rust_resource_expected(reader, msg, loc.cardinal.as_deref(), &inputs)?
                         } else {
                             expected
                         };
@@ -398,18 +407,10 @@ fn resolved_identity(msg: &TargetMessage, inputs: &Map<String, JsonValue>) -> (S
     )
 }
 
-fn rust_resource_expected(
+fn rust_resource_reader(
     bundle: &TargetBundle,
-    msg: &TargetMessage,
     locale: &str,
-    inputs: &Map<String, JsonValue>,
-) -> Result<String, Vec<Fault>> {
-    use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
-    let entry = bundle
-        .locales
-        .iter()
-        .find(|l| l.tag == locale)
-        .expect("selected locale");
+) -> Result<FluentBundle<FluentResource>, Vec<Fault>> {
     let lang = "und"
         .parse()
         .map_err(|_| vec![Fault::catalog("plural-rule")])?;
@@ -423,6 +424,15 @@ fn rust_resource_expected(
     reader
         .add_resource(resource)
         .map_err(|_| vec![Fault::catalog("resource-format")])?;
+    Ok(reader)
+}
+
+fn rust_resource_expected(
+    reader: &FluentBundle<FluentResource>,
+    msg: &TargetMessage,
+    cardinal_family: Option<&str>,
+    inputs: &Map<String, JsonValue>,
+) -> Result<String, Vec<Fault>> {
     let mut args = FluentArgs::new();
     for (name, value) in inputs {
         if let Some(v) = value.as_str() {
@@ -441,7 +451,7 @@ fn rust_resource_expected(
             .and_then(|selector| inputs.get(&selector.name))
             .and_then(JsonValue::as_i64)
     {
-        let category = plural::category(entry.cardinal.as_deref(), count).map_err(|f| vec![f])?;
+        let category = plural::category(cardinal_family, count).map_err(|f| vec![f])?;
         args.set(plural::CATEGORY_ARGUMENT, category);
     }
     let (key, _) = resolved_identity(msg, inputs);
