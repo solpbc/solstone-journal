@@ -17307,3 +17307,144 @@ fn batched_reference_reads_match_single_pages_and_keep_individual_failures() {
             .contains("second conversation")
     );
 }
+
+#[test]
+fn imported_material_previews_describe_content_and_photo_fetch_keeps_its_literal_text() {
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+    let photo_text =
+        r"Frost on wood, a literal \ and &lt;tag&gt; ![marker](https://example.invalid)";
+    let stored_photo_text = solstone_core_format::markdown::literal_text(photo_text);
+    let photo = format!(
+        "# Yard rail\n\n**Type:** Image\n**Format:** JPEG\n**Dimensions:** 1200×896\n\n---\n\n**Caption:**\ncaptionneedle on the rail\n\n---\n\n> [image description — model-derived]\n> {stored_photo_text}\n"
+    );
+    let footer =
+        "> [image description — model-derived]\n> unavailable — No active provider configured\n";
+    let caption_only = format!(
+        "# Captured\n\n**Type:** Image\n\n---\n\n**Caption:**\nA handwritten caption\n\n---\n\n{footer}"
+    );
+    let unavailable = format!("# Untitled\n\n**Type:** Image\n\n---\n\n{footer}");
+    let document = concat!(
+        "# Workshop minutes\n\n**Type:** Document\n**Pages:** 3\n",
+        "**Date:** 2026-03-08 (file modification time)\n\n---\n\n",
+        "## Page 1\n\n> [page text unavailable — scan failed; no page image could be produced]\n\n",
+        "## Page 2\n\nFirst readable page records the vote.\n\n",
+        "## Page 3\n\nThe pageonlyneedle ends the workshop.\n",
+    );
+    for (path, entry) in [
+        (
+            "import.image/130000_300/image_transcript.md",
+            photo.as_str(),
+        ),
+        (
+            "import.image/140000_300/image_transcript.md",
+            caption_only.as_str(),
+        ),
+        (
+            "import.image/150000_300/image_transcript.md",
+            unavailable.as_str(),
+        ),
+        (
+            "import.document/160000_300/document_transcript.md",
+            document,
+        ),
+    ] {
+        let file = root.join("chronicle").join(day).join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, entry).unwrap();
+    }
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "facets".into(),
+                    "transcripts".into(),
+                    "photos".into(),
+                    "documents".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    let result = probe(&journal, "search", json!({"day":day,"kind":"photos"})).unwrap();
+    let rows = result["results"].as_array().unwrap();
+    let find = |title: &str| rows.iter().find(|row| row["title"] == title).unwrap();
+    assert_eq!(rows.len(), 3, "{result}");
+    let row = find("Yard rail");
+    for field in ["description", "snippet"] {
+        let preview = row[field].as_str().unwrap();
+        assert!(preview.contains("Frost on wood"), "{preview}");
+        assert!(
+            !preview.contains("Type:") && !preview.contains("![marker]"),
+            "{preview}"
+        );
+    }
+    assert_eq!(find("Captured")["description"], "A handwritten caption");
+    assert!(find("Untitled").get("description").is_none());
+    let matched_caption = probe(
+        &journal,
+        "search",
+        json!({"day":day,"kind":"photos","query":"captionneedle"}),
+    )
+    .unwrap();
+    assert!(
+        matched_caption["results"][0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Frost on wood")
+    );
+    let week = probe(
+        &journal,
+        "get_week",
+        json!({"week":day,"include":["photos"]}),
+    )
+    .unwrap();
+    let items = week["days"][0]["summary"]["photos"]["items"]
+        .as_array()
+        .unwrap();
+    for item in items {
+        assert_eq!(
+            item.get("description"),
+            find(item["title"].as_str().unwrap()).get("description")
+        );
+    }
+
+    let reference = &row["reference"];
+    let single = probe(&journal, "fetch", json!({"reference":reference})).unwrap();
+    let batch = probe(&journal, "fetch", json!({"references":[reference]})).unwrap();
+    let text = single["text"].as_str().unwrap();
+    assert!(text.contains(&stored_photo_text), "{text}");
+    assert!(text.contains(r"\*\*Type\:\*\* Image"), "{text}");
+    assert_eq!(batch["items"][0]["result"]["text"], text);
+
+    let docs = probe(
+        &journal,
+        "search",
+        json!({"day":day,"kind":"documents","query":"modification"}),
+    )
+    .unwrap();
+    let header = &docs["results"][0];
+    assert_eq!(header["title"], "Workshop minutes", "{docs}");
+    assert_eq!(
+        header["description"], "First readable page records the vote.",
+        "{docs}"
+    );
+    assert!(!header["snippet"].as_str().unwrap().contains("Type"));
+    let hit = probe(
+        &journal,
+        "search",
+        json!({"day":day,"kind":"documents","query":"pageonlyneedle"}),
+    )
+    .unwrap();
+    assert!(
+        hit["results"][0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("pageonlyneedle"),
+        "{hit}"
+    );
+}

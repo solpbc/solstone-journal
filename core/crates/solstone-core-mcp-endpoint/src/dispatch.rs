@@ -51,6 +51,7 @@ use crate::tools::{
 pub(crate) const MAX_SEARCH_EXAMINED_ROWS: usize = 1_000;
 const MAX_INDEXED_ENTRY_BYTES: u64 = 64 * 1024;
 const MAX_SNIPPET_CHARS: usize = 800;
+const MAX_IMPORT_PREVIEW_ENTRIES: usize = 8;
 /// What `get_entity` returns of an entity's notes in the requested facet.
 const MAX_ENTITY_NOTES: usize = 50;
 const MAX_ENTITY_NOTE_BYTES: u64 = 4 * 1024;
@@ -1007,8 +1008,10 @@ pub(crate) fn week_kind_summary(
                 item[field] = value.clone();
             }
         }
-        if kind == AdmittedCategory::Photos {
-            item["description"] = row["description"].clone();
+        if kind == AdmittedCategory::Photos
+            && let Some(description) = row.get("description")
+        {
+            item["description"] = description.clone();
         }
         items.push(item);
     }
@@ -1833,6 +1836,7 @@ fn search(
     // may not see never matches, counts, relaxes the query or anchors a cursor.
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
+    let mut import_previews = BTreeMap::new();
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
@@ -2117,6 +2121,45 @@ fn search(
                 (None, None)
             };
 
+            let imported = photo
+                || (category == AdmittedCategory::Documents
+                    && hit.metadata.path.ends_with("/document_transcript.md"));
+            let preview = if imported {
+                let content = import_preview_content(&served_text);
+                if !photo && !content.is_empty() {
+                    Some(content.chars().take(MAX_SNIPPET_CHARS).collect::<String>())
+                } else {
+                    import_previews
+                        .entry(hit.metadata.path.clone())
+                        .or_insert_with(|| {
+                            match read_indexed_path_entries(
+                                journal_root,
+                                &boundary,
+                                &hit.metadata.path,
+                                MAX_IMPORT_PREVIEW_ENTRIES,
+                                MAX_INDEXED_ENTRY_BYTES,
+                            ) {
+                                Ok(indexed)
+                                    if indexed
+                                        .entries
+                                        .iter()
+                                        .any(|entry| entry == &served_text) =>
+                                {
+                                    import_preview(&indexed.entries, photo)
+                                }
+                                Ok(_) => None,
+                                Err(_) => {
+                                    degraded = true;
+                                    None
+                                }
+                            }
+                        })
+                        .clone()
+                }
+            } else {
+                None
+            };
+
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
                 crate::source_freeze_barrier::FreezePoint::Before,
@@ -2190,6 +2233,8 @@ fn search(
                 "date": hit.metadata.day,
                 "snippet": if is_screen_text {
                     screen_text_snippet(&served_text)
+                } else if imported {
+                    snippet(preview.as_deref().unwrap_or_default())
                 } else {
                     snippet(&served_text)
                 },
@@ -2220,17 +2265,12 @@ fn search(
                 if request.activity.is_some() || request.content_kinds.is_some() {
                     value["title"] = json!(crate::tools::activities::activity_title(record));
                 }
-            } else if photo || category == AdmittedCategory::Notes {
+            } else if imported || category == AdmittedCategory::Notes {
                 if let Some(title) = material_title(&served_text) {
                     value["title"] = json!(title);
                 }
-                if photo {
-                    value["description"] = json!(
-                        served_text
-                            .chars()
-                            .take(MAX_SNIPPET_CHARS)
-                            .collect::<String>()
-                    );
+                if let Some(preview) = preview {
+                    value["description"] = json!(preview);
                 }
                 if value.get("link").is_none()
                     && solstone_core_journal_io::is_day_key(&hit.metadata.day)
@@ -2404,6 +2444,66 @@ fn material_title(text: &str) -> Option<String> {
     let line = text.lines().find(|line| !line.trim().is_empty())?.trim();
     let heading = line.trim_start_matches('#').strip_prefix(' ')?;
     Some(heading.chars().take(160).collect())
+}
+
+/// The index keeps an import header and its content in separate chunks.
+fn import_preview_content(chunk: &str) -> &str {
+    let mut content = chunk.trim();
+    while let Some((line, rest)) = content.split_once('\n') {
+        if !line.starts_with("# ") && !line.starts_with("## ") {
+            break;
+        }
+        content = rest.trim_start();
+    }
+    let first = content.lines().next().unwrap_or_default().trim();
+    if matches!(first, "Type: Image" | "Type: Document")
+        || first
+            .trim_start_matches(['[', ' '])
+            .starts_with("page text unavailable")
+        || first
+            .trim_start_matches(['[', ' '])
+            .starts_with("image description unavailable")
+    {
+        return "";
+    }
+    content
+}
+
+fn import_preview(entries: &[String], photo: bool) -> Option<String> {
+    let chunks = || entries.iter().map(|entry| import_preview_content(entry));
+    let text = if photo {
+        chunks()
+            .find_map(|chunk| {
+                let (heading, body) = chunk.split_once('\n')?;
+                if heading.trim_matches(['[', ']', ' ']) != "image description — model-derived" {
+                    return None;
+                }
+                let body = body.trim();
+                (!body.is_empty()
+                    && body != "unavailable"
+                    && !body.starts_with("unavailable —")
+                    && !body.starts_with("unavailable -"))
+                .then_some(body)
+            })
+            .or_else(|| {
+                chunks().find_map(|chunk| {
+                    let (heading, body) = chunk.split_once('\n')?;
+                    (heading.trim() == "Caption:" && !body.trim().is_empty()).then_some(body.trim())
+                })
+            })
+            .or_else(|| {
+                chunks().find(|chunk| {
+                    let first = chunk.lines().next().unwrap_or_default();
+                    !first.is_empty()
+                        && first.trim_matches(['[', ']', ' '])
+                            != "image description — model-derived"
+                        && first.trim() != "Caption:"
+                })
+            })?
+    } else {
+        chunks().find(|chunk| !chunk.is_empty())?
+    };
+    Some(text.chars().take(MAX_SNIPPET_CHARS).collect())
 }
 
 fn matches_find_filters(
@@ -2960,8 +3060,15 @@ fn fetch(
             // is made literal at release.
             let served_as_is: &'static [&'static str] =
                 if record.is_some() { &["text"] } else { &[] };
-            let mut value =
-                json!({"title": entry_title(&entry.day), "date": entry.day, "text": text});
+            let photo = crate::photo_picture::is_photo_description(&entry.path);
+            let decoded = photo
+                .then(|| crate::photo_picture::decode_model_text(&text))
+                .flatten();
+            let mut value = json!({
+                "title": entry_title(&entry.day),
+                "date": entry.day,
+                "text": decoded.as_deref().unwrap_or(&text),
+            });
             if let Some(hidden) = hidden {
                 value["hidden"] = Value::Bool(hidden);
             }
@@ -2982,7 +3089,7 @@ fn fetch(
             // A photo's description arrives with the photo itself: the photos
             // kind that admitted the description admits its picture.
             let mut picture = None;
-            if crate::photo_picture::is_photo_description(&entry.path) {
+            if photo {
                 let (state, kept) = crate::photo_picture::photo_picture(journal_root, &entry.path);
                 value["picture"] = state;
                 picture = kept.map(|kept| kept.jpeg);
