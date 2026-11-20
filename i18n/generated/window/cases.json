@@ -189639,31 +189639,39 @@
     {
       "bundle": "journal-window",
       "call_contract": {
-        "arguments": [],
+        "arguments": [
+          {
+            "name": "destination_link",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.shell.redirect.detail\u0004m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c_plural",
+        "gettext_lookup_key": "journal.window.shell.redirect.instruction\u0004m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e_plural",
         "gettext_unsigned_quantity": null,
         "locale": "en-US",
-        "message_id": "journal.window.shell.redirect.detail",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
+        "message_id": "journal.window.shell.redirect.instruction",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
         "signed_quantity": null
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
-      "inputs": {},
+      "inputs": {
+        "destination_link": "sample"
+      },
       "locale": "en-US",
-      "logical_expected": "You should be redirected automatically to the target URL: {link}. If not, click the link.",
-      "message_id": "journal.window.shell.redirect.detail",
+      "logical_expected": "You should be redirected automatically to the target URL: ⁨sample⁩. If not, click the link.",
+      "message_id": "journal.window.shell.redirect.instruction",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.shell.redirect.detail\", [])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.shell.redirect.instruction\", [[\"destination_link\", \"sample\"]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
       "target": "classic"
     },
     {
@@ -439997,31 +440005,39 @@
     {
       "bundle": "journal-window",
       "call_contract": {
-        "arguments": [],
+        "arguments": [
+          {
+            "name": "destination_link",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.shell.redirect.detail\u0004m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c_plural",
+        "gettext_lookup_key": "journal.window.shell.redirect.instruction\u0004m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e_plural",
         "gettext_unsigned_quantity": null,
         "locale": "en-US",
-        "message_id": "journal.window.shell.redirect.detail",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
+        "message_id": "journal.window.shell.redirect.instruction",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
         "signed_quantity": null
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "You should be redirected automatically to the target URL: {link}. If not, click the link.",
+      "expected": "You should be redirected automatically to the target URL: ⁨sample⁩. If not, click the link.",
       "folder": null,
-      "inputs": {},
+      "inputs": {
+        "destination_link": "sample"
+      },
       "locale": "en-US",
-      "logical_expected": "You should be redirected automatically to the target URL: {link}. If not, click the link.",
-      "message_id": "journal.window.shell.redirect.detail",
+      "logical_expected": "You should be redirected automatically to the target URL: ⁨sample⁩. If not, click the link.",
+      "message_id": "journal.window.shell.redirect.instruction",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.shell.redirect.detail\", &[])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.shell.redirect.instruction\", &[(\"destination_link\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
       "target": "rust"
     },
     {

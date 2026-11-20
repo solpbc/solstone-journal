@@ -90889,8 +90889,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c",
       "namespace": "journal.window.shell.redirect",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.shell.redirect.instruction",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -90900,6 +90900,26 @@
           "value": "{link}"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.shell.redirect.instruction",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e",
+      "namespace": "journal.window.shell.redirect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "destination_link",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {

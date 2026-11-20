@@ -1,0 +1,21 @@
+{
+  "description": "Instructions when the browser does not follow a redirect automatically.",
+  "context": "Journal redirect page. destination_link is a clickable link displaying its destination address.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "destination_link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb8e607705b4c07c2c2f035de1ba92478cb9b95f4357dacdf7ca68dda11bf839",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

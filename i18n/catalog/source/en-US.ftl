@@ -8359,7 +8359,7 @@ journal.window.shell.pin.error.save = your settings couldn't be saved.
 
 journal.window.shell.presentation.banner = PRESENT — Shift+P to exit
 
-journal.window.shell.redirect.detail = You should be redirected automatically to the target URL: { $slot1 }. If not, click the link.
+journal.window.shell.redirect.instruction = You should be redirected automatically to the target URL: { $destination_link }. If not, click the link.
 
 journal.window.shell.redirect.title = Redirecting...
 

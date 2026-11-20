@@ -42807,10 +42807,10 @@
       "locales": []
     },
     {
-      "id": "journal.window.shell.redirect.detail",
-      "source": "650fa8b6934a33c3a4beecb8effe469e502b29ad8e954863b00367e32000fecd",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "71a1ec798b21b43302e4c8fb1ddfa2e829a39f863cd959b641d742f4684922a7",
+      "id": "journal.window.shell.redirect.instruction",
+      "source": "eb8e607705b4c07c2c2f035de1ba92478cb9b95f4357dacdf7ca68dda11bf839",
+      "contract": "14953221fab14bb65cf5adab159d5f2cc533cc651108583c3b00b53ef406d606",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {

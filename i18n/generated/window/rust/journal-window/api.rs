@@ -6143,7 +6143,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e696e76616c6964,
     m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e73617665,
     m6a6f75726e616c2e77696e646f772e7368656c6c2e70726573656e746174696f6e2e62616e6e6572,
-    m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c,
+    m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e,
     m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e7469746c65,
     m6a6f75726e616c2e77696e646f772e7368656c6c2e73657474696e67732e726561642e6661696c6564,
     m6a6f75726e616c2e77696e646f772e7368656c6c2e736b69702e746f2e776f726b7370616365,
@@ -14252,7 +14252,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.shell.pin.error.invalid", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e696e76616c6964),
         ("journal.window.shell.pin.error.save", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e73617665),
         ("journal.window.shell.presentation.banner", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e70726573656e746174696f6e2e62616e6e6572),
-        ("journal.window.shell.redirect.detail", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c),
+        ("journal.window.shell.redirect.instruction", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e),
         ("journal.window.shell.redirect.title", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e7469746c65),
         ("journal.window.shell.settings.read.failed", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e73657474696e67732e726561642e6661696c6564),
         ("journal.window.shell.skip.to.workspace", MessageId::m6a6f75726e616c2e77696e646f772e7368656c6c2e736b69702e746f2e776f726b7370616365),
@@ -22389,7 +22389,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e696e76616c6964", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e70696e2e6572726f722e73617665", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e70726573656e746174696f6e2e62616e6e6572", no_arguments),
-    ("m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e64657461696c", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e", prepare_m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e),
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e7469746c65", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e73657474696e67732e726561642e6661696c6564", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368656c6c2e736b69702e746f2e776f726b7370616365", no_arguments),
@@ -36497,6 +36497,24 @@ fn prepare_m6a6f75726e616c2e77696e646f772e7368617265642e7374617475732e70616e652e
         _ => return Err(RenderError::InvalidArgumentType("value1".to_string())),
     };
     f_args.set("value1", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7368656c6c2e72656469726563742e696e737472756374696f6e(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["destination_link"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "destination_link").ok_or_else(|| RenderError::MissingArgument("destination_link".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("destination_link".to_string())),
+    };
+    f_args.set("destination_link", FluentValue::from(v0.clone()));
     Ok((_resource_key, f_args))
 }
 

@@ -51,11 +51,42 @@ pub fn not_found_response() -> Response {
 
 pub fn redirect_body(location: &str, locale: &str) -> String {
     let lang = language_tag(locale);
-    let location = escape_html(location);
     let title = html(locale, "journal.window.shell.redirect.title");
-    let detail = html(locale, "journal.window.shell.redirect.detail")
-        .replace("{link}", &format!("<a href=\"{location}\">{location}</a>"));
+    let detail = redirect_instruction(location, locale);
     format!(
         "<!doctype html>\n<html lang={lang}>\n<title>{title}</title>\n<h1>{title}</h1>\n<p>{detail}\n"
     )
+}
+
+fn redirect_instruction(location: &str, locale: &str) -> String {
+    // Let Fluent position and isolate the link as a single argument. The
+    // address is escaped separately and cannot introduce an interpolation marker.
+    const LINK: &str = "\u{fdd0}";
+    let message = strings(
+        locale,
+        "journal.window.shell.redirect.instruction",
+        [("destination_link", LINK)],
+    );
+    let location = escape_html(location);
+    let link = format!("<a href=\"{location}\">{location}</a>");
+    message
+        .split(LINK)
+        .map(escape_html)
+        .collect::<Vec<_>>()
+        .join(&link)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redirect_link_escapes_the_address_in_the_href_and_label() {
+        let body = redirect_body("/app/home/?a=1&b=\"<journal>\"", ENGLISH);
+        assert!(body.contains(concat!(
+            "<a href=\"/app/home/?a=1&amp;b=&quot;&lt;journal&gt;&quot;\">",
+            "/app/home/?a=1&amp;b=&quot;&lt;journal&gt;&quot;</a>"
+        )));
+        assert!(!body.contains("<journal>"));
+    }
 }
