@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. that check makes sure there is room to download the next version beside the current one, which a package install doesn't need, because an update replaces it in place. it now skips package installs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - profile pic suggestions from past meetings could take an extra day to appear.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.

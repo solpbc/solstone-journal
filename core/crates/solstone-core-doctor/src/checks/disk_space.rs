@@ -18,8 +18,24 @@ use crate::{
 const INSTALL_TREE_HEADROOM_BYTES: u64 = 1024 * 1024 * 1024;
 const NOT_LAYOUT_INSTALL_TREE_DETAIL: &str =
     "resolved installation root is not a layout install tree";
+const PACKAGE_INSTALL_DETAIL: &str =
+    "a package install is replaced in place when it updates, so no second copy is needed";
+/// Where a distribution package (apt, dnf or zypper, from the repository or a
+/// standalone file) puts `solstone`. Its prefix is the system's `/usr`, not a
+/// tree this install owns, so there is no install of ours to measure there.
+const PACKAGE_INSTALL_BIN_DIR: &str = "/usr/bin";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    // The space this check asks for is room to write the next version beside
+    // the running one, which only a self-updating tree install does.
+    if context.install_bin_dir == Path::new(PACKAGE_INSTALL_BIN_DIR) {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            PACKAGE_INSTALL_DETAIL,
+            None::<String>,
+        ));
+    }
     let Some(_resolved_root) =
         resolve_installation_root_from_executable_dir(&context.install_bin_dir)
     else {
@@ -200,6 +216,17 @@ mod tests {
         assert_eq!(run(&staged, check).unwrap().status, Status::Warn);
         staged.context.free_space_bytes_override = Some(tree_bytes + slack_bytes);
         assert_eq!(run(&staged, check).unwrap().status, Status::Ok);
+    }
+
+    #[test]
+    fn skips_a_package_install_without_walking_the_system_prefix() {
+        let mut staged = context();
+        staged.context.install_bin_dir = std::path::PathBuf::from(PACKAGE_INSTALL_BIN_DIR);
+        let check = check("disk_space", Severity::Advisory);
+        let result = run(&staged, check).unwrap();
+        assert_eq!(result.status, Status::Skip);
+        assert_eq!(result.detail, PACKAGE_INSTALL_DETAIL);
+        assert!(result.execution_error.is_none());
     }
 
     #[test]
