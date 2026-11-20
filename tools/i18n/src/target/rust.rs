@@ -104,20 +104,20 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str(&plural_category_fn(bundle));
 
     s.push_str("pub fn render_dotted(locale: &str, dotted_id: &str, args: &[(&str, Value)]) -> Result<String, RenderError> { render_dotted_with_options(locale, dotted_id, args, true) }\n\npub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, Value)], use_isolating: bool) -> Result<String, RenderError> {\n");
-    s.push_str("    let id = match dotted_id {\n");
-    for msg in &bundle.messages {
+    s.push_str("    static IDS: &[(&str, MessageId)] = &[\n");
+    let mut by_name: Vec<_> = bundle.messages.iter().collect();
+    by_name.sort_by_key(|message| &message.id);
+    for msg in by_name {
         s.push_str(&format!(
-            "        \"{}\" => MessageId::{},\n",
+            "        (\"{}\", MessageId::{}),\n",
             msg.id, msg.resource_key
         ));
     }
-    s.push_str("        _ => return Err(RenderError::UnknownMessage),\n");
-    s.push_str("    };\n");
+    s.push_str("    ];\n    let index = IDS.binary_search_by_key(&dotted_id, |(name, _)| *name).map_err(|_| RenderError::UnknownMessage)?;\n    let id = IDS[index].1;\n");
     s.push_str("    render_with_options(locale, id, args, use_isolating)\n");
     s.push_str("}\n\n");
 
     s.push_str("pub fn render(locale: &str, id: MessageId, args: &[(&str, Value)]) -> Result<String, RenderError> { render_with_options(locale, id, args, true) }\n\npub fn render_with_options(locale: &str, id: MessageId, args: &[(&str, Value)], use_isolating: bool) -> Result<String, RenderError> {\n");
-    s.push_str("    let message_id = id;\n\n");
 
     // Check duplicate args
     s.push_str("    let mut seen = HashSet::new();\n");
@@ -144,13 +144,43 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str("        _ => return Err(RenderError::UnknownLocale),\n");
     s.push_str("    };\n\n");
 
-    // Match message_id
-    s.push_str("    let (res_key, fluent_args) = match message_id {\n");
+    // The enum and MESSAGES use the same order. Keep per-message temporaries
+    // in the selected preparer: a single debug-mode match reserves stack for
+    // thousands of inactive arms and overflows the Windows main thread.
+    s.push_str("    let (key, prepare) = MESSAGES[id as usize];\n    let (res_key, fluent_args) = prepare(key, args, cardinal_rule)?;\n");
+    // Formatting uses the same resource and isolation setting for this locale.
+    s.push_str("    let bundle = bundle.as_ref().map_err(Clone::clone)?;\n");
+    s.push_str("    let msg = bundle.get_message(res_key).ok_or(RenderError::FormatFailed)?;\n");
+    s.push_str("    let pattern = msg.value().ok_or(RenderError::FormatFailed)?;\n");
+    s.push_str("    let mut errs = vec![];\n");
+    s.push_str(
+        "    let formatted = bundle.format_pattern(pattern, Some(&fluent_args), &mut errs);\n",
+    );
+    s.push_str("    if !errs.is_empty() {\n");
+    s.push_str("        return Err(RenderError::FormatFailed);\n");
+    s.push_str("    }\n");
+    s.push_str("    Ok(formatted.into_owned())\n");
+    s.push_str("}\n\n");
+    s.push_str("type Prepared = Result<(&'static str, FluentArgs<'static>), RenderError>;\n");
+    s.push_str("type Prepare = fn(&'static str, &[(&str, Value)], Option<&str>) -> Prepared;\n");
+    s.push_str("static MESSAGES: &[(&str, Prepare)] = &[\n");
     for msg in &bundle.messages {
-        s.push_str(&format!("        MessageId::{} => {{\n", msg.resource_key));
-
+        let prepare = if msg.meta.arguments.is_empty() {
+            "no_arguments".to_owned()
+        } else {
+            format!("prepare_{}", msg.resource_key)
+        };
+        s.push_str(&format!("    (\"{}\", {}),\n", msg.resource_key, prepare));
+    }
+    s.push_str("];\n\n");
+    s.push_str("fn no_arguments(key: &'static str, args: &[(&str, Value)], _: Option<&str>) -> Prepared {\n    if let Some((name, _)) = args.first() { return Err(RenderError::UnknownArgument((*name).to_owned())); }\n    Ok((key, FluentArgs::new()))\n}\n\n");
+    for msg in &bundle.messages {
+        if msg.meta.arguments.is_empty() {
+            continue;
+        }
+        s.push_str(&format!("fn prepare_{}(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {{\n", msg.resource_key));
         // Check declared args
-        s.push_str("            const DECLARED: &[&str] = &[");
+        s.push_str("    const DECLARED: &[&str] = &[");
         for (i, arg) in msg.meta.arguments.iter().enumerate() {
             if i > 0 {
                 s.push_str(", ");
@@ -158,82 +188,68 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
             s.push_str(&format!("\"{}\"", arg.name));
         }
         s.push_str("];\n");
-        s.push_str("            for (name, _) in args {\n");
-        s.push_str("                if !DECLARED.contains(name) {\n");
-        s.push_str(
-            "                    return Err(RenderError::UnknownArgument((*name).to_string()));\n",
-        );
-        s.push_str("                }\n");
-        s.push_str("            }\n");
+        s.push_str("    for (name, _) in args {\n");
+        s.push_str("        if !DECLARED.contains(name) {\n");
+        s.push_str("            return Err(RenderError::UnknownArgument((*name).to_string()));\n");
+        s.push_str("        }\n");
+        s.push_str("    }\n");
 
-        s.push_str("            #[allow(unused_mut)]\n");
-        s.push_str("            let mut f_args = FluentArgs::new();\n");
+        s.push_str("    #[allow(unused_mut)]\n");
+        s.push_str("    let mut f_args = FluentArgs::new();\n");
 
         for (idx, arg) in msg.meta.arguments.iter().enumerate() {
             let val_name = format!("val_v{}", idx);
             let var_name = format!("v{}", idx);
             s.push_str(&format!(
-                "            let {} = args.iter().find(|(n, _)| *n == \"{}\").ok_or_else(|| RenderError::MissingArgument(\"{}\".to_string()))?.1.clone();\n",
+                "    let {} = args.iter().find(|(n, _)| *n == \"{}\").ok_or_else(|| RenderError::MissingArgument(\"{}\".to_string()))?.1.clone();\n",
                 val_name, arg.name, arg.name
             ));
 
             match arg.arg_type {
                 ScalarType::String => {
+                    s.push_str(&format!("    let {} = match {} {{\n", var_name, val_name));
+                    s.push_str("        Value::String(s) => s.to_string(),\n");
+                    s.push_str(&format!("        _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
+                    s.push_str("    };\n");
                     s.push_str(&format!(
-                        "            let {} = match {} {{\n",
-                        var_name, val_name
-                    ));
-                    s.push_str("                Value::String(s) => s.to_string(),\n");
-                    s.push_str(&format!("                _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
-                    s.push_str("            };\n");
-                    s.push_str(&format!(
-                        "            f_args.set(\"{}\", FluentValue::from({}.clone()));\n",
+                        "    f_args.set(\"{}\", FluentValue::from({}.clone()));\n",
                         arg.name, var_name
                     ));
                 }
                 ScalarType::Boolean => {
-                    s.push_str(&format!(
-                        "            let {} = match {} {{\n",
-                        var_name, val_name
-                    ));
-                    s.push_str("                Value::Boolean(b) => b,\n");
-                    s.push_str(&format!("                _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
-                    s.push_str("            };\n");
-                    s.push_str(&format!("            f_args.set(\"{}\", FluentValue::from(if {} {{ \"true\" }} else {{ \"false\" }}));\n", arg.name, var_name));
+                    s.push_str(&format!("    let {} = match {} {{\n", var_name, val_name));
+                    s.push_str("        Value::Boolean(b) => b,\n");
+                    s.push_str(&format!("        _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
+                    s.push_str("    };\n");
+                    s.push_str(&format!("    f_args.set(\"{}\", FluentValue::from(if {} {{ \"true\" }} else {{ \"false\" }}));\n", arg.name, var_name));
                 }
                 ScalarType::Integer => {
-                    s.push_str(&format!(
-                        "            let {} = match {} {{\n",
-                        var_name, val_name
-                    ));
-                    s.push_str("                Value::Integer(i) => i,\n");
-                    s.push_str(&format!("                _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
-                    s.push_str("            };\n");
+                    s.push_str(&format!("    let {} = match {} {{\n", var_name, val_name));
+                    s.push_str("        Value::Integer(i) => i,\n");
+                    s.push_str(&format!("        _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
+                    s.push_str("    };\n");
                     const INT_MIN: i64 = -9007199254740991;
                     const INT_MAX: i64 = 9007199254740991;
                     let eff_min = arg.min.map(|m| m as i64).unwrap_or(INT_MIN).max(INT_MIN);
                     let eff_max = arg.max.map(|m| m as i64).unwrap_or(INT_MAX).min(INT_MAX);
-                    s.push_str(&format!("            if {} < {}_i64 || {} > {}_i64 {{ return Err(RenderError::OutOfRange(\"{}\".to_string())); }}\n", var_name, eff_min, var_name, eff_max, arg.name));
+                    s.push_str(&format!("    if {} < {}_i64 || {} > {}_i64 {{ return Err(RenderError::OutOfRange(\"{}\".to_string())); }}\n", var_name, eff_min, var_name, eff_max, arg.name));
                     s.push_str(&format!(
-                        "            f_args.set(\"{}\", FluentValue::from({}));\n",
+                        "    f_args.set(\"{}\", FluentValue::from({}));\n",
                         arg.name, var_name
                     ));
                 }
                 ScalarType::Cardinal => {
-                    s.push_str(&format!(
-                        "            let {} = match {} {{\n",
-                        var_name, val_name
-                    ));
-                    s.push_str("                Value::Cardinal(c) => c,\n");
-                    s.push_str(&format!("                _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
-                    s.push_str("            };\n");
+                    s.push_str(&format!("    let {} = match {} {{\n", var_name, val_name));
+                    s.push_str("        Value::Cardinal(c) => c,\n");
+                    s.push_str(&format!("        _ => return Err(RenderError::InvalidArgumentType(\"{}\".to_string())),\n", arg.name));
+                    s.push_str("    };\n");
                     const CARD_MIN: i64 = -2147483648;
                     const CARD_MAX: i64 = 2147483647;
                     let eff_min = arg.min.map(|m| m as i64).unwrap_or(CARD_MIN).max(CARD_MIN);
                     let eff_max = arg.max.map(|m| m as i64).unwrap_or(CARD_MAX).min(CARD_MAX);
-                    s.push_str(&format!("            if {} < {}_i64 || {} > {}_i64 {{ return Err(RenderError::OutOfRange(\"{}\".to_string())); }}\n", var_name, eff_min, var_name, eff_max, arg.name));
+                    s.push_str(&format!("    if {} < {}_i64 || {} > {}_i64 {{ return Err(RenderError::OutOfRange(\"{}\".to_string())); }}\n", var_name, eff_min, var_name, eff_max, arg.name));
                     s.push_str(&format!(
-                        "            f_args.set(\"{}\", FluentValue::from({}));\n",
+                        "    f_args.set(\"{}\", FluentValue::from({}));\n",
                         arg.name, var_name
                     ));
                 }
@@ -253,22 +269,19 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
                 .position(|a| a.name == sel.name)
                 .ok_or_else(|| Fault::catalog("invalid-metadata"))?;
             s.push_str(&format!(
-                "            let target_key = match v{}.as_str() {{\n",
+                "    let target_key = match v{}.as_str() {{\n",
                 sel_idx
             ));
             for val in &sel.enum_values {
                 let var_key =
                     crate::target::model::enum_variant_resource_key(&msg.resource_key, val);
-                s.push_str(&format!(
-                    "                \"{}\" => \"{}\",\n",
-                    val, var_key
-                ));
+                s.push_str(&format!("        \"{}\" => \"{}\",\n", val, var_key));
             }
             let def_key =
                 crate::target::model::enum_variant_resource_key(&msg.resource_key, def_val);
-            s.push_str(&format!("                _ => \"{}\",\n", def_key));
-            s.push_str("            };\n");
-            s.push_str("            (target_key.to_string(), f_args)\n");
+            s.push_str(&format!("        _ => \"{}\",\n", def_key));
+            s.push_str("    };\n");
+            s.push_str("    Ok((target_key, f_args))\n");
         } else {
             if msg.meta.format_intent == FormatIntent::Cardinal {
                 let selector = msg
@@ -283,35 +296,17 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
                     .position(|arg| arg.name == selector.name)
                     .ok_or_else(|| Fault::catalog("invalid-metadata"))?;
                 s.push_str(&format!(
-                    "            f_args.set(\"{}\", plural_category(cardinal_rule, v{}));\n",
+                    "    f_args.set(\"{}\", plural_category(_cardinal_rule, v{}));\n",
                     crate::plural::CATEGORY_ARGUMENT,
                     index
                 ));
             }
-            s.push_str(&format!(
-                "            (\"{}\".to_string(), f_args)\n",
-                msg.resource_key
-            ));
+            s.push_str("    Ok((_resource_key, f_args))\n");
         }
 
-        s.push_str("        }\n");
+        s.push_str("}\n\n");
     }
-    s.push_str("    };\n\n");
 
-    // Formatting uses the same resource and isolation setting for this locale.
-    s.push_str("    let _ = cardinal_rule;\n");
-    s.push_str("    let bundle = bundle.as_ref().map_err(Clone::clone)?;\n");
-    s.push_str("    let msg = bundle.get_message(&res_key).ok_or(RenderError::FormatFailed)?;\n");
-    s.push_str("    let pattern = msg.value().ok_or(RenderError::FormatFailed)?;\n");
-    s.push_str("    let mut errs = vec![];\n");
-    s.push_str(
-        "    let formatted = bundle.format_pattern(pattern, Some(&fluent_args), &mut errs);\n",
-    );
-    s.push_str("    if !errs.is_empty() {\n");
-    s.push_str("        return Err(RenderError::FormatFailed);\n");
-    s.push_str("    }\n");
-    s.push_str("    Ok(formatted.into_owned())\n");
-    s.push_str("}\n\n");
     s.push_str(
         r#"fn load_bundle(ftl: &str, use_isolating: bool) -> Result<FluentBundle<FluentResource>, RenderError> {
     let lang = "und".parse().map_err(|_| RenderError::FormatFailed)?;

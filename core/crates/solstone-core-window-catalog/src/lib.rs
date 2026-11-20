@@ -72,3 +72,36 @@ pub fn escape_html(value: &str) -> String {
 pub fn html(locale: &str, id: &str) -> String {
     escape_html(&text(locale, id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_packaged_catalog_renders_on_a_small_stack() {
+        // Windows debug executables have a 1 MiB main stack. Leave room for
+        // the shell build script or service that calls the renderer.
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                assert_eq!(
+                    text(
+                        ENGLISH,
+                        "journal.window.agents.permission.kind.screen.text.label"
+                    ),
+                    "screen text"
+                );
+                assert_eq!(
+                    strings(
+                        ENGLISH,
+                        "journal.window.loading.other",
+                        [("name", "journal")]
+                    ),
+                    "loading journal…"
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+}
