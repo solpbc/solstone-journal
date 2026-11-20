@@ -1,0 +1,16 @@
+{
+  "description": "Trash refusal detail in the journal's entities view.",
+  "context": "Journal window, entities view. Trash refusal detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b296e069a212ca0fe7a7e5e1ddeafd175a98c3df9b7f50bac3892ff4d58770c1",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

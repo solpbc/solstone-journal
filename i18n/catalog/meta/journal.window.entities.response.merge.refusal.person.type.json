@@ -1,0 +1,16 @@
+{
+  "description": "Entity merge refusal in the journal's entities view.",
+  "context": "Journal window, entities view. Entity merge refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bec95769d72c3eb598f53bbbb2ec8dd41a8bef69792a52086c927cc85233c822",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Entity merge refusal in the journal's entities view.",
+  "context": "Journal window, entities view. Entity merge refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "184f576afd84bdc48abbcc7f926e9e9e2f4a88642d81aa9e3adf4f5722b3722d",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

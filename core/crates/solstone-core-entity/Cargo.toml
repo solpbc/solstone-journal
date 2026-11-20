@@ -29,6 +29,7 @@ sha2 = "0.10.9"
 solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-time.workspace = true
+solstone-core-window-catalog.workspace = true
 unicode-normalization.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-journal-config.workspace = true

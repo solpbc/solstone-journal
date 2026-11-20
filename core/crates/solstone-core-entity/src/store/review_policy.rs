@@ -1309,6 +1309,9 @@ pub fn restore_review(
                 super::review_candidates::EntityReviewCandidateError::PublicationRefused(
                     detail,
                 ) => EntityWriteError::PublicationRefused(detail),
+                error @ super::review_candidates::EntityReviewCandidateError::NoActiveRecordedMerge => {
+                    EntityWriteError::InvalidOperationContext { detail: error.to_string() }
+                }
                 super::review_candidates::EntityReviewCandidateError::RecordedMerge(detail) => {
                     EntityWriteError::InvalidOperationContext { detail }
                 }
@@ -1389,6 +1392,11 @@ pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWrite
         }
         super::review_candidates::EntityReviewCandidateError::PublicationRefused(detail) => {
             EntityWriteError::PublicationRefused(detail)
+        }
+        error @ super::review_candidates::EntityReviewCandidateError::NoActiveRecordedMerge => {
+            EntityWriteError::InvalidOperationContext {
+                detail: error.to_string(),
+            }
         }
         super::review_candidates::EntityReviewCandidateError::RecordedMerge(detail) => {
             EntityWriteError::InvalidOperationContext { detail }

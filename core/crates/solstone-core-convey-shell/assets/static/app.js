@@ -287,7 +287,7 @@ window.SurfaceState = (() => {
       desc = window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.shared.app.window.explanation.reload.to.try.again'),
       serverMessage = '',
       retry = false,
-      retryLabel = 'try again',
+      retryLabel = window.JournalI18n.render('journal.window.shared.shell.boot.button.label.try.again'),
       secondary = null,
       detail = null,
       reportable = true,

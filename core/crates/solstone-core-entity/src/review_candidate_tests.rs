@@ -188,11 +188,7 @@ fn accepts(temporary: &TempDir, target: &str, merge_id: &str) -> bool {
             assert_eq!(row["status"], "accepted");
             true
         }
-        Err(crate::EntityReviewCandidateError::RecordedMerge(message))
-            if message == "candidate merge has no matching active record" =>
-        {
-            false
-        }
+        Err(crate::EntityReviewCandidateError::NoActiveRecordedMerge) => false,
         other => panic!("unexpected accept outcome: {other:?}"),
     }
 }
@@ -321,8 +317,7 @@ fn a_damaged_record_is_an_error_not_a_fallback_to_the_log() {
     record_candidate(&temporary, "ada", "grace", None);
     assert!(matches!(
         accept_merge_candidate(temporary.path(), "work", "ada", "grace", "em_1"),
-        Err(crate::EntityReviewCandidateError::RecordedMerge(message))
-            if message != "candidate merge has no matching active record"
+        Err(crate::EntityReviewCandidateError::RecordedMerge(_))
     ));
 }
 

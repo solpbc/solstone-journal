@@ -18,7 +18,11 @@ use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
-use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    identity::AccessBasis,
+    window_catalog::{response_locale, text},
+};
 use solstone_core_facets::entity_trash::{
     Entities, chosen_entity, preview as entity_preview, refusal_code,
 };
@@ -60,17 +64,20 @@ fn surface_of(headers: &HeaderMap) -> Surface {
 }
 
 /// Short words for a refusal code, beside the code the page words itself.
-fn words(code: &str) -> &'static str {
-    match code {
-        "principal" => "you can't delete yourself",
-        "record_damaged" => "your journal's record of deleted entities couldn't be updated",
-        "busy" => "your journal is busy; try again in a moment",
-        "gone" => "that entity isn't in your journal",
-        "link_unreadable" => "a facet link couldn't be read",
-        "ambiguities_unreadable" => "your journal's ambiguity records couldn't be read",
-        "bad_request" => "that delete couldn't be read",
-        _ => "your journal couldn't move it to the trash",
-    }
+fn words(locale: &str, code: &str) -> String {
+    let id = match code {
+        "principal" => "journal.window.entities.response.delete.refusal.principal",
+        "record_damaged" => "journal.window.entities.response.delete.refusal.record.damaged",
+        "busy" => "journal.window.entities.response.delete.refusal.busy",
+        "gone" => "journal.window.entities.response.delete.refusal.gone",
+        "link_unreadable" => "journal.window.entities.response.delete.refusal.link.unreadable",
+        "ambiguities_unreadable" => {
+            "journal.window.entities.response.delete.refusal.ambiguities.unreadable"
+        }
+        "bad_request" => "journal.window.entities.response.delete.refusal.bad.request",
+        _ => "journal.window.entities.response.delete.refusal.failed",
+    };
+    text(locale, id)
 }
 
 fn status(code: &str) -> StatusCode {
@@ -82,10 +89,10 @@ fn status(code: &str) -> StatusCode {
     }
 }
 
-fn refused(code: &str) -> Response {
+fn refused(locale: &str, code: &str) -> Response {
     (
         status(code),
-        Json(json!({"success": false, "reason": code, "error": words(code)})),
+        Json(json!({"success": false, "reason": code, "error": words(locale, code)})),
     )
         .into_response()
 }
@@ -141,17 +148,19 @@ pub(crate) async fn delete_entity(
     State(state): State<Arc<RouterState>>,
     RoutePath(entity_id): RoutePath<String>,
     headers: HeaderMap,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
+    let locale = response_locale(locale);
     let request: DeleteBody = if body.iter().all(u8::is_ascii_whitespace) {
         DeleteBody::default()
     } else {
         match serde_json::from_slice(&body) {
             Ok(request) => request,
-            Err(_) => return refused("bad_request"),
+            Err(_) => return refused(locale, "bad_request"),
         }
     };
     let surface = surface_of(&headers);
@@ -172,8 +181,8 @@ pub(crate) async fn delete_entity(
     .await;
     match outcome {
         Ok(Ok(moved)) => (StatusCode::OK, Json(moved)).into_response(),
-        Ok(Err(error)) => refused(&refusal_code(&error)),
-        Err(_) => refused("failed"),
+        Ok(Err(error)) => refused(locale, &refusal_code(&error)),
+        Err(_) => refused(locale, "failed"),
     }
 }
 
@@ -184,16 +193,18 @@ pub(crate) async fn delete_set(
     Extension(b): Extension<AccessBasis>,
     State(state): State<Arc<RouterState>>,
     headers: HeaderMap,
+    locale: Option<Extension<ResponseLocale>>,
     body: Bytes,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
+    let locale = response_locale(locale);
     let Ok(request) = serde_json::from_slice::<SetBody>(&body) else {
-        return refused("bad_request");
+        return refused(locale, "bad_request");
     };
     if request.ids.is_empty() || request.ids.len() > SET_LIMIT {
-        return refused("bad_request");
+        return refused(locale, "bad_request");
     }
     let mut ids: Vec<String> = Vec::new();
     for id in request.ids {
@@ -215,8 +226,8 @@ pub(crate) async fn delete_set(
                     chosen.push(thing);
                     order.push(id);
                 }
-                Ok(None) => failed.push(refusal_row(&id, "gone")),
-                Err(_) => failed.push(refusal_row(&id, "link_unreadable")),
+                Ok(None) => failed.push(refusal_row(locale, &id, "gone")),
+                Err(_) => failed.push(refusal_row(locale, &id, "link_unreadable")),
             }
         }
         let mut done = Vec::new();
@@ -239,7 +250,7 @@ pub(crate) async fn delete_set(
                         "result": moved(&root, &item, erase, erased),
                     })),
                     SetResult::Refused(error) => {
-                        failed.push(refusal_row(&id, &refusal_code(&error)));
+                        failed.push(refusal_row(locale, &id, &refusal_code(&error)));
                     }
                 }
             }
@@ -249,13 +260,13 @@ pub(crate) async fn delete_set(
     .await;
     match outcome {
         Ok(Ok(payload)) => (StatusCode::OK, Json(payload)).into_response(),
-        Ok(Err(error)) => refused(&refusal_code(&error)),
-        Err(_) => refused("failed"),
+        Ok(Err(error)) => refused(locale, &refusal_code(&error)),
+        Err(_) => refused(locale, "failed"),
     }
 }
 
-fn refusal_row(id: &str, code: &str) -> Value {
-    json!({"id": id, "reason": code, "error": words(code)})
+fn refusal_row(locale: &str, id: &str, code: &str) -> Value {
+    json!({"id": id, "reason": code, "error": words(locale, code)})
 }
 
 /// What deleting an entity would take: its type, how many facets link it,
@@ -264,16 +275,18 @@ pub(crate) async fn preview(
     Extension(b): Extension<AccessBasis>,
     State(state): State<Arc<RouterState>>,
     RoutePath(entity_id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
+    let locale = response_locale(locale);
     let root = state.journal_root.clone();
     match solstone_core_serving::seam::run_blocking(move || entity_preview(&root, &entity_id)).await
     {
         Ok(Ok(Some(preview))) => (StatusCode::OK, Json(json!(preview))).into_response(),
-        Ok(Ok(None)) => refused("gone"),
-        Ok(Err(_)) => refused("link_unreadable"),
-        Err(_) => refused("failed"),
+        Ok(Ok(None)) => refused(locale, "gone"),
+        Ok(Err(_)) => refused(locale, "link_unreadable"),
+        Err(_) => refused(locale, "failed"),
     }
 }

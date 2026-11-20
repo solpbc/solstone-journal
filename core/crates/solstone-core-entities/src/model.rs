@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use axum::http::StatusCode;
+use axum::extract::Request;
+use axum::http::{StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde_json::Value;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_convey_http::window_catalog::{ENGLISH, resolve_table, text};
+use solstone_core_convey_http::window_catalog::{
+    ENGLISH, Value as CatalogValue, render, resolve_table, text,
+};
 use std::sync::LazyLock;
 
 pub const ENTITY_TYPES: [&str; 4] = ["Person", "Company", "Project", "Tool"];
@@ -153,16 +158,100 @@ impl ReasonCode {
     }
 }
 
-pub fn refusal(code: ReasonCode, detail: impl Into<String>) -> Response {
+pub(crate) fn refusal_label(locale: &str) -> String {
+    text(locale, "journal.window.entities.response.refused")
+}
+
+#[derive(Clone)]
+pub(crate) enum RefusalDetail {
+    Raw(String),
+    Merge(solstone_core_entity::EntityMergeRefusal),
+    Catalog(&'static str),
+    Formatted(&'static str, Vec<(&'static str, String)>),
+}
+
+impl From<String> for RefusalDetail {
+    fn from(value: String) -> Self {
+        Self::Raw(value)
+    }
+}
+
+impl From<&str> for RefusalDetail {
+    fn from(value: &str) -> Self {
+        Self::Raw(value.to_owned())
+    }
+}
+
+impl RefusalDetail {
+    fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Raw(reason) => reason.clone(),
+            Self::Merge(reason) => reason.render(locale),
+            Self::Catalog(id) => text(locale, id),
+            Self::Formatted(id, arguments) => render(
+                locale,
+                id,
+                &arguments
+                    .iter()
+                    .map(|(name, value)| (*name, CatalogValue::String(value)))
+                    .collect::<Vec<_>>(),
+            ),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RefusalCopy {
+    reason: &'static str,
+    detail: RefusalDetail,
+}
+
+impl RefusalCopy {
+    fn response(&self, locale: &str, status: StatusCode) -> Response {
+        error_envelope(
+            self.reason,
+            refusal_label(locale),
+            self.detail.render(locale),
+            status,
+        )
+        .into_response()
+    }
+}
+
+pub(crate) fn refusal(code: ReasonCode, detail: impl Into<RefusalDetail>) -> Response {
     refusal_with_status(code, detail, code.status())
 }
 
-pub fn refusal_with_status(
+pub(crate) fn refusal_with_status(
     code: ReasonCode,
-    detail: impl Into<String>,
+    detail: impl Into<RefusalDetail>,
     status: StatusCode,
 ) -> Response {
-    error_envelope(code.as_str(), "Entity request refused", detail, status).into_response()
+    let copy = RefusalCopy {
+        reason: code.as_str(),
+        detail: detail.into(),
+    };
+    let mut response = copy.response(ENGLISH, status);
+    response.extensions_mut().insert(copy);
+    response
+}
+
+pub(crate) async fn localize_refusal(request: Request, next: Next) -> Response {
+    let locale = request
+        .extensions()
+        .get::<ResponseLocale>()
+        .map_or(ENGLISH, |locale| locale.0);
+    let mut response = next.run(request).await;
+    if let Some(copy) = response
+        .extensions_mut()
+        .remove::<RefusalCopy>()
+        .filter(|_| locale != ENGLISH)
+    {
+        let localized = copy.response(locale, response.status());
+        *response.body_mut() = localized.into_body();
+        response.headers_mut().remove(header::CONTENT_LENGTH);
+    }
+    response
 }
 
 #[cfg(test)]

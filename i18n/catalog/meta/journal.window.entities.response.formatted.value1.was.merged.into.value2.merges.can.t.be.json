@@ -1,0 +1,29 @@
+{
+  "description": "Entity action or read refusal in the journal's entities view.",
+  "context": "Journal window, entities view. Entity action or read refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    },
+    {
+      "name": "value2",
+      "type": "string"
+    },
+    {
+      "name": "value3",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d9b7e4467692c8821b4ac8ba17a3c1abe1787900e1eae14ca97943bfae50cec7",
+  "max_length": 170,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

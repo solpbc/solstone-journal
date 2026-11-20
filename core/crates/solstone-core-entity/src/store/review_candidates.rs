@@ -34,7 +34,13 @@ pub enum EntityReviewCandidateError {
     Lock(LockError),
     Write(AtomicWriteError),
     RecordedMerge(String),
+    NoActiveRecordedMerge,
     PublicationRefused(String),
+}
+
+impl EntityReviewCandidateError {
+    pub const NO_ACTIVE_RECORD: &'static str =
+        "journal.window.entities.response.candidate.record.missing";
 }
 
 impl fmt::Display for EntityReviewCandidateError {
@@ -44,6 +50,12 @@ impl fmt::Display for EntityReviewCandidateError {
             Self::Store(error) => error.fmt(formatter),
             Self::Lock(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
+            Self::NoActiveRecordedMerge => {
+                formatter.write_str(&solstone_core_window_catalog::text(
+                    solstone_core_window_catalog::ENGLISH,
+                    Self::NO_ACTIVE_RECORD,
+                ))
+            }
             Self::RecordedMerge(error) | Self::PublicationRefused(error) => {
                 formatter.write_str(error)
             }
@@ -58,7 +70,9 @@ impl Error for EntityReviewCandidateError {
             Self::Store(error) => Some(error),
             Self::Lock(error) => Some(error),
             Self::Write(error) => Some(error),
-            Self::RecordedMerge(_) | Self::PublicationRefused(_) => None,
+            Self::RecordedMerge(_) | Self::NoActiveRecordedMerge | Self::PublicationRefused(_) => {
+                None
+            }
         }
     }
 }
@@ -434,9 +448,7 @@ pub fn accept_merge_candidate(
     super::merge_rollback::recover_interrupted_entity_merge(journal_root)
         .map_err(EntityReviewCandidateError::RecordedMerge)?;
     if !recorded_merge_matches(journal_root, source_slug, target_slug, merge_id)? {
-        return Err(EntityReviewCandidateError::RecordedMerge(
-            "candidate merge has no matching active record".to_owned(),
-        ));
+        return Err(EntityReviewCandidateError::NoActiveRecordedMerge);
     }
     let key = candidate_key(facet, source_slug, target_slug);
     mutate_candidates(journal_root, |rows| {

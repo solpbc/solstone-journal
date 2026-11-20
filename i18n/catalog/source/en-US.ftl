@@ -2673,6 +2673,10 @@ journal.window.entities.accessible.name.search.entities = search entities
 
 journal.window.entities.accessible.name.search.entity.cards = search entity cards
 
+journal.window.entities.action.hide.undo.failed.many = { $count }{ $slot1 }couldn't be put back; they're still under hidden.
+
+journal.window.entities.button.detail.reattach = re-attach
+
 journal.window.entities.button.label.attach.to.facet = attach to facet
 
 journal.window.entities.button.label.cancel = cancel
@@ -3187,6 +3191,44 @@ journal.window.entities.entity.delete.copy.voice.unknown.what.your.journal.keeps
 
 journal.window.entities.entity.delete.copy.voice.what.your.journal.keeps.about.its = what your journal keeps about its voice
 
+journal.window.entities.entity.view.status.e.g.value1 = e.g.{ $slot1 }{ $value1 }
+
+journal.window.entities.entity.view.status.e.g.value1.and.value2 = e.g.{ $slot1 }{ $value1 }{ $slot2 }and{ $slot3 }{ $value2 }
+
+journal.window.entities.entity.view.status.finding.entities.matching.value1 = finding entities matching "{ $value1 }"…
+
+journal.window.entities.entity.view.status.finding.value1.entities = finding{ $slot1 }{ $value1 }{ $slot2 }entities…
+
+journal.window.entities.entity.view.status.finding.value1.entities.matching.value2 = finding{ $slot1 }{ $value1 }{ $slot2 }entities matching "{ $value2 }"…
+
+journal.window.entities.entity.view.status.hid.value1.entities = hid{ $slot1 }{ $value1 }{ $slot2 }entities.
+
+journal.window.entities.entity.view.status.in.value1 = in{ $slot1 }{ $value1 }
+
+journal.window.entities.entity.view.status.in.value1.and.value2 = in{ $slot1 }{ $value1 }{ $slot2 }and{ $slot3 }{ $value2 }
+
+journal.window.entities.entity.view.status.kept.value1.pairs.separate = kept{ $slot1 }{ $value1 }{ $slot2 }pairs separate.
+
+journal.window.entities.entity.view.status.last.mentioned.value1 = Last mentioned:{ $slot1 }{ $value1 }
+
+journal.window.entities.entity.view.status.merged.value1.of.value2.pairs.value3 = merged{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }{ $slot4 }pairs.{ $slot5 }{ $value3 }
+
+journal.window.entities.entity.view.status.merged.value1.pairs = merged{ $slot1 }{ $value1 }{ $slot2 }pairs.
+
+journal.window.entities.entity.view.status.merging.of.value1 = merging… 0 of{ $slot1 }{ $value1 }
+
+journal.window.entities.entity.view.status.merging.value1.of.value2 = merging…{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
+
+journal.window.entities.entity.view.status.put.back.value1.entities = put back{ $slot1 }{ $value1 }{ $slot2 }entities.
+
+journal.window.entities.entity.view.status.value1.are.still.listed = { $value1 }{ $slot1 }are still listed.
+
+journal.window.entities.entity.view.status.value1.couldn.t.be.merged = { $value1 }{ $slot1 }couldn't be merged.
+
+journal.window.entities.facet.membership.count.facet = 1 facet
+
+journal.window.entities.facet.membership.count.value1.facets = { $value1 }{ $slot1 }facets
+
 journal.window.entities.field.label.alternative.names.akas = alternative names (AKAs)
 
 journal.window.entities.field.label.description = description
@@ -3269,9 +3311,357 @@ journal.window.entities.notes.none = no notes
 
 journal.window.entities.notes.one = 1 note
 
+journal.window.entities.response.candidate.facet.already.exists = Facet '{ $facet }' already exists
+
+journal.window.entities.response.candidate.facet.candidate.accept.failed = candidate accept failed
+
+journal.window.entities.response.candidate.facet.candidate.dismiss.failed = candidate dismiss failed
+
+journal.window.entities.response.candidate.facet.candidate.read.failed = candidate read failed
+
+journal.window.entities.response.candidate.facet.facet.creation.failed = facet creation failed
+
+journal.window.entities.response.candidate.facet.facet.lookup.failed = facet lookup failed
+
+journal.window.entities.response.candidate.facet.slug.invalid = Invalid facet name '{ $facet }': must be lowercase, start with a letter, and contain only letters, digits, hyphens, or underscores
+
+journal.window.entities.response.candidate.not.found = candidate not found
+
+journal.window.entities.response.candidate.record.missing = candidate merge has no matching active record
+
+journal.window.entities.response.candidate.status.accept = cannot accept candidate with status{ $slot1 }{ $status }
+
+journal.window.entities.response.candidate.status.dismiss = cannot dismiss candidate with status{ $slot1 }{ $status }
+
+journal.window.entities.response.candidate.status.preview = cannot preview candidate with status{ $slot1 }{ $status }
+
+journal.window.entities.response.delete.refusal.ambiguities.unreadable = your journal's ambiguity records couldn't be read
+
+journal.window.entities.response.delete.refusal.bad.request = that delete couldn't be read
+
+journal.window.entities.response.delete.refusal.busy = your journal is busy; try again in a moment
+
+journal.window.entities.response.delete.refusal.failed = your journal couldn't move it to the trash
+
+journal.window.entities.response.delete.refusal.gone = that entity isn't in your journal
+
+journal.window.entities.response.delete.refusal.link.unreadable = a facet link couldn't be read
+
+journal.window.entities.response.delete.refusal.principal = you can't delete yourself
+
+journal.window.entities.response.delete.refusal.record.damaged = your journal's record of deleted entities couldn't be updated
+
+journal.window.entities.response.detail.access.denied = access denied
+
+journal.window.entities.response.detail.after.id.and.offset.cannot.be.used.together = { $slot1 } and offset cannot be used together
+
+journal.window.entities.response.detail.after.id.must.be.a.non.negative.integer = { $slot1 } must be a non-negative integer
+
+journal.window.entities.response.detail.aka.is.required = aka is required
+
+journal.window.entities.response.detail.ambiguity.dismiss.failed = ambiguity dismiss failed
+
+journal.window.entities.response.detail.ambiguity.id.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.ambiguity.not.found = ambiguity not found
+
+journal.window.entities.response.detail.ambiguity.read.failed = ambiguity read failed
+
+journal.window.entities.response.detail.ambiguity.resolve.failed = ambiguity resolve failed
+
+journal.window.entities.response.detail.batch.block.failed = batch block failed
+
+journal.window.entities.response.detail.batch.unblock.failed = batch unblock failed
+
+journal.window.entities.response.detail.body.is.not.valid.json = body is not valid { $slot1 }
+
+journal.window.entities.response.detail.body.must.be.a.json.object = body must be a { $slot1 } object
+
+journal.window.entities.response.detail.candidate.read.failed = candidate read failed
+
+journal.window.entities.response.detail.content.is.required = content is required
+
+journal.window.entities.response.detail.couldn.t.hide.entity = couldn't hide entity
+
+journal.window.entities.response.detail.couldn.t.unhide.entity = couldn't unhide entity
+
+journal.window.entities.response.detail.day.is.required = day is required
+
+journal.window.entities.response.detail.description.is.required = description is required
+
+journal.window.entities.response.detail.detected.entity.activity.is.unavailable = detected entity activity is unavailable
+
+journal.window.entities.response.detail.detected.entity.not.found = detected entity not found
+
+journal.window.entities.response.detail.detected.entity.save.failed = detected entity save failed
+
+journal.window.entities.response.detail.detected.entity.update.failed = detected entity update failed
+
+journal.window.entities.response.detail.detected.read.failed = detected read failed
+
+journal.window.entities.response.detail.detections.can.t.be.shown.here.which.names.are = detections can't be shown here: which names are hidden can't be read
+
+journal.window.entities.response.detail.entity.alias.update.failed = entity alias update failed
+
+journal.window.entities.response.detail.entity.already.exists = entity already exists
+
+journal.window.entities.response.detail.entity.already.exists.in.destination.facet.use.merge.to = Entity already exists in destination facet. Use { $slot1 } to merge.
+
+journal.window.entities.response.detail.entity.busy = entity busy
+
+journal.window.entities.response.detail.entity.create.failed = entity create failed
+
+journal.window.entities.response.detail.entity.data.directory.not.found.in.source.facet = Entity data directory not found in source facet.
+
+journal.window.entities.response.detail.entity.description.update.failed = entity description update failed
+
+journal.window.entities.response.detail.entity.detach.failed = entity detach failed
+
+journal.window.entities.response.detail.entity.hidden = entity hidden
+
+journal.window.entities.response.detail.entity.id.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.entity.is.required = entity is required
+
+journal.window.entities.response.detail.entity.move.failed = entity move failed
+
+journal.window.entities.response.detail.entity.name.is.invalid = entity name is invalid
+
+journal.window.entities.response.detail.entity.not.found = entity not found
+
+journal.window.entities.response.detail.entity.not.found.in.facet = Entity not found in facet
+
+journal.window.entities.response.detail.entity.not.found.variant2 = Entity not found
+
+journal.window.entities.response.detail.entity.read.failed = entity read failed
+
+journal.window.entities.response.detail.entity.restore.failed = entity restore failed
+
+journal.window.entities.response.detail.entity.search.index.is.busy = entity search index is busy
+
+journal.window.entities.response.detail.entity.search.index.is.stale = entity search index is stale
+
+journal.window.entities.response.detail.entity.search.index.is.unavailable = entity search index is unavailable
+
+journal.window.entities.response.detail.entity.update.failed = entity update failed
+
+journal.window.entities.response.detail.entity.with.this.name.already.exists.in.facet = Entity with this name already exists in facet
+
+journal.window.entities.response.detail.evidence.is.required = evidence is required
+
+journal.window.entities.response.detail.exclude.name.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.facet.is.required = facet is required
+
+journal.window.entities.response.detail.facet.not.found = facet not found
+
+journal.window.entities.response.detail.facet.read.failed = facet read failed
+
+journal.window.entities.response.detail.from.facet.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.grid.read.failed = grid read failed
+
+journal.window.entities.response.detail.group.resolve.failed = group resolve failed
+
+journal.window.entities.response.detail.hidden.must.be.include.exclude.or.only = { $slot1 } must be { $slot2 }, { $slot3 } or { $slot4 }
+
+journal.window.entities.response.detail.history.read.failed = history read failed
+
+journal.window.entities.response.detail.history.version.was.not.found = history version was not found
+
+journal.window.entities.response.detail.ids.elements.must.be.strings = ids elements must be strings
+
+journal.window.entities.response.detail.ids.is.required = ids is required
+
+journal.window.entities.response.detail.ids.must.be.an.array = ids must be an array
+
+journal.window.entities.response.detail.index.plate.task.failed = index plate task failed
+
+journal.window.entities.response.detail.invalid.detected.entity = invalid detected entity
+
+journal.window.entities.response.detail.invalid.target.kind = invalid target kind
+
+journal.window.entities.response.detail.journal.read.failed = journal read failed
+
+journal.window.entities.response.detail.limit.bounded.two.hundred = limit must be between 0 and 200
+
+journal.window.entities.response.detail.limit.is.required = limit is required
+
+journal.window.entities.response.detail.limit.must.be.an.integer = limit must be an integer
+
+journal.window.entities.response.detail.member.ids.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.member.ids.must.contain.only.strings = { $slot1 } must contain only strings
+
+journal.window.entities.response.detail.member.ids.must.not.be.empty = { $slot1 } must not be empty
+
+journal.window.entities.response.detail.merge.candidate.accept.failed = merge candidate accept failed
+
+journal.window.entities.response.detail.merge.candidate.dismiss.failed = merge candidate dismiss failed
+
+journal.window.entities.response.detail.merge.candidate.record.failed = merge candidate record failed
+
+journal.window.entities.response.detail.merge.commit.failed = merge commit failed
+
+journal.window.entities.response.detail.merge.preview.failed = merge preview failed
+
+journal.window.entities.response.detail.missing.name.key = Missing { $slot1 }
+
+journal.window.entities.response.detail.name.is.required = name is required
+
+journal.window.entities.response.detail.no.data.provided = No data provided
+
+journal.window.entities.response.detail.observation.content.cannot.be.empty = observation content cannot be empty
+
+journal.window.entities.response.detail.observation.entity.lookup.failed = observation entity lookup failed
+
+journal.window.entities.response.detail.offset.must.be.a.non.negative.integer = offset must be a non-negative integer
+
+journal.window.entities.response.detail.offset.must.not.be.negative = offset must not be negative
+
+journal.window.entities.response.detail.old.name.and.new.name.are.required = { $slot1 } and { $slot2 } are required
+
+journal.window.entities.response.detail.operation.is.required = operation is required
+
+journal.window.entities.response.detail.operation.must.be.a.string = operation must be a string
+
+journal.window.entities.response.detail.recorded.entity.choice.is.absent.from.this.facet = recorded entity choice is absent from this facet
+
+journal.window.entities.response.detail.recorded.entity.choice.is.hidden = recorded entity choice is hidden
+
+journal.window.entities.response.detail.request.body.could.not.be.read = request body could not be read
+
+journal.window.entities.response.detail.resolution.task.failed = resolution task failed
+
+journal.window.entities.response.detail.restore.is.not.available = restore is not available
+
+journal.window.entities.response.detail.review.item.not.found = review item not found
+
+journal.window.entities.response.detail.review.read.failed = review read failed
+
+journal.window.entities.response.detail.review.restore.failed = review restore failed
+
+journal.window.entities.response.detail.review.sweep.failed = review sweep failed
+
+journal.window.entities.response.detail.revision.is.required = revision is required
+
+journal.window.entities.response.detail.since.must.be.a.yyyymmdd.day = since must be a { $slot1 } day
+
+journal.window.entities.response.detail.sort.must.be.activity.or.name = { $slot1 } must be { $slot2 } or { $slot3 }
+
+journal.window.entities.response.detail.source.and.target.resolve.to.the.same.entity = source and target resolve to the same entity.
+
+journal.window.entities.response.detail.source.is.required = source is required
+
+journal.window.entities.response.detail.source.slug.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.status.must.be.open.or.resolved = { $slot1 } must be { $slot2 } or { $slot3 }
+
+journal.window.entities.response.detail.suggestions.are.busy.try.again = suggestions are busy; try again
+
+journal.window.entities.response.detail.target.is.required = target is required
+
+journal.window.entities.response.detail.target.slug.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.the.name.couldn.t.be.changed.so.nothing.changed = the name couldn't be changed, so nothing changed
+
+journal.window.entities.response.detail.the.names.hidden.in.this.facet.can.t.be = the names hidden in this facet can't be read, so nothing changed
+
+journal.window.entities.response.detail.this.entity.is.hidden.so.its.names.can.t = this entity is hidden, so its names can't change until it is unhidden
+
+journal.window.entities.response.detail.this.entity.is.hidden.unhide.it.in.the.entities = This entity is hidden. Unhide it in the entities app first.
+
+journal.window.entities.response.detail.to.facet.is.required = { $slot1 } is required
+
+journal.window.entities.response.detail.type.and.name.are.required = Type and name are required
+
+journal.window.entities.response.detail.type.is.required = type is required
+
+journal.window.entities.response.detail.type.must.be.a.canonical.entity.type.or.other = type must be a canonical entity type or other
+
+journal.window.entities.response.detail.version.id.is.required = { $slot1 } is required
+
+journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2 = Alias '{ $value1 }' conflicts with entity '{ $value2 }'.
+
+journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2.variant2 = Alias '{ $value1 }' conflicts with entity '{ $value2 }'
+
+journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row = ambiguity file{ $slot1 }{ $value1 }{ $slot2 }contains a corrupt row
+
+journal.window.entities.response.formatted.cannot.dismiss.ambiguity.with.status.value1 = cannot dismiss ambiguity with status{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.entity.value1.already.exists = Entity '{ $value1 }' already exists
+
+journal.window.entities.response.formatted.entity.value1.not.found = Entity '{ $value1 }' not found
+
+journal.window.entities.response.formatted.invalid.entity.type.value1 = Invalid entity type{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.invalid.entity.type.value1.variant2 = Invalid entity type:{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.invalid.entity.type.value1.variant3 = Invalid entity type '{ $value1 }'
+
+journal.window.entities.response.formatted.invalid.ids.count.value1 = invalid ids count:{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.invalid.limit.value1 = invalid limit:{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.invalid.operation.id.value1 = invalid operation id:{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.limit.bounded = limit must be between 0 and{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.operation.value1.has.already.been.undone = operation{ $slot1 }{ $value1 }{ $slot2 }has already been undone
+
+journal.window.entities.response.formatted.principal.entity.is.protected.from.this.operation.value1 = principal entity is protected from this operation:{ $slot1 }{ $value1 }
+
+journal.window.entities.response.formatted.query.bound = { $value1 }{ $slot1 }must be between 0 and{ $slot2 }{ $value2 }
+
+journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here = '{ $value1 }' isn't in this facet. add it here first, then add notes about it.
+
+journal.window.entities.response.formatted.value1.must.be.an.integer = { $value1 }{ $slot1 }must be an integer
+
+journal.window.entities.response.formatted.value1.was.merged.into.value2.merges.can.t.be = '{ $value1 }' was merged into '{ $value2 }'. Merges can't be undone, so that name can't be added as a new entity; use '{ $value3 }' instead.
+
+journal.window.entities.response.merge.refusal.both.principal = can't merge these: both are marked as you.
+
+journal.window.entities.response.merge.refusal.person.type = can't merge a person into something that isn't a person.
+
+journal.window.entities.response.merge.refusal.principal.type = can't merge you into something that isn't a person.
+
+journal.window.entities.response.merge.refusal.same.entity = Source and target must be different entities.
+
+journal.window.entities.response.merge.refusal.source.hidden = can't merge something that's hidden. unhide it first.
+
+journal.window.entities.response.merge.refusal.source.missing = Source entity not found:{ $slot1 }{ $id }
+
+journal.window.entities.response.merge.refusal.target.hidden = can't merge into something that's hidden. unhide it first.
+
+journal.window.entities.response.merge.refusal.target.missing = Target entity not found:{ $slot1 }{ $id }
+
+journal.window.entities.response.merge.repair = Contact an operator to repair this merge.
+
+journal.window.entities.response.photo.entity.not.found = that person couldn't be found.
+
+journal.window.entities.response.photo.face.action.changed = this changed since the page loaded. refresh the page.
+
+journal.window.entities.response.photo.face.not.found = that photo is no longer available.
+
+journal.window.entities.response.photo.faces.busy = face data is busy. try again shortly.
+
+journal.window.entities.response.photo.faces.disabled = turn on photo suggestions before choosing a photo.
+
+journal.window.entities.response.photo.faces.enabled = turn off photo suggestions before clearing face data.
+
+journal.window.entities.response.photo.faces.read.failed = those photos couldn't be read. try again.
+
+journal.window.entities.response.photo.request.invalid = that photo request couldn't be read.
+
+journal.window.entities.response.refused = Entity request refused
+
 journal.window.entities.section.heading.detach = detach
 
 journal.window.entities.section.heading.no.entities.yet = no entities yet
+
+journal.window.entities.state.edit.loading = loading…
+
+journal.window.entities.state.edit.unavailable = unavailable
 
 journal.window.entities.text.couldn.t.hide.them = couldn't hide them.
 

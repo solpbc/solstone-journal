@@ -1,0 +1,21 @@
+{
+  "description": "Facet candidate response in the journal's entities view.",
+  "context": "Journal window, entities view. Facet candidate response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9820cb605a5bdf806b46980e91cb78df48e43f67c2cd974f7d1ed797f2fe24e7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -75,8 +75,8 @@ pub use map::{
     NamedIdentityGroups, read_identity_group_map, read_identity_map, read_named_identity_groups,
 };
 pub use merge::{
-    EntityMergeError, EntityMergeOptions, EntityMergePreview, EntityMergeReport,
-    commit_entity_merge, commit_entity_merge_attributed, preview_entity_merge,
+    EntityMergeError, EntityMergeOptions, EntityMergePreview, EntityMergeRefusal,
+    EntityMergeReport, commit_entity_merge, commit_entity_merge_attributed, preview_entity_merge,
 };
 pub use merge_rollback::{entity_merge_recovery_pending, recover_interrupted_entity_merge};
 pub use observations::{

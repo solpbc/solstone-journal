@@ -194,8 +194,7 @@ fn an_interrupted_merge_is_settled_before_its_candidate_is_accepted() {
     assert!(
         matches!(
             &refused,
-            Err(crate::EntityReviewCandidateError::RecordedMerge(message))
-                if message == "candidate merge has no matching active record"
+            Err(crate::EntityReviewCandidateError::NoActiveRecordedMerge)
         ),
         "{refused:?}"
     );

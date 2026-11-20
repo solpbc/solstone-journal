@@ -1,0 +1,16 @@
+{
+  "description": "Partial merge recovery in the journal's entities view.",
+  "context": "Journal window, entities view. Partial merge recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8760e0ad4cdb35f350b932d38058b0b2aeacbf95bc8b373db4a8dc0044a1bc8",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

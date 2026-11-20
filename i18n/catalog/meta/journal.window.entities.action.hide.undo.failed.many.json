@@ -1,0 +1,28 @@
+{
+  "description": "Hide undo result in the journal's entities view.",
+  "context": "Journal window, entities view. Hide undo result.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "77137300386d3f9340ce1eb26a46fc57e32e69c5ea025b8e9e00f912388c5f15",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

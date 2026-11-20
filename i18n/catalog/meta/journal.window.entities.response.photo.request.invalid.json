@@ -1,0 +1,16 @@
+{
+  "description": "Photo request validation in the journal's entities view.",
+  "context": "Journal window, entities view. Photo request validation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd6b8cdabf166c1d06b49ca9c7e687528e58266df5a6a36f432a2803863397c8",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

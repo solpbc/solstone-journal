@@ -4577,7 +4577,7 @@ function showJournalDetailView(entityId) {
   currentDetailEntity = null;
   const knownName = knownEntityName(entityId);
   document.getElementById('journal-detail-name').textContent = knownName || window.JournalI18n.render('journal.window.entities.visible.text.loading');
-  setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.state.text.loading.this.entity'), 'loading…');
+  setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.state.text.loading.this.entity'), window.JournalI18n.render('journal.window.entities.state.edit.loading'));
   document.getElementById('journal-detail-type').textContent = '';
   document.getElementById('journal-detail-aka').textContent = '';
   document.getElementById('journal-detail-indicators').innerHTML = '';
@@ -4605,7 +4605,7 @@ function showJournalDetailView(entityId) {
       console.error('Error loading journal entity details:', error);
       reportEntitiesReady('error');
       document.getElementById('journal-detail-name').textContent = knownName;
-      setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.explanation.this.entity.couldn.t.be.loaded'), 'unavailable');
+      setJournalEditLoading(window.JournalI18n.render('journal.window.entities.window.explanation.this.entity.couldn.t.be.loaded'), window.JournalI18n.render('journal.window.entities.state.edit.unavailable'));
       const container = document.getElementById('journal-detail-facets');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
@@ -4707,13 +4707,13 @@ function renderJournalDetailView(entity) {
   const indicators = [];
   const displayDate = getEntityDisplayDate(entity);
   if (displayDate) {
-    indicators.push(`Last mentioned: ${displayDate}`);
+    indicators.push(window.JournalI18n.renderHtml('journal.window.entities.entity.view.status.last.mentioned.value1', [['value1', String(displayDate)]]));
   }
   if (entity.total_observation_count > 0) {
     indicators.push(journalNotesLabel(entity.total_observation_count));
   }
   if (entity.facets && entity.facets.length > 0) {
-    indicators.push(`${entity.facets.length} facet${entity.facets.length !== 1 ? 's' : ''}`);
+    indicators.push((entity.facets.length === 1 ? window.JournalI18n.renderHtml('journal.window.entities.facet.membership.count.facet') : window.JournalI18n.renderHtml('journal.window.entities.facet.membership.count.value1.facets', [['value1', String(entity.facets.length)]])));
   }
   document.getElementById('journal-detail-indicators').innerHTML = indicators.join(' · ');
   renderJournalDetailIdNote(entity);
@@ -5413,39 +5413,39 @@ const ENTITY_DELETE_COPY = {
   pickLabel: window.JournalI18n.render('journal.window.entities.entity.delete.copy.pick.label.select.name'),
   more: window.JournalI18n.render('journal.window.entities.entity.delete.copy.more.and.n.more'),
   move: {
-    title: window.JournalI18n.render('journal.window.entities.title.delete.this.entity'),
-    titleMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.title.many.delete.n.entities'),
-    reach: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2'),
-    reachMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2'),
-    lead: window.JournalI18n.render('journal.window.entities.entity.delete.copy.lead.this.moves.the.entity.s.own'),
-    ownMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own'),
-    stays: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in.variant2'),
-    staysMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in.variant2'),
+    title: window.JournalI18n.renderEnglish('journal.window.entities.title.delete.this.entity'),
+    titleMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.title.many.delete.n.entities'),
+    reach: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2'),
+    reachMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2'),
+    lead: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.lead.this.moves.the.entity.s.own'),
+    ownMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own'),
+    stays: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in.variant2'),
+    staysMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in.variant2'),
   },
   erase: {
-    title: window.JournalI18n.render('journal.window.entities.title.erase.this.entity.now'),
-    titleMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.title.many.erase.n.entities.now'),
-    reach: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and'),
-    reachMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and'),
-    lead: window.JournalI18n.render('journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own'),
-    ownMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.own.many.this.erases.each.one.s.own'),
-    stays: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in'),
-    staysMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in'),
+    title: window.JournalI18n.renderEnglish('journal.window.entities.title.erase.this.entity.now'),
+    titleMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.title.many.erase.n.entities.now'),
+    reach: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and'),
+    reachMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and'),
+    lead: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own'),
+    ownMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.own.many.this.erases.each.one.s.own'),
+    stays: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.stays.transcripts.summaries.and.activities.elsewhere.in'),
+    staysMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.stays.many.transcripts.summaries.and.activities.elsewhere.in'),
   },
-  again: window.JournalI18n.render('journal.window.entities.entity.delete.copy.again.if.your.journal.finds.it.again'),
-  againMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.again.many.any.of.them.your.journal.finds'),
+  again: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.again.if.your.journal.finds.it.again'),
+  againMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.again.many.any.of.them.your.journal.finds'),
   list: {
-    details: window.JournalI18n.render('journal.window.entities.entity.delete.copy.details.its.details.and.version.history'),
-    facetOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.one.its.place.and.notes.in.facet'),
-    facetMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.many.its.place.and.notes.in.n'),
-    voice: window.JournalI18n.render('journal.window.entities.entity.delete.copy.voice.what.your.journal.keeps.about.its'),
-    facetUnknown: window.JournalI18n.render('journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.each'),
-    voiceUnknown: window.JournalI18n.render('journal.window.entities.entity.delete.copy.voice.unknown.what.your.journal.keeps.about.its'),
+    details: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.details.its.details.and.version.history'),
+    facetOne: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.facet.one.its.place.and.notes.in.facet'),
+    facetMany: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.facet.many.its.place.and.notes.in.n'),
+    voice: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.voice.what.your.journal.keeps.about.its'),
+    facetUnknown: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.each'),
+    voiceUnknown: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.voice.unknown.what.your.journal.keeps.about.its'),
   },
   buttons: {
-    eraseNow: window.JournalI18n.render('journal.window.entities.entity.delete.copy.erase.now.erase.now'),
+    eraseNow: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.erase.now.erase.now'),
     cancel: window.JournalI18n.render('journal.window.entities.entity.delete.copy.cancel.cancel'),
-    moveToTrash: window.JournalI18n.render('journal.window.entities.entity.delete.copy.move.to.trash.move.to.trash'),
+    moveToTrash: window.JournalI18n.renderEnglish('journal.window.entities.entity.delete.copy.move.to.trash.move.to.trash'),
     back: window.JournalI18n.render('journal.window.entities.entity.delete.copy.back.back'),
     recover: window.JournalI18n.render('journal.window.entities.entity.delete.copy.recover.recover'),
     openTrash: window.JournalI18n.render('journal.window.entities.entity.delete.copy.open.trash.open.trash'),
@@ -6242,7 +6242,7 @@ function renderDetailView(entity, observations, detailData) {
   const indicators = [];
   const displayDate = getEntityDisplayDate(entity);
   if (displayDate) {
-    indicators.push(`Last mentioned: ${displayDate}`);
+    indicators.push(window.JournalI18n.renderHtml('journal.window.entities.entity.view.status.last.mentioned.value1', [['value1', String(displayDate)]]));
   }
   if (entity.has_voiceprint) {
     indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${window.ConveyIcons?.svg('mic-vocal') || ''}</span> ${window.JournalI18n.renderHtml('journal.window.entities.visible.text.has.voiceprint')}`);
@@ -6304,7 +6304,7 @@ function renderDetailView(entity, observations, detailData) {
     attachSection.style.display = 'none';
 
     if (isDetached) {
-      detachBtn.textContent = 're-attach';
+      detachBtn.textContent = window.JournalI18n.render('journal.window.entities.button.detail.reattach');
       detachBtn.className = 'btn btn-primary';
       detachBtn.onclick = () => reattachEntity(entity);
     } else {
@@ -6801,9 +6801,9 @@ function renderLoadedJournalEntities() {
 function journalFilterLoadingLabel() {
   const term = journalEntitySearch;
   const type = journalEntityType;
-  if (term && type) return `finding ${type} entities matching "${term}"…`;
-  if (term) return `finding entities matching "${term}"…`;
-  if (type) return `finding ${type} entities…`;
+  if (term && type) return window.JournalI18n.render('journal.window.entities.entity.view.status.finding.value1.entities.matching.value2', [['value1', String(type)], ['value2', String(term)]]);
+  if (term) return window.JournalI18n.render('journal.window.entities.entity.view.status.finding.entities.matching.value1', [['value1', String(term)]]);
+  if (type) return window.JournalI18n.render('journal.window.entities.entity.view.status.finding.value1.entities', [['value1', String(type)]]);
   return window.JournalI18n.render('journal.window.entities.window.state.text.finding.entities');
 }
 
@@ -7906,13 +7906,13 @@ function renderTidyBand() {
   if (ids.count > 0) {
     const names = (ids.items || []).slice(0, 3).map(item => item.name).filter(Boolean);
     card(`${groupedCount(ids.count)} ${tidyPlural(ids.count, window.JournalI18n.render('journal.window.entities.window.explanation.looks.like.an.id'), window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'))}`,
-      names.length ? `e.g. ${names.join(', ')}` : '', 'ids');
+      names.length ? window.JournalI18n.render('journal.window.entities.entity.view.status.e.g.value1', [['value1', String(names.join(', '))]]) : '', 'ids');
   }
   const dups = data.duplicates || {};
   if (dups.count > 0) {
     const first = (dups.items || [])[0];
     card(`${groupedCount(dups.count)} ${tidyPlural(dups.count, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`,
-      first ? `e.g. ${first.names[0]} and ${first.names[1]}` : '', 'duplicates');
+      first ? window.JournalI18n.render('journal.window.entities.entity.view.status.e.g.value1.and.value2', [['value1', String(first.names[0])], ['value2', String(first.names[1])]]) : '', 'duplicates');
   }
   band.hidden = band.children.length === 0;
 }
@@ -8310,7 +8310,7 @@ function tidyToastContent(op) {
     case 'hiding':
       return {text: window.JournalI18n.render('journal.window.entities.text.hiding.value1.of.value2', [['value1', String(groupedCount(op.done || 0))], ['value2', String(groupedCount(t))]])};
     case 'hide-done': {
-      let text = m === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.hid.entity') : `hid ${groupedCount(m)} entities.`;
+      let text = m === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.hid.entity') : window.JournalI18n.render('journal.window.entities.entity.view.status.hid.value1.entities', [['value1', String(groupedCount(m))]]);
       if (k > 0) text += k === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.was.already.hidden.or.gone') : window.JournalI18n.render('journal.window.entities.window.explanation.value1.were.already.hidden.or.gone', [['value1', String(groupedCount(k))]]);
       return {
         text,
@@ -8341,9 +8341,9 @@ function tidyToastContent(op) {
       const failed = op.undo.failed.size;
       let text;
       if (failed > 0) {
-        text = window.JournalI18n.render('journal.window.entities.window.explanation.put.back.value1.of.value2.value3', [['value1', String(groupedCount(restored))], ['value2', String(groupedCount(op.undo.total ?? restored + failed))], ['value3', String(failed === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.be.put.back.it') : `${groupedCount(failed)} couldn't be put back; they're still under hidden.`)]]);
+        text = window.JournalI18n.render('journal.window.entities.window.explanation.put.back.value1.of.value2.value3', [['value1', String(groupedCount(restored))], ['value2', String(groupedCount(op.undo.total ?? restored + failed))], ['value3', String(failed === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.be.put.back.it') : window.JournalI18n.render('journal.window.entities.action.hide.undo.failed.many', [['count', String(groupedCount(failed))]]))]]);
       } else {
-        text = restored === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.put.back.entity') : `put back ${groupedCount(restored)} entities.`;
+        text = restored === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.put.back.entity') : window.JournalI18n.render('journal.window.entities.entity.view.status.put.back.value1.entities', [['value1', String(groupedCount(restored))]]);
       }
       const skipped = Array.from(op.undo.skipped);
       let small = null;
@@ -8421,9 +8421,9 @@ function facetDisplayTitle(slug) {
 
 function facetListText(facets) {
   const titles = facets.map(facetDisplayTitle);
-  if (titles.length <= 1) return titles.length ? `in ${titles[0]}` : '';
-  if (titles.length === 2) return `in ${titles[0]} and ${titles[1]}`;
-  return `in ${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
+  if (titles.length <= 1) return titles.length ? window.JournalI18n.render('journal.window.entities.entity.view.status.in.value1', [['value1', String(titles[0])]]) : '';
+  if (titles.length === 2) return window.JournalI18n.render('journal.window.entities.entity.view.status.in.value1.and.value2', [['value1', String(titles[0])], ['value2', String(titles[1])]]);
+  return window.JournalI18n.render('journal.window.entities.entity.view.status.in.value1.and.value2', [['value1', String(titles.slice(0, -1).join(', '))], ['value2', String(titles[titles.length - 1])]]);
 }
 
 /// Accepting a merge closes every open suggestion naming the merged source,
@@ -8461,7 +8461,7 @@ function renderDupsPanel() {
   title.textContent = `${groupedCount(n)} ${tidyPlural(n, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`;
   const lede = document.createElement('p');
   lede.className = 'journal-tidy-lede';
-  lede.textContent = window.JournalI18n.render('journal.window.entities.visible.text.pairs.that.might.be.the.same');
+  lede.textContent = window.JournalI18n.renderEnglish('journal.window.entities.visible.text.pairs.that.might.be.the.same');
   panel.append(title, lede);
   if (group.error || (tidyState.error && tidyState.dupConfirm?.pendingReport)) {
     tidyLoadError(panel);
@@ -8538,7 +8538,7 @@ function renderDupsPanel() {
   merge.type = 'button';
   merge.className = 'btn btn-primary';
   merge.dataset.action = 'dup-merge';
-  merge.textContent = window.JournalI18n.render('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
+  merge.textContent = window.JournalI18n.renderEnglish('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
   merge.disabled = busy || t === 0;
   merge.onclick = () => {
     tidyState.dupConfirm = {...planDuplicateMerge(members, tidyState.dupSelected), focus: true};
@@ -8609,11 +8609,11 @@ function renderMergeConfirm(plan) {
   box.className = 'journal-dup-confirm';
   box.dataset.tidyState = 'merge-confirm';
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', t === 1 ? window.JournalI18n.render('journal.window.entities.accessible.label.merge.pair') : window.JournalI18n.render('journal.window.entities.accessible.label.merge.value1.pairs', [['value1', String(t)]]));
+  box.setAttribute('aria-label', t === 1 ? window.JournalI18n.renderEnglish('journal.window.entities.accessible.label.merge.pair') : window.JournalI18n.renderEnglish('journal.window.entities.accessible.label.merge.value1.pairs', [['value1', String(t)]]));
   const heading = document.createElement('h4');
-  heading.textContent = t === 1 ? window.JournalI18n.render('journal.window.entities.visible.text.merge.pair') : window.JournalI18n.render('journal.window.entities.visible.text.merge.value1.pairs', [['value1', String(groupedCount(t))]]);
+  heading.textContent = t === 1 ? window.JournalI18n.renderEnglish('journal.window.entities.visible.text.merge.pair') : window.JournalI18n.renderEnglish('journal.window.entities.visible.text.merge.value1.pairs', [['value1', String(groupedCount(t))]]);
   const body = document.createElement('p');
-  body.textContent = window.JournalI18n.render('journal.window.entities.visible.text.each.pair.below.becomes.one.entity');
+  body.textContent = window.JournalI18n.renderEnglish('journal.window.entities.visible.text.each.pair.below.becomes.one.entity');
   const list = document.createElement('ul');
   list.dataset.list = 'kept';
   const previewLoads = [];
@@ -8665,7 +8665,7 @@ function renderMergeConfirm(plan) {
   confirm.type = 'button';
   confirm.className = 'btn btn-primary';
   confirm.dataset.action = 'dup-merge-confirm';
-  confirm.textContent = window.JournalI18n.render('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
+  confirm.textContent = window.JournalI18n.renderEnglish('journal.window.entities.visible.text.merge.value1', [['value1', String(groupedCount(t))]]);
   confirm.disabled = true;
   Promise.all(previewLoads).then(() => {
     if (!ctx.disposed && tidyState.dupConfirm === plan) confirm.disabled = false;
@@ -8681,7 +8681,7 @@ async function runDuplicateMerge(plan) {
   tidyState.dupBusy = true;
   const t = plan.kept.length;
   const statuses = new Map();
-  tidyState.dupStatus = `merging… 0 of ${groupedCount(t)}`;
+  tidyState.dupStatus = window.JournalI18n.render('journal.window.entities.entity.view.status.merging.of.value1', [['value1', String(groupedCount(t))]]);
   renderDupsPanel();
   for (let start = 0; start < t; start += TIDY_MERGE_BATCH) {
     if (start > 0) await tidyClock.sleep(TIDY_GAP_MS);
@@ -8700,7 +8700,7 @@ async function runDuplicateMerge(plan) {
       const merged = result.status === 'accepted' || result.status === 'already_accepted';
       statuses.set(dupKey(member.pair), merged ? 'merged' : (result.status === 'error' ? 'failed' : 'undecided'));
     });
-    tidyState.dupStatus = `merging… ${groupedCount(Math.min(t, start + chunk.length))} of ${groupedCount(t)}`;
+    tidyState.dupStatus = window.JournalI18n.render('journal.window.entities.entity.view.status.merging.value1.of.value2', [['value1', String(groupedCount(Math.min(t, start + chunk.length)))], ['value2', String(groupedCount(t))]]);
     renderDupsPanel();
   }
   const report = {kind: 'merge', keys: plan.kept.map(member => dupKey(member.pair)), statuses};
@@ -8768,15 +8768,15 @@ async function finishDuplicateReport(report) {
 }
 
 function mergeReportText(m, f, t) {
-  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.merged.pair') : `merged ${groupedCount(t)} pairs.`;
+  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.state.text.merged.pair') : window.JournalI18n.render('journal.window.entities.entity.view.status.merged.value1.pairs', [['value1', String(groupedCount(t))]]);
   if (m === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.merge.it.it.s') : window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.merge.them.they.re');
-  return `merged ${groupedCount(m)} of ${groupedCount(t)} pairs. ${f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.be.merged') : `${groupedCount(f)} couldn't be merged.`}`;
+  return window.JournalI18n.render('journal.window.entities.entity.view.status.merged.value1.of.value2.pairs.value3', [['value1', String(groupedCount(m))], ['value2', String(groupedCount(t))], ['value3', String(f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.be.merged') : window.JournalI18n.render('journal.window.entities.entity.view.status.value1.couldn.t.be.merged', [['value1', String(groupedCount(f))]]))]]);
 }
 
 function keepReportText(m, f, t) {
-  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.kept.pair.separate') : `kept ${groupedCount(t)} pairs separate.`;
+  if (f === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.kept.pair.separate') : window.JournalI18n.render('journal.window.entities.entity.view.status.kept.value1.pairs.separate', [['value1', String(groupedCount(t))]]);
   if (m === 0) return t === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.keep.it.separate.it') : window.JournalI18n.render('journal.window.entities.window.explanation.couldn.t.keep.them.separate.they');
-  return window.JournalI18n.render('journal.window.entities.window.explanation.kept.value1.of.value2.pairs.separate', [['value1', String(groupedCount(m))], ['value2', String(groupedCount(t))], ['value3', String(f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.is.still.listed') : `${groupedCount(f)} are still listed.`)]]);
+  return window.JournalI18n.render('journal.window.entities.window.explanation.kept.value1.of.value2.pairs.separate', [['value1', String(groupedCount(m))], ['value2', String(groupedCount(t))], ['value3', String(f === 1 ? window.JournalI18n.render('journal.window.entities.window.explanation.is.still.listed') : window.JournalI18n.render('journal.window.entities.entity.view.status.value1.are.still.listed', [['value1', String(groupedCount(f))]]))]]);
 }
 
 // --- detail view -------------------------------------------------------------
