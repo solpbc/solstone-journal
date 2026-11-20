@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::borrow::Cow;
+
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd};
 
-const MAX_LINE_CHARS: usize = 2048;
+pub const LEGACY_MAX_LINE_CHARS: usize = 2048;
 const MAX_CHUNK_CHARS: usize = 4096;
-const OVERLONG_LINE_WARNING: &str =
-    "Dropped {count} line(s) exceeding 2048 chars during markdown sanitization";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkdownChunk {
@@ -64,43 +64,106 @@ struct CodeBlock {
 struct RawChunk {
     headers: Vec<Header>,
     body: String,
+    prefer_lines: bool,
 }
 
 pub fn format_markdown(input: &str) -> MarkdownFormat {
     let (sanitized, warnings) = sanitize_markdown(input);
-    let raw_chunks = chunk_markdown(&sanitized);
-    let chunks = raw_chunks
-        .into_iter()
-        .map(|chunk| {
-            let rendered = render_chunk(&chunk);
-            let rendered_chars = rendered.chars().count();
-            let markdown = if rendered_chars > MAX_CHUNK_CHARS {
-                render_header_stub(&chunk.headers, rendered_chars)
+    let mut chunks = Vec::new();
+    for chunk in chunk_markdown(&sanitized) {
+        let rendered = render_chunk(&chunk);
+        if rendered.chars().nth(MAX_CHUNK_CHARS).is_none() {
+            chunks.push(MarkdownChunk { markdown: rendered });
+            continue;
+        }
+        let mut remaining = rendered.as_str();
+        while let Some((end, next)) = remaining.char_indices().nth(MAX_CHUNK_CHARS) {
+            let window = &remaining[..end];
+            let line_end = if chunk.prefer_lines {
+                if next == '\n' {
+                    Some(end)
+                } else {
+                    window.rfind('\n')
+                }
             } else {
-                rendered
+                None
             };
-            MarkdownChunk { markdown }
-        })
-        .collect();
+            let boundary = line_end
+                .filter(|offset| *offset > 0)
+                .or_else(|| {
+                    if next.is_whitespace() {
+                        Some(end)
+                    } else {
+                        window
+                            .rfind(char::is_whitespace)
+                            .filter(|offset| *offset > 0)
+                    }
+                })
+                .unwrap_or(end);
+            let (piece, tail) = remaining.split_at(boundary);
+            chunks.push(MarkdownChunk {
+                markdown: piece.trim_end().to_owned(),
+            });
+            remaining = tail.trim_start();
+        }
+        if !remaining.is_empty() {
+            chunks.push(MarkdownChunk {
+                markdown: remaining.to_owned(),
+            });
+        }
+    }
     MarkdownFormat { chunks, warnings }
 }
 
-fn sanitize_markdown(input: &str) -> (String, Vec<String>) {
-    let mut clean = Vec::new();
-    let mut dropped = 0usize;
-    for line in input.split('\n') {
-        if line.chars().count() > MAX_LINE_CHARS {
-            dropped += 1;
-        } else {
-            clean.push(line);
+pub fn exceeds_legacy_line_limit(line: &str) -> bool {
+    line.len() > LEGACY_MAX_LINE_CHARS && line.chars().nth(LEGACY_MAX_LINE_CHARS).is_some()
+}
+
+/// A stored size stub can also be literal prose. Confirm the oversized
+/// rendering on the source before marking its rows for replacement.
+pub fn has_oversized_chunk(input: &str) -> bool {
+    chunk_markdown(input)
+        .iter()
+        .any(|chunk| render_chunk(chunk).chars().nth(MAX_CHUNK_CHARS).is_some())
+}
+
+fn sanitize_markdown(input: &str) -> (Cow<'_, str>, Vec<String>) {
+    let mut sanitized = String::new();
+    let mut copied = 0;
+    let mut collapsed = 0;
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if exceeds_legacy_line_limit(body) {
+            let chars = body.chars().count();
+            let text = body.chars().filter(|ch| !ch.is_whitespace()).count();
+            if text <= chars / 100 {
+                sanitized.push_str(&input[copied..offset]);
+                // Keep a blank line blank and keep the words on a padded line.
+                let mut words = body.split_whitespace();
+                if let Some(first) = words.next() {
+                    sanitized.push_str(first);
+                    for word in words {
+                        sanitized.push(' ');
+                        sanitized.push_str(word);
+                    }
+                }
+                copied = offset + body.len();
+                collapsed += 1;
+            }
         }
+        offset += line.len();
     }
-    let warnings = if dropped == 0 {
-        Vec::new()
-    } else {
-        vec![OVERLONG_LINE_WARNING.replace("{count}", &dropped.to_string())]
-    };
-    (clean.join("\n"), warnings)
+    if collapsed == 0 {
+        return (Cow::Borrowed(input), Vec::new());
+    }
+    sanitized.push_str(&input[copied..]);
+    (
+        Cow::Owned(sanitized),
+        vec![format!(
+            "Collapsed whitespace on {collapsed} overlong Markdown line(s) during indexing"
+        )],
+    )
 }
 
 fn chunk_markdown(input: &str) -> Vec<RawChunk> {
@@ -212,7 +275,7 @@ fn chunk_blocks(blocks: &[MarkdownBlock]) -> Vec<RawChunk> {
                 ) {
                     intro = Some(text.clone());
                 } else {
-                    push_chunk(&mut chunks, &headers, text.clone());
+                    push_chunk(&mut chunks, &headers, text.clone(), false);
                     intro = None;
                 }
             }
@@ -223,13 +286,13 @@ fn chunk_blocks(blocks: &[MarkdownBlock]) -> Vec<RawChunk> {
                     for item in &list.items {
                         append_piece(&mut body, &item.text);
                     }
-                    push_chunk(&mut chunks, &headers, body);
+                    push_chunk(&mut chunks, &headers, body, false);
                 } else {
                     for item in &list.items {
                         let mut body = String::new();
                         append_intro(&mut body, intro.as_deref());
                         append_piece(&mut body, &item.text);
-                        push_chunk(&mut chunks, &headers, body);
+                        push_chunk(&mut chunks, &headers, body, false);
                     }
                 }
                 intro = None;
@@ -240,7 +303,7 @@ fn chunk_blocks(blocks: &[MarkdownBlock]) -> Vec<RawChunk> {
                     append_intro(&mut body, intro.as_deref());
                     append_table_row(&mut body, &table.headers);
                     append_table_row(&mut body, row);
-                    push_chunk(&mut chunks, &headers, body);
+                    push_chunk(&mut chunks, &headers, body, false);
                 }
                 intro = None;
             }
@@ -248,11 +311,11 @@ fn chunk_blocks(blocks: &[MarkdownBlock]) -> Vec<RawChunk> {
                 let mut body = String::new();
                 append_piece(&mut body, &code.info);
                 append_piece(&mut body, &code.body);
-                push_chunk(&mut chunks, &headers, body);
+                push_chunk(&mut chunks, &headers, body, true);
                 intro = None;
             }
             MarkdownBlock::BlockQuote(text) => {
-                push_chunk(&mut chunks, &headers, text.clone());
+                push_chunk(&mut chunks, &headers, text.clone(), true);
                 intro = None;
             }
             MarkdownBlock::ThematicBreak | MarkdownBlock::HtmlBlock => {
@@ -264,13 +327,14 @@ fn chunk_blocks(blocks: &[MarkdownBlock]) -> Vec<RawChunk> {
     chunks
 }
 
-fn push_chunk(chunks: &mut Vec<RawChunk>, headers: &[Header], body: String) {
+fn push_chunk(chunks: &mut Vec<RawChunk>, headers: &[Header], body: String, prefer_lines: bool) {
     if body.trim().is_empty() {
         return;
     }
     chunks.push(RawChunk {
         headers: headers.to_vec(),
         body,
+        prefer_lines,
     });
 }
 
@@ -320,36 +384,6 @@ fn render_chunk(chunk: &RawChunk) -> String {
     }
     markdown.push_str(chunk.body.trim());
     markdown
-}
-
-fn render_header_stub(headers: &[Header], original_size: usize) -> String {
-    let mut parts: Vec<String> = headers
-        .iter()
-        .map(|header| {
-            format!(
-                "{} {}",
-                "#".repeat(heading_rank(header.level)),
-                header.text.trim()
-            )
-        })
-        .collect();
-    parts.push(format!(
-        "\n[Content too large to index: {} chars]",
-        format_usize_with_commas(original_size)
-    ));
-    parts.join("\n\n")
-}
-
-fn format_usize_with_commas(value: usize) -> String {
-    let digits = value.to_string();
-    let mut out = String::new();
-    for (idx, ch) in digits.chars().rev().enumerate() {
-        if idx > 0 && idx % 3 == 0 {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out.chars().rev().collect()
 }
 
 fn heading_rank(level: HeadingLevel) -> usize {
@@ -972,21 +1006,21 @@ mod tests {
     }
 
     #[test]
-    fn overlong_lines_are_dropped_with_warning() {
-        let input = format!("# Long\n\n{}\n\nkept alpha", "z".repeat(MAX_LINE_CHARS + 1));
-        let formatted = format_markdown(&input);
+    fn overlong_paragraph_is_kept() {
+        let paragraph = format!("{}lineend", "ordinary ".repeat(300));
+        let formatted = format_markdown(&format!("# Long\n\n{paragraph}\n\nkept alpha"));
+        assert!(formatted.warnings.is_empty());
+        assert_eq!(formatted.chunks.len(), 2);
         assert_eq!(
-            formatted.warnings,
-            vec!["Dropped 1 line(s) exceeding 2048 chars during markdown sanitization"]
+            formatted.chunks[0].markdown,
+            format!("# Long\n\n{paragraph}")
         );
-        assert_eq!(formatted.chunks.len(), 1);
-        assert!(formatted.chunks[0].markdown.contains("kept alpha"));
-        assert!(!formatted.chunks[0].markdown.contains('z'));
+        assert_eq!(formatted.chunks[1].markdown, "# Long\n\nkept alpha");
     }
 
     #[test]
     fn non_ascii_bounds_count_characters_not_utf8_bytes() {
-        let under_line_bound = format!("# Accent\n\n{}\n", "é".repeat(MAX_LINE_CHARS - 1));
+        let under_line_bound = format!("# Accent\n\n{}\n", "é".repeat(LEGACY_MAX_LINE_CHARS - 1));
         let formatted = format_markdown(&under_line_bound);
         assert!(formatted.warnings.is_empty());
         assert_eq!(formatted.chunks.len(), 1);
@@ -994,16 +1028,16 @@ mod tests {
 
         let over_line_bound = format!(
             "# Accent\n\n{}\n\nkept alpha\n",
-            "é".repeat(MAX_LINE_CHARS + 1)
+            "é".repeat(LEGACY_MAX_LINE_CHARS + 1)
         );
         let formatted = format_markdown(&over_line_bound);
+        assert!(formatted.warnings.is_empty());
+        assert_eq!(formatted.chunks.len(), 2);
         assert_eq!(
-            formatted.warnings,
-            vec!["Dropped 1 line(s) exceeding 2048 chars during markdown sanitization"]
+            formatted.chunks[0].markdown.matches('é').count(),
+            LEGACY_MAX_LINE_CHARS + 1
         );
-        assert_eq!(formatted.chunks.len(), 1);
-        assert!(formatted.chunks[0].markdown.contains("kept alpha"));
-        assert!(!formatted.chunks[0].markdown.contains('é'));
+        assert!(formatted.chunks[1].markdown.contains("kept alpha"));
 
         let multi_line = ["é".repeat(1300), "é".repeat(1300), "é".repeat(1300)].join("\n");
         let formatted = format_markdown(&format!("# Accent\n\n{multi_line}\n"));
@@ -1019,20 +1053,89 @@ mod tests {
     }
 
     #[test]
-    fn oversized_chunks_become_header_stub() {
-        let oversized_line = "alpha ".repeat(300);
-        let input = format!(
-            "# Big\n\n{}\n{}\n{}",
-            oversized_line, oversized_line, oversized_line
-        );
-        let formatted = format_markdown(&input);
-        assert_eq!(formatted.chunks.len(), 1);
+    fn oversized_paragraph_keeps_all_words_in_order() {
+        let line = "alpha ".repeat(300);
+        let formatted = format_markdown(&format!("# Big\n\n{line}\n{line}\n{line}blockend"));
+        assert!(formatted.warnings.is_empty());
+        assert_eq!(formatted.chunks.len(), 2);
         assert!(formatted.chunks[0].markdown.starts_with("# Big\n\n"));
-        assert!(
-            formatted.chunks[0]
-                .markdown
-                .contains("[Content too large to index:")
+        assert!(formatted.chunks[1].markdown.ends_with("blockend"));
+        assert_eq!(
+            formatted
+                .chunks
+                .iter()
+                .map(|piece| piece.markdown.matches("alpha").count())
+                .sum::<usize>(),
+            900,
         );
-        assert!(!formatted.chunks[0].markdown.contains("alpha alpha"));
+        assert!(
+            formatted
+                .chunks
+                .iter()
+                .all(|piece| piece.markdown.chars().count() <= MAX_CHUNK_CHARS)
+        );
+    }
+
+    #[test]
+    fn oversized_code_and_quotes_prefer_line_boundaries() {
+        let line = format!("{} complete", "item ".repeat(290));
+        let code = format!("```text\n{line}\n{line}\n{line}\ncodeend\n```");
+        let quote = format!("> {line}\n> {line}\n> {line}\n> quoteend");
+        for (source, tail) in [(code, "codeend"), (quote, "quoteend")] {
+            let formatted = format_markdown(&source);
+            assert!(formatted.warnings.is_empty());
+            assert_eq!(formatted.chunks.len(), 2);
+            assert!(formatted.chunks[0].markdown.ends_with(&line));
+            assert_eq!(formatted.chunks[1].markdown, format!("{line}\n{tail}"));
+        }
+    }
+
+    #[test]
+    fn an_unbroken_token_splits_only_at_utf8_boundaries() {
+        let source = "界".repeat(MAX_CHUNK_CHARS * 2 + 7);
+        let formatted = format_markdown(&source);
+        assert!(formatted.warnings.is_empty());
+        assert_eq!(formatted.chunks.len(), 3);
+        assert_eq!(
+            formatted
+                .chunks
+                .into_iter()
+                .map(|chunk| chunk.markdown)
+                .collect::<String>(),
+            source,
+        );
+    }
+
+    #[test]
+    fn whitespace_padded_line_collapses_and_keeps_its_words() {
+        let left = "x".repeat(995);
+        let input = format!("# Padded\n\n{left}{}right", " ".repeat(99_000));
+        let formatted = format_markdown(&input);
+        assert_eq!(formatted.warnings.len(), 1);
+        assert_eq!(
+            formatted.chunks,
+            [MarkdownChunk {
+                markdown: format!("# Padded\n\n{left} right")
+            }]
+        );
+    }
+
+    #[test]
+    fn short_chunks_keep_their_existing_bytes() {
+        let formatted =
+            format_markdown("# Topic\n\nOrdinary prose.\n\n## Details\n\nLead-in\n\n- Red\n- Blue");
+        let chunks: Vec<_> = formatted
+            .chunks
+            .iter()
+            .map(|chunk| chunk.markdown.as_str())
+            .collect();
+        assert_eq!(
+            chunks,
+            [
+                "# Topic\n\nOrdinary prose.",
+                "# Topic\n\n## Details\n\nLead-in\n\nRed",
+                "# Topic\n\n## Details\n\nLead-in\n\nBlue",
+            ],
+        );
     }
 }

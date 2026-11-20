@@ -9,6 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use solstone_core_format::agent_memory::{Coordinate, Origin, ReadyDocument, SourceKey};
+use solstone_core_format::chunker::{
+    LEGACY_MAX_LINE_CHARS, exceeds_legacy_line_limit, has_oversized_chunk,
+};
 use solstone_core_format::content::{
     ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
@@ -628,7 +631,7 @@ fn scan_journal_pass(
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
-    mark_once_reindexes(&mut conn, journal, !full, checkpoint)?;
+    mark_once_reindexes(&mut conn, journal, &files, !full, checkpoint)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
@@ -974,7 +977,7 @@ pub(crate) fn plan_scan_turns(
             return Ok(None);
         };
         let mut conn = open_index_admitted(journal, &admission, checkpoint)?;
-        mark_once_reindexes(&mut conn, journal, false, checkpoint)?;
+        mark_once_reindexes(&mut conn, journal, &files, false, checkpoint)?;
         load_file_mtimes(&conn)?
     };
     let mut planned = Vec::new();
@@ -1871,6 +1874,7 @@ const RETIRED_EVENT_PLANS_META: &str = "retired_event_plans";
 fn mark_once_reindexes(
     conn: &mut Connection,
     journal: &Path,
+    files: &BTreeMap<String, PathBuf>,
     queue_full_pass: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), StoreError> {
@@ -1889,24 +1893,97 @@ fn mark_once_reindexes(
         tx.rollback()?;
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
-    match reindex_hidden_once(&tx, journal)? {
-        Some(marked) => {
-            commit_scanned(tx, checkpoint)?;
-            // Too many for one light scan to carry: a full pass takes turns
-            // with saves instead.
-            if queue_full_pass
-                && marked > crate::todo::scan_turns_min()
-                && let Err(error) = solstone_core_indexer_todo::enqueue_token(
-                    journal,
-                    solstone_core_indexer_todo::Token::ScanFull,
-                )
-            {
-                log::warn!(target: "solstone::indexer", "full search pass not queued: {error}");
-            }
-        }
-        None => tx.rollback()?,
+    let hidden = reindex_hidden_once(&tx, journal)?;
+    let markdown = reindex_long_markdown_once(&tx, files)?;
+    if hidden.is_some() || markdown.is_some() {
+        commit_scanned(tx, checkpoint)?;
+    } else {
+        tx.rollback()?;
+    }
+    // Too many for one light scan to carry: a full pass takes turns with
+    // saves instead.
+    if queue_full_pass
+        && hidden.unwrap_or(0) + markdown.unwrap_or(0) > crate::todo::scan_turns_min()
+        && let Err(error) = solstone_core_indexer_todo::enqueue_token(
+            journal,
+            solstone_core_indexer_todo::Token::ScanFull,
+        )
+    {
+        log::warn!(target: "solstone::indexer", "full search pass not queued: {error}");
     }
     Ok(())
+}
+
+const LONG_MARKDOWN_META: &str = "long_markdown_split";
+
+/// The old index has no per-file record of dropped lines. An overlong line
+/// needs at least 2,049 bytes, so use the source size to avoid opening small
+/// files. An oversized rendered block did leave a stub, even when rendering
+/// expanded a small source. Find those candidates through FTS.
+fn reindex_long_markdown_once(
+    conn: &Connection,
+    files: &BTreeMap<String, PathBuf>,
+) -> Result<Option<usize>, StoreError> {
+    if conn
+        .query_row(
+            "SELECT 1 FROM index_meta WHERE key=?",
+            [LONG_MARKDOWN_META],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some()
+    {
+        return Ok(None);
+    }
+    let paths = conn
+        .prepare("SELECT path FROM files WHERE path GLOB '*.md' AND mtime != -1")?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let stub_paths = conn
+        .prepare("SELECT DISTINCT path FROM chunks WHERE chunks MATCH ? AND path GLOB '*.md'")?
+        .query_map(["\"content too large to index\""], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<HashSet<_>, _>>()?;
+
+    let mut marked = 0;
+    let mut all_read = true;
+    for rel in paths {
+        let Some(path) = files.get(&rel) else {
+            continue;
+        };
+        let select = || -> std::io::Result<bool> {
+            let has_stub = stub_paths.contains(&rel);
+            let metadata = fs::metadata(path)?;
+            if !metadata.is_file()
+                || (!has_stub && metadata.len() <= LEGACY_MAX_LINE_CHARS as u64)
+                || resolve_content_shape(path, &rel) != ContentResolution::Indexed(Family::Markdown)
+            {
+                return Ok(false);
+            }
+            let text = fs::read_to_string(path)?;
+            Ok(text.split('\n').any(exceeds_legacy_line_limit)
+                || (has_stub && has_oversized_chunk(&text)))
+        };
+        match select() {
+            Ok(true) => {
+                marked += conn.execute("UPDATE files SET mtime=-1 WHERE path=?", [&rel])?;
+            }
+            Ok(false) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                all_read = false;
+                log::warn!(target: "solstone::indexer", "Markdown reindex could not check {rel}: {error}");
+            }
+        }
+    }
+    if all_read {
+        conn.execute(
+            "INSERT INTO index_meta(key, value) VALUES (?, '1')",
+            [LONG_MARKDOWN_META],
+        )?;
+    }
+    Ok(Some(marked))
 }
 
 /// The `index_meta` key marking that what hides kept in search before hides
@@ -5380,23 +5457,24 @@ mod tests {
     }
 
     #[test]
-    fn scan_propagates_markdown_sanitize_warnings() {
+    fn scan_propagates_markdown_whitespace_collapse_warning() {
         let root = temp_root("markdown-sanitize-warning");
         let rel = "20260717/talents/flow.md";
         write(
             &root,
             &format!("chronicle/{rel}"),
-            &format!("# Flow\n\n{}\n\nkept alpha", "z".repeat(2049)),
+            &format!("# Flow\n\nleft{}right", " ".repeat(100_000)),
         );
-
         let report = scan_journal(&root, true).expect("scan markdown warning");
         assert_eq!(report.indexed, 1);
-        assert_eq!(
-            report.warnings,
-            vec!["Dropped 1 line(s) exceeding 2048 chars during markdown sanitization"]
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("Collapsed whitespace"))
         );
         let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(chunk_content(&conn, rel), "# Flow\n\nkept alpha");
+        assert_eq!(chunk_content(&conn, rel), "# Flow\n\nleft right");
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup markdown warning root");
     }

@@ -82,6 +82,9 @@ pub(crate) struct EntryReference {
     pub activity_proof: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_identity: Option<String>,
+    /// Markdown chunk positions can move when their file is indexed again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markdown_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -554,6 +557,7 @@ mod tests {
                     row_id: 9,
                     activity_proof: None,
                     record_identity: None,
+                    markdown_fingerprint: None,
                     source_digest: None,
                     byte_offset: None,
                 }),

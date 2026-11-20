@@ -2143,6 +2143,9 @@ fn search(
                         row_id: hit.row_id,
                         activity_proof,
                         record_identity,
+                        markdown_fingerprint: (!is_screen_text
+                            && hit.metadata.path.ends_with(".md"))
+                        .then(|| digest(&hit.text)),
                         source_digest,
                         byte_offset,
                     }),
@@ -2734,6 +2737,7 @@ fn fetch(
                                 row_id: entry.row_id,
                                 activity_proof: None,
                                 record_identity: None,
+                                markdown_fingerprint: None,
                                 source_digest: Some(source_digest.to_owned()),
                                 byte_offset: Some(next_off),
                             }),
@@ -2822,6 +2826,14 @@ fn fetch(
                     // Links resolve from the admitted record. Cleaning drops
                     // `stream`, and the resolver would then cross streams.
                     (cleaned_text, Some(a.hidden), Some(a.record))
+                }
+                ActivityAdmit::NotActivity(content)
+                    if entry
+                        .markdown_fingerprint
+                        .as_ref()
+                        .is_some_and(|fingerprint| *fingerprint != digest(&content)) =>
+                {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                 }
                 // A possible name is re-checked for this connection now, as search did.
                 ActivityAdmit::NotActivity(content) if is_possible_names_path(&entry.path) => {

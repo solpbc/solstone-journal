@@ -2702,8 +2702,7 @@ mod tests {
     use glob::{MatchOptions, Pattern};
 
     use crate::chunker::test_support::{
-        OVERSIZED_SIZE_NORMALIZATION, markdown_fixture, normalize_tokens, rust_tokenize, strings,
-        token_comparison_enabled,
+        markdown_fixture, normalize_tokens, rust_tokenize, strings, token_comparison_enabled,
     };
 
     use super::*;
@@ -3618,53 +3617,18 @@ mod tests {
     }
 
     #[test]
-    fn markdown_producer_drops_overlong_lines_and_stubs_oversized_chunks() {
+    fn markdown_producer_keeps_words_beyond_the_old_line_and_chunk_limits() {
+        let paragraph = format!("{}lineend", "ordinary ".repeat(300));
+        let line = "alpha ".repeat(300);
         let produced = produce_chunks(
             Family::Markdown,
             "20240101/talents/flow.md",
-            &format!("# Long\n\n{}\n\nkept alpha\n", "z".repeat(2049)),
+            &format!("# Long\n\n{paragraph}\n\n{line}\n{line}\n{line}blockend"),
         );
-        assert_eq!(produced.chunks.len(), 1);
-        assert_eq!(
-            produced.warnings,
-            vec!["Dropped 1 line(s) exceeding 2048 chars during markdown sanitization"]
-        );
-        assert_eq!(
-            rust_tokenize(&produced.chunks[0].content),
-            ["long", "kept", "alpha"]
-        );
-
-        let oversized_line = "alpha ".repeat(300);
-        let produced = produce_chunks(
-            Family::Markdown,
-            "20240101/talents/flow.md",
-            &format!(
-                "# Big\n\n{}\n{}\n{}",
-                oversized_line, oversized_line, oversized_line
-            ),
-        );
-        assert_eq!(produced.chunks.len(), 1);
-        assert!(
-            produced.chunks[0]
-                .content
-                .contains("[Content too large to index:")
-        );
-        assert_eq!(
-            normalize_tokens(
-                rust_tokenize(&produced.chunks[0].content),
-                &[OVERSIZED_SIZE_NORMALIZATION.to_string()]
-            ),
-            [
-                "big",
-                "content",
-                "too",
-                "large",
-                "to",
-                "index",
-                "normalizedsize",
-                "chars"
-            ]
-        );
+        assert!(produced.warnings.is_empty());
+        assert_eq!(produced.chunks.len(), 3);
+        assert!(produced.chunks[0].content.ends_with("lineend"));
+        assert!(produced.chunks[2].content.ends_with("blockend"));
     }
 
     #[test]

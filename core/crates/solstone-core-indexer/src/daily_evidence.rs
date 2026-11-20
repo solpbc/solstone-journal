@@ -411,7 +411,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             .agent_override
             .unwrap_or(metadata.agent)
             .to_lowercase();
-        // Search formatting may drop long lines or omit structured fields.
+        // Search formatting may collapse whitespace or omit structured fields.
         // Revision identity must retain every source field the hooks can read,
         // even when this source produces no searchable chunks at all.
         sources.push(SourceEvidence {
@@ -1526,25 +1526,23 @@ mod tests {
     }
 
     #[test]
-    fn evidence_retains_long_transcript_lines_eliminated_by_search_formatting() {
+    fn evidence_retains_whitespace_collapsed_by_search_formatting() {
         let root = root("daily-lossless-transcript");
         let path = "chronicle/20260910/mic/090000_60/audio_transcript.md";
-        let prefix = "context ".repeat(400);
-        write(&root, path, &format!("{prefix}Meeting is on Monday."));
+        let padded = |width| format!("Meeting{}is on Monday.", " ".repeat(width));
+        write(&root, path, &padded(100_000));
         let projected = capture_day_sources(&root, "20260910").unwrap();
-        assert!(
-            projected.is_empty(),
-            "positive control: search formatter must omit the long line"
-        );
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].text, "Meeting is on Monday.");
         let before = revision(&root, "morning_briefing", None);
-        write(&root, path, &format!("{prefix}Meeting is on Friday."));
+        write(&root, path, &padded(100_001));
         assert_eq!(projected, capture_day_sources(&root, "20260910").unwrap());
         assert_ne!(before, revision(&root, "morning_briefing", None));
         let report = capture_day_projection(&root, "20260910").unwrap();
         assert_eq!(report.sources.len(), 1);
         assert!(
             !report.sources[0].warnings.is_empty(),
-            "omitted chunks must retain their diagnostic"
+            "collapsed whitespace must retain its diagnostic"
         );
         fs::remove_dir_all(root).unwrap();
     }

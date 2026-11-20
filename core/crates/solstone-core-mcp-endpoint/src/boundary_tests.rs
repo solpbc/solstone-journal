@@ -9280,6 +9280,7 @@ fn malformed_activity_source_withholds_the_whole_file_after_indexing() {
                 row_id,
                 activity_proof: Some(proof),
                 record_identity: None,
+                markdown_fingerprint: None,
                 source_digest: None,
                 byte_offset: None,
             }),
@@ -10474,6 +10475,7 @@ fn facets_only_listing_fetches_the_activity_and_refuses_an_entry() {
                 row_id: 1,
                 activity_proof: None,
                 record_identity: None,
+                markdown_fingerprint: None,
                 source_digest: None,
                 byte_offset: None,
             }),
@@ -11666,6 +11668,72 @@ fn fetch_markdown_first_chunk_refuses_when_expansion_cannot_be_verified() {
 }
 
 #[test]
+fn fetch_after_markdown_reindex_reads_the_document_and_rejects_a_shifted_reference() {
+    let journal = base_activity_journal();
+    let rel = "reflections/weekly/20260308.md";
+    let path = journal.path().join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let legacy = "# Report\n\n[Content too large to index: 5,473 chars]\n\nfollowingneedle";
+    fs::write(&path, legacy).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    let search = |query| probe(&journal, "search", json!({"query": query})).unwrap();
+    let old_hit = search("followingneedle");
+    let old_reference = old_hit["results"][0]["reference"].as_str().unwrap();
+    assert!(probe(&journal, "fetch", json!({"reference": old_reference})).is_ok());
+
+    let line = "ordinary ".repeat(200);
+    let updated = format!("# Report\n\n{line}\n{line}\n{line}secondpieceneedle\n\nfollowingneedle");
+    fs::write(&path, &updated).unwrap();
+    let conn = rusqlite::Connection::open(solstone_core_indexer_store::db::db_path(journal.path()))
+        .unwrap();
+    let mtime = fs::metadata(&path)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    conn.execute(
+        "UPDATE files SET mtime=?1 WHERE path=?2",
+        rusqlite::params![mtime, rel],
+    )
+    .unwrap();
+    conn.execute("DELETE FROM index_meta WHERE key='long_markdown_split'", [])
+        .unwrap();
+    drop(conn);
+    assert!(
+        search("secondpieceneedle")["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
+    let new_hit = search("secondpieceneedle");
+    let hits = new_hit["results"].as_array().unwrap();
+    assert_eq!(hits.len(), 1);
+    let reference = hits[0]["reference"].as_str().unwrap();
+    let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
+    assert_eq!(
+        fetched["text"],
+        solstone_core_format::markdown::literal_markup(&updated)
+    );
+    assert_eq!(
+        probe(&journal, "fetch", json!({"reference": old_reference})),
+        Err(McpProbeError::Unavailable)
+    );
+    let batch = probe(
+        &journal,
+        "fetch",
+        json!({"references": [old_reference, reference]}),
+    )
+    .unwrap();
+    assert_eq!(batch["items"][0]["error"]["code"], "not_found");
+    assert_eq!(batch["items"][1]["result"]["text"], fetched["text"]);
+    assert_eq!(fs::read_to_string(path).unwrap(), updated);
+}
+
+#[test]
 fn fetch_activity_jsonl_neighbor_isolation() {
     let journal = base_activity_journal();
     let day = "20260308";
@@ -12545,6 +12613,7 @@ fn a_chosen_facet_connection_reaches_neither_the_briefing_nor_the_weekly_page() 
                     row_id,
                     activity_proof: None,
                     record_identity: None,
+                    markdown_fingerprint: None,
                     source_digest: None,
                     byte_offset: None,
                 }),
