@@ -29,120 +29,120 @@
   // --- owner-facing strings ---
   const strings = Object.freeze({
     unknown: '—',
-    drawer_label: 'bookkeeping',
-    leads_title: 'where this landed',
-    activities: 'activities',
-    view_day: 'view that day',
-    upload_facts: 'upload facts',
-    processing_facts: 'processing facts',
-    merge_summary: 'merge summary',
-    merge_highlights: 'merge highlights',
-    artifact_paths: 'artifact paths',
-    created_files: 'created files',
-    original_file: 'original file',
-    file_size: 'file size',
-    mime_type: 'mime type',
-    uploaded_at: 'uploaded at',
-    detected_time: 'detected time',
-    import_time: 'import time',
-    date_source: 'date source',
-    date_source_photo: 'from photo',
-    date_source_fallback: 'import time (no date in photo)',
-    date_source_owner: 'chosen by you',
-    photo_fallback_notice: 'no date in photo · placed at import time',
-    facets: 'facets',
-    setting: 'setting',
-    status: 'status',
-    source: 'source',
-    target_day: 'target day',
-    date_range: 'date range',
-    entry: 'entry',
-    entries: 'entries',
-    entity: 'entity',
-    entities: 'entities',
-    file: 'file',
-    files: 'files',
-    completed_at: 'completed at',
-    failed_at: 'failed at',
-    failed_stage: 'failed stage',
-    error: 'error',
-    segments: 'segments',
-    imports: 'imports',
-    decisions: 'decisions',
-    staging: 'staging',
-    staged_entities: 'staged entities',
-    more_staged: 'more staged',
-    summary_errors: 'summary errors',
-    raw_payload: 'raw payload',
-    drawer_unavailable: 'drawer renderer unavailable',
-    completed: 'completed',
-    failed: 'failed',
-    pending: 'pending',
-    running: 'running',
-    unconfirmed: 'import unconfirmed',
-    unconfirmed_explanation: "this import couldn't be confirmed as finished.",
-    status_unavailable: 'import status unavailable',
-    image_description_gap_detail: 'image saved without visual description',
-    processing: 'processing…',
-    saved: 'saved',
-    not_started: 'not started',
-    start_unknown: 'start status unknown',
+    drawer_label: window.JournalI18n.render('journal.window.import.strings.drawer.label.bookkeeping'),
+    leads_title: window.JournalI18n.render('journal.window.import.strings.leads.title.where.this.landed'),
+    activities: window.JournalI18n.render('journal.window.import.strings.activities.activities'),
+    view_day: window.JournalI18n.render('journal.window.import.strings.view.day.view.that.day'),
+    upload_facts: window.JournalI18n.render('journal.window.import.strings.upload.facts.upload.facts'),
+    processing_facts: window.JournalI18n.render('journal.window.import.strings.processing.facts.processing.facts'),
+    merge_summary: window.JournalI18n.render('journal.window.import.strings.merge.summary.merge.summary'),
+    merge_highlights: window.JournalI18n.render('journal.window.import.strings.merge.highlights.merge.highlights'),
+    artifact_paths: window.JournalI18n.render('journal.window.import.strings.artifact.paths.artifact.paths'),
+    created_files: window.JournalI18n.render('journal.window.import.strings.created.files.created.files'),
+    original_file: window.JournalI18n.render('journal.window.import.strings.original.file.original.file'),
+    file_size: window.JournalI18n.render('journal.window.import.strings.file.size.file.size'),
+    mime_type: window.JournalI18n.render('journal.window.import.strings.mime.type.mime.type'),
+    uploaded_at: window.JournalI18n.render('journal.window.import.strings.uploaded.at.uploaded.at'),
+    detected_time: window.JournalI18n.render('journal.window.import.strings.detected.time.detected.time'),
+    import_time: window.JournalI18n.render('journal.window.import.strings.import.time.import.time'),
+    date_source: window.JournalI18n.render('journal.window.import.strings.date.source.date.source'),
+    date_source_photo: window.JournalI18n.render('journal.window.import.strings.date.source.photo.from.photo'),
+    date_source_fallback: window.JournalI18n.render('journal.window.import.strings.date.source.fallback.import.time.no.date.in.photo'),
+    date_source_owner: window.JournalI18n.render('journal.window.import.strings.date.source.owner.chosen.by.you'),
+    photo_fallback_notice: window.JournalI18n.render('journal.window.import.strings.photo.fallback.notice.no.date.in.photo.placed.at'),
+    facets: window.JournalI18n.render('journal.window.import.strings.facets.facets'),
+    setting: window.JournalI18n.render('journal.window.import.strings.setting.setting'),
+    status: window.JournalI18n.render('journal.window.import.strings.status.status'),
+    source: window.JournalI18n.render('journal.window.import.strings.source.source'),
+    target_day: window.JournalI18n.render('journal.window.import.strings.target.day.target.day'),
+    date_range: window.JournalI18n.render('journal.window.import.strings.date.range.date.range'),
+    entry: window.JournalI18n.render('journal.window.import.strings.entry.entry'),
+    entries: window.JournalI18n.render('journal.window.import.strings.entries.entries'),
+    entity: window.JournalI18n.render('journal.window.import.strings.entity.entity'),
+    entities: window.JournalI18n.render('journal.window.import.strings.entities.entities'),
+    file: window.JournalI18n.render('journal.window.import.strings.file.file'),
+    files: window.JournalI18n.render('journal.window.import.strings.files.files'),
+    completed_at: window.JournalI18n.render('journal.window.import.strings.completed.at.completed.at'),
+    failed_at: window.JournalI18n.render('journal.window.import.strings.failed.at.failed.at'),
+    failed_stage: window.JournalI18n.render('journal.window.import.strings.failed.stage.failed.stage'),
+    error: window.JournalI18n.render('journal.window.import.strings.error.error'),
+    segments: window.JournalI18n.render('journal.window.import.strings.segments.segments'),
+    imports: window.JournalI18n.render('journal.window.import.strings.imports.imports'),
+    decisions: window.JournalI18n.render('journal.window.import.strings.decisions.decisions'),
+    staging: window.JournalI18n.render('journal.window.import.strings.staging.staging'),
+    staged_entities: window.JournalI18n.render('journal.window.import.strings.staged.entities.staged.entities'),
+    more_staged: window.JournalI18n.render('journal.window.import.strings.more.staged.more.staged'),
+    summary_errors: window.JournalI18n.render('journal.window.import.strings.summary.errors.summary.errors'),
+    raw_payload: window.JournalI18n.render('journal.window.import.strings.raw.payload.raw.payload'),
+    drawer_unavailable: window.JournalI18n.render('journal.window.import.strings.drawer.unavailable.drawer.renderer.unavailable'),
+    completed: window.JournalI18n.render('journal.window.import.strings.completed.completed'),
+    failed: window.JournalI18n.render('journal.window.import.strings.failed.failed'),
+    pending: window.JournalI18n.render('journal.window.import.strings.pending.pending'),
+    running: window.JournalI18n.render('journal.window.import.strings.running.running'),
+    unconfirmed: window.JournalI18n.render('journal.window.import.strings.unconfirmed.import.unconfirmed'),
+    unconfirmed_explanation: window.JournalI18n.render('journal.window.import.strings.unconfirmed.explanation.this.import.couldn.t.be.confirmed'),
+    status_unavailable: window.JournalI18n.render('journal.window.import.strings.status.unavailable.import.status.unavailable'),
+    image_description_gap_detail: window.JournalI18n.render('journal.window.import.strings.image.description.gap.detail.image.saved.without.visual.description'),
+    processing: window.JournalI18n.render('journal.window.import.strings.processing.processing'),
+    saved: window.JournalI18n.render('journal.window.import.strings.saved.saved'),
+    not_started: window.JournalI18n.render('journal.window.import.strings.not.started.not.started'),
+    start_unknown: window.JournalI18n.render('journal.window.import.strings.start.unknown.start.status.unknown'),
     // An Apple Health import's own states, as its row says them. Owner copy: voice-checked.
-    body_partly_saved: 'partly saved',
-    body_stopped: 'stopped',
-    body_failed: 'not brought in',
-    body_didnt_start: "didn't start",
-    start_unknown_detail: "this file is saved, but its history doesn't confirm whether the import started.",
-    starting: 'starting…',
-    preview_import: 'preview import',
-    preparing_preview: 'preparing preview…',
-    start_import: 'start import',
-    check_status: 'check status',
-    checking_status: 'checking status…',
-    nothing_to_import: 'nothing to import',
-    preview_failed: "couldn't prepare a preview. try again.",
-    status_failed: "couldn't load the import's status. check again.",
-    start_unconfirmed: "couldn't confirm whether the import started. check status before doing anything else.",
-    failed_line: 'failed while processing',
-    completed_in: 'completed in',
-    files_created: 'files created',
-    owner_identity_differs: 'owner identity differs',
-    identity_differs: 'identity differs',
-    under_a_minute: 'under a minute',
-    minute: 'minute',
-    minutes: 'minutes',
-    hour: 'hour',
-    hours: 'hours',
-    day: 'day',
-    days: 'days',
-    copied: 'copied',
-    zone_differs_under: "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
-    zone_differs_one: "1 hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
-    zone_differs_many: "{hours} hours of {source} may show at the wrong time: they were saved in a different time zone from the one this journal holds for {source}.",
-    body_days_hidden_one: "1 day of body data was hidden in the archive, so it's hidden in this journal too.",
-    body_days_hidden_many: "{n} days of body data were hidden in the archive, so they're hidden in this journal too.",
-    skipped: 'skipped',
-    errored: 'errored',
-    created: 'created',
-    merged: 'merged',
-    staged: 'staged',
-    links_left_out: 'entity links left out',
-    importer: 'importer',
-    processed: 'processed',
-    profile_link: 'review profile settings',
-    collision_title: 'owner identity differs between journals',
-    collision_body_before_target: 'this journal belongs to ',
-    collision_body_between_names: ', and the imported journal marks ',
-    collision_body_after_source: ' as its owner. this ',
-    collision_body_journal_entity: 'journal&#39;s',
-    collision_body_after_entity: ' owner is unchanged; the other person came in as a regular entity.',
-    collision_body_after_entity_staged: " owner is unchanged; the other person was staged and wasn't added.",
-    unavailable_description: 'unavailable description',
-    unavailable_pages: 'unavailable pages',
-    has_gaps: 'contains gaps',
-    untimed_notice: 'no turn times found in this file, so it landed as one segment at the import\'s start time, each line as written. if your transcripts mark times in a way the journal doesn\'t read yet,',
-    untimed_ask: 'ask us to add it',
-    delete_import: 'delete this import',
+    body_partly_saved: window.JournalI18n.render('journal.window.import.strings.body.partly.saved.partly.saved'),
+    body_stopped: window.JournalI18n.render('journal.window.import.strings.body.stopped.stopped'),
+    body_failed: window.JournalI18n.render('journal.window.import.strings.body.failed.not.brought.in'),
+    body_didnt_start: window.JournalI18n.render('journal.window.import.strings.body.didnt.start.didn.t.start'),
+    start_unknown_detail: window.JournalI18n.render('journal.window.import.strings.start.unknown.detail.this.file.is.saved.but.its'),
+    starting: window.JournalI18n.render('journal.window.import.strings.starting.starting'),
+    preview_import: window.JournalI18n.render('journal.window.import.strings.preview.import.preview.import'),
+    preparing_preview: window.JournalI18n.render('journal.window.import.strings.preparing.preview.preparing.preview'),
+    start_import: window.JournalI18n.render('journal.window.import.strings.start.import.start.import'),
+    check_status: window.JournalI18n.render('journal.window.import.strings.check.status.check.status'),
+    checking_status: window.JournalI18n.render('journal.window.import.strings.checking.status.checking.status'),
+    nothing_to_import: window.JournalI18n.render('journal.window.import.strings.nothing.to.import.nothing.to.import'),
+    preview_failed: window.JournalI18n.render('journal.window.import.strings.preview.failed.couldn.t.prepare.a.preview.try'),
+    status_failed: window.JournalI18n.render('journal.window.import.strings.status.failed.couldn.t.load.the.import.s'),
+    start_unconfirmed: window.JournalI18n.render('journal.window.import.strings.start.unconfirmed.couldn.t.confirm.whether.the.import'),
+    failed_line: window.JournalI18n.render('journal.window.import.strings.failed.line.failed.while.processing'),
+    completed_in: window.JournalI18n.render('journal.window.import.strings.completed.in.completed.in'),
+    files_created: window.JournalI18n.render('journal.window.import.strings.files.created.files.created'),
+    owner_identity_differs: window.JournalI18n.render('journal.window.import.strings.owner.identity.differs.owner.identity.differs'),
+    identity_differs: window.JournalI18n.render('journal.window.import.strings.identity.differs.identity.differs'),
+    under_a_minute: window.JournalI18n.render('journal.window.import.strings.under.a.minute.under.a.minute'),
+    minute: window.JournalI18n.render('journal.window.import.strings.minute.minute'),
+    minutes: window.JournalI18n.render('journal.window.import.strings.minutes.minutes'),
+    hour: window.JournalI18n.render('journal.window.import.strings.hour.hour'),
+    hours: window.JournalI18n.render('journal.window.import.strings.hours.hours'),
+    day: window.JournalI18n.render('journal.window.import.strings.day.day'),
+    days: window.JournalI18n.render('journal.window.import.strings.days.days'),
+    copied: window.JournalI18n.render('journal.window.import.strings.copied.copied'),
+    zone_differs_under: window.JournalI18n.render('journal.window.import.strings.zone.differs.under.less.than.an.hour.of.source'),
+    zone_differs_one: window.JournalI18n.render('journal.window.import.strings.zone.differs.one.hour.of.source.may.show.at'),
+    zone_differs_many: window.JournalI18n.render('journal.window.import.strings.zone.differs.many.hours.hours.of.source.may.show'),
+    body_days_hidden_one: window.JournalI18n.render('journal.window.import.strings.body.days.hidden.one.day.of.body.data.was.hidden'),
+    body_days_hidden_many: window.JournalI18n.render('journal.window.import.strings.body.days.hidden.many.n.days.of.body.data.were'),
+    skipped: window.JournalI18n.render('journal.window.import.strings.skipped.skipped'),
+    errored: window.JournalI18n.render('journal.window.import.strings.errored.errored'),
+    created: window.JournalI18n.render('journal.window.import.strings.created.created'),
+    merged: window.JournalI18n.render('journal.window.import.strings.merged.merged'),
+    staged: window.JournalI18n.render('journal.window.import.strings.staged.staged'),
+    links_left_out: window.JournalI18n.render('journal.window.import.strings.links.left.out.entity.links.left.out'),
+    importer: window.JournalI18n.render('journal.window.import.strings.importer.importer'),
+    processed: window.JournalI18n.render('journal.window.import.strings.processed.processed'),
+    profile_link: window.JournalI18n.render('journal.window.import.strings.profile.link.review.profile.settings'),
+    collision_title: window.JournalI18n.render('journal.window.import.strings.collision.title.owner.identity.differs.between.journals'),
+    collision_body_before_target: window.JournalI18n.render('journal.window.import.strings.collision.body.before.target.this.journal.belongs.to'),
+    collision_body_between_names: window.JournalI18n.render('journal.window.import.strings.collision.body.between.names.and.the.imported.journal.marks'),
+    collision_body_after_source: window.JournalI18n.render('journal.window.import.strings.collision.body.after.source.as.its.owner.this'),
+    collision_body_journal_entity: window.JournalI18n.render('journal.window.import.detail.collision.journal'),
+    collision_body_after_entity: window.JournalI18n.render('journal.window.import.strings.collision.body.after.entity.owner.is.unchanged.the.other.person'),
+    collision_body_after_entity_staged: window.JournalI18n.render('journal.window.import.strings.collision.body.after.entity.staged.owner.is.unchanged.the.other.person'),
+    unavailable_description: window.JournalI18n.render('journal.window.import.strings.unavailable.description.unavailable.description'),
+    unavailable_pages: window.JournalI18n.render('journal.window.import.strings.unavailable.pages.unavailable.pages'),
+    has_gaps: window.JournalI18n.render('journal.window.import.strings.has.gaps.contains.gaps'),
+    untimed_notice: window.JournalI18n.render('journal.window.import.strings.untimed.notice.no.turn.times.found.in.this'),
+    untimed_ask: window.JournalI18n.render('journal.window.import.strings.untimed.ask.ask.us.to.add.it'),
+    delete_import: window.JournalI18n.render('journal.window.import.strings.delete.import.delete.this.import'),
     file_size_units: Object.freeze(['b', 'kb', 'mb', 'gb'])
   });
   // --- end owner-facing strings ---
@@ -277,13 +277,8 @@
     return `${days} ${plural(days, strings.day, strings.days)}`;
   }
 
-  function statusClass(status) {
-    if (status === strings.completed) return 'success';
-    if (status === strings.failed) return 'failed';
-    if (status === strings.running) return 'running';
-    if (status === strings.unconfirmed || status === 'unconfirmed') return 'unconfirmed';
-    if (status === strings.status_unavailable || status === 'unavailable') return 'unavailable';
-    return 'pending';
+  function statusClass(code) {
+    return ['success', 'failed', 'running', 'unconfirmed', 'unavailable'].includes(code) ? code : 'pending';
   }
 
   function deriveStatus(data) {
@@ -298,12 +293,12 @@
     }[data?.body_state];
     if (bodyLabel) {
       const warn = data.body_state === 'partly_saved' || data.body_state === 'stopped';
-      return { status: bodyLabel, chipText: bodyLabel, chipTone: warn ? 'warn' : 'danger', open: true, body: true };
+      return { code: data.body_state === 'failed' ? 'body_failed' : data.body_state, status: bodyLabel, chipText: bodyLabel, chipTone: warn ? 'warn' : 'danger', open: true, body: true };
     }
 
     if (canonicalStatus === 'failed') {
       return {
-        status: strings.failed,
+        code: 'failed', status: strings.failed,
         chipText: strings.failed,
         chipTone: 'danger',
         open: true
@@ -311,7 +306,7 @@
     }
     if (canonicalStatus === 'unconfirmed') {
       return {
-        status: strings.unconfirmed,
+        code: 'unconfirmed', status: strings.unconfirmed,
         chipText: strings.unconfirmed,
         chipTone: 'warn',
         open: true
@@ -319,7 +314,7 @@
     }
     if (canonicalStatus === 'unavailable') {
       return {
-        status: strings.status_unavailable,
+        code: 'unavailable', status: strings.status_unavailable,
         chipText: strings.status_unavailable,
         chipTone: 'warn',
         open: true
@@ -328,27 +323,27 @@
     if (canonicalStatus === 'success') {
       if (principalCollision) {
         return {
-          status: strings.completed,
+          code: 'success', status: strings.completed,
           chipText: strings.identity_differs,
           chipTone: 'warn',
           open: true
         };
       }
-      return { status: strings.completed, chipText: '', chipTone: '', open: false };
+      return { code: 'success', status: strings.completed, chipText: '', chipTone: '', open: false };
     }
     if (canonicalStatus === 'running') {
-      return { status: strings.running, chipText: '', chipTone: '', open: false };
+      return { code: 'running', status: strings.running, chipText: '', chipTone: '', open: false };
     }
     if (data?.saved_start?.state === 'eligible' && !savedFlows.get(data?.timestamp)?.revoked) {
-      return { status: strings.saved, chipText: strings.not_started, chipTone: '', open: false };
+      return { code: 'saved', status: strings.saved, chipText: strings.not_started, chipTone: '', open: false };
     }
     if (data?.saved_start?.active === true) {
-      return { status: strings.running, chipText: strings.starting, chipTone: '', open: false };
+      return { code: 'running', status: strings.running, chipText: strings.starting, chipTone: '', open: false };
     }
     if (data?.saved_start) {
-      return { status: strings.start_unknown, chipText: strings.start_unknown, chipTone: 'warn', open: true };
+      return { code: 'start_unknown', status: strings.start_unknown, chipText: strings.start_unknown, chipTone: 'warn', open: true };
     }
-    return { status: strings.pending, chipText: '', chipTone: '', open: false };
+    return { code: 'pending', status: strings.pending, chipText: '', chipTone: '', open: false };
   }
 
   function composeDrawerLine(data) {
@@ -356,14 +351,14 @@
     const derived = deriveStatus(data);
 
     if (derived.body) return data?.body_words || derived.status;
-    if (derived.status === strings.saved) return strings.not_started;
-    if (derived.status === strings.start_unknown) return strings.start_unknown_detail;
+    if (derived.code === 'saved') return strings.not_started;
+    if (derived.code === 'start_unknown') return strings.start_unknown_detail;
     if (data?.saved_start?.active === true && data?.status !== 'running') return strings.starting;
 
-    if (derived.status === strings.failed) return strings.failed_line;
-    if (derived.status === strings.unconfirmed) return strings.unconfirmed_explanation;
-    if (derived.status === strings.status_unavailable) return strings.status_unavailable;
-    if (derived.status === strings.running || derived.status === strings.pending) {
+    if (derived.code === 'failed') return strings.failed_line;
+    if (derived.code === 'unconfirmed') return strings.unconfirmed_explanation;
+    if (derived.code === 'unavailable') return strings.status_unavailable;
+    if (derived.code === 'running' || derived.code === 'pending') {
       return strings.processing;
     }
 
@@ -376,7 +371,7 @@
       ? formatSeconds(durationMs / 1000)
       : formatDuration(importJson.upload_datetime, data?.finished_at);
     if (duration) {
-      clauses.push(`${strings.completed_in} ${duration}`);
+      clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(strings.completed_in)], ['value2', String(duration)]]));
     }
     if (!clauses.length) {
       clauses.push(strings.completed);
@@ -438,14 +433,29 @@
       ? ` · <span data-wall-time>${escapeHtml(strings.uploaded_at)}: ${escapeHtml(uploadTime)}</span>`
       : '';
 
-    return `<span>${escapeHtml(fileText)}</span>${uploadHtml} <span class="status-badge ${statusClass(derived.status)}">${escapeHtml(derived.status)}</span>`;
+    return `<span>${escapeHtml(fileText)}</span>${uploadHtml} <span class="status-badge ${statusClass(derived.code)}">${escapeHtml(derived.status)}</span>`;
+  }
+
+  function sourceTypeLabel(type) {
+    const known = {
+      document: 'journal.window.import.source.document.name',
+      image: 'journal.window.import.source.image.name',
+      text: 'journal.window.import.import.source.names.text.text',
+    };
+    const label = Object.hasOwn(known, type) ? known[type] : null;
+    return label ? window.JournalI18n.render(label) : type;
+  }
+
+  function displaySource(data, importedJson) {
+    return data?.source_display || sourceTypeLabel(data?.source_type)
+      || importedJson.source_display || sourceTypeLabel(importedJson.source_type);
   }
 
   function renderLeadsCard(data) {
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
     const day = resolveDay(data);
-    const source = data?.source_display || data?.source_type || importedJson.source_display || importedJson.source_type;
+    const source = displaySource(data, importedJson);
     const facts = [
       derived.status,
       source,
@@ -456,26 +466,26 @@
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
     const links = day
-      ? `<div class="import-leads-links"><a href="#content">view imported content</a><a href="/app/transcripts/${escapeHtml(encodedDay)}">${escapeHtml(strings.view_day)}</a></div>`
+      ? `<div class="import-leads-links"><a href="#content">${window.JournalI18n.renderHtml('journal.window.import.link.label.view.imported.content')}</a><a href="/app/transcripts/${escapeHtml(encodedDay)}">${escapeHtml(strings.view_day)}</a></div>`
       : '';
 
     const untimed = data?.untimed_transcript === true
       ? `<p class="import-leads-notice">${escapeHtml(strings.untimed_notice)} <a href="${escapeHtml(UNTIMED_TRANSCRIPT_SUPPORT_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(strings.untimed_ask)}</a>.</p>`
       : '';
     const importJson = asObject(data?.import_json) || {};
-    const photoFallback = photoDateSourceLabel(importJson) === strings.date_source_fallback
+    const photoFallback = photoDateSource(importJson) === 'date_source_fallback'
       ? `<p class="import-leads-notice" data-photo-date-source="upload_fallback">${escapeHtml(strings.photo_fallback_notice)}</p>`
       : '';
 
     return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${untimed}${photoFallback}${links}</section>`;
   }
 
-  function photoDateSourceLabel(importJson) {
+  function photoDateSource(importJson) {
     if (String(importJson?.source || '').toLowerCase() !== 'image') return null;
-    if (hasValue(importJson.owner_timestamp)) return strings.date_source_owner;
+    if (hasValue(importJson.owner_timestamp)) return 'date_source_owner';
     const method = importJson.timestamp_detection_method;
-    if (method === 'deterministic') return strings.date_source_photo;
-    if (method === 'upload_fallback' || method === 'path_fallback') return strings.date_source_fallback;
+    if (method === 'deterministic') return 'date_source_photo';
+    if (method === 'upload_fallback' || method === 'path_fallback') return 'date_source_fallback';
     return null;
   }
 
@@ -487,7 +497,7 @@
       kvRow(strings.uploaded_at, formatDateTime(importJson.upload_datetime), { wall: true }),
       kvRow(strings.detected_time, formatTimestamp(importJson.detected_timestamp)),
       kvRow(strings.import_time, formatTimestamp(importJson.user_timestamp)),
-      kvRow(strings.date_source, photoDateSourceLabel(importJson)),
+      kvRow(strings.date_source, strings[photoDateSource(importJson)]),
       kvRow(strings.setting, importJson.setting)
     ]);
   }
@@ -495,12 +505,12 @@
   function processingFacts(data) {
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
-    const source = data?.source_display || data?.source_type || importedJson.source_display || importedJson.source_type;
+    const source = displaySource(data, importedJson);
     const unavailPages = typeof data?.unavailable_pages === 'number'
       ? (data.unavailable_pages > 0
           ? (data.unavailable_pages === 1
-              ? '1 page could not be extracted'
-              : `${data.unavailable_pages} pages could not be extracted`)
+              ? window.JournalI18n.render('journal.window.import.window.explanation.page.could.not.be.extracted')
+              : window.JournalI18n.render('journal.window.import.window.explanation.value1.pages.could.not.be.extracted', [['value1', String(data.unavailable_pages)]]))
           : null)
       : formatUnavailablePages(data?.unavailable_pages);
     const unavailDesc = data?.unavailable_description
@@ -510,11 +520,11 @@
     // even if the answer is "we don't know" -- so the counts carry a dash. The
     // failure keys belong to a failure and the completion time to a completion;
     // on any other status they are not unknown, they are not applicable.
-    const finished = derived.status === strings.completed;
-    const didFail = derived.status === strings.failed;
+    const finished = derived.code === 'success';
+    const didFail = derived.code === 'failed';
     const countsApply = finished
-      || derived.status === strings.unconfirmed
-      || derived.status === strings.status_unavailable;
+      || derived.code === 'unconfirmed'
+      || derived.code === 'unavailable';
     return sectionHtml(strings.processing_facts, [
       kvRow(strings.status, derived.status),
       kvRow(strings.source, source),
@@ -525,7 +535,7 @@
       kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files), { always: countsApply }),
       kvRow(strings.unavailable_description, unavailDesc),
       kvRow(strings.unavailable_pages, unavailPages),
-      data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
+      data?.has_gaps ? kvRow(strings.has_gaps, window.JournalI18n.render('journal.window.import.answer.yes')) : '',
       finished ? kvRow(strings.completed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
       didFail ? kvRow(strings.failed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
       kvRow(strings.failed_stage, derived.body ? null : data?.error_stage, { always: didFail }),
@@ -609,7 +619,7 @@
     return `
       <div class="import-collision-callout">
         <h3>${escapeHtml(strings.collision_title)}</h3>
-        <p>${escapeHtml(strings.collision_body_before_target)}${escapeHtml(principalCollision.target_name || '')}${escapeHtml(strings.collision_body_between_names)}${escapeHtml(principalCollision.source_name || '')}${escapeHtml(strings.collision_body_after_source)}${strings.collision_body_journal_entity}${escapeHtml(principalCollision.staged ? strings.collision_body_after_entity_staged : strings.collision_body_after_entity)}</p>
+        <p>${escapeHtml(strings.collision_body_before_target)}${escapeHtml(principalCollision.target_name || '')}${escapeHtml(strings.collision_body_between_names)}${escapeHtml(principalCollision.source_name || '')}${escapeHtml(strings.collision_body_after_source)}${escapeHtml(strings.collision_body_journal_entity)}${escapeHtml(principalCollision.staged ? strings.collision_body_after_entity_staged : strings.collision_body_after_entity)}</p>
         <a href="/app/settings#profile">${escapeHtml(strings.profile_link)}</a>
       </div>
     `;
@@ -667,9 +677,9 @@
   function renderProvenance(data, importedJson) {
     const processedAt = formatDateTime(data?.finished_at);
     const clauses = [];
-    if (processedAt) clauses.push(`${strings.processed} ${processedAt}`);
+    if (processedAt) clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(strings.processed)], ['value2', String(processedAt)]]));
     if (hasValue(importedJson?.source_type)) {
-      clauses.push(`${importedJson.source_type} ${strings.importer}`);
+      clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(importedJson.source_type)], ['value2', String(strings.importer)]]));
     }
     if (clauses.length === 0) return '';
     const wallAttr = processedAt ? ' data-wall-time' : '';
@@ -784,8 +794,8 @@
         && (!Array.isArray(other) || typeof other[0] !== 'string'
           || !Number.isSafeInteger(other[1]) || other[1] < 0)) throw new Error('invalid Preview');
     const ready = size.recordings > 0 || (other && other[1] > 0);
-    const summary = `${size.recordings} ${plural(size.recordings, 'recording', 'recordings')} across ${size.days} ${plural(size.days, 'day', 'days')}`
-      + (other ? ` · ${other[1]} ${other[0]}` : '');
+    const summary = window.JournalI18n.render('journal.window.import.import.view.value1.value2.across.value3.value4', [['value1', String(size.recordings)], ['value2', String(plural(size.recordings, window.JournalI18n.render('journal.window.import.import.view.recording'), window.JournalI18n.render('journal.window.import.import.view.recordings')))], ['value3', String(size.days)], ['value4', String(plural(size.days, window.JournalI18n.render('journal.window.import.import.view.day'), window.JournalI18n.render('journal.window.import.import.view.days')))]])
+      + (other ? window.JournalI18n.render('journal.window.import.import.view.value1.value2.variant2', [['value1', String(other[1])], ['value2', String(other[0])]]) : '');
     return { ready: Boolean(ready), summary: ready ? summary : strings.nothing_to_import };
   }
 
@@ -925,7 +935,7 @@
       open: derived.open,
       bodyHtml: renderDrawerBody(data)
     });
-    const leads = derived.status === strings.completed ? renderLeadsCard(data) : '';
+    const leads = derived.code === 'success' ? renderLeadsCard(data) : '';
     const continuation = hasSavedFlow(data) ? '<div data-saved-start-slot></div>' : '';
     return continuation + leads + drawer + renderImportDelete(data);
   }

@@ -1,0 +1,16 @@
+{
+  "description": "Import source control in the journal's import view.",
+  "context": "Journal window, import view. Import source control.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ba80179cc71ffcf420e8984b9461925b4accb5c3bc3aa3229a5f4c06e914425",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

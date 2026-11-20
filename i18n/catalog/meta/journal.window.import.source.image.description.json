@@ -1,0 +1,16 @@
+{
+  "description": "Import source image description in the journal's import view.",
+  "context": "Journal window, import view. Import source image description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf4bc994da44deaee50466a6123bf6211094ac6f8b3dd97723b28dae108e84bc",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

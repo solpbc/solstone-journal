@@ -1,0 +1,28 @@
+{
+  "description": "apple_health guide line 5 in the journal's import view.",
+  "context": "Journal window, import view. apple_health guide line 5.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37bbca2d19ef2449861e23305a2386182667f3327327ce2ce6691d141b77fe19",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**Export All Health Data**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "**Export**"
+    }
+  ]
+}

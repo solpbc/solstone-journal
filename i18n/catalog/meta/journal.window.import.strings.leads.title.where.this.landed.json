@@ -1,0 +1,16 @@
+{
+  "description": "strings leads_title in the journal's import view.",
+  "context": "Journal window, import view. strings leads_title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fc007163e1b5ec56a3e8feb58255ec304e6b90d06cba50bafa291093339b310",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -434,13 +434,23 @@ fn a_card_preview_carries_space_beside_its_size_and_a_small_one_fits() {
     let root = journal(&[]);
     let (id, _) = staged_apple(root.path(), 1_000);
     let mut preview = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
-    crate::apple_card::add_space(root.path(), &id, &mut preview);
+    crate::apple_card::add_space(
+        root.path(),
+        &id,
+        &mut preview,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    );
     assert_eq!(preview["space"]["fits"], true, "{preview}");
     assert!(preview["size"].get("space").is_none());
     assert!(preview["space"]["words"].is_null());
     let mut other = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
     let (strava, _) = staged_strava(root.path());
-    crate::apple_card::add_space(root.path(), &strava, &mut other);
+    crate::apple_card::add_space(
+        root.path(),
+        &strava,
+        &mut other,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    );
     assert!(other.get("space").is_none());
 }
 

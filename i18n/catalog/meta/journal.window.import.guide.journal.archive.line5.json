@@ -1,0 +1,23 @@
+{
+  "description": "journal_archive guide line 5 in the journal's import view.",
+  "context": "Journal window, import view. journal_archive guide line 5.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb7d49eb9f5b612f72a6bed4d0b3df0b17d34eaae9d4fed518451ef0a3bd2411",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "`.zip`"
+    }
+  ]
+}

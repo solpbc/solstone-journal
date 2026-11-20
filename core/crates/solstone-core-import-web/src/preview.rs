@@ -11,12 +11,17 @@ use crate::{
     mobile_import_contract::ImportErrorKind,
 };
 use axum::{
+    Extension,
     extract::{Json, State},
     http::StatusCode,
     response::Response,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{ENGLISH, strings, text},
+};
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::{ImportMetadata, read_import_metadata, write_import_metadata};
 use std::{
@@ -36,6 +41,11 @@ pub enum PreviewError {
     PlanFailed(String),
     /// The importer's own words for what the page can't start, shown as they are.
     Refused(String),
+    EmbeddedBodyRefused,
+    PreviewRefused {
+        words: String,
+        copy: &'static str,
+    },
 }
 
 impl PreviewError {
@@ -46,20 +56,35 @@ impl PreviewError {
             Self::SourceChanged(_) => ImportErrorKind::SourceChanged,
             Self::InvalidRequest(_) => ImportErrorKind::InvalidRequest,
             Self::NotFound(_) => ImportErrorKind::NotFound,
-            Self::PlanFailed(_) | Self::Refused(_) => ImportErrorKind::PlanFailed,
+            Self::PlanFailed(_)
+            | Self::Refused(_)
+            | Self::EmbeddedBodyRefused
+            | Self::PreviewRefused { .. } => ImportErrorKind::PlanFailed,
         }
     }
 
-    pub const fn owner_sentence(&self) -> &'static str {
+    pub fn owner_message(&self) -> &'static str {
         match self {
-            Self::AlreadyRunning => "this import has already started.",
-            Self::NothingToImport => "there is nothing new in this source to import.",
-            Self::SourceChanged(_) => "something changed, so choose the source again.",
-            Self::InvalidRequest(_) => "this import's source or date isn't valid.",
-            Self::NotFound(_) => {
-                "this import or its source wasn't found, so choose the source again."
+            Self::AlreadyRunning => {
+                "journal.window.import.response.error.this.import.has.already.started"
             }
-            Self::PlanFailed(_) | Self::Refused(_) => "the import could not be prepared.",
+            Self::NothingToImport => {
+                "journal.window.import.response.error.there.is.nothing.new.in.this"
+            }
+            Self::SourceChanged(_) => {
+                "journal.window.import.response.error.something.changed.so.choose.the.source"
+            }
+            Self::InvalidRequest(_) => {
+                "journal.window.import.response.error.this.import.s.source.or.date"
+            }
+            Self::NotFound(_) => {
+                "journal.window.import.response.error.this.import.or.its.source.wasn"
+            }
+            Self::EmbeddedBodyRefused => "journal.window.import.response.preview.embedded.body",
+            Self::PreviewRefused { copy, .. } => copy,
+            Self::PlanFailed(_) | Self::Refused(_) => {
+                "journal.window.import.response.error.the.import.could.not.be.prepared"
+            }
         }
     }
 
@@ -67,6 +92,8 @@ impl PreviewError {
         match self {
             Self::AlreadyRunning => "this import is already running",
             Self::NothingToImport => "there are no recordings to import from this source",
+            Self::EmbeddedBodyRefused => solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL,
+            Self::PreviewRefused { words, .. } => words,
             Self::SourceChanged(s)
             | Self::InvalidRequest(s)
             | Self::NotFound(s)
@@ -77,15 +104,16 @@ impl PreviewError {
 }
 
 pub(crate) fn preview_error_body(reason_code: &str, error: &PreviewError) -> Value {
-    json!({
-        "error": match error {
-            PreviewError::Refused(words) => words.as_str(),
-            other => other.owner_sentence(),
-        },
-        "reason_code": reason_code,
-        "detail": error.detail(),
-        "kind": error.kind().as_wire(),
-    })
+    let sentence = match error {
+        PreviewError::Refused(words) | PreviewError::PreviewRefused { words, .. } => words.clone(),
+        other => text(ENGLISH, other.owner_message()),
+    };
+    crate::http::error_body(
+        &sentence,
+        reason_code,
+        error.detail().to_owned(),
+        Some(error.kind()),
+    )
 }
 
 pub(crate) fn preview_error_response(
@@ -93,7 +121,11 @@ pub(crate) fn preview_error_response(
     reason_code: &str,
     error: &PreviewError,
 ) -> Response {
-    json_response(status, preview_error_body(reason_code, error))
+    let body = preview_error_body(reason_code, error);
+    match error {
+        PreviewError::Refused(_) => json_response(status, body),
+        other => crate::http::refusal(status, body, other.owner_message()),
+    }
 }
 
 pub(crate) type PreviewPlanStub = dyn Fn(
@@ -252,7 +284,7 @@ fn preview_command(
 fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
     if run.exit_code != 0 {
         if run.stderr.trim() == solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL {
-            return Err(PreviewError::Refused(run.stderr.trim().to_owned()));
+            return Err(PreviewError::EmbeddedBodyRefused);
         }
         return Err(PreviewError::PlanFailed(run.stderr));
     }
@@ -293,6 +325,23 @@ fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
 /// Apple Health card asked, because only the card carries that go-ahead.
 fn refuse_what_the_page_cant_start(size: &Value, from_card: bool) -> Result<(), PreviewError> {
     if let Some(words) = size.get("page_refusal").and_then(Value::as_str) {
+        if size.get("source").and_then(Value::as_str) == Some("apple_health")
+            && let Some(code) = size.get("refusal").and_then(Value::as_str)
+        {
+            let copy = solstone_core_import_sources::body_status::words_id(code);
+            return Err(PreviewError::PreviewRefused {
+                words: words.to_owned(),
+                copy,
+            });
+        }
+        if size.get("schema").and_then(Value::as_str) == Some("solstone.import.evernote.preview.v1")
+            && let Some(copy) = solstone_core_import_sources::evernote::preview_refusal_id(words)
+        {
+            return Err(PreviewError::PreviewRefused {
+                words: words.to_owned(),
+                copy,
+            });
+        }
         return Err(PreviewError::Refused(words.to_owned()));
     }
     match size.get("go_ahead").and_then(Value::as_str) {
@@ -688,7 +737,12 @@ async fn plan_using(
     require_size_preview(size)
 }
 
-pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
+pub(crate) async fn preview(
+    State(state): State<AppState>,
+    selected_locale: Option<Extension<ResponseLocale>>,
+    Json(data): Json<Value>,
+) -> Response {
+    let locale = selected_locale.map_or(ENGLISH, |Extension(locale)| locale.0);
     let resolved_id = crate::lifecycle::resolve_import_id(&state.root, &data);
     let _guard = if let Some(id) = resolved_id.as_deref() {
         Some(crate::start_lock::acquire(&state.root, id).await)
@@ -697,17 +751,19 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
     };
     let root = state.root.clone();
     let previewed = if let Some(slot) = state.route.clone() {
-        create_preview(state.root, data, PreviewPlan::Embedded(slot)).await
+        create_preview(locale, state.root, data, PreviewPlan::Embedded(slot)).await
     } else {
         match planner() {
-            Ok(program) => create_preview(state.root, data, PreviewPlan::Program(&program)).await,
+            Ok(program) => {
+                create_preview(locale, state.root, data, PreviewPlan::Program(&program)).await
+            }
             Err(error) => Err(error),
         }
     };
     match previewed {
         Ok(mut preview) => {
             if let Some(id) = resolved_id.as_deref() {
-                crate::apple_card::add_space(&root, id, &mut preview);
+                crate::apple_card::add_space(&root, id, &mut preview, locale);
             }
             json_response(StatusCode::OK, preview)
         }
@@ -775,6 +831,7 @@ pub(crate) fn commit_pending_preview(
 }
 
 async fn assemble_preview(
+    locale: &str,
     root: &Path,
     data: Value,
     program: PreviewPlan<'_>,
@@ -844,15 +901,52 @@ async fn assemble_preview(
             solstone_core_import::validate_timestamp(previous),
             solstone_core_import::validate_timestamp(planned),
         ) {
-            (Ok(fresh), Ok(previous), Ok(planned)) => {
-                solstone_core_import::force_day_notice(&fresh, &previous, &planned)
+            (Ok(fresh), Ok(previous), Ok(planned)) if fresh.day() != previous.day() => {
+                Some(strings(
+                    locale,
+                    "journal.window.import.response.preview.force.day",
+                    [
+                        ("fileday", fresh.day()),
+                        ("previous", previous.day()),
+                        ("planned", planned.day()),
+                    ],
+                ))
             }
             _ => None,
         }
     } else {
         None
     };
-    let response = json!({"preview_token": token, "import_id": input.id, "size": prepared.size, "force_notice": notice});
+    let mut size = prepared.size;
+    if let Some(units) = size.get_mut("other_units").and_then(Value::as_array_mut)
+        && let Some(unit) = units.first_mut()
+    {
+        let label = match unit.as_str() {
+            Some("other archive files") => {
+                Some("journal.window.import.response.preview.archive.other.files")
+            }
+            Some("Apple Health records") => {
+                Some("journal.window.import.response.preview.apple.other.records")
+            }
+            _ => None,
+        };
+        if let Some(label) = label {
+            *unit = json!(text(locale, label));
+        }
+    }
+    if locale != ENGLISH
+        && size.get("schema").and_then(Value::as_str) == Some("solstone.import.evernote.preview.v1")
+        && let Some(lines) = size.get_mut("lines").and_then(Value::as_array_mut)
+    {
+        for line in lines {
+            if let Some(localized) = line.as_str().and_then(|line| {
+                solstone_core_import_sources::evernote::project_preview_line(locale, line)
+            }) {
+                *line = json!(localized);
+            }
+        }
+    }
+    let response = json!({"preview_token": token, "import_id": input.id, "size": size, "force_notice": notice});
     Ok(AssembledPreview {
         response,
         pending: PendingPreview {
@@ -877,11 +971,12 @@ struct AssembledParts {
 }
 
 async fn create_preview(
+    locale: &str,
     root: PathBuf,
     data: Value,
     program: PreviewPlan<'_>,
 ) -> Result<Value, PreviewError> {
-    let assembled = assemble_preview(&root, data, program).await?;
+    let assembled = assemble_preview(locale, &root, data, program).await?;
     let response = assembled.response.clone();
     tokio::task::spawn_blocking(move || {
         commit_pending_preview(&root, assembled.pending)?;
@@ -989,7 +1084,8 @@ pub(crate) async fn validate_start(
     // settings and size binding as a preview the owner saw.
     let previewed_here = data.get("preview_token").and_then(Value::as_str).is_none();
     if previewed_here {
-        let preview = create_preview(root.to_path_buf(), data.clone(), program.clone()).await?;
+        let preview =
+            create_preview(ENGLISH, root.to_path_buf(), data.clone(), program.clone()).await?;
         data["preview_token"] = preview["preview_token"].clone();
     }
     confirm_existing_preview(root, data, program, previewed_here).await
@@ -1011,7 +1107,8 @@ pub(crate) async fn prepare_embedded_start(
         return Ok((data, None));
     }
     let validation = Arc::clone(&slot);
-    let assembled = assemble_preview(root, data.clone(), PreviewPlan::Embedded(slot)).await?;
+    let assembled =
+        assemble_preview(ENGLISH, root, data.clone(), PreviewPlan::Embedded(slot)).await?;
     data["preview_token"] = assembled.response["preview_token"].clone();
     let checked_root = root.to_path_buf();
     let checked_data = data.clone();

@@ -1,0 +1,28 @@
+{
+  "description": "Import source ics upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source ics upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21422f8020d7a0f79461486b428501465d375307e95a0f501eefed6aae974bda",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": ".ics"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": ".zip"
+    }
+  ]
+}

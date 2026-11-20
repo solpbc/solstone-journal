@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal foundMany in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal foundMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62bce737076fe7c6729a18e75b0b12e2c74c442655cf9cd8f1783a4681afc1c6",
+  "max_length": 225,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

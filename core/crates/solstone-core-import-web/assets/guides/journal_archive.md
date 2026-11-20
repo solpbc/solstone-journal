@@ -1,8 +1,8 @@
-### moving a journal
+### {{journal.window.import.guide.journal.archive.line1}}
 
-1. on the journal you want to move, open its import screen.
-2. choose **journal** and select **download this journal**.
-3. bring the downloaded `.zip` to this journal.
-4. upload the `.zip` here, select **preview** to check the days it contains, then select **start import** to merge it.
+1. {{journal.window.import.guide.journal.archive.line3}}
+2. {{journal.window.import.guide.journal.archive.line4}}
+3. {{journal.window.import.guide.journal.archive.line5}}
+4. {{!journal.window.import.guide.journal.archive.line6}}
 
-if the other journal is on another machine, download its `.zip` from that journal's import screen first, then upload it here.
+{{journal.window.import.guide.journal.archive.line8}}

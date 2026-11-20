@@ -1,0 +1,16 @@
+{
+  "description": "strings processing in the journal's import view.",
+  "context": "Journal window, import view. strings processing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "491a4a5f1c0e1c57cc723af0426a8fab6ba80f85fc3a503badba235b85469016",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

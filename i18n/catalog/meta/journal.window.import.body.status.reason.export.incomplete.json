@@ -1,0 +1,23 @@
+{
+  "description": "Apple Health import reason export incomplete in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason export incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b9b2634906df5631dee0e3c1a9144de95e6184d2472bce7df65551c7937deea",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

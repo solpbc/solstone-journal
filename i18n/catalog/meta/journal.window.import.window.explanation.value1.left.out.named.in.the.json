@@ -1,0 +1,28 @@
+{
+  "description": "Window explanation in the journal's import view.",
+  "context": "Journal window, import view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9b026f26790fe1234c524c2b1735e5e02147727d688ecc95b45002bd2cadbd9a",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

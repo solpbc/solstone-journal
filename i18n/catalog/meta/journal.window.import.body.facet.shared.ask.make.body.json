@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared ask make body in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared ask make body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e99680e4a9cc0fc408bd27f2c772282ab3f56176379e7ce385567ad5027ab208",
+  "max_length": 66,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

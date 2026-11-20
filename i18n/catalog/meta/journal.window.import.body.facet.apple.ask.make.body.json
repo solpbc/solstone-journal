@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet apple ask make body in the journal's import view.",
+  "context": "Journal window, import view. Import body facet apple ask make body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40b184d67e6e0472a182102c4db188c1f44a902f813ea4eb314a67f23f2a21cd",
+  "max_length": 93,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

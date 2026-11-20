@@ -1,0 +1,43 @@
+{
+  "description": "Import preview projection in the journal's import view.",
+  "context": "Journal window, import view. Import preview projection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "where",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6da6c7bb04283b5c9f5e2d6b8cf6cb731bac52c8b9057d3aac091555850de3ce",
+  "max_length": 188,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "command",
+      "value": "solstone journal importer <your export> --confirm-body-save"
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

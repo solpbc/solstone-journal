@@ -851,3 +851,15 @@ fn tighten(path: &Path, mode: u32) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Identify the known preview-only refusal copy in an importer reply.
+#[must_use]
+pub fn preview_refusal_id(line: &str) -> Option<&'static str> {
+    copy::preview_refusal_id(line)
+}
+
+/// Localize the producer's known preview copy. Unknown reply text survives.
+#[must_use]
+pub fn project_preview_line(locale: &str, line: &str) -> Option<String> {
+    copy::project_preview_line(locale, line)
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Apple Health history busy in the journal's import view.",
+  "context": "Journal window, import view. Apple Health history busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7c0f53dc7abf7e44f4a43f0a8026584f3c0e2aa809a57b8c3430d5b366063c56",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

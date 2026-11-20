@@ -1,0 +1,16 @@
+{
+  "description": "Import view in the journal's import view.",
+  "context": "Journal window, import view. Import view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45cc51a3e6eb66e46a53d009a86873a16da080ba40120245aa6e6c414861a1cc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

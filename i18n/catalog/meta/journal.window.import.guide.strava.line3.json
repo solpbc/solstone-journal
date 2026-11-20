@@ -1,0 +1,23 @@
+{
+  "description": "strava guide line 3 in the journal's import view.",
+  "context": "Journal window, import view. strava guide line 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bc16cdc2598ca5f4e4c6ed9a7cf325c062d84db7842b2e94e8e39ac172c6f9b",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Strava"
+    }
+  ]
+}

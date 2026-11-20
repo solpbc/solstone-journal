@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason disk full in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason disk full.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8cca99617d7b0cccf8453f67785024ca809356c09e66c845d4e1409634c2f05f",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

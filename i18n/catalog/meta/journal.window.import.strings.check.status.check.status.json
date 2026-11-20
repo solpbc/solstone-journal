@@ -1,0 +1,16 @@
+{
+  "description": "strings check_status in the journal's import view.",
+  "context": "Journal window, import view. strings check_status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93ca28e21a0254a24cc187ffe9e26e2336e7ce9ade68933caa4534031fac08db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

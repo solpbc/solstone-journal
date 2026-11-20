@@ -1,0 +1,16 @@
+{
+  "description": "body phase words write in the journal's import view.",
+  "context": "Journal window, import view. body phase words write.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9572ff1bf16aca32c30079782f8f9c544de8259a2e00de21cdd73a2c36e5dac6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared unanswered in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared unanswered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "806f260173eb7f78c4923e39bc1ab05696ae9203f90fcd7ea4d9469c9f7adb9a",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

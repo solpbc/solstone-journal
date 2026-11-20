@@ -1,0 +1,23 @@
+{
+  "description": "apple_health guide line 4 in the journal's import view.",
+  "context": "Journal window, import view. apple_health guide line 4.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86b5a07cea571eca11c560a90a2ceb53a1945dccfcb3142c92b2cc34535ac4e3",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**Summary**"
+    }
+  ]
+}

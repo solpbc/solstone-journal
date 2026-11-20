@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -92,7 +93,7 @@ const DRAW_STAND_INS = {
 };
 
 function makeContext(globals) {
-  const context = vm.createContext({ ...DRAW_STAND_INS, reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  const context = journalContext({ ...DRAW_STAND_INS, reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
   context.__HostURL = URL;
   vm.runInContext(MOUNT_SCOPE, context);
   const source = scriptFromWorkspace();
@@ -102,12 +103,19 @@ function makeContext(globals) {
     const importInFlight = { guided: false, quick: false };
     let thinkingProgressTimer = null;
   `, context);
-  // The shell's focus helper, as its boot part gives it to every view, on
-  // whichever window a case gives the context, now or later.
+  // Keep the shell's focus and catalog runtimes on each case's window.
   let caseWindow = context.window;
-  const withFocus = (value) => { if (value && typeof value === 'object' && !value.SolFocus) value.SolFocus = SOL_FOCUS; return value; };
-  withFocus(caseWindow);
-  Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withFocus(value); } });
+  const copy = caseWindow.JournalI18n;
+  context.__journalCopy = copy;
+  const withShell = value => {
+    if (value && typeof value === 'object') {
+      value.SolFocus ??= SOL_FOCUS;
+      value.JournalI18n ??= copy;
+    }
+    return value;
+  };
+  withShell(caseWindow);
+  Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withShell(value); } });
   for (const name of ['setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
@@ -794,7 +802,7 @@ function runHistoryHeaderSummary() {
     "let importSourceOptions = [];",
     "const sourceMetadataByName = {};",
     "let currentSourceFilter = '';",
-    "const window = { createViewReady: () => () => {},};",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},};",
   ].join('\n'), context);
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
@@ -829,7 +837,7 @@ function runHistoryHeaderSummary() {
 function runImportRowColumns() {
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = { createViewReady: () => () => {},",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -967,7 +975,7 @@ function runProgressPanelUpdatesOnCompletion() {
   const guideSteps = new Element();
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = { createViewReady: () => () => {},",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},",
     "  location: { hash: '#progress/1700000000' },",
     "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
     "};",
@@ -1085,7 +1093,7 @@ function runReloadedPanelAgreesWithItsOwnSummary() {
   const guideSteps = new Element();
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = { createViewReady: () => () => {},",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},",
     "  location: { hash: '#progress/1700000000' },",
     "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
     "};",
@@ -2817,7 +2825,7 @@ function runEveryOwnerSinkEscapes() {
   // --- the history table: row error detail, source cell, filter options ---
   const historyContext = makeContext({ console });
   vm.runInContext([
-    "const window = { createViewReady: () => () => {},",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -3470,7 +3478,7 @@ function runImportIdSelectorsEscapeQuotes() {
 function runOwnerSinksEscapeServerDerivedPayloads() {
   const rowContext = makeContext({ console });
   vm.runInContext([
-    "const window = { createViewReady: () => () => {},",
+    "const window = { JournalI18n: __journalCopy, createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -4443,7 +4451,7 @@ function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
     const { status = 200, body = {} } = typeof answer === 'function' ? answer() : (answer || {});
     return { ok: status >= 200 && status < 300, status, json: async () => body };
   };
-  const context = vm.createContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
+  const context = journalContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
   context.__HostURL = URL;
   vm.runInContext(MOUNT_SCOPE, context);
   // The mount's own setters and focus helpers, over this harness's nodes.
@@ -4804,7 +4812,9 @@ function runAppleImportEndsInItsOwnWords() {
   assert.ok(guideSteps.innerHTML.includes('Apple Health'), guideSteps.innerHTML);
   // The too-large refusal names the page's own bound, in the GB the card uses.
   const bound = vm.runInNewContext(workspace.match(/const MAX_UPLOAD_BYTES = ([^;]+);/)[1]);
-  const tooBig = workspace.match(/too_big: '([^']+)'/)[1];
+  const appleWords = workspace.match(/const APPLE_WORDS = \{[\s\S]*?^\};/m)[0];
+  vm.runInContext(appleWords, context);
+  const tooBig = vm.runInContext('APPLE_WORDS.too_big', context);
   assert.ok(tooBig.includes(`larger than ${(bound / 1e9).toFixed(1)} GB`), tooBig);
   // Refused or stopped: the row's words, not "error:" or "couldn't be confirmed".
   vm.runInContext(`showProgressView('a1', ${JSON.stringify({ import_id: 'a1', event: 'error', status: 'failed',

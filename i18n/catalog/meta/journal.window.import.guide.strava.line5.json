@@ -1,0 +1,33 @@
+{
+  "description": "strava guide line 5 in the journal's import view.",
+  "context": "Journal window, import view. strava guide line 5.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8164066a76ed2d70b57eee88548fee1f996368fbc5bc2c0a3381a512a12f7ea",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**My Account**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "**Get Started**"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "**Download your account**"
+    }
+  ]
+}

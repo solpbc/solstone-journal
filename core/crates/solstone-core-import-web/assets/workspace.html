@@ -732,17 +732,17 @@
   <section id="importSyncSources" hidden></section>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
-    <a href="#" class="import-back-link" data-import-show-grid>← back to sources</a>
+    <a href="#" class="import-back-link" data-import-show-grid>{{journal.window.import.link.label.back.to.sources}}</a>
     <div id="guideSteps"></div>
   </div>
 
   <div class="import-list">
-    <h2>import history</h2>
+    <h2>{{journal.window.import.section.heading.import.history}}</h2>
     <div id="importListContent">
       <div class="surface-state surface-state--loading" role="status" aria-busy="true">
         <div class="surface-state-spinner" aria-hidden="true"></div>
-        <span class="surface-state-text" data-role="loading-status">loading imports…</span>
-        <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+        <span class="surface-state-text" data-role="loading-status">{{journal.window.import.visible.text.loading.imports}}</span>
+        <span class="surface-state-still" data-role="still-working">{{journal.window.import.visible.text.still.working}}</span>
       </div>
     </div>
   </div>
@@ -750,17 +750,17 @@
 
 <div id="detectModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="detectModalTitle">
   <div class="modal-content">
-    <h3 id="detectModalTitle">confirm import details</h3>
-    <button class="close" type="button" aria-label="close" data-import-detect-close>&times;</button>
+    <h3 id="detectModalTitle">{{journal.window.import.section.heading.confirm.import.details}}</h3>
+    <button class="close" type="button" aria-label="{{journal.window.import.accessible.name.close}}" data-import-detect-close>&times;</button>
     <div class="confirm-fields">
       <div class="confirm-field">
-        <label for="timestampInput">date</label>
+        <label for="timestampInput">{{journal.window.import.field.label.date}}</label>
         <input id="timestampInput" />
       </div>
       <div class="confirm-field">
-        <label for="settingInput">context <span class="import-field-optional">(optional)</span></label>
-        <input id="settingInput" placeholder="e.g. rae lunch with joe" />
-        <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
+        <label for="settingInput">{{journal.window.import.field.label.context}} <span class="import-field-optional">{{journal.window.import.visible.text.optional}}</span></label>
+        <input id="settingInput" placeholder="{{journal.window.import.field.placeholder.e.g.rae.lunch.with.joe}}" />
+        <div class="import-field-hint">{{journal.window.import.visible.text.a.short.note.about.what.this}}</div>
       </div>
     </div>
     <div id="quickOriginals"></div>
@@ -768,7 +768,7 @@
     <div id="detectDuplicateNotice"></div>
     <div class="modal-actions">
       <div id="quickSizePreview" role="status" aria-live="polite"></div>
-      <button id="startBtn" class="import-primary-btn">preview import</button>
+      <button id="startBtn" class="import-primary-btn">{{journal.window.import.button.label.preview.import}}</button>
     </div>
   </div>
 </div>
@@ -779,7 +779,7 @@
   <div class="modal-content">
     <div class="modal-header" id="importDeleteModalHeader">
       <h3 id="importDeleteModalTitle"></h3>
-      <button type="button" class="close" id="importDeleteModalClose" aria-label="close">&times;</button>
+      <button type="button" class="close" id="importDeleteModalClose" aria-label="{{journal.window.import.accessible.name.close}}">&times;</button>
     </div>
     <div class="modal-body">
       <div id="importDeleteModalBody" class="trash-dlg-note"></div>
@@ -1110,7 +1110,7 @@ function importWrite(url, init = {}, options = {}) {
   if (options.fileUpload) {
     const status = document.getElementById('importUploadStatus');
     pendingFileUploads += 1;
-    if (status) status.textContent = 'uploading your file… keep this page open until it finishes.';
+    if (status) status.textContent = window.JournalI18n.render('journal.window.import.visible.text.uploading.your.file.keep.this.page');
     request = request.finally(() => {
       pendingFileUploads -= 1;
       if (status && !ctx.disposed) status.textContent = '';
@@ -1140,11 +1140,11 @@ function importErrorMessage(data, fallback) {
     switch (data.detail) {
       case 'content already imported':
       case 'content already imported; will not start':
-        return "you've already imported this file. if you deleted part of it, recover that from the trash, or delete the whole import and import the file again.";
+        return window.JournalI18n.render('journal.window.import.status.conflict.already.imported');
       case 'import already started or processed':
-        return 'this import has already started. check its progress in your imports.';
+        return window.JournalI18n.render('journal.window.import.status.conflict.already.started');
       default:
-        return 'this import has changed. refresh the page and try again.';
+        return window.JournalI18n.render('journal.window.import.status.conflict.changed');
     }
   }
   return data?.error || fallback;
@@ -1154,22 +1154,22 @@ const settingInput = document.getElementById('settingInput');
 const startBtn = document.getElementById('startBtn');
 
 const STAGE_NAMES = {
-  initialization: 'preparing…',
-  importing: 'reading the import…',
-  execution: 'reading the import…',
-  detection: 'detecting content type…',
-  audio_segmenting: 'splitting audio…',
-  transcription: 'transcribing audio…',
-  processing: 'processing entries…',
-  writing: 'writing to journal…',
-  indexing: 'building search index…',
-  cleanup: 'finishing up…',
-  segmenting: 'preparing segments…',
-  transcribing: 'transcribing audio…',
-  segments: 'merging segments…',
-  entities: 'merging entities…',
-  facets: 'merging facets…',
-  imports: 'copying prior imports…',
+  initialization: window.JournalI18n.render('journal.window.import.stage.names.initialization.preparing'),
+  importing: window.JournalI18n.render('journal.window.import.stage.names.importing.reading.the.import'),
+  execution: window.JournalI18n.render('journal.window.import.stage.names.execution.reading.the.import'),
+  detection: window.JournalI18n.render('journal.window.import.stage.names.detection.detecting.content.type'),
+  audio_segmenting: window.JournalI18n.render('journal.window.import.stage.names.audio.segmenting.splitting.audio'),
+  transcription: window.JournalI18n.render('journal.window.import.stage.names.transcription.transcribing.audio'),
+  processing: window.JournalI18n.render('journal.window.import.stage.names.processing.processing.entries'),
+  writing: window.JournalI18n.render('journal.window.import.stage.names.writing.writing.to.journal'),
+  indexing: window.JournalI18n.render('journal.window.import.stage.names.indexing.building.search.index'),
+  cleanup: window.JournalI18n.render('journal.window.import.stage.names.cleanup.finishing.up'),
+  segmenting: window.JournalI18n.render('journal.window.import.stage.names.segmenting.preparing.segments'),
+  transcribing: window.JournalI18n.render('journal.window.import.stage.names.transcribing.transcribing.audio'),
+  segments: window.JournalI18n.render('journal.window.import.stage.names.segments.merging.segments'),
+  entities: window.JournalI18n.render('journal.window.import.stage.names.entities.merging.entities'),
+  facets: window.JournalI18n.render('journal.window.import.stage.names.facets.merging.facets'),
+  imports: window.JournalI18n.render('journal.window.import.stage.names.imports.copying.prior.imports'),
 };
 const IMPORT_STALL_TIMEOUT_MS = 10 * 60 * 1000; // longest observed real import; stalled rows surface amber after this without a terminal event
 const IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
@@ -1216,7 +1216,7 @@ function malformedImportHistoryResponse(url) {
   return new window.ApiError({
     status: 200,
     statusText: 'OK',
-    serverMessage: 'Malformed import history response',
+    serverMessage: window.JournalI18n.render('journal.window.import.window.explanation.malformed.import.history.response'),
     url,
     cause: 'parse',
   });
@@ -1431,9 +1431,9 @@ function isTerminalDuplicate(data) {
 function duplicateNoticeText(duplicate = {}, inProgress = false) {
   const importId = duplicate.import_id || '';
   if (inProgress) {
-    return `this import is already in progress${importId ? ` as ${importId}` : ''}.`;
+    return window.JournalI18n.render('journal.window.import.window.explanation.this.import.is.already.in.progress', [['value1', String(importId ? window.JournalI18n.render('journal.window.import.import.view.as.value1', [['value1', String(importId)]]) : '')]]);
   }
-  return `this file was already staged${importId ? ` as ${importId}` : ''}.`;
+  return window.JournalI18n.render('journal.window.import.window.explanation.this.file.was.already.staged.value1', [['value1', String(importId ? window.JournalI18n.render('journal.window.import.import.view.as.value1', [['value1', String(importId)]]) : '')]]);
 }
 
 const importOriginalsSources = new Set([
@@ -1446,8 +1446,8 @@ async function showImportOriginals(host, source) {
   delete host.dataset.originalsPending;
   if (!importOriginalsSources.has(source)) return;
   host.innerHTML = `
-    <label><input type="checkbox" disabled> keep originals</label>
-    <p class="import-field-hint">turn this on if you want a local copy of the originals in your journal.</p>
+    <label><input type="checkbox" disabled> ${window.JournalI18n.renderEnglishHtml('journal.window.import.field.label.keep.originals')}</label>
+    <p class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.turn.this.on.if.you.want')}</p>
     <p class="import-field-hint" role="status"></p>
   `;
   const checkbox = host.querySelector('input');
@@ -1455,7 +1455,7 @@ async function showImportOriginals(host, source) {
   const endpoint = '/app/import/api/keep-originals';
   host.dataset.originalsPending = "true";
   const displayError = () => {
-    status.textContent = "couldn't load this choice. reopen the import to try again.";
+    status.textContent = window.JournalI18n.render('journal.window.import.visible.text.couldn.t.load.this.choice.reopen');
   };
   try {
     const response = await importWrite(endpoint);
@@ -1482,7 +1482,7 @@ async function showImportOriginals(host, source) {
       if (!response.ok) throw new Error('keep originals');
     } catch (_) {
       checkbox.checked = !next;
-      status.textContent = "couldn't save this choice. try again.";
+      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.couldn.t.save.this.choice.try');
     } finally {
       checkbox.disabled = false;
       delete host.dataset.originalsPending;
@@ -1498,8 +1498,8 @@ function showDetect(res) {
   const duplicateNotice = document.getElementById('detectDuplicateNotice');
   if (duplicateNotice) {
     duplicateNotice.textContent = ['upload_fallback', 'path_fallback'].includes(res.diagnostics?.timestamp_detection_method)
-      ? 'no creation date was found in this file. choose its date, or keep the upload date.'
-      : res.diagnostics?.timestamp_detection_method === 'document_dates' ? 'this PDF uses its own dates. you can choose a date for this file.' : '';
+      ? window.JournalI18n.render('journal.window.import.visible.text.no.creation.date.was.found.in')
+      : res.diagnostics?.timestamp_detection_method === 'document_dates' ? window.JournalI18n.render('journal.window.import.visible.text.this.pdf.uses.its.own.dates') : '';
   }
   startBtn.style.display = '';
   startBtn.disabled = false;
@@ -1561,20 +1561,20 @@ function formatElapsed(ms) {
   const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
   if (hours > 0) {
-    return `${hours}h ${mins}m`;
+    return window.JournalI18n.render('journal.window.import.import.view.value1.h.value2.m', [['value1', String(hours)], ['value2', String(mins)]]);
   }
   if (mins > 0) {
-    return `${mins}m ${secs}s`;
+    return window.JournalI18n.render('journal.window.import.import.view.value1.m.value2.s', [['value1', String(mins)], ['value2', String(secs)]]);
   }
-  return `${secs}s`;
+  return window.JournalI18n.render('journal.window.import.import.view.value1.s', [['value1', String(secs)]]);
 }
 
 // One stage, or no stage time: the total alone, never the same time twice.
 function statusElapsedDetail(eventData) {
   const totalTime = formatElapsed(eventData.elapsed_ms);
   return eventData.stage_elapsed_ms && eventData.stage_elapsed_ms !== eventData.elapsed_ms
-    ? `${formatElapsed(eventData.stage_elapsed_ms)} (${totalTime} total)`
-    : `${totalTime} elapsed`;
+    ? window.JournalI18n.render('journal.window.import.import.view.value1.value2.total', [['value1', String(formatElapsed(eventData.stage_elapsed_ms))], ['value2', String(totalTime)]])
+    : window.JournalI18n.render('journal.window.import.import.view.value1.elapsed', [['value1', String(totalTime)]]);
 }
 
 function capitalizeStage(stage) {
@@ -1583,9 +1583,12 @@ function capitalizeStage(stage) {
 }
 
 function humanStageName(stage, sourceDisplay = '') {
+  if (stage === 'saving') {
+    return `${capitalizeStage(window.JournalI18n.render('journal.window.import.body.phase.words.write.saving'))}…`;
+  }
   const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}…`;
   if ((stage === 'importing' || stage === 'execution') && sourceDisplay) {
-    return `reading ${sourceDisplay}…`;
+    return window.JournalI18n.render('journal.window.import.import.view.reading.value1', [['value1', String(sourceDisplay)]]);
   }
   return fallback;
 }
@@ -1605,10 +1608,10 @@ function formatDateRange(dateRange) {
 function formatImportStats(entriesWritten, entitiesSeeded) {
   const parts = [];
   if (typeof entriesWritten === 'number') {
-    parts.push(`${entriesWritten.toLocaleString()} ${entriesWritten === 1 ? 'entry' : 'entries'}`);
+    parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(entriesWritten.toLocaleString())], ['value2', String(entriesWritten === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]));
   }
   if (typeof entitiesSeeded === 'number') {
-    parts.push(`${entitiesSeeded} entities`);
+    parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.entities', [['value1', String(entitiesSeeded)]]));
   }
   return parts.join(' • ') || '—';
 }
@@ -1616,16 +1619,16 @@ function formatImportStats(entriesWritten, entitiesSeeded) {
 function formatProgressStats(eventData) {
   const stats = [];
   if (eventData.items_total) {
-    stats.push(`${eventData.items_processed || 0}/${eventData.items_total} items`);
+    stats.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2.items', [['value1', String(eventData.items_processed || 0)], ['value2', String(eventData.items_total)]]));
   }
   if (eventData.earliest_date) {
-    stats.push(`from ${eventData.earliest_date}`);
+    stats.push(window.JournalI18n.render('journal.window.import.import.view.from.value1', [['value1', String(eventData.earliest_date)]]));
   }
   if (eventData.latest_date && eventData.latest_date !== eventData.earliest_date) {
-    stats.push(`to ${eventData.latest_date}`);
+    stats.push(window.JournalI18n.render('journal.window.import.import.view.to.value1', [['value1', String(eventData.latest_date)]]));
   }
   if (eventData.entities_found) {
-    stats.push(`${eventData.entities_found} entities found`);
+    stats.push(window.JournalI18n.render('journal.window.import.import.view.value1.entities.found', [['value1', String(eventData.entities_found)]]));
   }
   return stats;
 }
@@ -1633,8 +1636,8 @@ function formatProgressStats(eventData) {
 function renderProgressStats(eventData) {
   if (eventData.source_type === 'audio_archive') {
     const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '—';
-    const stats = [`${count(eventData.saved_parts)} audio ${eventData.saved_parts === 1 ? 'part' : 'parts'} saved`, `${count(eventData.processed_parts)} processed`,
-      `${count(eventData.processing)} waiting for processing`, `${count(eventData.remaining)} still to save`, `${count(eventData.left_out)} left out`];
+    const stats = [window.JournalI18n.render('journal.window.import.import.view.value1.audio.value2.saved', [['value1', String(count(eventData.saved_parts))], ['value2', String(eventData.saved_parts === 1 ? window.JournalI18n.render('journal.window.import.import.view.part') : window.JournalI18n.render('journal.window.import.import.view.parts'))]]), window.JournalI18n.render('journal.window.import.import.view.value1.processed', [['value1', String(count(eventData.processed_parts))]]),
+      window.JournalI18n.render('journal.window.import.import.view.value1.waiting.for.processing', [['value1', String(count(eventData.processing))]]), window.JournalI18n.render('journal.window.import.import.view.value1.still.to.save', [['value1', String(count(eventData.remaining))]]), window.JournalI18n.render('journal.window.import.import.view.value1.left.out', [['value1', String(count(eventData.left_out))]])];
     return `<div class="import-progress-stats">${stats.map(stat => `<div class="import-progress-stat">${escapeHtml(stat)}</div>`).join('')}</div>`;
   }
   const stats = formatProgressStats(eventData);
@@ -1661,7 +1664,7 @@ function sourceFilterOptionsHtml() {
   const labels = new Map(importSourceOptions.map(name => [name,
     sourceLabel({ source_type: name, source_display: name }) || name]));
   return [
-    '<option value="">all sources</option>',
+    `<option value="">${window.JournalI18n.renderHtml('journal.window.import.option.label.all.sources')}</option>`,
     ...[...labels].sort((a, b) => a[1].localeCompare(b[1])).map(([name, label]) => {
       const selected = currentSourceFilter === name ? ' selected' : '';
       return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(label)}</option>`;
@@ -1677,17 +1680,17 @@ function buildHistoryHeader(total, totalEntriesWritten) {
   const on = importPick.on;
   const count = importPick.ids.size;
 
-  const importsLabel = total === 1 ? 'import' : 'imports';
+  const importsLabel = total === 1 ? window.JournalI18n.render('journal.window.import.import.view.import') : window.JournalI18n.render('journal.window.import.import.view.imports');
   const entriesPart = (totalEntriesWritten === null || totalEntriesWritten === undefined)
     ? '—'
-    : `${totalEntriesWritten.toLocaleString()} ${totalEntriesWritten === 1 ? 'entry' : 'entries'}`;
-  const summaryText = `${total.toLocaleString()} ${importsLabel}, ${entriesPart}.`;
+    : window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(totalEntriesWritten.toLocaleString())], ['value2', String(totalEntriesWritten === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]);
+  const summaryText = window.JournalI18n.render('journal.window.import.import.view.value1.value2.value3', [['value1', String(total.toLocaleString())], ['value2', String(importsLabel)], ['value3', String(entriesPart)]]);
 
   return `
     <div class="import-history-header">
       <div class="import-history-summary">${escapeHtml(summaryText)}</div>
       <div class="import-history-filters">
-        <label for="importSourceFilter">source</label>
+        <label for="importSourceFilter">${window.JournalI18n.renderHtml('journal.window.import.field.label.source')}</label>
         <select id="importSourceFilter">
           ${sourceOptions}
         </select>
@@ -1708,7 +1711,7 @@ function buildHistoryHeader(total, totalEntriesWritten) {
 }
 
 function sourceLabel(imp) {
-  if (imp.source_type === 'audio_archive') return 'audio archive';
+  if (imp.source_type === 'audio_archive') return window.JournalI18n.render('journal.window.import.source.audio.archive.name');
   const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
   const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
   const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
@@ -1720,11 +1723,11 @@ function sourceLabel(imp) {
 // What an Apple Health import's row says, by its state. Owner copy: voice-checked.
 function bodyStateLabel(state) {
   return {
-    saved: 'saved',
-    partly_saved: 'partly saved',
-    stopped: 'stopped',
-    failed: 'not brought in',
-    didnt_start: "didn't start",
+    saved: window.JournalI18n.render('journal.window.import.body.label.saved'),
+    partly_saved: window.JournalI18n.render('journal.window.import.body.label.partly.saved'),
+    stopped: window.JournalI18n.render('journal.window.import.body.label.stopped'),
+    failed: window.JournalI18n.render('journal.window.import.body.label.failed'),
+    didnt_start: window.JournalI18n.render('journal.window.import.body.label.didnt.start'),
   }[state];
 }
 
@@ -1738,10 +1741,10 @@ function renderImportRow(imp, picking = false) {
   let statusDetail = '';
   if (imp.status === 'success') {
     statusClass = 'success';
-    statusText = imp.body_state === 'saved' ? bodyStateLabel('saved') : 'completed';
+    statusText = imp.body_state === 'saved' ? bodyStateLabel(window.JournalI18n.render('journal.window.import.status.saved')) : window.JournalI18n.render('journal.window.import.status.completed');
   } else if (imp.status === 'failed') {
     statusClass = 'failed';
-    statusText = bodyStateLabel(imp.body_state) || 'failed';
+    statusText = bodyStateLabel(imp.body_state) || window.JournalI18n.render('journal.window.import.status.failed');
     if (imp.body_words) {
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
     } else if (imp.error) {
@@ -1750,26 +1753,26 @@ function renderImportRow(imp, picking = false) {
     }
   } else if (imp.status === 'unconfirmed') {
     statusClass = 'unconfirmed';
-    statusText = 'unconfirmed';
+    statusText = window.JournalI18n.render('journal.window.import.status.unconfirmed');
   } else if (imp.status === 'noted') {
     statusClass = 'unconfirmed';
-    statusText = bodyStateLabel(imp.body_state) || 'stopped';
+    statusText = bodyStateLabel(imp.body_state) || window.JournalI18n.render('journal.window.import.status.stopped');
   } else if (imp.status === 'unavailable') {
     statusClass = 'unavailable';
-    statusText = 'status unavailable';
+    statusText = window.JournalI18n.render('journal.window.import.status.status.unavailable');
   } else if (imp.status === 'running') {
     statusClass = 'running';
-    statusText = 'running';
+    statusText = window.JournalI18n.render('journal.window.import.status.running');
   } else {
     statusClass = 'pending';
-    statusText = 'pending';
+    statusText = window.JournalI18n.render('journal.window.import.status.pending');
   }
 
   if (imp.status === 'noted' && imp.body_words) {
     statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
   }
   if (imp.has_gaps) {
-    statusDetail += `<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:var(--warn-ink);">contains gaps</div>`;
+    statusDetail += `<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.contains.gaps')}</div>`;
   }
 
   // The file column holds a file and nothing else, and the source column holds a
@@ -1792,9 +1795,9 @@ function renderImportRow(imp, picking = false) {
     const remaining = imp.remaining ?? 0;
     const processing = imp.processing ?? 0;
     const leftOut = imp.left_out ?? 0;
-    statsText = `${saved} parts saved · ${remaining} left to save · ${processing} waiting to process · ${imp.processed_parts ?? 0} processed · ${leftOut} members left out`;
-    if (imp.rejected_parts) statsText += ` · ${imp.rejected_parts} parts rejected`;
-    if (imp.unavailable_parts) statsText += ` · ${imp.unavailable_parts} unavailable`;
+    statsText = window.JournalI18n.render('journal.window.import.import.view.value1.parts.saved.value2.left.to', [['value1', String(saved)], ['value2', String(remaining)], ['value3', String(processing)], ['value4', String(imp.processed_parts ?? 0)], ['value5', String(leftOut)]]);
+    if (imp.rejected_parts) statsText += window.JournalI18n.render('journal.window.import.import.view.value1.parts.rejected', [['value1', String(imp.rejected_parts)]]);
+    if (imp.unavailable_parts) statsText += window.JournalI18n.render('journal.window.import.import.view.value1.unavailable', [['value1', String(imp.unavailable_parts)]]);
   }
   const encodedId = encodeURIComponent(imp.timestamp);
 
@@ -1830,159 +1833,159 @@ function renderImportRow(imp, picking = false) {
 // list. The dialog, its erase step and the receipts are the trash's own, as the
 // transcripts and settings pages have them; what moves is the import's own.
 const IMPORT_DELETE_COPY = {
-  noun: 'import',
-  things: 'imports',
-  select: 'select',
-  selectAll: 'select all',
-  selected: '{n} selected',
-  delete: 'delete',
-  done: 'done',
-  pickLabel: 'select {name}',
-  meta: 'imported {day}',
-  more: 'and {n} more',
+  noun: window.JournalI18n.render('journal.window.import.import.delete.copy.noun.import'),
+  things: window.JournalI18n.render('journal.window.import.import.delete.copy.things.imports'),
+  select: window.JournalI18n.render('journal.window.import.import.delete.copy.select.select'),
+  selectAll: window.JournalI18n.render('journal.window.import.import.delete.copy.selectall.select.all'),
+  selected: window.JournalI18n.render('journal.window.import.import.delete.copy.selected.n.selected'),
+  delete: window.JournalI18n.render('journal.window.import.import.delete.copy.delete.delete'),
+  done: window.JournalI18n.render('journal.window.import.import.delete.copy.done.done'),
+  pickLabel: window.JournalI18n.render('journal.window.import.import.delete.copy.picklabel.select.name'),
+  meta: window.JournalI18n.render('journal.window.import.import.delete.copy.meta.imported.day'),
+  more: window.JournalI18n.render('journal.window.import.import.delete.copy.more.and.n.more'),
   move: {
-    title: 'delete this import?',
-    titleMany: 'delete {n} imports?',
-    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
-    reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
-    lead: "this moves the import's own:",
-    ownMany: "this moves each import's own segments, any original file it kept, and its row in your import history.",
-    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
-    found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.",
-    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
-    foundMany: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.",
-    staysBody: 'activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.',
-    staysBodyMany: 'activities, summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.',
-    sharedOne: 'on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
-    sharedMany: 'on {n} days, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
-    sharedUnknown: 'some of what it brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.',
-    sharedSet: 'some of what they brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.',
-    tookNothing: 'everything it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
-    verb: 'deletes',
-    size: 'total size: {size}',
+    title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.delete.this.import'),
+    titleMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.titlemany.delete.n.imports'),
+    reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2'),
+    reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and.variant2'),
+    lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.moves.the.import.s.own'),
+    ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.moves.each.import.s.own'),
+    stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
+    found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and'),
+    staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
+    foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and'),
+    staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2'),
+    staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2'),
+    sharedOne: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it'),
+    sharedMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what'),
+    sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in'),
+    sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in'),
+    tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because'),
+    verb: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.verb.deletes'),
+    size: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.size.total.size.size'),
   },
   erase: {
-    title: 'erase this import now?',
-    titleMany: 'erase {n} imports now?',
-    reach: "it leaves your journal now and can't be recovered.",
-    reachMany: "they leave your journal now and can't be recovered.",
-    lead: "this erases the import's own:",
-    ownMany: "this erases each import's own segments, any original file it kept, and its row in your import history.",
-    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
-    found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.",
-    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
-    foundMany: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.",
-    staysBody: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
-    staysBodyMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
-    sharedOne: "on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
-    sharedMany: "on {n} days, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
-    sharedUnknown: 'some of what it brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.',
-    sharedSet: 'some of what they brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.',
-    tookNothing: "everything it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
-    verb: 'erases',
+    title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.erase.this.import.now'),
+    titleMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.titlemany.erase.n.imports.now'),
+    reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and'),
+    reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and'),
+    lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.erases.the.import.s.own'),
+    ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.erases.each.import.s.own'),
+    stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
+    found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2'),
+    staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
+    foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2'),
+    staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from'),
+    staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from'),
+    sharedOne: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it.variant2'),
+    sharedMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what.variant2'),
+    sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in.variant2'),
+    sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in.variant2'),
+    tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.and'),
+    verb: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.verb.erases'),
   },
   // What brings back what a body import deletes or erases ({verb}).
   again: {
-    apple_health: 'each Apple Health export holds your whole history, so importing one again brings back what this {verb}.',
-    strava: 'importing a Strava download again brings back the workouts this {verb}.',
-    oura: 'an Oura sync leaves out what this {verb}. one you ask for the days it covered brings it back.',
+    apple_health: window.JournalI18n.render('journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your'),
+    strava: window.JournalI18n.render('journal.window.import.import.delete.copy.strava.importing.a.strava.download.again.brings'),
+    oura: window.JournalI18n.render('journal.window.import.import.delete.copy.oura.an.oura.sync.leaves.out.what'),
   },
   // An import erased now erases its segments waiting in the trash on their own.
   waiting: {
-    oneOne: 'the segment from it that waits in the trash on its own is erased with it.',
-    oneMany: 'the {w} segments from it that wait in the trash on their own are erased with it.',
-    manyOne: 'the segment from them that waits in the trash on its own is erased with them.',
-    manyMany: 'the {w} segments from them that wait in the trash on their own are erased with them.',
-    oneUnknown: 'any of its segments waiting in the trash on their own are erased with it.',
+    oneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.oneone.the.segment.from.it.that.waits'),
+    oneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.onemany.the.w.segments.from.it.that'),
+    manyOne: window.JournalI18n.render('journal.window.import.import.delete.copy.manyone.the.segment.from.them.that.waits'),
+    manyMany: window.JournalI18n.render('journal.window.import.import.delete.copy.manymany.the.w.segments.from.them.that'),
+    oneUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in'),
   },
   // Said once, after the lines above, whenever the dialog holds a body import.
-  hideDay: 'a day you hide on the body page stays hidden when you import or sync it again.',
+  hideDay: window.JournalI18n.render('journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the'),
   list: {
-    bodySpan: 'body data from {first} to {last}',
-    bodyDay: 'body data from {day}',
-    bodyUnknown: 'the body data it brought in',
-    workoutSpanOne: '{n} workout from {first} to {last}',
-    workoutSpanMany: '{n} workouts from {first} to {last}',
-    workoutDayOne: '{n} workout from {day}',
-    workoutDayMany: '{n} workouts from {day}',
-    workoutsUnknown: 'the workouts it brought in',
-    spanOne: '{n} segment from {first} to {last}',
-    spanMany: '{n} segments from {first} to {last}',
-    dayOne: '{n} segment from {day}',
-    dayMany: '{n} segments from {day}',
-    originalOne: 'the original file it kept',
-    originalMany: 'the {n} original files it kept',
-    row: 'its row in your import history',
-    segmentsUnknown: 'the segments it brought in',
-    originalUnknown: 'any original file it kept',
+    bodySpan: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyspan.body.data.from.first.to.last'),
+    bodyDay: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyday.body.data.from.day'),
+    bodyUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in'),
+    workoutSpanOne: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutspanone.n.workout.from.first.to.last'),
+    workoutSpanMany: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutspanmany.n.workouts.from.first.to.last'),
+    workoutDayOne: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutdayone.n.workout.from.day'),
+    workoutDayMany: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutdaymany.n.workouts.from.day'),
+    workoutsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in'),
+    spanOne: window.JournalI18n.render('journal.window.import.import.delete.copy.spanone.n.segment.from.first.to.last'),
+    spanMany: window.JournalI18n.render('journal.window.import.import.delete.copy.spanmany.n.segments.from.first.to.last'),
+    dayOne: window.JournalI18n.render('journal.window.import.import.delete.copy.dayone.n.segment.from.day'),
+    dayMany: window.JournalI18n.render('journal.window.import.import.delete.copy.daymany.n.segments.from.day'),
+    originalOne: window.JournalI18n.render('journal.window.import.import.delete.copy.originalone.the.original.file.it.kept'),
+    originalMany: window.JournalI18n.render('journal.window.import.import.delete.copy.originalmany.the.n.original.files.it.kept'),
+    row: window.JournalI18n.render('journal.window.import.import.delete.copy.row.its.row.in.your.import.history'),
+    segmentsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.segmentsunknown.the.segments.it.brought.in'),
+    originalUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.originalunknown.any.original.file.it.kept'),
   },
   buttons: {
-    eraseNow: 'erase now',
-    cancel: 'cancel',
-    moveToTrash: 'move to trash',
-    back: 'back',
-    recover: 'recover',
-    openTrash: 'open trash',
+    eraseNow: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.erasenow.erase.now'),
+    cancel: window.JournalI18n.render('journal.window.import.import.delete.copy.cancel.cancel'),
+    moveToTrash: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.movetotrash.move.to.trash'),
+    back: window.JournalI18n.render('journal.window.import.import.delete.copy.back.back'),
+    recover: window.JournalI18n.render('journal.window.import.import.delete.copy.recover.recover'),
+    openTrash: window.JournalI18n.render('journal.window.import.import.delete.copy.opentrash.open.trash'),
   },
   notes: {
-    busy: 'this is already being moved or erased. reload in a minute to check.',
-    importing: "this wasn't moved because it's still importing. try again once it's done.",
-    other: "this wasn't moved. try again.",
-    eraseImporting: "this wasn't erased because it's still importing. try again once it's done.",
-    eraseOther: "this wasn't erased. try again.",
+    busy: window.JournalI18n.render('journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or'),
+    importing: window.JournalI18n.render('journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it'),
+    other: window.JournalI18n.render('journal.window.import.import.delete.copy.other.this.wasn.t.moved.try.again'),
+    eraseImporting: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it'),
+    eraseOther: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again'),
   },
   receipt: {
-    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
-    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
-    erased: { title: '{noun} erased from your journal' },
-    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
-    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
-    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
-    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
-    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
-    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
-    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+    moved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.erases.date.unless.you.recover.it') },
+    recovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.noun.recovered'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.back.in.your.journal') },
+    erased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.noun.erased.from.your.journal') },
+    recoverFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.the.trash') },
+    moveRefused: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
+    eraseRefused: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
+    eraseFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.in.the.trash.you') },
+    noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.in.the') },
+    noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload') },
+    noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.back.in') },
   },
   set: {
-    moved: { title: 'moved {n} {things} to the trash', message: 'they erase {date} unless you recover them.' },
-    partMoved: { title: 'moved {done} of {n} to the trash' },
-    stillOne: "{k} couldn't be moved and is still in your journal, marked below.",
-    stillMany: "{k} couldn't be moved and are still in your journal, marked below.",
-    markedOne: "{k} couldn't be moved and is marked below.",
-    markedMany: "{k} couldn't be moved and are marked below.",
-    goneMoreOne: '{g} more is no longer listed.',
-    goneMoreMany: '{g} more are no longer listed.',
-    othersGoneOne: 'the other is no longer listed here.',
-    othersGoneMany: 'the others are no longer listed here.',
-    noneMoved: { title: "couldn't move those to the trash" },
-    noneStillOne: '{k} is still in your journal, marked below.',
-    noneStillMany: '{k} are still in your journal, marked below.',
-    noneGoneOne: "it's no longer listed here.",
-    noneGoneMany: "they're no longer listed here.",
-    erased: { title: 'erased {n} {things} from your journal' },
-    partErased: { title: 'erased {done} of {n}' },
-    partErasedOne: "the other wasn't erased. look for it below or in the trash.",
-    partErasedMany: "the others weren't erased. look for them below or in the trash.",
-    noneErased: { title: "couldn't erase those" },
-    noneErasedOne: 'look for it below or in the trash.',
-    noneErasedMany: 'look for them below or in the trash.',
-    recovered: { title: '{n} {things} recovered', message: "they're back in your journal." },
-    partRecovered: { title: 'recovered {done} of {n}' },
-    partRecoveredOne: 'the other is still in the trash. you can try again from there.',
-    partRecoveredMany: 'the others are still in the trash. you can try again from there.',
-    recoverFailed: { title: "couldn't recover those", message: "they're still in the trash. you can try again from there." },
-    noAnswerMove: { title: "your journal didn't answer", message: 'they may already be in the trash. reload to check.' },
-    noAnswerErase: { title: "your journal didn't answer", message: 'they may already be erased. reload to check.' },
-    noAnswerRecover: { title: "your journal didn't answer", message: 'they may already be back in your journal. reload to check.' },
+    moved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.n.things.to.the.trash'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.erase.date.unless.you.recover') },
+    partMoved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.done.of.n.to.the') },
+    stillOne: window.JournalI18n.render('journal.window.import.import.delete.copy.stillone.k.couldn.t.be.moved.and'),
+    stillMany: window.JournalI18n.render('journal.window.import.import.delete.copy.stillmany.k.couldn.t.be.moved.and'),
+    markedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.markedone.k.couldn.t.be.moved.and'),
+    markedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.markedmany.k.couldn.t.be.moved.and'),
+    goneMoreOne: window.JournalI18n.render('journal.window.import.import.delete.copy.gonemoreone.g.more.is.no.longer.listed'),
+    goneMoreMany: window.JournalI18n.render('journal.window.import.import.delete.copy.gonemoremany.g.more.are.no.longer.listed'),
+    othersGoneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.othersgoneone.the.other.is.no.longer.listed'),
+    othersGoneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.othersgonemany.the.others.are.no.longer.listed'),
+    noneMoved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the') },
+    noneStillOne: window.JournalI18n.render('journal.window.import.import.delete.copy.nonestillone.k.is.still.in.your.journal'),
+    noneStillMany: window.JournalI18n.render('journal.window.import.import.delete.copy.nonestillmany.k.are.still.in.your.journal'),
+    noneGoneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.nonegoneone.it.s.no.longer.listed.here'),
+    noneGoneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.nonegonemany.they.re.no.longer.listed.here'),
+    erased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.erased.n.things.from.your.journal') },
+    partErased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.erased.done.of.n') },
+    partErasedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.parterasedone.the.other.wasn.t.erased.look'),
+    partErasedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.parterasedmany.the.others.weren.t.erased.look'),
+    noneErased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.those') },
+    noneErasedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.noneerasedone.look.for.it.below.or.in'),
+    noneErasedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.noneerasedmany.look.for.them.below.or.in'),
+    recovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.n.things.recovered'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.back.in.your.journal') },
+    partRecovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.recovered.done.of.n') },
+    partRecoveredOne: window.JournalI18n.render('journal.window.import.import.delete.copy.partrecoveredone.the.other.is.still.in.the'),
+    partRecoveredMany: window.JournalI18n.render('journal.window.import.import.delete.copy.partrecoveredmany.the.others.are.still.in.the'),
+    recoverFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.still.in.the.trash') },
+    noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.in.the') },
+    noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.erased.reload') },
+    noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.back.in') },
   },
 };
 // The Import page's own name for each source, for the page that has not loaded
 // its source cards (an import's own page) and for sources with no card.
 const IMPORT_SOURCE_NAMES = {
-  ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', journal_archive: 'journal',
-  audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
-  strava: 'Strava', evernote: 'Evernote', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
-  obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
+  ics: window.JournalI18n.render('journal.window.import.import.source.names.ics.calendar'), chatgpt: window.JournalI18n.render('journal.window.import.source.chatgpt.name'), claude: window.JournalI18n.render('journal.window.import.source.claude.name'), gemini: window.JournalI18n.render('journal.window.import.source.gemini.name'), journal_archive: window.JournalI18n.render('journal.window.import.import.source.names.journal.archive.journal'),
+  audio_archive: window.JournalI18n.render('journal.window.import.import.source.names.audio.archive.audio.archive'), recording: window.JournalI18n.render('journal.window.import.import.source.names.recording.meeting.audio'), document: window.JournalI18n.render('journal.window.import.import.source.names.document.document'), image: window.JournalI18n.render('journal.window.import.import.source.names.image.image'),
+  strava: window.JournalI18n.render('journal.window.import.source.strava.name'), evernote: window.JournalI18n.render('journal.window.import.source.evernote.name'), quick: window.JournalI18n.render('journal.window.import.import.source.names.quick.quick.import'), plaud: window.JournalI18n.render('journal.window.import.label.source.plaud'), audio: window.JournalI18n.render('journal.window.import.import.source.names.audio.audio.folder'), text: window.JournalI18n.render('journal.window.import.import.source.names.text.text'),
+  obsidian: window.JournalI18n.render('journal.window.import.label.source.obsidian'), apple_health: window.JournalI18n.render('journal.window.import.source.apple.health.name'), oura: window.JournalI18n.render('journal.window.import.label.source.oura'),
 };
 const IMPORT_RECEIPT_KEY = 'journal-import-delete-receipt';
 const IMPORT_SET_SHOWN = 5;
@@ -2503,11 +2506,11 @@ function paintImportPick() {
     writeHidden(bar, !importPick.on);
     writeHidden(byId('importPickIdle'), count > 0);
     writeHidden(byId('importPickSome'), count === 0);
-    writeText(byId('importPickAllLabel'), C.selectAll);
+    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickalllabel')), C.selectAll);
     byId('importPickAll').checked = false;
     byId('importPickAll').onchange = selectAllImports;
-    writeText(byId('importPickCount'), importDeleteFill(C.selected, { n: count }));
-    writeText(byId('importPickDelete'), C.delete);
+    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickcount')), importDeleteFill(C.selected, { n: count }));
+    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickdelete')), C.delete);
     byId('importPickDelete').onclick = deleteChosenImports;
     for (const id of ['importPickDoneIdle', 'importPickDoneSome']) {
       writeText(byId(id), C.done);
@@ -2719,9 +2722,9 @@ async function loadImports() {
     if (imports.length === 0 && !currentSourceFilter) {
       drawMarkup(container, window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('inbox'),
-        heading: 'no imports yet',
-        desc: 'import from any source above.',
-        action: '<a href="#" data-import-scroll-grid style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
+        heading: window.JournalI18n.render('journal.window.import.owner.heading.no.imports.yet'),
+        desc: window.JournalI18n.render('journal.window.import.owner.desc.import.from.any.source.above'),
+        action: `<a href="#" data-import-scroll-grid style="color: var(--orange-text-aa); font-weight: 600;">${window.JournalI18n.renderHtml('journal.window.import.link.label.choose.a.source')}</a>`
       }), importListLanding);
       importPick.on = false;
       importPick.ids.clear();
@@ -2739,12 +2742,12 @@ async function loadImports() {
     html += `<div class="import-table-wrap"><table class="import-table${importPick.on ? ' import-table--picking' : ''}">`;
     html += '<thead><tr>';
     if (importPick.on) html += importPickHeadHtml();
-    html += '<th>imported to</th>';
-    html += '<th>file</th>';
-    html += '<th>source</th>';
-    html += '<th>status</th>';
-    html += '<th>entries</th>';
-    html += '<th>imported at</th>';
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.imported.to')}</th>`;
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.file')}</th>`;
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.source')}</th>`;
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.status')}</th>`;
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.entries')}</th>`;
+    html += `<th>${window.JournalI18n.renderHtml('journal.window.import.column.heading.imported.at')}</th>`;
     html += '</tr></thead><tbody>';
 
     imports.forEach(imp => {
@@ -2753,13 +2756,13 @@ async function loadImports() {
 
     html += '</tbody></table></div>';
     if (!imports.length) html += window.SurfaceState.empty({
-      icon: window.ConveyIcons.svg('search'), heading: 'no imports match this filter'
+      icon: window.ConveyIcons.svg('search'), heading: window.JournalI18n.render('journal.window.import.owner.heading.no.imports.match.this.filter')
     });
     if (data.page < data.pages) {
       html += `
         <div id="importLoadMore" style="text-align: center; margin: 1.5rem 0;">
           <button class="import-primary-btn" data-import-load-more>
-            load more (${importsCache.length} of ${data.total} shown)
+            ${window.JournalI18n.renderHtml('journal.window.import.button.label.load.more')}${importsCache.length} ${window.JournalI18n.renderHtml('journal.window.import.button.label.of')} ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.button.label.shown')}
           </button>
         </div>
       `;
@@ -2792,7 +2795,7 @@ async function loadImports() {
   } catch (err) {
     if (generation !== historyRequestGeneration) return false;
     window.SurfaceState.replaceLoading('importListContent', window.SurfaceState.error({
-      heading: 'couldn\'t load your import history',
+      heading: window.JournalI18n.render('journal.window.import.owner.heading.couldn.t.load.your.import.history'),
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
@@ -2818,7 +2821,7 @@ function renderLoadMoreError(err) {
   }
 
   const serverMessage = window.SurfaceState.serverMessageFrom(err);
-  errorEl.innerHTML = `<strong>couldn&#39;t load more imports.</strong> ${window.CONVEY_COPY.RELOAD_HINT}${serverMessage ? ` ${escapeHtml(serverMessage)}` : ''}`;
+  errorEl.innerHTML = `<strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.couldn.t.load.more.imports')}</strong> ${window.CONVEY_COPY.RELOAD_HINT}${serverMessage ? ` ${escapeHtml(serverMessage)}` : ''}`;
 
   const loadMoreContainer = document.getElementById('importLoadMore');
   const host = (typeof table.closest === 'function' && table.closest('.import-table-wrap')) || table;
@@ -2867,7 +2870,7 @@ async function loadMoreImports() {
       if (data.page < data.pages) {
         drawMarkup(loadMoreContainer, `
           <button class="import-primary-btn" data-import-load-more>
-            load more (${importsCache.length} of ${data.total} shown)
+            ${window.JournalI18n.renderHtml('journal.window.import.button.label.load.more')}${importsCache.length} ${window.JournalI18n.renderHtml('journal.window.import.button.label.of')} ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.button.label.shown')}
           </button>`);
       } else {
         // On the last page the button goes: the first row it brought takes its place.
@@ -2905,7 +2908,7 @@ function markRowStalled(importId) {
     writeClass(row, 'import-row--stalled', true);
     const statusCell = row.querySelector('.status-cell');
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import id: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`);
+      drawMarkup(statusCell, `<span class="import-status stalled">${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled')}</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button><div class="progress-detail import-stalled-meta">${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled.no.updates.in.minutes.import')} ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`);
     }
   }
 
@@ -3047,15 +3050,15 @@ function updateImportRow(importId, eventData, options = {}) {
   }
 
   const status = eventData.status || (eventData.event === 'completed' ? 'success' : eventData.event === 'error' ? 'failed' : null);
-  let gapDetail = eventData.has_gaps ? '<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:var(--warn-ink);">contains gaps</div>' : '';
+  let gapDetail = eventData.has_gaps ? `<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.contains.gaps')}</div>` : '';
 
   if (status === 'unconfirmed') {
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status unconfirmed">unconfirmed</span>${gapDetail}`);
+      drawMarkup(statusCell, `<span class="import-status unconfirmed">${window.JournalI18n.renderHtml('journal.window.import.visible.text.unconfirmed')}</span>${gapDetail}`);
     }
   } else if (status === 'unavailable') {
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status unavailable">status unavailable</span>${gapDetail}`);
+      drawMarkup(statusCell, `<span class="import-status unavailable">${window.JournalI18n.renderHtml('journal.window.import.visible.text.status.unavailable')}</span>${gapDetail}`);
     }
   } else if (eventData.event === 'started') {
     if (statusCell) {
@@ -3072,7 +3075,7 @@ function updateImportRow(importId, eventData, options = {}) {
     }
   } else if (eventData.event === 'completed' || status === 'success') {
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status success">completed</span>${gapDetail}`);
+      drawMarkup(statusCell, `<span class="import-status success">${window.JournalI18n.renderHtml('journal.window.import.visible.text.completed')}</span>${gapDetail}`);
     }
     if (statsCell) {
       writeText(statsCell, formatImportStats(eventData.entries_written, eventData.entities_seeded));
@@ -3082,7 +3085,7 @@ function updateImportRow(importId, eventData, options = {}) {
     // An Apple Health import's end names its own state, which the row then reads.
     const bodyLabel = bodyStateLabel(eventData.body_state || eventData.stage);
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status failed">${escapeHtml(bodyLabel || 'failed')}</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`);
+      drawMarkup(statusCell, `<span class="import-status failed">${escapeHtml(bodyLabel || window.JournalI18n.render('journal.window.import.status.text.failed'))}</span><div class="progress-detail">${escapeHtml(eventData.error || window.JournalI18n.render('journal.window.import.status.text.unknown.error'))}</div>${gapDetail}`);
     }
     if (bodyLabel) ctx.setTimeout(() => loadImports(), 1000);
   }
@@ -3120,7 +3123,7 @@ async function loadGuidedFlow(sourceName) {
   }
 
   if (!source) {
-    guideSteps.innerHTML = '<div class="no-imports">unknown import source</div>';
+    guideSteps.innerHTML = `<div class="no-imports">${window.JournalI18n.renderHtml('journal.window.import.visible.text.unknown.import.source')}</div>`;
     return;
   }
 
@@ -3135,14 +3138,14 @@ async function loadGuidedFlow(sourceName) {
     const response = await ctx.fetch(`/app/import/api/guide/${sourceName}`);
     if (response.ok) {
       const markdown = await response.text();
-      guideHtml = `<li><div class="import-step"><div class="import-step-number">step ${guideStepNumber}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
+      guideHtml = `<li><div class="import-step"><div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${guideStepNumber}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
       guideStepNumber += 1;
     }
   }
   const uploadStepNumber = guideStepNumber;
   const configureStepNumber = uploadStepNumber + 1;
   const folderPicker = window.JournalOwnerFolders && ['audio_archive', 'gemini', 'document'].includes(source.name)
-    ? '<button id="guidedFolderBtn" class="import-secondary-btn" type="button">choose folder</button><p id="guidedFolderStatus" role="status" aria-live="polite"></p>' : '';
+    ? `<button id="guidedFolderBtn" class="import-secondary-btn" type="button">${window.JournalI18n.renderHtml('journal.window.import.button.label.choose.folder')}</button><p id="guidedFolderStatus" role="status" aria-live="polite"></p>` : '';
 
   guideSteps.innerHTML = `
     <div>
@@ -3152,18 +3155,18 @@ async function loadGuidedFlow(sourceName) {
     <form id="guidedImportForm" onsubmit="return false;"><ol class="import-steps-list">
     ${guideHtml}
       <li><div class="import-step">
-        <div class="import-step-number">step ${uploadStepNumber}</div>
+        <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${uploadStepNumber}</div>
         ${source.input_type === 'path_input' && folderPicker ? `
           ${folderPicker}
         ` : source.input_type === 'path_input' ? `
-          <h4>${escapeHtml(source.upload_prompt || 'paste the full path to your folder')}</h4>
+          <h4>${escapeHtml(source.upload_prompt || window.JournalI18n.render('journal.window.import.status.text.paste.the.full.path.to.your'))}</h4>
           <input id="guidedPathInput" class="import-path-input" type="text"
-            placeholder="${escapeHtml(source.upload_prompt || 'paste the full path to your folder')}" />
+            placeholder="${escapeHtml(source.upload_prompt || window.JournalI18n.render('journal.window.import.status.text.paste.the.full.path.to.your'))}" />
         ` : `
-          <h4>upload your file</h4>
-          <div class="import-upload-area" id="guidedDropArea" role="button" tabindex="0" aria-label="choose file to upload">
-            <p>${escapeHtml(source.upload_prompt || 'select a file to import')}</p>
-            <div class="import-upload-help">${escapeHtml(source.accept ? `accepts ${source.accept}` : 'any supported file')}</div>
+          <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.upload.your.file')}</h4>
+          <div class="import-upload-area" id="guidedDropArea" role="button" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.import.accessible.name.choose.file.to.upload')}">
+            <p>${escapeHtml(source.upload_prompt || window.JournalI18n.render('journal.window.import.status.text.select.a.file.to.import'))}</p>
+            <div class="import-upload-help">${escapeHtml(source.accept ? window.JournalI18n.render('journal.window.import.status.text.accepts.value1', [['value1', String(source.accept)]]) : window.JournalI18n.render('journal.window.import.status.text.any.supported.file'))}</div>
             <input id="guidedFileInput" type="file" accept="${escapeHtml(source.accept || '')}" style="display:none" />
             <div id="guidedFileLabel" class="import-file-label"></div>
           </div>
@@ -3172,42 +3175,42 @@ async function loadGuidedFlow(sourceName) {
         <div id="guidedDedupNotice"></div>
       </div></li>
       <li><div class="import-step">
-        <div class="import-step-number">step ${configureStepNumber}</div>
+        <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${configureStepNumber}</div>
         <div id="guidedSizePreview" role="status" aria-live="polite"></div>
         ${source.name === 'journal_archive' ? `
-          <h4>preview, then merge your archive</h4>
+          <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.preview.then.merge.your.archive')}</h4>
           <div class="import-action-row">
-            <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
-            <a class="import-secondary-btn" href="/app/import/api/journal-archive/export">download this journal</a>
+            <button id="guidedStartBtn" class="import-primary-btn" type="button">${window.JournalI18n.renderHtml('journal.window.import.button.label.preview.import')}</button>
+            <a class="import-secondary-btn" href="/app/import/api/journal-archive/export">${window.JournalI18n.renderHtml('journal.window.import.link.label.download.this.journal')}</a>
           </div>
-          <p class="import-field-hint">the ZIP includes your settings and credentials. processing logs, rebuildable indexes and caches, locks and temporary files are left out. merging keeps the receiving journal's settings and connections.</p>
+          <p class="import-field-hint">${window.JournalI18n.renderEnglishHtml('journal.window.import.visible.text.the.zip.includes.your.settings.and')}</p>
 
         ` : source.name === 'audio_archive' ? `
-          <h4>preview your recordings</h4>
+          <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.preview.your.recordings')}</h4>
           <div class="confirm-field">
-            <label for="guidedArchiveZone">time zone in recording filenames</label>
-            <select id="guidedArchiveZone" class="import-path-input"><option value="">choose a time zone</option>${(source.time_zones || []).map(zone => `<option value="${escapeHtml(zone)}">${escapeHtml(zone)}</option>`).join('')}</select>
+            <label for="guidedArchiveZone">${window.JournalI18n.renderHtml('journal.window.import.field.label.time.zone.in.recording.filenames')}</label>
+            <select id="guidedArchiveZone" class="import-path-input"><option value="">${window.JournalI18n.renderHtml('journal.window.import.option.label.choose.a.time.zone')}</option>${(source.time_zones || []).map(zone => `<option value="${escapeHtml(zone)}">${escapeHtml(zone)}</option>`).join('')}</select>
           </div>
           <div class="confirm-field">
-            <label for="guidedArchiveManifest">manifest filename <span class="import-field-optional">(optional)</span></label>
+            <label for="guidedArchiveManifest">${window.JournalI18n.renderHtml('journal.window.import.field.label.manifest.filename')} <span class="import-field-optional">${window.JournalI18n.renderHtml('journal.window.import.visible.text.optional')}</span></label>
             <input id="guidedArchiveManifest" class="import-path-input" placeholder="manifest.json" autocomplete="off" autocapitalize="none" />
-            <p class="import-field-hint">leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.</p>
+            <p class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.leave.this.empty.to.use.recording')}</p>
           </div>
           <div id="guidedOriginals"></div>
-          <div class="import-action-row"><button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button></div>
+          <div class="import-action-row"><button id="guidedStartBtn" class="import-primary-btn" type="button">${window.JournalI18n.renderHtml('journal.window.import.button.label.preview.import')}</button></div>
         ` : `
-          <h4>configure and start</h4>
+          <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.configure.and.start')}</h4>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="guidedSettingInput">context <span class="import-field-optional">(optional)</span></label>
-              <input id="guidedSettingInput" placeholder="e.g. weekly planning" />
-              <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
+              <label for="guidedSettingInput">${window.JournalI18n.renderHtml('journal.window.import.field.label.context')} <span class="import-field-optional">${window.JournalI18n.renderHtml('journal.window.import.visible.text.optional')}</span></label>
+              <input id="guidedSettingInput" placeholder="${window.JournalI18n.renderHtml('journal.window.import.field.placeholder.e.g.weekly.planning')}" />
+              <div class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.a.short.note.about.what.this')}</div>
             </div>
           </div>
           ${['strava', 'apple_health'].includes(source.name) ? '<div id="guidedFacet" class="import-facet"></div>' : ''}
           <div id="guidedOriginals"></div>
           <div class="import-action-row">
-            <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
+            <button id="guidedStartBtn" class="import-primary-btn" type="button">${window.JournalI18n.renderHtml('journal.window.import.button.label.preview.import')}</button>
           </div>
         `}
         ${source.input_type === 'path_input' ? '' : '<div id="importUploadStatus" class="import-field-hint" role="status"></div>'}
@@ -3388,31 +3391,31 @@ function renderQuickImportFlow() {
 
   guideSteps.innerHTML = `
     <div>
-      <h2 class="import-guide-title">quick import</h2>
-      <p class="import-guide-subtitle">paste text or drop a file. you'll confirm the date before it goes in.</p>
+      <h2 class="import-guide-title">${window.JournalI18n.renderHtml('journal.window.import.section.heading.quick.import')}</h2>
+      <p class="import-guide-subtitle">${window.JournalI18n.renderHtml('journal.window.import.visible.text.paste.text.or.drop.a.file')}</p>
     </div>
     <form id="importForm">
       <ol class="import-steps-list">
         <li><div class="import-step">
-          <div class="import-step-number">step 1</div>
-          <div class="import-upload-area" id="dropArea" role="button" tabindex="0" aria-label="choose file to upload">
-            <p>drop a file here or choose one</p>
+          <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step.variant2')}</div>
+          <div class="import-upload-area" id="dropArea" role="button" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.import.accessible.name.choose.file.to.upload')}">
+            <p>${window.JournalI18n.renderHtml('journal.window.import.visible.text.drop.a.file.here.or.choose')}</p>
             <input id="fileInput" type="file" style="display:none" />
             <div id="fileLabel" class="import-file-label"></div>
           </div>
         </div></li>
         <li><div class="import-step">
-          <div class="import-step-number">step 2</div>
-          <textarea id="pasteText" class="import-paste-text" placeholder="paste text here…"></textarea>
+          <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step.variant3')}</div>
+          <textarea id="pasteText" class="import-paste-text" placeholder="${window.JournalI18n.renderHtml('journal.window.import.field.placeholder.paste.text.here')}"></textarea>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="quickSettingInput">context <span class="import-field-optional">(optional)</span></label>
-              <input id="quickSettingInput" placeholder="e.g. paste from notes app" />
-              <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
+              <label for="quickSettingInput">${window.JournalI18n.renderHtml('journal.window.import.field.label.context')} <span class="import-field-optional">${window.JournalI18n.renderHtml('journal.window.import.visible.text.optional')}</span></label>
+              <input id="quickSettingInput" placeholder="${window.JournalI18n.renderHtml('journal.window.import.field.placeholder.e.g.paste.from.notes.app')}" />
+              <div class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.a.short.note.about.what.this')}</div>
             </div>
           </div>
           <div class="import-action-row">
-            <button type="submit" id="validateBtn" class="import-primary-btn">validate</button>
+            <button type="submit" id="validateBtn" class="import-primary-btn">${window.JournalI18n.renderHtml('journal.window.import.button.label.validate')}</button>
           </div>
           <div id="importUploadStatus" class="import-field-hint" role="status"></div>
         </div></li>
@@ -3550,13 +3553,13 @@ function setupQuickImportForm() {
 
     if (!hasFile && !hasText) {
       if (window.showError) {
-        showError('Please provide a file or paste text');
+        showError(window.JournalI18n.render('journal.window.import.status.text.please.provide.a.file.or.paste'));
       }
       return;
     }
 
     window.SolFocus.setBusy(validateBtn, true);
-    validateBtn.innerHTML = 'validating<span class="spinner"></span>';
+    validateBtn.innerHTML = `${window.JournalI18n.renderHtml('journal.window.import.visible.text.validating')}<span class="spinner"></span>`;
 
     try {
       const fd = new FormData();
@@ -3578,11 +3581,11 @@ function setupQuickImportForm() {
       const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true, fileUpload: hasFile });
       const data = await response.json();
       window.SolFocus.setBusy(validateBtn, false);
-      validateBtn.textContent = 'validate';
+      validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
 
       if (!response.ok) {
         if (window.showError) {
-          showError(importErrorMessage(data, 'Validation failed'));
+          showError(importErrorMessage(data, window.JournalI18n.render('journal.window.import.import.view.validation.failed')));
         }
         return;
       }
@@ -3598,10 +3601,10 @@ function setupQuickImportForm() {
       showDetect(data);
     } catch (_err) {
       window.SolFocus.setBusy(validateBtn, false);
-      validateBtn.textContent = 'validate';
+      validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
       await loadImports();
       if (window.showError) {
-        showError('Validation failed');
+        showError(window.JournalI18n.render('journal.window.import.status.text.validation.failed'));
       }
     }
   };
@@ -3610,7 +3613,7 @@ function setupQuickImportForm() {
 async function uploadGuidedSourceFile(source) {
   const revision = previewRevisions.guided;
   if (!currentGuidedFile) {
-    throw new Error('Please select a file to import.');
+    throw new Error(window.JournalI18n.render('journal.window.import.import.view.please.select.a.file.to.import'));
   }
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');
@@ -3633,7 +3636,7 @@ async function uploadGuidedSourceFile(source) {
   }, { upload: true, fileUpload: true });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(importErrorMessage(data, 'Failed to save import'));
+    throw new Error(importErrorMessage(data, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import')));
   }
 
   if (revision !== previewRevisions.guided) return null;
@@ -3702,7 +3705,7 @@ async function chooseGuidedFolder(source) {
       if (label) label.textContent = '';
       invalidateImportPreview('guided');
       importDraft.guidedClientItemId = reference;
-      status.textContent = 'saving folder… this can take a while for a large folder.';
+      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.saving.folder.this.can.take.a');
       return true;
     });
     if (result.state === 'outcome_unknown' && result.client_item_id === reference) {
@@ -3712,20 +3715,20 @@ async function chooseGuidedFolder(source) {
     if (result.state === 'saved' && result.ok && result.value?.path) {
       currentGuidedSaved = result.value;
       folderSelection(source, { client_item_id: reference, import_id: result.import_id });
-      status.textContent = `${result.folder_name}: saved`;
+      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved', [['value1', String(result.folder_name)]]);
     } else if (result.state === 'registration_failed') {
       currentGuidedSaved = null;
       folderSelection(source, { client_item_id: reference, import_id: result.import_id, custody: 'saved' });
-      status.textContent = `${result.folder_name}: saved, but import setup could not be confirmed. check your imports before choosing it again.`;
+      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved.but.import.setup.could', [['value1', String(result.folder_name)]]);
     } else {
       await reconcileGuidedFolder(source, true);
-      if (live() && !currentGuidedSaved) status.textContent = result.error || 'this import could not be confirmed. check your imports before choosing it again.';
+      if (live() && !currentGuidedSaved) status.textContent = result.error || window.JournalI18n.render('journal.window.import.visible.text.this.import.could.not.be.confirmed');
     }
     await loadImports();
   } catch (error) {
     if (live()) {
       await reconcileGuidedFolder(source, true);
-      if (!currentGuidedSaved) status.textContent = 'this import could not be confirmed. check your imports before choosing it again.';
+      if (!currentGuidedSaved) status.textContent = window.JournalI18n.render('journal.window.import.visible.text.this.import.could.not.be.confirmed');
     }
   } finally {
     guidedFolderBusy = false;
@@ -3746,7 +3749,7 @@ async function reconcileGuidedFolder(source, duringReply = false) {
   const live = () => currentGuideSource === source.name && document.getElementById('guidedFolderStatus') === status
     && folderSelection(source)?.client_item_id === retained.client_item_id && importDraft.guidedClientItemId === clientChoice;
   folderControls(true);
-  status.textContent = 'checking import…';
+  status.textContent = window.JournalI18n.render('journal.window.import.visible.text.checking.import');
   try {
     const response = await ctx.fetch(`/app/import/api/list?client_item_id=${encodeURIComponent(retained.client_item_id)}`);
     if (!response.ok) throw new Error('unavailable');
@@ -3772,13 +3775,13 @@ async function reconcileGuidedFolder(source, duringReply = false) {
       source_timestamp: metadata.source_timestamp || rows[0].timestamp, client_item_id: retained.client_item_id };
     importDraft.guidedClientItemId = retained.client_item_id;
     clientChoice = retained.client_item_id;
-    status.textContent = `${metadata.original_filename}: saved`;
+    status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved', [['value1', String(metadata.original_filename)]]);
   } catch (error) {
     if (live()) {
       currentGuidedSaved = null;
       status.textContent = retained.custody === 'saved'
-        ? 'folder saved, but import setup could not be confirmed. check your imports before choosing it again.'
-        : 'this import could not be confirmed. check your imports before choosing it again.';
+        ? window.JournalI18n.render('journal.window.import.visible.text.folder.saved.but.import.setup.could')
+        : window.JournalI18n.render('journal.window.import.visible.text.this.import.could.not.be.confirmed');
     }
   } finally { if (live()) folderControls(false); }
 }
@@ -3787,7 +3790,7 @@ async function saveGuidedPath(source) {
   const revision = previewRevisions.guided;
   const pathInput = document.getElementById('guidedPathInput');
   if (!pathInput || !pathInput.value.trim()) {
-    throw new Error('Please enter the path to your folder.');
+    throw new Error(window.JournalI18n.render('journal.window.import.import.view.please.enter.the.path.to.your'));
   }
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');
@@ -3809,7 +3812,7 @@ async function saveGuidedPath(source) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(importErrorMessage(data, 'Path not found'));
+    throw new Error(importErrorMessage(data, window.JournalI18n.render('journal.window.import.import.view.path.not.found')));
   }
 
   if (revision !== previewRevisions.guided) return null;
@@ -3830,7 +3833,7 @@ function invalidateImportPreview(kind) {
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) panel.textContent = '';
   const button = document.getElementById(kind === 'guided' ? 'guidedStartBtn' : 'startBtn');
-  if (button) { button.textContent = 'preview import'; setImportButton(kind, button, false); }
+  if (button) { button.textContent = window.JournalI18n.render('journal.window.import.visible.text.preview.import'); setImportButton(kind, button, false); }
 }
 
 // A start whose own write is out is busy; one with nothing to import is unavailable.
@@ -3843,41 +3846,41 @@ function setImportButton(kind, button, unavailable) {
 
 function restoreImportButton(kind, button) {
   const preview = importPreviews[kind];
-  button.textContent = preview ? 'start import' : 'preview import';
+  button.textContent = preview ? window.JournalI18n.render('journal.window.import.visible.text.start.import') : window.JournalI18n.render('journal.window.import.visible.text.preview.import');
   setImportButton(kind, button, Boolean(preview && !preview.ready));
 }
 
 // What the Apple Health card says. Owner copy: reviewed with voice-check.
 const APPLE_WORDS = {
-  reading: 'reading your export…',
-  cancel: 'cancel',
-  too_big: 'this export is larger than 4.3 GB, the most this page uploads. instead, run: solstone journal importer <your export> --confirm-body-save',
-  keeps_running: 'this keeps running if you close this page. a long history can take an hour or more.',
+  reading: window.JournalI18n.render('journal.window.import.apple.words.reading.reading.your.export'),
+  cancel: window.JournalI18n.render('journal.window.import.apple.words.cancel.cancel'),
+  too_big: window.JournalI18n.render('journal.window.import.apple.export.too.large'),
+  keeps_running: window.JournalI18n.render('journal.window.import.apple.words.keeps.running.this.keeps.running.if.you.close'),
 };
 
 function applePreviewText(size, space) {
   const held = size.apple_health;
-  const count = (n, one, many) => `${Number(n).toLocaleString()} ${n === 1 ? one : many}`;
+  const count = (n, one, many) => window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(Number(n).toLocaleString())], ['value2', String(n === 1 ? one : many)]]);
   const parts = [];
-  if (held.span) parts.push(`${held.span[0]} to ${held.span[1]}`);
-  parts.push(count(held.workouts, 'workout', 'workouts'));
-  parts.push(`${count(held.nights, 'night', 'nights')} put together from sleep stages`);
-  parts.push(count(held.mindful_sessions, 'mindful session', 'mindful sessions'));
-  parts.push(count(held.readings, 'reading', 'readings'));
-  parts.push(count(held.daily_totals, 'daily total', 'daily totals'));
-  parts.push(count(held.logged, 'logged entry', 'logged entries'));
+  if (held.span) parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.to.value2', [['value1', String(held.span[0])], ['value2', String(held.span[1])]]));
+  parts.push(count(held.workouts, window.JournalI18n.render('journal.window.import.import.view.workout'), window.JournalI18n.render('journal.window.import.import.view.workouts')));
+  parts.push(window.JournalI18n.render('journal.window.import.window.explanation.value1.put.together.from.sleep.stages', [['value1', String(count(held.nights, window.JournalI18n.render('journal.window.import.unit.night'), window.JournalI18n.render('journal.window.import.unit.nights')))]]));
+  parts.push(count(held.mindful_sessions, window.JournalI18n.render('journal.window.import.import.view.mindful.session'), window.JournalI18n.render('journal.window.import.import.view.mindful.sessions')));
+  parts.push(count(held.readings, window.JournalI18n.render('journal.window.body.count.reading.one'), window.JournalI18n.render('journal.window.body.count.reading.other')));
+  parts.push(count(held.daily_totals, window.JournalI18n.render('journal.window.import.import.view.daily.total'), window.JournalI18n.render('journal.window.import.import.view.daily.totals')));
+  parts.push(count(held.logged, window.JournalI18n.render('journal.window.import.import.view.logged.entry'), window.JournalI18n.render('journal.window.import.import.view.logged.entries')));
   const left = Object.keys(held.not_read || {}).length;
-  if (left) parts.push(`${count(left, 'other kind', 'other kinds')} left out, named in the summary`);
+  if (left) parts.push(window.JournalI18n.render('journal.window.import.window.explanation.value1.left.out.named.in.the', [['value1', String(count(left, window.JournalI18n.render('journal.window.import.import.view.other.kind'), window.JournalI18n.render('journal.window.import.import.view.other.kinds')))]]));
   if (size.listed_moves?.count) {
-    parts.push(`saying yes can move up to ${count(size.listed_moves.count, 'record', 'records')} already listed on the activities page to this import's facet`);
+    parts.push(window.JournalI18n.renderEnglish('journal.window.import.window.explanation.saying.yes.can.move.up.to', [['value1', String(count(size.listed_moves.count, window.JournalI18n.render('journal.window.import.unit.record'), window.JournalI18n.render('journal.window.import.unit.records')))]]));
   }
   let text = parts.join(' · ');
   if (space) {
     text += space.fits === false
       ? ` · ${space.words}`
-      : ` · needs about ${space.need_words} free, and ${space.free_words} is free`;
+      : window.JournalI18n.render('journal.window.import.import.view.needs.about.value1.free.and.value2', [['value1', String(space.need_words)], ['value2', String(space.free_words)]]);
   }
-  if (!size.other_units?.[1]) text += ' · nothing to import';
+  if (!size.other_units?.[1]) text += window.JournalI18n.render('journal.window.import.import.view.nothing.to.import');
   return text;
 }
 
@@ -3905,7 +3908,7 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   if (previous?.key === key && previous.ready) return previous.token;
   const revision = previewRevisions[kind];
   const apple = kind === 'guided' && sourceName === 'apple_health';
-  button.textContent = apple ? APPLE_WORDS.reading : 'preparing preview…';
+  button.textContent = apple ? APPLE_WORDS.reading : window.JournalI18n.render('journal.window.import.visible.text.preparing.preview');
   const controller = apple ? new AbortController() : null;
   if (apple) showApplePreviewCancel(controller);
   let response;
@@ -3924,7 +3927,7 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
     if (apple) showApplePreviewCancel(null);
   }
   const data = await response.json();
-  if (!response.ok) throw new Error(importErrorMessage(data, 'could not preview this import'));
+  if (!response.ok) throw new Error(importErrorMessage(data, window.JournalI18n.render('journal.window.import.window.explanation.could.not.preview.this.import')));
   if (revision !== previewRevisions[kind]) return null;
   const size = data.size;
   if (size?.schema === 'solstone.import.evernote.preview.v1') {
@@ -3937,7 +3940,7 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
       notebook = document.createElement('input');
       notebook.id = 'evernoteNotebook';
       notebook.type = 'text';
-      notebook.setAttribute('aria-label', 'notebook');
+      notebook.setAttribute('aria-label', window.JournalI18n.render('journal.window.import.accessible.label.notebook'));
       notebook.autocomplete = 'off';
       panel.after(notebook);
     }
@@ -3947,22 +3950,22 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   }
   if (size?.schema === 'solstone.import.audio-archive.size.v1') {
     if (!['members', 'source_bytes', 'days', 'tiles'].every(key => Number.isSafeInteger(size[key]) && size[key] >= 0)
-        || !size.left_out || !Object.values(size.left_out).every(value => Number.isSafeInteger(value) && value >= 0) || !data.preview_token) throw new Error('could not read the archive size');
+        || !size.left_out || !Object.values(size.left_out).every(value => Number.isSafeInteger(value) && value >= 0) || !data.preview_token) throw new Error(window.JournalI18n.render('journal.window.import.import.view.could.not.read.the.archive.size'));
     const ready = size.tiles > 0;
     importPreviews[kind] = { key, token: data.preview_token, ready };
     const panel = document.getElementById(`${kind}SizePreview`);
     if (panel) {
       const skipped = Object.values(size.left_out).reduce((total, count) => total + count, 0);
-      panel.textContent = `${size.members} source ${size.members === 1 ? 'file' : 'files'} · ${size.source_bytes} recording bytes · ${size.days} ${size.days === 1 ? 'day' : 'days'}`
-        + (skipped ? ` · ${skipped} left out` : '')
-        + (Number.isSafeInteger(size.saved_parts) ? ` · ${size.saved_parts} audio ${size.saved_parts === 1 ? 'part' : 'parts'} already saved` : '')
-        + (!ready ? ' · nothing to import' : '');
+      panel.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.source.value2.value3.recording.bytes', [['value1', String(size.members)], ['value2', String(size.members === 1 ? 'file' : 'files')], ['value3', String(size.source_bytes)], ['value4', String(size.days)], ['value5', String(size.days === 1 ? 'day' : 'days')]])
+        + (skipped ? window.JournalI18n.render('journal.window.import.visible.text.value1.left.out', [['value1', String(skipped)]]) : '')
+        + (Number.isSafeInteger(size.saved_parts) ? window.JournalI18n.render('journal.window.import.visible.text.value1.audio.value2.already.saved', [['value1', String(size.saved_parts)], ['value2', String(size.saved_parts === 1 ? 'part' : 'parts')]]) : '')
+        + (!ready ? window.JournalI18n.render('journal.window.import.visible.text.nothing.to.import') : '');
     }
     restoreImportButton(kind, button);
     return null;
   }
   if (!size || !Number.isInteger(size.recordings) || !Number.isInteger(size.days) || !data.preview_token) {
-    throw new Error('could not read the import size');
+    throw new Error(window.JournalI18n.render('journal.window.import.import.view.could.not.read.the.import.size'));
   }
   if (size.apple_health) {
     const fits = !data.space || data.space.fits !== false;
@@ -3977,14 +3980,14 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   importPreviews[kind] = { key, token: data.preview_token, ready };
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) {
-    panel.textContent = `${size.recordings} ${size.recordings === 1 ? 'recording' : 'recordings'} across ${size.days} ${size.days === 1 ? 'day' : 'days'}`;
+    panel.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.value2.across.value3.value4', [['value1', String(size.recordings)], ['value2', String(size.recordings === 1 ? 'recording' : 'recordings')], ['value3', String(size.days)], ['value4', String(size.days === 1 ? 'day' : 'days')]]);
     if (size.other_units) panel.textContent += ` · ${size.other_units[1]} ${size.other_units[0]}`;
-    if (size.skipped) panel.textContent += ` · ${size.skipped} skipped`;
+    if (size.skipped) panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.value1.skipped', [['value1', String(size.skipped)]]);
     if (size.listed_moves) {
-      panel.textContent += ` · ${size.listed_moves.count} ${size.listed_moves.count === 1 ? 'workout' : 'workouts'} already listed on the activities page would move to this import's facet from ${size.listed_moves.from.join(', ')}`;
+      panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.value1.value2.already.listed.on.the', [['value1', String(size.listed_moves.count)], ['value2', String(size.listed_moves.count === 1 ? 'workout' : 'workouts')], ['value3', String(size.listed_moves.from.join(', '))]]);
     }
     if (data.force_notice) panel.textContent += ` · ${data.force_notice}`;
-    if (!ready) panel.textContent += ' · nothing to import';
+    if (!ready) panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.nothing.to.import');
   }
   restoreImportButton(kind, button);
   return null;
@@ -4019,7 +4022,7 @@ async function startGuidedImport(source) {
   const guidedSettingInput = document.getElementById('guidedSettingInput');
 
   setImportButton('guided', startButton, false);
-  startButton.innerHTML = 'starting<span class="spinner"></span>';
+  startButton.innerHTML = `${window.JournalI18n.renderHtml('journal.window.import.visible.text.starting')}<span class="spinner"></span>`;
 
   try {
     let saved;
@@ -4054,7 +4057,7 @@ async function startGuidedImport(source) {
 
     if (!metaResponse.ok) {
       const errorData = await metaResponse.json().catch(() => ({}));
-      throw new Error(importErrorMessage(errorData, 'Failed to save import settings'));
+      throw new Error(importErrorMessage(errorData, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import.settings')));
     }
 
     if (revision !== previewRevisions.guided) return;
@@ -4062,7 +4065,7 @@ async function startGuidedImport(source) {
     if (source.name === 'audio_archive') {
       payload.source_zone = document.getElementById('guidedArchiveZone').value;
       const manifest = document.getElementById('guidedArchiveManifest').value.trim();
-      if (!payload.source_zone && !manifest) throw new Error('choose the time zone in the recording filenames, or enter the manifest filename.');
+      if (!payload.source_zone && !manifest) throw new Error(window.JournalI18n.render('journal.window.import.import.view.choose.the.time.zone.in.the'));
       if (manifest) payload.archive_manifest = manifest;
     }
     const previewToken = await prepareImportPreview('guided', payload, setting, startButton, source.name);
@@ -4079,7 +4082,7 @@ async function startGuidedImport(source) {
 
     const started = await startResponse.json().catch(() => ({}));
     if (!startResponse.ok) {
-      throw new Error(importErrorMessage(started, 'Failed to start import'));
+      throw new Error(importErrorMessage(started, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.start.import')));
     }
     const importId = started.import_id || saved.timestamp;
     // A replayed start found the import already started or finished, so the progress view
@@ -4150,11 +4153,11 @@ function formatStatValue(val) {
 }
 
 const BODY_PHASE_WORDS = {
-  scan: 'reading your export',
-  place: 'sorting what it read',
-  repair: 'checking what an earlier import left',
-  write: 'saving',
-  retry: 'trying again what didn\'t save',
+  scan: window.JournalI18n.render('journal.window.import.body.phase.words.scan.reading.your.export'),
+  place: window.JournalI18n.render('journal.window.import.body.phase.words.place.sorting.what.it.read'),
+  repair: window.JournalI18n.render('journal.window.import.body.phase.words.repair.checking.what.an.earlier.import.left'),
+  write: window.JournalI18n.render('journal.window.import.body.phase.words.write.saving'),
+  retry: window.JournalI18n.render('journal.window.import.body.phase.words.retry.trying.again.what.didn.t.save'),
 };
 
 function renderThinkingProgress(progress) {
@@ -4164,15 +4167,15 @@ function renderThinkingProgress(progress) {
     const body = progress.body || {};
     const phase = BODY_PHASE_WORDS[body.phase] || '';
     const days = Number.isSafeInteger(body.days_total) && body.days_total > 0
-      ? `day ${escapeHtml(body.days_done || 0)} of ${escapeHtml(body.days_total)}` : '';
-    return [phase, body.phase === 'write' ? days : ''].filter(Boolean).join(' · ');
+      ? window.JournalI18n.render('journal.window.import.import.view.day.value1.of.value2', [['value1', String(body.days_done || 0)], ['value2', String(body.days_total)]]) : '';
+    return [phase, body.phase === 'write' ? days : ''].filter(Boolean).map(escapeHtml).join(' · ');
   }
   if (!progress || progress.status === 'not_published') return '';
-  if (progress.status !== 'current') return 'thinking progress is unavailable';
-  return `${escapeHtml(progress.ready)} of ${escapeHtml(progress.recordings)} ${progress.recordings === 1 ? 'recording' : 'recordings'} ready to find`
-    + (progress.waiting ? ` · ${escapeHtml(progress.waiting)} waiting` : '')
-    + (progress.held ? ` · ${escapeHtml(progress.held)} held — <a href="/app/health/">review on Health</a>` : '')
-    + (progress.unreadable ? ` · ${escapeHtml(progress.unreadable)} could not be checked` : '');
+  if (progress.status !== 'current') return window.JournalI18n.renderHtml('journal.window.import.window.explanation.thinking.progress.is.unavailable');
+  return window.JournalI18n.renderHtml('journal.window.import.window.explanation.value1.of.value2.value3.ready.to', [['value1', String(progress.ready)], ['value2', String(progress.recordings)], ['value3', String(window.JournalI18n.render(progress.recordings === 1 ? 'journal.window.import.import.view.recording' : 'journal.window.import.import.view.recordings'))]])
+    + (progress.waiting ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.waiting', [['value1', String(progress.waiting)]]) : '')
+    + (progress.held ? ` · ${escapeHtml(progress.held)} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.held')} <a href="/app/health/">${window.JournalI18n.renderHtml('journal.window.import.link.label.review.on.health')}</a>` : '')
+    + (progress.unreadable ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.could.not.be.checked', [['value1', String(progress.unreadable)]]) : '');
 }
 
 function showProgressView(importId, eventData = null) {
@@ -4204,7 +4207,7 @@ function showProgressView(importId, eventData = null) {
   const apple = currentGuideSource === 'apple_health' || importInfo?.source_hint === 'apple_health' || Boolean(bodyState);
   const appleEnded = apple && (isConfirmedSuccess || isFailed || isUnconfirmed || Boolean(bodyState));
   const displayName = apple
-    ? 'Apple Health'
+    ? window.JournalI18n.render('journal.window.import.source.apple.health.name')
     : currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
 
   // A running Apple Health import says its phase on the line below; it sends
@@ -4214,17 +4217,17 @@ function showProgressView(importId, eventData = null) {
     : apple
       ? ''
       : isStalled
-    ? 'stalled: no updates in 10 minutes'
+    ? window.JournalI18n.render('journal.window.import.window.explanation.stalled.no.updates.in.minutes')
     : isConfirmedSuccess
-      ? 'recordings saved'
+      ? window.JournalI18n.render('journal.window.import.import.view.recordings.saved')
       : isUnconfirmed
-        ? 'import unconfirmed'
+        ? window.JournalI18n.render('journal.window.import.import.view.import.unconfirmed')
         : isUnavailable
-          ? 'import status unavailable'
+          ? window.JournalI18n.render('journal.window.import.import.view.import.status.unavailable')
           : isFailed
-            ? 'import failed'
+            ? window.JournalI18n.render('journal.window.import.import.view.import.failed')
             : currentEvent?.source_type === 'audio_archive' && currentEvent?.save_complete === true
-              ? 'recordings saved; processing continues'
+              ? window.JournalI18n.render('journal.window.import.import.view.recordings.saved.processing.continues')
               : humanStageName(currentEvent?.stage || 'initialization', displayName);
   const progressHtml = currentEvent && !appleEnded ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
@@ -4239,20 +4242,20 @@ function showProgressView(importId, eventData = null) {
     if (Array.isArray(range) && range[0]) {
       // Anchored both ends: `day` would give a date in the last week as a bare weekday.
       const day = value => window.JournalFormat.dayFull(value);
-      facts.push(range[1] && range[1] !== range[0] ? `${day(range[0])} to ${day(range[1])}` : day(range[0]));
+      facts.push(range[1] && range[1] !== range[0] ? window.JournalI18n.render('journal.window.import.import.view.value1.to.value2', [['value1', String(day(range[0]))], ['value2', String(day(range[1]))]]) : day(range[0]));
     }
-    if (entries === 0) facts.push('nothing new');
-    else if (typeof entries === 'number') facts.push(`${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'}`);
+    if (entries === 0) facts.push(window.JournalI18n.render('journal.window.import.import.view.nothing.new'));
+    else if (typeof entries === 'number') facts.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(entries.toLocaleString())], ['value2', String(entries === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]));
     // Under a second would read "took 0s": say nothing about the time.
-    if (typeof durationMs === 'number' && durationMs >= 1000) facts.push(`took ${formatElapsed(durationMs)}`);
+    if (typeof durationMs === 'number' && durationMs >= 1000) facts.push(window.JournalI18n.render('journal.window.import.import.view.took.value1', [['value1', String(formatElapsed(durationMs))]]));
     completionHtml = `
       <div class="import-completion-summary">
         ${words ? `<div>${escapeHtml(words)}</div>` : ''}
         ${facts.length ? `<div>${escapeHtml(facts.join(' · '))}</div>` : ''}
         <div class="import-action-row">
-          <a class="import-primary-btn" href="/app/body/">see it in the body app →</a>
-          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(done.processed_timestamp || importId)}#content">browse what was imported →</a>
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <a class="import-primary-btn" href="/app/body/">${window.JournalI18n.renderHtml('journal.window.import.link.label.see.it.in.the.body.app')}</a>
+          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(done.processed_timestamp || importId)}#content">${window.JournalI18n.renderHtml('journal.window.import.link.label.browse.what.was.imported')}</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
@@ -4263,7 +4266,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-completion-summary">
         ${words ? `<div>${escapeHtml(words)}</div>` : ''}
         <div class="import-action-row">
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
@@ -4277,29 +4280,29 @@ function showProgressView(importId, eventData = null) {
     const unavailPages = completedInfo.unavailable_pages ?? importInfo?.unavailable_pages ?? null;
     let gapHtml = '';
     if (unavailDesc) {
-      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">original saved (description unavailable)</div>`;
+      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.original.saved.description.unavailable')}</div>`;
     }
     if (typeof unavailPages === 'number' && unavailPages > 0) {
-      const pageLabel = unavailPages === 1 ? '1 page unavailable' : `${unavailPages} pages unavailable`;
-      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">partially extracted (${pageLabel})</div>`;
+      const pageLabel = unavailPages === 1 ? window.JournalI18n.render('journal.window.import.import.view.page.unavailable') : window.JournalI18n.render('journal.window.import.import.view.value1.pages.unavailable', [['value1', String(unavailPages)]]);
+      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.partially.extracted')}${pageLabel})</div>`;
     }
     const finish = importInfo?.finish || '';
     const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
     const repeatBtn = ['image', 'document'].includes(sourceName) ? `
-      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? 'import another ' + (source?.display_name || sourceName) : 'import another source')}</button>
+      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? window.JournalI18n.render('journal.window.import.status.text.import.another') + (source?.display_name || sourceName) : window.JournalI18n.render('journal.window.import.status.text.import.another.source'))}</button>
     ` : '';
     completionHtml = `
       <div class="import-completion-summary">
-        <div><strong>entries written:</strong> ${formatStatValue(entriesWritten)}</div>
-        <div><strong>entities seeded:</strong> ${formatStatValue(entitiesSeeded)}</div>
-        <div><strong>date range:</strong> ${escapeHtml(formatDateRange(range) || '—')}</div>
-        <div><strong>duration:</strong> ${durationMs !== null && durationMs !== undefined ? formatElapsed(durationMs) : '—'}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.entries.written')}</strong> ${formatStatValue(entriesWritten)}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.entities.seeded')}</strong> ${formatStatValue(entitiesSeeded)}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.date.range')}</strong> ${escapeHtml(formatDateRange(range) || '—')}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.duration')}</strong> ${durationMs !== null && durationMs !== undefined ? formatElapsed(durationMs) : '—'}</div>
         ${finish ? `<div class="import-finish" style="white-space: pre-line">${escapeHtml(finish)}</div>` : ''}
         ${gapHtml}
         <div class="import-action-row">
-          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(completedInfo.processed_timestamp || importId)}#content">browse what was imported →</a>
+          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(completedInfo.processed_timestamp || importId)}#content">${window.JournalI18n.renderHtml('journal.window.import.link.label.browse.what.was.imported')}</a>
           ${repeatBtn}
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
@@ -4313,15 +4316,15 @@ function showProgressView(importId, eventData = null) {
       : (typeof importInfo?.entries_written === 'number' ? importInfo.entries_written : null);
     const hasVerifiedOutputs = (typeof totalFiles === 'number' && totalFiles > 0) || (typeof entries === 'number' && entries > 0);
     const browseBtn = hasVerifiedOutputs ? `
-      <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(importId)}#content">browse what was imported →</a>
+      <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(importId)}#content">${window.JournalI18n.renderHtml('journal.window.import.link.label.browse.what.was.imported')}</a>
     ` : '';
     completionHtml = `
       <div class="import-completion-summary unconfirmed">
-        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: var(--warn-ink);">this import couldn't be confirmed as finished.</div>
+        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.this.import.couldn.t.be.confirmed')}</div>
         <div class="import-action-row">
-          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button>
           ${browseBtn}
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
@@ -4334,29 +4337,29 @@ function showProgressView(importId, eventData = null) {
     completionHtml = `
       <div class="import-completion-summary unavailable">
         <div class="import-action-row">
-          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
   } else if (isFailed) {
-    const errorText = currentEvent?.error || importInfo?.error || 'import failed';
+    const errorText = currentEvent?.error || importInfo?.error || window.JournalI18n.render('journal.window.import.import.view.import.failed');
     completionHtml = `
       <div class="import-completion-summary failed">
-        <div><strong>error:</strong> ${escapeHtml(errorText)}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.error')}</strong> ${escapeHtml(errorText)}</div>
         <div class="import-action-row">
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
   } else if (currentEvent?.stalled) {
     completionHtml = `
       <div class="import-completion-summary stalled">
-        <div><strong>import id:</strong> ${escapeHtml(importId)}</div>
-        <div>stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
+        <div><strong>${window.JournalI18n.renderHtml('journal.window.import.visible.text.import.id')}</strong> ${escapeHtml(importId)}</div>
+        <div>${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled.no.updates.in.minutes')} ${window.CONVEY_COPY.RELOAD_HINT}</div>
         <div class="import-action-row">
-          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
-          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>${window.JournalI18n.renderHtml('journal.window.import.link.label.import.another.source')}</a>
         </div>
       </div>
     `;
@@ -4367,10 +4370,10 @@ function showProgressView(importId, eventData = null) {
   // focus falls to <body> and a keyboard owner starts the page over.
   drawMarkup(guideSteps, `
     <div class="import-progress-panel" tabindex="-1">
-      <div class="import-step-number">progress</div>
+      <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.progress')}</div>
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
       <p class="import-progress-message">${escapeHtml(stageLabel)}</p>
-      ${currentEvent?.elapsed_ms && !apple ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} elapsed</div>` : ''}
+      ${currentEvent?.elapsed_ms && !apple ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.elapsed')}</div>` : ''}
       <div id="progressReconcileError" role="alert" aria-live="polite" style="display:none; color:var(--danger); margin-top:0.5rem; font-size:0.9rem;"></div>
       ${progressHtml}
       <div class="import-thinking-progress" role="status" aria-live="polite">${renderThinkingProgress(currentEvent?.thinking)}</div>
@@ -4389,7 +4392,7 @@ startBtn.addEventListener('click', async () => {
   const setting = settingInput.value.trim();
 
   if (!ts) {
-    if (window.showError) showError('the date is required before starting the import.');
+    if (window.showError) showError(window.JournalI18n.render('journal.window.import.status.text.the.date.is.required.before.starting'));
     return;
   }
   if (isTerminalDuplicate(importDraft.quickSaved)) {
@@ -4399,7 +4402,7 @@ startBtn.addEventListener('click', async () => {
 
   importInFlight.quick = true;
   setImportButton('quick', startBtn, false);
-  startBtn.innerHTML = 'starting<span class="spinner"></span>';
+  startBtn.innerHTML = `${window.JournalI18n.renderHtml('journal.window.import.visible.text.starting')}<span class="spinner"></span>`;
 
   try {
     const response = await importWrite('/app/import/api/meta', {
@@ -4410,7 +4413,7 @@ startBtn.addEventListener('click', async () => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(importErrorMessage(errorData, 'Failed to save import settings'));
+      throw new Error(importErrorMessage(errorData, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import.settings')));
     }
 
     if (revision !== previewRevisions.quick) return;
@@ -4427,7 +4430,7 @@ startBtn.addEventListener('click', async () => {
 
     const started = await startResponse.json().catch(() => ({}));
     if (!startResponse.ok) {
-      throw new Error(importErrorMessage(started, 'Failed to start import'));
+      throw new Error(importErrorMessage(started, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.start.import')));
     }
     const importId = started.import_id || importDraft.quickSaved?.timestamp || ts;
     restoreImportButton('quick', startBtn);
@@ -4443,7 +4446,7 @@ startBtn.addEventListener('click', async () => {
         event: 'started',
         stage: 'initialization',
         source_type: 'quick',
-        source_display: 'quick import',
+        source_display: window.JournalI18n.render('journal.window.import.source.quick.name'),
         ...(importEvents[importId] || {})
       };
     }
@@ -4549,7 +4552,7 @@ async function reconcileImportState(importId, options = {}) {
     };
     if (archive) {
       eventData.source_type = 'audio_archive';
-      eventData.source_display = res.source_display || 'audio archive';
+      eventData.source_display = res.source_display || window.JournalI18n.render('journal.window.import.source.audio.archive.name');
       eventData.stage = res.save_complete === true ? 'processing' : 'saving';
       for (const key of ['saved_parts', 'saved_tiles', 'remaining', 'left_out', 'processing', 'processed_parts', 'save_complete', 'unavailable_parts', 'rejected_parts']) {
         if (res[key] !== undefined) eventData[key] = res[key];
@@ -4577,7 +4580,7 @@ async function reconcileImportState(importId, options = {}) {
     if (errEl) {
       errEl.setAttribute('role', 'alert');
       errEl.setAttribute('aria-live', 'polite');
-      errEl.textContent = "couldn't check status. reload to try again.";
+      errEl.textContent = window.JournalI18n.render('journal.window.import.visible.text.couldn.t.check.status.reload.to');
       errEl.style.display = '';
     }
   } finally {
@@ -4693,11 +4696,11 @@ ctx.on(importMain, 'click', event => {
   // In select mode a press on a row that can be deleted toggles it; the day
   // link inside it still opens the day.
   const pickRow = importPick.on && event.target.closest('.import-table--picking tr[data-import-id]');
-  if (pickRow && !event.target.closest('a, button, select, textarea')) {
+  if (pickRow && !event.target.closest(window.JournalI18n.render('journal.window.import.window.explanation.a.button.select.textarea'))) {
     if (toggleImportPick(pickRow, Boolean(event.target.closest('input[data-import-pick]')))) return;
   }
   const tr = event.target.closest('tr[data-import-link]');
-  if (tr && !event.target.closest('a, button, input, select, textarea')) {
+  if (tr && !event.target.closest(window.JournalI18n.render('journal.window.import.window.explanation.a.button.input.select.textarea'))) {
     const link = tr.getAttribute('data-import-link');
     if (link) importMove(link);
   }
@@ -4868,7 +4871,7 @@ tabs.forEach(tab => {
 function loadContent(page = 1) {
   const container = document.getElementById('contentContainer');
   const loading = document.getElementById('contentLoading');
-  loading.textContent = 'loading content…';
+  loading.textContent = window.JournalI18n.render('journal.window.import.visible.text.loading.content');
   loading.style.display = 'block';
 
   const params = new URLSearchParams({page, per_page: 50});
@@ -4892,7 +4895,7 @@ function loadContent(page = 1) {
       contentLoaded = true;
     })
     .catch(err => {
-      loading.textContent = 'error loading content';
+      loading.textContent = window.JournalI18n.render('journal.window.import.visible.text.error.loading.content');
       console.error('Content load error:', err);
     });
 }
@@ -4902,13 +4905,13 @@ function renderContentSummary(data) {
   const iconSvg = data.source_icon_svg || '';
   const display = data.source_display || '';
   const iconHtml = iconSvg ? `<span class="import-content-summary-icon" aria-hidden="true">${iconSvg}</span>` : '';
-  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} items`;
+  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.items')}`;
 }
 
 function renderContentMonths(months) {
   const select = document.getElementById('contentMonth');
   const current = select.value;
-  select.innerHTML = '<option value="">all months</option>';
+  select.innerHTML = `<option value="">${window.JournalI18n.renderHtml('journal.window.import.option.label.all.months')}</option>`;
   for (const [month, count] of Object.entries(months)) {
     const label = month.slice(0, 4) + '-' + month.slice(4, 6);
     const opt = document.createElement('option');
@@ -4922,10 +4925,11 @@ function renderContentMonths(months) {
 function renderContentItems(items) {
   const el = document.getElementById('contentItems');
   if (!items.length) {
-    el.innerHTML = '<div class="no-data">no items found</div>';
+    el.innerHTML = `<div class="no-data">${window.JournalI18n.renderHtml('journal.window.import.visible.text.no.items.found')}</div>`;
     return;
   }
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const months = ['january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'];
   let currentMonth = '';
   let html = '';
   items.forEach(item => {
@@ -4934,15 +4938,18 @@ function renderContentItems(items) {
       currentMonth = itemMonth;
       const year = itemMonth.slice(0, 4);
       const monthIdx = parseInt(itemMonth.slice(4, 6), 10) - 1;
-      const monthLabel = monthNames[monthIdx] || '';
+      const monthLabel = months[monthIdx] ? window.JournalI18n.render('journal.window.shared.date.nav.months.label.' + months[monthIdx]) : '';
       const monthCount = items.filter(i => (i.date || '').startsWith(itemMonth)).length;
-      html += `<div class="import-content-month-header">${monthLabel} ${year}, ${monthCount} items</div>`;
+      html += `<div class="import-content-month-header">${window.JournalI18n.renderHtml('journal.window.import.content.month.heading', [['month', String(monthLabel)], ['year', String(year)], ['count', String(monthCount)]])}</div>`;
     }
     const typeLabel = {
-      conversation: 'chat',
-      event: 'event',
-      highlight_group: 'highlights',
-      note: 'note',
+      conversation: window.JournalI18n.render('journal.window.import.content.type.conversation'),
+      event: window.JournalI18n.render('journal.window.import.content.type.event'),
+      highlight_group: window.JournalI18n.render('journal.window.import.content.type.highlight.group'),
+      note: window.JournalI18n.render('journal.window.import.content.type.note'),
+      audio: window.JournalI18n.render('journal.window.import.content.type.audio'),
+      pdf: window.JournalI18n.render('journal.window.import.content.type.pdf'),
+      image: window.JournalI18n.render('journal.window.import.content.type.image'),
     }[item.type] || item.type;
     const date = item.date ? window.JournalFormat.day(item.date) : '';
     // Audio has no inline reader: each segment deep-links straight to that segment in
@@ -4957,7 +4964,7 @@ function renderContentItems(items) {
         html += `
           <a class="import-content-item import-content-item-link" href="/app/transcripts/${encodeURIComponent(day)}?stream=${encodeURIComponent(stream)}#${encodeURIComponent(key)}">
             <div class="import-content-item-header">
-              <span class="import-content-item-type">${typeLabel}</span>
+              <span class="import-content-item-type">${escapeContentHtml(typeLabel)}</span>
               <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
               <span class="import-content-item-date">${date}${segmentTime ? ` · ${escapeContentHtml(segmentTime)}` : ''}</span>
               <span class="import-content-item-arrow" aria-hidden="true">→</span>
@@ -4969,21 +4976,21 @@ function renderContentItems(items) {
     html += `
       <div class="import-content-item" data-item-id="${item.id}" data-content-toggle tabindex="0" role="button">
         <div class="import-content-item-header">
-          <span class="import-content-item-type">${typeLabel}</span>
+          <span class="import-content-item-type">${escapeContentHtml(typeLabel)}</span>
           <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
           <span class="import-content-item-date">${date}</span>
         </div>
         <div class="import-content-item-meta">
-          ${item.meta?.message_count ? `${item.meta.message_count} messages` : ''}
-          ${item.meta?.highlight_count ? `${item.meta.highlight_count} highlights` : ''}
-          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? `${item.meta.duration_minutes} min` : '')}
-          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? ` · ${item.meta.attendee_count} attendees` : '')}
+          ${item.meta?.message_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.messages', [['value1', String(item.meta.message_count)]]) : ''}
+          ${item.meta?.highlight_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.highlights', [['value1', String(item.meta.highlight_count)]]) : ''}
+          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.min', [['value1', String(item.meta.duration_minutes)]]) : '')}
+          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.attendees', [['value1', String(item.meta.attendee_count)]]) : '')}
           ${item.meta?.location ? ` · ${escapeContentHtml(item.meta.location)}` : ''}
           ${item.meta?.author ? `· ${escapeContentHtml(item.meta.author)}` : ''}
           ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
         </div>
         ${item.preview ? `<div class="import-content-item-preview">${escapeContentHtml(stripMarkdown(item.preview))}</div>` : ''}
-        <div class="import-content-item-body"><div class="no-data">loading…</div></div>
+        <div class="import-content-item-body"><div class="no-data">${window.JournalI18n.renderHtml('journal.window.import.visible.text.loading')}</div></div>
       </div>`;
   });
   el.innerHTML = html;
@@ -5010,13 +5017,13 @@ function toggleContentItem(el) {
       body.innerHTML = renderContentDetail(data);
     })
     .catch(() => {
-      body.innerHTML = '<div class="no-data">Error loading content</div>';
+      body.innerHTML = `<div class="no-data">${window.JournalI18n.renderHtml('journal.window.import.visible.text.error.loading.content.variant2')}</div>`;
     });
 }
 
 function renderContentDetail(data) {
   if (!data.content || !data.content.length) {
-    return '<div class="no-data">No content available</div>';
+    return `<div class="no-data">${window.JournalI18n.renderHtml('journal.window.import.visible.text.no.content.available')}</div>`;
   }
 
   return data.content.map(part => {
@@ -5037,13 +5044,13 @@ function renderContentPagination(data) {
     return;
   }
   let html = '';
-  html += `<button ${data.page <= 1 ? 'disabled' : ''} data-content-page="${data.page - 1}">prev</button>`;
+  html += `<button ${data.page <= 1 ? 'disabled' : ''} data-content-page="${data.page - 1}">${window.JournalI18n.renderHtml('journal.window.import.button.label.prev')}</button>`;
   const start = Math.max(1, data.page - 2);
   const end = Math.min(data.pages, data.page + 2);
   for (let i = start; i <= end; i++) {
     html += `<button class="${i === data.page ? 'active' : ''}" data-content-page="${i}">${i}</button>`;
   }
-  html += `<button ${data.page >= data.pages ? 'disabled' : ''} data-content-page="${data.page + 1}">next</button>`;
+  html += `<button ${data.page >= data.pages ? 'disabled' : ''} data-content-page="${data.page + 1}">${window.JournalI18n.renderHtml('journal.window.import.button.label.next')}</button>`;
   // The same control drawn again keeps focus; on the last page, the page it's on.
   drawMarkup(el, html, () => [el.querySelector('button.active')]);
 }
@@ -5118,10 +5125,10 @@ function loadImportDetail(keepSavedStart = false) {
       reportImportReady('error');
       const serverMessage = window.SurfaceState.serverMessageFrom(err);
       const escapedMessage = window.AppServices.escapeHtml(serverMessage);
-      document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">couldn&#39;t load import details.${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
+      document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">${window.JournalI18n.renderHtml('journal.window.import.visible.text.couldn.t.load.import.details')}${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
       const overview = document.getElementById('overviewContent');
       if (!overview.querySelector('[data-saved-start-slot]')) {
-        overview.innerHTML = '<div class="no-data">overview unavailable</div>';
+        overview.innerHTML = `<div class="no-data">${window.JournalI18n.renderHtml('journal.window.import.visible.text.overview.unavailable')}</div>`;
       }
       if (keepSavedStart) throw err;
     });
@@ -5135,7 +5142,7 @@ function initImportDetail() {
   if (detailView) detailView.style.display = '';
 
   const heading = document.getElementById('importDetailHeading');
-  if (heading) heading.textContent = `import: ${window.JournalFormat.day(importDetailTimestamp.slice(0, 8))} · ${window.JournalFormat.segmentTime(importDetailTimestamp.slice(9))}`;
+  if (heading) heading.textContent = window.JournalI18n.render('journal.window.import.visible.text.import.value1.value2', [['value1', String(window.JournalFormat.day(importDetailTimestamp.slice(0, 8)))], ['value2', String(window.JournalFormat.segmentTime(importDetailTimestamp.slice(9)))]]);
 
   loadImportDetail();
 
@@ -5210,7 +5217,7 @@ function disposeImport() {
   window.ImportDetail?.forgetSavedStarts?.();
   window.ConveyModalLayer?.reconcile?.({ restore: false });
   if (pendingFileUploads > 0) {
-    importNotice({}, { title: 'upload interrupted', message: 'check your import history before trying again.' });
+    importNotice({}, { title: window.JournalI18n.render('journal.window.import.owner.title.upload.interrupted'), message: window.JournalI18n.render('journal.window.import.owner.message.check.your.import.history.before.trying') });
   }
 }
 
@@ -5335,32 +5342,32 @@ else initImportWorkspace();
   </style>
 
 <div class="import-detail-content" id="importDetailView" style="display:none;">
-  <a href="/app/import/" class="back-link">← back to imports</a>
+  <a href="/app/import/" class="back-link">{{journal.window.import.link.label.back.to.imports}}</a>
 
   <div class="import-header">
     <h1 id="importDetailHeading"></h1>
     <div class="import-meta" id="importMeta">
-      <span>loading…</span>
+      <span>{{journal.window.import.visible.text.loading}}</span>
     </div>
   </div>
 
   <div class="tabs" role="tablist">
-    <div class="tab active" data-target="overview" tabindex="0" role="tab">overview</div>
-    <div class="tab" data-target="content" tabindex="0" role="tab">content</div>
+    <div class="tab active" data-target="overview" tabindex="0" role="tab">{{journal.window.import.visible.text.overview}}</div>
+    <div class="tab" data-target="content" tabindex="0" role="tab">{{journal.window.import.visible.text.content}}</div>
   </div>
 
   <div class="tab-content active" id="overview">
-    <div id="overviewContent">loading…</div>
+    <div id="overviewContent">{{journal.window.import.visible.text.loading}}</div>
   </div>
 
   <div class="tab-content" id="content">
-    <div id="contentLoading" class="no-data">select this tab to browse imported content</div>
+    <div id="contentLoading" class="no-data">{{journal.window.import.visible.text.select.this.tab.to.browse.imported}}</div>
     <div id="contentContainer" style="display:none;">
       <div class="import-content-summary" id="contentSummary"></div>
       <div class="import-content-controls">
-        <input type="text" id="contentSearch" class="import-content-search" placeholder="search items…" />
-        <select id="contentMonth" class="import-content-month" aria-label="filter by month">
-          <option value="">all months</option>
+        <input type="text" id="contentSearch" class="import-content-search" placeholder="{{journal.window.import.field.placeholder.search.items}}" />
+        <select id="contentMonth" class="import-content-month" aria-label="{{journal.window.import.accessible.name.filter.by.month}}">
+          <option value="">{{journal.window.import.option.label.all.months}}</option>
         </select>
       </div>
       <div id="contentItems" class="import-content-items"></div>

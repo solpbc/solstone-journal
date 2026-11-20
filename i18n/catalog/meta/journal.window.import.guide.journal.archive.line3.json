@@ -1,0 +1,16 @@
+{
+  "description": "journal_archive guide line 3 in the journal's import view.",
+  "context": "Journal window, import view. journal_archive guide line 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fa91089f40f612353a16f6cb09ab99f1b8b83c8998e91e568cb65a9c462a682",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

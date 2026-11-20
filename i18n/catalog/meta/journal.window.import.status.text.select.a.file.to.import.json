@@ -1,0 +1,16 @@
+{
+  "description": "Status text in the journal's import view.",
+  "context": "Journal window, import view. Status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1cea5409e9281f27b2f82780fd8e844ad1452a2da309d8683347c6e8b8416c2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

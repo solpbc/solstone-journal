@@ -1,0 +1,16 @@
+{
+  "description": "strings summary_errors in the journal's import view.",
+  "context": "Journal window, import view. strings summary_errors.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d322f9b2a21b0f47aad800dd2cb5f55ddf23cb873eb1bc4d2c9e675ca1c4ad3f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

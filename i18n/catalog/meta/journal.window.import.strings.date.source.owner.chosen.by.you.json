@@ -1,0 +1,16 @@
+{
+  "description": "strings date_source_owner in the journal's import view.",
+  "context": "Journal window, import view. strings date_source_owner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbda8a6388c93e6b5b3b7dad8d4d73a4571d8250fc364367aaba895495509a5d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

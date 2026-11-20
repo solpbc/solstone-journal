@@ -1,0 +1,16 @@
+{
+  "description": "strings identity_differs in the journal's import view.",
+  "context": "Journal window, import view. strings identity_differs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45afa5651416816cb79a190115fe5ce105bfc15eef1aa80919f4b7f1439e2904",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Apple Health import reason preview again in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason preview again.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3953597344d510e10070a4ac2ed57948572f4b0f129bffeca5e6750857f885fc",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

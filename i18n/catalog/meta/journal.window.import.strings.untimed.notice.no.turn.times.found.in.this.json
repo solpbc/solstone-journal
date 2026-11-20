@@ -1,0 +1,16 @@
+{
+  "description": "strings untimed_notice in the journal's import view.",
+  "context": "Journal window, import view. strings untimed_notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a7a5b7a90d1f3cbb1f8a425a79a3fac005a18afa0fd464a3dc3e5ce8f6f723c",
+  "max_length": 211,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

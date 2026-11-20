@@ -1,0 +1,16 @@
+{
+  "description": "stage names processing in the journal's import view.",
+  "context": "Journal window, import view. stage names processing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfe3a16bbf2a17c0affe86b8a36d1dc9c17f32478560e62c80871e3cdbb7945e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason not started in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason not started.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2936493c383637ec5158f90efe9f5002702274b6efd67535e15446efd47ae9a0",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

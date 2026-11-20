@@ -1,0 +1,23 @@
+{
+  "description": "strings collision_body_before_target in the journal's import view.",
+  "context": "Journal window, import view. strings collision_body_before_target.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06011284db08e21e7534d386c54ea9d4d74ffc9534df47e6b50ebb3375c966ee",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "gemini guide line 5 in the journal's import view.",
+  "context": "Journal window, import view. gemini guide line 5.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56491202a65ee6ca9c3bf404c6bd9692c647f667de7397c6ce10bbde67e67f39",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**My Activity**"
+    }
+  ]
+}

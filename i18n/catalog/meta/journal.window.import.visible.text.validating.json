@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's import view.",
+  "context": "Journal window, import view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b301e3cbcf9c9d98157aae4fd5fc2a6d67e072934e2938a41524bf6a0decc4e0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

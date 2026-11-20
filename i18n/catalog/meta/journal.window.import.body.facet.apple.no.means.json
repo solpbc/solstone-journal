@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet apple no means in the journal's import view.",
+  "context": "Journal window, import view. Import body facet apple no means.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a52a924ed01f51eb3246e6952cbc00ec99d1d341dceb4791366f362c28d7da92",
+  "max_length": 196,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

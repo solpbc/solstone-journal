@@ -1,0 +1,16 @@
+{
+  "description": "strings date_range in the journal's import view.",
+  "context": "Journal window, import view. strings date_range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60c5e044dc06686278d8f6494f1ba7e107bdb6126dd9a689f5fd85ecb57ba121",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

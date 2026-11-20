@@ -1,0 +1,16 @@
+{
+  "description": "apple_health guide line 9 in the journal's import view.",
+  "context": "Journal window, import view. apple_health guide line 9.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66ff69b72f67931850377614daf499ea37a5925a8d99fce30483fe9ce3041713",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

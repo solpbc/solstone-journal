@@ -1,0 +1,16 @@
+{
+  "description": "import source names recording in the journal's import view.",
+  "context": "Journal window, import view. import source names recording.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf64bac9bf227211ec25d1edb01a6affafaf701d5a4f98d700535dcbbdd37124",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

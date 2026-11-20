@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy message in the journal's import view.",
+  "context": "Journal window, import view. import delete copy message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d1fe386b8615f4d150798efc887c5211425d1d70d9035ff181d6391a9d2c818",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

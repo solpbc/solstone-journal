@@ -1,0 +1,33 @@
+{
+  "description": "Import source ics description in the journal's import view.",
+  "context": "Journal window, import view. Import source ics description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4338b497a920c5da92a23c8dedcf0598b54aa19ba290598253f436663fb3c427",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Google Calendar"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Apple Calendar"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "Outlook"
+    }
+  ]
+}

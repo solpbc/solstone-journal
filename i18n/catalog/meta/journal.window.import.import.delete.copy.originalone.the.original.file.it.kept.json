@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy originalOne in the journal's import view.",
+  "context": "Journal window, import view. import delete copy originalOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a541f02c89ab83da5ece4d754ae5e7017a0331d3c78ffbb8ef3ba402f3da2f2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

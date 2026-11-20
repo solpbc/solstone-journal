@@ -1,0 +1,23 @@
+{
+  "description": "Link label in the journal's import view.",
+  "context": "Journal window, import view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2e8b43bec16840bf04be2b06bb826924064eead13efd3f0e34175cfa44f806c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

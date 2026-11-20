@@ -1,0 +1,28 @@
+{
+  "description": "Import preview projection in the journal's import view.",
+  "context": "Journal window, import view. Import preview projection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9fd8ea609f8f145cf70bf85d54f416577614635cb58ae22fbf9cfabff62b047d",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

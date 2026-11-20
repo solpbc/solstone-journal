@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's import view.",
+  "context": "Journal window, import view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1618be335a6d71a78b51f6c29e910b88707160b3f1bed26d5f022922add28b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

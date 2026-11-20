@@ -14416,3 +14416,1587 @@ journal.window.shared.import.item.label = { $kind } · { $source }
 journal.window.shared.import.item.dated.label = { $label } · { $date }
 
 journal.window.shared.import.item.text.unavailable = no text available
+
+journal.window.import.accessible.label.notebook = notebook
+
+journal.window.import.accessible.name.choose.file.to.upload = choose file to upload
+
+journal.window.import.accessible.name.close = close
+
+journal.window.import.accessible.name.filter.by.month = filter by month
+
+journal.window.import.answer.yes = yes
+
+journal.window.import.apple.export.too.large = this export is larger than 4.3 { $slot1 }, the most this page uploads. instead, run: { $slot2 }
+
+journal.window.import.apple.words.cancel.cancel = cancel
+
+journal.window.import.apple.words.keeps.running.this.keeps.running.if.you.close = this keeps running if you close this page. a long history can take an hour or more.
+
+journal.window.import.apple.words.reading.reading.your.export = reading your export…
+
+journal.window.import.body.facet.apple.ask.existing = file your workouts, sleep and other body data under the facet you named { $slot1 }?
+
+journal.window.import.body.facet.apple.ask.make.body = make a body facet for your workouts, sleep and other body data?
+
+journal.window.import.body.facet.apple.ask.unmute = your body facet is muted. turn it back on for your workouts, sleep and other body data?
+
+journal.window.import.body.facet.apple.files.earlier = this files everything in this export under { $slot1 }, including what's already listed on the activities page. the preview says how many of those could move, at most.
+
+journal.window.import.body.facet.apple.no.means = if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.window.import.body.facet.apple.none.hint = new workouts and sleep in this import aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.window.import.body.facet.shared.answer.failed = your answer couldn't be saved. try again.
+
+journal.window.import.body.facet.shared.ask.existing = file your workouts under the facet you named { $slot1 }?
+
+journal.window.import.body.facet.shared.ask.make.body = make a body facet for your workouts?
+
+journal.window.import.body.facet.shared.ask.unmute = your body facet is muted. turn it back on for your workouts?
+
+journal.window.import.body.facet.shared.files.earlier = this files every workout in this download under { $slot1 }, including any already listed on the activities page. the preview says how many of those would move.
+
+journal.window.import.body.facet.shared.heading = facet
+
+journal.window.import.body.facet.shared.no = no
+
+journal.window.import.body.facet.shared.no.means = if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.window.import.body.facet.shared.none.hint = new workouts in this import aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.window.import.body.facet.shared.none.option = no facet
+
+journal.window.import.body.facet.shared.offer.changed = the facet question changed after you saw it, so your answer wasn't saved. the card now shows where it stands.
+
+journal.window.import.body.facet.shared.this.import = facet for this import
+
+journal.window.import.body.facet.shared.unanswered = answer the facet question first, then preview again.
+
+journal.window.import.body.facet.shared.yes = yes
+
+journal.window.import.body.history.busy = { $reason }{ $slot1 }once it finishes, import the export again.
+
+journal.window.import.body.history.carried = stopped before it finished. carried on by your import of{ $slot1 }{ $time }.
+
+journal.window.import.body.history.carried.running = stopped before it finished. carried on by your import of{ $slot1 }{ $time }, which is running now.
+
+journal.window.import.body.history.followed.done = stopped before it finished. your import of{ $slot1 }{ $time }{ $slot2 }ran after it.
+
+journal.window.import.body.history.followed.running = stopped before it finished. your import of{ $slot1 }{ $time }{ $slot2 }is running now.
+
+journal.window.import.body.history.partly.saved.many = { $count }{ $slot1 }parts of your journal didn't finish saving. importing any { $slot2 } export again tries them.
+
+journal.window.import.body.history.partly.saved.one = 1 part of your journal didn't finish saving. importing any { $slot1 } export again tries it.
+
+journal.window.import.body.history.partly.saved.unknown = some parts of your journal didn't finish saving. importing any { $slot1 } export again tries them.
+
+journal.window.import.body.history.stopped.default = it stopped before it finished. import the export again to finish.
+
+journal.window.import.body.history.time.label = { $month }{ $slot1 }{ $day },{ $slot2 }{ $clock }
+
+journal.window.import.body.label.didnt.start = didn't start
+
+journal.window.import.body.label.failed = not brought in
+
+journal.window.import.body.label.partly.saved = partly saved
+
+journal.window.import.body.label.saved = saved
+
+journal.window.import.body.label.stopped = stopped
+
+journal.window.import.body.phase.words.place.sorting.what.it.read = sorting what it read
+
+journal.window.import.body.phase.words.repair.checking.what.an.earlier.import.left = checking what an earlier import left
+
+journal.window.import.body.phase.words.retry.trying.again.what.didn.t.save = trying again what didn't save
+
+journal.window.import.body.phase.words.scan.reading.your.export = reading your export
+
+journal.window.import.body.phase.words.write.saving = saving
+
+journal.window.import.body.status.reason.busy = another { $slot1 } import was running, so this one didn't start.
+
+journal.window.import.body.status.reason.disk.full = the disk on the computer your journal runs on filled up before it finished.
+
+journal.window.import.body.status.reason.export.incomplete = this export looks incomplete, so none of it was saved. export it from { $slot1 } again and import the new copy.
+
+journal.window.import.body.status.reason.export.too.large = this export unpacks to more than 68.7 { $slot1 }, the most one import reads.
+
+journal.window.import.body.status.reason.export.unreadable = this export couldn't be read. export it from { $slot1 } again and import the new copy.
+
+journal.window.import.body.status.reason.facet = the facet chosen for it is muted or gone, so nothing was brought in.
+
+journal.window.import.body.status.reason.go.ahead = it didn't have your go-ahead, so nothing was brought in.
+
+journal.window.import.body.status.reason.no.room = there wasn't room on the computer your journal runs on to start it, so nothing was brought in. free up space, then import the export again.
+
+journal.window.import.body.status.reason.not.started = it didn't start, so nothing was brought in.
+
+journal.window.import.body.status.reason.not.this.import = this import doesn't hold that export, so nothing was brought in.
+
+journal.window.import.body.status.reason.other = it stopped before it finished.
+
+journal.window.import.body.status.reason.permission = the journal wasn't allowed to open the export.
+
+journal.window.import.body.status.reason.preview.again = the facet, the time zone or the export changed after its preview, so nothing was brought in. import the export again from the { $slot1 } card.
+
+journal.window.import.body.status.reason.whole.export = an { $slot1 } import always reads the whole export, so nothing was brought in.
+
+journal.window.import.body.status.reason.windows.not.saving = too many parts of your journal in a row couldn't be saved, so it stopped.
+
+journal.window.import.body.status.stop.disk = { $reason }{ $slot1 }free up space, then import the export again.
+
+journal.window.import.body.status.stop.resume = { $reason }{ $slot1 }import the export again to finish.
+
+journal.window.import.body.status.upload.limit.mac = this export is larger than 4.3 { $slot1 }, the most this page uploads. instead, in the journal app's journal menu, choose open admin terminal, and run: { $slot2 }
+
+journal.window.import.body.status.upload.limit.other = this export is larger than 4.3 { $slot1 }, the most this page uploads. instead, from a terminal on the computer your journal runs on, run: { $slot2 }
+
+journal.window.import.button.label.change.folder = change folder
+
+journal.window.import.button.label.check.status = check status
+
+journal.window.import.button.label.choose.folder = choose folder
+
+journal.window.import.button.label.choose.folder.again = choose folder again
+
+journal.window.import.button.label.connect.folder = connect folder
+
+journal.window.import.button.label.forget.folder = forget folder
+
+journal.window.import.button.label.load.more = load more (
+
+journal.window.import.button.label.next = next
+
+journal.window.import.button.label.of = of
+
+journal.window.import.button.label.prev = prev
+
+journal.window.import.button.label.preview.import = preview import
+
+journal.window.import.button.label.remove.schedule = remove schedule
+
+journal.window.import.button.label.save.schedule = save schedule
+
+journal.window.import.button.label.shown = shown)
+
+journal.window.import.button.label.sync.now = sync now
+
+journal.window.import.button.label.validate = validate
+
+journal.window.import.column.heading.entries = entries
+
+journal.window.import.column.heading.file = file
+
+journal.window.import.column.heading.imported.at = imported at
+
+journal.window.import.column.heading.imported.to = imported to
+
+journal.window.import.column.heading.source = source
+
+journal.window.import.column.heading.status = status
+
+journal.window.import.consent.import.removal.erasenow.erase.now = erase now
+
+journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.
+
+journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2 = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.
+
+journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and = detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.
+
+journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2 = detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.
+
+journal.window.import.consent.import.removal.lead.this.erases.the.import.s.own = this erases the import's own:
+
+journal.window.import.consent.import.removal.lead.this.moves.the.import.s.own = this moves the import's own:
+
+journal.window.import.consent.import.removal.movetotrash.move.to.trash = move to trash
+
+journal.window.import.consent.import.removal.ownmany.this.erases.each.import.s.own = this erases each import's own segments, any original file it kept, and its row in your import history.
+
+journal.window.import.consent.import.removal.ownmany.this.moves.each.import.s.own = this moves each import's own segments, any original file it kept, and its row in your import history.
+
+journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and = it leaves your journal now and can't be recovered.
+
+journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2 = it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.
+
+journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and = they leave your journal now and can't be recovered.
+
+journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and.variant2 = they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.
+
+journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what = on { $slot1 } days, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what.variant2 = on { $slot1 } days, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it = on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it.variant2 = on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in = some of what they brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in.variant2 = some of what they brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in = some of what it brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in.variant2 = some of what it brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.size.total.size.size = total size: { $slot1 }
+
+journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it = activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
+
+journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from = activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.
+
+journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2 = activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.
+
+journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from = activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.
+
+journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2 = activities, summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.
+
+journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
+
+journal.window.import.consent.import.removal.title.delete.this.import = delete this import?
+
+journal.window.import.consent.import.removal.title.erase.this.import.now = erase this import now?
+
+journal.window.import.consent.import.removal.titlemany.delete.n.imports = delete { $slot1 } imports?
+
+journal.window.import.consent.import.removal.titlemany.erase.n.imports.now = erase { $slot1 } imports now?
+
+journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.and = everything it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because = everything it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
+
+journal.window.import.consent.import.removal.verb.deletes = deletes
+
+journal.window.import.consent.import.removal.verb.erases = erases
+
+journal.window.import.content.month.heading = { $month }{ $slot1 }{ $year },{ $slot2 }{ $count }{ $slot3 }items
+
+journal.window.import.content.type.audio = audio
+
+journal.window.import.content.type.conversation = chat
+
+journal.window.import.content.type.event = event
+
+journal.window.import.content.type.highlight.group = highlights
+
+journal.window.import.content.type.image = image
+
+journal.window.import.content.type.note = note
+
+journal.window.import.content.type.pdf = pdf
+
+journal.window.import.detail.collision.journal = journal's
+
+journal.window.import.disclosure.label.automatic.sync = automatic sync
+
+journal.window.import.field.label.automatic.sync.enabled = automatic sync enabled
+
+journal.window.import.field.label.context = context
+
+journal.window.import.field.label.date = date
+
+journal.window.import.field.label.how.often = how often
+
+journal.window.import.field.label.keep.originals = keep originals
+
+journal.window.import.field.label.manifest.filename = manifest filename
+
+journal.window.import.field.label.source = source
+
+journal.window.import.field.label.time.zone.in.recording.filenames = time zone in recording filenames
+
+journal.window.import.field.placeholder.e.g.paste.from.notes.app = e.g. paste from notes app
+
+journal.window.import.field.placeholder.e.g.rae.lunch.with.joe = e.g. rae lunch with joe
+
+journal.window.import.field.placeholder.e.g.weekly.planning = e.g. weekly planning
+
+journal.window.import.field.placeholder.paste.text.here = paste text here…
+
+journal.window.import.field.placeholder.search.items = search items…
+
+journal.window.import.guide.apple.health.line1 = get your { $slot1 } export
+
+journal.window.import.guide.apple.health.line11 = before you import
+
+journal.window.import.guide.apple.health.line13 = this import reads workouts, sleep, mindful time, heart rate and other readings, daily totals like steps and distance, and logged entries like food and symptoms. everything else in the export is left out, and the summary names the other kinds of records it skipped. it's kept in your journal folder, so it goes wherever that folder is copied, and encrypted backup, if you use it, includes it. the export itself isn't kept after the import.
+
+journal.window.import.guide.apple.health.line15 = importing the same export again brings back only what you deleted, and a newer export also adds what's new. a day you hid on the body page stays hidden.
+
+journal.window.import.guide.apple.health.line3 = on your iphone, open the { $slot1 } app
+
+journal.window.import.guide.apple.health.line4 = tap { $slot1 }, then your picture or initials at the top right
+
+journal.window.import.guide.apple.health.line5 = tap { $slot1 }, then { $slot2 }. a long history can take a while, so leave the app open until it finishes
+
+journal.window.import.guide.apple.health.line6 = send { $slot1 } to this computer. { $slot2 } to a mac, or saving it to Files and copying it across, both work
+
+journal.window.import.guide.apple.health.line7 = upload it here
+
+journal.window.import.guide.apple.health.line9 = if the export finishes almost at once and the file is tiny, it didn't work. export it again.
+
+journal.window.import.guide.chatgpt.line1 = export your { $slot1 } history
+
+journal.window.import.guide.chatgpt.line10 = upload the { $slot1 } file here
+
+journal.window.import.guide.chatgpt.line3 = open [{ $slot1 }]({ $slot2 })
+
+journal.window.import.guide.chatgpt.line4 = click your profile icon in the bottom-left corner
+
+journal.window.import.guide.chatgpt.line5 = select { $slot1 }
+
+journal.window.import.guide.chatgpt.line6 = go to { $slot1 }
+
+journal.window.import.guide.chatgpt.line7 = click { $slot1 }
+
+journal.window.import.guide.chatgpt.line8 = you'll receive an email with a download link. this may take a few minutes
+
+journal.window.import.guide.chatgpt.line9 = download the { $slot1 } file from the email
+
+journal.window.import.guide.claude.line1 = export your { $slot1 } history
+
+journal.window.import.guide.claude.line10 = upload the { $slot1 } file here
+
+journal.window.import.guide.claude.line3 = open [{ $slot1 }]({ $slot2 })
+
+journal.window.import.guide.claude.line4 = click your profile icon in the bottom-left corner
+
+journal.window.import.guide.claude.line5 = select { $slot1 }
+
+journal.window.import.guide.claude.line6 = select { $slot1 } in the sidebar, then scroll to the { $slot2 } section
+
+journal.window.import.guide.claude.line7 = click { $slot1 }
+
+journal.window.import.guide.claude.line8 = you'll receive an email with a download link
+
+journal.window.import.guide.claude.line9 = download the { $slot1 } file from the email
+
+journal.window.import.guide.gemini.line1 = export your { $slot1 } history
+
+journal.window.import.guide.gemini.line10 = download the { $slot1 } file when ready
+
+journal.window.import.guide.gemini.line11 = upload the { $slot1 } file here
+
+journal.window.import.guide.gemini.line3 = go to [{ $slot1 }]({ $slot2 })
+
+journal.window.import.guide.gemini.line4 = click { $slot1 }
+
+journal.window.import.guide.gemini.line5 = scroll down and select only { $slot1 }
+
+journal.window.import.guide.gemini.line6 = click { $slot1 }, then deselect everything except { $slot2 }
+
+journal.window.import.guide.gemini.line7 = click { $slot1 }, then scroll down and click { $slot2 }
+
+journal.window.import.guide.gemini.line8 = choose { $slot1 }, file type { $slot2 }, and your preferred size
+
+journal.window.import.guide.gemini.line9 = click { $slot1 }. this may take minutes to hours depending on your history
+
+journal.window.import.guide.ics.line1 = { $slot1 }
+
+journal.window.import.guide.ics.line10 = select the calendar you want to export in the sidebar
+
+journal.window.import.guide.ics.line11 = go to { $slot1 }
+
+journal.window.import.guide.ics.line12 = save the { $slot1 } file
+
+journal.window.import.guide.ics.line13 = upload it here
+
+journal.window.import.guide.ics.line15 = { $slot1 }
+
+journal.window.import.guide.ics.line17 = open [{ $slot1 } Calendar]({ $slot2 })
+
+journal.window.import.guide.ics.line18 = go to { $slot1 }
+
+journal.window.import.guide.ics.line19 = select { $slot1 }
+
+journal.window.import.guide.ics.line20 = under { $slot1 }, select the calendar and choose { $slot2 }
+
+journal.window.import.guide.ics.line21 = click the { $slot1 } link to download
+
+journal.window.import.guide.ics.line22 = upload the { $slot1 } file here
+
+journal.window.import.guide.ics.line3 = open [{ $slot1 } Settings]({ $slot2 })
+
+journal.window.import.guide.ics.line4 = click { $slot1 }. this downloads a { $slot2 } file containing { $slot3 } files for each calendar
+
+journal.window.import.guide.ics.line5 = upload the { $slot1 } file here
+
+journal.window.import.guide.ics.line7 = { $slot1 }
+
+journal.window.import.guide.ics.line9 = open the { $slot1 } app on your Mac
+
+journal.window.import.guide.journal.archive.line1 = moving a journal
+
+journal.window.import.guide.journal.archive.line3 = on the journal you want to move, open its import screen.
+
+journal.window.import.guide.journal.archive.line4 = choose { $slot1 } and select { $slot2 }.
+
+journal.window.import.guide.journal.archive.line5 = bring the downloaded { $slot1 } to this journal.
+
+journal.window.import.guide.journal.archive.line6 = upload the { $slot1 } here, select { $slot2 } to check the days it contains, then select { $slot3 } to merge it.
+
+journal.window.import.guide.journal.archive.line8 = if the other journal is on another machine, download its { $slot1 } from that journal's import screen first, then upload it here.
+
+journal.window.import.guide.strava.line1 = get your { $slot1 } download
+
+journal.window.import.guide.strava.line10 = the download can be large, since it holds your photos and more. this import opens only the list of your workouts inside it, { $slot1 }. if you'd rather not upload the rest, unzip it and upload just that file.
+
+journal.window.import.guide.strava.line12 = before you import
+
+journal.window.import.guide.strava.line14 = these workouts are kept in your journal folder, so they go wherever that folder is copied, and encrypted backup, if you use it, includes them. your { $slot1 } download itself isn't kept after the import.
+
+journal.window.import.guide.strava.line3 = sign in at strava.com on a computer. { $slot1 } only offers the download on its website, not in its app
+
+journal.window.import.guide.strava.line4 = hover over your name in the top right and choose { $slot1 }
+
+journal.window.import.guide.strava.line5 = choose { $slot1 }, then { $slot2 } under { $slot3 }
+
+journal.window.import.guide.strava.line6 = choose { $slot1 }
+
+journal.window.import.guide.strava.line7 = { $slot1 } emails you a link. this can take a few hours. download the { $slot2 } file
+
+journal.window.import.guide.strava.line8 = upload it here
+
+journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your = each { $slot1 } export holds your whole history, so importing one again brings back what this { $slot2 }.
+
+journal.window.import.import.delete.copy.back.back = back
+
+journal.window.import.import.delete.copy.bodyday.body.data.from.day = body data from { $slot1 }
+
+journal.window.import.import.delete.copy.bodyspan.body.data.from.first.to.last = body data from { $slot1 } to { $slot2 }
+
+journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in = the body data it brought in
+
+journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or = this is already being moved or erased. reload in a minute to check.
+
+journal.window.import.import.delete.copy.cancel.cancel = cancel
+
+journal.window.import.import.delete.copy.daymany.n.segments.from.day = { $slot1 } segments from { $slot2 }
+
+journal.window.import.import.delete.copy.dayone.n.segment.from.day = { $slot1 } segment from { $slot2 }
+
+journal.window.import.import.delete.copy.delete.delete = delete
+
+journal.window.import.import.delete.copy.done.done = done
+
+journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it = this wasn't erased because it's still importing. try again once it's done.
+
+journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again = this wasn't erased. try again.
+
+journal.window.import.import.delete.copy.gonemoremany.g.more.are.no.longer.listed = { $slot1 } more are no longer listed.
+
+journal.window.import.import.delete.copy.gonemoreone.g.more.is.no.longer.listed = { $slot1 } more is no longer listed.
+
+journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the = a day you hide on the body page stays hidden when you import or sync it again.
+
+journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it = this wasn't moved because it's still importing. try again once it's done.
+
+journal.window.import.import.delete.copy.manymany.the.w.segments.from.them.that = the { $slot1 } segments from them that wait in the trash on their own are erased with them.
+
+journal.window.import.import.delete.copy.manyone.the.segment.from.them.that.waits = the segment from them that waits in the trash on its own is erased with them.
+
+journal.window.import.import.delete.copy.markedmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are marked below.
+
+journal.window.import.import.delete.copy.markedone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is marked below.
+
+journal.window.import.import.delete.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
+
+journal.window.import.import.delete.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
+
+journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
+
+journal.window.import.import.delete.copy.message.it.may.already.be.in.the = it may already be in the trash. reload to check.
+
+journal.window.import.import.delete.copy.message.it.s.back.in.your.journal = it's back in your journal.
+
+journal.window.import.import.delete.copy.message.it.s.in.the.trash.you = it's in the trash. you can try again from there.
+
+journal.window.import.import.delete.copy.message.it.s.still.in.the.trash = it's still in the trash. you can try again from there.
+
+journal.window.import.import.delete.copy.message.it.s.still.in.your.journal = it's still in your journal.
+
+journal.window.import.import.delete.copy.message.they.erase.date.unless.you.recover = they erase { $slot1 } unless you recover them.
+
+journal.window.import.import.delete.copy.message.they.may.already.be.back.in = they may already be back in your journal. reload to check.
+
+journal.window.import.import.delete.copy.message.they.may.already.be.erased.reload = they may already be erased. reload to check.
+
+journal.window.import.import.delete.copy.message.they.may.already.be.in.the = they may already be in the trash. reload to check.
+
+journal.window.import.import.delete.copy.message.they.re.back.in.your.journal = they're back in your journal.
+
+journal.window.import.import.delete.copy.message.they.re.still.in.the.trash = they're still in the trash. you can try again from there.
+
+journal.window.import.import.delete.copy.meta.imported.day = imported { $slot1 }
+
+journal.window.import.import.delete.copy.more.and.n.more = and { $slot1 } more
+
+journal.window.import.import.delete.copy.noneerasedmany.look.for.them.below.or.in = look for them below or in the trash.
+
+journal.window.import.import.delete.copy.noneerasedone.look.for.it.below.or.in = look for it below or in the trash.
+
+journal.window.import.import.delete.copy.nonegonemany.they.re.no.longer.listed.here = they're no longer listed here.
+
+journal.window.import.import.delete.copy.nonegoneone.it.s.no.longer.listed.here = it's no longer listed here.
+
+journal.window.import.import.delete.copy.nonestillmany.k.are.still.in.your.journal = { $slot1 } are still in your journal, marked below.
+
+journal.window.import.import.delete.copy.nonestillone.k.is.still.in.your.journal = { $slot1 } is still in your journal, marked below.
+
+journal.window.import.import.delete.copy.noun.import = import
+
+journal.window.import.import.delete.copy.onemany.the.w.segments.from.it.that = the { $slot1 } segments from it that wait in the trash on their own are erased with it.
+
+journal.window.import.import.delete.copy.oneone.the.segment.from.it.that.waits = the segment from it that waits in the trash on its own is erased with it.
+
+journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in = any of its segments waiting in the trash on their own are erased with it.
+
+journal.window.import.import.delete.copy.opentrash.open.trash = open trash
+
+journal.window.import.import.delete.copy.originalmany.the.n.original.files.it.kept = the { $slot1 } original files it kept
+
+journal.window.import.import.delete.copy.originalone.the.original.file.it.kept = the original file it kept
+
+journal.window.import.import.delete.copy.originalunknown.any.original.file.it.kept = any original file it kept
+
+journal.window.import.import.delete.copy.other.this.wasn.t.moved.try.again = this wasn't moved. try again.
+
+journal.window.import.import.delete.copy.othersgonemany.the.others.are.no.longer.listed = the others are no longer listed here.
+
+journal.window.import.import.delete.copy.othersgoneone.the.other.is.no.longer.listed = the other is no longer listed here.
+
+journal.window.import.import.delete.copy.oura.an.oura.sync.leaves.out.what = an { $slot1 } sync leaves out what this { $slot2 }. one you ask for the days it covered brings it back.
+
+journal.window.import.import.delete.copy.parterasedmany.the.others.weren.t.erased.look = the others weren't erased. look for them below or in the trash.
+
+journal.window.import.import.delete.copy.parterasedone.the.other.wasn.t.erased.look = the other wasn't erased. look for it below or in the trash.
+
+journal.window.import.import.delete.copy.partrecoveredmany.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
+
+journal.window.import.import.delete.copy.partrecoveredone.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
+
+journal.window.import.import.delete.copy.picklabel.select.name = select { $slot1 }
+
+journal.window.import.import.delete.copy.recover.recover = recover
+
+journal.window.import.import.delete.copy.row.its.row.in.your.import.history = its row in your import history
+
+journal.window.import.import.delete.copy.segmentsunknown.the.segments.it.brought.in = the segments it brought in
+
+journal.window.import.import.delete.copy.select.select = select
+
+journal.window.import.import.delete.copy.selectall.select.all = select all
+
+journal.window.import.import.delete.copy.selected.n.selected = { $slot1 } selected
+
+journal.window.import.import.delete.copy.spanmany.n.segments.from.first.to.last = { $slot1 } segments from { $slot2 } to { $slot3 }
+
+journal.window.import.import.delete.copy.spanone.n.segment.from.first.to.last = { $slot1 } segment from { $slot2 } to { $slot3 }
+
+journal.window.import.import.delete.copy.stillmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are still in your journal, marked below.
+
+journal.window.import.import.delete.copy.stillone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is still in your journal, marked below.
+
+journal.window.import.import.delete.copy.strava.importing.a.strava.download.again.brings = importing a { $slot1 } download again brings back the workouts this { $slot2 }.
+
+journal.window.import.import.delete.copy.things.imports = imports
+
+journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
+
+journal.window.import.import.delete.copy.title.couldn.t.erase.those = couldn't erase those
+
+journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the = couldn't move that to the trash
+
+journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the = couldn't move those to the trash
+
+journal.window.import.import.delete.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
+
+journal.window.import.import.delete.copy.title.couldn.t.recover.those = couldn't recover those
+
+journal.window.import.import.delete.copy.title.erased.done.of.n = erased { $slot1 } of { $slot2 }
+
+journal.window.import.import.delete.copy.title.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal
+
+journal.window.import.import.delete.copy.title.moved.done.of.n.to.the = moved { $slot1 } of { $slot2 } to the trash
+
+journal.window.import.import.delete.copy.title.moved.n.things.to.the.trash = moved { $slot1 } { $slot2 } to the trash
+
+journal.window.import.import.delete.copy.title.moved.to.the.trash = moved to the trash
+
+journal.window.import.import.delete.copy.title.n.things.recovered = { $slot1 } { $slot2 } recovered
+
+journal.window.import.import.delete.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
+
+journal.window.import.import.delete.copy.title.noun.recovered = { $slot1 } recovered
+
+journal.window.import.import.delete.copy.title.recovered.done.of.n = recovered { $slot1 } of { $slot2 }
+
+journal.window.import.import.delete.copy.title.your.journal.didn.t.answer = your journal didn't answer
+
+journal.window.import.import.delete.copy.workoutdaymany.n.workouts.from.day = { $slot1 } workouts from { $slot2 }
+
+journal.window.import.import.delete.copy.workoutdayone.n.workout.from.day = { $slot1 } workout from { $slot2 }
+
+journal.window.import.import.delete.copy.workoutspanmany.n.workouts.from.first.to.last = { $slot1 } workouts from { $slot2 } to { $slot3 }
+
+journal.window.import.import.delete.copy.workoutspanone.n.workout.from.first.to.last = { $slot1 } workout from { $slot2 } to { $slot3 }
+
+journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in = the workouts it brought in
+
+journal.window.import.import.source.control.audio.folder = audio folder
+
+journal.window.import.import.source.control.choose.a.cadence = choose a cadence
+
+journal.window.import.import.source.control.every.day = every day
+
+journal.window.import.import.source.control.every.hour = every hour
+
+journal.window.import.import.source.control.every.minutes = every 15 minutes
+
+journal.window.import.import.source.names.audio.archive.audio.archive = audio archive
+
+journal.window.import.import.source.names.audio.audio.folder = audio folder
+
+journal.window.import.import.source.names.document.document = document
+
+journal.window.import.import.source.names.ics.calendar = calendar
+
+journal.window.import.import.source.names.image.image = image
+
+journal.window.import.import.source.names.journal.archive.journal = journal
+
+journal.window.import.import.source.names.quick.quick.import = quick import
+
+journal.window.import.import.source.names.recording.meeting.audio = meeting audio
+
+journal.window.import.import.source.names.text.text = text
+
+journal.window.import.import.status.or.action.choose.how.often.to.sync.before = choose how often to sync before saving the schedule.
+
+journal.window.import.import.status.or.action.could.not.confirm.the.folder.change = could not confirm the folder change. check the current connection before trying again.
+
+journal.window.import.import.status.or.action.could.not.confirm.the.schedule.change = could not confirm the schedule change. check the current schedule before trying again.
+
+journal.window.import.import.status.or.action.could.not.confirm.the.sync.result = could not confirm the sync result. check import history.
+
+journal.window.import.import.status.or.action.could.not.confirm.this.sync.request = could not confirm this sync request. check import history before syncing again.
+
+journal.window.import.import.status.or.action.could.not.read.the.sync.result = could not read the sync result. check again before syncing again.
+
+journal.window.import.import.status.or.action.folder.access.forgotten.earlier.imports.stay = folder access forgotten. earlier imports stay in your journal.
+
+journal.window.import.import.status.or.action.folder.connection.updated = folder connection updated.
+
+journal.window.import.import.status.or.action.importpickalllabel = importPickAllLabel
+
+journal.window.import.import.status.or.action.importpickcount = importPickCount
+
+journal.window.import.import.status.or.action.importpickdelete = importPickDelete
+
+journal.window.import.import.status.or.action.schedule.updated = schedule updated.
+
+journal.window.import.import.status.or.action.sending.sync.request = sending sync request…
+
+journal.window.import.import.status.or.action.source.sync.did.not.finish.check = source sync did not finish. check import history for what was saved.
+
+journal.window.import.import.status.or.action.source.sync.finished.media.processing.may = source sync finished. media processing may continue.
+
+journal.window.import.import.status.or.action.source.sync.is.running = source sync is running.
+
+journal.window.import.import.status.or.action.this.page.could.not.keep.the = this page could not keep the request. reload the page before trying again.
+
+journal.window.import.import.status.or.action.updating.folder.access = updating folder access…
+
+journal.window.import.import.status.or.action.waiting.to.sync = waiting to sync.
+
+journal.window.import.import.view.as.value1 = { $slot1 }as{ $slot2 }{ $value1 }
+
+journal.window.import.import.view.choose.the.time.zone.in.the = choose the time zone in the recording filenames, or enter the manifest filename.
+
+journal.window.import.import.view.could.not.read.the.archive.size = could not read the archive size
+
+journal.window.import.import.view.could.not.read.the.import.size = could not read the import size
+
+journal.window.import.import.view.daily.total = daily total
+
+journal.window.import.import.view.daily.totals = daily totals
+
+journal.window.import.import.view.day = day
+
+journal.window.import.import.view.day.value1.of.value2 = day{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
+
+journal.window.import.import.view.days = days
+
+journal.window.import.import.view.entries = entries
+
+journal.window.import.import.view.entry = entry
+
+journal.window.import.import.view.from.value1 = from{ $slot1 }{ $value1 }
+
+journal.window.import.import.view.import = import
+
+journal.window.import.import.view.import.failed = import failed
+
+journal.window.import.import.view.import.status.unavailable = import status unavailable
+
+journal.window.import.import.view.import.unconfirmed = import unconfirmed
+
+journal.window.import.import.view.imports = imports
+
+journal.window.import.import.view.logged.entries = logged entries
+
+journal.window.import.import.view.logged.entry = logged entry
+
+journal.window.import.import.view.mindful.session = mindful session
+
+journal.window.import.import.view.mindful.sessions = mindful sessions
+
+journal.window.import.import.view.needs.about.value1.free.and.value2 = { $slot1 }· needs about{ $slot2 }{ $value1 }{ $slot3 }free, and{ $slot4 }{ $value2 }{ $slot5 }is free
+
+journal.window.import.import.view.nothing.new = nothing new
+
+journal.window.import.import.view.nothing.to.import = { $slot1 }· nothing to import
+
+journal.window.import.import.view.other.kind = other kind
+
+journal.window.import.import.view.other.kinds = other kinds
+
+journal.window.import.import.view.page.unavailable = 1 page unavailable
+
+journal.window.import.import.view.part = part
+
+journal.window.import.import.view.parts = parts
+
+journal.window.import.import.view.path.not.found = Path not found
+
+journal.window.import.import.view.please.enter.the.path.to.your = Please enter the path to your folder.
+
+journal.window.import.import.view.please.select.a.file.to.import = Please select a file to import.
+
+journal.window.import.import.view.reading.value1 = reading{ $slot1 }{ $value1 }…
+
+journal.window.import.import.view.recording = recording
+
+journal.window.import.import.view.recordings = recordings
+
+journal.window.import.import.view.recordings.saved = recordings saved
+
+journal.window.import.import.view.recordings.saved.processing.continues = recordings saved; processing continues
+
+journal.window.import.import.view.to.value1 = to{ $slot1 }{ $value1 }
+
+journal.window.import.import.view.took.value1 = took{ $slot1 }{ $value1 }
+
+journal.window.import.import.view.validation.failed = Validation failed
+
+journal.window.import.import.view.value1.attendees = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }attendees
+
+journal.window.import.import.view.value1.audio.value2.saved = { $value1 }{ $slot1 }audio{ $slot2 }{ $value2 }{ $slot3 }saved
+
+journal.window.import.import.view.value1.could.not.be.checked = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }could not be checked
+
+journal.window.import.import.view.value1.elapsed = { $value1 }{ $slot1 }elapsed
+
+journal.window.import.import.view.value1.entities = { $value1 }{ $slot1 }entities
+
+journal.window.import.import.view.value1.entities.found = { $value1 }{ $slot1 }entities found
+
+journal.window.import.import.view.value1.h.value2.m = { $value1 }h{ $slot1 }{ $value2 }m
+
+journal.window.import.import.view.value1.highlights = { $value1 }{ $slot1 }highlights
+
+journal.window.import.import.view.value1.left.out = { $value1 }{ $slot1 }left out
+
+journal.window.import.import.view.value1.m.value2.s = { $value1 }m{ $slot1 }{ $value2 }s
+
+journal.window.import.import.view.value1.messages = { $value1 }{ $slot1 }messages
+
+journal.window.import.import.view.value1.min = { $value1 }{ $slot1 }min
+
+journal.window.import.import.view.value1.pages.unavailable = { $value1 }{ $slot1 }pages unavailable
+
+journal.window.import.import.view.value1.parts.rejected = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }parts rejected
+
+journal.window.import.import.view.value1.parts.saved.value2.left.to = { $value1 }{ $slot1 }parts saved ·{ $slot2 }{ $value2 }{ $slot3 }left to save ·{ $slot4 }{ $value3 }{ $slot5 }waiting to process ·{ $slot6 }{ $value4 }{ $slot7 }processed ·{ $slot8 }{ $value5 }{ $slot9 }members left out
+
+journal.window.import.import.view.value1.processed = { $value1 }{ $slot1 }processed
+
+journal.window.import.import.view.value1.s = { $value1 }s
+
+journal.window.import.import.view.value1.still.to.save = { $value1 }{ $slot1 }still to save
+
+journal.window.import.import.view.value1.to.value2 = { $value1 }{ $slot1 }to{ $slot2 }{ $value2 }
+
+journal.window.import.import.view.value1.unavailable = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }unavailable
+
+journal.window.import.import.view.value1.value2 = { $value1 }{ $slot1 }{ $value2 }
+
+journal.window.import.import.view.value1.value2.across.value3.value4 = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }across{ $slot3 }{ $value3 }{ $slot4 }{ $value4 }
+
+journal.window.import.import.view.value1.value2.items = { $value1 }/{ $value2 }{ $slot1 }items
+
+journal.window.import.import.view.value1.value2.total = { $value1 }{ $slot1 }({ $value2 }{ $slot2 }total)
+
+journal.window.import.import.view.value1.value2.value3 = { $value1 }{ $slot1 }{ $value2 },{ $slot2 }{ $value3 }.
+
+journal.window.import.import.view.value1.value2.variant2 = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }{ $value2 }
+
+journal.window.import.import.view.value1.waiting = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }waiting
+
+journal.window.import.import.view.value1.waiting.for.processing = { $value1 }{ $slot1 }waiting for processing
+
+journal.window.import.import.view.workout = workout
+
+journal.window.import.import.view.workouts = workouts
+
+journal.window.import.label.source.obsidian = { $slot1 }
+
+journal.window.import.label.source.oura = { $slot1 }
+
+journal.window.import.label.source.plaud = { $slot1 }
+
+journal.window.import.link.label.back.to.imports = ← back to imports
+
+journal.window.import.link.label.back.to.sources = ← back to sources
+
+journal.window.import.link.label.browse.what.was.imported = browse what was imported →
+
+journal.window.import.link.label.choose.a.source = choose a source →
+
+journal.window.import.link.label.download.this.journal = download this journal
+
+journal.window.import.link.label.import.another.source = import another source
+
+journal.window.import.link.label.plaud.connection.settings = { $slot1 } connection settings
+
+journal.window.import.link.label.review.on.health = review on Health
+
+journal.window.import.link.label.see.it.in.the.body.app = see it in the body app →
+
+journal.window.import.link.label.view.imported.content = view imported content
+
+journal.window.import.option.label.all.months = all months
+
+journal.window.import.option.label.all.sources = all sources
+
+journal.window.import.option.label.choose.a.cadence = choose a cadence
+
+journal.window.import.option.label.choose.a.time.zone = choose a time zone
+
+journal.window.import.owner.desc.import.from.any.source.above = import from any source above.
+
+journal.window.import.owner.heading.couldn.t.load.your.import.history = couldn't load your import history
+
+journal.window.import.owner.heading.no.imports.match.this.filter = no imports match this filter
+
+journal.window.import.owner.heading.no.imports.yet = no imports yet
+
+journal.window.import.owner.message.check.your.import.history.before.trying = check your import history before trying again.
+
+journal.window.import.owner.title.upload.interrupted = upload interrupted
+
+journal.window.import.response.apple.insufficient.space = this import needs about{ $slot1 }{ $need }{ $slot2 }free, and this disk has{ $slot3 }{ $free }{ $slot4 }free, as the system reports it. free up about{ $slot5 }{ $difference }, then start it.
+
+journal.window.import.response.error.a.required.field.is.missing = a required field is missing.
+
+journal.window.import.response.error.one.of.those.values.couldn.t = one of those values couldn't be used.
+
+journal.window.import.response.error.something.changed.so.choose.the.source = something changed, so choose the source again.
+
+journal.window.import.response.error.that.action.isn.t.available.in = that action isn't available in the current state.
+
+journal.window.import.response.error.that.archive.couldn.t.be.previewed = that archive couldn't be previewed.
+
+journal.window.import.response.error.that.delete.couldn.t.be.read = that delete couldn't be read, so nothing was deleted.
+
+journal.window.import.response.error.that.file.is.too.large.to = that file is too large to bring in.
+
+journal.window.import.response.error.that.file.isn.t.available = that file isn't available.
+
+journal.window.import.response.error.that.import.couldn.t.be.moved = that import couldn't be moved, so nothing was deleted.
+
+journal.window.import.response.error.that.import.couldn.t.be.started = that import couldn't be started because it already exists.
+
+journal.window.import.response.error.that.import.isn.t.in.your = that import isn't in your journal.
+
+journal.window.import.response.error.that.import.metadata.couldn.t.be = that import metadata couldn't be updated.
+
+journal.window.import.response.error.that.import.metadata.couldn.t.be.variant2 = that import metadata couldn't be read.
+
+journal.window.import.response.error.that.imported.content.couldn.t.be = that imported content couldn't be read.
+
+journal.window.import.response.error.the.import.could.not.be.prepared = the import could not be prepared.
+
+journal.window.import.response.error.there.are.no.files.to.bring = there are no files to bring in.
+
+journal.window.import.response.error.there.is.nothing.new.in.this = there is nothing new in this source to import.
+
+journal.window.import.response.error.there.s.nothing.to.browse.for = there's nothing to browse for this import.
+
+journal.window.import.response.error.this.export.is.over.gb.in = this export is over 2 { $slot1 }. in { $slot2 }, export it again in smaller parts.
+
+journal.window.import.response.error.this.import.can.t.be.deleted = this import can't be deleted here.
+
+journal.window.import.response.error.this.import.has.already.started = this import has already started.
+
+journal.window.import.response.error.this.import.or.its.source.wasn = this import or its source wasn't found, so choose the source again.
+
+journal.window.import.response.error.this.import.s.source.or.date = this import's source or date isn't valid.
+
+journal.window.import.response.error.this.journal.couldn.t.be.exported = this journal couldn't be exported.
+
+journal.window.import.response.error.this.looks.like.a.strava.download = this looks like a { $slot1 } download, so your journal didn't keep it. use the { $slot2 } card so only your workouts are read.
+
+journal.window.import.response.error.your.journal.can.t.open.heic = your journal can't open { $slot1 } or { $slot2 } photos directly. add it through the solstone app on your phone or computer, or convert it to { $slot3 } first.
+
+journal.window.import.response.error.your.journal.couldn.t.finish.that = your journal couldn't finish that delete. reload to check.
+
+journal.window.import.response.error.your.journal.couldn.t.move.that = your journal couldn't move that to the trash, so nothing was deleted.
+
+journal.window.import.response.error.your.journal.s.background.service.isn = your journal's background service isn't running. start it, then try again.
+
+journal.window.import.response.evernote.counts.dated = { $notes }{ $slot1 }notes, from{ $slot2 }{ $first }{ $slot3 }to{ $slot4 }{ $last }.{ $slot5 }{ $attachments }{ $slot6 }attachments.
+
+journal.window.import.response.evernote.counts.encrypted = { $count }{ $slot1 }notes have an encrypted part that will be left out.
+
+journal.window.import.response.evernote.counts.undated = { $notes }{ $slot1 }notes.{ $slot2 }{ $attachments }{ $slot3 }attachments.
+
+journal.window.import.response.evernote.empty = this export has no notes.
+
+journal.window.import.response.evernote.ended.empty = this export ended early. 0 notes came in.
+
+journal.window.import.response.evernote.notebook = notes that share this name stay together.
+
+journal.window.import.response.evernote.type = this file isn't an { $slot1 } export.
+
+journal.window.import.response.originals.read = couldn't load this choice.
+
+journal.window.import.response.originals.unknown.source = unknown import source
+
+journal.window.import.response.originals.write = couldn't save this choice. try again.
+
+journal.window.import.response.preview.apple.go.ahead = saving an { $slot1 } export needs your go-ahead, so nothing from it was brought in.{ $slot2 }{ $where }: { $slot3 }{ $slot4 }
+
+journal.window.import.response.preview.apple.other.records = { $slot1 } records
+
+journal.window.import.response.preview.archive.other.files = other archive files
+
+journal.window.import.response.preview.embedded.body = { $slot1 } exports and { $slot2 } data are brought in by a journal on a computer, so nothing was brought in.
+
+journal.window.import.response.preview.force.day = notice: this file dates to{ $slot1 }{ $fileday }, and a previous import used{ $slot2 }{ $previous }. this { $slot3 } import will use{ $slot4 }{ $planned }. existing recordings are not moved.{ $slot5 }
+
+journal.window.import.response.removal.set.failed = your journal couldn't move it to the trash.
+
+journal.window.import.response.removal.set.held = { $reason }.
+
+journal.window.import.response.removal.set.not.allowed = this import can't be deleted here.
+
+journal.window.import.response.removal.set.unreadable = part of this import couldn't be read, so nothing of it was deleted
+
+journal.window.import.section.heading.confirm.import.details = confirm import details
+
+journal.window.import.section.heading.import.history = import history
+
+journal.window.import.section.heading.quick.import = quick import
+
+journal.window.import.section.heading.sync.sources = sync sources
+
+journal.window.import.source.apple.health.description = import your workouts, sleep and readings from an { $slot1 } export
+
+journal.window.import.source.apple.health.name = { $slot1 }
+
+journal.window.import.source.apple.health.upload.prompt = upload export.zip from the Health app on your iphone
+
+journal.window.import.source.audio.archive.description = bring in { $slot1 } recordings with their original recording times
+
+journal.window.import.source.audio.archive.name = audio archive
+
+journal.window.import.source.audio.archive.upload.prompt = paste the full path to your recordings folder
+
+journal.window.import.source.chatgpt.description = import your conversation history from { $slot1 }
+
+journal.window.import.source.chatgpt.name = { $slot1 }
+
+journal.window.import.source.chatgpt.upload.prompt = upload your { $slot1 } export { $slot2 } file
+
+journal.window.import.source.claude.description = import your conversation history from { $slot1 }
+
+journal.window.import.source.claude.name = { $slot1 }
+
+journal.window.import.source.claude.upload.prompt = upload your { $slot1 } export { $slot2 } file
+
+journal.window.import.source.document.description = import a { $slot1 } document
+
+journal.window.import.source.document.name = document
+
+journal.window.import.source.document.upload.prompt = upload a { $slot1 } file
+
+journal.window.import.source.evernote.description = bring in notes from an { $slot1 } export
+
+journal.window.import.source.evernote.name = { $slot1 }
+
+journal.window.import.source.evernote.upload.prompt = upload an { $slot1 } export
+
+journal.window.import.source.gemini.description = import your activity history from Google { $slot1 }
+
+journal.window.import.source.gemini.name = { $slot1 }
+
+journal.window.import.source.gemini.upload.prompt = upload your { $slot1 } { $slot2 } file
+
+journal.window.import.source.ics.description = import events from { $slot1 }, { $slot2 }, or { $slot3 }
+
+journal.window.import.source.ics.name = calendar
+
+journal.window.import.source.ics.upload.prompt = upload your { $slot1 } file or { $slot2 } export
+
+journal.window.import.source.image.description = add a photo or screenshot and let a model describe what's in it
+
+journal.window.import.source.image.name = image
+
+journal.window.import.source.image.upload.prompt = upload an image ({ $slot1 }, { $slot2 }, { $slot3 }, { $slot4 })
+
+journal.window.import.source.journal.archive.description = import a full journal export from another journal
+
+journal.window.import.source.journal.archive.name = journal
+
+journal.window.import.source.journal.archive.upload.prompt = upload your journal export { $slot1 } file
+
+journal.window.import.source.quick.description = paste text or drop any file for quick import
+
+journal.window.import.source.quick.name = quick import
+
+journal.window.import.source.quick.upload.prompt = paste text or drag and drop a file
+
+journal.window.import.source.recording.description = import audio from meetings or conversations
+
+journal.window.import.source.recording.name = meeting audio
+
+journal.window.import.source.recording.upload.prompt = upload an audio, video, or image file
+
+journal.window.import.source.strava.description = import your workouts from a { $slot1 } download
+
+journal.window.import.source.strava.name = { $slot1 }
+
+journal.window.import.source.strava.upload.prompt = upload your { $slot1 } download { $slot2 }, or just { $slot3 } from inside it
+
+journal.window.import.stage.names.audio.segmenting.splitting.audio = splitting audio…
+
+journal.window.import.stage.names.cleanup.finishing.up = finishing up…
+
+journal.window.import.stage.names.detection.detecting.content.type = detecting content type…
+
+journal.window.import.stage.names.entities.merging.entities = merging entities…
+
+journal.window.import.stage.names.execution.reading.the.import = reading the import…
+
+journal.window.import.stage.names.facets.merging.facets = merging facets…
+
+journal.window.import.stage.names.importing.reading.the.import = reading the import…
+
+journal.window.import.stage.names.imports.copying.prior.imports = copying prior imports…
+
+journal.window.import.stage.names.indexing.building.search.index = building search index…
+
+journal.window.import.stage.names.initialization.preparing = preparing…
+
+journal.window.import.stage.names.processing.processing.entries = processing entries…
+
+journal.window.import.stage.names.segmenting.preparing.segments = preparing segments…
+
+journal.window.import.stage.names.segments.merging.segments = merging segments…
+
+journal.window.import.stage.names.transcribing.transcribing.audio = transcribing audio…
+
+journal.window.import.stage.names.transcription.transcribing.audio = transcribing audio…
+
+journal.window.import.stage.names.writing.writing.to.journal = writing to journal…
+
+journal.window.import.status.completed = completed
+
+journal.window.import.status.conflict.already.imported = you've already imported this file. if you deleted part of it, recover that from the trash, or delete the whole import and import the file again.
+
+journal.window.import.status.conflict.already.started = this import has already started. check its progress in your imports.
+
+journal.window.import.status.conflict.changed = this import has changed. refresh the page and try again.
+
+journal.window.import.status.failed = failed
+
+journal.window.import.status.pending = pending
+
+journal.window.import.status.running = running
+
+journal.window.import.status.saved = saved
+
+journal.window.import.status.status.unavailable = status unavailable
+
+journal.window.import.status.stopped = stopped
+
+journal.window.import.status.text.accepts.value1 = accepts{ $slot1 }{ $value1 }
+
+journal.window.import.status.text.any.supported.file = any supported file
+
+journal.window.import.status.text.failed = failed
+
+journal.window.import.status.text.import.another = import another{ $slot1 }
+
+journal.window.import.status.text.import.another.source = import another source
+
+journal.window.import.status.text.paste.the.full.path.to.your = paste the full path to your folder
+
+journal.window.import.status.text.please.provide.a.file.or.paste = Please provide a file or paste text
+
+journal.window.import.status.text.select.a.file.to.import = select a file to import
+
+journal.window.import.status.text.the.date.is.required.before.starting = the date is required before starting the import.
+
+journal.window.import.status.text.unknown.error = unknown error
+
+journal.window.import.status.text.validation.failed = Validation failed
+
+journal.window.import.status.unconfirmed = unconfirmed
+
+journal.window.import.strings.activities.activities = activities
+
+journal.window.import.strings.artifact.paths.artifact.paths = artifact paths
+
+journal.window.import.strings.body.days.hidden.many.n.days.of.body.data.were = { $slot1 } days of body data were hidden in the archive, so they're hidden in this journal too.
+
+journal.window.import.strings.body.days.hidden.one.day.of.body.data.was.hidden = 1 day of body data was hidden in the archive, so it's hidden in this journal too.
+
+journal.window.import.strings.body.didnt.start.didn.t.start = didn't start
+
+journal.window.import.strings.body.failed.not.brought.in = not brought in
+
+journal.window.import.strings.body.partly.saved.partly.saved = partly saved
+
+journal.window.import.strings.body.stopped.stopped = stopped
+
+journal.window.import.strings.check.status.check.status = check status
+
+journal.window.import.strings.checking.status.checking.status = checking status…
+
+journal.window.import.strings.collision.body.after.entity.owner.is.unchanged.the.other.person = { $slot1 }owner is unchanged; the other person came in as a regular entity.
+
+journal.window.import.strings.collision.body.after.entity.staged.owner.is.unchanged.the.other.person = { $slot1 }owner is unchanged; the other person was staged and wasn't added.
+
+journal.window.import.strings.collision.body.after.source.as.its.owner.this = { $slot1 }as its owner. this{ $slot2 }
+
+journal.window.import.strings.collision.body.before.target.this.journal.belongs.to = this journal belongs to{ $slot1 }
+
+journal.window.import.strings.collision.body.between.names.and.the.imported.journal.marks = , and the imported journal marks{ $slot1 }
+
+journal.window.import.strings.collision.title.owner.identity.differs.between.journals = owner identity differs between journals
+
+journal.window.import.strings.completed.at.completed.at = completed at
+
+journal.window.import.strings.completed.completed = completed
+
+journal.window.import.strings.completed.in.completed.in = completed in
+
+journal.window.import.strings.copied.copied = copied
+
+journal.window.import.strings.created.created = created
+
+journal.window.import.strings.created.files.created.files = created files
+
+journal.window.import.strings.date.range.date.range = date range
+
+journal.window.import.strings.date.source.date.source = date source
+
+journal.window.import.strings.date.source.fallback.import.time.no.date.in.photo = import time (no date in photo)
+
+journal.window.import.strings.date.source.owner.chosen.by.you = chosen by you
+
+journal.window.import.strings.date.source.photo.from.photo = from photo
+
+journal.window.import.strings.day.day = day
+
+journal.window.import.strings.days.days = days
+
+journal.window.import.strings.decisions.decisions = decisions
+
+journal.window.import.strings.delete.import.delete.this.import = delete this import
+
+journal.window.import.strings.detected.time.detected.time = detected time
+
+journal.window.import.strings.drawer.label.bookkeeping = bookkeeping
+
+journal.window.import.strings.drawer.unavailable.drawer.renderer.unavailable = drawer renderer unavailable
+
+journal.window.import.strings.entities.entities = entities
+
+journal.window.import.strings.entity.entity = entity
+
+journal.window.import.strings.entries.entries = entries
+
+journal.window.import.strings.entry.entry = entry
+
+journal.window.import.strings.error.error = error
+
+journal.window.import.strings.errored.errored = errored
+
+journal.window.import.strings.facets.facets = facets
+
+journal.window.import.strings.failed.at.failed.at = failed at
+
+journal.window.import.strings.failed.failed = failed
+
+journal.window.import.strings.failed.line.failed.while.processing = failed while processing
+
+journal.window.import.strings.failed.stage.failed.stage = failed stage
+
+journal.window.import.strings.file.file = file
+
+journal.window.import.strings.file.size.file.size = file size
+
+journal.window.import.strings.files.created.files.created = files created
+
+journal.window.import.strings.files.files = files
+
+journal.window.import.strings.has.gaps.contains.gaps = contains gaps
+
+journal.window.import.strings.hour.hour = hour
+
+journal.window.import.strings.hours.hours = hours
+
+journal.window.import.strings.identity.differs.identity.differs = identity differs
+
+journal.window.import.strings.image.description.gap.detail.image.saved.without.visual.description = image saved without visual description
+
+journal.window.import.strings.import.time.import.time = import time
+
+journal.window.import.strings.importer.importer = importer
+
+journal.window.import.strings.imports.imports = imports
+
+journal.window.import.strings.leads.title.where.this.landed = where this landed
+
+journal.window.import.strings.links.left.out.entity.links.left.out = entity links left out
+
+journal.window.import.strings.merge.highlights.merge.highlights = merge highlights
+
+journal.window.import.strings.merge.summary.merge.summary = merge summary
+
+journal.window.import.strings.merged.merged = merged
+
+journal.window.import.strings.mime.type.mime.type = mime type
+
+journal.window.import.strings.minute.minute = minute
+
+journal.window.import.strings.minutes.minutes = minutes
+
+journal.window.import.strings.more.staged.more.staged = more staged
+
+journal.window.import.strings.not.started.not.started = not started
+
+journal.window.import.strings.nothing.to.import.nothing.to.import = nothing to import
+
+journal.window.import.strings.original.file.original.file = original file
+
+journal.window.import.strings.owner.identity.differs.owner.identity.differs = owner identity differs
+
+journal.window.import.strings.pending.pending = pending
+
+journal.window.import.strings.photo.fallback.notice.no.date.in.photo.placed.at = no date in photo · placed at import time
+
+journal.window.import.strings.preparing.preview.preparing.preview = preparing preview…
+
+journal.window.import.strings.preview.failed.couldn.t.prepare.a.preview.try = couldn't prepare a preview. try again.
+
+journal.window.import.strings.preview.import.preview.import = preview import
+
+journal.window.import.strings.processed.processed = processed
+
+journal.window.import.strings.processing.facts.processing.facts = processing facts
+
+journal.window.import.strings.processing.processing = processing…
+
+journal.window.import.strings.profile.link.review.profile.settings = review profile settings
+
+journal.window.import.strings.raw.payload.raw.payload = raw payload
+
+journal.window.import.strings.running.running = running
+
+journal.window.import.strings.saved.saved = saved
+
+journal.window.import.strings.segments.segments = segments
+
+journal.window.import.strings.setting.setting = setting
+
+journal.window.import.strings.skipped.skipped = skipped
+
+journal.window.import.strings.source.source = source
+
+journal.window.import.strings.staged.entities.staged.entities = staged entities
+
+journal.window.import.strings.staged.staged = staged
+
+journal.window.import.strings.staging.staging = staging
+
+journal.window.import.strings.start.import.start.import = start import
+
+journal.window.import.strings.start.unconfirmed.couldn.t.confirm.whether.the.import = couldn't confirm whether the import started. check status before doing anything else.
+
+journal.window.import.strings.start.unknown.detail.this.file.is.saved.but.its = this file is saved, but its history doesn't confirm whether the import started.
+
+journal.window.import.strings.start.unknown.start.status.unknown = start status unknown
+
+journal.window.import.strings.starting.starting = starting…
+
+journal.window.import.strings.status.failed.couldn.t.load.the.import.s = couldn't load the import's status. check again.
+
+journal.window.import.strings.status.status = status
+
+journal.window.import.strings.status.unavailable.import.status.unavailable = import status unavailable
+
+journal.window.import.strings.summary.errors.summary.errors = summary errors
+
+journal.window.import.strings.target.day.target.day = target day
+
+journal.window.import.strings.unavailable.description.unavailable.description = unavailable description
+
+journal.window.import.strings.unavailable.pages.unavailable.pages = unavailable pages
+
+journal.window.import.strings.unconfirmed.explanation.this.import.couldn.t.be.confirmed = this import couldn't be confirmed as finished.
+
+journal.window.import.strings.unconfirmed.import.unconfirmed = import unconfirmed
+
+journal.window.import.strings.under.a.minute.under.a.minute = under a minute
+
+journal.window.import.strings.untimed.ask.ask.us.to.add.it = ask us to add it
+
+journal.window.import.strings.untimed.notice.no.turn.times.found.in.this = no turn times found in this file, so it landed as one segment at the import's start time, each line as written. if your transcripts mark times in a way the journal doesn't read yet,
+
+journal.window.import.strings.upload.facts.upload.facts = upload facts
+
+journal.window.import.strings.uploaded.at.uploaded.at = uploaded at
+
+journal.window.import.strings.view.day.view.that.day = view that day
+
+journal.window.import.strings.zone.differs.many.hours.hours.of.source.may.show = { $slot1 } hours of { $slot2 } may show at the wrong time: they were saved in a different time zone from the one this journal holds for { $slot3 }.
+
+journal.window.import.strings.zone.differs.one.hour.of.source.may.show.at = 1 hour of { $slot1 } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $slot2 }.
+
+journal.window.import.strings.zone.differs.under.less.than.an.hour.of.source = less than an hour of { $slot1 } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $slot2 }.
+
+journal.window.import.unit.night = night
+
+journal.window.import.unit.nights = nights
+
+journal.window.import.unit.record = record
+
+journal.window.import.unit.records = records
+
+journal.window.import.visible.text.a.short.note.about.what.this = a short note about what this is, so it's easier to find later
+
+journal.window.import.visible.text.add.your.plaud.token.in.settings = add your { $slot1 } token in settings to sync recordings into your journal.
+
+journal.window.import.visible.text.automatic.sync.is.off = automatic sync is off.
+
+journal.window.import.visible.text.automatic.sync.is.on.value1 = automatic sync is on:{ $slot1 }{ $value1 }.
+
+journal.window.import.visible.text.checking.import = checking import…
+
+journal.window.import.visible.text.checking.schedule = checking schedule…
+
+journal.window.import.visible.text.checking.source = checking source…
+
+journal.window.import.visible.text.completed = completed
+
+journal.window.import.visible.text.configure.and.start = configure and start
+
+journal.window.import.visible.text.connecting.keeps.read.access.to.the = connecting keeps read access to the selected folder for future syncs. forgetting a folder keeps earlier imports in your journal.
+
+journal.window.import.visible.text.contains.gaps = contains gaps
+
+journal.window.import.visible.text.content = content
+
+journal.window.import.visible.text.could.not.confirm.the.folder.change = could not confirm the folder change. check the current connection before trying again.
+
+journal.window.import.visible.text.could.not.read.the.schedule.check = could not read the schedule. check again before changing it.
+
+journal.window.import.visible.text.could.not.read.this.source.check = could not read this source. check again before changing it.
+
+journal.window.import.visible.text.couldn.t.check.status.reload.to = couldn't check status. reload to try again.
+
+journal.window.import.visible.text.couldn.t.load.import.details = couldn't load import details.
+
+journal.window.import.visible.text.couldn.t.load.more.imports = couldn't load more imports.
+
+journal.window.import.visible.text.couldn.t.load.this.choice.reopen = couldn't load this choice. reopen the import to try again.
+
+journal.window.import.visible.text.couldn.t.save.this.choice.try = couldn't save this choice. try again.
+
+journal.window.import.visible.text.custom.schedules.stay.unchanged.value1 = custom schedules stay unchanged:{ $slot1 }{ $value1 }.
+
+journal.window.import.visible.text.date.range = date range:
+
+journal.window.import.visible.text.drop.a.file.here.or.choose = drop a file here or choose one
+
+journal.window.import.visible.text.duration = duration:
+
+journal.window.import.visible.text.elapsed = elapsed
+
+journal.window.import.visible.text.entities.seeded = entities seeded:
+
+journal.window.import.visible.text.entries.written = entries written:
+
+journal.window.import.visible.text.error = error:
+
+journal.window.import.visible.text.error.loading.content = error loading content
+
+journal.window.import.visible.text.error.loading.content.variant2 = Error loading content
+
+journal.window.import.visible.text.folder.saved.but.import.setup.could = folder saved, but import setup could not be confirmed. check your imports before choosing it again.
+
+journal.window.import.visible.text.held = held —
+
+journal.window.import.visible.text.import.id = import id:
+
+journal.window.import.visible.text.import.value1.value2 = import:{ $slot1 }{ $value1 }{ $slot2 }·{ $slot3 }{ $value2 }
+
+journal.window.import.visible.text.items = items
+
+journal.window.import.visible.text.leave.this.empty.to.use.recording = leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.
+
+journal.window.import.visible.text.loading = loading…
+
+journal.window.import.visible.text.loading.content = loading content…
+
+journal.window.import.visible.text.loading.imports = loading imports…
+
+journal.window.import.visible.text.no.content.available = No content available
+
+journal.window.import.visible.text.no.creation.date.was.found.in = no creation date was found in this file. choose its date, or keep the upload date.
+
+journal.window.import.visible.text.no.folder.connected = no folder connected.
+
+journal.window.import.visible.text.no.items.found = no items found
+
+journal.window.import.visible.text.nothing.to.import = { $slot1 }· nothing to import
+
+journal.window.import.visible.text.optional = (optional)
+
+journal.window.import.visible.text.original.saved.description.unavailable = original saved (description unavailable)
+
+journal.window.import.visible.text.overview = overview
+
+journal.window.import.visible.text.overview.unavailable = overview unavailable
+
+journal.window.import.visible.text.partially.extracted = partially extracted (
+
+journal.window.import.visible.text.paste.text.or.drop.a.file = paste text or drop a file. you'll confirm the date before it goes in.
+
+journal.window.import.visible.text.preparing.preview = preparing preview…
+
+journal.window.import.visible.text.preview.import = preview import
+
+journal.window.import.visible.text.preview.then.merge.your.archive = preview, then merge your archive
+
+journal.window.import.visible.text.preview.your.recordings = preview your recordings
+
+journal.window.import.visible.text.progress = progress
+
+journal.window.import.visible.text.ready.to.sync.recordings.into.your = ready to sync recordings into your journal.
+
+journal.window.import.visible.text.saving.folder.this.can.take.a = saving folder… this can take a while for a large folder.
+
+journal.window.import.visible.text.select.this.tab.to.browse.imported = select this tab to browse imported content
+
+journal.window.import.visible.text.stalled = stalled
+
+journal.window.import.visible.text.stalled.no.updates.in.minutes = stalled: no updates in 10 minutes.
+
+journal.window.import.visible.text.stalled.no.updates.in.minutes.import = stalled: no updates in 10 minutes. import id:
+
+journal.window.import.visible.text.start.import = start import
+
+journal.window.import.visible.text.starting = starting
+
+journal.window.import.visible.text.status.unavailable = status unavailable
+
+journal.window.import.visible.text.step = step
+
+journal.window.import.visible.text.step.variant2 = step 1
+
+journal.window.import.visible.text.step.variant3 = step 2
+
+journal.window.import.visible.text.still.working = still working…
+
+journal.window.import.visible.text.the.zip.includes.your.settings.and = the ZIP includes your settings and credentials. processing logs, rebuildable indexes and caches, locks and temporary files are left out. merging keeps the receiving journal's settings and connections.
+
+journal.window.import.visible.text.this.import.could.not.be.confirmed = this import could not be confirmed. check your imports before choosing it again.
+
+journal.window.import.visible.text.this.import.couldn.t.be.confirmed = this import couldn't be confirmed as finished.
+
+journal.window.import.visible.text.this.pdf.uses.its.own.dates = this { $slot1 } uses its own dates. you can choose a date for this file.
+
+journal.window.import.visible.text.turn.this.on.if.you.want = turn this on if you want a local copy of the originals in your journal.
+
+journal.window.import.visible.text.unconfirmed = unconfirmed
+
+journal.window.import.visible.text.unknown.import.source = unknown import source
+
+journal.window.import.visible.text.upload.your.file = upload your file
+
+journal.window.import.visible.text.uploading.your.file.keep.this.page = uploading your file… keep this page open until it finishes.
+
+journal.window.import.visible.text.validate = validate
+
+journal.window.import.visible.text.validating = validating
+
+journal.window.import.visible.text.value1.audio.value2.already.saved = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }audio{ $slot4 }{ $value2 }{ $slot5 }already saved
+
+journal.window.import.visible.text.value1.choose.the.folder.again.to = { $value1 }: choose the folder again to restore read access.
+
+journal.window.import.visible.text.value1.left.out = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }left out
+
+journal.window.import.visible.text.value1.read.access.remembered.for.future = { $value1 }: read access remembered for future syncs.
+
+journal.window.import.visible.text.value1.saved = { $value1 }: saved
+
+journal.window.import.visible.text.value1.saved.but.import.setup.could = { $value1 }: saved, but import setup could not be confirmed. check your imports before choosing it again.
+
+journal.window.import.visible.text.value1.skipped = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }skipped
+
+journal.window.import.visible.text.value1.source.value2.value3.recording.bytes = { $value1 }{ $slot1 }source{ $slot2 }{ $value2 }{ $slot3 }·{ $slot4 }{ $value3 }{ $slot5 }recording bytes ·{ $slot6 }{ $value4 }{ $slot7 }{ $value5 }
+
+journal.window.import.visible.text.value1.value2.across.value3.value4 = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }across{ $slot3 }{ $value3 }{ $slot4 }{ $value4 }
+
+journal.window.import.visible.text.value1.value2.already.listed.on.the = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }{ $value2 }{ $slot4 }already listed on the activities page would move to this import's facet from{ $slot5 }{ $value3 }
+
+journal.window.import.window.explanation.a.button.input.select.textarea = a, button, input, select, textarea
+
+journal.window.import.window.explanation.a.button.select.textarea = a, button, select, textarea
+
+journal.window.import.window.explanation.could.not.preview.this.import = could not preview this import
+
+journal.window.import.window.explanation.failed.to.save.import = Failed to save import
+
+journal.window.import.window.explanation.failed.to.save.import.settings = Failed to save import settings
+
+journal.window.import.window.explanation.failed.to.start.import = Failed to start import
+
+journal.window.import.window.explanation.malformed.import.history.response = Malformed import history response
+
+journal.window.import.window.explanation.page.could.not.be.extracted = 1 page could not be extracted
+
+journal.window.import.window.explanation.saying.yes.can.move.up.to = saying yes can move up to{ $slot1 }{ $value1 }{ $slot2 }already listed on the activities page to this import's facet
+
+journal.window.import.window.explanation.stalled.no.updates.in.minutes = stalled: no updates in 10 minutes
+
+journal.window.import.window.explanation.thinking.progress.is.unavailable = thinking progress is unavailable
+
+journal.window.import.window.explanation.this.file.was.already.staged.value1 = this file was already staged{ $value1 }.
+
+journal.window.import.window.explanation.this.import.is.already.in.progress = this import is already in progress{ $value1 }.
+
+journal.window.import.window.explanation.value1.left.out.named.in.the = { $value1 }{ $slot1 }left out, named in the summary
+
+journal.window.import.window.explanation.value1.of.value2.value3.ready.to = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }{ $value3 }{ $slot4 }ready to find
+
+journal.window.import.window.explanation.value1.pages.could.not.be.extracted = { $value1 }{ $slot1 }pages could not be extracted
+
+journal.window.import.window.explanation.value1.put.together.from.sleep.stages = { $value1 }{ $slot1 }put together from sleep stages

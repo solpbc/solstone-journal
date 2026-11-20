@@ -1,10 +1,10 @@
-### export your ChatGPT history
+### {{journal.window.import.guide.chatgpt.line1}}
 
-1. open [ChatGPT](https://chat.openai.com)
-2. click your profile icon in the bottom-left corner
-3. select **Settings**
-4. go to **Data controls**
-5. click **Export data**
-6. you'll receive an email with a download link. this may take a few minutes
-7. download the .zip file from the email
-8. upload the .zip file here
+1. {{journal.window.import.guide.chatgpt.line3}}
+2. {{journal.window.import.guide.chatgpt.line4}}
+3. {{journal.window.import.guide.chatgpt.line5}}
+4. {{journal.window.import.guide.chatgpt.line6}}
+5. {{journal.window.import.guide.chatgpt.line7}}
+6. {{journal.window.import.guide.chatgpt.line8}}
+7. {{journal.window.import.guide.chatgpt.line9}}
+8. {{journal.window.import.guide.chatgpt.line10}}

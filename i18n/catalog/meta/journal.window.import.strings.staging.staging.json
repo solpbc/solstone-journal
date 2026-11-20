@@ -1,0 +1,16 @@
+{
+  "description": "strings staging in the journal's import view.",
+  "context": "Journal window, import view. strings staging.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a49011c1200b237e700132da9a1c17a05cadc9f0ffbc8ca646065b165835dd7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

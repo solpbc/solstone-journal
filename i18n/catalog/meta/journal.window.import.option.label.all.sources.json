@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's import view.",
+  "context": "Journal window, import view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "940682601fea1e1bdf7d74f707796afcb10c4dae9e8dc26fa38d3546b959d084",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

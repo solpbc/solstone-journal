@@ -1,0 +1,16 @@
+{
+  "description": "strings not_started in the journal's import view.",
+  "context": "Journal window, import view. strings not_started.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5f20617e4ffbec0ec6bf6659e1f30da772b316d53bcbb80102a3b6af5c8b6a3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

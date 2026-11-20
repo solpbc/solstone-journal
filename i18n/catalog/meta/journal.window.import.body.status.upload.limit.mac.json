@@ -1,0 +1,28 @@
+{
+  "description": "Apple Health import upload limit mac in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import upload limit mac.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cae25456b96067573dd4113c7c5297753404299f4ec7fd8552673406d6e97d1d",
+  "max_length": 233,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "GB"
+    },
+    {
+      "name": "slot2",
+      "kind": "command",
+      "value": "solstone journal importer <your export> --confirm-body-save"
+    }
+  ]
+}

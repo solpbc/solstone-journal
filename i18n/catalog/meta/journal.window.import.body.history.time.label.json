@@ -1,0 +1,41 @@
+{
+  "description": "Apple Health history time label in the journal's import view.",
+  "context": "Journal window, import view. Apple Health history time label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "clock",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5214d5b243cbd0ef0fbcee43c1543a76354e0bb088c178f0017cd2b44cb07d69",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

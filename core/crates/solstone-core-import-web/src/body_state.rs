@@ -11,6 +11,7 @@
 //! didn't run here, such as a merged one, is never ordered, so no later run
 //! reads as having saved it. A row it can't place keeps the import page's own.
 
+use solstone_core_convey_http::window_catalog::{strings, text};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -128,19 +129,41 @@ pub(crate) fn failing_windows(root: &Path, import_id: &str) -> Option<usize> {
 }
 
 /// A start time as the owner reads it, in the journal's zone.
-fn when(root: &Path, started_ms: u64) -> String {
+fn when(locale: &str, root: &Path, started_ms: u64) -> String {
     let zone = solstone_core_journal_config::owner_zone(root);
     jiff::Timestamp::from_millisecond(i64::try_from(started_ms).unwrap_or(i64::MAX))
         .map(|at| {
-            zone.to_datetime(at)
-                .strftime("%b %-d, %-I:%M %p")
-                .to_string()
+            const MONTHS: [&str; 12] = [
+                "journal.window.date.months.short.jan",
+                "journal.window.date.months.short.feb",
+                "journal.window.date.months.short.mar",
+                "journal.window.date.months.short.apr",
+                "journal.window.date.months.short.may",
+                "journal.window.date.months.short.jun",
+                "journal.window.date.months.short.jul",
+                "journal.window.date.months.short.aug",
+                "journal.window.date.months.short.sep",
+                "journal.window.date.months.short.oct",
+                "journal.window.date.months.short.nov",
+                "journal.window.date.months.short.dec",
+            ];
+            let at = zone.to_datetime(at);
+            strings(
+                locale,
+                "journal.window.import.body.history.time.label",
+                [
+                    ("month", &text(locale, MONTHS[at.month() as usize - 1])),
+                    ("day", &at.day().to_string()),
+                    ("clock", &at.strftime("%-I:%M %p").to_string()),
+                ],
+            )
         })
         .unwrap_or_default()
 }
 
 /// The row's state and words, or `None` to keep the import page's own reading.
-pub(crate) fn apple_row(
+fn apple_row_localized(
+    locale: &str,
     root: &Path,
     import_id: &str,
     all: &[Seen],
@@ -167,12 +190,13 @@ pub(crate) fn apple_row(
     });
     let classed = |code: &str| -> (&'static str, String) {
         match body_status::class_of(code) {
-            StopClass::Refused => ("failed", body_status::words(code).to_owned()),
+            StopClass::Refused => ("failed", body_status::words_localized(locale, code)),
             StopClass::DidntStart => (
                 "didnt_start",
-                format!(
-                    "{} once it finishes, import the export again.",
-                    body_status::words(code)
+                strings(
+                    locale,
+                    "journal.window.import.body.history.busy",
+                    [("reason", &body_status::words_localized(locale, code))],
                 ),
             ),
             StopClass::Stopped => ("stopped", String::new()),
@@ -205,9 +229,19 @@ pub(crate) fn apple_row(
             return Some(("saved", String::new()));
         }
         let words = match failing {
-            Some(1) => "1 part of your journal didn't finish saving. importing any Apple Health export again tries it.".to_owned(),
-            Some(n) => format!("{n} parts of your journal didn't finish saving. importing any Apple Health export again tries them."),
-            None => "some parts of your journal didn't finish saving. importing any Apple Health export again tries them.".to_owned(),
+            Some(1) => text(
+                locale,
+                "journal.window.import.body.history.partly.saved.one",
+            ),
+            Some(n) => strings(
+                locale,
+                "journal.window.import.body.history.partly.saved.many",
+                [("count", &n.to_string())],
+            ),
+            None => text(
+                locale,
+                "journal.window.import.body.history.partly.saved.unknown",
+            ),
         };
         return Some(("partly_saved", words));
     }
@@ -225,13 +259,19 @@ pub(crate) fn apple_row(
     }
     .and_then(|id| all.iter().find(|seen| seen.id == id));
     if let Some(seen) = carried_by {
-        let at = when(root, seen.started_ms.unwrap_or_default());
+        let at = when(locale, root, seen.started_ms.unwrap_or_default());
         let words = if seen.running {
-            format!(
-                "stopped before it finished. carried on by your import of {at}, which is running now."
+            strings(
+                locale,
+                "journal.window.import.body.history.carried.running",
+                [("time", &at)],
             )
         } else {
-            format!("stopped before it finished. carried on by your import of {at}.")
+            strings(
+                locale,
+                "journal.window.import.body.history.carried",
+                [("time", &at)],
+            )
         };
         return Some(("stopped", words));
     }
@@ -241,25 +281,52 @@ pub(crate) fn apple_row(
         .filter(|seen| seen.clean || seen.running)
         .min_by_key(|seen| seen.order);
     let words = match after {
-        Some(seen) if seen.clean => format!(
-            "stopped before it finished. your import of {} ran after it.",
-            when(root, seen.started_ms.unwrap_or_default())
+        Some(seen) if seen.clean => strings(
+            locale,
+            "journal.window.import.body.history.followed.done",
+            [(
+                "time",
+                &when(locale, root, seen.started_ms.unwrap_or_default()),
+            )],
         ),
-        Some(seen) => format!(
-            "stopped before it finished. your import of {} is running now.",
-            when(root, seen.started_ms.unwrap_or_default())
+        Some(seen) => strings(
+            locale,
+            "journal.window.import.body.history.followed.running",
+            [(
+                "time",
+                &when(locale, root, seen.started_ms.unwrap_or_default()),
+            )],
         ),
         None => match stop.as_ref() {
-            Some((code, _)) => body_status::stopped_words(code),
-            None => "it stopped before it finished. import the export again to finish.".to_owned(),
+            Some((code, _)) => body_status::stopped_words_localized(locale, code),
+            None => text(locale, "journal.window.import.body.history.stopped.default"),
         },
     };
     Some(("stopped", words))
 }
 
+pub(crate) fn apple_row(
+    root: &Path,
+    import_id: &str,
+    all: &[Seen],
+) -> Option<(&'static str, String)> {
+    apple_row_localized(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        root,
+        import_id,
+        all,
+    )
+}
+
 /// Put the reading on a list or detail row: its state, its words, and the
 /// generic status the page already knows how to draw.
-pub(crate) fn overlay(root: &Path, import_id: &str, values: &mut Map<String, Value>, all: &[Seen]) {
+pub(crate) fn overlay(
+    locale: &str,
+    root: &Path,
+    import_id: &str,
+    values: &mut Map<String, Value>,
+    all: &[Seen],
+) {
     // An Apple Health upload is named for what it is in every state, running and
     // pending included, not by the generic kind its upload was saved as.
     let apple = read_import_metadata(root, import_id)
@@ -268,12 +335,13 @@ pub(crate) fn overlay(root: &Path, import_id: &str, values: &mut Map<String, Val
         values.insert("source_type".into(), json!(APPLE));
         values.insert(
             "source_display".into(),
-            json!(
-                crate::imports::source_display(APPLE).unwrap_or_else(|| "Apple Health".to_owned())
-            ),
+            json!(text(
+                locale,
+                "journal.window.import.source.apple.health.name"
+            )),
         );
     }
-    let Some((state, words)) = apple_row(root, import_id, all) else {
+    let Some((state, words)) = apple_row_localized(locale, root, import_id, all) else {
         return;
     };
     let status = match state {
@@ -289,6 +357,7 @@ pub(crate) fn overlay(root: &Path, import_id: &str, values: &mut Map<String, Val
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_convey_http::window_catalog::ENGLISH;
     use solstone_core_import::publish::{
         DayMarkerOutcome, IndexPublicationOutcomes, IndexedFileError, PUBLICATION_SCHEMA,
         PublicationRecord, PublicationStatus, SegmentPublicationOutcome, write_publication_record,
@@ -703,7 +772,7 @@ mod tests {
             "{words}"
         );
         assert!(
-            words.contains(&when(root, 9_000_000)),
+            words.contains(&when(ENGLISH, root, 9_000_000)),
             "names the recorded successor: {words}"
         );
         // A successor that isn't here any more falls back to the run order.
@@ -725,7 +794,13 @@ mod tests {
         let mut values = serde_json::Map::new();
         values.insert("source_type".into(), json!("text"));
         values.insert("source_display".into(), json!("Text"));
-        overlay(root, "20261010_120000", &mut values, &apple_imports(root));
+        overlay(
+            ENGLISH,
+            root,
+            "20261010_120000",
+            &mut values,
+            &apple_imports(root),
+        );
         assert_eq!(values["source_type"], APPLE);
         assert_eq!(values["source_display"], "Apple Health");
         assert!(
@@ -746,7 +821,13 @@ mod tests {
         assert_eq!(row(root, "20261010_130000"), None, "not Apple Health");
         let mut values = Map::new();
         values.insert("status".into(), json!("pending"));
-        overlay(root, "20261010_120000", &mut values, &apple_imports(root));
+        overlay(
+            ENGLISH,
+            root,
+            "20261010_120000",
+            &mut values,
+            &apple_imports(root),
+        );
         assert_eq!(values["status"], "pending");
     }
 

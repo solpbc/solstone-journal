@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet apple none hint in the journal's import view.",
+  "context": "Journal window, import view. Import body facet apple none hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18bd3cbbaa453bfda53b6b98a8339a35009234be2ba535dd5f04c9085ec0cef2",
+  "max_length": 196,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

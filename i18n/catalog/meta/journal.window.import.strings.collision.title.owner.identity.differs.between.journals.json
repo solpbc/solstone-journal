@@ -1,0 +1,16 @@
+{
+  "description": "strings collision_title in the journal's import view.",
+  "context": "Journal window, import view. strings collision_title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c55fd1cc9d8e16e82f2d8fc26e83c1eb9d49c9119c9e0ec14b4bdea3c812db06",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

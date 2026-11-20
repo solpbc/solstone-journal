@@ -1,0 +1,16 @@
+{
+  "description": "apple_health guide line 13 in the journal's import view.",
+  "context": "Journal window, import view. apple_health guide line 13.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe8c7ffdb9a9cc8848eea20c3cf9b5954a87a885b124847f3ba27226ae965e1a",
+  "max_length": 468,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

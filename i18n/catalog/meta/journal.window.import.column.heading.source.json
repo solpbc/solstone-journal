@@ -1,0 +1,16 @@
+{
+  "description": "Column heading in the journal's import view.",
+  "context": "Journal window, import view. Column heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6859d467050b2a3daa1574ca66f745aef8a131383faba193d6fcbf936255013b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

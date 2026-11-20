@@ -1,0 +1,16 @@
+{
+  "description": "strings view_day in the journal's import view.",
+  "context": "Journal window, import view. strings view_day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1ad001e89c4487c0175506d8d276ebf69b6edcde06216957322b144abc856d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

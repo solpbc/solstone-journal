@@ -42,13 +42,8 @@ pub(crate) struct BodyCommand<'a> {
     pub save: bool,
 }
 
-use solstone_core_import_sources::body_status::WHERE_TO_RUN;
+use solstone_core_import_sources::body_status::apple_go_ahead_words as apple_confirm_words;
 
-fn apple_confirm_words() -> String {
-    format!(
-        "saving an Apple Health export needs your go-ahead, so nothing from it was brought in. {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save\n"
-    )
-}
 const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
 
 /// What a page start of an import that already ran is told; the page shows

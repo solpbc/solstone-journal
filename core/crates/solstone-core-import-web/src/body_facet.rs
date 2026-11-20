@@ -12,53 +12,68 @@
 //! itself without changing what is remembered: that choice travels in the
 //! staged import's metadata, never here.
 //!
-//! Every word the card shows for this lives in [`COPY`], so it can be read and
-//! changed in one place.
+//! The card resolves its copy from the window catalog.
 
 use std::path::Path;
 
-use axum::{Json, extract::State, http::StatusCode, response::Response};
+use axum::{Extension, Json, extract::State, http::StatusCode, response::Response};
 use serde_json::{Value, json};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text as catalog_text},
+};
 use solstone_core_journal_config::PREFERRED_BODY_FACET;
 
 use crate::{AppState, http::json as json_response};
 
 /// What the card says about the facet, by key.
 pub(crate) const COPY: &[(&str, &str)] = &[
-    ("heading", "facet"),
+    ("heading", "journal.window.import.body.facet.shared.heading"),
     (
         "ask_existing",
-        "file your workouts under the facet you named {facet}?",
+        "!journal.window.import.body.facet.shared.ask.existing",
     ),
-    ("ask_make_body", "make a body facet for your workouts?"),
+    (
+        "ask_make_body",
+        "!journal.window.import.body.facet.shared.ask.make.body",
+    ),
     (
         "ask_unmute",
-        "your body facet is muted. turn it back on for your workouts?",
+        "!journal.window.import.body.facet.shared.ask.unmute",
     ),
     (
         "no_means",
-        "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "!journal.window.import.body.facet.shared.no.means",
     ),
-    ("yes", "yes"),
-    ("no", "no"),
-    ("this_import", "facet for this import"),
-    ("none_option", "no facet"),
+    ("yes", "!journal.window.import.body.facet.shared.yes"),
+    ("no", "!journal.window.import.body.facet.shared.no"),
+    (
+        "this_import",
+        "!journal.window.import.body.facet.shared.this.import",
+    ),
+    (
+        "none_option",
+        "!journal.window.import.body.facet.shared.none.option",
+    ),
     (
         "files_earlier",
-        "this files every workout in this download under {facet}, including any already listed on the activities page. the preview says how many of those would move.",
+        "!journal.window.import.body.facet.shared.files.earlier",
     ),
     (
         "none_hint",
-        "new workouts in this import aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "!journal.window.import.body.facet.shared.none.hint",
     ),
     (
         "unanswered",
-        "answer the facet question first, then preview again.",
+        "journal.window.import.body.facet.shared.unanswered",
     ),
-    ("answer_failed", "your answer couldn't be saved. try again."),
+    (
+        "answer_failed",
+        "journal.window.import.body.facet.shared.answer.failed",
+    ),
     (
         "offer_changed",
-        "the facet question changed after you saw it, so your answer wasn't saved. the card now shows where it stands.",
+        "journal.window.import.body.facet.shared.offer.changed",
     ),
 ];
 
@@ -68,27 +83,27 @@ pub(crate) const COPY: &[(&str, &str)] = &[
 pub(crate) const APPLE_COPY: &[(&str, &str)] = &[
     (
         "ask_existing",
-        "file your workouts, sleep and other body data under the facet you named {facet}?",
+        "!journal.window.import.body.facet.apple.ask.existing",
     ),
     (
         "ask_make_body",
-        "make a body facet for your workouts, sleep and other body data?",
+        "!journal.window.import.body.facet.apple.ask.make.body",
     ),
     (
         "ask_unmute",
-        "your body facet is muted. turn it back on for your workouts, sleep and other body data?",
+        "!journal.window.import.body.facet.apple.ask.unmute",
     ),
     (
         "no_means",
-        "if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.",
+        "!journal.window.import.body.facet.apple.no.means",
     ),
     (
         "files_earlier",
-        "this files everything in this export under {facet}, including what's already listed on the activities page. the preview says how many of those could move, at most.",
+        "!journal.window.import.body.facet.apple.files.earlier",
     ),
     (
         "none_hint",
-        "new workouts and sleep in this import aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.",
+        "!journal.window.import.body.facet.apple.none.hint",
     ),
 ];
 
@@ -97,14 +112,14 @@ fn for_apple(source: Option<&str>) -> bool {
     source == Some("apple_health")
 }
 
-fn copy(apple: bool) -> Value {
+fn copy(locale: &str, apple: bool) -> Value {
     let mut words: serde_json::Map<String, Value> = COPY
         .iter()
-        .map(|(key, text)| ((*key).to_owned(), json!(text)))
+        .map(|(key, id)| ((*key).to_owned(), json!(catalog_text(locale, id))))
         .collect();
     if apple {
-        for (key, text) in APPLE_COPY {
-            words.insert((*key).to_owned(), json!(text));
+        for (key, id) in APPLE_COPY {
+            words.insert((*key).to_owned(), json!(catalog_text(locale, id)));
         }
     }
     Value::Object(words)
@@ -128,7 +143,7 @@ fn offer_value(offer: &CardOffer) -> Value {
     json!({"state": state, "facet": facet})
 }
 
-fn body(root: &Path, apple: bool) -> Result<Value, String> {
+fn body(locale: &str, root: &Path, apple: bool) -> Result<Value, String> {
     let (offer, facets) = card_offer(root)?;
     Ok(json!({
         "offer": offer_value(&offer),
@@ -136,33 +151,45 @@ fn body(root: &Path, apple: bool) -> Result<Value, String> {
             .into_iter()
             .map(|(name, title)| json!({"name": name, "title": title}))
             .collect::<Vec<_>>(),
-        "copy": copy(apple),
+        "copy": copy(locale, apple),
     }))
 }
 
 fn failed(status: StatusCode, detail: String) -> Response {
-    json_response(
+    crate::http::refusal(
         status,
-        json!({"error": text("answer_failed"), "reason_code": "body_facet_failed", "detail": detail}),
+        json!({"error": "", "reason_code": "body_facet_failed", "detail": detail}),
+        copy_id("answer_failed"),
     )
 }
 
-fn text(key: &str) -> &'static str {
+fn copy_id(key: &str) -> &'static str {
     COPY.iter()
         .find_map(|(name, text)| (*name == key).then_some(*text))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+fn text(key: &str) -> String {
+    catalog_text(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        copy_id(key),
+    )
 }
 
 /// `GET /app/import/api/body-facet[?source=apple_health]`: what the Strava or
 /// Apple Health card asks or remembers. The offer is one for every body
 /// importer; only the words differ.
 pub(crate) async fn offer(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let root = state.root.clone();
     let apple = for_apple(query.get("source").map(String::as_str));
-    match tokio::task::spawn_blocking(move || body(&root, apple)).await {
+    match tokio::task::spawn_blocking(move || body(response_locale(selected_locale), &root, apple))
+        .await
+    {
         Ok(Ok(body)) => json_response(StatusCode::OK, body),
         Ok(Err(error)) => failed(StatusCode::INTERNAL_SERVER_ERROR, error),
         Err(error) => failed(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
@@ -187,7 +214,11 @@ impl From<String> for AnswerRefused {
 /// `POST /app/import/api/body-facet` with `{"answer": "yes" | "no", "offer":
 /// <the offer the card showed>}`: record the owner's answer to the card's
 /// question, if it is still the question asked now.
-pub(crate) async fn answer(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
+pub(crate) async fn answer(
+    selected_locale: Option<Extension<ResponseLocale>>,
+    State(state): State<AppState>,
+    Json(data): Json<Value>,
+) -> Response {
     let yes = match data.get("answer").and_then(Value::as_str) {
         Some("yes") => true,
         Some("no") => false,
@@ -202,15 +233,17 @@ pub(crate) async fn answer(State(state): State<AppState>, Json(data): Json<Value
     let apple = for_apple(data.get("source").and_then(Value::as_str));
     let root = state.root.clone();
     match tokio::task::spawn_blocking(move || {
-        record_answer(&root, yes, &shown).and_then(|()| Ok(body(&root, apple)?))
+        record_answer(&root, yes, &shown)
+            .and_then(|()| Ok(body(response_locale(selected_locale), &root, apple)?))
     })
     .await
     {
         Ok(Ok(body)) => json_response(StatusCode::OK, body),
-        Ok(Err(AnswerRefused::OfferChanged)) => json_response(
+        Ok(Err(AnswerRefused::OfferChanged)) => crate::http::refusal(
             StatusCode::CONFLICT,
-            json!({"error": text("offer_changed"), "reason_code": "body_facet_offer_changed",
+            json!({"error": "", "reason_code": "body_facet_offer_changed",
                 "detail": "the facet question changed since it was shown"}),
+            copy_id("offer_changed"),
         ),
         Ok(Err(AnswerRefused::Failed(error))) => failed(StatusCode::CONFLICT, error),
         Err(error) => failed(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),

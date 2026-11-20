@@ -1,0 +1,28 @@
+{
+  "description": "import delete copy dayMany in the journal's import view.",
+  "context": "Journal window, import view. import delete copy dayMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "448f1887b6634d3f04a8474ca84b899026f899124975188f887170439df3875e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

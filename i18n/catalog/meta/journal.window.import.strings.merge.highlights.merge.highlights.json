@@ -1,0 +1,16 @@
+{
+  "description": "strings merge_highlights in the journal's import view.",
+  "context": "Journal window, import view. strings merge_highlights.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62728b8c74bd135919da5c9dc633bf5c95d3d73c68059740f1825312832ea8a8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "stage names audio_segmenting in the journal's import view.",
+  "context": "Journal window, import view. stage names audio_segmenting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da3b3e7673cc037960dfdd77e2634b973457c627d3c1a36f9c721ff5a578fb45",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

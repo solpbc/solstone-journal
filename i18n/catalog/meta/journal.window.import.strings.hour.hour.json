@@ -1,0 +1,16 @@
+{
+  "description": "strings hour in the journal's import view.",
+  "context": "Journal window, import view. strings hour.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "914379d5d7cc47dc334c795bc8d4eeb284361b368d7f23343a323a19567ccaed",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

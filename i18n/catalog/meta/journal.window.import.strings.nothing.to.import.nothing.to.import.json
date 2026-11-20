@@ -1,0 +1,16 @@
+{
+  "description": "strings nothing_to_import in the journal's import view.",
+  "context": "Journal window, import view. strings nothing_to_import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba986b48b31df22e02bceb2e5497395c2ad458c628b4ebe984af7c5bbd0f4244",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

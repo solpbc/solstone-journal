@@ -1,0 +1,16 @@
+{
+  "description": "stage names facets in the journal's import view.",
+  "context": "Journal window, import view. stage names facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f4eddb5fc92c2720dc0986782df0c464fd65f8d9c98b5e5dedfea5ddf78f378",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared ask unmute in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared ask unmute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afcc3556770fe99a97736acefbadb9c3532780041add3c717c2d5cb61f6e7a6f",
+  "max_length": 90,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

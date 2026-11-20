@@ -1,0 +1,16 @@
+{
+  "description": "strings drawer_unavailable in the journal's import view.",
+  "context": "Journal window, import view. strings drawer_unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44088d5a6eff82aeb616cfc87db28709acff7486f7fe40602af5bef718f833fa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

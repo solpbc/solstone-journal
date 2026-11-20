@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use solstone_core_window_catalog::{ENGLISH, strings};
 
 use crate::body_stream::APPLE;
 
@@ -130,11 +131,23 @@ pub fn size_words(bytes: u64) -> String {
 /// Why a start was refused for space, in the owner's words.
 #[must_use]
 pub fn too_full_words(space: &Space) -> String {
-    format!(
-        "this import needs about {} free, and this disk has {} free, as the system reports it. free up about {}, then start it.",
-        size_words(space.need),
-        size_words(space.free),
-        size_words(space.need.saturating_sub(space.free))
+    too_full_words_localized(ENGLISH, space)
+}
+
+/// Say how much room the owner can make in the selected language.
+#[must_use]
+pub fn too_full_words_localized(locale: &str, space: &Space) -> String {
+    strings(
+        locale,
+        "journal.window.import.response.apple.insufficient.space",
+        [
+            ("need", &size_words(space.need)),
+            ("free", &size_words(space.free)),
+            (
+                "difference",
+                &size_words(space.need.saturating_sub(space.free)),
+            ),
+        ],
     )
 }
 

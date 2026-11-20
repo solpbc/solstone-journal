@@ -1,11 +1,11 @@
-### export your Gemini history
+### {{journal.window.import.guide.gemini.line1}}
 
-1. go to [Google Takeout](https://takeout.google.com)
-2. click **Deselect all**
-3. scroll down and select only **My Activity**
-4. click **All activity data included**, then deselect everything except **Gemini Apps**
-5. click **OK**, then scroll down and click **Next step**
-6. choose **Export once**, file type **.zip**, and your preferred size
-7. click **Create export**. this may take minutes to hours depending on your history
-8. download the .zip file when ready
-9. upload the .zip file here
+1. {{journal.window.import.guide.gemini.line3}}
+2. {{journal.window.import.guide.gemini.line4}}
+3. {{journal.window.import.guide.gemini.line5}}
+4. {{journal.window.import.guide.gemini.line6}}
+5. {{journal.window.import.guide.gemini.line7}}
+6. {{journal.window.import.guide.gemini.line8}}
+7. {{journal.window.import.guide.gemini.line9}}
+8. {{journal.window.import.guide.gemini.line10}}
+9. {{journal.window.import.guide.gemini.line11}}

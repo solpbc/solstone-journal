@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason other in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07f2197a885dc62bee6a1cb7227edf30e6b4350f16c133d0e3442fed2e11b3d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

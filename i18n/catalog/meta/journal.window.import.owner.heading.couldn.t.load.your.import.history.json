@@ -1,0 +1,16 @@
+{
+  "description": "Owner heading in the journal's import view.",
+  "context": "Journal window, import view. Owner heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41d848b938741ceca776ecd7e67457f4ee962d228392872ac0f49ed7be0ad312",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

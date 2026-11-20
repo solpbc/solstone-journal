@@ -1,0 +1,16 @@
+{
+  "description": "strings body_stopped in the journal's import view.",
+  "context": "Journal window, import view. strings body_stopped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c1cc4feaf896a2ffc78fa3585c4b3ab59157702f265adf605758c776ba3b376",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "strings setting in the journal's import view.",
+  "context": "Journal window, import view. strings setting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fa50de83a9f619796714af5594db044a694ad6f031c685494d40d26c1989a16",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

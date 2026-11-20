@@ -58,7 +58,8 @@ fn deterministic_timestamp(path: &Path, filename: &str, zone: &TimeZone) -> Opti
         .map(|ts| ts.as_str().to_owned())
 }
 
-const HEIC_REFUSAL_MESSAGE: &str = "your journal can't open HEIC or HEIF photos directly. add it through the solstone app on your phone or computer, or convert it to JPEG first.";
+const HEIC_REFUSAL_MESSAGE: &str =
+    "journal.window.import.response.error.your.journal.can.t.open.heic";
 
 fn is_heic_upload(filename: &str, content_type: Option<&str>) -> bool {
     let ext_heic = Path::new(filename)
@@ -412,7 +413,7 @@ fn safe_filename(filename: &str) -> Option<String> {
 
 fn failure(
     code: ImportReasonCode,
-    message: &str,
+    message: &'static str,
     detail: impl Into<String>,
     kind: Option<ImportErrorKind>,
 ) -> Response {
@@ -422,7 +423,7 @@ fn failure(
 fn metadata_failed(detail: impl Into<String>) -> Response {
     failure(
         ImportReasonCode::ImportMetadataFailed,
-        "that import metadata couldn't be updated.",
+        "journal.window.import.response.error.that.import.metadata.couldn.t.be",
         detail,
         None,
     )
@@ -431,7 +432,7 @@ fn metadata_failed(detail: impl Into<String>) -> Response {
 fn missing(detail: impl Into<String>) -> Response {
     failure(
         ImportReasonCode::MissingRequiredField,
-        "a required field is missing.",
+        "journal.window.import.response.error.a.required.field.is.missing",
         detail,
         None,
     )
@@ -452,7 +453,7 @@ pub(crate) fn invalid_state_body(
 fn invalid_state(detail: impl Into<String>, kind: Option<ImportErrorKind>) -> Response {
     failure(
         ImportReasonCode::InvalidOperationForState,
-        "that action isn't available in the current state.",
+        "journal.window.import.response.error.that.action.isn.t.available.in",
         detail,
         kind,
     )
@@ -774,7 +775,7 @@ fn ensure_save_tmp(root: &Path) -> Result<PathBuf, String> {
 fn payload_too_large(detail: impl Into<String>) -> Response {
     failure(
         ImportReasonCode::MultipartPartTooLarge,
-        "that file is too large to bring in.",
+        "journal.window.import.response.error.that.file.is.too.large.to",
         detail,
         None,
     )
@@ -799,7 +800,7 @@ fn stream_error_response(error: save_stream::SaveStreamError) -> Response {
         }
         save_stream::SaveStreamError::Read => failure(
             ImportReasonCode::IngestNoFiles,
-            "there are no files to bring in.",
+            "journal.window.import.response.error.there.are.no.files.to.bring",
             "cannot read multipart part",
             None,
         ),
@@ -959,7 +960,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             Err(_) => {
                 return failure(
                     ImportReasonCode::IngestNoFiles,
-                    "there are no files to bring in.",
+                    "journal.window.import.response.error.there.are.no.files.to.bring",
                     "invalid multipart body",
                     None,
                 );
@@ -968,7 +969,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         if part_count == multipart::MAX_PARTS {
             return failure(
                 ImportReasonCode::IngestNoFiles,
-                "there are no files to bring in.",
+                "journal.window.import.response.error.there.are.no.files.to.bring",
                 "too many multipart parts",
                 None,
             );
@@ -977,7 +978,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         if field.headers().len() > multipart::MAX_HEADERS {
             return failure(
                 ImportReasonCode::IngestNoFiles,
-                "there are no files to bring in.",
+                "journal.window.import.response.error.there.are.no.files.to.bring",
                 "too many multipart headers",
                 None,
             );
@@ -989,7 +990,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         {
             return failure(
                 ImportReasonCode::IngestNoFiles,
-                "there are no files to bring in.",
+                "journal.window.import.response.error.there.are.no.files.to.bring",
                 "multipart filename is too long",
                 None,
             );
@@ -1022,7 +1023,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                 Err(detail) => {
                     return failure(
                         ImportReasonCode::IngestNoFiles,
-                        "there are no files to bring in.",
+                        "journal.window.import.response.error.there.are.no.files.to.bring",
                         detail,
                         None,
                     );
@@ -1062,7 +1063,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             let Some(filename) = safe_filename(&original) else {
                 return failure(
                     ImportReasonCode::IngestNoFiles,
-                    "there are no files to bring in.",
+                    "journal.window.import.response.error.there.are.no.files.to.bring",
                     "No input",
                     None,
                 );
@@ -1099,7 +1100,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         _ => {
             return failure(
                 ImportReasonCode::IngestNoFiles,
-                "there are no files to bring in.",
+                "journal.window.import.response.error.there.are.no.files.to.bring",
                 "No input",
                 None,
             );
@@ -1112,7 +1113,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     if let Some(sentence) = evernote_upload_refusal(&data, evernote_bytes) {
         return error(
             StatusCode::BAD_REQUEST,
-            sentence,
+            "journal.window.import.response.error.this.export.is.over.gb.in",
             "evernote_export_too_big",
             sentence.to_owned(),
             None,
@@ -1128,7 +1129,10 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         return failure(
             ImportReasonCode::UnsupportedImageFormat,
             HEIC_REFUSAL_MESSAGE,
-            HEIC_REFUSAL_MESSAGE,
+            solstone_core_convey_http::window_catalog::text(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+                HEIC_REFUSAL_MESSAGE,
+            ),
             None,
         );
     }
@@ -1151,7 +1155,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     if is_strava && !strava_card {
         return failure(
             ImportReasonCode::StravaDownload,
-            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
+            "journal.window.import.response.error.this.looks.like.a.strava.download",
             "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
             None,
         );
@@ -1366,7 +1370,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
     if !local.exists() {
         return error(
             StatusCode::NOT_FOUND,
-            "that file isn't available.",
+            "journal.window.import.response.error.that.file.isn.t.available",
             "file_not_found",
             format!("Path not found: {local_path}"),
             None,
@@ -1375,7 +1379,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
     if solstone_core_import_sources::strava::looks_like_strava_download(local, None) {
         return failure(
             ImportReasonCode::StravaDownload,
-            "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
+            "journal.window.import.response.error.this.looks.like.a.strava.download",
             "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
             None,
         );
@@ -1428,7 +1432,10 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         return failure(
             ImportReasonCode::UnsupportedImageFormat,
             HEIC_REFUSAL_MESSAGE,
-            HEIC_REFUSAL_MESSAGE,
+            solstone_core_convey_http::window_catalog::text(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+                HEIC_REFUSAL_MESSAGE,
+            ),
             None,
         );
     }
@@ -1635,7 +1642,7 @@ fn relocation_error(error: ImportError, old_timestamp: &str, timestamp: &str) ->
         }
         ImportError::DestinationExists { .. } => failure(
             ImportReasonCode::ImportConflict,
-            "that import couldn't be started because it already exists.",
+            "journal.window.import.response.error.that.import.couldn.t.be.started",
             format!("Import already exists for timestamp {timestamp}"),
             None,
         ),
@@ -1646,7 +1653,7 @@ fn relocation_error(error: ImportError, old_timestamp: &str, timestamp: &str) ->
 fn queue_error() -> Response {
     failure(
         ImportReasonCode::ImportQueueUnreachable,
-        "your journal's background service isn't running. start it, then try again.",
+        "journal.window.import.response.error.your.journal.s.background.service.isn",
         "your journal's background service isn't running. start it, then try again.",
         None,
     )
@@ -1772,7 +1779,25 @@ impl StartSeams {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn run_start(
+    root: &Path,
+    data: Value,
+    plan: crate::preview::PreviewPlan<'_>,
+    seams: StartSeams,
+) -> Response {
+    run_start_localized(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        root,
+        data,
+        plan,
+        seams,
+    )
+    .await
+}
+
+async fn run_start_localized(
+    locale: &str,
     root: &Path,
     data: Value,
     plan: crate::preview::PreviewPlan<'_>,
@@ -1864,7 +1889,7 @@ pub(crate) async fn run_start(
     // An Apple Health import that no longer fits isn't started: the page may
     // have previewed it when there was room.
     if let Some(id) = resolved_id.as_deref()
-        && let Some(words) = crate::apple_card::refuse_start_for_space(root, id)
+        && let Some(words) = crate::apple_card::refuse_start_for_space(root, id, locale)
     {
         return json_response(
             StatusCode::CONFLICT,
@@ -1974,9 +1999,18 @@ pub(crate) async fn run_start(
     .unwrap_or_else(|error| metadata_failed(format!("could not start the import: {error}")))
 }
 
-pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
+pub(crate) async fn start(
+    State(state): State<AppState>,
+    selected_locale: Option<axum::Extension<solstone_core_convey_http::coalesce::ResponseLocale>>,
+    Json(data): Json<Value>,
+) -> Response {
+    let locale = selected_locale.map_or(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        |axum::Extension(locale)| locale.0,
+    );
     if let Some(slot) = state.route.clone() {
-        return run_start(
+        return run_start_localized(
+            locale,
             &state.root,
             data,
             crate::preview::PreviewPlan::Embedded(slot),
@@ -1994,7 +2028,8 @@ pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>
             );
         }
     };
-    run_start(
+    run_start_localized(
+        locale,
         &state.root,
         data,
         crate::preview::PreviewPlan::Program(&program),

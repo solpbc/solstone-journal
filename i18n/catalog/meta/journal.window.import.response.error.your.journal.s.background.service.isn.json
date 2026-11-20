@@ -1,0 +1,16 @@
+{
+  "description": "Import response error in the journal's import view.",
+  "context": "Journal window, import view. Import response error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6eebdcbf74d7f1b5534f6682e1651601475ab5c4c9b3d939559d8a50c1fcd03c",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

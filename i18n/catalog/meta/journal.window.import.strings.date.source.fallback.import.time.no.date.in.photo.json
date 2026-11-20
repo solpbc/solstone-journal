@@ -1,0 +1,16 @@
+{
+  "description": "strings date_source_fallback in the journal's import view.",
+  "context": "Journal window, import view. strings date_source_fallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fedc3af35a34797452b6b7ef73372ca1a0bdf8f601f623d9c55329e4397ec287",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

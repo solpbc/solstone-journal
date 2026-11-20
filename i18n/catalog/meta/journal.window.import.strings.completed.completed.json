@@ -1,0 +1,16 @@
+{
+  "description": "strings completed in the journal's import view.",
+  "context": "Journal window, import view. strings completed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a876c55bc9ca3266f4e59f532a03d7a2c8b27653bcf37c3715331eafc3f5f45",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

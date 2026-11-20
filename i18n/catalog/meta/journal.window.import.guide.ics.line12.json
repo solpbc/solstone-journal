@@ -1,0 +1,23 @@
+{
+  "description": "ics guide line 12 in the journal's import view.",
+  "context": "Journal window, import view. ics guide line 12.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "729929724c88303c1e13267ff73d13d449adde609bf5c6a39e2ad8e4e94ba4db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": ".ics"
+    }
+  ]
+}

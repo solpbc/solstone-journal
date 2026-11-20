@@ -1,0 +1,23 @@
+{
+  "description": "Import body facet apple ask existing in the journal's import view.",
+  "context": "Journal window, import view. Import body facet apple ask existing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "031380a7bf9b0fb15dd57487352c9d6bde1a833a26dea3e33b1399767a5a4d26",
+  "max_length": 110,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

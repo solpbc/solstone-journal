@@ -1,0 +1,28 @@
+{
+  "description": "Import source chatgpt upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source chatgpt upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a114dbad437814dce9dbb45b3d76b4c7004edfd6123720bfd75dd582c0e54d5",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "ChatGPT"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": ".zip"
+    }
+  ]
+}

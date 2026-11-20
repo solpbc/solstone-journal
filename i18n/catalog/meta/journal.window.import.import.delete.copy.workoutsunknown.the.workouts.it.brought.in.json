@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy workoutsUnknown in the journal's import view.",
+  "context": "Journal window, import view. import delete copy workoutsUnknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "466ff7523b16c5eb0319f1bcb440a7413a2d720bdab6c60ac85fd6e32c9416e0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

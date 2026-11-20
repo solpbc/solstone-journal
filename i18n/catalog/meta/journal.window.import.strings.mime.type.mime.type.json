@@ -1,0 +1,16 @@
+{
+  "description": "strings mime_type in the journal's import view.",
+  "context": "Journal window, import view. strings mime_type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c93f3ff2decb376b2ce5a69738b4eb20f34bd7f26af337418fca05a1812e0bf2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

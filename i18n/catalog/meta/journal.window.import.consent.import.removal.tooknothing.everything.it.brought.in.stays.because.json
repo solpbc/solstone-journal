@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal tookNothing in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal tookNothing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0e05368f883713ad7c819d3f7b1beb3baf6866f9128e10157b23d1c1775cfad",
+  "max_length": 150,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

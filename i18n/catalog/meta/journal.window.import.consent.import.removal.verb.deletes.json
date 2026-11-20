@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal verb in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal verb.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4260fc32f35ed792d6e87b0f48f2f1182f7da5ad5e60ef85b14471f2860c88b2",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

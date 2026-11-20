@@ -1,0 +1,23 @@
+{
+  "description": "Import source claude description in the journal's import view.",
+  "context": "Journal window, import view. Import source claude description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80303875c64c72c53552487290e398c026a33b0b15794cbfff5e0c011587fd08",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Claude"
+    }
+  ]
+}

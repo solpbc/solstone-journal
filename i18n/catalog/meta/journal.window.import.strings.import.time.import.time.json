@@ -1,0 +1,16 @@
+{
+  "description": "strings import_time in the journal's import view.",
+  "context": "Journal window, import view. strings import_time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5cd4057f306c8407df4649c87ef3f7e4435bfdbf0bec21bc38e746ad6bb14e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

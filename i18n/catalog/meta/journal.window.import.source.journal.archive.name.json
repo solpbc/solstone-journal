@@ -1,0 +1,16 @@
+{
+  "description": "Import source journal_archive name in the journal's import view.",
+  "context": "Journal window, import view. Import source journal_archive name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

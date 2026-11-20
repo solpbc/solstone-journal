@@ -1,0 +1,16 @@
+{
+  "description": "strings raw_payload in the journal's import view.",
+  "context": "Journal window, import view. strings raw_payload.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21763805a5e954cd41dd1cd7566261f77a7e090306237f2f4097c0297039e073",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

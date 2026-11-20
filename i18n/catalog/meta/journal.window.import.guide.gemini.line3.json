@@ -1,0 +1,28 @@
+{
+  "description": "gemini guide line 3 in the journal's import view.",
+  "context": "Journal window, import view. gemini guide line 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31edba601009eea1ad93e636f9025688746861895a8b30c19d4e0aff586223f1",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Google Takeout"
+    },
+    {
+      "name": "slot2",
+      "kind": "url",
+      "value": "https://takeout.google.com"
+    }
+  ]
+}

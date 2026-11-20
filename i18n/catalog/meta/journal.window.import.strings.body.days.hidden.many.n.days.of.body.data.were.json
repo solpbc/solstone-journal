@@ -1,0 +1,23 @@
+{
+  "description": "strings body_days_hidden_many in the journal's import view.",
+  "context": "Journal window, import view. strings body_days_hidden_many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13e819c087a9a1667d51638fb69de8027166001e5993502b8efd1639f8a8601e",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

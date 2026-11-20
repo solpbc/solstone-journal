@@ -1,0 +1,23 @@
+{
+  "description": "Import source document description in the journal's import view.",
+  "context": "Journal window, import view. Import source document description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6ac272d64be95bb1756ea7be5b1b5bdecb2ddbe7ecb42ef7f3bd188a34b31c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "PDF"
+    }
+  ]
+}

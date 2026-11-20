@@ -1,0 +1,16 @@
+{
+  "description": "strings owner_identity_differs in the journal's import view.",
+  "context": "Journal window, import view. strings owner_identity_differs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "702307684c641198d042b63f38091a5b72fcdf4e6af1bd4c73a9da1d30ec09a6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

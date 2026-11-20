@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason no room in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason no room.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d69354599ec23262e0b1ec49b7a4c26686d968bc3f2546887b1ee0d1321f380",
+  "max_length": 169,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

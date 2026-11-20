@@ -16,6 +16,12 @@ use axum::{
 };
 use serde_json::{Map, Value, json};
 
+use axum::Extension;
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{response_locale, text},
+};
+
 use crate::{
     AppState,
     http::{import_not_found, json as json_response},
@@ -36,131 +42,131 @@ struct SourceMetadata {
 const SOURCES: &[SourceMetadata] = &[
     SourceMetadata {
         name: "ics",
-        display_name: "calendar",
+        display_name: "journal.window.import.source.ics.name",
         icon: "calendar",
-        description: "import events from Google Calendar, Apple Calendar, or Outlook",
+        description: "journal.window.import.source.ics.description",
         input_type: "file",
-        upload_prompt: "upload your .ics file or .zip export",
+        upload_prompt: "journal.window.import.source.ics.upload.prompt",
         has_guide: true,
         accept: ".ics,.zip",
     },
     SourceMetadata {
         name: "chatgpt",
-        display_name: "ChatGPT",
+        display_name: "journal.window.import.source.chatgpt.name",
         icon: "message-square",
-        description: "import your conversation history from ChatGPT",
+        description: "journal.window.import.source.chatgpt.description",
         input_type: "file",
-        upload_prompt: "upload your ChatGPT export .zip file",
+        upload_prompt: "journal.window.import.source.chatgpt.upload.prompt",
         has_guide: true,
         accept: ".zip",
     },
     SourceMetadata {
         name: "claude",
-        display_name: "Claude",
+        display_name: "journal.window.import.source.claude.name",
         icon: "message-circle",
-        description: "import your conversation history from Claude",
+        description: "journal.window.import.source.claude.description",
         input_type: "file",
-        upload_prompt: "upload your Claude export .zip file",
+        upload_prompt: "journal.window.import.source.claude.upload.prompt",
         has_guide: true,
         accept: ".zip",
     },
     SourceMetadata {
         name: "gemini",
-        display_name: "Gemini",
+        display_name: "journal.window.import.source.gemini.name",
         icon: "sparkles",
-        description: "import your activity history from Google Gemini",
+        description: "journal.window.import.source.gemini.description",
         input_type: "file",
-        upload_prompt: "upload your Google Takeout .zip file",
+        upload_prompt: "journal.window.import.source.gemini.upload.prompt",
         has_guide: true,
         accept: ".zip,.json",
     },
     SourceMetadata {
         name: "journal_archive",
-        display_name: "journal",
+        display_name: "journal.window.import.source.journal.archive.name",
         icon: "book",
-        description: "import a full journal export from another journal",
+        description: "journal.window.import.source.journal.archive.description",
         input_type: "file",
-        upload_prompt: "upload your journal export .zip file",
+        upload_prompt: "journal.window.import.source.journal.archive.upload.prompt",
         has_guide: true,
         accept: ".zip",
     },
     SourceMetadata {
         name: "audio_archive",
-        display_name: "audio archive",
+        display_name: "journal.window.import.source.audio.archive.name",
         icon: "archive",
-        description: "bring in Ogg Opus recordings with their original recording times",
+        description: "journal.window.import.source.audio.archive.description",
         input_type: "path_input",
-        upload_prompt: "paste the full path to your recordings folder",
+        upload_prompt: "journal.window.import.source.audio.archive.upload.prompt",
         has_guide: false,
         accept: "",
     },
     SourceMetadata {
         name: "recording",
-        display_name: "meeting audio",
+        display_name: "journal.window.import.source.recording.name",
         icon: "mic",
-        description: "import audio from meetings or conversations",
+        description: "journal.window.import.source.recording.description",
         input_type: "file",
-        upload_prompt: "upload an audio, video, or image file",
+        upload_prompt: "journal.window.import.source.recording.upload.prompt",
         has_guide: false,
         accept: ".flac,.gif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.wav,.webm,.webp",
     },
     SourceMetadata {
         name: "document",
-        display_name: "document",
+        display_name: "journal.window.import.source.document.name",
         icon: "file",
-        description: "import a PDF document",
+        description: "journal.window.import.source.document.description",
         input_type: "file",
-        upload_prompt: "upload a PDF file",
+        upload_prompt: "journal.window.import.source.document.upload.prompt",
         has_guide: false,
         accept: ".pdf",
     },
     SourceMetadata {
         name: "image",
-        display_name: "image",
+        display_name: "journal.window.import.source.image.name",
         icon: "image",
-        description: "add a photo or screenshot and let a model describe what's in it",
+        description: "journal.window.import.source.image.description",
         input_type: "file",
-        upload_prompt: "upload an image (PNG, JPEG, WebP, GIF)",
+        upload_prompt: "journal.window.import.source.image.upload.prompt",
         has_guide: false,
         accept: ".png,.jpg,.jpeg,.webp,.gif",
     },
     SourceMetadata {
         name: "strava",
-        display_name: "Strava",
+        display_name: "journal.window.import.source.strava.name",
         icon: "activity",
-        description: "import your workouts from a Strava download",
+        description: "journal.window.import.source.strava.description",
         input_type: "file",
-        upload_prompt: "upload your Strava download .zip, or just activities.csv from inside it",
+        upload_prompt: "journal.window.import.source.strava.upload.prompt",
         has_guide: true,
         accept: ".zip,.csv",
     },
     SourceMetadata {
         name: "apple_health",
-        display_name: "Apple Health",
+        display_name: "journal.window.import.source.apple.health.name",
         icon: "heart-pulse",
-        description: "import your workouts, sleep and readings from an Apple Health export",
+        description: "journal.window.import.source.apple.health.description",
         input_type: "file",
-        upload_prompt: "upload export.zip from the Health app on your iphone",
+        upload_prompt: "journal.window.import.source.apple.health.upload.prompt",
         has_guide: true,
         accept: ".zip",
     },
     SourceMetadata {
         name: "evernote",
-        display_name: "Evernote",
+        display_name: "journal.window.import.source.evernote.name",
         icon: "file",
-        description: "bring in notes from an Evernote export",
+        description: "journal.window.import.source.evernote.description",
         input_type: "file",
-        upload_prompt: "upload an Evernote export",
+        upload_prompt: "journal.window.import.source.evernote.upload.prompt",
         has_guide: false,
         accept: ".enex",
     },
     SourceMetadata {
         name: "quick",
-        display_name: "quick import",
+        display_name: "journal.window.import.source.quick.name",
         icon: "zap",
-        description: "paste text or drop any file for quick import",
+        description: "journal.window.import.source.quick.description",
         input_type: "text",
-        upload_prompt: "paste text or drag and drop a file",
+        upload_prompt: "journal.window.import.source.quick.upload.prompt",
         has_guide: false,
         accept: "",
     },
@@ -364,8 +370,8 @@ fn source(name: &str) -> Option<&'static SourceMetadata> {
 pub(crate) fn source_icon(name: &str) -> Option<String> {
     source(name).and_then(|item| ICONS.get(item.icon).cloned())
 }
-pub(crate) fn source_display(name: &str) -> Option<String> {
-    source(name).map(|item| item.display_name.to_owned())
+pub(crate) fn source_display_localized(locale: &str, name: &str) -> Option<String> {
+    source(name).map(|item| text(locale, item.display_name))
 }
 
 /// The zone names an audio archive can be placed in, in byte order: every name
@@ -388,19 +394,23 @@ fn time_zone_names() -> &'static [String] {
 /// brought in by a journal on a computer.
 const DESKTOP_ONLY: &[&str] = &["apple_health"];
 
-pub(crate) async fn sources(State(state): State<AppState>) -> Response {
+pub(crate) async fn sources(
+    selected_locale: Option<Extension<ResponseLocale>>,
+    State(state): State<AppState>,
+) -> Response {
+    let locale = response_locale(selected_locale);
     let on_phone = state.route.is_some();
     let offered = SOURCES
         .iter()
         .filter(|item| !(on_phone && DESKTOP_ONLY.contains(&item.name)));
     let items: Vec<Value> = offered.map(|item| {
         let mut value = json!({
-        "name": item.name, "display_name": item.display_name, "icon": item.icon,
-        "description": item.description, "input_type": item.input_type, "upload_prompt": item.upload_prompt,
+        "name": item.name, "display_name": text(locale, item.display_name), "icon": item.icon,
+        "description": text(locale, item.description), "input_type": item.input_type, "upload_prompt": text(locale, item.upload_prompt),
         "has_guide": item.has_guide, "accept": item.accept, "icon_svg": ICONS.get(item.icon),
         });
         if item.name == "apple_health" {
-            value["too_big_words"] = json!(solstone_core_import_sources::body_status::too_big_to_upload_words());
+            value["too_big_words"] = json!(solstone_core_import_sources::body_status::too_big_to_upload_words_localized(locale));
         }
         if item.name == "audio_archive" {
             value["time_zones"] = json!(time_zone_names());
@@ -412,9 +422,11 @@ pub(crate) async fn sources(State(state): State<AppState>) -> Response {
 }
 
 pub(crate) async fn list(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<AppState>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     let filter = query
         .get("source")
         .filter(|value| !value.is_empty())
@@ -454,7 +466,7 @@ pub(crate) async fn list(
         }
         // An Apple Health row is named and read as one before anything below
         // looks at its kind.
-        crate::body_state::overlay(&state.root, &timestamp, &mut info.values, &apple);
+        crate::body_state::overlay(locale, &state.root, &timestamp, &mut info.values, &apple);
         let source_type = info
             .values
             .get("source_type")
@@ -462,8 +474,7 @@ pub(crate) async fn list(
             .map(ToOwned::to_owned);
         if let Some(display) = source_type
             .as_deref()
-            .and_then(source)
-            .map(|item| item.display_name)
+            .and_then(|name| source_display_localized(locale, name))
         {
             info.values.insert("source_display".into(), json!(display));
         }
@@ -551,16 +562,18 @@ pub(crate) async fn list(
 }
 
 pub(crate) async fn detail(
+    selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<AppState>,
     AxumPath(timestamp): AxumPath<String>,
 ) -> Response {
+    let locale = response_locale(selected_locale);
     if solstone_core_import::validate_timestamp(&timestamp).is_err() {
         return import_not_found("Import not found");
     }
     let guard = crate::start_lock::acquire(&state.root, &timestamp).await;
     match tokio::task::spawn_blocking(move || {
         let _guard = guard;
-        detail_sync(state, timestamp)
+        detail_sync(state, timestamp, locale)
     })
     .await
     {
@@ -572,7 +585,7 @@ pub(crate) async fn detail(
     }
 }
 
-fn detail_sync(state: AppState, timestamp: String) -> Response {
+fn detail_sync(state: AppState, timestamp: String, locale: &str) -> Response {
     let Ok(info) = load_import_info(&state.root, &timestamp) else {
         return import_not_found("Import not found");
     };
@@ -723,7 +736,7 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         // Same lowercase display name the list row carries for this source, when the
         // source has an upload tile. A source_type with no tile (e.g. `audio`) falls
         // back to the projection's own computed display rather than the raw source_type.
-        if let Some(display) = source(&projection.source_type).map(|item| item.display_name) {
+        if let Some(display) = source_display_localized(locale, &projection.source_type) {
             body.insert("source_display".into(), json!(display));
         } else {
             body.insert("source_display".into(), json!(projection.source_display));
@@ -752,7 +765,7 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         crate::progress::read(&state.root, &timestamp),
     );
     let apple = crate::body_state::apple_imports(&state.root);
-    crate::body_state::overlay(&state.root, &timestamp, &mut body, &apple);
+    crate::body_state::overlay(locale, &state.root, &timestamp, &mut body, &apple);
     json_response(StatusCode::OK, Value::Object(body))
 }
 
@@ -848,7 +861,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             route: None,
         };
-        let response = list(State(state.clone()), Query(HashMap::new())).await;
+        let response = list(None, State(state.clone()), Query(HashMap::new())).await;
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -858,7 +871,7 @@ mod tests {
         assert_eq!(row["body_state"], "stopped", "{row}");
         assert_eq!(row["deletable"], true, "{row}");
         assert_eq!(body["source_options"], json!(["apple_health"]), "{body}");
-        let detail = detail(State(state), axum::extract::Path(id.to_owned())).await;
+        let detail = detail(None, State(state), axum::extract::Path(id.to_owned())).await;
         let bytes = axum::body::to_bytes(detail.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -890,7 +903,7 @@ mod tests {
                 ("page".into(), page.into()),
                 ("per_page".into(), "1".into()),
             ]);
-            let response = list(State(state.clone()), Query(query)).await;
+            let response = list(None, State(state.clone()), Query(query)).await;
             let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
                 .await
                 .unwrap();
@@ -989,7 +1002,7 @@ mod tests {
                 root: journal.to_path_buf(),
                 route: None,
             };
-            let response = detail(State(state), AxumPath(id.to_owned())).await;
+            let response = detail(None, State(state), AxumPath(id.to_owned())).await;
             let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
                 .await
                 .unwrap();
@@ -1012,7 +1025,7 @@ mod tests {
             root: journal.to_path_buf(),
             route: None,
         };
-        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let response = detail(None, State(state), AxumPath(id.to_owned())).await;
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -1050,7 +1063,7 @@ mod tests {
         };
 
         // Test list endpoint
-        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_resp = list(None, State(state.clone()), Query(HashMap::new())).await;
         let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -1065,7 +1078,7 @@ mod tests {
         assert!(row["error"].is_null(), "{row:?}");
 
         // Test detail endpoint
-        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let response = detail(None, State(state), AxumPath(id.to_owned())).await;
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -1106,7 +1119,7 @@ mod tests {
         };
 
         // Test list endpoint
-        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_resp = list(None, State(state.clone()), Query(HashMap::new())).await;
         let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -1120,7 +1133,7 @@ mod tests {
         assert_eq!(row["error"], "import failed", "{row:?}");
 
         // Test detail endpoint
-        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let response = detail(None, State(state), AxumPath(id.to_owned())).await;
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();

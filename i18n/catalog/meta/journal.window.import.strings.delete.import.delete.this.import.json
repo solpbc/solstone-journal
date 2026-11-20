@@ -1,0 +1,16 @@
+{
+  "description": "strings delete_import in the journal's import view.",
+  "context": "Journal window, import view. strings delete_import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebc100d11b2daf9b3474b2c5b493fc34569baf44338f9d7351a7c3659938d753",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

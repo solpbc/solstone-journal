@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason permission in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason permission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1134156d481cb1f40192dae8fda5d5c7c2bad4db500dab8a1d75c440c27fef6",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

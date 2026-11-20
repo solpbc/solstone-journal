@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 function functionSource(source, name) {
   const match = new RegExp(`(?:async\\s+)?function\\s+${name}\\(`).exec(source);
@@ -42,7 +43,7 @@ function harness(crateDir, source = 'audio') {
       throw new Error(`unhandled selector ${selector}`);
     },
   };
-  const context = vm.createContext({
+  const context = journalContext({
     console, URL,
     clearTimeout() {}, setTimeout() { return 1; },
     document: { visibilityState: 'visible', removeEventListener() {} },

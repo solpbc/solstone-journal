@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason windows not saving in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason windows not saving.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7e242a31c5525b6190809bd185e0e39de3269c4814f055cd263294f8ce73474",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

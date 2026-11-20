@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy oneUnknown in the journal's import view.",
+  "context": "Journal window, import view. import delete copy oneUnknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad142c44514e1024cb1e9c90d8974ae140fd503658c60d10fae7e848130c6bb9",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

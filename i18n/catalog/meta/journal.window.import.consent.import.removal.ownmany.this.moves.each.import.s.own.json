@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal ownMany in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal ownMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd6635c70829d75d552830e164bd64ee7a5de06ee0b0f8ade70f4cd153dc16a9",
+  "max_length": 131,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

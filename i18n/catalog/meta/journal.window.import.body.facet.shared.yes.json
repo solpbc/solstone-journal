@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared yes in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared yes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e8d36790df3cc0a5d94def72ba8b63d19fc93a8f14172ca34057f678a41cc83",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

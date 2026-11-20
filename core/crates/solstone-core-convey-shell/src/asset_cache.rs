@@ -180,7 +180,17 @@ pub(crate) async fn apply(mut request: Request, next: Next) -> Response {
     let (response, tag) = match record.kind {
         AssetKind::Dynamic => return classed(response, CacheClass::Personal),
         AssetKind::File => (served(record, head, response).await, record.etag.to_owned()),
-        AssetKind::Template if head => return classed(response, CacheClass::Personal),
+        AssetKind::Template if head => {
+            let tag = response
+                .headers()
+                .get(ETAG)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            match tag {
+                Some(tag) => (response, tag),
+                None => return classed(response, CacheClass::Personal),
+            }
+        }
         AssetKind::Template => filled(record, response).await,
     };
     if response.status() != StatusCode::OK {

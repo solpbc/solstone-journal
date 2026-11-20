@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared none hint in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared none hint.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f29c4012c55484ac4b9e4c4b9455e77107671ae4d1f0bc9a31122ab5c9d6fcec",
+  "max_length": 222,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

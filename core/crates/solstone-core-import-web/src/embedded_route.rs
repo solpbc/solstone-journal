@@ -878,14 +878,14 @@ mod tests {
             root: root.path().to_path_buf(),
             route: None,
         };
-        let _desktop = preview::preview(State(desktop), Json(data.clone())).await;
+        let _desktop = preview::preview(State(desktop), None, Json(data.clone())).await;
         assert!(fake.captures.lock().expect("captures").is_empty());
 
         let embedded = AppState {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let response = preview::preview(State(embedded), Json(data)).await;
+        let response = preview::preview(State(embedded), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let saved = read_import_metadata(root.path(), ID).expect("saved metadata");
         let relative = saved["preview"]["relative"]
@@ -932,14 +932,14 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(slot.clone()),
         };
-        let response = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let response = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         let body = body_of(response).await;
         assert_eq!(body["detail"], refusal);
 
         *fake.preview_error.lock().expect("error") = None;
         let stderr = "route stderr".to_owned();
         *fake.preview_stderr.lock().expect("stderr") = Some(stderr.clone());
-        let response = preview::preview(State(state), Json(data)).await;
+        let response = preview::preview(State(state), None, Json(data)).await;
         let body = body_of(response).await;
         assert_eq!(body["detail"], stderr);
         slot.retire().expect("checked import retirement");
@@ -956,7 +956,7 @@ mod tests {
             route: Some(Arc::clone(&slot)),
         };
         fake.block_run.store(true, Ordering::Release);
-        let response = lifecycle::start(State(state.clone()), Json(data.clone())).await;
+        let response = lifecycle::start(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(response.status(), StatusCode::OK);
         let started = body_of(response).await;
         assert!(started.get("generation").is_none());
@@ -969,7 +969,7 @@ mod tests {
         );
         assert!(slot.retains(ID));
 
-        let replay = lifecycle::start(State(state), Json(data.clone())).await;
+        let replay = lifecycle::start(State(state), None, Json(data.clone())).await;
         assert_eq!(replay.status(), StatusCode::OK);
         let body = body_of(replay).await;
         assert_eq!(body["replay"], true);
@@ -996,6 +996,7 @@ mod tests {
                 root: root.path().to_path_buf(),
                 route: Some(restarted_slot.clone()),
             }),
+            None,
             Json(stale),
         )
         .await;
@@ -1023,8 +1024,12 @@ mod tests {
             route: Some(slot.clone()),
         };
         let before = std::fs::read(root.path().join(format!("imports/{ID}/import.json"))).unwrap();
-        let detail =
-            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await;
+        let detail = crate::imports::detail(
+            None,
+            State(state.clone()),
+            axum::extract::Path(ID.to_owned()),
+        )
+        .await;
         assert_eq!(body_of(detail).await["saved_start"]["state"], "eligible");
         assert_eq!(
             before,
@@ -1032,11 +1037,13 @@ mod tests {
         );
         assert_eq!(fake.runs.load(Ordering::Acquire), 0);
         let previewed =
-            body_of(preview::preview(State(state.clone()), Json(data.clone())).await).await;
+            body_of(preview::preview(State(state.clone()), None, Json(data.clone())).await).await;
         data["preview_token"] = previewed["preview_token"].clone();
         data["first_start_only"] = json!(true);
         assert_eq!(
-            lifecycle::start(State(state), Json(data)).await.status(),
+            lifecycle::start(State(state), None, Json(data))
+                .await
+                .status(),
             StatusCode::OK
         );
         wait_until(&fake.entered);
@@ -1062,10 +1069,14 @@ mod tests {
             root: legacy_root.path().to_path_buf(),
             route: Some(legacy_slot.clone()),
         };
-        let detail =
-            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await;
+        let detail = crate::imports::detail(
+            None,
+            State(state.clone()),
+            axum::extract::Path(ID.to_owned()),
+        )
+        .await;
         assert_eq!(body_of(detail).await["saved_start"]["state"], "unknown");
-        let _ = preview::preview(State(state.clone()), Json(legacy_data.clone())).await;
+        let _ = preview::preview(State(state.clone()), None, Json(legacy_data.clone())).await;
         assert!(
             !read_import_metadata(legacy_root.path(), ID)
                 .unwrap()
@@ -1073,7 +1084,7 @@ mod tests {
         );
         legacy_data["first_start_only"] = json!(true);
         assert_ne!(
-            lifecycle::start(State(state), Json(legacy_data))
+            lifecycle::start(State(state), None, Json(legacy_data))
                 .await
                 .status(),
             StatusCode::OK
@@ -1113,7 +1124,12 @@ mod tests {
             route: Some(slot.clone()),
         };
         let detail = body_of(
-            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await,
+            crate::imports::detail(
+                None,
+                State(state.clone()),
+                axum::extract::Path(ID.to_owned()),
+            )
+            .await,
         )
         .await;
         assert_eq!(detail["saved_start"]["state"], "eligible");
@@ -1123,12 +1139,12 @@ mod tests {
         let mut data = json!({"import_id": ID, "path": metadata["file_path"],
             "timestamp": metadata["source_timestamp"], "setting": ""});
         let previewed =
-            body_of(preview::preview(State(state.clone()), Json(data.clone())).await).await;
+            body_of(preview::preview(State(state.clone()), None, Json(data.clone())).await).await;
         assert!(previewed["preview_token"].is_string(), "{previewed}");
         data["preview_token"] = previewed["preview_token"].clone();
         data["first_start_only"] = json!(true);
         assert_eq!(
-            lifecycle::start(State(state), Json(data.clone()))
+            lifecycle::start(State(state), None, Json(data.clone()))
                 .await
                 .status(),
             StatusCode::OK
@@ -1150,6 +1166,7 @@ mod tests {
                 root: journal.path().to_path_buf(),
                 route: Some(restarted_slot.clone()),
             }),
+            None,
             Json(data),
         )
         .await;
@@ -1170,8 +1187,8 @@ mod tests {
             route: Some(slot.clone()),
         };
         let (left, right) = tokio::join!(
-            lifecycle::start(State(state.clone()), Json(data.clone())),
-            lifecycle::start(State(state), Json(data.clone())),
+            lifecycle::start(State(state.clone()), None, Json(data.clone())),
+            lifecycle::start(State(state), None, Json(data.clone())),
         );
         assert_eq!(
             usize::from(left.status() == StatusCode::OK)
@@ -1194,6 +1211,7 @@ mod tests {
                 root: root.path().to_path_buf(),
                 route: Some(restarted_slot.clone()),
             }),
+            None,
             Json(data),
         )
         .await;
@@ -1239,7 +1257,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let response = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let response = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(response.status(), StatusCode::OK);
         {
             let captures = fake.captures.lock().expect("captures");
@@ -1256,7 +1274,7 @@ mod tests {
 
         let previewed = body_of(response).await;
         data["preview_token"] = previewed["preview_token"].clone();
-        let started = lifecycle::start(State(state), Json(data)).await;
+        let started = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(started.status(), StatusCode::OK);
         wait_until(&fake.entered);
         assert_ne!(
@@ -1297,7 +1315,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let response = preview::preview(State(state), Json(data)).await;
+        let response = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = body_of(response).await;
         assert_eq!(body["detail"], "capture refused");
@@ -1327,7 +1345,7 @@ mod tests {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .expect("runtime");
-            runtime.block_on(preview::preview(State(state), Json(data)))
+            runtime.block_on(preview::preview(State(state), None, Json(data)))
         });
         let release = Resume(&fake.capture_release);
         spin_until(|| fake.capture_entered.load(Ordering::Acquire));
@@ -1361,7 +1379,7 @@ mod tests {
     }
 
     async fn attach_preview_token(state: &AppState, data: &mut Value) {
-        let response = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let response = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(response.status(), StatusCode::OK);
         let previewed = body_of(response).await;
         data["preview_token"] = previewed["preview_token"].clone();
@@ -1381,7 +1399,7 @@ mod tests {
         attach_preview_token(&state, &mut data).await;
         *fake.execution_error.lock().expect("execution error") =
             Some("execution refused".to_owned());
-        let response = lifecycle::start(State(state), Json(data)).await;
+        let response = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = body_of(response).await;
         assert_eq!(body["detail"], "execution refused");
@@ -1413,7 +1431,7 @@ mod tests {
         attach_preview_token(&state, &mut data).await;
         *fake.execution_error.lock().expect("execution error") =
             Some("execution refused".to_owned());
-        let response = lifecycle::start(State(state), Json(data)).await;
+        let response = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert!(root.path().join("imports").join(ID).is_dir());
         assert!(destination.is_dir());
@@ -1446,7 +1464,7 @@ mod tests {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .expect("runtime");
-            runtime.block_on(lifecycle::start(State(state), Json(data)))
+            runtime.block_on(lifecycle::start(State(state), None, Json(data)))
         });
         let release = Resume(&fake.capture_release);
         spin_until(|| fake.capture_entered.load(Ordering::Acquire));
@@ -1494,7 +1512,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let response = lifecycle::start(State(state.clone()), Json(data.clone())).await;
+        let response = lifecycle::start(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(response.status(), StatusCode::OK);
         drop(response);
         wait_until(&fake.entered);
@@ -1504,7 +1522,7 @@ mod tests {
             ProjectionStatus::Running
         );
 
-        let replay = lifecycle::start(State(state), Json(data)).await;
+        let replay = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(replay.status(), StatusCode::OK);
         let body = body_of(replay).await;
         assert_eq!(body["replay"], true);
@@ -1775,10 +1793,10 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let first = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let first = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(first.status(), StatusCode::OK);
         wait_until_finished(&slot);
-        let second = preview::preview(State(state), Json(data)).await;
+        let second = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(second.status(), StatusCode::OK);
         assert_eq!(slot.workers.lock().expect("workers").handles.len(), 1);
         slot.retire().expect("checked import retirement");
@@ -1794,12 +1812,12 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let started = lifecycle::start(State(state.clone()), Json(data.clone())).await;
+        let started = lifecycle::start(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(started.status(), StatusCode::OK);
         wait_until(&fake.entered);
         assert_eq!(worker_counts(&slot).0, 1);
 
-        let first = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let first = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(first.status(), StatusCode::OK);
         loop {
             let (running, finished) = worker_counts(&slot);
@@ -1809,7 +1827,7 @@ mod tests {
             std::thread::yield_now();
         }
         let before = slot.workers.lock().expect("workers").handles.len();
-        let second = preview::preview(State(state), Json(data)).await;
+        let second = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(second.status(), StatusCode::OK);
         // Returning the HTTP result releases the preview's retained value; it
         // does not join the worker that still owns its cleanup. Count the
@@ -1864,7 +1882,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let first = preview::preview(State(state.clone()), Json(data.clone())).await;
+        let first = preview::preview(State(state.clone()), None, Json(data.clone())).await;
         assert_eq!(first.status(), StatusCode::OK);
         let saved = read_import_metadata(root.path(), ID).expect("metadata");
         let relative = saved["preview"]["relative"]
@@ -1873,7 +1891,7 @@ mod tests {
             .to_owned();
         let directories = preview_names(root.path());
         assert_eq!(directories.len(), 1);
-        let second = preview::preview(State(state), Json(data)).await;
+        let second = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(second.status(), StatusCode::OK);
         let saved = read_import_metadata(root.path(), ID).expect("metadata");
         assert_eq!(
@@ -1924,7 +1942,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(slot.clone()),
         };
-        let response = preview::preview(State(state), Json(data)).await;
+        let response = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(preview_names(root.path()), before);
         let saved = read_import_metadata(root.path(), ID).expect("metadata");
@@ -1947,7 +1965,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(slot.clone()),
         };
-        let response = preview::preview(State(state), Json(data)).await;
+        let response = preview::preview(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(planted.is_dir());
         let saved = read_import_metadata(root.path(), ID).expect("metadata");
@@ -1975,7 +1993,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(slot.clone()),
         };
-        let response = lifecycle::start(State(state), Json(data)).await;
+        let response = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = body_of(response).await;
         assert_eq!(body["detail"], "capture refused");
@@ -2007,7 +2025,7 @@ mod tests {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .expect("runtime");
-            runtime.block_on(lifecycle::start(State(state), Json(data)))
+            runtime.block_on(lifecycle::start(State(state), None, Json(data)))
         });
         let release = Resume(&fake.capture_release);
         spin_until(|| fake.capture_entered.load(Ordering::Acquire));
@@ -2133,7 +2151,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(slot.clone()),
         };
-        let response = runtime.block_on(preview::preview(State(state), Json(data)));
+        let response = runtime.block_on(preview::preview(State(state), None, Json(data)));
         assert_eq!(response.status(), StatusCode::OK);
         slot.retire().expect("checked import retirement");
     }
@@ -2240,7 +2258,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let response = lifecycle::start(State(state), Json(data)).await;
+        let response = lifecycle::start(State(state), None, Json(data)).await;
         assert_eq!(response.status(), StatusCode::OK);
         drop(response);
         wait_until(&fake.entered);
@@ -2316,7 +2334,7 @@ mod tests {
             root: root.clone(),
             route: Some(Arc::clone(&slot)),
         };
-        let preview_task = tokio::spawn(preview::preview(State(state), Json(data)));
+        let preview_task = tokio::spawn(preview::preview(State(state), None, Json(data)));
         let slot_wait = Arc::clone(&slot);
         tokio::task::spawn_blocking(move || {
             spin_until(|| slot_wait.snapshot_delete_waiting.load(Ordering::Acquire));
@@ -2458,7 +2476,7 @@ mod tests {
             root: root.path().to_path_buf(),
             route: Some(Arc::clone(&slot)),
         };
-        let started = tokio::spawn(lifecycle::start(State(state), Json(data)));
+        let started = tokio::spawn(lifecycle::start(State(state), None, Json(data)));
         let fake_wait = Arc::clone(&fake);
         tokio::task::spawn_blocking(move || {
             spin_until(|| fake_wait.capture_entered.load(Ordering::Acquire));

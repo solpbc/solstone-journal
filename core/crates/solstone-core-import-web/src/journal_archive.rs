@@ -40,7 +40,7 @@ pub(crate) async fn export(State(state): State<AppState>) -> Response {
             .expect("archive export response"),
         Err(detail) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "this journal couldn't be exported.",
+            "journal.window.import.response.error.this.journal.couldn.t.be.exported",
             "journal_archive_export_failed",
             detail,
             None,
@@ -61,7 +61,7 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
         ),
         Err(archive_error) => error(
             StatusCode::BAD_REQUEST,
-            "that archive couldn't be previewed.",
+            "journal.window.import.response.error.that.archive.couldn.t.be.previewed",
             "journal_archive_preview_failed",
             archive_error.to_string(),
             None,
@@ -162,7 +162,7 @@ fn staged_archive_path(root: &Path, data: &Value) -> Result<PathBuf, Box<Respons
 fn invalid_preview_request(detail: &str) -> Response {
     error(
         StatusCode::BAD_REQUEST,
-        "one of those values couldn't be used.",
+        "journal.window.import.response.error.one.of.those.values.couldn.t",
         "invalid_request_value",
         detail.to_owned(),
         None,

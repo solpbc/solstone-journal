@@ -14,7 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
+const { loadWindowCatalog, journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -952,7 +952,9 @@ module.exports = async function importContractCases(crateDir) {
   const inline = [...workspace.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   const detailJs = fs.readFileSync(path.join(crateDir, 'assets/import_detail.js'), 'utf8');
   const sourcesJs = fs.readFileSync(path.join(crateDir, 'assets/source_connections.js'), 'utf8');
-  const markup = workspace.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<link[^>]*>/g, '');
+  const template = workspace.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<link[^>]*>/g, '');
+  const { JournalI18n } = journalContext({});
+  const markup = JournalI18n.renderWorkspace(template);
   const shellDir = path.join(crateDir, '../solstone-core-convey-shell/assets/static');
   // In the fragment's order: the view's script, then its two files.
   const env = { markup, shellDir, scripts: [['workspace.html', inline[0]], ['source_connections.js', sourcesJs], ['import_detail.js', detailJs]] };

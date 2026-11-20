@@ -1,0 +1,16 @@
+{
+  "description": "strings body_didnt_start in the journal's import view.",
+  "context": "Journal window, import view. strings body_didnt_start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f53c2c5534ef1ee0e9c295f3714f3686b0cc4784ef7d1aa8c80c9aee96300c73",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

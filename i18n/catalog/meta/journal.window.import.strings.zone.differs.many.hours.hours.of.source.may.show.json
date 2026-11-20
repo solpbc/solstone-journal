@@ -1,0 +1,33 @@
+{
+  "description": "strings zone_differs_many in the journal's import view.",
+  "context": "Journal window, import view. strings zone_differs_many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2b385466500872dcf02361ef935e213aa290a6b453f7b7a0819f2cf61fb46f4",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{hours}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{source}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{source}"
+    }
+  ]
+}

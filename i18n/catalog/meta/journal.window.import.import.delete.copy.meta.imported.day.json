@@ -1,0 +1,23 @@
+{
+  "description": "import delete copy meta in the journal's import view.",
+  "context": "Journal window, import view. import delete copy meta.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a47e26038b671fc4e563ede3abda789ee6d2afc55baeecc27c5665c2a9318fb1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

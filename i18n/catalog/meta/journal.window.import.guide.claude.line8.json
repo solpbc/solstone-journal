@@ -1,0 +1,16 @@
+{
+  "description": "claude guide line 8 in the journal's import view.",
+  "context": "Journal window, import view. claude guide line 8.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b2dfd363141afd17ec77537fc6a91105c51f1c840896f7d0fc0ae9965907192",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

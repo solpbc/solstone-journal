@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy row in the journal's import view.",
+  "context": "Journal window, import view. import delete copy row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b98b07c9ca69b7ff86b3072b910a61493cc4dd8a6db1a1dcd57ac8a79f433d7e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

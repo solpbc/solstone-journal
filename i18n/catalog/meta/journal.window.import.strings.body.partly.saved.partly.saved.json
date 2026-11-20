@@ -1,0 +1,16 @@
+{
+  "description": "strings body_partly_saved in the journal's import view.",
+  "context": "Journal window, import view. strings body_partly_saved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8096b666ca634539ff59c0696697b6566e63335964ace1590a5356a42510c8a6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

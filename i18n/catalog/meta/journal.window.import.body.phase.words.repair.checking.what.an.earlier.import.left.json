@@ -1,0 +1,16 @@
+{
+  "description": "body phase words repair in the journal's import view.",
+  "context": "Journal window, import view. body phase words repair.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11eb7c2a29b45ed957ee6facb2168d1872a2afe843ba5f42742a86a5814afe8c",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

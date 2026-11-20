@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal stays in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal stays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d9f4400b6e976d1ce0afd9b6f9fc24b5a0b4887b7158f1c13c978f965e392d1",
+  "max_length": 204,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

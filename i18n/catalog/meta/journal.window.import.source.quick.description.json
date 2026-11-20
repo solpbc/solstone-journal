@@ -1,0 +1,16 @@
+{
+  "description": "Import source quick description in the journal's import view.",
+  "context": "Journal window, import view. Import source quick description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cdd4906e8edf76850580652eac9672807b2b8f2da187c08dd4086e8f17387a09",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Import source audio_archive description in the journal's import view.",
+  "context": "Journal window, import view. Import source audio_archive description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69e5d73510294ec3b4f8d110ff276b7a3e8e748db189c8b364f1fa2d73b36b66",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Ogg Opus"
+    }
+  ]
+}

@@ -764,7 +764,11 @@ pub(crate) mod tests {
             (
                 StatusCode::OK,
                 "text/markdown; charset=utf-8".to_owned(),
-                include_bytes!("../assets/guides/ics.md").to_vec()
+                crate::assets::guide_markdown(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    include_str!("../assets/guides/ics.md"),
+                )
+                .into_bytes()
             )
         );
         let (code, missing) = json_request(root.path(), "GET", "/app/import/api/guide/nope").await;

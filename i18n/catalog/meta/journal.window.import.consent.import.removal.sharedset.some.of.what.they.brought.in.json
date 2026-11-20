@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal sharedSet in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal sharedSet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "077e388fd5eb8c46d9b4c94cb50835dbb73a5a29d4afce6d64b97a8b9e8ba31a",
+  "max_length": 157,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

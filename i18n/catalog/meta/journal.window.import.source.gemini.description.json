@@ -1,0 +1,23 @@
+{
+  "description": "Import source gemini description in the journal's import view.",
+  "context": "Journal window, import view. Import source gemini description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09dc8cf0a1a85694b8c7eb31b1766c9390940e9b4271b14a33e7c446fd8b13ed",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Gemini"
+    }
+  ]
+}

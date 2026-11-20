@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's import view.",
+  "context": "Journal window, import view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ef6dcb22561d6ffb8febc5545c57650f2901228555c0b40a27512a995ca15b6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

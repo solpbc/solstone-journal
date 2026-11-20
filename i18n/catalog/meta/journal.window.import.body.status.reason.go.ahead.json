@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason go ahead in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason go ahead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "626e5d2416db5e7bf167b3203b01c28990af425a3b57be3bdb2bc7068ace00ad",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

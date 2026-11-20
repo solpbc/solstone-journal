@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's import view.",
+  "context": "Journal window, import view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "baede50415efd72092b473d5bf81059fbc229e3e052521e719c4ad633d6f0558",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

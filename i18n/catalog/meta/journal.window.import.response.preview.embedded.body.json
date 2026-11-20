@@ -1,0 +1,28 @@
+{
+  "description": "Import response in the journal's import view.",
+  "context": "Journal window, import view. Import response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df75522aa3590b7ca061ae782a4775c60da3ec53e12aaa6c0d55da5920af7148",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Oura"
+    }
+  ]
+}

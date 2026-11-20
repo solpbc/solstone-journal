@@ -1,0 +1,16 @@
+{
+  "description": "strings more_staged in the journal's import view.",
+  "context": "Journal window, import view. strings more_staged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6422a8e2d1a534cb2220274ecd27b177770a921c04b3eaf5cf1b4134cf83507",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

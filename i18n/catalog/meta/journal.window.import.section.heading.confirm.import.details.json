@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's import view.",
+  "context": "Journal window, import view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02e4c9f180a7a686f1f0837aaeeed3f4063280f90a0119e8e6f7e7c490266ceb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

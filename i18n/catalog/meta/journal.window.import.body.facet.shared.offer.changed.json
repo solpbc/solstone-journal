@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared offer changed in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared offer changed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "415ff2b34379bfaf5e8e90250d2d57bc64d58ec17a6855cfc0b5c0ae9b11eb51",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

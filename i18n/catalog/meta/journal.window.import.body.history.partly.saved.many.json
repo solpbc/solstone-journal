@@ -1,0 +1,33 @@
+{
+  "description": "Apple Health history partly saved many in the journal's import view.",
+  "context": "Journal window, import view. Apple Health history partly saved many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "acef629f411fa39bfa40bbd65072f98346f93c5577d61b0b1d8c872acd460e58",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

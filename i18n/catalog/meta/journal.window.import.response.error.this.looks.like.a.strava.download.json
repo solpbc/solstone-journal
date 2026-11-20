@@ -1,0 +1,28 @@
+{
+  "description": "Import response error in the journal's import view.",
+  "context": "Journal window, import view. Import response error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8299477dd3d7ceba4c5bb33461119dada673c855346e94a458ee60a5780a43bc",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Strava"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Strava"
+    }
+  ]
+}

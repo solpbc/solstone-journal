@@ -1,0 +1,16 @@
+{
+  "description": "Import response in the journal's import view.",
+  "context": "Journal window, import view. Import response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c0315652689bebb548a686adc833044763a538a759962467b36cc9d1714b8cb",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

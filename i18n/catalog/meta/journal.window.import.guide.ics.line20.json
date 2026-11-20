@@ -1,0 +1,28 @@
+{
+  "description": "ics guide line 20 in the journal's import view.",
+  "context": "Journal window, import view. ics guide line 20.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c011a1fc0e32c68fde763cfa5c92987de0d24ae85512b7031bcaf613f789c8e",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**Publish a calendar**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "**Can view all details**"
+    }
+  ]
+}

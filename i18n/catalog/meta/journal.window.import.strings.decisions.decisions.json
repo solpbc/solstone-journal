@@ -1,0 +1,16 @@
+{
+  "description": "strings decisions in the journal's import view.",
+  "context": "Journal window, import view. strings decisions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "561f82b4d6abd9f4fca62f00304695fe1efb0a75a68a310edf9fd6d74d3a9a99",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

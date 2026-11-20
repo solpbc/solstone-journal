@@ -1,0 +1,16 @@
+{
+  "description": "strings artifact_paths in the journal's import view.",
+  "context": "Journal window, import view. strings artifact_paths.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c2f5b30857d80b4894e7f152ebe860e645b05502878c85c24c532187353fc2a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

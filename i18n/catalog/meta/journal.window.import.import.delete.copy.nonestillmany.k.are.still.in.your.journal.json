@@ -1,0 +1,23 @@
+{
+  "description": "import delete copy noneStillMany in the journal's import view.",
+  "context": "Journal window, import view. import delete copy noneStillMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d5389536be73596af62cd6947d9fb28c4099b46fbdf4e811ef3c329168feb25",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "ics guide line 10 in the journal's import view.",
+  "context": "Journal window, import view. ics guide line 10.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef1fdda2af8b0084a844e71540429cde7549fc9fbd2a8d99086bc5506b553071",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

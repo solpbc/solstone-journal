@@ -1,0 +1,16 @@
+{
+  "description": "Import status or action in the journal's import view.",
+  "context": "Journal window, import view. Import status or action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "169837114c0384b74469a01cc8df6abcfdeb7d8571ee32423599a5f7bddff163",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

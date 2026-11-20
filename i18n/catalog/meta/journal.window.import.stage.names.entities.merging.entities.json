@@ -1,0 +1,16 @@
+{
+  "description": "stage names entities in the journal's import view.",
+  "context": "Journal window, import view. stage names entities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52b82d5da3a5653ee0a138703165385552022018235c6f5af4825614b876d997",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

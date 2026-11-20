@@ -1,0 +1,16 @@
+{
+  "description": "strings untimed_ask in the journal's import view.",
+  "context": "Journal window, import view. strings untimed_ask.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c712ff999b04652198a5412cc374922801af77d7d1e4e1603e90284ba4e00e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

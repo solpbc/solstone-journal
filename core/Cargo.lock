@@ -5459,6 +5459,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-system",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
  "zip",
 ]

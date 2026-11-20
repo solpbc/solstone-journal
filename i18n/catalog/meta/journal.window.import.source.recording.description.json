@@ -1,0 +1,16 @@
+{
+  "description": "Import source recording description in the journal's import view.",
+  "context": "Journal window, import view. Import source recording description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d950cda143d6a6808956e297b20e8200660bb5c6dbaa4fea0bbc6c3e2ef458c",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -11,7 +11,7 @@ use crate::{AppState, http::json as json_response};
 pub(crate) async fn read(State(state): State<AppState>) -> Response {
     match originals::preferences(&state.root) {
         Ok(preferences) => json_response(StatusCode::OK, json!({ "keep_originals": preferences })),
-        Err(error) => storage_error(&error, "couldn't load this choice."),
+        Err(error) => storage_error(&error, "journal.window.import.response.originals.read"),
     }
 }
 
@@ -23,9 +23,10 @@ pub(crate) struct Choice {
 
 pub(crate) async fn write(State(state): State<AppState>, Json(choice): Json<Choice>) -> Response {
     if !originals::SOURCES.contains(&choice.source.as_str()) {
-        return json_response(
+        return crate::http::refusal(
             StatusCode::BAD_REQUEST,
-            json!({ "error": "unknown import source" }),
+            json!({ "error": "" }),
+            "journal.window.import.response.originals.unknown.source",
         );
     }
     match tokio::task::spawn_blocking(move || {
@@ -34,15 +35,19 @@ pub(crate) async fn write(State(state): State<AppState>, Json(choice): Json<Choi
     .await
     {
         Ok(Ok(())) => json_response(StatusCode::OK, json!({ "keep": choice.keep })),
-        Ok(Err(error)) => storage_error(&error, "couldn't save this choice. try again."),
-        Err(error) => storage_error(&error.to_string(), "couldn't save this choice. try again."),
+        Ok(Err(error)) => storage_error(&error, "journal.window.import.response.originals.write"),
+        Err(error) => storage_error(
+            &error.to_string(),
+            "journal.window.import.response.originals.write",
+        ),
     }
 }
 
-fn storage_error(error: &str, message: &str) -> Response {
+fn storage_error(error: &str, message: &'static str) -> Response {
     log::warn!("import originals settings: {error}");
-    json_response(
+    crate::http::refusal(
         StatusCode::INTERNAL_SERVER_ERROR,
-        json!({ "error": message }),
+        json!({ "error": "" }),
+        message,
     )
 }

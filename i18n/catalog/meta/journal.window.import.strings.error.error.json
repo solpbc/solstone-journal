@@ -1,0 +1,16 @@
+{
+  "description": "strings error in the journal's import view.",
+  "context": "Journal window, import view. strings error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9fba56756fa4c02c10b841cdcf1a3ebca0de7af715652d5893663be88e98181e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

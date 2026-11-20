@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal reach in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal reach.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96b66705c9994c878cca0754eafa4e32bbdc6b35c26a0674980e7746f7735ac2",
+  "max_length": 80,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

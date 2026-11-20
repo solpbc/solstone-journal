@@ -1,0 +1,16 @@
+{
+  "description": "strings unconfirmed in the journal's import view.",
+  "context": "Journal window, import view. strings unconfirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5362a7a587618639003ad790479bcfd36ed8d16bc40fc0d22946d6a6e85c3ac9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

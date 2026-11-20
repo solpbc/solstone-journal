@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy hideDay in the journal's import view.",
+  "context": "Journal window, import view. import delete copy hideDay.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c95910d862d7bcd90e7f74eb41e46460275a66f57a9120cc63f802ebe15d9682",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

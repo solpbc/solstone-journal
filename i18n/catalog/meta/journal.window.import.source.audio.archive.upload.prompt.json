@@ -1,0 +1,16 @@
+{
+  "description": "Import source audio_archive upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source audio_archive upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70f7ec0f8896060a71c2ef56e3f21c5530915ed66b7ca247aa288466a5ba2cfd",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

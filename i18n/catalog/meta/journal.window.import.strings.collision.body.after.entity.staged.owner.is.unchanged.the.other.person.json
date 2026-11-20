@@ -1,0 +1,23 @@
+{
+  "description": "strings collision_body_after_entity_staged in the journal's import view.",
+  "context": "Journal window, import view. strings collision_body_after_entity_staged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfcaee5bcebca46c7ccc5441c22ecf00679930a721a7f1a8cfa199b8352233de",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

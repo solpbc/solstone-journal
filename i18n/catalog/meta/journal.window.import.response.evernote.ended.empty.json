@@ -1,0 +1,16 @@
+{
+  "description": "Import preview projection in the journal's import view.",
+  "context": "Journal window, import view. Import preview projection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e3f0881f02ca6c71a568cae9e4355b2bda7f3b9b1150cf8aaf2e16a7ded6d61",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

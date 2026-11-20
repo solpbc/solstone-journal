@@ -1,0 +1,16 @@
+{
+  "description": "strings preview_import in the journal's import view.",
+  "context": "Journal window, import view. strings preview_import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b20fed01ec2dd009e3a0f9d4736723fa5752104837fff6fa9d4db951353635b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

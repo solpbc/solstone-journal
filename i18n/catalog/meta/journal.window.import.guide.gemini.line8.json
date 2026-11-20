@@ -1,0 +1,28 @@
+{
+  "description": "gemini guide line 8 in the journal's import view.",
+  "context": "Journal window, import view. gemini guide line 8.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cf3be0e91023b25e101b307b82e6f160b68a8b179aefb18eb0105efe4f04139",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**Export once**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "**.zip**"
+    }
+  ]
+}

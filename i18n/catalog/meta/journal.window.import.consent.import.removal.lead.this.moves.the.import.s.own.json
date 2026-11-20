@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal lead in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "720912842160a04e41058adf8dc1d85ffd1c092f5dcbfd4f0b54bee3e7e3741d",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

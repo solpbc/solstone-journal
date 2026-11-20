@@ -1,0 +1,16 @@
+{
+  "description": "strings has_gaps in the journal's import view.",
+  "context": "Journal window, import view. strings has_gaps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34c0c0b91f528f859c2348a53c0ae998bdcf13abe29b3234d2b0257919502d4d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

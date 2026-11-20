@@ -1,0 +1,16 @@
+{
+  "description": "strings links_left_out in the journal's import view.",
+  "context": "Journal window, import view. strings links_left_out.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c453391c3e9eb317f46a0d4844c566dec6fe2cccdcdc1eef44783672b70d7aec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

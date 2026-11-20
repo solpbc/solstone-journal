@@ -1,0 +1,28 @@
+{
+  "description": "Apple Health import stop resume in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import stop resume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "18f02c5be1d768d0c4b8b4d335d0fefff8004364e571899a5df392715152a4a9",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

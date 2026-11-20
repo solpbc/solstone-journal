@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 module.exports = async function savedStartCases(crateDir) {
   let cases = 0;
@@ -21,7 +22,7 @@ module.exports = async function savedStartCases(crateDir) {
     const document = { activeElement: null, addEventListener() {} };
     const window = { createViewReady: () => () => {}, JournalFormat: { day: String }, Drawer: { render: () => '<div></div>' },
       apiJson: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return api(url, options); } };
-    const context = vm.createContext({ window, document });
+    const context = journalContext({ window, document });
     vm.runInContext(source, context);
     const root = { isConnected: true, slot: null,
       querySelector() { return this.slot; },

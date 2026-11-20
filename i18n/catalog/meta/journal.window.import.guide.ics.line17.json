@@ -1,0 +1,28 @@
+{
+  "description": "ics guide line 17 in the journal's import view.",
+  "context": "Journal window, import view. ics guide line 17.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23e36f2313797d08f97e7d420fd67f263884190350766a93a68a3dc898872f10",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Outlook"
+    },
+    {
+      "name": "slot2",
+      "kind": "url",
+      "value": "https://outlook.live.com/calendar"
+    }
+  ]
+}

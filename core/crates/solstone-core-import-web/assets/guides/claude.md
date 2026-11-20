@@ -1,10 +1,10 @@
-### export your Claude history
+### {{journal.window.import.guide.claude.line1}}
 
-1. open [Claude](https://claude.ai)
-2. click your profile icon in the bottom-left corner
-3. select **Settings**
-4. select **Privacy** in the sidebar, then scroll to the **Your data** section
-5. click **Export data**
-6. you'll receive an email with a download link
-7. download the .zip file from the email
-8. upload the .zip file here
+1. {{journal.window.import.guide.claude.line3}}
+2. {{journal.window.import.guide.claude.line4}}
+3. {{journal.window.import.guide.claude.line5}}
+4. {{journal.window.import.guide.claude.line6}}
+5. {{journal.window.import.guide.claude.line7}}
+6. {{journal.window.import.guide.claude.line8}}
+7. {{journal.window.import.guide.claude.line9}}
+8. {{journal.window.import.guide.claude.line10}}

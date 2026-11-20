@@ -1,0 +1,16 @@
+{
+  "description": "apple words reading in the journal's import view.",
+  "context": "Journal window, import view. apple words reading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "edc6394f4e00b5093c9c45e831f2612fb8d7b2ea791537767b99f0bd4e64b613",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

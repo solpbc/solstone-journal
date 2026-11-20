@@ -1,0 +1,28 @@
+{
+  "description": "Apple Health history carried running in the journal's import view.",
+  "context": "Journal window, import view. Apple Health history carried running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09f329d52d435927b6485210539fd89687fcba8eb5d53d6275f488d75ffc98f5",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

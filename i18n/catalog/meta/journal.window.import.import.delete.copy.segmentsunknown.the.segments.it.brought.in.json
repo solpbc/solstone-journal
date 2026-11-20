@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy segmentsUnknown in the journal's import view.",
+  "context": "Journal window, import view. import delete copy segmentsUnknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a01ee6b78998133697d3a98a78ecf9055c02a6f584d871f40ce841d0a4511ada",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

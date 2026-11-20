@@ -1,0 +1,23 @@
+{
+  "description": "Import source evernote upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source evernote upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "822d640b6705dbab2ee69dc3d2c56674d4ed58ee169d0cb0497f3f5af6fb394b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Evernote"
+    }
+  ]
+}

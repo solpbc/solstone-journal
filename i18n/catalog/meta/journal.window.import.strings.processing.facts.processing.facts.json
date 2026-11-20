@@ -1,0 +1,16 @@
+{
+  "description": "strings processing_facts in the journal's import view.",
+  "context": "Journal window, import view. strings processing_facts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e3c9ad46c4f3c6c79488604347bcceba9d7d09eb74bc084df9438f56c4d4dcf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Apple Health import reason busy in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b0cbb43b743f6f18b107c68e35f2283583845606a8c3f03ad6f995655bb28f1",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

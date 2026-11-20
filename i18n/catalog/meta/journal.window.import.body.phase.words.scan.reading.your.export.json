@@ -1,0 +1,16 @@
+{
+  "description": "body phase words scan in the journal's import view.",
+  "context": "Journal window, import view. body phase words scan.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7faf5be67c7592ea4138da01bd678d13c8de29f2d2796b09da1b55303f2a901f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

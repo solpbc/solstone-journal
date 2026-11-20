@@ -1,0 +1,16 @@
+{
+  "description": "strings created_files in the journal's import view.",
+  "context": "Journal window, import view. strings created_files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70274e4f70577598764c7c4e42e734c3a57ced79ef7a6ef6148cd3491e1ee9eb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

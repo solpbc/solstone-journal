@@ -1,0 +1,23 @@
+{
+  "description": "strava guide line 10 in the journal's import view.",
+  "context": "Journal window, import view. strava guide line 10.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eff0addaa2feb0d7ca2f59842ee19ecd43fb82029d563cca111b679712c7fca",
+  "max_length": 242,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "activities.csv"
+    }
+  ]
+}

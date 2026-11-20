@@ -1,0 +1,33 @@
+{
+  "description": "Import source strava upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source strava upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "53760ec3b31136dbaa9ef3e25dd50cb908bd86d7d615798bd3c63f403bf0c404",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Strava"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": ".zip"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "activities.csv"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Import source strava description in the journal's import view.",
+  "context": "Journal window, import view. Import source strava description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97debe8069ebcb34ff8cfe32419acdbfbd6b783e543929d1217ca760c46ac81d",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Strava"
+    }
+  ]
+}

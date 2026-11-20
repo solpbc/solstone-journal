@@ -1,0 +1,16 @@
+{
+  "description": "strings body_days_hidden_one in the journal's import view.",
+  "context": "Journal window, import view. strings body_days_hidden_one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60993c19671d04c78a36bf12ee7092610085ff6d4174fe6bce619e920d42e979",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

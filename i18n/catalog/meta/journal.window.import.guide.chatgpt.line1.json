@@ -1,0 +1,23 @@
+{
+  "description": "chatgpt guide line 1 in the journal's import view.",
+  "context": "Journal window, import view. chatgpt guide line 1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d86530d64039bc0ba408c472279cca41d0452e81a4bb9a75acbf25fa3b7e642",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "ChatGPT"
+    }
+  ]
+}

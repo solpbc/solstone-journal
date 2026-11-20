@@ -1,0 +1,16 @@
+{
+  "description": "strings date_source_photo in the journal's import view.",
+  "context": "Journal window, import view. strings date_source_photo.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9b61b16da18c53345cd2b5744e4fd2a2133546502d2389de3f8876a5557db66",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

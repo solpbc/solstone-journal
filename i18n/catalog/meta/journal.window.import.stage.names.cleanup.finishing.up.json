@@ -1,0 +1,16 @@
+{
+  "description": "stage names cleanup in the journal's import view.",
+  "context": "Journal window, import view. stage names cleanup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab228160038a0fb8d82f9f4867ebb5387cdaa94667fef0db9587dfb496897adb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

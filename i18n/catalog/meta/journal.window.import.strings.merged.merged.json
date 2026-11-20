@@ -1,0 +1,16 @@
+{
+  "description": "strings merged in the journal's import view.",
+  "context": "Journal window, import view. strings merged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2105b77858ccc18814654fb8d0b698d968f16e6f291e3d7a8fad2b7759c23a5f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

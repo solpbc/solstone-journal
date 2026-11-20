@@ -1,0 +1,28 @@
+{
+  "description": "import delete copy oura in the journal's import view.",
+  "context": "Journal window, import view. import delete copy oura.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "280b2442f443784646fa4464329f221b2bcbb68582dd5ef84cc49807df1dbfaf",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Oura"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{verb}"
+    }
+  ]
+}

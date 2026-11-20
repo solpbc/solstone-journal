@@ -1,0 +1,16 @@
+{
+  "description": "strings drawer_label in the journal's import view.",
+  "context": "Journal window, import view. strings drawer_label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af93706426322cd5753db0d6250f43c7a6633f82c68583a64f46e5c31587e260",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Apple Health import reason export unreadable in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason export unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5b6d69753b4b82883ca31a12e26f18d48faa3265a6054ffc058b5d3509f8752",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

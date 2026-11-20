@@ -1,0 +1,16 @@
+{
+  "description": "strings uploaded_at in the journal's import view.",
+  "context": "Journal window, import view. strings uploaded_at.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df1131c2c275497a64698967596617aa666c10f76c3311f9a5605a4d13379627",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

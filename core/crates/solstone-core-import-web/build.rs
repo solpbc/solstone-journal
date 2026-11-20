@@ -18,7 +18,7 @@ fn main() {
         let name = entry.expect("guide entry").file_name();
         let name = name.to_string_lossy();
         let stem = name.strip_suffix(".md").expect("a guide is markdown");
-        records.file(
+        records.template(
             &format!("/app/import/api/guide/{stem}"),
             &format!("assets/guides/{name}"),
         );

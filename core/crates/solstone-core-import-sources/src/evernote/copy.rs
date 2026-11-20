@@ -57,3 +57,70 @@ pub fn no_date(count: u64) -> String {
 pub fn ended_early(count: u64) -> String {
     format!("this export ended early. {count} notes came in.")
 }
+
+/// A refusal from the current or an older importer, identified by its own JSON copy.
+pub(crate) fn preview_refusal_id(line: &str) -> Option<&'static str> {
+    match line {
+        NOT_AN_EXPORT => Some("journal.window.import.response.evernote.type"),
+        EMPTY_EXPORT => Some("journal.window.import.response.evernote.empty"),
+        line if line == ended_early(0) => {
+            Some("journal.window.import.response.evernote.ended.empty")
+        }
+        _ => None,
+    }
+}
+
+/// Project known preview lines from the importer JSON. Counts round-trip through
+/// the source formatter, so an unknown line from an older importer stays intact.
+pub(crate) fn project_preview_line(locale: &str, line: &str) -> Option<String> {
+    use solstone_core_window_catalog::{strings, text};
+
+    if line == NOTEBOOK_HINT {
+        return Some(text(
+            locale,
+            "journal.window.import.response.evernote.notebook",
+        ));
+    }
+    let numeric: Vec<_> = line
+        .split_whitespace()
+        .map(|word| word.trim_end_matches('.'))
+        .filter(|word| word.parse::<i64>().is_ok())
+        .collect();
+    match numeric.as_slice() {
+        [notes, first, last, attachments]
+            if line
+                == preview_counts(
+                    notes.parse().ok()?,
+                    first.parse().ok()?,
+                    last.parse().ok()?,
+                    attachments.parse().ok()?,
+                ) =>
+        {
+            Some(strings(
+                locale,
+                "journal.window.import.response.evernote.counts.dated",
+                [
+                    ("notes", notes),
+                    ("first", first),
+                    ("last", last),
+                    ("attachments", attachments),
+                ],
+            ))
+        }
+        [notes, attachments]
+            if line == preview_counts_undated(notes.parse().ok()?, attachments.parse().ok()?) =>
+        {
+            Some(strings(
+                locale,
+                "journal.window.import.response.evernote.counts.undated",
+                [("notes", notes), ("attachments", attachments)],
+            ))
+        }
+        [count] if line == encrypted_count(count.parse().ok()?) => Some(strings(
+            locale,
+            "journal.window.import.response.evernote.counts.encrypted",
+            [("count", count)],
+        )),
+        _ => None,
+    }
+}

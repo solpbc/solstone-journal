@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's import view.",
+  "context": "Journal window, import view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "703bcd61bc4539318c56e43ed979a55d4448347d55d958b580432a85e2e0cfc7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "strings image_description_gap_detail in the journal's import view.",
+  "context": "Journal window, import view. strings image_description_gap_detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68a1c8dbca6f91727369d8c215d3fd43b6b76783db539f40c1c2a9cc70ca6fec",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

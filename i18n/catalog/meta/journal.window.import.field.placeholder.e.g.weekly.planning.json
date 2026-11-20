@@ -1,0 +1,16 @@
+{
+  "description": "Field placeholder in the journal's import view.",
+  "context": "Journal window, import view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b4ba47a2fe887d79a40971d4d8c9dd7fe0d77a8f3c66cf802a0a94c333c80b6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

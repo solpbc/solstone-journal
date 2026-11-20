@@ -1,0 +1,16 @@
+{
+  "description": "Owner title in the journal's import view.",
+  "context": "Journal window, import view. Owner title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6712cd0e51e88da18b3f631149dc56d244dde12c89688ca69572be636288f72d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

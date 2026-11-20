@@ -5782,8 +5782,8 @@ dependencies = [
  "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-time",
- "solstone-core-window-catalog",
  "solstone-core-trash",
+ "solstone-core-window-catalog",
  "unicode-normalization",
  "zip",
 ]
@@ -6115,6 +6115,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-system",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
  "zip",
 ]

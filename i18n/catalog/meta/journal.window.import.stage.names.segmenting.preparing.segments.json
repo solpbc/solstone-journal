@@ -1,0 +1,16 @@
+{
+  "description": "stage names segmenting in the journal's import view.",
+  "context": "Journal window, import view. stage names segmenting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e90bb0e6e43e1af536f135134b63083b33d1c9afb4038a0beae298b99e6d463",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

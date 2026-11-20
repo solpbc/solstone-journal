@@ -1,0 +1,16 @@
+{
+  "description": "strings body_failed in the journal's import view.",
+  "context": "Journal window, import view. strings body_failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8cfc13067bea2d7ebfa371e2218396d43f7b559557ed3717937718e1190667ac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

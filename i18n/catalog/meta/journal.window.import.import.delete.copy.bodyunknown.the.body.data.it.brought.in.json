@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy bodyUnknown in the journal's import view.",
+  "context": "Journal window, import view. import delete copy bodyUnknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f3a473727c02f4c634bd43317acb5dc9add4146a864cdc1bf9bb0c418dd93d6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

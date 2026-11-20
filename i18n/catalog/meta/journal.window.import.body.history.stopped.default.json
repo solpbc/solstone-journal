@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health history stopped default in the journal's import view.",
+  "context": "Journal window, import view. Apple Health history stopped default.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f854c29590117dc128d27c23f03e6271b613373001ca8fac049e91a74d28cc03",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

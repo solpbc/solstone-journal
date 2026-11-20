@@ -9,7 +9,9 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_import::{ImportMetadata, ProjectionStatus, read_import_metadata};
-use solstone_core_import_sources::body_space::{Space, apple_space, size_words, too_full_words};
+use solstone_core_import_sources::body_space::{
+    Space, apple_space, size_words, too_full_words_localized,
+};
 
 use crate::lifecycle::is_apple_card;
 
@@ -59,7 +61,7 @@ pub(crate) fn space(root: &Path, metadata: &ImportMetadata, size: &Value) -> Opt
 
 /// Add the space line to a card's preview response, beside its size: never
 /// inside it, because a start compares sizes and free space moves.
-pub(crate) fn add_space(root: &Path, import_id: &str, preview: &mut Value) {
+pub(crate) fn add_space(root: &Path, import_id: &str, preview: &mut Value, locale: &str) {
     let Ok(metadata) = read_import_metadata(root, import_id) else {
         return;
     };
@@ -75,16 +77,16 @@ pub(crate) fn add_space(root: &Path, import_id: &str, preview: &mut Value) {
         "fits": space.fits,
         "need_words": size_words(space.need),
         "free_words": size_words(space.free),
-        "words": (!space.fits).then(|| too_full_words(&space)),
+        "words": (!space.fits).then(|| too_full_words_localized(locale, &space)),
     });
 }
 
 /// The words a start is refused with when the import doesn't fit now.
-pub(crate) fn refuse_start_for_space(root: &Path, import_id: &str) -> Option<String> {
+pub(crate) fn refuse_start_for_space(root: &Path, import_id: &str, locale: &str) -> Option<String> {
     let metadata = read_import_metadata(root, import_id).ok()?;
     let size = metadata.get("preview")?.get("size")?.clone();
     let space = space(root, &metadata, &size)?;
-    (!space.fits).then(|| too_full_words(&space))
+    (!space.fits).then(|| too_full_words_localized(locale, &space))
 }
 
 #[cfg(test)]

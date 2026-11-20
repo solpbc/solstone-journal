@@ -1,0 +1,28 @@
+{
+  "description": "journal_archive guide line 4 in the journal's import view.",
+  "context": "Journal window, import view. journal_archive guide line 4.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de47bd3cc705eb68600911334d3525d3cb7ab77a5851b676ca26ceef683ec721",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**journal**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "**download this journal**"
+    }
+  ]
+}

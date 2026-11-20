@@ -1,0 +1,33 @@
+{
+  "description": "ics guide line 4 in the journal's import view.",
+  "context": "Journal window, import view. ics guide line 4.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ccfd94d146ebb48535b7f43f87de919c6720192213289e7fe4734d3d237c4679",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "**Export**"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": ".zip"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": ".ics"
+    }
+  ]
+}

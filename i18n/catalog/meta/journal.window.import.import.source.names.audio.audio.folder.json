@@ -1,0 +1,16 @@
+{
+  "description": "import source names audio in the journal's import view.",
+  "context": "Journal window, import view. import source names audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb5c193f1860b60a8ab66bcd15bc6f669a4eccb59b42ceccb5982b95770b2a5b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

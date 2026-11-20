@@ -9,6 +9,9 @@
 //! import reads as comes from its attempt, and a code from another generation is
 //! ignored.
 
+use solstone_core_window_catalog::{ENGLISH, strings, text};
+use std::{collections::HashMap, sync::OnceLock};
+
 use crate::apple_export::EXPORT_INCOMPLETE_TEXT;
 
 /// The file an Apple run leaves when it stops or is refused.
@@ -147,74 +150,138 @@ pub const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
     "from a terminal on the computer your journal runs on, run"
 };
 
-/// What the card says of an export too large for the page to upload.
+/// The go-ahead refusal and its literal terminal command are kept in English.
 #[must_use]
-pub fn too_big_to_upload_words() -> String {
-    format!(
-        "this export is larger than 4.3 GB, the most this page uploads. instead, {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save"
+pub fn apple_go_ahead_words() -> String {
+    strings(
+        ENGLISH,
+        "journal.window.import.response.preview.apple.go.ahead",
+        [("where", WHERE_TO_RUN)],
     )
 }
 
-/// The size bound in the units the card shows sizes in. `too_large_words` keeps
-/// it in step with the bound itself.
-const TOO_LARGE: &str = "this export unpacks to more than 68.7 GB, the most one import reads.";
+/// What the card says of an export too large for the page to upload.
+#[must_use]
+pub fn too_big_to_upload_words() -> String {
+    too_big_to_upload_words_localized(ENGLISH)
+}
+
+pub fn too_big_to_upload_words_localized(locale: &str) -> String {
+    let id = if cfg!(target_os = "macos") {
+        "journal.window.import.body.status.upload.limit.mac"
+    } else {
+        "journal.window.import.body.status.upload.limit.other"
+    };
+    text(locale, id)
+}
 
 /// What a too-large export is told, at the terminal as on the page.
 #[must_use]
 pub fn too_large_words() -> String {
-    TOO_LARGE.trim_end_matches('.').to_owned()
+    words("export_too_large").trim_end_matches('.').to_owned()
 }
-
-/// The incomplete-export words as a sentence beside the others.
-const EXPORT_INCOMPLETE_SENTENCE: &str = "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy.";
 
 /// What a stopped import's row says: what happened, then what to do. Importing
 /// again finishes most stops; a full disk needs room first, and a refused
 /// permission isn't fixed by importing again, so it says only what happened.
 #[must_use]
 pub fn stopped_words(code: &str) -> String {
+    stopped_words_localized(ENGLISH, code)
+}
+
+pub fn stopped_words_localized(locale: &str, code: &str) -> String {
+    let reason = words_localized(locale, code);
     match code {
-        "disk_full" => format!(
-            "{} free up space, then import the export again.",
-            words(code)
+        "disk_full" => strings(
+            locale,
+            "journal.window.import.body.status.stop.disk",
+            [("reason", &reason)],
         ),
-        "permission" => words(code).to_owned(),
-        _ => format!("{} import the export again to finish.", words(code)),
+        "permission" => reason,
+        _ => strings(
+            locale,
+            "journal.window.import.body.status.stop.resume",
+            [("reason", &reason)],
+        ),
     }
 }
 
-/// What the owner reads for a code: what happened, without the system's own words.
+const REASONS: &[(&str, &str)] = &[
+    (
+        "disk_full",
+        "journal.window.import.body.status.reason.disk.full",
+    ),
+    (
+        "permission",
+        "journal.window.import.body.status.reason.permission",
+    ),
+    (
+        "windows_not_saving",
+        "journal.window.import.body.status.reason.windows.not.saving",
+    ),
+    ("busy", "journal.window.import.body.status.reason.busy"),
+    (
+        "export_incomplete",
+        "journal.window.import.body.status.reason.export.incomplete",
+    ),
+    (
+        "export_too_large",
+        "journal.window.import.body.status.reason.export.too.large",
+    ),
+    (
+        "export_unreadable",
+        "journal.window.import.body.status.reason.export.unreadable",
+    ),
+    (
+        "not_this_import",
+        "journal.window.import.body.status.reason.not.this.import",
+    ),
+    ("facet", "journal.window.import.body.status.reason.facet"),
+    (
+        "go_ahead",
+        "journal.window.import.body.status.reason.go.ahead",
+    ),
+    (
+        "whole_export",
+        "journal.window.import.body.status.reason.whole.export",
+    ),
+    (
+        "preview_again",
+        "journal.window.import.body.status.reason.preview.again",
+    ),
+    (
+        "not_started",
+        "journal.window.import.body.status.reason.not.started",
+    ),
+    (
+        "no_room",
+        "journal.window.import.body.status.reason.no.room",
+    ),
+    ("other", "journal.window.import.body.status.reason.other"),
+];
+
+pub fn words_id(code: &str) -> &'static str {
+    REASONS
+        .iter()
+        .find_map(|(known, id)| (*known == code).then_some(*id))
+        .unwrap_or("journal.window.import.body.status.reason.other")
+}
+
+/// Source-English copy for command output.
 #[must_use]
 pub fn words(code: &str) -> &'static str {
-    match code {
-        "disk_full" => {
-            "the disk on the computer your journal runs on filled up before it finished."
-        }
-        "permission" => "the journal wasn't allowed to open the export.",
-        "windows_not_saving" => {
-            "too many parts of your journal in a row couldn't be saved, so it stopped."
-        }
-        "busy" => "another Apple Health import was running, so this one didn't start.",
-        "export_incomplete" => EXPORT_INCOMPLETE_SENTENCE,
-        "export_too_large" => TOO_LARGE,
-        "export_unreadable" => {
-            "this export couldn't be read. export it from Apple Health again and import the new copy."
-        }
-        "not_this_import" => "this import doesn't hold that export, so nothing was brought in.",
-        "facet" => "the facet chosen for it is muted or gone, so nothing was brought in.",
-        "go_ahead" => "it didn't have your go-ahead, so nothing was brought in.",
-        "whole_export" => {
-            "an Apple Health import always reads the whole export, so nothing was brought in."
-        }
-        "preview_again" => {
-            "the facet, the time zone or the export changed after its preview, so nothing was brought in. import the export again from the Apple Health card."
-        }
-        "not_started" => "it didn't start, so nothing was brought in.",
-        "no_room" => {
-            "there wasn't room on the computer your journal runs on to start it, so nothing was brought in. free up space, then import the export again."
-        }
-        _ => "it stopped before it finished.",
-    }
+    static ENGLISH_COPY: OnceLock<HashMap<&'static str, String>> = OnceLock::new();
+    &ENGLISH_COPY.get_or_init(|| {
+        REASONS
+            .iter()
+            .map(|(_, id)| (*id, text(ENGLISH, id)))
+            .collect()
+    })[words_id(code)]
+}
+
+/// Project the recorded reason in the language selected by the reader.
+pub fn words_localized(locale: &str, code: &str) -> String {
+    text(locale, words_id(code))
 }
 
 #[cfg(test)]
@@ -270,7 +337,8 @@ mod tests {
     #[test]
     fn the_too_large_words_name_the_bound_the_reader_uses() {
         let bound = crate::body_space::size_words(crate::apple_export::apple_scan_byte_bound());
-        assert!(TOO_LARGE.contains(&bound), "{TOO_LARGE} against {bound}");
+        let words = words("export_too_large");
+        assert!(words.contains(&bound), "{words} against {bound}");
         assert_eq!(code_for_error_text(&too_large_words()), "export_too_large");
     }
 

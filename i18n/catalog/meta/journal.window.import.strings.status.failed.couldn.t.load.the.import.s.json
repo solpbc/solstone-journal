@@ -1,0 +1,16 @@
+{
+  "description": "strings status_failed in the journal's import view.",
+  "context": "Journal window, import view. strings status_failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28d3d645afb4aa940ae43e64734354d3e84662badb5be91b45f4afb84a84f314",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

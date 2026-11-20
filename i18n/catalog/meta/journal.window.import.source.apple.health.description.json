@@ -1,0 +1,23 @@
+{
+  "description": "Import source apple_health description in the journal's import view.",
+  "context": "Journal window, import view. Import source apple_health description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33923a1d9909908f5121a1181f8d5b5d971f532ccc474e357ae591cc05cbb794",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Apple Health"
+    }
+  ]
+}

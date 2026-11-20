@@ -1,0 +1,23 @@
+{
+  "description": "import delete copy pickLabel in the journal's import view.",
+  "context": "Journal window, import view. import delete copy pickLabel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6878d748836df360197870a66dedd7224bb6a97cbf5e28e7c877cef28246ac4b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{name}"
+    }
+  ]
+}

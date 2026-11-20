@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy busy in the journal's import view.",
+  "context": "Journal window, import view. import delete copy busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c7065388741228157eafd47688929fb45423246549eb141abe226cd00874b35",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "import delete copy othersGoneOne in the journal's import view.",
+  "context": "Journal window, import view. import delete copy othersGoneOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee6020c61defde03d0b0dc7c8c97f7975616e86a45e78c831a23f564b31739ee",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

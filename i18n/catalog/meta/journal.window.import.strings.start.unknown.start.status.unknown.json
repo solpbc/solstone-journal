@@ -1,0 +1,16 @@
+{
+  "description": "strings start_unknown in the journal's import view.",
+  "context": "Journal window, import view. strings start_unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79f10a746ef2e71489925ad6fcfbff50151969b2534a21d6873ed3ad708f9c0e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "strings failed_line in the journal's import view.",
+  "context": "Journal window, import view. strings failed_line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9cf26cd6415a2cb58efc8cb264bb90baf585bab6682a32961f3ba12d2a0bbb16",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

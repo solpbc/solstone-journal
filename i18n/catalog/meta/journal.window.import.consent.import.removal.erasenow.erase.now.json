@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal eraseNow in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal eraseNow.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f0d94b126144e123f18dace87680cf5aefd21e62e8bae2dff9d39b1ffead87b",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

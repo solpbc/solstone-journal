@@ -1,0 +1,16 @@
+{
+  "description": "stage names writing in the journal's import view.",
+  "context": "Journal window, import view. stage names writing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf57fee838bcebfa3db42dafb500c30fe9d888002793e377b0f4ab271cf78a5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

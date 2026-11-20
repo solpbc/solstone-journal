@@ -1,0 +1,16 @@
+{
+  "description": "chatgpt guide line 8 in the journal's import view.",
+  "context": "Journal window, import view. chatgpt guide line 8.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f38627336eb35b6f062da368e6c6add2519b4902fe8d1c6b696fb9a7aacfc59",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

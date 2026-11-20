@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal title in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b260ad81afe6e292d3e8961d5edb0f5cb4e9a9805fb6dea69658a6fa05798aa2",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

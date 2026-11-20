@@ -1,0 +1,16 @@
+{
+  "description": "Owner message in the journal's import view.",
+  "context": "Journal window, import view. Owner message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7bedbb1da546f2376912e655db67b1edde27f5287dedd26435d16652a3b6bd67",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

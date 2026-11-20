@@ -1,0 +1,16 @@
+{
+  "description": "strings failed_stage in the journal's import view.",
+  "context": "Journal window, import view. strings failed_stage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01f45a03719f87bb057decd0cc03d0c9a8efde94d7536dfa61bc5fe24b06bf7f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -8,11 +8,13 @@ use std::{
 };
 
 use axum::{
+    Extension,
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
     response::Response,
 };
 use serde_json::{Value, json};
+use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::ENGLISH};
 
 use crate::{
     AppState,
@@ -218,7 +220,7 @@ fn json_from_file(root: &Path, path: &Path) -> Result<Option<Value>, std::io::Er
 fn metadata_read_error(detail: std::io::Error) -> Response {
     error(
         ImportReasonCode::ImportMetadataFailed.status(),
-        "that import metadata couldn't be read.",
+        "journal.window.import.response.error.that.import.metadata.couldn.t.be.variant2",
         ImportReasonCode::ImportMetadataFailed.as_wire(),
         detail.to_string(),
         None,
@@ -340,7 +342,7 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
             .map_err(|_| {
                 Box::new(error(
                     ImportReasonCode::ImportMetadataFailed.status(),
-                    "that import metadata couldn't be read.",
+                    "journal.window.import.response.error.that.import.metadata.couldn.t.be.variant2",
                     ImportReasonCode::ImportMetadataFailed.as_wire(),
                     "Failed to read manifest".to_owned(),
                     None,
@@ -391,14 +393,14 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
         // the import exists and is visible in the list, it just has nothing browsable.
         Ok(None) => Err(Box::new(error(
             StatusCode::NOT_FOUND,
-            "there's nothing to browse for this import.",
+            "journal.window.import.response.error.there.s.nothing.to.browse.for",
             "import_content_unavailable",
             "No content available".to_owned(),
             None,
         ))),
         Err(error_detail) => Err(Box::new(error(
             ImportReasonCode::ImportMetadataFailed.status(),
-            "that import metadata couldn't be read.",
+            "journal.window.import.response.error.that.import.metadata.couldn.t.be.variant2",
             ImportReasonCode::ImportMetadataFailed.as_wire(),
             error_detail.to_string(),
             None,
@@ -410,7 +412,9 @@ pub(crate) async fn list(
     State(state): State<AppState>,
     AxumPath(timestamp): AxumPath<String>,
     Query(query): Query<HashMap<String, String>>,
+    selected_locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = selected_locale.map_or(ENGLISH, |Extension(locale)| locale.0);
     let (directory, items) = match content_manifest(&state.root, &timestamp) {
         Ok(value) => value,
         Err(response) => return *response,
@@ -440,8 +444,8 @@ pub(crate) async fn list(
             }
         }
     }
-    let source_display =
-        crate::imports::source_display(&source_type).unwrap_or_else(|| source_type.clone());
+    let source_display = crate::imports::source_display_localized(locale, &source_type)
+        .unwrap_or_else(|| source_type.clone());
     let mut months = BTreeMap::<String, usize>::new();
     for item in &items {
         if let Some(date) = item
@@ -520,7 +524,7 @@ pub(crate) async fn detail(
         Err(detail) => {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "that imported content couldn't be read.",
+                "journal.window.import.response.error.that.imported.content.couldn.t.be",
                 "import_content_failed",
                 detail.to_string(),
                 None,
@@ -842,6 +846,7 @@ mod tests {
                 State(state.clone()),
                 AxumPath("20260101_120000".into()),
                 Query(HashMap::new()),
+                None,
             )
             .await,
         )
@@ -869,6 +874,7 @@ mod tests {
                     State(state.clone()),
                     AxumPath("20260101_120000".into()),
                     Query(HashMap::new()),
+                    None,
                 )
                 .await,
             )

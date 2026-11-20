@@ -1,0 +1,16 @@
+{
+  "description": "body phase words retry in the journal's import view.",
+  "context": "Journal window, import view. body phase words retry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b969fb3dccc2fecbdcdc90f7dcd0f57adabcb0797f4fec963d345bf40247cf12",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

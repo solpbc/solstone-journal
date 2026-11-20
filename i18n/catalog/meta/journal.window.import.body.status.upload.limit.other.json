@@ -1,0 +1,28 @@
+{
+  "description": "Apple Health import upload limit other in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import upload limit other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9912c35f65c7224505b21dca7dbfa113d7b4d52dc1e8195b6ada5b26c8de8a0",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "GB"
+    },
+    {
+      "name": "slot2",
+      "kind": "command",
+      "value": "solstone journal importer <your export> --confirm-body-save"
+    }
+  ]
+}

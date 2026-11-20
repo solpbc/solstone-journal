@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's import view.",
+  "context": "Journal window, import view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "015d3dc6f36ab6c9ac70e14aeae54baf3c53c8887f47631fb02465a355823481",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

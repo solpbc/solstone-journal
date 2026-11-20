@@ -1,0 +1,16 @@
+{
+  "description": "Consent import removal sharedUnknown in the journal's import view.",
+  "context": "Journal window, import view. Consent import removal sharedUnknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bbf36cf256b184c7bff8e7d1274b4de07fd80483512e5bc9dcd9a86237cbc92",
+  "max_length": 173,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "strings unavailable_pages in the journal's import view.",
+  "context": "Journal window, import view. strings unavailable_pages.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "597e491523e157905d5320a6f4fa19d743f8969d4db22466b6e0e79d74fde70b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

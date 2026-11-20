@@ -1,0 +1,16 @@
+{
+  "description": "strings under_a_minute in the journal's import view.",
+  "context": "Journal window, import view. strings under_a_minute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9c874f6e3954ab816ce953603fe464453434b037906e91d20db3961edd376a9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

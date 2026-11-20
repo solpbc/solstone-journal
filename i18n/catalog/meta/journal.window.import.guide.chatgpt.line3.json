@@ -1,0 +1,28 @@
+{
+  "description": "chatgpt guide line 3 in the journal's import view.",
+  "context": "Journal window, import view. chatgpt guide line 3.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62c72a95f71440e393bba735fbd72563ef999074970fc4f159d879d851654744",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "ChatGPT"
+    },
+    {
+      "name": "slot2",
+      "kind": "url",
+      "value": "https://chat.openai.com"
+    }
+  ]
+}

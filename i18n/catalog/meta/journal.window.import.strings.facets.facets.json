@@ -1,0 +1,16 @@
+{
+  "description": "strings facets in the journal's import view.",
+  "context": "Journal window, import view. strings facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90583cf49330877621f65432fc1a99740af3ed5d6cd18a336657e9db7fe541f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

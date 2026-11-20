@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health import reason facet in the journal's import view.",
+  "context": "Journal window, import view. Apple Health import reason facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55f2f3eb29f62ee1733f0b394c0a8314d53e127d7e64437682ac5aa7e35135e2",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

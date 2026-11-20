@@ -1,0 +1,16 @@
+{
+  "description": "body phase words place in the journal's import view.",
+  "context": "Journal window, import view. body phase words place.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f757436365cf8cc5517d99caa7eea2c03a08c02f7ac6d47b140d72e58b242e7a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

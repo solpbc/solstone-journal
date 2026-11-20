@@ -1,0 +1,23 @@
+{
+  "description": "Import body facet apple files earlier in the journal's import view.",
+  "context": "Journal window, import view. Import body facet apple files earlier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "247c9f1bf1d42e1775c3fefc00e5d079956b2006da0d93b7d75bb4bbe73ed8bc",
+  "max_length": 193,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{facet}"
+    }
+  ]
+}

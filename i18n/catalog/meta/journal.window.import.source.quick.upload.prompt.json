@@ -1,0 +1,16 @@
+{
+  "description": "Import source quick upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source quick upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f284992c5870bcf3e626adda479bfef58247788404cd7638e84e6feab2f797d0",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "description": "Import response in the journal's import view.",
+  "context": "Journal window, import view. Import response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "need",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "difference",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "299d5a7f031bd6446c2ebfcddce11a16ca3c58323cb9e2ac2dac178104a4aaac",
+  "max_length": 175,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot4",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot5",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

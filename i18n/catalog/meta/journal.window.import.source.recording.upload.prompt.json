@@ -1,0 +1,16 @@
+{
+  "description": "Import source recording upload.prompt in the journal's import view.",
+  "context": "Journal window, import view. Import source recording upload.prompt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b87d67416fd9c2d03ac17a8537149eb2a86af787de2494b2cc3af85df6c67d31",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

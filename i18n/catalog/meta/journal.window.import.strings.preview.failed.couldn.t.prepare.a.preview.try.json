@@ -1,0 +1,16 @@
+{
+  "description": "strings preview_failed in the journal's import view.",
+  "context": "Journal window, import view. strings preview_failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5571650d98dd4026527ceee470e0250f15f564f7695aaf7d9cdc8cadd3cc15f2",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

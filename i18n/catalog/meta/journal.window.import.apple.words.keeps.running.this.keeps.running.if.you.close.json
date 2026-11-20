@@ -1,0 +1,16 @@
+{
+  "description": "apple words keeps_running in the journal's import view.",
+  "context": "Journal window, import view. apple words keeps_running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44a294db64d5c7f9e343e49131843929a611b6cd25e136a0c23141d476318f40",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

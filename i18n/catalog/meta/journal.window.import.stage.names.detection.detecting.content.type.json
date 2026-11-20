@@ -1,0 +1,16 @@
+{
+  "description": "stage names detection in the journal's import view.",
+  "context": "Journal window, import view. stage names detection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ef8d971932b624476d2ee5bbaffa0c0b0024a6053a243063b4d0360ddd95d3c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

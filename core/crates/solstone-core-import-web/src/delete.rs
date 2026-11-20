@@ -7,12 +7,16 @@
 
 use std::path::Path;
 
-use axum::body::Bytes;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
+use axum::{Extension, body::Bytes};
 use serde_json::{Value, json};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{ENGLISH, strings, text},
+};
 use solstone_core_import::import_trash::{
     ImportThings, Imports, deletes_here, failure_key, import_label, import_things, is_import_id,
     kept_originals,
@@ -49,7 +53,7 @@ struct SetBody {
 fn bad_body() -> Response {
     error(
         StatusCode::BAD_REQUEST,
-        "that delete couldn't be read, so nothing was deleted.",
+        "journal.window.import.response.error.that.delete.couldn.t.be.read",
         "invalid_request",
         "Invalid delete body".to_owned(),
         None,
@@ -152,7 +156,7 @@ pub(crate) async fn preview(
 fn failed(detail: &str) -> Response {
     error(
         StatusCode::INTERNAL_SERVER_ERROR,
-        "your journal couldn't finish that delete. reload to check.",
+        "journal.window.import.response.error.your.journal.couldn.t.finish.that",
         "import_delete_failed",
         detail.to_owned(),
         None,
@@ -163,18 +167,18 @@ fn trash_error(error_value: &TrashError) -> Response {
     match error_value {
         TrashError::Missing(_) | TrashError::NotInTrash => import_not_found("Import not found"),
         TrashError::Held(_) | TrashError::InFlight => {
-            let mut body = crate::http::error_body(
-                "that import couldn't be moved, so nothing was deleted.",
-                "import_delete_held",
-                error_value.to_string(),
-                None,
-            );
+            let mut body =
+                crate::http::error_body("", "import_delete_held", error_value.to_string(), None);
             body["key"] = json!(failure_key(error_value));
-            json_response(StatusCode::CONFLICT, body)
+            crate::http::refusal(
+                StatusCode::CONFLICT,
+                body,
+                "journal.window.import.response.error.that.import.couldn.t.be.moved",
+            )
         }
         other => error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "your journal couldn't move that to the trash, so nothing was deleted.",
+            "journal.window.import.response.error.your.journal.couldn.t.move.that",
             "import_delete_failed",
             other.to_string(),
             None,
@@ -185,7 +189,7 @@ fn trash_error(error_value: &TrashError) -> Response {
 fn elsewhere() -> Response {
     error(
         StatusCode::CONFLICT,
-        "this import can't be deleted here.",
+        "journal.window.import.response.error.this.import.can.t.be.deleted",
         "import_delete_elsewhere",
         "not deleted as a whole here".to_owned(),
         None,
@@ -282,9 +286,11 @@ fn moved(id: &str, erase_at: &str, asked: bool, erased: bool) -> Value {
 /// when the journal starts again.
 pub(crate) async fn delete_set(
     State(state): State<AppState>,
+    selected_locale: Option<Extension<ResponseLocale>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let locale = selected_locale.map_or(ENGLISH, |Extension(locale)| locale.0);
     let Ok(request) = serde_json::from_slice::<SetBody>(&body) else {
         return bad_body();
     };
@@ -317,14 +323,14 @@ pub(crate) async fn delete_set(
                 .then(|| import_things(&root, &id))
                 .flatten();
             match things {
-                None => failed.push(json!({"id": id, "key": "other", "reason": "that import isn't in your journal."})),
+                None => failed.push(json!({"id": id, "key": "other", "reason": text(locale, "journal.window.import.response.error.that.import.isn.t.in.your")})),
                 Some(things) if !deletes_here(&things.source) => failed.push(
-                    json!({"id": id, "key": "other", "reason": "this import can't be deleted here."}),
+                    json!({"id": id, "key": "other", "reason": text(locale, "journal.window.import.response.removal.set.not.allowed")}),
                 ),
                 Some(things) if things.unreadable > 0 => failed.push(json!({
                     "id": id,
                     "key": "other",
-                    "reason": solstone_core_import::import_trash::PART_UNREADABLE,
+                    "reason": text(locale, "journal.window.import.response.removal.set.unreadable"),
                 })),
                 Some(things) => {
                     chosen.push(Chosen {
@@ -366,7 +372,7 @@ pub(crate) async fn delete_set(
                         failed.push(json!({
                             "id": id,
                             "key": failure_key(&error),
-                            "reason": crate_reason(&error),
+                            "reason": crate_reason(locale, &error),
                         }));
                     }
                 }
@@ -383,13 +389,18 @@ pub(crate) async fn delete_set(
 }
 
 /// Why one thing of a set didn't move, in words the owner can read.
-fn crate_reason(error: &TrashError) -> String {
+fn crate_reason(locale: &str, error: &TrashError) -> String {
     match error {
-        TrashError::Missing(_) | TrashError::NotInTrash => {
-            "that import isn't in your journal.".to_owned()
-        }
-        TrashError::Held(reason) => format!("{reason}."),
-        _ => "your journal couldn't move it to the trash.".to_owned(),
+        TrashError::Missing(_) | TrashError::NotInTrash => text(
+            locale,
+            "journal.window.import.response.error.that.import.isn.t.in.your",
+        ),
+        TrashError::Held(reason) => strings(
+            locale,
+            "journal.window.import.response.removal.set.held",
+            [("reason", reason)],
+        ),
+        _ => text(locale, "journal.window.import.response.removal.set.failed"),
     }
 }
 

@@ -1,0 +1,16 @@
+{
+  "description": "strings preparing_preview in the journal's import view.",
+  "context": "Journal window, import view. strings preparing_preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8d4a2f421879ad59353e27e74e7db19019a1779358a557548ca7e9a4b7afdae0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

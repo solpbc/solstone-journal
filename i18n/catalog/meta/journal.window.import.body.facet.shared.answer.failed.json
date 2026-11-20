@@ -1,0 +1,16 @@
+{
+  "description": "Import body facet shared answer failed in the journal's import view.",
+  "context": "Journal window, import view. Import body facet shared answer failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfb4e16599c9c4ca93b16b90cf9eacd9f88e55c31bbb42b85aac17308e603029",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
