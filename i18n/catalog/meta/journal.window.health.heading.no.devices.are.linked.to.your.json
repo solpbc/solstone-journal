@@ -1,0 +1,16 @@
+{
+  "description": "Heading in the journal's health view.",
+  "context": "Journal window, health view. Heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "566b64fc5c71aa1c005f662104d1a9dd8bf48c185749115fae521e012a1a1ae3",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

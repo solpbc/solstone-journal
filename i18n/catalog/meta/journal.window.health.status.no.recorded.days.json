@@ -1,0 +1,16 @@
+{
+  "description": "Health status text in the journal's health view.",
+  "context": "Journal window, health view. Health status text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74fc6a515a3cbe43295e9f2a7baa135a8afd7c53e5d9feb7703d2614c22947d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

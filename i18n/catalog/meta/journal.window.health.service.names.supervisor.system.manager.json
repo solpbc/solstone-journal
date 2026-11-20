@@ -1,0 +1,16 @@
+{
+  "description": "Service names supervisor in the journal's health view.",
+  "context": "Journal window, health view. Service names supervisor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a4ef630be21a10cf81b0f94a4295b506b9beffcfda2936d7abfecaefaf4396d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

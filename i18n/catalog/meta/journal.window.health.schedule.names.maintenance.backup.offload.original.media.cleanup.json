@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:backup:offload' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:backup:offload'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57fb58b3cf6f3daf9fc77dd2db8fdc9f55ce75c0f45406d38f972e86b7521f1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

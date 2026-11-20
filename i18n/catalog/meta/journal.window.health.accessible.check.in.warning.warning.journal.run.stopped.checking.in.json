@@ -1,0 +1,16 @@
+{
+  "description": "Accessible check-in warning in the journal's health view.",
+  "context": "Journal window, health view. Accessible check-in warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5057c6f12fbb35fc19560c0bdb6efcf1a165a7ff2588b90065d80f00d8972e5d",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

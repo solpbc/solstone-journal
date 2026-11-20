@@ -1,0 +1,23 @@
+{
+  "description": "Health glance copy \"health_observe_unknown_reporting\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_observe_unknown_reporting\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1cefcc7cc4e6971333be6fb9f85ee7185e3a68736e67759ccf33f5fbfabd416c",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{label}"
+    }
+  ]
+}

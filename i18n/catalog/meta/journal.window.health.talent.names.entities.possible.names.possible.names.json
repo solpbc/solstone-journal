@@ -1,0 +1,16 @@
+{
+  "description": "Talent names 'entities:possible_names' in the journal's health view.",
+  "context": "Journal window, health view. Talent names 'entities:possible_names'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17fe0ace52c9e0fc4ef5faeaaf7ac2e180ae4ab57401bb8a23c8e6f0c0c346e6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

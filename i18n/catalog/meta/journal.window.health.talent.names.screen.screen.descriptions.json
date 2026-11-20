@@ -1,0 +1,16 @@
+{
+  "description": "Talent names screen in the journal's health view.",
+  "context": "Journal window, health view. Talent names screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99fa6482c6fc467b4a80b5f4987a6c6c97c188078153c0f815dbec8ca134537d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

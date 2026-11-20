@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's health view.",
+  "context": "Journal window, health view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "211b06a4e014723a6b37fd25da523b5f3a2ab078bdf404d36baa03046e5cde7f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

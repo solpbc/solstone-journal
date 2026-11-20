@@ -1,0 +1,16 @@
+{
+  "description": "Service names cortex in the journal's health view.",
+  "context": "Journal window, health view. Service names cortex.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e36c4a5b6559ff11494e12cb947a5ceb769fbdda15e7e4867c52ac4a96ac1f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

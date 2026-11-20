@@ -1,0 +1,32 @@
+{
+  "description": "Visible text in the journal's health view.",
+  "context": "Journal window, health view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    },
+    {
+      "name": "value2",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a68de083040016ad765edcfb4f894a130885774b050c4f10c94fc706ed9ec55",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Service names sense in the journal's health view.",
+  "context": "Journal window, health view. Service names sense.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "020cd738b0a7dcf15cf210d791051dbd52614e920a8006fddc8fb2de06186b3d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

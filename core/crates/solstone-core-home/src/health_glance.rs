@@ -330,7 +330,7 @@ fn backlog_issues(source: &BacklogSource, now: Timestamp) -> Vec<Value> {
     issues
 }
 fn unknown_backlog() -> Value {
-    json!({"text":solstone_core_system_health::VERDICT_UNCLEAR_NOW,"severity":"amber","href":"/app/health"})
+    json!({"text":solstone_core_system_health::backlog_unavailable(),"severity":"amber","href":"/app/health"})
 }
 fn rejected_sources(client: &Value) -> Vec<&str> {
     client
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn first_night_is_a_calm_note_never_a_count_and_never_green() {
         use solstone_core_journal_config::SavedLane;
-        use solstone_core_system_health::{NOT_YET_ENGINE, NOT_YET_FIRST_NIGHT, NotYet};
+        use solstone_core_system_health::NotYet;
         let note = |glance: &Value| glance["note"]["text"].as_str().map(str::to_owned);
 
         // A device already delivering on day 0: calm, not ok.
@@ -1209,7 +1209,10 @@ mod tests {
         assert_eq!(delivering["headline"], NOT_YET_ACTIVE_HEADLINE);
         assert_eq!(delivering["last_observation"], "2 minutes ago");
         assert!(delivering["issues"].as_array().unwrap().is_empty());
-        assert_eq!(note(&delivering).as_deref(), Some(NOT_YET_FIRST_NIGHT));
+        assert_eq!(
+            note(&delivering).as_deref(),
+            Some("you'll see whether your journal is caught up after its first night.")
+        );
         assert_eq!(delivering["note"]["href"], "/app/health/#backlogVerdict");
 
         // No way to think yet is a choice still ahead, not a fault: the note
@@ -1221,7 +1224,10 @@ mod tests {
         assert_eq!(no_engine["verdict"], "calm");
         assert!(no_engine["issues"].as_array().unwrap().is_empty());
         assert_eq!(no_engine["cta"]["href"], "/app/network/#devices");
-        assert_eq!(note(&no_engine).as_deref(), Some(NOT_YET_ENGINE));
+        assert_eq!(
+            note(&no_engine).as_deref(),
+            Some("your journal starts catching up once you choose where the thinking happens.")
+        );
         assert_eq!(no_engine["note"]["href"], "/app/thinking/");
 
         for (lane, expected_href) in [
@@ -1234,7 +1240,7 @@ mod tests {
             let glance = not_yet_glance(&empty, &blocked, &backlog_with_not_yet);
             assert_eq!(
                 note(&glance).as_deref(),
-                Some(NotYet::AwaitingEngine(Some(lane)).text())
+                Some(NotYet::AwaitingEngine(Some(lane)).text().as_str())
             );
             assert_eq!(glance["note"]["href"], expected_href);
         }
@@ -1243,7 +1249,10 @@ mod tests {
         // the same note, never an issue.
         let unchosen_later = not_yet_glance(&active, &blocked, &fresh_backlog());
         assert!(unchosen_later["issues"].as_array().unwrap().is_empty());
-        assert_eq!(note(&unchosen_later).as_deref(), Some(NOT_YET_ENGINE));
+        assert_eq!(
+            note(&unchosen_later).as_deref(),
+            Some("your journal starts catching up once you choose where the thinking happens.")
+        );
         assert_eq!(unchosen_later["verdict"], "calm");
 
         // Summary exists (Valid backlog) and brain reason_code == "thinking_engine_not_chosen":
@@ -1253,7 +1262,7 @@ mod tests {
         let byo_glance = not_yet_glance(&active, &blocked, &byo_backlog);
         assert_eq!(
             note(&byo_glance).as_deref(),
-            Some(NotYet::AwaitingEngine(Some(SavedLane::Byo)).text())
+            Some(NotYet::AwaitingEngine(Some(SavedLane::Byo)).text().as_str())
         );
         assert_eq!(byo_glance["note"]["href"], "/app/thinking/#byo-setup");
 
@@ -1278,7 +1287,10 @@ mod tests {
         assert_eq!(first_run["verdict"], "calm");
         assert_eq!(first_run["headline"], EMPTY_REGISTRY_HEADLINE);
         assert_eq!(first_run["cta"]["text"], "set one up →");
-        assert_eq!(note(&first_run).as_deref(), Some(NOT_YET_FIRST_NIGHT));
+        assert_eq!(
+            note(&first_run).as_deref(),
+            Some("you'll see whether your journal is caught up after its first night.")
+        );
 
         // A summary that is missing for any other reason keeps today's amber.
         let missing = BacklogSource {
@@ -1291,7 +1303,7 @@ mod tests {
         assert_eq!(amber["verdict"], "attention");
         assert_eq!(
             amber["issues"][0]["text"],
-            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+            "it's unclear whether your journal is caught up right now."
         );
         assert!(amber.get("note").is_none());
 

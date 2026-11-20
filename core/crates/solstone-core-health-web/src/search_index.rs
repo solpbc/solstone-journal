@@ -14,7 +14,7 @@ use solstone_core_indexer_store::db::{
 };
 use solstone_core_system_health::{
     IndexHealth, IndexHealthState, IndexingAttemptObservation, IndexingDiagnostics,
-    evaluate_index_health_recent, read_indexing_observations,
+    evaluate_index_health_recent_in, read_indexing_observations,
 };
 
 pub trait IndexMetadata: Send + Sync {
@@ -59,6 +59,20 @@ pub fn evaluate_search_index(
     metadata_source: &dyn IndexMetadata,
     now: Timestamp,
 ) -> SearchIndexHealth {
+    evaluate_search_index_in(
+        journal_root,
+        metadata_source,
+        now,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    )
+}
+
+pub(crate) fn evaluate_search_index_in(
+    journal_root: &Path,
+    metadata_source: &dyn IndexMetadata,
+    now: Timestamp,
+    locale: &str,
+) -> SearchIndexHealth {
     let observations = read_indexing_observations(journal_root, now);
     let observed_failure = observations
         .outcomes
@@ -99,7 +113,7 @@ pub fn evaluate_search_index(
 
     // Measured after the activity time is read: opening the index, even
     // read-only, can create an empty write-ahead file beside it.
-    let index = evaluate_index_health_recent(journal_root, &observations);
+    let index = evaluate_index_health_recent_in(journal_root, &observations, locale);
 
     let mut backfill = "unknown".to_owned();
     let mut stalled_path = None;

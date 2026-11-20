@@ -1,0 +1,16 @@
+{
+  "description": "Window explanation in the journal's health view.",
+  "context": "Journal window, health view. Window explanation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ebdbebc0e7d1a20a1c07663051f2566967bf8fe3b078b0d97f56d68d295e6c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

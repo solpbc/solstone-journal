@@ -1,0 +1,16 @@
+{
+  "description": "First run or setup status in the journal's system.health view.",
+  "context": "Journal window, system.health view. First run or setup status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b2dd5db66531e180988a5fd5403b6a5c71a337d338c8b00cb4d9edc7df10879",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

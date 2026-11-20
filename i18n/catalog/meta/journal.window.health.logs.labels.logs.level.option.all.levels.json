@@ -1,0 +1,16 @@
+{
+  "description": "Health logs copy \"logs_level_option_all\" in the journal's health view.",
+  "context": "Journal window, health view. Health logs copy \"logs_level_option_all\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96385bdec3dace5f8701314e9dd886c1dea3ada57112eea892276b29678e2cc7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Backlog day recovery in the journal's system.health view.",
+  "context": "Journal window, system.health view. Backlog day recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ade1476dcd0018bce150162d9193e993716ee9064f1f730e08f6bffadf5bc382",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

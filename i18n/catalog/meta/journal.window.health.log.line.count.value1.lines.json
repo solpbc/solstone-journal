@@ -1,0 +1,28 @@
+{
+  "description": "Log line count in the journal's health view.",
+  "context": "Journal window, health view. Log line count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "188a4b3769c4dd74aac3a16bb11a2a39f7aef70701bea68dd81bb4c4ec53f9d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

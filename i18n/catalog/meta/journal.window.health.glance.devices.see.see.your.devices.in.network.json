@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_devices_see_link\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_devices_see_link\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3b8bae0e46736aa7a0963efa0a6574dddc7f94169b7d734deb9a5f8494bca09",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_observe_unknown_silent\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_observe_unknown_silent\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b84c7ad50d41b7197bed4e9d9e0464dad8455e96cab8c06ad94d0be306b258bd",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

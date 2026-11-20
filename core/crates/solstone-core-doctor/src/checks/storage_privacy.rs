@@ -6,7 +6,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 use solstone_core_system::storage_privacy::{
-    DRIVE_CANNOT_RUN, UNAVAILABLE, drive_cannot_run_journal, inspect,
+    DRIVE_CANNOT_RUN, drive_cannot_run_journal, inspect, unavailable_message,
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if drive_cannot_run_journal(&context.journal_path) {
@@ -30,12 +30,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     privacy.message
                 )
             } else {
-                privacy.message.to_owned()
+                privacy.message
             },
         ),
         Err(error) => {
             log::warn!("storage privacy: {error}");
-            (Status::Warn, UNAVAILABLE.to_owned())
+            (Status::Warn, unavailable_message("en-US"))
         }
     };
     Ok(make_result(check, status, message, None::<String>))

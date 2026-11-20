@@ -1,0 +1,16 @@
+{
+  "description": "Search health outcome in the journal's system.health view.",
+  "context": "Journal window, system.health view. Search health outcome.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28466a45146f40ea6ec869b5f4220857c2f85e1c10fba6da6875eea703b33366",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

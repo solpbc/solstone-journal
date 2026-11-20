@@ -593,7 +593,8 @@ mod tests {
                 "schema":"solstone.processing.v1","handler":"transcribe","state":"analyzed","retry_attempt":context.attempt
             }});
             std::fs::write(&output, format!("{receipt}\n")).unwrap();
-            let path = super::super::path(root.path(), &context.unit_id).unwrap();
+            let path =
+                super::super::path(root.path(), &context.unit_id, super::super::ENGLISH).unwrap();
             let before = std::fs::read(&path).unwrap();
             let held = hold_lock(&path, LockOptions::default()).unwrap();
             let cancelled = Arc::new(AtomicBool::new(false));

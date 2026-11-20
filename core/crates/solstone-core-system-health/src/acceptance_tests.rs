@@ -12,10 +12,8 @@ mod tests {
 
     use crate::{
         BACKLOG_STATE_COMPLETE, FilesystemHealthLogSource, FilesystemSegmentSource, HealthError,
-        HealthLogSource, SummaryFreshness, UNFINISHED_TEMPLATE_MANY_DAYS,
-        UNFINISHED_TEMPLATE_MANY_ONE_DAY, UNFINISHED_TEMPLATE_ONE, aggregate_unfinished_activities,
-        format_summary_age, parse_summary_time, read_backlog_view, select_unfinished_template,
-        summary_freshness,
+        HealthLogSource, SummaryFreshness, aggregate_unfinished_activities, format_summary_age,
+        parse_summary_time, read_backlog_view, select_unfinished_template, summary_freshness,
     };
 
     fn configure_daily_work(journal: &Path, enabled: Option<&str>) {
@@ -520,24 +518,24 @@ mod tests {
     fn acceptance_4_unfinished_template_selection() {
         // Template 1: single activity
         assert_eq!(
-            select_unfinished_template(1, 1),
-            Some(UNFINISHED_TEMPLATE_ONE)
+            select_unfinished_template(1, 1).as_deref(),
+            Some("an activity from {day} couldn't finish processing")
         );
 
         // Template 2: multiple activities on 1 day
         assert_eq!(
-            select_unfinished_template(2, 1),
-            Some(UNFINISHED_TEMPLATE_MANY_ONE_DAY)
+            select_unfinished_template(2, 1).as_deref(),
+            Some("{n} activities from {day} couldn't finish processing")
         );
 
         // Template 3: multiple activities across multiple days
         assert_eq!(
-            select_unfinished_template(3, 2),
-            Some(UNFINISHED_TEMPLATE_MANY_DAYS)
+            select_unfinished_template(3, 2).as_deref(),
+            Some("{n} activities couldn't finish processing. oldest: {day}")
         );
 
         // 0 activities -> None
-        assert_eq!(select_unfinished_template(0, 0), None);
+        assert_eq!(select_unfinished_template(0, 0).as_deref(), None);
 
         // Test aggregate_unfinished_activities over backlog json
         let mut backlog_map = Map::new();

@@ -7,6 +7,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::{Value, json};
+use solstone_core_convey_http::window_catalog::ENGLISH;
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogFormat, create_oplog_at},
@@ -224,7 +225,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             backlog.insert("not_yet".into(), json!("awaiting_engine"));
                             backlog.insert(
                                 "verdict".into(),
-                                json!(solstone_core_system_health::NOT_YET_ENGINE),
+                                json!("your journal starts catching up once you choose where the thinking happens."),
                             );
                         }
                         // The corpus predates the measured index health value: its
@@ -433,7 +434,7 @@ async fn reprocess_holds_back_the_journals_today_not_this_computers() {
         let root = root.path().to_owned();
         async move {
             let body = json!({"day": solstone_core_time::day_key(day), "flavor": "from-scratch"});
-            let response = crate::actions::reprocess(root, Some(axum::Json(body))).await;
+            let response = crate::actions::reprocess(root, Some(axum::Json(body)), ENGLISH).await;
             let body: Value =
                 serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                     .unwrap();
@@ -460,6 +461,7 @@ async fn ac14_reprocess_response_shapes() {
     let saved = crate::actions::response(
         "20240101",
         solstone_core_reprocess_cli::DayOutcome::WaitingForSupervisor,
+        ENGLISH,
     );
     assert_eq!(saved.status(), StatusCode::OK);
     let saved: Value =
@@ -487,7 +489,7 @@ async fn ac14_reprocess_response_shapes() {
             "reprocess_failed",
         ),
     ] {
-        let response = crate::actions::response("20240101", outcome).into_response();
+        let response = crate::actions::response("20240101", outcome, ENGLISH).into_response();
         assert_eq!(response.status(), status);
         let body: Value =
             serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
@@ -513,6 +515,7 @@ async fn reprocess_with_no_engine_returns_bad_request_without_transport() {
         solstone_core_reprocess_cli::Flavor::FromScratch,
         now,
         &jiff::tz::TimeZone::UTC,
+        ENGLISH,
         |_| {
             calls.set(calls.get() + 1);
             true
@@ -557,7 +560,7 @@ async fn ac6_absent_and_unparseable_stats_share_the_unknown_backlog() {
     assert!(unparseable["not_yet"].is_null());
     assert_eq!(
         unparseable["verdict"],
-        solstone_core_system_health::VERDICT_UNCLEAR_NOW
+        "it's unclear whether your journal is caught up right now."
     );
     // Once a way to think is chosen and the first night has passed, absent and
     // unparseable share the unknown backlog again.
@@ -596,7 +599,7 @@ async fn ac12_retry_import_keeps_all_three_python_forms() {
             Some("Import retry from stage decode will be available in a future update"),
         ),
     ] {
-        let response = crate::actions::retry_import(Some(axum::Json(body))).await;
+        let response = crate::actions::retry_import(Some(axum::Json(body)), ENGLISH).await;
         if let Some(message) = message {
             assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
             let body: Value =
@@ -767,14 +770,17 @@ async fn ac18_background_uses_shell_catch_all() {
 }
 #[test]
 fn ac8_errors_today_label_checks_both_count_and_scan_success() {
-    assert_eq!(crate::errors_today_label(1, true), "error today");
+    assert_eq!(crate::errors_today_label(1, true, ENGLISH), "error today");
     for count in [0, 2, 5] {
-        assert_eq!(crate::errors_today_label(count, true), "errors today");
+        assert_eq!(
+            crate::errors_today_label(count, true, ENGLISH),
+            "errors today"
+        );
     }
     // A one-item failed scan must take the explicit non-ok branch, rather than
     // accidentally inheriting the singular result from its count.
-    assert_eq!(crate::errors_today_label(1, false), "errors today");
-    assert_eq!(crate::errors_today_label(0, false), "errors today");
+    assert_eq!(crate::errors_today_label(1, false, ENGLISH), "errors today");
+    assert_eq!(crate::errors_today_label(0, false, ENGLISH), "errors today");
 }
 
 #[tokio::test]
@@ -876,6 +882,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
         solstone_core_reprocess_cli::Flavor::FromScratch,
         now,
         &jiff::tz::TimeZone::UTC,
+        ENGLISH,
         |envelope| {
             calls.borrow_mut().push(envelope.clone());
             true
@@ -915,6 +922,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
         solstone_core_reprocess_cli::Flavor::ProcessNow,
         now,
         &jiff::tz::TimeZone::UTC,
+        ENGLISH,
         |_| {
             calls.set(calls.get() + 1);
             true
@@ -943,8 +951,13 @@ async fn retry_work_saves_one_unit_and_refuses_stale_or_malformed_evidence() {
         .unwrap();
     work_retry::raw::observe(root.path(), &evidence).unwrap();
     let id = evidence.unit.id().unwrap();
-    let post =
-        || crate::actions::retry_work(root.path().into(), Some(axum::Json(json!({"unit":id}))));
+    let post = || {
+        crate::actions::retry_work(
+            root.path().into(),
+            Some(axum::Json(json!({"unit":id}))),
+            ENGLISH,
+        )
+    };
     let response = post().await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: Value =
@@ -979,9 +992,12 @@ async fn retry_work_saves_one_unit_and_refuses_stale_or_malformed_evidence() {
         std::fs::read_to_string(permission_path).unwrap(),
         "unreadable permission"
     );
-    let response =
-        crate::actions::retry_work(root.path().into(), Some(axum::Json(json!({"safety":true}))))
-            .await;
+    let response = crate::actions::retry_work(
+        root.path().into(),
+        Some(axum::Json(json!({"safety":true}))),
+        ENGLISH,
+    )
+    .await;
     let body: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
     assert_eq!(body["status"], "held");

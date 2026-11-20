@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_glance_devices_unavailable\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_devices_unavailable\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf79753c1e002fca3b5489a449f1b0f733c4e89a641157849018e4e3fcb2a60e",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

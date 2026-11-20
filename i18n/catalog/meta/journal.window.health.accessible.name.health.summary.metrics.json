@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's health view.",
+  "context": "Journal window, health view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a62d579f6645c4aa9bdbbd79b35913509ff94356c97db84b2a6d261eddd973e2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

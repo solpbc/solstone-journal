@@ -1,0 +1,23 @@
+{
+  "description": "Health glance copy \"health_glance_device_failing\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_device_failing\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7832a4b0a670f7a8b5e5d3956023accbc3dda4ff5e8f555bdffc07e3021208a",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{device}"
+    }
+  ]
+}

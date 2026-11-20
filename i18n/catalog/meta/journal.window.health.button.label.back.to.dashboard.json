@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's health view.",
+  "context": "Journal window, health view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39267cac7a9c9c1ca56b5dace96f8996f534b09dd611b5cf4b185c74107649da",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

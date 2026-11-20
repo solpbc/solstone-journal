@@ -1,0 +1,33 @@
+{
+  "description": "Health glance copy \"health_glance_catching_up\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_catching_up\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6355067962880ef5a5a7afce17e88a13c0495a1b91012135f8622a77cae9750",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{tasks}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{age}"
+    }
+  ]
+}

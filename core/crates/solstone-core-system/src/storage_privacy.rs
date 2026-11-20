@@ -13,10 +13,16 @@ use std::{io, path::Path};
 #[path = "storage_privacy_windows.rs"]
 mod windows;
 
-pub const WARNING: &str = "other accounts on this computer may be able to read your journal. its folder could not be made private on this drive. you can keep it on this drive or move it to a drive that keeps folders private.";
-pub const ACCEPTED: &str = "you chose to keep your journal on this drive, where other accounts on this computer may be able to read it.";
-pub const PRIVATE: &str = "your journal's folder is private to your account on this computer.";
-pub const UNAVAILABLE: &str = "your journal's folder privacy could not be checked.";
+use solstone_core_window_catalog::{ENGLISH, text};
+
+const WARNING_ID: &str = "!journal.window.health.storage.privacy.warning";
+const ACCEPTED_ID: &str = "!journal.window.health.storage.privacy.accepted";
+const PRIVATE_ID: &str = "journal.window.health.storage.privacy.private";
+const UNAVAILABLE_ID: &str = "journal.window.health.storage.privacy.unavailable";
+
+pub fn unavailable_message(locale: &str) -> String {
+    text(locale, UNAVAILABLE_ID)
+}
 
 pub const DRIVE_CANNOT_RUN: &str = "your journal can't run on this drive because the drive can't save files the way your journal needs. use a mac-formatted drive for your journal.";
 
@@ -110,9 +116,9 @@ pub fn apply_private_root(root: &Path) {
         }
         match inspect(&root) {
             Ok(status) if !status.private && status.consented => {
-                log::info!("journal root privacy: {ACCEPTED}")
+                log::info!("journal root privacy: {}", status.message)
             }
-            Ok(status) if !status.private => log::warn!("journal root privacy: {WARNING}"),
+            Ok(status) if !status.private => log::warn!("journal root privacy: {}", status.message),
             Err(error) => log::warn!("journal root privacy could not be checked: {error}"),
             _ => {}
         }
@@ -127,9 +133,9 @@ pub fn apply_private_root(root: &Path) {
     }
     match inspect(root) {
         Ok(status) if !status.private && status.consented => {
-            log::info!("journal root privacy: {ACCEPTED}")
+            log::info!("journal root privacy: {}", status.message)
         }
-        Ok(status) if !status.private => log::warn!("journal root privacy: {WARNING}"),
+        Ok(status) if !status.private => log::warn!("journal root privacy: {}", status.message),
         Err(error) => log::warn!("journal root privacy could not be checked: {error}"),
         _ => {}
     }
@@ -140,11 +146,15 @@ pub struct StoragePrivacy {
     pub private: bool,
     pub consented: bool,
     pub filesystem_type: String,
-    pub message: &'static str,
+    pub message: String,
 }
 
 /// Read-only: health and doctor must not repair modes or record consent.
 pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
+    inspect_in(root, ENGLISH)
+}
+
+pub fn inspect_in(root: &Path, locale: &str) -> io::Result<StoragePrivacy> {
     #[cfg(unix)]
     let (private, filesystem_type) = {
         let metadata = fs::metadata(root)?;
@@ -170,13 +180,16 @@ pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
         private,
         consented,
         filesystem_type,
-        message: if private {
-            PRIVATE
-        } else if consented {
-            ACCEPTED
-        } else {
-            WARNING
-        },
+        message: text(
+            locale,
+            if private {
+                PRIVATE_ID
+            } else if consented {
+                ACCEPTED_ID
+            } else {
+                WARNING_ID
+            },
+        ),
     })
 }
 

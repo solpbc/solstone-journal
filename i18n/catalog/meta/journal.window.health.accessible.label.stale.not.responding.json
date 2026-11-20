@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label in the journal's health view.",
+  "context": "Journal window, health view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52336661b45f2da71893bf971e1008718ec40424d44ec6c7c446d09a1ca703bd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

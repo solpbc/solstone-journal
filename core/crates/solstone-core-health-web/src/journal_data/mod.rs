@@ -15,6 +15,7 @@ use axum::{
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::{ENGLISH, text};
 
 mod pipeline;
 pub(crate) mod report;
@@ -70,11 +71,15 @@ async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
     .await
 }
 
-pub(crate) async fn media_backlog(root: PathBuf, now: jiff::Timestamp) -> Response {
+pub(crate) async fn media_backlog(
+    root: PathBuf,
+    now: jiff::Timestamp,
+    locale: &'static str,
+) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthMediaBacklog, move || {
         match report::read_segment_backlog_health(&root, now) {
             Ok(backlog) => Json(serde_json::json!({"segment_backlog":backlog})).into_response(),
-            Err(error) => error_response(error),
+            Err(error) => error_response_in(error, locale),
         }
     })
     .await
@@ -134,17 +139,21 @@ fn report_response(result: Result<report::HealthReport, HealthError>) -> Respons
 }
 
 fn error_response(error: HealthError) -> Response {
+    error_response_in(error, ENGLISH)
+}
+
+fn error_response_in(error: HealthError, locale: &str) -> Response {
     match error {
         HealthError::InvalidRequest(detail) => error_envelope(
             "invalid_request_value",
-            "Invalid request value",
+            text(locale, "journal.window.health.report.invalid"),
             detail,
             StatusCode::BAD_REQUEST,
         )
         .into_response(),
         HealthError::MissingRequiredField(detail) => error_envelope(
             "missing_required_field",
-            "Missing required field",
+            text(locale, "journal.window.health.report.missing"),
             detail,
             StatusCode::BAD_REQUEST,
         )
@@ -153,8 +162,8 @@ fn error_response(error: HealthError) -> Response {
             log::warn!("native health journal-data report failed: {context}");
             error_envelope(
                 "health_report_failed",
-                "Health report failed",
-                "health report unavailable",
+                text(locale, "journal.window.health.report.failed"),
+                text(locale, "journal.window.health.report.unavailable"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response()

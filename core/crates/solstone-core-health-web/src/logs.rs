@@ -4,16 +4,21 @@
 use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
 use serde_json::json;
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::window_catalog::text;
 
 pub async fn get(
     root: std::path::PathBuf,
     Query(query): Query<std::collections::HashMap<String, String>>,
+    locale: &'static str,
 ) -> axum::response::Response {
     let Some(path) = query.get("path").filter(|s| !s.is_empty()) else {
         return error_envelope(
             "missing_required_field",
-            "a required field is missing.",
-            "Missing path parameter",
+            text(
+                locale,
+                "journal.window.health.logs.a.required.field.is.missing",
+            ),
+            text(locale, "journal.window.health.logs.missing.path.parameter"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -21,8 +26,11 @@ pub async fn get(
     if !valid(path) {
         return error_envelope(
             "invalid_path",
-            "that path couldn't be used.",
-            "Invalid path",
+            text(
+                locale,
+                "journal.window.health.logs.that.path.couldn.t.be.used",
+            ),
+            text(locale, "journal.window.health.logs.invalid.path"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -39,8 +47,11 @@ pub async fn get(
             let Ok(file) = file.canonicalize() else {
                 return error_envelope(
                     "file_not_found",
-                    "that file isn't available.",
-                    "Log file not found",
+                    text(
+                        locale,
+                        "journal.window.health.logs.that.file.isn.t.available",
+                    ),
+                    text(locale, "journal.window.health.logs.log.file.not.found"),
                     StatusCode::NOT_FOUND,
                 )
                 .into_response();
@@ -48,8 +59,11 @@ pub async fn get(
             if !file.starts_with(&root) {
                 return error_envelope(
                     "invalid_path",
-                    "that path couldn't be used.",
-                    "Invalid path",
+                    text(
+                        locale,
+                        "journal.window.health.logs.that.path.couldn.t.be.used",
+                    ),
+                    text(locale, "journal.window.health.logs.invalid.path"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
@@ -58,8 +72,11 @@ pub async fn get(
                 Ok(content) => Json(json!({"content":content,"path":path})).into_response(),
                 Err(_) => error_envelope(
                     "file_read_failed",
-                    "that file couldn't be read.",
-                    "Failed to read log file",
+                    text(
+                        locale,
+                        "journal.window.health.logs.that.file.couldn.t.be.read",
+                    ),
+                    text(locale, "journal.window.health.logs.failed.to.read.log.file"),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
                 .into_response(),

@@ -1,0 +1,28 @@
+{
+  "description": "Unfinished activities template in the journal's system.health view.",
+  "context": "Journal window, system.health view. Unfinished activities template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7ef32aa0b7fc6a9f064742d588e5e4ad1af2b256650dc77fb2f63f374ef363b",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{day}"
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::window_catalog::text;
 
 pub fn load(root: &std::path::Path) -> (Option<String>, Option<Map<String, Value>>) {
     let Ok(bytes) = std::fs::read(root.join("stats.json")) else {
@@ -47,7 +48,7 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
-pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
+pub fn stuck_rows(backlog: Option<&Map<String, Value>>, locale: &str) -> Vec<Value> {
     let Some(backlog) = backlog else {
         return Vec::new();
     };
@@ -77,7 +78,9 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
             );
             row.insert(
                 "reason".to_owned(),
-                Value::String(solstone_core_system_health::backlog_day_reason_copy(day).to_owned()),
+                Value::String(solstone_core_system_health::backlog_day_reason_copy_in(
+                    day, locale,
+                )),
             );
             row.insert(
                 "depth".to_owned(),
@@ -101,18 +104,18 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
         .collect()
 }
 
-pub fn copy() -> Value {
+pub fn copy(locale: &str) -> Value {
     json!({
-        "bucket_heading": "days that need a hand",
-        "bucket_description": "some days retry automatically; others need your help. each day shows its current status.",
-        "day_badge": "stuck",
-        "action_process_now": "prioritize day",
-        "action_redo_scratch": "redo from scratch",
-        "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer.",
-        "queued_feedback": "request saved; today's work goes first",
-        "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
-        "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
-        "unfinished_template_many_days": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS,
+        "bucket_heading": text(locale, "journal.window.health.backlog.bucket.heading"),
+        "bucket_description": text(locale, "journal.window.health.backlog.bucket.description"),
+        "day_badge": text(locale, "journal.window.health.backlog.day.badge"),
+        "action_process_now": text(locale, "journal.window.health.backlog.action.process.now"),
+        "action_redo_scratch": text(locale, "journal.window.health.backlog.action.redo.scratch"),
+        "confirm_redo_scratch": text(locale, "!journal.window.health.backlog.confirm.redo.scratch"),
+        "queued_feedback": text(locale, "journal.window.health.backlog.queued.feedback"),
+        "unfinished_template_one": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_ONE_ID),
+        "unfinished_template_many_one_day": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID),
+        "unfinished_template_many_days": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS_ID),
     })
 }
 
@@ -120,6 +123,7 @@ pub fn copy() -> Value {
 mod tests {
     use super::{count, stuck_rows};
     use serde_json::json;
+    use solstone_core_convey_http::window_catalog::ENGLISH;
 
     #[test]
     fn retry_and_repair_states_keep_their_distinct_recovery_guidance() {
@@ -143,7 +147,7 @@ mod tests {
             ),
         ] {
             let backlog = json!({"days":[{"day":"20260904","state":"stuck","reason_code":code}]});
-            let rows = stuck_rows(backlog.as_object());
+            let rows = stuck_rows(backlog.as_object(), ENGLISH);
             assert_eq!(rows[0]["reason"], expected, "{code}");
             assert_eq!(rows[0]["reason_code"], code);
         }
@@ -163,7 +167,7 @@ mod tests {
 
     #[test]
     fn rows_map_startup_and_provider_to_the_same_copy() {
-        let rows = stuck_rows(json!({"days":[{"day":"20240101","state":"stuck","reason_code":"local_model_loading","segments":1},{"day":"20240102","state":"stuck","reason_code":"provider_unavailable","units":2},{"day":"20240103","state":"stuck","reason_code":"provider_request_rejected"}]}).as_object());
+        let rows = stuck_rows(json!({"days":[{"day":"20240101","state":"stuck","reason_code":"local_model_loading","segments":1},{"day":"20240102","state":"stuck","reason_code":"provider_unavailable","units":2},{"day":"20240103","state":"stuck","reason_code":"provider_request_rejected"}]}).as_object(), ENGLISH);
         assert_eq!(
             rows[0]["reason"],
             "the AI provider was unreachable. try again"
@@ -178,6 +182,7 @@ mod tests {
         );
         let generic = stuck_rows(
             json!({"days":[{"day":"20240104","state":"stuck","reason_code":"local_artifact_proof_unavailable"},{"day":"20240105","state":"stuck","reason_code":"not_in_taxonomy"}]}).as_object(),
+            ENGLISH,
         );
         assert_eq!(
             generic[0]["reason"],
@@ -193,11 +198,11 @@ mod tests {
     fn falsey_day_errors_fall_through_to_backlog_errors() {
         for error in [json!(false), json!("")] {
             let without_fallback = json!({"days":[{"day":"20240101","error":error.clone()}]});
-            assert!(stuck_rows(without_fallback.as_object()).is_empty());
+            assert!(stuck_rows(without_fallback.as_object(), ENGLISH).is_empty());
 
             let with_fallback =
                 json!({"days":[{"day":"20240101","error":error}],"errors":[{"day":"20240101"}]});
-            assert_eq!(stuck_rows(with_fallback.as_object()).len(), 1);
+            assert_eq!(stuck_rows(with_fallback.as_object(), ENGLISH).len(), 1);
         }
     }
 
@@ -207,7 +212,7 @@ mod tests {
         let generic = "a processing step keeps failing. try again";
         for code in ["context_preserved_overflow", "context_fitted_overflow"] {
             let backlog = json!({"days":[{"day":"20260904","state":"stuck","reason_code":code}]});
-            let rows = stuck_rows(backlog.as_object());
+            let rows = stuck_rows(backlog.as_object(), ENGLISH);
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0]["reason"], expected, "{code}");
             assert_ne!(rows[0]["reason"], generic, "{code}");

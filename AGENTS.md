@@ -446,7 +446,9 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 ### Journal window strings
 
 Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
-`solstone-core-backup-web` and `solstone-core-facets-web`.
+`solstone-core-backup-web`, `solstone-core-facets-web` and
+`solstone-core-health-web`, including the status copy Health reads from
+`solstone-core-system-health` and `solstone-core-system`.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
 For localized copy, use `JournalI18n.render` for JavaScript text and
 `JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages

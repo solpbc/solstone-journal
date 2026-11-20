@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:health:prune-logs' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:health:prune-logs'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9ea46a17263a75ce3cd161f1886402026158732e2249df6226033ce2700ee32",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

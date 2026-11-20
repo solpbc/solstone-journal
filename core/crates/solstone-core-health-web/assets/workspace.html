@@ -1539,16 +1539,16 @@ h2.card-title {
 <div class="health-dashboard">
   <div class="health-glance" id="healthGlance">
     <p class="glance-sentence" id="healthGlanceSentence" aria-live="polite"></p>
-    <div class="glance-metrics" aria-label="health summary metrics">
+    <div class="glance-metrics" aria-label="{{journal.window.health.accessible.name.health.summary.metrics}}">
       <a class="glance-metric glance-metric-errors" href="#focus=recent-errors" id="glanceErrors">
         <span class="glance-metric-value" id="glanceErrorsValue">—</span>
-        <span class="glance-metric-label" id="glanceErrorsLabel">errors today</span>
+        <span class="glance-metric-label" id="glanceErrorsLabel">{{journal.window.health.visible.text.errors.today}}</span>
       </a>
     </div>
   </div>
 
   <section class="backlog-verdict-card" id="backlogVerdict">
-    <p class="backlog-verdict-line">checking journal backlog…</p>
+    <p class="backlog-verdict-line">{{journal.window.health.visible.text.checking.journal.backlog}}</p>
     <p class="backlog-unfinished-line" hidden></p>
     <p class="backlog-search-line" hidden></p>
     <div class="backlog-state-error" data-health-state-error hidden></div>
@@ -1557,25 +1557,25 @@ h2.card-title {
   {{STORAGE_PRIVACY}}
 
   <section class="dashboard-card" id="localPrograms" hidden>
-    <h2 class="card-title">programs using the older local connection</h2>
-    <p>programs that reach your journal without a browser, since your journal started. this list stays on this computer.</p>
+    <h2 class="card-title">{{journal.window.health.section.heading.programs.using.the.older.local.connection}}</h2>
+    <p>{{journal.window.health.visible.text.programs.that.reach.your.journal.without}}</p>
     <div data-local-programs></div>
   </section>
 
   <section class="dashboard-card brain-health-card" id="brain">
     <div class="section-header">
-      <h2 class="card-title">processing</h2>
-      <button id="brainCheckBtn" hidden>check again</button>
+      <h2 class="card-title">{{journal.window.health.section.heading.processing}}</h2>
+      <button id="brainCheckBtn" hidden>{{journal.window.health.button.label.check.again}}</button>
     </div>
-    <div id="brainHealthStatus" role="status" aria-live="polite"><p class="brain-health-pending">checking processing&hellip;</p></div>
+    <div id="brainHealthStatus" role="status" aria-live="polite"><p class="brain-health-pending">{{journal.window.health.visible.text.checking.processing}}</p></div>
     <div id="speechSetup" data-applicable="{{SPEECH_SETUP_APPLICABLE}}" hidden>
-      <p role="status" aria-live="polite" aria-atomic="true"><span>local speech recognition</span>: <span id="speechSetupState"></span></p>
+      <p role="status" aria-live="polite" aria-atomic="true"><span>{{journal.window.health.visible.text.local.speech.recognition}}</span>: <span id="speechSetupState"></span></p>
       <p id="speechSetupExplanation" hidden></p>
       <div id="speechSetupBytes" hidden></div>
       <details id="speechSetupDetails">
         <summary id="speechSetupSummary"></summary>
         <p id="speechSetupCause" hidden></p>
-        <p id="speechSetupInstruction" hidden>on the computer running your journal:</p>
+        <p id="speechSetupInstruction" hidden>{{journal.window.health.visible.text.on.the.computer.running.your.journal}}</p>
         <pre id="speechSetupCommandWrapper" hidden><code id="speechSetupCommand"></code></pre>
       </details>
     </div>
@@ -1585,7 +1585,7 @@ h2.card-title {
   <div class="vitals-bar">
     <div class="vitals-header">
       <div class="vitals-title">
-        system vitals
+        {{journal.window.health.visible.text.system.vitals}}
       </div>
       <div class="vitals-status unavailable" id="vitalsStatus" role="status" aria-live="polite">
         <span class="skeleton" style="width: 120px; height: 1em;">&nbsp;</span>
@@ -1593,63 +1593,63 @@ h2.card-title {
       <span class="connection-indicator" id="connectionIndicator"></span>
     </div>
     <div class="vitals-content">
-      <div class="vitals-section" role="group" aria-label="services: loading">
-        <div class="vitals-label" aria-hidden="true">services</div>
+      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.services.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.services}}</div>
         <div class="vitals-value" aria-hidden="true">
           <div class="service-dots" id="serviceDots">
             <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
           </div>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="thinking: loading">
-        <div class="vitals-label" aria-hidden="true">thinking</div>
+      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.thinking.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.thinking}}</div>
         <div class="vitals-value" id="agentsValue" aria-hidden="true">
           <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="tasks: loading">
-        <div class="vitals-label" aria-hidden="true">tasks</div>
+      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.tasks.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.tasks.variant2}}</div>
         <div class="vitals-value" id="tasksValue" aria-hidden="true">
           <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="health: loading">
-        <div class="vitals-label" aria-hidden="true">health</div>
+      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.health.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.health}}</div>
         <div class="vitals-value" id="healthValue" aria-hidden="true">
           <span class="skeleton" style="width: 100px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" id="queuesSection" role="group" aria-label="queues: loading">
-        <div class="vitals-label" aria-hidden="true">queues</div>
+      <div class="vitals-section" id="queuesSection" role="group" aria-label="{{journal.window.health.accessible.name.queues.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.queues}}</div>
         <div class="vitals-value" id="queuesValue" aria-hidden="true"><span class="skeleton" style="width: 60px; height: 0.9em;">&nbsp;</span></div>
       </div>
-      <div class="vitals-section" id="schedulesSection" role="group" aria-label="schedules: loading">
-        <div class="vitals-label" aria-hidden="true">schedules</div>
+      <div class="vitals-section" id="schedulesSection" role="group" aria-label="{{journal.window.health.accessible.name.schedules.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.schedules}}</div>
         <div class="vitals-value" id="schedulesValue"><span class="skeleton" style="width: 90px; height: 0.9em;">&nbsp;</span></div>
       </div>
     </div>
   </div>
 
   <section class="dashboard-card" id="workProgress" aria-labelledby="workProgressTitle">
-    <h2 class="card-title" id="workProgressTitle">work in your journal</h2>
-    <p data-work-reach>checking what is left…</p>
+    <h2 class="card-title" id="workProgressTitle">{{journal.window.health.section.heading.work.in.your.journal}}</h2>
+    <p data-work-reach>{{journal.window.health.visible.text.checking.what.is.left}}</p>
     <p data-work-history hidden></p>
     <ol data-work-bands></ol>
     <div data-work-confirm hidden>
-      <p data-work-cost>finishing older recordings and day updates uses your chosen model and may add charges from your provider. today's work goes first.</p>
-      <button type="button" class="action-btn" data-work-allow>allow older work</button>
+      <p data-work-cost>{{!journal.window.health.visible.text.finishing.older.recordings.and.day.updates}}</p>
+      <button type="button" class="action-btn" data-work-allow>{{!journal.window.health.button.label.allow.older.work}}</button>
     </div>
     <p data-work-action-result role="status" hidden></p>
-    <details data-work-details hidden><summary>inspection details</summary><pre></pre></details>
+    <details data-work-details hidden><summary>{{journal.window.health.disclosure.label.inspection.details}}</summary><pre></pre></details>
   </section>
 
   <section class="dashboard-card" id="processingHolds" aria-labelledby="processingHoldsTitle" hidden>
-    <h2 class="card-title" id="processingHoldsTitle">set-aside work</h2>
+    <h2 class="card-title" id="processingHoldsTitle">{{journal.window.health.section.heading.set.aside.work}}</h2>
     <p data-held-work-notice></p>
-    <details data-held-work-list><summary>review items on hold</summary>
+    <details data-held-work-list><summary>{{journal.window.health.disclosure.label.review.items.on.hold}}</summary>
     <div data-held-work-rows></div>
-    <nav data-held-work-pages aria-label="set-aside work pages" hidden><button type="button" data-held-previous>previous</button> <span></span> <button type="button" data-held-next>next</button></nav></details>
-    <p data-held-work-support><a href="https://support.solstone.app/">get help →</a></p>
+    <nav data-held-work-pages aria-label="{{journal.window.health.accessible.name.set.aside.work.pages}}" hidden><button type="button" data-held-previous>{{journal.window.health.button.label.previous}}</button> <span></span> <button type="button" data-held-next>{{journal.window.health.button.label.next}}</button></nav></details>
+    <p data-held-work-support><a href="https://support.solstone.app/">{{journal.window.health.link.label.get.help}}</a></p>
   </section>
 
   <style>
@@ -1663,15 +1663,15 @@ h2.card-title {
     @media (max-width: 480px) { .backup-health-card dl > div { grid-template-columns: 1fr; gap: 0.15rem; } }
   </style>
   <section class="dashboard-card backup-health-card" id="backup" aria-labelledby="backupTitle">
-    <h2 class="card-title" id="backupTitle">backup</h2>
-    <p data-backup-summary role="status">checking backup status…</p>
+    <h2 class="card-title" id="backupTitle">{{journal.window.health.section.heading.backup}}</h2>
+    <p data-backup-summary role="status">{{journal.window.health.visible.text.checking.backup.status}}</p>
     <div data-backup-facts></div>
-    <a href="/app/backup/">manage backup →</a>
+    <a href="/app/backup/">{{journal.window.health.link.label.manage.backup}}</a>
   </section>
 
   <div class="dashboard-card activity-section hidden" id="errorSummary">
     <div class="activity-section-header error">
-      Recent errors
+      {{journal.window.health.visible.text.recent.errors}}
     </div>
     <div id="errorSummaryContent"></div>
   </div>
@@ -1680,48 +1680,48 @@ h2.card-title {
   <div class="dashboard-card observe-card">
     <div class="card-header">
       <div class="card-title">
-        what's going into your journal
+        {{journal.window.health.visible.text.what.s.going.into.your.journal}}
       </div>
       <div class="health-badge idle" id="observeModeBadge">
-        <span id="observeModeLabel">waiting…</span>
+        <span id="observeModeLabel">{{journal.window.health.visible.text.waiting}}</span>
       </div>
     </div>
     <div class="observe-source-note hidden" id="observeSourceNote"></div>
     <div id="observeEmpty">
       <div class="surface-state surface-state--empty">
-        <h2 class="surface-state-heading">checking device activity…</h2>
-        <div class="surface-state-action"><a href="/app/network/#devices">view devices →</a></div>
+        <h2 class="surface-state-heading">{{journal.window.health.section.heading.checking.device.activity}}</h2>
+        <div class="surface-state-action"><a href="/app/network/#devices">{{journal.window.health.link.label.view.devices}}</a></div>
       </div>
     </div>
     <div class="observe-content hidden" id="observeContent">
       <div class="observe-section">
-        <div class="observe-section-title">screen</div>
-        <div class="observe-section-value" id="screencastStatus">waiting…</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.screen}}</div>
+        <div class="observe-section-value" id="screencastStatus">{{journal.window.health.visible.text.waiting}}</div>
         <div class="observe-section-detail" id="screencastDetail"></div>
       </div>
       <div class="observe-section">
-        <div class="observe-section-title">terminal sessions</div>
-        <div class="observe-section-value" id="tmuxStatus">waiting…</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.terminal.sessions}}</div>
+        <div class="observe-section-value" id="tmuxStatus">{{journal.window.health.visible.text.waiting}}</div>
         <div class="observe-section-detail" id="tmuxDetail"></div>
       </div>
       <div class="observe-section">
-        <div class="observe-section-title">audio</div>
-        <div class="observe-section-value" id="audioStatus">waiting…</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.audio}}</div>
+        <div class="observe-section-value" id="audioStatus">{{journal.window.health.visible.text.waiting}}</div>
         <div class="observe-section-detail" id="audioDetail"></div>
       </div>
       <div class="observe-section">
-        <div class="observe-section-title">system activity</div>
-        <div class="observe-section-value" id="activityStatus">waiting…</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.system.activity}}</div>
+        <div class="observe-section-value" id="activityStatus">{{journal.window.health.visible.text.waiting}}</div>
         <div class="observe-section-detail" id="activityDetail"></div>
       </div>
       <div class="observe-section">
-        <div class="observe-section-title">scene analysis</div>
-        <div class="observe-section-value" id="describeStatus">idle</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.scene.analysis}}</div>
+        <div class="observe-section-value" id="describeStatus">{{journal.window.health.visible.text.idle}}</div>
         <div class="observe-section-detail" id="describeDetail"></div>
       </div>
       <div class="observe-section">
-        <div class="observe-section-title">audio transcription</div>
-        <div class="observe-section-value" id="transcribeStatus">idle</div>
+        <div class="observe-section-title">{{journal.window.health.visible.text.audio.transcription}}</div>
+        <div class="observe-section-value" id="transcribeStatus">{{journal.window.health.visible.text.idle}}</div>
         <div class="observe-section-detail" id="transcribeDetail"></div>
       </div>
     </div>
@@ -1731,7 +1731,7 @@ h2.card-title {
   <div class="dashboard-card clients-card hidden" id="clientsCard">
     <div class="card-header">
       <div class="card-title">
-        sources adding to your journal
+        {{journal.window.health.visible.text.sources.adding.to.your.journal}}
       </div>
     </div>
     <div class="clients-grid" id="clientsGrid"></div>
@@ -1739,7 +1739,7 @@ h2.card-title {
 
   <div class="dashboard-card registered-clients-card hidden" id="registeredClientsCard">
     <div class="card-header">
-      <div class="card-title">your devices</div>
+      <div class="card-title">{{journal.window.health.visible.text.your.devices}}</div>
     </div>
     <div class="registered-clients-strip" id="registeredClientsStrip"></div>
   </div>
@@ -1755,7 +1755,7 @@ h2.card-title {
     <!-- Cortex Agents -->
     <div class="dashboard-card activity-section hidden" id="cortexSection">
       <div class="activity-section-header">
-        Active runs
+        {{journal.window.health.visible.text.active.runs}}
       </div>
       <div class="activity-grid" id="cortexGrid"></div>
     </div>
@@ -1763,7 +1763,7 @@ h2.card-title {
     <!-- Importers -->
     <div class="dashboard-card activity-section hidden" id="importerSection">
       <div class="activity-section-header">
-        Active imports
+        {{journal.window.health.visible.text.active.imports}}
       </div>
       <div class="activity-grid" id="importerGrid"></div>
     </div>
@@ -1771,8 +1771,8 @@ h2.card-title {
 
   <div class="dashboard-card activity-section hidden" id="allQuietCard">
     <div class="idle-card">
-      <h2 class="card-title">right now</h2>
-      <div class="idle-card-title">everything is idle</div>
+      <h2 class="card-title">{{journal.window.health.section.heading.right.now}}</h2>
+      <div class="idle-card-title">{{journal.window.health.visible.text.everything.is.idle}}</div>
       <div class="idle-card-stats" id="idleCardStats"></div>
     </div>
   </div>
@@ -1780,7 +1780,7 @@ h2.card-title {
   <!-- Think Card (hidden when idle) -->
   <div class="dashboard-card think-card hidden" id="thinkCard">
     <div class="card-header">
-      <div class="card-title">background analysis</div>
+      <div class="card-title">{{journal.window.health.visible.text.background.analysis}}</div>
     </div>
     <div class="think-info" id="thinkInfo"></div>
     <div id="thinkProgress"></div>
@@ -1790,15 +1790,15 @@ h2.card-title {
   <!-- Service Logs -->
   <div class="dashboard-card logs-card logs-collapsed">
     <div class="logs-header" role="button" tabindex="0" aria-expanded="false" aria-controls="logsViewport">
-      <div class="logs-title">service logs</div>
+      <div class="logs-title">{{journal.window.health.visible.text.service.logs}}</div>
       <span class="logs-summary-badge" id="logsSummaryBadge" aria-live="polite"></span>
       <span class="logs-error-badge hidden" id="logErrorBadge"></span>
       <span class="logs-connection-note hidden" id="logsConnectionNote"></span>
-      <span class="logs-collapse-indicator" id="logsCollapseIndicator">▶ show</span>
+      <span class="logs-collapse-indicator" id="logsCollapseIndicator">{{journal.window.health.visible.text.show}}</span>
       <div class="logs-controls">
         <label for="logServiceFilter" data-health-copy="LOGS_SERVICE_FILTER_LABEL"></label>
         <select id="logServiceFilter">
-          <option value="all">all services</option>
+          <option value="all">{{journal.window.health.option.label.all.services}}</option>
         </select>
         <label for="logLevelFilter" data-health-copy="LOGS_LEVEL_FILTER_LABEL"></label>
         <select id="logLevelFilter">
@@ -1809,21 +1809,21 @@ h2.card-title {
         </select>
         <label for="logStreamFilter" data-health-copy="LOGS_STREAM_FILTER_LABEL"></label>
         <select id="logStreamFilter">
-          <option value="all">all streams</option>
-          <option value="stdout">stdout</option>
-          <option value="stderr">stderr</option>
-          <option value="log">log</option>
+          <option value="all">{{journal.window.health.option.label.all.streams}}</option>
+          <option value="stdout">{{journal.window.health.option.label.stdout}}</option>
+          <option value="stderr">{{journal.window.health.option.label.stderr}}</option>
+          <option value="log">{{journal.window.health.option.label.log}}</option>
         </select>
-        <button id="logFollowBtn" class="active">follow</button>
-        <button id="logClearBtn">clear</button>
-        <button id="logExportBtn">export</button>
+        <button id="logFollowBtn" class="active">{{journal.window.health.button.label.follow}}</button>
+        <button id="logClearBtn">{{journal.window.health.button.label.clear}}</button>
+        <button id="logExportBtn">{{journal.window.health.button.label.export}}</button>
       </div>
     </div>
     <div class="logs-viewport" id="logsViewport" role="log"></div>
     <div id="logsAnnouncer" class="logs-announcer" role="status" aria-live="polite"></div>
 
   </div>
-  <section id="healthSystemDetails" class="dashboard-card"><h2 class="card-title">journal status details</h2></section>
+  <section id="healthSystemDetails" class="dashboard-card"><h2 class="card-title">{{journal.window.health.section.heading.journal.status.details}}</h2></section>
 </div>
 <script src="/app/backup/static/backup-status.js"></script>
 <script src="/app/health/static/health.js"></script>

@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_glance_devices_unknown\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_devices_unknown\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd67a43f32fa560634e40b450a391c42a121eb2663c9a9a6ffb042823350af6b",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

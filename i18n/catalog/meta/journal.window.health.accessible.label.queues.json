@@ -1,0 +1,23 @@
+{
+  "description": "Accessible label in the journal's health view.",
+  "context": "Journal window, health view. Accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0628d8bb05afa82bba8c683cd86a67916a75efb22deace7c07ad61d3bcf9f309",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

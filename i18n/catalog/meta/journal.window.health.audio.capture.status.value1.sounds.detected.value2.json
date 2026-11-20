@@ -1,0 +1,32 @@
+{
+  "description": "Audio capture status in the journal's health view.",
+  "context": "Journal window, health view. Audio capture status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    },
+    {
+      "name": "value2",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1efeac72af1b138967f6cf6d715653c41034f2bcc200f69cfb4f71dbd0f04099",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

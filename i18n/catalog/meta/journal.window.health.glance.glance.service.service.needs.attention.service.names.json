@@ -1,0 +1,23 @@
+{
+  "description": "Health glance copy \"health_glance_service_attention\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_service_attention\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d16f77c166f4191f07de6df0d9749b82c7c06d05bea81833db9fd0c618f01bdb",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{service_names}"
+    }
+  ]
+}

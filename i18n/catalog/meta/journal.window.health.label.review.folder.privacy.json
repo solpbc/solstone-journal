@@ -1,0 +1,16 @@
+{
+  "description": "Label in the journal's health view.",
+  "context": "Journal window, health view. Label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90a7be4fb6b61076d6739ab79176efcb7408f33306cafc6569a94af68aad48d4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

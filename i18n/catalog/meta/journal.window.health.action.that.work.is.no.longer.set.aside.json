@@ -1,0 +1,16 @@
+{
+  "description": "Action result or refusal in the journal's health view.",
+  "context": "Journal window, health view. Action result or refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "807ae3956f5f4082a20a6b8e13ee6ef525574d2a3bc8235e9ec77bee0be8c8bd",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

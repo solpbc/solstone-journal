@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_glance_work_held\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_work_held\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14adeb3e622f601bbae281857eb74db5151882ea7074fe1c6ab14009a12597ec",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -3,14 +3,15 @@
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_convey_http::window_catalog::text;
 use std::time::Duration;
 
-pub fn snapshot(root: &std::path::Path) -> Value {
+pub fn snapshot(root: &std::path::Path, locale: &str) -> Value {
     match solstone_core_thinking::read_config(root) {
-        Ok(config) => {
-            solstone_core_thinking::brain::presentation(root, &config, false)["brain"].clone()
-        }
-        Err(_) => fallback(),
+        Ok(config) => solstone_core_thinking::brain::presentation_in(root, &config, false, locale)
+            ["brain"]
+            .clone(),
+        Err(_) => fallback(locale),
     }
 }
 pub fn refresh(root: &std::path::Path) -> bool {
@@ -43,6 +44,6 @@ where
         extra,
     })
 }
-fn fallback() -> Value {
-    json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
+fn fallback(locale: &str) -> Value {
+    json!({"state":"unknown","headline":text(locale, "journal.window.health.brain.thinking.status.unavailable"),"reason_code":"brain_record_unavailable","reason_text":text(locale, "journal.window.health.brain.brain.record.unavailable"),"failing_component":null,"action":{"label":text(locale, "journal.window.health.brain.check.again"),"refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":text(locale, "journal.window.health.brain.unknown"),"observed_at":null}},"progressing":false})
 }

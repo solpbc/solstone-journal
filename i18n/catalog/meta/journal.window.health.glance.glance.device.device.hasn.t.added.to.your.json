@@ -1,0 +1,28 @@
+{
+  "description": "Health glance copy \"health_glance_device_silent\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_device_silent\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b8cd90e410938f03e73163dcc867a7743f7f3a6e7832e9a5a81ba0b9fb7aea5",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{device}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{age}"
+    }
+  ]
+}

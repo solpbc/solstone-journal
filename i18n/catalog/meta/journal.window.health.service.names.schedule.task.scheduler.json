@@ -1,0 +1,16 @@
+{
+  "description": "Service names schedule in the journal's health view.",
+  "context": "Journal window, health view. Service names schedule.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f668b1923d0a3345614563d24d15358f253b0f62e73401d35c52ebb40fe4a51",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

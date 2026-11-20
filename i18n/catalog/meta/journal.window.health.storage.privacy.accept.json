@@ -1,0 +1,16 @@
+{
+  "description": "Health status or action response in the journal's health view.",
+  "context": "Journal window, health view. Health status or action response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1e2ef88613669a2dc2cc4457cf016f180e5c1278bba9d14d0aae05ba01af587",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

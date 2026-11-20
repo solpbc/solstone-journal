@@ -19,7 +19,6 @@ mod tests {
 
     use crate::search_index::{IndexMetadata, evaluate_search_index};
     use crate::{Clock, backlog, routes_with_clock};
-    use solstone_core_system_health::INDEX_TEXT_OK;
 
     fn utc(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
         jiff::civil::date(year, month, day)
@@ -166,7 +165,7 @@ mod tests {
         assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, INDEX_TEXT_OK);
+        assert_eq!(eval.text, "search is up to date with your journal.");
 
         // 2. Other metadata error on sqlite -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(
@@ -180,7 +179,7 @@ mod tests {
         assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, INDEX_TEXT_OK);
+        assert_eq!(eval.text, "search is up to date with your journal.");
 
         // 3. Other metadata error on existing WAL -> unknown, observed_failure false, index_activity_at_ms null
         stub.insert(&sqlite, Ok(now_sys));
@@ -195,7 +194,7 @@ mod tests {
         assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, INDEX_TEXT_OK);
+        assert_eq!(eval.text, "search is up to date with your journal.");
 
         // 4. Newest mtime more than 5 minutes ahead -> unknown
         stub.insert(&sqlite, Ok(now_sys + StdDuration::from_secs(301)));
@@ -210,7 +209,7 @@ mod tests {
         assert_eq!(eval.state, "ok");
         assert_eq!(eval.index_activity_at_ms, None);
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, INDEX_TEXT_OK);
+        assert_eq!(eval.text, "search is up to date with your journal.");
 
         // 5. Valid mtime with no failure -> state unknown, index_activity_at_ms Some, rendered text
         let one_hour_ago = now_sys - StdDuration::from_secs(3600);
@@ -229,7 +228,7 @@ mod tests {
             Some((1_800_000_000 - 3600) * 1000)
         );
         assert!(!eval.observed_failure);
-        assert_eq!(eval.text, INDEX_TEXT_OK);
+        assert_eq!(eval.text, "search is up to date with your journal.");
 
         // 6. A recorded failure for a file that is not on disk is observed, and
         // is history: nothing is behind, so the index is still ok.
@@ -281,7 +280,7 @@ mod tests {
         assert!(
             notes
                 .iter()
-                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_UNREADABLE)
+                .any(|n| n.message == "search can't read its index right now.")
         );
 
         // 3. A real index, and a recorded failed update for a file that is still
@@ -315,7 +314,7 @@ mod tests {
         assert!(
             notes
                 .iter()
-                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_FAILED_FILES)
+                .any(|n| n.message == "some journal updates couldn't be added to search.")
         );
     }
 
@@ -389,10 +388,7 @@ mod tests {
                 assert_eq!(search["coverage"], "unknown");
                 assert_eq!(search["state"], "failing");
                 assert_eq!(search["observed_failure"], false);
-                assert_eq!(
-                    search["text"],
-                    solstone_core_system_health::INDEX_TEXT_UNREADABLE
-                );
+                assert_eq!(search["text"], "search can't read its index right now.");
             });
     }
 
@@ -429,7 +425,7 @@ mod tests {
         assert_eq!(body["backlog"]["not_yet"], "awaiting_engine");
         assert_eq!(
             body["backlog"]["verdict"],
-            solstone_core_system_health::NOT_YET_ENGINE
+            "your journal starts catching up once you choose where the thinking happens."
         );
         assert_eq!(body["search_index"]["text"], "");
 
@@ -449,12 +445,9 @@ mod tests {
         assert_eq!(body["backlog"]["not_yet"], "first_night");
         assert_eq!(
             body["backlog"]["verdict"],
-            solstone_core_system_health::NOT_YET_FIRST_NIGHT
+            "you'll see whether your journal is caught up after its first night."
         );
-        assert_eq!(
-            body["search_index"]["text"],
-            solstone_core_system_health::NOT_YET_SEARCH
-        );
+        assert_eq!(body["search_index"]["text"], "search catches up overnight.");
 
         // The injected clock decides: three days on, the first night has passed
         // with no summary, so it is unclear again.
@@ -462,7 +455,7 @@ mod tests {
         assert!(later["backlog"]["not_yet"].is_null());
         assert_eq!(
             later["backlog"]["verdict"],
-            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+            "it's unclear whether your journal is caught up right now."
         );
 
         // Any summary file at all keeps today's rules.
@@ -471,7 +464,7 @@ mod tests {
         assert!(body["backlog"]["not_yet"].is_null());
         assert_eq!(
             body["backlog"]["verdict"],
-            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+            "it's unclear whether your journal is caught up right now."
         );
     }
 
@@ -994,7 +987,7 @@ mod tests {
         assert_eq!(eval1.state, "ok");
         assert_eq!(eval1.coverage, "complete");
         assert!(!eval1.observed_failure);
-        assert_eq!(eval1.text, INDEX_TEXT_OK);
+        assert_eq!(eval1.text, "search is up to date with your journal.");
         assert_eq!(eval1.index_activity_at_ms, Some(eight_days_ago_secs * 1000));
 
         let eval2 = evaluate_search_index(root, &meta, now);
@@ -1082,7 +1075,7 @@ mod tests {
         assert!(
             !notes
                 .iter()
-                .any(|n| n.message == solstone_core_system_health::INDEX_TEXT_FAILED_FILES),
+                .any(|n| n.message == "some journal updates couldn't be added to search."),
             "no index attempt failure in chronicle logs"
         );
         assert_eq!(synth.index_activity_at, Some(one_hour_ago * 1000));

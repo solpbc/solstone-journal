@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's health view.",
+  "context": "Journal window, health view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e8d900fe06532def0f0b12add9130aa350c744b19b9c914a508a33b7b3ea722",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

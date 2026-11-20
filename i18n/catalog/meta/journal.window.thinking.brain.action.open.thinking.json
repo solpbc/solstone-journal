@@ -1,0 +1,16 @@
+{
+  "description": "Thinking health action in the journal's thinking view.",
+  "context": "Journal window, thinking view. Thinking health action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a228e8abb63c6a4d678158c2169a9312c5fb20c7f1ab62c679a0db50a29865aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

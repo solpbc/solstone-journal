@@ -1,0 +1,33 @@
+{
+  "description": "Health logs copy \"logs_service_collapsed\" in the journal's health view.",
+  "context": "Journal window, health view. Health logs copy \"logs_service_collapsed\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4140ed32d374715cb4d484e3dc8c6417c4d7ef284baeef12d45bec4802db658d",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{service}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{errors}"
+    }
+  ]
+}

@@ -873,7 +873,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         engine_chosen(root.path());
         fs::create_dir_all(root.path().join("chronicle/20260814")).unwrap();
-        let unclear = solstone_core_system_health::VERDICT_UNCLEAR_NOW;
+        let unclear = "it's unclear whether your journal is caught up right now.";
         let has_unclear = |payload: &Value| {
             payload["health_glance"]["issues"]
                 .as_array()
@@ -888,7 +888,7 @@ mod tests {
         ));
         assert_eq!(
             day0["health_glance"]["note"]["text"],
-            solstone_core_system_health::NOT_YET_FIRST_NIGHT
+            "you'll see whether your journal is caught up after its first night."
         );
         assert!(!has_unclear(&day0), "{}", day0["health_glance"]);
         assert_ne!(day0["health_glance"]["verdict"], "ok");

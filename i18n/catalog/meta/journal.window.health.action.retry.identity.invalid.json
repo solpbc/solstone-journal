@@ -1,0 +1,16 @@
+{
+  "description": "Held work refusal in the journal's health view.",
+  "context": "Journal window, health view. Held work refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2896bfe8defe21a8f7aab5df50212f7b640e58104bc87845069eda6e56620650",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

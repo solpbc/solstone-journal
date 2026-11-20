@@ -1,0 +1,16 @@
+{
+  "description": "Service names importer in the journal's health view.",
+  "context": "Journal window, health view. Service names importer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b64c0f33d66fddf0f68ebf1cbb7114683566300d770f5a349d9c7fd62bbb660",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

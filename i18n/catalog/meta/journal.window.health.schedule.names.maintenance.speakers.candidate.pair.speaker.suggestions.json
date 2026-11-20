@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:speakers:candidate-pair-suggestions' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:speakers:candidate-pair-suggestions'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abd4833e9cfbd313caeda12898aaf980658a5d0e12ddff706677f27bfc7e4fbc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

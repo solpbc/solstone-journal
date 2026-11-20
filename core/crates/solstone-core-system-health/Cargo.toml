@@ -31,6 +31,7 @@ solstone-core-system.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-time.workspace = true
+solstone-core-window-catalog.workspace = true
 sha2.workspace = true
 
 [[test]]

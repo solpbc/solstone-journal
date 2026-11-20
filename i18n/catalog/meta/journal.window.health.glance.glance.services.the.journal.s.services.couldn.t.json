@@ -1,0 +1,16 @@
+{
+  "description": "Health glance copy \"health_glance_services_unreachable\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_glance_services_unreachable\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fda0969ad03dcc4987a7bb6ac258cc5a1ca6c19649937f73258dd0c25db06c5",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

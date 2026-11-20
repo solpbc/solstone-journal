@@ -2,50 +2,73 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
+use solstone_core_window_catalog::{ENGLISH, text};
 
 /// The one owner-facing reason for a backlog day, shared by the health page
 /// and the stats page so the same day never reads two ways.
-pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> &'static str {
+pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> String {
+    backlog_day_reason_copy_in(day, ENGLISH)
+}
+
+pub fn backlog_day_reason_copy_in(day: &Map<String, Value>, locale: &str) -> String {
+    text(locale, backlog_day_reason_id(day))
+}
+
+fn backlog_day_reason_id(day: &Map<String, Value>) -> &'static str {
     let marker = day_reason_marker(day);
     match marker {
         Some("confidential_access_ended") => {
-            return "confidential processing isn't active for this journal. open the thinking app to see why.";
+            return "journal.window.system.health.backlog.day.confidential.processing.isn.t.active.for.this.journal.open.the.thinking";
         }
-        Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
+        Some("catchup_backoff") => {
+            return "journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.action.needed.yet";
+        }
         Some("chatgpt_sign_in_required") => {
-            return "signed out of ChatGPT. sign in again on the thinking page";
+            return "journal.window.system.health.backlog.day.signed.out.of.chatgpt.sign.in.again.on.the.thinking.page";
         }
         Some("chatgpt_usage_limit") => {
-            return "a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings";
+            return "journal.window.system.health.backlog.day.a.chatgpt.usage.limit.was.reached.check.usage.and.app.limits.in.chatgpt";
         }
         Some("chatgpt_not_eligible") => {
-            return "this ChatGPT account can't be used for thinking. pick another provider on the thinking page";
+            return "journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o";
         }
         Some("context_preserved_overflow" | "context_fitted_overflow") => {
-            return "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
+            return "journal.window.system.health.backlog.day.this.day.s.remaining.content.still.will.not.fit.the.on.device.model.aft";
         }
-        Some("segment_repair_progressing") => return "repairing itself. check back soon",
+        Some("segment_repair_progressing") => {
+            return "journal.window.system.health.backlog.day.repairing.itself.check.back.soon";
+        }
         Some("segment_repair_degraded") => {
-            return "repair is having trouble keeping up. may need a hand";
+            return "journal.window.system.health.backlog.day.repair.is.having.trouble.keeping.up.may.need.a.hand";
         }
-        Some("segment_repair_stuck") => return "repair has stalled. try again",
-        Some("segment_repair_unknown") => return "repair status is unclear right now",
+        Some("segment_repair_stuck") => {
+            return "journal.window.system.health.backlog.day.repair.has.stalled.try.again";
+        }
+        Some("segment_repair_unknown") => {
+            return "journal.window.system.health.backlog.day.repair.status.is.unclear.right.now";
+        }
         _ => {}
     }
     if marker == Some("corrupt_raw") {
-        return "original raw media is missing or damaged. re-import it";
+        return "journal.window.system.health.backlog.day.original.raw.media.is.missing.or.damaged.re.import.it";
     }
     match category(marker) {
-        "setup" => "a setting's missing. check your journal's setup",
-        "key" => "your AI provider turned down your key. check it on the thinking page",
+        "setup" => {
+            "journal.window.system.health.backlog.day.a.setting.s.missing.check.your.journal.s.setup"
+        }
+        "key" => {
+            "journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page"
+        }
         "thinking" => {
-            "the AI model spent its whole reply thinking. try another model on the thinking page"
+            "journal.window.system.health.backlog.day.the.ai.model.spent.its.whole.reply.thinking.try.another.model.on.the.th"
         }
-        "provider" | "startup" => "the AI provider was unreachable. try again",
+        "provider" | "startup" => {
+            "journal.window.system.health.backlog.day.the.ai.provider.was.unreachable.try.again"
+        }
         "request" => {
-            "the AI provider refused a request. retrying won't help; this is a defect to report."
+            "journal.window.system.health.backlog.day.the.ai.provider.refused.a.request.retrying.won.t.help.this.is.a.defect"
         }
-        _ => "a processing step keeps failing. try again",
+        _ => "journal.window.system.health.backlog.day.a.processing.step.keeps.failing.try.again",
     }
 }
 

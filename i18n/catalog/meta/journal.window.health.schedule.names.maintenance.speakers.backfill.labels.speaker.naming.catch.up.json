@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:speakers:backfill-labels' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:speakers:backfill-labels'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dad8d1ed932c8164922cfca19f9c55cd65c7322b6074f2b828e3b1fd8b859ab7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

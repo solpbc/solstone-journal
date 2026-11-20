@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
+use solstone_core_window_catalog::{ENGLISH, text};
 
 pub mod daily;
 pub mod input;
@@ -293,15 +294,22 @@ fn directory(journal: &Path) -> PathBuf {
     journal.join("health/work-retry")
 }
 
-fn path(journal: &Path, id: &str) -> Result<PathBuf, String> {
+fn path(journal: &Path, id: &str, locale: &str) -> Result<PathBuf, String> {
     if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("invalid retry identity".into());
+        return Err(text(
+            locale,
+            "journal.window.health.action.retry.identity.invalid",
+        ));
     }
     Ok(directory(journal).join(format!("{id}.json")))
 }
 
 pub fn read(journal: &Path, id: &str) -> Result<Option<Record>, String> {
-    let bytes = match std::fs::read(path(journal, id)?) {
+    read_in(journal, id, ENGLISH)
+}
+
+pub fn read_in(journal: &Path, id: &str, locale: &str) -> Result<Option<Record>, String> {
+    let bytes = match std::fs::read(path(journal, id, locale)?) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.to_string()),
@@ -320,7 +328,10 @@ pub fn read(journal: &Path, id: &str) -> Result<Option<Record>, String> {
             !record.consumed.contains(&attempt.cause) || attempt.input != record.input
         })
     {
-        return Err("unrecognized retry record".into());
+        return Err(text(
+            locale,
+            "journal.window.health.action.retry.record.unrecognized",
+        ));
     }
     Ok(Some(record))
 }
@@ -340,7 +351,7 @@ fn update_checked<T>(
     mutate: impl FnOnce(&mut Option<Record>) -> Result<T, String>,
 ) -> Result<T, String> {
     let id = unit.id()?;
-    let path = path(journal, &id)?;
+    let path = path(journal, &id, ENGLISH)?;
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
     let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
     checkpoint()?;
@@ -441,7 +452,7 @@ pub fn execution_claim(
     journal: &Path,
     unit: &Unit,
 ) -> Result<solstone_core_journal_io::FileLock, String> {
-    let path = path(journal, &unit.id()?)?.with_extension("execution");
+    let path = path(journal, &unit.id()?, ENGLISH)?.with_extension("execution");
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
     hold_lock(
         path,
@@ -693,7 +704,7 @@ mod tests {
                     .permission("input-a", &[])
                     .unwrap();
                 consume(root.path(), &unit, &grant, "schema_invalid", "input-a", &[]).unwrap();
-                let path = path(root.path(), &id).unwrap();
+                let path = path(root.path(), &id, ENGLISH).unwrap();
                 let before = std::fs::read(&path).unwrap();
                 let held = hold_lock(&path, LockOptions::default()).unwrap();
                 let cancelled = Arc::new(AtomicBool::new(false));
@@ -914,11 +925,11 @@ mod tests {
         let record = read(root.path(), &id).unwrap().unwrap();
         assert!(record.permission("input-a", FIXES).is_none());
         assert!(record.permission("input-b", FIXES).is_some());
-        std::fs::write(path(root.path(), &id).unwrap(), "{").unwrap();
+        std::fs::write(path(root.path(), &id, ENGLISH).unwrap(), "{").unwrap();
         assert!(observe_held(root.path(), &unit, "schema_invalid", "input-c").is_err());
         assert!(request(root.path(), &unit).is_err());
         assert_eq!(
-            std::fs::read_to_string(path(root.path(), &id).unwrap()).unwrap(),
+            std::fs::read_to_string(path(root.path(), &id, ENGLISH).unwrap()).unwrap(),
             "{"
         );
     }

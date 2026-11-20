@@ -12,9 +12,9 @@ include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 
 #[cfg(unix)]
 pub(crate) const STORAGE_PRIVACY: &str = r#"<section class="dashboard-card" id="storagePrivacy" aria-labelledby="storagePrivacyTitle" hidden>
-      <h2 class="card-title" id="storagePrivacyTitle">journal folder privacy</h2>
+      <h2 class="card-title" id="storagePrivacyTitle">{{journal.window.health.storage.privacy.heading}}</h2>
       <p data-storage-privacy-message role="status" aria-live="polite"></p>
-      <button type="button" class="action-btn" data-storage-privacy-consent>keep it on this drive</button>
+      <button type="button" class="action-btn" data-storage-privacy-consent>{{!journal.window.health.storage.privacy.accept}}</button>
       <p data-storage-privacy-result role="status" hidden></p>
     </section>"#;
 #[cfg(not(unix))]
@@ -47,13 +47,7 @@ pub async fn static_asset(
 ) -> Response<Body> {
     match STATIC_ASSETS.iter().find(|(asset, _, _)| *asset == name) {
         Some((_, content_type, bytes)) => asset_response(bytes, content_type),
-        None => Response::builder()
-            .status(axum::http::StatusCode::NOT_FOUND)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Body::from(
-                "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
-            ))
-            .expect("health static 404 response"),
+        None => solstone_core_convey_http::window_catalog::not_found_response(),
     }
 }
 

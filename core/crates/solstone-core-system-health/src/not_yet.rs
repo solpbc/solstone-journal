@@ -11,6 +11,8 @@
 
 use std::path::Path;
 
+use solstone_core_window_catalog::{ENGLISH, text};
+
 use jiff::civil::{Date, DateTime};
 use solstone_core_journal_config::SavedLane;
 
@@ -20,15 +22,12 @@ use crate::freshness::{BacklogStatusEvaluation, SummaryFreshness, UnfinishedActi
 /// due by then too; before it, nothing overnight can be reported as missed.
 pub const OVERNIGHT_WINDOW_END_HOUR: u32 = 10;
 
-pub const NOT_YET_FIRST_NIGHT: &str =
-    "you'll see whether your journal is caught up after its first night.";
-pub const NOT_YET_ENGINE: &str =
-    "your journal starts catching up once you choose where the thinking happens.";
-const NOT_YET_ENGINE_BYO: &str = "your journal starts catching up once your own model is set up.";
-const NOT_YET_ENGINE_SPP: &str =
-    "your journal starts catching up once confidential processing is set up.";
-const NOT_YET_ENGINE_LOCAL: &str = "your journal starts catching up once local thinking is set up.";
-pub const NOT_YET_SEARCH: &str = "search catches up overnight.";
+const NOT_YET_FIRST_NIGHT_ID: &str = "journal.window.system.health.not.yet.first.night";
+const NOT_YET_ENGINE_ID: &str = "journal.window.system.health.not.yet.engine";
+const NOT_YET_ENGINE_BYO_ID: &str = "journal.window.system.health.not.yet.engine.byo";
+const NOT_YET_ENGINE_SPP_ID: &str = "journal.window.system.health.not.yet.engine.spp";
+const NOT_YET_ENGINE_LOCAL_ID: &str = "journal.window.system.health.not.yet.engine.local";
+pub const NOT_YET_SEARCH_ID: &str = "journal.window.system.health.not.yet.search";
 
 /// Why the nightly catch-up hasn't had its first chance yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,14 +41,19 @@ pub enum NotYet {
 }
 
 impl NotYet {
-    pub const fn text(self) -> &'static str {
-        match self {
-            Self::AwaitingEngine(None) => NOT_YET_ENGINE,
-            Self::AwaitingEngine(Some(SavedLane::Byo)) => NOT_YET_ENGINE_BYO,
-            Self::AwaitingEngine(Some(SavedLane::Spp)) => NOT_YET_ENGINE_SPP,
-            Self::AwaitingEngine(Some(SavedLane::Local)) => NOT_YET_ENGINE_LOCAL,
-            Self::FirstNight => NOT_YET_FIRST_NIGHT,
-        }
+    pub fn text(self) -> String {
+        self.text_in(ENGLISH)
+    }
+
+    pub fn text_in(self, locale: &str) -> String {
+        let id = match self {
+            Self::AwaitingEngine(None) => NOT_YET_ENGINE_ID,
+            Self::AwaitingEngine(Some(SavedLane::Byo)) => NOT_YET_ENGINE_BYO_ID,
+            Self::AwaitingEngine(Some(SavedLane::Spp)) => NOT_YET_ENGINE_SPP_ID,
+            Self::AwaitingEngine(Some(SavedLane::Local)) => NOT_YET_ENGINE_LOCAL_ID,
+            Self::FirstNight => NOT_YET_FIRST_NIGHT_ID,
+        };
+        text(locale, id)
     }
 
     /// Where the note leads: the fix when there is one, the detail otherwise.
@@ -126,8 +130,12 @@ pub fn summary_not_yet(journal: &Path, local_now: DateTime) -> Option<NotYet> {
 
 /// The backlog evaluation for a summary that hasn't come up yet.
 pub fn not_yet_evaluation(not_yet: NotYet) -> BacklogStatusEvaluation {
+    not_yet_evaluation_in(not_yet, ENGLISH)
+}
+
+pub fn not_yet_evaluation_in(not_yet: NotYet, locale: &str) -> BacklogStatusEvaluation {
     BacklogStatusEvaluation {
-        verdict: not_yet.text().to_owned(),
+        verdict: not_yet.text_in(locale),
         freshness: SummaryFreshness::Unknown,
         pending_days: 0,
         oldest_pending_day: None,
@@ -258,7 +266,10 @@ mod tests {
 
     #[test]
     fn awaiting_engine_variants_and_hrefs() {
-        assert_eq!(NotYet::AwaitingEngine(None).text(), NOT_YET_ENGINE);
+        assert_eq!(
+            NotYet::AwaitingEngine(None).text(),
+            "your journal starts catching up once you choose where the thinking happens."
+        );
         assert_eq!(NotYet::AwaitingEngine(None).href(), "/app/thinking/");
         assert_eq!(NotYet::AwaitingEngine(None).as_str(), "awaiting_engine");
 
@@ -268,7 +279,10 @@ mod tests {
             (SavedLane::Local, "/app/thinking/#local-setup"),
         ] {
             let not_yet = NotYet::AwaitingEngine(Some(lane));
-            assert_ne!(not_yet.text(), NOT_YET_ENGINE);
+            assert_ne!(
+                not_yet.text(),
+                "your journal starts catching up once you choose where the thinking happens."
+            );
             assert_eq!(not_yet.href(), expected_href);
             assert_eq!(not_yet.as_str(), "awaiting_engine");
         }

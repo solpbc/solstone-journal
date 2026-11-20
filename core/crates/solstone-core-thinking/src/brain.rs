@@ -86,7 +86,7 @@ fn presentation_on(
         "reason_code": projection.reason_code,
         "reason_text": view.reason_text,
         "failing_component": view.failing_component,
-        "action": action(&projection.aggregate_state, reason, projection.active_lane.as_deref(), view.failing_component.as_deref(), view.progressing),
+        "action": action(&projection.aggregate_state, reason, projection.active_lane.as_deref(), view.failing_component.as_deref(), view.progressing, locale),
         "identity": {"lane": projection.active_lane, "provider": projection.active_provider, "model": solstone_core_brain::owner_identity_model(config, projection.active_lane.as_deref(), projection.active_model.as_deref())},
         "evidence": {"observed_at": view.evidence.observed_at, "age_seconds": view.evidence.age_seconds, "age_text": view.evidence.age_text},
         "components": components,
@@ -135,6 +135,7 @@ fn action(
     lane: Option<&str>,
     failing: Option<&str>,
     progressing: bool,
+    locale: &str,
 ) -> Value {
     let bundled_runtime = lane == Some("bundled")
         && (matches!(
@@ -154,20 +155,20 @@ fn action(
         return Value::Null;
     }
     if state == "unhealthy" && reason == Some("brain_refresh_timeout") {
-        return json!({"label":"check again","refresh":true});
+        return json!({"label":text(locale, "journal.window.thinking.button.label.check.again"),"refresh":true});
     }
     if matches!(state, "blocked" | "unhealthy") {
         return if bundled_runtime {
-            json!({"label":"open local setup","href":"/app/thinking/#local-setup"})
+            json!({"label":text(locale, "journal.window.thinking.brain.action.local.setup"),"href":"/app/thinking/#local-setup"})
         } else {
-            json!({"label":"open thinking","href":"/app/thinking/#main"})
+            json!({"label":text(locale, "journal.window.thinking.brain.action.open.thinking"),"href":"/app/thinking/#main"})
         };
     }
     if state == "unknown" && reason == Some("configuration_invalid") {
-        return json!({"label":"open thinking","href":"/app/thinking/#main"});
+        return json!({"label":text(locale, "journal.window.thinking.brain.action.open.thinking"),"href":"/app/thinking/#main"});
     }
     if state == "unknown" {
-        return json!({"label":"check again","refresh":true});
+        return json!({"label":text(locale, "journal.window.thinking.button.label.check.again"),"refresh":true});
     }
     Value::Null
 }
@@ -354,7 +355,7 @@ mod tests {
 
     #[test]
     fn timed_out_check_offers_the_existing_refresh_action_on_each_lane() {
-        let refresh = action("unknown", None, None, None, false);
+        let refresh = action("unknown", None, None, None, false, ENGLISH);
         for lane in ["bundled", "byo-cloud", "byo-endpoint", "spp"] {
             assert_eq!(
                 action(
@@ -363,6 +364,7 @@ mod tests {
                     Some(lane),
                     Some("generate"),
                     false,
+                    ENGLISH,
                 ),
                 refresh,
                 "{lane}: a timed-out check can be requested again",
@@ -375,6 +377,7 @@ mod tests {
                         Some(lane),
                         Some("generate"),
                         false,
+                        ENGLISH,
                     )
                     .is_null(),
                     "{lane}: {state} does not offer another check",
@@ -391,6 +394,7 @@ mod tests {
             Some("bundled"),
             Some("lane_prerequisites"),
             false,
+            ENGLISH,
         );
         assert_eq!(setup["href"], "/app/thinking/#local-setup");
         assert!(setup.get("refresh").is_none());
@@ -400,6 +404,7 @@ mod tests {
             Some("byo-cloud"),
             Some("generate"),
             false,
+            ENGLISH,
         );
         assert_eq!(credential["href"], "/app/thinking/#main");
         assert!(credential.get("refresh").is_none());

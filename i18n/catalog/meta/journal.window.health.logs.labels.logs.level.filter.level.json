@@ -1,0 +1,16 @@
+{
+  "description": "Health logs copy \"logs_level_filter_label\" in the journal's health view.",
+  "context": "Journal window, health view. Health logs copy \"logs_level_filter_label\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afdec72c97779519b1096872e4333136a9dbe1ad38b72901b33b46187d57b59b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

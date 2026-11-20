@@ -1,0 +1,16 @@
+{
+  "description": "Backlog verdict in the journal's system.health view.",
+  "context": "Journal window, system.health view. Backlog verdict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e06aa26f0c2e6eac0a4b6b33fd01fd595761ed141758eac575d2f90c97d40816",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

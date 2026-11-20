@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:retention:owner-voice-originals' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:retention:owner-voice-originals'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e74094c6d87d53f466dd72d70b076573fca13dbeed4a25d160d23c0b3eb24b87",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

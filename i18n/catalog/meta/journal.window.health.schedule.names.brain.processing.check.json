@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'brain' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'brain'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7b2179d02de36c5e4f33fb6195f204d9c612452682c96752dcd0a2473138569",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

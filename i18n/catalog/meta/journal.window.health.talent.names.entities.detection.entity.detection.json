@@ -1,0 +1,16 @@
+{
+  "description": "Talent names 'entities:detection' in the journal's health view.",
+  "context": "Journal window, health view. Talent names 'entities:detection'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f988b4fab2151e32f1ace5103a75ed43d4da8e60d9fbe96fd3563db0a420f610",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'cadence' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'cadence'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5da1ab9a6d8ce47d3a9472d8ec64ba36ec390fcaaf22ca703678202e9e60d51",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

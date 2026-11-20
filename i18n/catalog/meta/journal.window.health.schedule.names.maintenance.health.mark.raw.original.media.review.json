@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:health:mark-raw' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:health:mark-raw'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57a946297e3db9a42b157f7320fe30be28e1541f4cfa93a494b64dcedf6e3f5a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

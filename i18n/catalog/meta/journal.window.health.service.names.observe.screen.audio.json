@@ -1,0 +1,16 @@
+{
+  "description": "Service names observe in the journal's health view.",
+  "context": "Journal window, health view. Service names observe.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc684c1f8303d15645e6726e3df93a470cc9de25585fde833f960af79305138d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

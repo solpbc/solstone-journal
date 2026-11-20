@@ -5,52 +5,52 @@
   const reportHealthReady = window.createViewReady('health');
 
   const HEALTH_LOGS_COPY = {
-    "LOGS_LEVEL_FILTER_LABEL": "level",
-    "LOGS_LEVEL_OPTION_ALL": "all levels",
-    "LOGS_LEVEL_OPTION_ERROR": "errors only",
-    "LOGS_LEVEL_OPTION_INFO": "info & above",
-    "LOGS_LEVEL_OPTION_WARNING": "warnings & errors",
-    "LOGS_SERVICE_COLLAPSED": "── {service} ── ({n} lines, ★ {errors} errors)",
-    "LOGS_SERVICE_FILTER_LABEL": "service",
-    "LOGS_STREAM_FILTER_LABEL": "stream"
+    "LOGS_LEVEL_FILTER_LABEL": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.filter.level'),
+    "LOGS_LEVEL_OPTION_ALL": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.all.levels'),
+    "LOGS_LEVEL_OPTION_ERROR": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.errors.only'),
+    "LOGS_LEVEL_OPTION_INFO": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.info.above'),
+    "LOGS_LEVEL_OPTION_WARNING": window.JournalI18n.render('journal.window.health.logs.labels.logs.level.option.warnings.errors'),
+    "LOGS_SERVICE_COLLAPSED": window.JournalI18n.render('journal.window.health.logs.labels.logs.service.collapsed.service.n.lines.errors.errors'),
+    "LOGS_SERVICE_FILTER_LABEL": window.JournalI18n.render('journal.window.health.logs.labels.logs.service.filter.service'),
+    "LOGS_STREAM_FILTER_LABEL": window.JournalI18n.render('journal.window.health.logs.labels.logs.stream.filter.stream')
   };
   const HEALTH_GLANCE_COPY = {
-    "HEALTH_GLANCE_CATCHING_UP": "catching up on {n} {tasks} in the background. last update {age}.",
-    "HEALTH_GLANCE_CHECKING": "checking where your journal stands…",
-    "HEALTH_GLANCE_CLIENT_SILENT": "one of your devices hasn't reached your journal recently.",
-    "HEALTH_GLANCE_DEVICE_FAILING": "your journal couldn't accept uploads from {device}.",
-    "HEALTH_GLANCE_DEVICES_FAILING": "your journal couldn't accept uploads from {n} devices: {devices}.",
-    "HEALTH_GLANCE_DEVICE_SILENT": "{device} hasn't added to your journal in {age}.",
-    "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": "{device} hasn't added to your journal recently.",
-    "HEALTH_GLANCE_DEVICES_SILENT": "{n} devices haven't added to your journal recently: {devices}.",
-    "HEALTH_GLANCE_DEVICES_UNAVAILABLE": "your devices' delivery status is unavailable right now.",
-    "HEALTH_GLANCE_DEVICES_UNKNOWN": "delivery from some of your devices isn't known right now.",
-    "HEALTH_GLANCE_WORK_HELD": "some queued work is on hold for a safety check.",
-    "HEALTH_GLANCE_WORK_UNAVAILABLE": "queued work status is unavailable right now.",
-    "HEALTH_GLANCE_OK": "the journal's live services and processing are working.",
+    "HEALTH_GLANCE_CATCHING_UP": window.JournalI18n.render('journal.window.health.glance.glance.catching.catching.up.on.n.tasks.in'),
+    "HEALTH_GLANCE_CHECKING": window.JournalI18n.render('journal.window.health.glance.glance.checking.checking.where.your.journal.stands'),
+    "HEALTH_GLANCE_CLIENT_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.client.one.of.your.devices.hasn.t'),
+    "HEALTH_GLANCE_DEVICE_FAILING": window.JournalI18n.render('journal.window.health.glance.glance.device.your.journal.couldn.t.accept.uploads'),
+    "HEALTH_GLANCE_DEVICES_FAILING": window.JournalI18n.render('journal.window.health.glance.glance.devices.your.journal.couldn.t.accept.uploads'),
+    "HEALTH_GLANCE_DEVICE_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.device.device.hasn.t.added.to.your'),
+    "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": window.JournalI18n.render('journal.window.health.glance.glance.device.device.hasn.t.added.to.your.variant2'),
+    "HEALTH_GLANCE_DEVICES_SILENT": window.JournalI18n.render('journal.window.health.glance.glance.devices.n.devices.haven.t.added.to'),
+    "HEALTH_GLANCE_DEVICES_UNAVAILABLE": window.JournalI18n.render('journal.window.health.glance.glance.devices.your.devices.delivery.status.is.unavailable'),
+    "HEALTH_GLANCE_DEVICES_UNKNOWN": window.JournalI18n.render('journal.window.health.glance.glance.devices.delivery.from.some.of.your.devices'),
+    "HEALTH_GLANCE_WORK_HELD": window.JournalI18n.render('journal.window.health.glance.glance.work.some.queued.work.is.on.hold'),
+    "HEALTH_GLANCE_WORK_UNAVAILABLE": window.JournalI18n.render('journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right'),
+    "HEALTH_GLANCE_OK": window.JournalI18n.render('journal.window.health.glance.glance.ok.the.journal.s.live.services.and'),
     "HEALTH_GLANCE_BACKUP": "{headline}",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
-    "HEALTH_GLANCE_CHECKIN_STALE": "a journal run on {name} stopped checking in with your journal.",
-    "HEALTH_GLANCE_CHECKINS_STALE": "{n} journal runs stopped checking in with your journal: {names}.",
+    "HEALTH_GLANCE_CHECKIN_STALE": window.JournalI18n.render('journal.window.health.glance.glance.checkin.a.journal.run.on.name.stopped'),
+    "HEALTH_GLANCE_CHECKINS_STALE": window.JournalI18n.render('journal.window.health.glance.glance.checkins.n.journal.runs.stopped.checking.in'),
     "HEALTH_GLANCE_STORAGE_PRIVACY": "{message}",
-    "HEALTH_GLANCE_SERVICE_ATTENTION": "1 service needs attention: {service_names}.",
-    "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} services need attention: {service_names}.",
-    "HEALTH_GLANCE_SERVICES_UNREACHABLE": "the journal's services couldn't be reached. check that your journal is running.",
-    "HEALTH_OBSERVE_LOCAL_REPORTING": "your journal's computer isn't reporting yet. showing {label}.",
-    "HEALTH_OBSERVE_LOCAL_SILENT": "your journal's computer isn't reporting yet.",
-    "HEALTH_OBSERVE_UNKNOWN_REPORTING": "can't identify your journal's computer yet. showing {label}.",
-    "HEALTH_OBSERVE_UNKNOWN_SILENT": "can't identify your journal's computer yet.",
-    "HEALTH_DEVICES_COUNT_ONE": "1 device is adding to your journal.",
-    "HEALTH_DEVICES_COUNT_MANY": "{n} devices are adding to your journal.",
-    "HEALTH_DEVICES_EMPTY": "no devices are paired yet.",
-    "HEALTH_DEVICES_PAIR_LINK": "pair a device →",
-    "HEALTH_DEVICES_SEE_LINK": "see your devices in network →",
-    "HEALTH_DEVICES_MANAGE_LINK": "manage in network →"
+    "HEALTH_GLANCE_SERVICE_ATTENTION": window.JournalI18n.render('journal.window.health.glance.glance.service.service.needs.attention.service.names'),
+    "HEALTH_GLANCE_SERVICES_ATTENTION": window.JournalI18n.render('journal.window.health.glance.glance.services.n.services.need.attention.service.names'),
+    "HEALTH_GLANCE_SERVICES_UNREACHABLE": window.JournalI18n.render('journal.window.health.glance.glance.services.the.journal.s.services.couldn.t'),
+    "HEALTH_OBSERVE_LOCAL_REPORTING": window.JournalI18n.render('journal.window.health.glance.observe.local.your.journal.s.computer.isn.t.variant2'),
+    "HEALTH_OBSERVE_LOCAL_SILENT": window.JournalI18n.render('journal.window.health.glance.observe.local.your.journal.s.computer.isn.t'),
+    "HEALTH_OBSERVE_UNKNOWN_REPORTING": window.JournalI18n.render('journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s.variant2'),
+    "HEALTH_OBSERVE_UNKNOWN_SILENT": window.JournalI18n.render('journal.window.health.glance.observe.unknown.can.t.identify.your.journal.s'),
+    "HEALTH_DEVICES_COUNT_ONE": window.JournalI18n.render('journal.window.health.glance.devices.count.device.is.adding.to.your.journal'),
+    "HEALTH_DEVICES_COUNT_MANY": window.JournalI18n.render('journal.window.health.glance.devices.count.n.devices.are.adding.to.your'),
+    "HEALTH_DEVICES_EMPTY": window.JournalI18n.render('journal.window.health.glance.devices.empty.no.devices.are.paired.yet'),
+    "HEALTH_DEVICES_PAIR_LINK": window.JournalI18n.render('journal.window.health.glance.devices.pair.pair.a.device'),
+    "HEALTH_DEVICES_SEE_LINK": window.JournalI18n.render('journal.window.health.glance.devices.see.see.your.devices.in.network'),
+    "HEALTH_DEVICES_MANAGE_LINK": window.JournalI18n.render('journal.window.health.glance.devices.manage.manage.in.network')
   };
   // Worst signal wins, and green is earned: a verdict may not read "everything's
   // working" while the device rows below it say a device has gone quiet, and a
   // failure to derive device delivery renders unavailable, never green.
-  const GLANCE_DEVICES_ACTION = { href: '#registeredClientsCard', label: 'view devices' };
+  const GLANCE_DEVICES_ACTION = { href: '#registeredClientsCard', label: window.JournalI18n.render('journal.window.health.label.view.devices') };
 
   let brainSnapshot = null;
   let backlogCopy = {};
@@ -96,7 +96,7 @@
   const state = {
     loadedAt: Date.now(),
     queuedWorkAuthoritySeen: false,
-    backupView: { tone: 'unavailable', text: 'checking backup status…' },
+    backupView: { tone: 'unavailable', text: window.JournalI18n.render('journal.window.health.text.checking.backup.status') },
     heldWorkSnapshot: null,
     heldWorkCurrent: false,
     supervisorSeen: false,
@@ -275,44 +275,44 @@
 
   const SPEECH_SETUP_COPY = {
     waiting: {
-      state: 'waiting for setup',
-      explanation: "setup hasn't started yet.",
-      summary: 'setup details',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.waiting.for.setup'),
+      explanation: window.JournalI18n.render('journal.window.health.speech.setup.copy.explanation.setup.hasn.t.started.yet'),
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.setup.details'),
     },
     downloading: {
-      state: 'downloading',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.downloading'),
       explanation: null,
-      summary: 'setup details',
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.setup.details'),
     },
     verifying: {
-      state: 'checking the download',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.checking.the.download'),
       explanation: null,
-      summary: 'setup details',
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.setup.details'),
     },
     installing: {
-      state: 'installing',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.installing'),
       explanation: null,
-      summary: 'setup details',
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.setup.details'),
     },
     paused: {
-      state: 'setup paused',
-      explanation: 'setup was cancelled.',
-      summary: 'show recovery steps',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.setup.paused'),
+      explanation: window.JournalI18n.render('journal.window.health.speech.setup.copy.explanation.setup.was.cancelled'),
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.show.recovery.steps'),
     },
     cooling: {
-      state: "setup couldn't finish",
-      explanation: 'automatic setup is waiting to try again.',
-      summary: 'show recovery steps',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.setup.couldn.t.finish'),
+      explanation: window.JournalI18n.render('journal.window.health.speech.setup.copy.explanation.automatic.setup.is.waiting.to.try'),
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.show.recovery.steps'),
     },
     attention: {
-      state: 'setup needs attention',
-      explanation: "local speech recognition isn't ready.",
-      summary: 'show recovery steps',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.setup.needs.attention'),
+      explanation: window.JournalI18n.render('journal.window.health.speech.setup.copy.explanation.local.speech.recognition.isn.t.ready'),
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.show.recovery.steps'),
     },
     unavailable: {
-      state: 'status unavailable',
-      explanation: "speech recognition setup couldn't be checked.",
-      summary: 'setup details',
+      state: window.JournalI18n.render('journal.window.health.speech.setup.copy.state.status.unavailable'),
+      explanation: window.JournalI18n.render('journal.window.health.speech.setup.copy.explanation.speech.recognition.setup.couldn.t.be'),
+      summary: window.JournalI18n.render('journal.window.health.speech.setup.copy.summary.setup.details'),
     },
   };
 
@@ -406,7 +406,7 @@
     const copy = SPEECH_SETUP_COPY[payload.state] || {
       state: payload.state || '',
       explanation: null,
-      summary: 'setup details',
+      summary: window.JournalI18n.render('journal.window.health.status.setup.details'),
     };
 
     const stateEl = document.getElementById('speechSetupState');
@@ -437,7 +437,7 @@
         else bytesEl.removeAttribute('data-total');
 
         if (hasReceived && hasTotal) {
-          bytesEl.textContent = `${formatSpeechBytes(payload.bytes_received)} of ${formatSpeechBytes(payload.bytes_total)}`;
+          bytesEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.of.value2', [['value1', String(formatSpeechBytes(payload.bytes_received))], ['value2', String(formatSpeechBytes(payload.bytes_total))]]);
         } else if (hasReceived) {
           bytesEl.textContent = formatSpeechBytes(payload.bytes_received);
         } else {
@@ -605,13 +605,13 @@
       host.replaceChildren();
       for (const item of data.items) {
         const row = document.createElement('p');
-        row.textContent = `${item.program} · ${item.count} ${item.count === 1 ? 'request' : 'requests'} · ${new Date(item.last_seen * 1000).toLocaleString()}`;
+        row.textContent = `${item.program} · ${item.count} ${item.count === 1 ? window.JournalI18n.render('journal.window.health.status.request') : window.JournalI18n.render('journal.window.health.status.requests')} · ${new Date(item.last_seen * 1000).toLocaleString()}`;
         host.appendChild(row);
       }
-      if (!data.items.length) host.textContent = 'none since this journal started.';
+      if (!data.items.length) host.textContent = window.JournalI18n.render('journal.window.health.visible.text.none.since.this.journal.started');
       section.hidden = false;
     } catch (_) {
-      section.querySelector('[data-local-programs]').textContent = 'this list could not be read. try again shortly.';
+      section.querySelector('[data-local-programs]').textContent = window.JournalI18n.render('journal.window.health.visible.text.this.list.could.not.be.read');
       section.hidden = false;
     }
   }
@@ -639,14 +639,15 @@
     errorHost.hidden = false;
     if (window.SurfaceState) {
       errorHost.innerHTML = window.SurfaceState.error({
-        heading: "health state couldn't be loaded",
-        desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
+        heading: window.JournalI18n.render('journal.window.health.heading.health.state.couldn.t.be.loaded'),
+        desc: window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.health.window.explanation.reload.to.try.again'),
         retry: true,
+        retryLabel: window.JournalI18n.render('journal.window.health.button.label.try.again'),
         detail: error,
         headingLevel: 'h3'
       });
     } else {
-      errorHost.innerHTML = '<button type="button" class="surface-state-retry">try again</button>';
+      errorHost.innerHTML = `<button type="button" class="surface-state-retry">${window.JournalI18n.renderHtml('journal.window.health.button.label.try.again')}</button>`;
     }
     errorHost.querySelector('.surface-state-retry')?.addEventListener('click', () => {
       loadHealthState();
@@ -670,12 +671,12 @@
     link.href = `/app/transcripts/${encodeURIComponent(day)}`;
     if (pending === 1 && stuckCount === 0) {
       line.textContent = '';
-      link.textContent = `${label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase())} is still catching up →`;
+      link.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.is.still.catching.up', [['value1', String(label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase()))]]);
       line.appendChild(link);
       return;
     }
     line.textContent = `${data.verdict || ''} `;
-    link.textContent = `oldest: ${label} →`;
+    link.textContent = window.JournalI18n.render('journal.window.health.visible.text.oldest.value1', [['value1', String(label)]]);
     line.appendChild(link);
   }
 
@@ -738,13 +739,13 @@
         const index = searchIndex.index;
         if (index) {
           const details = [];
-          if (index.queued > 0) details.push(`${index.queued} updates queued`);
-          if (index.failed_deletions > 0) details.push(`${index.failed_deletions} removals still waiting`);
+          if (index.queued > 0) details.push(window.JournalI18n.render('journal.window.health.status.value1.updates.queued', [['value1', String(index.queued)]]));
+          if (index.failed_deletions > 0) details.push(window.JournalI18n.render('journal.window.health.status.value1.removals.still.waiting', [['value1', String(index.failed_deletions)]]));
           if (Number.isFinite(index.last_finished_check_at_ms)) {
             const hours = Math.max(0, Math.floor((Date.now() - index.last_finished_check_at_ms) / 3600000));
-            details.push(`last search check ${hours < 1 ? 'less than an hour ago' : `${hours} hours ago`}: ${index.check_indexed} updated, ${index.check_removed} removed`);
+            details.push(window.JournalI18n.render('journal.window.health.window.explanation.last.search.check.value1.value2.updated', [['value1', String(hours < 1 ? window.JournalI18n.render('journal.window.health.window.explanation.less.than.an.hour.ago') : window.JournalI18n.render('journal.window.health.status.value1.hours.ago', [['value1', String(hours)]]))], ['value2', String(index.check_indexed)], ['value3', String(index.check_removed)]]));
           } else {
-            details.push('no finished search check yet');
+            details.push(window.JournalI18n.render('journal.window.health.window.explanation.no.finished.search.check.yet'));
           }
           searchLine.textContent += ` ${details.join('; ')}.`;
         }
@@ -776,7 +777,7 @@
       elements.glanceErrorsValue.classList.toggle('has-errors', state.agentErrorsOk && reported > 0);
     }
     if (elements.glanceErrorsLabel) {
-      elements.glanceErrorsLabel.textContent = data.label || 'errors today';
+      elements.glanceErrorsLabel.textContent = data.label || window.JournalI18n.render('journal.window.health.visible.text.errors.today');
     }
     updateStatusSummary();
   }
@@ -787,11 +788,11 @@
     const count = Number(notSensed);
     if (!card) return;
     if (Number.isFinite(count) && count > 0) {
-      const word = count === 1 ? 'segment' : 'segments';
+      const word = count === 1 ? window.JournalI18n.render('journal.window.health.status.segment') : window.JournalI18n.render('journal.window.health.status.segments');
       const el = existing || document.createElement('p');
       el.id = 'mediaBacklogLine';
       el.className = 'brain-health-pending';
-      el.textContent = `${count} ${word} waiting for media processing`;
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.value2.waiting.for.media.processing', [['value1', String(count)], ['value2', String(word)]]);
       if (!existing) {
         card.appendChild(el);
       }
@@ -829,22 +830,22 @@
     const fresh = inventory && Date.now() >= inventory.as_of_ms
       && Date.now() - Math.max(inventory.as_of_ms, inventory.next_pass_ms ?? inventory.as_of_ms) < 180000;
     if (!inventory) {
-      reach.textContent = 'the journal has not finished checking its work. keep it running to see progress here.';
+      reach.textContent = window.JournalI18n.render('journal.window.health.visible.text.the.journal.has.not.finished.checking');
     } else {
-      const range = inventory.oldest_day ? inventory.oldest_day + '–' + inventory.newest_day : 'no recorded days';
-      reach.textContent = `${inventory.days_inspected} of ${inventory.days_total} days checked (${range}). `
-        + (!fresh ? 'last known progress, checked ' + new Date(inventory.as_of_ms).toLocaleString() + '.'
-          : inventory.complete ? 'the inspection covers the whole journal.' : 'the inspection is incomplete.');
-      const names = ['today', 'your requests and yesterday', 'recent days', 'imports', 'finishing older days', 'updating older days'];
+      const range = inventory.oldest_day ? inventory.oldest_day + '–' + inventory.newest_day : window.JournalI18n.render('journal.window.health.status.no.recorded.days');
+      reach.textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.of.value2.days.checked.value3', [['value1', String(inventory.days_inspected)], ['value2', String(inventory.days_total)], ['value3', String(range)]])
+        + (!fresh ? window.JournalI18n.render('journal.window.health.visible.text.last.known.progress.checked') + new Date(inventory.as_of_ms).toLocaleString() + '.'
+          : inventory.complete ? window.JournalI18n.render('journal.window.health.visible.text.the.inspection.covers.the.whole.journal') : window.JournalI18n.render('journal.window.health.visible.text.the.inspection.is.incomplete'));
+      const names = [window.JournalI18n.render('journal.window.health.status.today'), window.JournalI18n.render('journal.window.health.window.explanation.your.requests.and.yesterday'), window.JournalI18n.render('journal.window.health.status.recent.days'), window.JournalI18n.render('journal.window.health.status.imports'), window.JournalI18n.render('journal.window.health.status.finishing.older.days'), window.JournalI18n.render('journal.window.health.status.updating.older.days')];
       inventory.bands.forEach((band, i) => {
         const row = document.createElement('li');
-        row.textContent = names[i] + ': ' + band.segments_complete + ' recordings ready, '
-          + band.segments_owed + ' left; ' + band.daily_units_complete + ' daily outputs ready, '
-          + band.daily_units_owed + ' left'
-          + (band.activities_owed ? '; ' + band.activities_owed + ' activities left' : '')
-          + (band.owner_requests ? '; ' + band.owner_requests + ' requests to redo a day' : '')
-          + (band.permission_held ? '; ' + band.permission_held + ' waiting for permission' : '')
-          + (band.prerequisite_held ? '; ' + band.prerequisite_held + ' waiting for recordings' : '') + '.';
+        row.textContent = names[i] + ': ' + band.segments_complete + window.JournalI18n.render('journal.window.health.status.recordings.ready')
+          + band.segments_owed + window.JournalI18n.render('journal.window.health.status.left') + band.daily_units_complete + window.JournalI18n.render('journal.window.health.status.daily.outputs.ready')
+          + band.daily_units_owed + window.JournalI18n.render('journal.window.health.visible.text.left')
+          + (band.activities_owed ? '; ' + band.activities_owed + window.JournalI18n.render('journal.window.health.visible.text.activities.left') : '')
+          + (band.owner_requests ? '; ' + band.owner_requests + window.JournalI18n.render('journal.window.health.visible.text.requests.to.redo.a.day') : '')
+          + (band.permission_held ? '; ' + band.permission_held + window.JournalI18n.render('journal.window.health.visible.text.waiting.for.permission') : '')
+          + (band.prerequisite_held ? '; ' + band.prerequisite_held + window.JournalI18n.render('journal.window.health.visible.text.waiting.for.recordings') : '') + '.';
         rows.appendChild(row);
       });
     }
@@ -857,22 +858,22 @@
       const day = key => new Date(Number(key.slice(0, 4)), Number(key.slice(4, 6)) - 1, Number(key.slice(6, 8)))
         .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const range = progress.caught_up_since
-        ? `history caught up back to ${day(progress.caught_up_since)}`
+        ? window.JournalI18n.render('journal.window.health.window.explanation.history.caught.up.back.to.value1', [['value1', String(day(progress.caught_up_since))]])
         : inventory.oldest_day && inventory.oldest_day <= progress.through_day
-          ? 'older history is still catching up' : 'no older history to check';
-      const parts = [range, `${count(progress.segments_owed)} recordings and ${count(progress.daily_units_owed)} daily outputs left`];
-      if (fresh && progress.net_per_hour > 0) parts.push(`about ${progress.net_per_hour.toLocaleString(undefined, { maximumSignificantDigits: 3 })} an hour`);
-      if (progress.set_aside_units) parts.push(`${count(progress.set_aside_units)} items set aside`);
-      if (progress.unreadable_days) parts.push(`${count(progress.unreadable_days)} days could not be checked`);
-      history.textContent = (!fresh ? 'last checked: ' : '') + parts.join(' · ')
-        + `. through ${day(progress.through_day)}; today and yesterday are separate.`;
+          ? window.JournalI18n.render('journal.window.health.window.explanation.older.history.is.still.catching.up') : window.JournalI18n.render('journal.window.health.window.explanation.no.older.history.to.check');
+      const parts = [range, window.JournalI18n.render('journal.window.health.window.explanation.value1.recordings.and.value2.daily.outputs', [['value1', String(count(progress.segments_owed))], ['value2', String(count(progress.daily_units_owed))]])];
+      if (fresh && progress.net_per_hour > 0) parts.push(window.JournalI18n.render('journal.window.health.status.about.value1.an.hour', [['value1', String(progress.net_per_hour.toLocaleString(undefined, { maximumSignificantDigits: 3 }))]]));
+      if (progress.set_aside_units) parts.push(window.JournalI18n.render('journal.window.health.status.value1.items.set.aside', [['value1', String(count(progress.set_aside_units))]]));
+      if (progress.unreadable_days) parts.push(window.JournalI18n.render('journal.window.health.window.explanation.value1.days.could.not.be.checked', [['value1', String(count(progress.unreadable_days))]]));
+      history.textContent = (!fresh ? window.JournalI18n.render('journal.window.health.visible.text.last.checked') : '') + parts.join(' · ')
+        + window.JournalI18n.render('journal.window.health.status.through.value1.today.and.yesterday.are', [['value1', String(day(progress.through_day))]]);
     }
     const cost = section.querySelector('[data-work-cost]');
     const older = inventory?.bands?.slice(4);
     const count = (key) => older?.reduce((total, band) => total + (band[key] || 0), 0);
     cost.textContent = older && fresh && inventory.complete
-      ? `finishing ${count('segments_owed')} older recordings, ${count('daily_units_owed')} daily outputs and ${count('activities_owed')} activities uses your chosen model and may add charges from your provider. today's work goes first.`
-      : "finishing older recordings and day updates uses your chosen model and may add charges from your provider. today's work goes first.";
+      ? window.JournalI18n.renderEnglish('journal.window.health.visible.text.finishing.value1.older.recordings.value2.daily', [['value1', String(count('segments_owed'))], ['value2', String(count('daily_units_owed'))], ['value3', String(count('activities_owed'))]])
+      : window.JournalI18n.renderEnglish('journal.window.health.visible.text.finishing.older.recordings.and.day.updates');
     section.querySelector('[data-work-confirm]').hidden = !work?.confirmation_available || work.history_confirmed;
     const details = section.querySelector('[data-work-details]');
     const errors = [...(work?.error ? [work.error] : inventory?.unreadable || []), ...(work?.retry_errors || [])];
@@ -882,17 +883,17 @@
     button.onclick = async () => {
       const result = section.querySelector('[data-work-action-result]');
       result.hidden = false;
-      result.textContent = 'saving your choice…';
+      result.textContent = window.JournalI18n.render('journal.window.health.visible.text.saving.your.choice');
       try {
         const response = await fetch('/app/settings/api/config', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ section: 'processing', data: { history_confirmed: true } }),
         });
         if (!response.ok) throw new Error('save failed');
-        result.textContent = 'older work is allowed to use your chosen model, which may add charges from your provider. today\'s work goes first.';
+        result.textContent = window.JournalI18n.render('journal.window.health.visible.text.older.work.is.allowed.to.use');
         await loadHealthState();
       } catch {
-        result.textContent = 'your choice could not be saved. try again.';
+        result.textContent = window.JournalI18n.render('journal.window.health.visible.text.your.choice.could.not.be.saved');
       }
     };
   }
@@ -946,7 +947,7 @@
         renderStoragePrivacy(saved);
         updateStatusSummary();
       } catch (error) {
-        result.textContent = error.error || 'your choice could not be saved. please try again.';
+        result.textContent = error.error || window.JournalI18n.render('journal.window.health.visible.text.your.choice.could.not.be.saved.variant2');
         result.hidden = false;
       } finally { button.disabled = false; }
     };
@@ -960,16 +961,16 @@
   // entry here is a codename on the trust page, so the map covers the ones that
   // ship (spl, parakeet) rather than letting them through raw (X-18).
   const SERVICE_NAMES = {
-    supervisor: 'system manager',
-    convey: 'web interface',
-    cortex: 'model runtime',
-    sense: 'media processor',
-    observe: 'screen & audio',
-    think: 'background analysis',
-    importer: 'file importer',
-    schedule: 'task scheduler',
-    spl: 'private network',
-    parakeet: 'transcription',
+    supervisor: window.JournalI18n.render('journal.window.health.service.names.supervisor.system.manager'),
+    convey: window.JournalI18n.render('journal.window.health.service.names.convey.web.interface'),
+    cortex: window.JournalI18n.render('journal.window.health.service.names.cortex.model.runtime'),
+    sense: window.JournalI18n.render('journal.window.health.service.names.sense.media.processor'),
+    observe: window.JournalI18n.render('journal.window.health.service.names.observe.screen.audio'),
+    think: window.JournalI18n.render('journal.window.health.service.names.think.background.analysis'),
+    importer: window.JournalI18n.render('journal.window.health.service.names.importer.file.importer'),
+    schedule: window.JournalI18n.render('journal.window.health.service.names.schedule.task.scheduler'),
+    spl: window.JournalI18n.render('journal.window.health.service.names.spl.private.network'),
+    parakeet: window.JournalI18n.render('journal.window.health.service.names.parakeet.transcription'),
   };
 
   function serviceName(internal) {
@@ -980,10 +981,10 @@
   // falls back to the humanized id. Mirrors thinking.js talentLabel so the two
   // surfaces name the same talent the same way (X-18).
   const TALENT_NAMES = {
-    'entities:detection': 'entity detection',
-    'entities:entity_observer': 'entity facts',
-    'entities:possible_names': 'possible names',
-    screen: 'screen descriptions',
+    'entities:detection': window.JournalI18n.render('journal.window.health.talent.names.entities.detection.entity.detection'),
+    'entities:entity_observer': window.JournalI18n.render('journal.window.health.talent.names.entities.entity.observer.entity.facts'),
+    'entities:possible_names': window.JournalI18n.render('journal.window.health.talent.names.entities.possible.names.possible.names'),
+    screen: window.JournalI18n.render('journal.window.health.talent.names.screen.screen.descriptions'),
   };
 
   function talentName(name) {
@@ -996,24 +997,24 @@
   // unmapped key so callers can fall back to a generic phrase instead of
   // printing a colon-delimited task identifier (G3-102).
   const SCHEDULE_NAMES = {
-    'brain': 'processing check',
-    'cadence': 'processing schedule',
-    'heartbeat': 'journal review',
-    'facet-candidates': 'facet suggestions',
-    'maintenance:backup:run': 'backup',
-    'maintenance:backup:prune': 'backup cleanup',
-    'maintenance:backup:verify': 'backup check',
-    'maintenance:backup:offload': 'original media cleanup',
-    'maintenance:health:mark-raw': 'original media review',
-    'maintenance:health:prune-logs': 'log cleanup',
-    'maintenance:retention:owner-voice-originals': 'audio deletion catch-up',
-    'maintenance:trash:erase': 'trash erase',
-    'maintenance:speakers:discover-voices': 'voice discovery',
-    'maintenance:speakers:candidate-pair-suggestions': 'speaker suggestions',
-    'maintenance:speakers:name-variants': 'speaker name suggestions',
-    'maintenance:speakers:consolidate-pool': 'speaker cleanup',
-    'maintenance:speakers:backfill-pool': 'voice list catch-up',
-    'maintenance:speakers:backfill-labels': 'speaker naming catch-up',
+    'brain': window.JournalI18n.render('journal.window.health.schedule.names.brain.processing.check'),
+    'cadence': window.JournalI18n.render('journal.window.health.schedule.names.cadence.processing.schedule'),
+    'heartbeat': window.JournalI18n.render('journal.window.health.schedule.names.heartbeat.journal.review'),
+    'facet-candidates': window.JournalI18n.render('journal.window.health.schedule.names.facet.candidates.facet.suggestions'),
+    'maintenance:backup:run': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.backup.run.backup'),
+    'maintenance:backup:prune': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.backup.prune.backup.cleanup'),
+    'maintenance:backup:verify': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.backup.verify.backup.check'),
+    'maintenance:backup:offload': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.backup.offload.original.media.cleanup'),
+    'maintenance:health:mark-raw': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.health.mark.raw.original.media.review'),
+    'maintenance:health:prune-logs': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.health.prune.logs.log.cleanup'),
+    'maintenance:retention:owner-voice-originals': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.retention.owner.voice.audio.deletion.catch.up'),
+    'maintenance:trash:erase': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.trash.erase.trash.erase'),
+    'maintenance:speakers:discover-voices': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.discover.voices.voice.discovery'),
+    'maintenance:speakers:candidate-pair-suggestions': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.candidate.pair.speaker.suggestions'),
+    'maintenance:speakers:name-variants': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.name.variants.speaker.name.suggestions'),
+    'maintenance:speakers:consolidate-pool': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.consolidate.pool.speaker.cleanup'),
+    'maintenance:speakers:backfill-pool': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.backfill.pool.voice.list.catch.up'),
+    'maintenance:speakers:backfill-labels': window.JournalI18n.render('journal.window.health.schedule.names.maintenance.speakers.backfill.labels.speaker.naming.catch.up'),
   };
 
   function scheduleName(name) {
@@ -1035,14 +1036,14 @@
       return;
     }
     if (vitalPending(el)) return;
-    el.replaceChildren(document.createTextNode('unavailable'));
+    el.replaceChildren(document.createTextNode(window.JournalI18n.render('journal.window.health.status.unavailable')));
   }
 
   // The word a vitals group reads out before its value lands. Screen readers
   // heard "unavailable" permanently because the static aria-label was never
   // rewritten; it is written from this path now, alongside the value.
   function pendingVitalLabel() {
-    return timeoutFired ? 'unavailable' : 'loading';
+    return timeoutFired ? window.JournalI18n.render('journal.window.health.status.unavailable') : window.JournalI18n.render('journal.window.health.status.loading');
   }
 
   function sweepUnresolvedSkeletons() {
@@ -1060,7 +1061,7 @@
     ];
     for (const el of targets) {
       if (el && el.querySelector('.skeleton, .skeleton-dark')) {
-        el.textContent = 'unavailable';
+        el.textContent = window.JournalI18n.render('journal.window.health.visible.text.unavailable');
         el.classList.add('unavailable');
       }
     }
@@ -1101,8 +1102,8 @@
   // "0 seconds ago" are all the same defect (G3-104).
   function ageAgo(ms) {
     const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
-    if (value < 60000) return 'just now';
-    return relativeTime(value) + ' ago';
+    if (value < 60000) return window.JournalI18n.render('journal.window.health.status.just.now');
+    return relativeTime(value) + window.JournalI18n.render('journal.window.health.status.ago');
   }
 
   // A duration that is still running is not an age, so it gets the ladder
@@ -1110,7 +1111,7 @@
   // "just now". A bare "8s" is the same defect as "0 seconds ago" (G3-104).
   function runningFor(ms) {
     const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
-    if (value < 60000) return 'under a minute';
+    if (value < 60000) return window.JournalI18n.render('journal.window.health.status.under.a.minute');
     return relativeTime(value);
   }
 
@@ -1159,10 +1160,10 @@
   function formatNextRun(epochMs) {
     if (!epochMs) return '';
     const delta = epochMs - Date.now();
-    if (delta < 0) return 'due now';
+    if (delta < 0) return window.JournalI18n.render('journal.window.health.status.due.now');
     // Spelled units, same ladder as every other age on the page (G3-104).
-    if (delta < 60000) return 'in under a minute';
-    return `in ${relativeTime(delta)}`;
+    if (delta < 60000) return window.JournalI18n.render('journal.window.health.window.explanation.in.under.a.minute');
+    return window.JournalI18n.render('journal.window.health.status.in.value1', [['value1', String(relativeTime(delta))]]);
   }
 
   function renderInfoItems(parent, items) {
@@ -1187,7 +1188,7 @@
   }
 
   function registeredClientName(client) {
-    return client.display_label || client.device_label || client.cid_short || client.cid || 'an unnamed device';
+    return client.display_label || client.device_label || client.cid_short || client.cid || window.JournalI18n.render('journal.window.health.status.an.unnamed.device');
   }
 
   function registeredClientAge(client) {
@@ -1214,7 +1215,7 @@
   }
 
   function describeRejectedClient(client) {
-    const sources = rejectedClientSources(client).map(([name]) => name || 'default');
+    const sources = rejectedClientSources(client).map(([name]) => name || window.JournalI18n.render('journal.window.health.status.default'));
     return registeredClientName(client) + (sources.length ? ` (${sources.join(', ')})` : '');
   }
 
@@ -1300,30 +1301,30 @@
     const days = new Set(holds.map(hold => hold.day));
     for (const row of state.legacyHolds || []) {
       if (!days.has(row.day)) holds.push({ key: 'day:' + row.day, day: row.day,
-        reason: row.reason, label: row.day, evidence: row });
+        displayReason: row.reason, label: row.day, evidence: row });
     }
     return [...new Map(holds.map(hold => [hold.key, hold])).values()];
   }
 
   function heldReason(reason) {
     const reasons = {
-      corrupt_input: 'the recording could not be read. replace its source before trying again.',
-      no_audio_stream: 'the recording has no audio stream.',
-      'embedded-duration-budget': 'this recording exceeds the audio processing limit on this device. the original is kept. use a shorter recording, reduce its audio tracks, or process it on a computer.',
-      'embedded-input-budget': 'this recording is larger than the 16 mib limit on this device. the original is kept. use a smaller recording or process it on a computer.',
-      segment_prerequisites: 'waiting for the recordings on this day.',
-      spending_confirmation: 'waiting for permission to process older work.',
-      thinking_unavailable: 'choose a model in thinking before this work can run.',
-      retry_wait: 'waiting before another attempt.',
-      analysis_failed: 'analysis has failed repeatedly.',
-      schema_invalid: 'the model repeatedly returned an unusable result.',
-      schema_validation_failed: 'the model repeatedly returned an unusable result.',
+      corrupt_input: window.JournalI18n.render('journal.window.health.window.explanation.the.recording.could.not.be.read'),
+      no_audio_stream: window.JournalI18n.render('journal.window.health.window.explanation.the.recording.has.no.audio.stream'),
+      'embedded-duration-budget': window.JournalI18n.render('journal.window.health.window.explanation.this.recording.exceeds.the.audio.processing'),
+      'embedded-input-budget': window.JournalI18n.render('journal.window.health.window.explanation.this.recording.is.larger.than.the'),
+      segment_prerequisites: window.JournalI18n.render('journal.window.health.window.explanation.waiting.for.the.recordings.on.this'),
+      spending_confirmation: window.JournalI18n.render('journal.window.health.window.explanation.waiting.for.permission.to.process.older'),
+      thinking_unavailable: window.JournalI18n.render('journal.window.health.window.explanation.choose.a.model.in.thinking.before'),
+      retry_wait: window.JournalI18n.render('journal.window.health.window.explanation.waiting.before.another.attempt'),
+      analysis_failed: window.JournalI18n.render('journal.window.health.window.explanation.analysis.has.failed.repeatedly'),
+      schema_invalid: window.JournalI18n.render('journal.window.health.window.explanation.the.model.repeatedly.returned.an.unusable'),
+      schema_validation_failed: window.JournalI18n.render('journal.window.health.window.explanation.the.model.repeatedly.returned.an.unusable'),
     };
-    return reasons[reason] || (reason && reason.includes(' ') ? reason : 'this processing step has been set aside.');
+    return reasons[reason] || (reason && reason.includes(' ') ? reason : window.JournalI18n.render('journal.window.health.window.explanation.this.processing.step.has.been.set'));
   }
 
   function heldWorkVerdict() {
-    const action = { href: '#processingHolds', label: 'view queued work' };
+    const action = { href: '#processingHolds', label: window.JournalI18n.render('journal.window.health.label.view.queued.work') };
     const inventory = state.work?.inventory;
     const workStale = inventory && !(Date.now() >= inventory.as_of_ms
         && Date.now() - Math.max(inventory.as_of_ms, inventory.next_pass_ms ?? inventory.as_of_ms) < 180000);
@@ -1353,10 +1354,10 @@
     section.hidden = current && holds.length === 0;
     section.dataset.current = String(current);
     const notice = section.querySelector('[data-held-work-notice]');
-    notice.textContent = workStale ? 'set-aside work was last checked ' + new Date(inventory.as_of_ms).toLocaleString() + '. checking its status again.' : current ? '' : state.heldWorkSnapshot
-      ? 'queued work status is unavailable. last known status, checked '
+    notice.textContent = workStale ? window.JournalI18n.render('journal.window.health.visible.text.set.aside.work.was.last.checked') + new Date(inventory.as_of_ms).toLocaleString() + window.JournalI18n.render('journal.window.health.status.checking.its.status.again') : current ? '' : state.heldWorkSnapshot
+      ? window.JournalI18n.render('journal.window.health.visible.text.queued.work.status.is.unavailable.last')
         + new Date(state.heldWorkSnapshot.observedAt).toLocaleString() + '.'
-      : 'queued work status is unavailable.';
+      : window.JournalI18n.render('journal.window.health.visible.text.queued.work.status.is.unavailable');
     notice.hidden = current;
     const rows = section.querySelector('[data-held-work-rows]');
     heldWorkPage = Math.min(heldWorkPage, Math.max(0, Math.ceil(holds.length / HELD_WORK_PAGE_SIZE) - 1));
@@ -1364,7 +1365,7 @@
     const pager = section.querySelector('[data-held-work-pages]');
     if (pager) {
       pager.hidden = holds.length <= HELD_WORK_PAGE_SIZE;
-      pager.querySelector('span').textContent = 'page ' + (heldWorkPage + 1) + ' of ' + Math.max(1, Math.ceil(holds.length / HELD_WORK_PAGE_SIZE));
+      pager.querySelector('span').textContent = window.JournalI18n.render('journal.window.health.visible.text.page') + (heldWorkPage + 1) + window.JournalI18n.render('journal.window.health.visible.text.of') + Math.max(1, Math.ceil(holds.length / HELD_WORK_PAGE_SIZE));
       const previous = pager.querySelector('[data-held-previous]');
       const next = pager.querySelector('[data-held-next]');
       previous.disabled = heldWorkPage === 0;
@@ -1386,41 +1387,41 @@
         const line = document.createElement('p');
         const details = document.createElement('details');
         const summary = document.createElement('summary');
-        summary.textContent = 'technical details';
+        summary.textContent = window.JournalI18n.render('journal.window.health.visible.text.technical.details');
         details.append(summary, document.createElement('pre'));
         const retry = document.createElement('button');
         retry.type = 'button';
-        retry.textContent = 'try again';
+        retry.textContent = window.JournalI18n.render('journal.window.health.visible.text.try.again');
         const feedback = document.createElement('p');
         feedback.dataset.retryFeedback = '';
         feedback.setAttribute('role', 'status');
         row.append(line, retry, feedback, details);
         rows.appendChild(row);
       }
-      const names = { daily: 'daily processing', activity: 'activity processing',
-        segment: 'segment processing', flush: 'finishing activities', weekly: 'weekly reflection',
-        indexer: 'search updates' };
+      const names = { daily: window.JournalI18n.render('journal.window.health.status.daily.processing'), activity: window.JournalI18n.render('journal.window.health.status.activity.processing'),
+        segment: window.JournalI18n.render('journal.window.health.status.segment.processing'), flush: window.JournalI18n.render('journal.window.health.status.finishing.activities'), weekly: window.JournalI18n.render('journal.window.health.status.weekly.reflection'),
+        indexer: window.JournalI18n.render('journal.window.health.status.search.updates') };
       const scope = hold.partition
-        ? names[hold.partition] || scheduleName(hold.partition) || 'queued processing'
-        : 'all queued work';
-      row.querySelector('p').textContent = hold.label ? hold.label + (hold.count > 1 ? ' · ' + hold.count + ' items' : '') + ': ' + heldReason(hold.reason) : scope + ': ' + hold.count
-        + (hold.count === 1 ? ' task' : ' tasks')
-        + (state.heldWorkCurrent ? ' on hold for a safety check.' : ' on hold at the last check.');
+        ? names[hold.partition] || scheduleName(hold.partition) || window.JournalI18n.render('journal.window.health.status.queued.processing')
+        : window.JournalI18n.render('journal.window.health.status.all.queued.work');
+      row.querySelector('p').textContent = hold.label ? hold.label + (hold.count > 1 ? ' · ' + hold.count + window.JournalI18n.render('journal.window.health.visible.text.items') : '') + ': ' + (hold.displayReason || heldReason(hold.reason)) : scope + ': ' + hold.count
+        + (hold.count === 1 ? window.JournalI18n.render('journal.window.health.visible.text.task') : window.JournalI18n.render('journal.window.health.visible.text.tasks'))
+        + (state.heldWorkCurrent ? window.JournalI18n.render('journal.window.health.visible.text.on.hold.for.a.safety.check') : window.JournalI18n.render('journal.window.health.visible.text.on.hold.at.the.last.check'));
       row.querySelector('pre').textContent = JSON.stringify(hold.evidence, null, 2);
       const retry = row.querySelector('button');
       retry.onclick = async () => {
         const feedback = row.querySelector('[data-retry-feedback]');
         retry.disabled = true;
-        feedback.textContent = 'checking this work…';
+        feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.checking.this.work');
         try {
           const endpoint = hold.unit || !hold.day ? '/app/health/api/retry-work' : '/app/health/api/reprocess';
           const body = hold.unit ? { unit: hold.unit } : hold.day ? { day: hold.day, flavor: 'process-now' } : { safety: true };
           const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           const result = await response.json();
-          feedback.textContent = result.message || (response.ok ? 'your request is saved.' : 'this work could not be retried.');
+          feedback.textContent = result.message || (response.ok ? window.JournalI18n.render('journal.window.health.visible.text.your.request.is.saved') : window.JournalI18n.render('journal.window.health.visible.text.this.work.could.not.be.retried'));
           await loadHealthState();
         } catch {
-          feedback.textContent = 'the retry could not be saved. try again.';
+          feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.the.retry.could.not.be.saved');
         } finally { retry.disabled = false; }
       };
     }
@@ -1444,7 +1445,7 @@
 
     if (state.storagePrivacy && !state.storagePrivacy.private && !state.storagePrivacy.consented) {
       return { key: 'HEALTH_GLANCE_STORAGE_PRIVACY', vars: { message: state.storagePrivacy.message },
-        action: { href: '#storagePrivacy', label: 'review folder privacy' } };
+        action: { href: '#storagePrivacy', label: window.JournalI18n.render('journal.window.health.label.review.folder.privacy') } };
     }
 
     if (state.crashed.size > 0) {
@@ -1504,14 +1505,14 @@
 
     const backupVerdict = state.backupView.tone !== 'neutral'
       ? { key: 'HEALTH_GLANCE_BACKUP', vars: { headline: state.backupView.text },
-        action: { href: '#backup', label: 'view backup details' } } : null;
+        action: { href: '#backup', label: window.JournalI18n.render('journal.window.health.label.view.backup.details') } } : null;
     if (state.backupView.tone === 'attention') return backupVerdict;
 
     if (deviceVerdict) return deviceVerdict;
     if (workVerdict) return workVerdict;
     if (backupVerdict) {
       return { key: 'HEALTH_GLANCE_BACKUP', vars: { headline: state.backupView.text },
-        action: { href: '#backup', label: 'view backup details' } };
+        action: { href: '#backup', label: window.JournalI18n.render('journal.window.health.label.view.backup.details') } };
     }
 
 	    if (activeAgents > 0 || activeImports > 0) {
@@ -1520,7 +1521,7 @@
         key: 'HEALTH_GLANCE_CATCHING_UP',
         vars: {
           n: String(catchingUp),
-          tasks: catchingUp === 1 ? 'task' : 'tasks',
+          tasks: catchingUp === 1 ? window.JournalI18n.render('journal.window.health.status.task') : window.JournalI18n.render('journal.window.health.status.tasks'),
           age: ageAgo(now - (state.lastEventTs || now)),
         },
       };
@@ -1601,12 +1602,12 @@
     if (!state.agentErrorsOk || !state.agentErrorsLoaded) {
       elements.glanceErrorsValue.textContent = '—';
       elements.glanceErrorsValue.classList.remove('has-errors');
-      elements.glanceErrorsLabel.textContent = 'errors today';
+      elements.glanceErrorsLabel.textContent = window.JournalI18n.render('journal.window.health.visible.text.errors.today');
     } else {
       const errorsToday = state.recentErrors.filter(error => dayKeyFromTimestamp(error.ts) === today).length;
       elements.glanceErrorsValue.textContent = String(errorsToday);
       elements.glanceErrorsValue.classList.toggle('has-errors', errorsToday > 0);
-      elements.glanceErrorsLabel.textContent = (errorsToday === 1 ? 'error today' : 'errors today');
+      elements.glanceErrorsLabel.textContent = (errorsToday === 1 ? window.JournalI18n.render('journal.window.health.visible.text.error.today') : window.JournalI18n.render('journal.window.health.visible.text.errors.today'));
     }
   }
 
@@ -1623,14 +1624,14 @@
       // a read that never lands is not still loading: once the page's own
       // timeout fires the card says so and the retry comes back, instead of
       // waiting forever with the only way out hidden (F-16).
-      pending.textContent = timeoutFired ? 'processing status unavailable.' : 'checking processing…';
+      pending.textContent = timeoutFired ? window.JournalI18n.render('journal.window.health.visible.text.processing.status.unavailable') : window.JournalI18n.render('journal.window.health.visible.text.checking.processing');
       if (timeoutFired) pending.classList.add('unavailable');
       box.appendChild(pending);
       const button = elements.brainCheckBtn;
       if (button) {
         button.hidden = !timeoutFired;
         if (timeoutFired) {
-          button.textContent = 'check again';
+          button.textContent = window.JournalI18n.render('journal.window.health.visible.text.check.again');
           button.disabled = false;
           button.onclick = () => requestBrainCheck();
         }
@@ -1648,8 +1649,8 @@
         // vocabulary, so derive from age_seconds and fall back only if absent.
         const checkedAge = Number.isFinite(evidence.age_seconds)
           ? ageAgo(evidence.age_seconds * 1000)
-          : (evidence.age_text ? evidence.age_text + ' ago' : '');
-        const checked = checkedAge ? `, checked ${checkedAge}` : '';
+          : (evidence.age_text ? evidence.age_text + window.JournalI18n.render('journal.window.health.status.ago') : '');
+        const checked = checkedAge ? window.JournalI18n.render('journal.window.health.status.checked.value1', [['value1', String(checkedAge)]]) : '';
         lines.push(`${window.JournalFormat.processingLane(identity.lane)}${checked}`);
       } else {
         lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
@@ -1670,13 +1671,13 @@
     // acts on, so they sit in the processing disclosure rather than leading the
     // page as a headline figure (G3-106).
     const tokensText = Number.isFinite(state.todayTokens)
-      ? `${window.JournalFormat.compactTokens(state.todayTokens)} tokens used today`
+      ? window.JournalI18n.render('journal.window.health.status.value1.tokens.used.today', [['value1', String(window.JournalFormat.compactTokens(state.todayTokens))]])
       : '';
     if (identityText || tokensText) {
       const details = document.createElement('details');
       details.open = identityOpen;
       const summary = document.createElement('summary');
-      summary.textContent = 'processing details';
+      summary.textContent = window.JournalI18n.render('journal.window.health.visible.text.processing.details');
       details.append(summary);
       if (identityText) {
         const value = document.createElement('p');
@@ -1765,20 +1766,20 @@
     // landed, the vital says 'unavailable' and this line may not contradict it.
     if (state.lastAgentFinishTs && state.cortexSeen) {
       const el = ensureChild(idx++);
-      el.textContent = 'last run finished ' + ageAgo(Date.now() - state.lastAgentFinishTs);
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.last.run.finished') + ageAgo(Date.now() - state.lastAgentFinishTs);
       el.style.color = '';
     }
 
     const errCount = state.recentErrors.length;
     const errEl = ensureChild(idx++);
     if (!state.agentErrorsOk) {
-      errEl.textContent = "couldn't check thinking errors today.";
+      errEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.couldn.t.check.thinking.errors.today');
       errEl.style.color = 'var(--warn-ink)';
     } else if (errCount > 0) {
-      errEl.textContent = errCount + ' recent error' + (errCount !== 1 ? 's' : '');
+      errEl.textContent = errCount + window.JournalI18n.render('journal.window.health.visible.text.recent.error') + (errCount !== 1 ? 's' : '');
       errEl.style.color = 'var(--danger)';
     } else {
-      errEl.textContent = 'no recent errors';
+      errEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.no.recent.errors');
       errEl.style.color = '';
     }
 
@@ -1793,8 +1794,8 @@
       // schedules disclosure in the vitals bar (G3-102).
       const label = scheduleName(nextSchedule.name);
       el.textContent = label
-        ? 'next: ' + label + ' ' + formatNextRun(nextSchedule.next_run)
-        : 'next scheduled run ' + formatNextRun(nextSchedule.next_run);
+        ? window.JournalI18n.render('journal.window.health.visible.text.next') + label + ' ' + formatNextRun(nextSchedule.next_run)
+        : window.JournalI18n.render('journal.window.health.visible.text.next.scheduled.run') + formatNextRun(nextSchedule.next_run);
       el.style.color = '';
     }
 
@@ -1805,7 +1806,9 @@
 
   function updateLogsBadge() {
     if (state.deepLinkMode) return;
-    let text = state.logTotalCount + ' line' + (state.logTotalCount !== 1 ? 's' : '');
+    let text = state.logTotalCount === 1
+      ? window.JournalI18n.render('journal.window.health.log.line.count.line')
+      : window.JournalI18n.render('journal.window.health.log.line.count.value1.lines', [['value1', String(state.logTotalCount)]]);
     if (state.lastLogTs) {
       if (window.JournalClock?.parts) {
         const p = window.JournalClock.parts(state.lastLogTs);
@@ -1862,15 +1865,15 @@
   // not something the owner can act on. The raw message keeps its place in the
   // row's disclosure panel and in the service logs (G3-103).
   function recentErrorOwnerPhrase(entry) {
-    if (entry.type === 'agent') return "didn't finish";
-    if (entry.type === 'import') return "didn't finish importing";
-    return 'ran into a problem';
+    if (entry.type === 'agent') return window.JournalI18n.render('journal.window.health.status.didn.t.finish');
+    if (entry.type === 'import') return window.JournalI18n.render('journal.window.health.status.didn.t.finish.importing');
+    return window.JournalI18n.render('journal.window.health.window.explanation.ran.into.a.problem');
   }
 
   // The name an owner recognises for whatever produced the error.
   function recentErrorName(entry) {
     if (entry.type === 'agent') return talentName(entry.name);
-    if (entry.type === 'import') return String(entry.name || 'import');
+    if (entry.type === 'import') return String(entry.name || window.JournalI18n.render('journal.window.health.status.import'));
     return serviceName(entry.name);
   }
 
@@ -1970,7 +1973,7 @@
     if (!state.agentErrorsOk && entries.length > 0) {
       const degraded = document.createElement('div');
       degraded.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--warn-ink);';
-      degraded.textContent = "couldn't check thinking errors today.";
+      degraded.textContent = window.JournalI18n.render('journal.window.health.visible.text.couldn.t.check.thinking.errors.today');
       container.appendChild(degraded);
     }
 
@@ -1979,15 +1982,15 @@
       const label = document.createElement('div');
       label.style.cssText = 'padding: 0.2em 0 0.45em; font-size: 0.8em; color: var(--ink-soft); display: flex; gap: 0.5em; align-items: center;';
       const dayText = filter.day === 'today' ? "today's" : filter.day;
-      label.appendChild(document.createTextNode(`showing ${dayText} errors`));
+      label.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.showing.value1.errors', [['value1', String(dayText)]])));
       if (filter.talent) {
-        label.appendChild(document.createTextNode(` for ${talentName(filter.talent)}`));
+        label.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.value1', [['value1', String(talentName(filter.talent))]])));
       }
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.setAttribute('data-action', 'clear-error-filter');
       clearBtn.className = 'error-advice-link';
-      clearBtn.textContent = 'clear';
+      clearBtn.textContent = window.JournalI18n.render('journal.window.health.visible.text.clear');
       label.appendChild(clearBtn);
       container.appendChild(label);
     }
@@ -1996,8 +1999,8 @@
       const empty = document.createElement('div');
       empty.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink-soft);';
       empty.textContent = !state.agentErrorsOk
-        ? "couldn't check thinking errors today."
-        : (state.recentErrorsFilter ? 'no matching recent errors yet.' : 'no recent errors.');
+        ? window.JournalI18n.render('journal.window.health.visible.text.couldn.t.check.thinking.errors.today')
+        : (state.recentErrorsFilter ? window.JournalI18n.render('journal.window.health.visible.text.no.matching.recent.errors.yet') : window.JournalI18n.render('journal.window.health.visible.text.no.recent.errors.variant2'));
       container.appendChild(empty);
       if (state.pendingRecentErrorsFocus) {
         state.pendingRecentErrorsFocus = false;
@@ -2029,12 +2032,12 @@
         const viewBtn = document.createElement('button');
         viewBtn.setAttribute('data-action', 'view-logs');
         viewBtn.className = 'error-action-btn';
-        viewBtn.textContent = 'view logs';
+        viewBtn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.logs');
         actions.appendChild(viewBtn);
         const dismissBtn = document.createElement('button');
         dismissBtn.setAttribute('data-action', 'dismiss');
         dismissBtn.className = 'error-dismiss-btn';
-        dismissBtn.textContent = 'dismiss';
+        dismissBtn.textContent = window.JournalI18n.render('journal.window.health.visible.text.dismiss');
         actions.appendChild(dismissBtn);
         row.appendChild(actions);
 
@@ -2097,27 +2100,27 @@
     if (types.has('agent')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode('thinking errors usually clear up on the next run. '));
+      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.window.explanation.thinking.errors.usually.clear.up.on')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view model runtime logs';
+      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.model.runtime.logs');
       advice.appendChild(btn);
-      advice.appendChild(document.createTextNode(' for details.'));
+      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.details')));
       container.appendChild(advice);
     }
     if (types.has('import')) {
       const importErr = recent.find(({ e }) => e.type === 'import')?.e;
-      const stageText = importErr?.stage && importErr.stage !== 'unknown' ? ' at ' + importErr.stage : '';
+      const stageText = importErr?.stage && importErr.stage !== 'unknown' ? window.JournalI18n.render('journal.window.health.status.at') + importErr.stage : '';
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode('import failed' + stageText + '. check the source file and retry, or '));
+      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.import.failed') + stageText + window.JournalI18n.render('journal.window.health.status.check.the.source.file.and.retry')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'importer');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view file importer logs';
+      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.file.importer.logs');
       advice.appendChild(btn);
       advice.appendChild(document.createTextNode('.'));
       container.appendChild(advice);
@@ -2126,14 +2129,14 @@
     if (Array.from(types).some(t => t !== 'agent' && t !== 'import')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode('service error detected. '));
+      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.service.error.detected')));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'supervisor');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view system manager logs';
+      btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.view.system.manager.logs');
       advice.appendChild(btn);
-      advice.appendChild(document.createTextNode(' for details.'));
+      advice.appendChild(document.createTextNode(window.JournalI18n.render('journal.window.health.status.for.details')));
       container.appendChild(advice);
     }
   }
@@ -2149,7 +2152,7 @@
 	    if (state.logsCollapsed) {
       state.logsCollapsed = false;
       document.querySelector('.logs-card').classList.remove('logs-collapsed');
-      elements.logsCollapseIndicator.textContent = '▼ hide';
+      elements.logsCollapseIndicator.textContent = window.JournalI18n.render('journal.window.health.visible.text.hide');
       document.querySelector('.logs-header').setAttribute('aria-expanded', 'true');
     }
     renderLogs();
@@ -2202,14 +2205,14 @@
     const card = btn.closest('[data-key]');
     const errorEl = card?.querySelector('.activity-card-error');
     btn.disabled = true;
-    btn.textContent = 'retrying…';
+    btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retrying');
     window.apiJson('/app/health/api/retry-import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ import_id: importId })
     })
       .then(() => {
-        btn.textContent = 'retry sent';
+        btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry.sent');
         btn.style.color = 'var(--ink-faint)';
         if (errorEl) {
           errorEl.textContent = '';
@@ -2218,10 +2221,10 @@
       .catch((err) => {
         window.logError(err, { context: 'health: retry-import failed' });
         btn.disabled = false;
-        btn.textContent = 'retry';
+        btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry');
         btn.style.color = '';
         if (errorEl) {
-          errorEl.textContent = err.serverMessage || 'retry failed';
+          errorEl.textContent = err.serverMessage || window.JournalI18n.render('journal.window.health.visible.text.retry.failed');
         }
       });
   });
@@ -2260,36 +2263,38 @@
     const crashedCount = Array.from(state.crashed.values()).filter(info => info.phase !== 'backoff').length;
     const retryingCount = state.crashed.size - crashedCount;
     const serviceParts = [];
-    if (runningCount > 0) serviceParts.push(runningCount + ' active');
-    if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
-    if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
-    sections[0]?.setAttribute('aria-label', 'services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
+    if (runningCount > 0) serviceParts.push(window.JournalI18n.render('journal.window.health.accessible.service.count.value1.active', [['value1', String(runningCount)]]));
+    if (retryingCount > 0) serviceParts.push(retryingCount + window.JournalI18n.render('journal.window.health.status.retrying.variant2'));
+    if (crashedCount > 0) serviceParts.push(crashedCount + window.JournalI18n.render('journal.window.health.status.needs.attention'));
+    sections[0]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services') + (state.supervisorSeen ? serviceParts.join(', ') || window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel()));
 
-    sections[1]?.setAttribute('aria-label', 'thinking: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
-    sections[2]?.setAttribute('aria-label', 'tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
+    sections[1]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.thinking') + (state.cortexSeen ? state.agentCount + window.JournalI18n.render('journal.window.health.accessible.label.running') : pendingVitalLabel()));
+    sections[2]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.tasks') + (state.supervisorSeen ? state.tasks.length + window.JournalI18n.render('journal.window.health.accessible.label.active.variant2') : pendingVitalLabel()));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
-    let healthLabel = timeoutFired ? 'unavailable' : 'loading';
+    let healthLabel = timeoutFired ? window.JournalI18n.render('journal.window.health.status.unavailable') : window.JournalI18n.render('journal.window.health.status.loading');
     if (crashedCount > 0) {
-      healthLabel = 'error, services need attention';
+      healthLabel = window.JournalI18n.render('journal.window.health.window.explanation.error.services.need.attention');
     } else if (staleCount > 0) {
-      healthLabel = 'warning, ' + staleCount + ' journal run' + (staleCount === 1 ? '' : 's') + ' stopped checking in';
+      healthLabel = staleCount === 1
+        ? window.JournalI18n.render('journal.window.health.accessible.check.in.warning.warning.journal.run.stopped.checking.in')
+        : window.JournalI18n.render('journal.window.health.accessible.check.in.warning.warning.value1.journal.runs.stopped.checking', [['value1', String(staleCount)]]);
     } else if (retryingCount > 0) {
-      healthLabel = 'warning, services retrying';
+      healthLabel = window.JournalI18n.render('journal.window.health.status.warning.services.retrying');
     } else if (state.health) {
-      healthLabel = 'ok';
+      healthLabel = window.JournalI18n.render('journal.window.health.status.ok');
     }
-    sections[3]?.setAttribute('aria-label', 'health: ' + healthLabel);
+    sections[3]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.health') + healthLabel);
 
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     sections[4]?.setAttribute(
       'aria-label',
-      'queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
+      window.JournalI18n.render('journal.window.health.accessible.label.queues') + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel()))
     );
 
     sections[5]?.setAttribute(
       'aria-label',
-      'schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
+      window.JournalI18n.render('journal.window.health.accessible.label.schedules') + (state.schedules.length ? state.schedules.length + window.JournalI18n.render('journal.window.health.accessible.label.scheduled') : state.supervisorSeen ? window.JournalI18n.render('journal.window.health.accessible.label.none') : pendingVitalLabel())
     );
   }
 
@@ -2340,8 +2345,8 @@
         }
         const retrying = crashed && info.phase === 'backoff';
         const statusClass = retrying ? 'restarting' : (crashed ? 'crashed' : 'active');
-        const statusLabel = retrying ? 'retrying' : statusClass;
-        const restartInfo = retrying ? ' (retrying)' : '';
+        const statusLabel = retrying ? window.JournalI18n.render('journal.window.health.status.retrying') : crashed ? window.JournalI18n.render('journal.window.health.status.crashed') : window.JournalI18n.render('journal.window.health.status.active');
+        const restartInfo = retrying ? window.JournalI18n.render('journal.window.health.status.retrying.variant3') : '';
         dot.className = retrying ? 'service-dot restarting' : (crashed ? 'service-dot crashed' : 'service-dot');
         dot.children[0].className = 'status-indicator ' + statusClass;
         dot.children[0].setAttribute('aria-label', serviceName(name) + ': ' + statusLabel + restartInfo);
@@ -2351,8 +2356,8 @@
     }
 
     if (!state.supervisorSeen && timeoutFired) {
-      elements.serviceDots.textContent = 'unavailable';
-      elements.healthValue.textContent = 'unavailable';
+      elements.serviceDots.textContent = window.JournalI18n.render('journal.window.health.visible.text.unavailable');
+      elements.healthValue.textContent = window.JournalI18n.render('journal.window.health.visible.text.unavailable');
       updateVitalsStatus('unavailable');
     }
 
@@ -2361,11 +2366,11 @@
 
 
     // Agents count
-    writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + ' running');
+    writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + window.JournalI18n.render('journal.window.health.status.running'));
 
     // Tasks
     const taskCount = state.tasks.length;
-    writeVital(elements.tasksValue, state.supervisorSeen, taskCount + ' active');
+    writeVital(elements.tasksValue, state.supervisorSeen, window.JournalI18n.render('journal.window.health.active.task.count.value1.active', [['value1', String(taskCount)]]));
 
     // Health with stale heartbeat names
     if (state.health) {
@@ -2388,25 +2393,25 @@
       const staleListSpan = hv.children[1];
 
       if (hasCrashed) {
-        mainSpan.textContent = 'services need attention';
+        mainSpan.textContent = window.JournalI18n.render('journal.window.health.visible.text.services.need.attention');
         mainSpan.style.color = 'var(--danger)';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('error');
       } else if (staleCount > 0) {
-        mainSpan.textContent = staleCount + ' journal run' + (staleCount === 1 ? '' : 's') + ' stopped checking in:';
+        mainSpan.textContent = staleCount + window.JournalI18n.render('journal.window.health.visible.text.journal.run') + (staleCount === 1 ? '' : 's') + window.JournalI18n.render('journal.window.health.visible.text.stopped.checking.in');
         mainSpan.style.color = 'var(--warn-ink)';
         staleListSpan.textContent = ' ' + staleHeartbeats.map(String).join(', ');
         staleListSpan.style.display = '';
         updateVitalsStatus('warning');
       } else if (hasRetrying) {
-        mainSpan.textContent = 'services retrying';
+        mainSpan.textContent = window.JournalI18n.render('journal.window.health.visible.text.services.retrying');
         mainSpan.style.color = 'var(--warn-ink)';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('warning');
       } else {
-        mainSpan.textContent = 'ok';
+        mainSpan.textContent = window.JournalI18n.render('journal.window.health.visible.text.ok');
         mainSpan.style.color = '';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
@@ -2443,7 +2448,7 @@
         chip.textContent = cmd + ': ' + count;
       }
     } else {
-      writeVital(elements.queuesValue, state.supervisorSeen, 'none');
+      writeVital(elements.queuesValue, state.supervisorSeen, window.JournalI18n.render('journal.window.health.accessible.label.none'));
     }
 
     // Keep the inventory available without turning the glance into a long list.
@@ -2461,19 +2466,19 @@
         || (schedule.next_run && Number(schedule.next_run) <= Date.now())).length;
       const next = formatNextRun(schedules[0].next_run);
       const tail = dueNow === 1
-        ? ' · one is due now'
+        ? window.JournalI18n.render('journal.window.health.status.one.is.due.now')
         : dueNow > 1
-          ? ` · ${dueNow} are due now`
-          : next ? ' · next ' + next : '';
-      details.querySelector('summary').textContent = `${schedules.length} scheduled${tail}`;
+          ? window.JournalI18n.render('journal.window.health.status.value1.are.due.now', [['value1', String(dueNow)]])
+          : next ? window.JournalI18n.render('journal.window.health.status.next') + next : '';
+      details.querySelector('summary').textContent = window.JournalI18n.render('journal.window.health.visible.text.value1.scheduled.value2', [['value1', String(schedules.length)], ['value2', String(tail)]]);
       details.querySelector('ul').innerHTML = schedules.map(schedule => {
-        const name = schedule.name || 'unnamed';
+        const name = schedule.name || window.JournalI18n.render('journal.window.health.status.unnamed');
         const label = scheduleName(name) || name.replace(/^maintenance:/, '').replace(/[:_-]+/g, ' ');
-        const next = schedule.due ? 'due now' : formatNextRun(schedule.next_run);
+        const next = schedule.due ? window.JournalI18n.render('journal.window.health.status.due.now') : formatNextRun(schedule.next_run);
         return `<li>${escapeHtml(label)}${next ? ' · ' + escapeHtml(next) : ''}<code>${escapeHtml(name)}</code></li>`;
       }).join('');
     } else {
-      writeVital(elements.schedulesValue, state.supervisorSeen, 'none');
+      writeVital(elements.schedulesValue, state.supervisorSeen, window.JournalI18n.render('journal.window.health.accessible.label.none'));
     }
 
     updateVitalsA11y();
@@ -2507,25 +2512,25 @@
     // the worst signal for the whole page (G3-101).
     if (status === 'ok') {
       indicator.className = 'status-indicator active';
-      indicator.setAttribute('aria-label', 'services: all running');
-      text.textContent = 'all services running';
+      indicator.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services.all.running'));
+      text.textContent = window.JournalI18n.render('journal.window.health.visible.text.all.services.running');
       severity.textContent = '';
     } else if (status === 'warning') {
       indicator.className = 'status-indicator restarting';
-      indicator.setAttribute('aria-label', 'services: warning');
-      text.textContent = 'some services slow to respond';
-      severity.textContent = 'warning';
+      indicator.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services.warning'));
+      text.textContent = window.JournalI18n.render('journal.window.health.visible.text.some.services.slow.to.respond');
+      severity.textContent = window.JournalI18n.render('journal.window.health.visible.text.warning');
       el.classList.add('warning');
     } else if (status === 'error') {
       indicator.className = 'status-indicator crashed';
-      indicator.setAttribute('aria-label', 'services: need attention');
-      text.textContent = 'services need attention';
-      severity.textContent = 'error';
+      indicator.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services.need.attention'));
+      text.textContent = window.JournalI18n.render('journal.window.health.visible.text.services.need.attention');
+      severity.textContent = window.JournalI18n.render('journal.window.health.visible.text.error');
       el.classList.add('error');
     } else {
       indicator.className = 'status-indicator';
-      indicator.setAttribute('aria-label', 'services: status unavailable');
-      text.textContent = 'service status unavailable';
+      indicator.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.services.status.unavailable'));
+      text.textContent = window.JournalI18n.render('journal.window.health.visible.text.service.status.unavailable');
       severity.textContent = '';
       el.classList.add('unavailable');
     }
@@ -2536,13 +2541,13 @@
   // stream, so "unavailable" is only true when that list is unreadable too.
   function observeQuietState() {
     if (state.registeredClientsFailed) {
-      return { badge: 'unavailable', unavailable: true, heading: 'device activity is unavailable right now.' };
+      return { badge: window.JournalI18n.render('journal.window.health.status.unavailable'), unavailable: true, heading: window.JournalI18n.render('journal.window.health.heading.device.activity.is.unavailable.right.now') };
     }
     if (!Array.isArray(state.registeredClients)) {
-      return { badge: 'checking', unavailable: false, heading: 'checking device activity…' };
+      return { badge: window.JournalI18n.render('journal.window.health.status.checking'), unavailable: false, heading: window.JournalI18n.render('journal.window.health.heading.checking.device.activity') };
     }
     if (state.registeredClients.length === 0) {
-      return { badge: 'no devices', unavailable: false, heading: 'no devices are linked to your journal yet.' };
+      return { badge: window.JournalI18n.render('journal.window.health.status.no.devices'), unavailable: false, heading: window.JournalI18n.render('journal.window.health.heading.no.devices.are.linked.to.your') };
     }
     const adding = state.registeredClients
       .filter(client => client.capture_state === 'active')
@@ -2552,17 +2557,17 @@
       const age = registeredClientAge(adding[0]);
       const name = registeredClientName(adding[0]);
       return {
-        badge: 'adding',
+        badge: window.JournalI18n.render('journal.window.health.status.adding'),
         unavailable: false,
         heading: age
-          ? `${name} added to your journal ${ageAgo(adding[0].capture_elapsed_ms)}. live detail isn't being reported right now.`
-          : `${name} is adding to your journal. live detail isn't being reported right now.`,
+          ? window.JournalI18n.render('journal.window.health.heading.value1.added.to.your.journal.value2', [['value1', String(name)], ['value2', String(ageAgo(adding[0].capture_elapsed_ms))]])
+          : window.JournalI18n.render('journal.window.health.heading.value1.is.adding.to.your.journal', [['value1', String(name)]]),
       };
     }
     if (state.registeredClients.some(client => client.capture_state === 'unknown')) {
-      return { badge: 'unknown', unavailable: true, heading: HEALTH_GLANCE_COPY.HEALTH_GLANCE_DEVICES_UNKNOWN };
+      return { badge: window.JournalI18n.render('journal.window.health.status.unknown'), unavailable: true, heading: HEALTH_GLANCE_COPY.HEALTH_GLANCE_DEVICES_UNKNOWN };
     }
-    return { badge: 'quiet', unavailable: false, heading: 'no device is reporting live activity right now.' };
+    return { badge: window.JournalI18n.render('journal.window.health.status.quiet'), unavailable: false, heading: window.JournalI18n.render('journal.window.health.heading.no.device.is.reporting.live.activity') };
   }
 
   // Update observe mode badge
@@ -2579,16 +2584,16 @@
 
     if (mode === 'screencast') {
       badge.className = 'health-badge recording';
-      label.textContent = 'taking in your screen';
+      label.textContent = window.JournalI18n.render('journal.window.health.visible.text.taking.in.your.screen');
     } else if (mode === 'tmux') {
       badge.className = 'health-badge tmux';
-      label.textContent = 'terminal sessions';
+      label.textContent = window.JournalI18n.render('journal.window.health.visible.text.terminal.sessions');
     } else if (mode === 'idle') {
       badge.className = 'health-badge idle';
-      label.textContent = 'idle';
+      label.textContent = window.JournalI18n.render('journal.window.health.visible.text.idle');
     } else {
       badge.className = 'health-badge idle';
-      label.textContent = 'idle';
+      label.textContent = window.JournalI18n.render('journal.window.health.visible.text.idle');
     }
   }
 
@@ -2646,18 +2651,18 @@
       {
         statusEl: elements.screencastStatus,
         detailEl: elements.screencastDetail,
-        idleText: 'idle',
+        idleText: window.JournalI18n.render('journal.window.health.status.idle'),
         extract: () => {
           if (!primary?.screencast) return null;
           const recording = primary.screencast.recording;
-          if (!recording) return { status: 'idle' };
+          if (!recording) return { status: window.JournalI18n.render('journal.window.health.status.idle') };
           const streams = primary.screencast.streams || [];
           const elapsed = primary.screencast.window_elapsed_seconds || 0;
           const streamCount = streams.length;
-          const displayLabel = streamCount === 1 ? 'display' : 'displays';
+          const displayLabel = streamCount === 1 ? window.JournalI18n.render('journal.window.health.status.display') : window.JournalI18n.render('journal.window.health.status.displays');
           const mins = Math.max(1, Math.round(elapsed / 60));
           return {
-            status: `taking in ${streamCount} ${displayLabel}, ~${mins} min`,
+            status: window.JournalI18n.render('journal.window.health.status.taking.in.value1.value2.value3.min', [['value1', String(streamCount)], ['value2', String(displayLabel)], ['value3', String(mins)]]),
             detail: streamCount > 0
               ? streams.map(s => `${s.position || 'unknown'} ${s.connector || 'unknown'}`).join(', ')
               : '',
@@ -2667,16 +2672,16 @@
       {
         statusEl: elements.tmuxStatus,
         detailEl: elements.tmuxDetail,
-        idleText: 'idle',
+        idleText: window.JournalI18n.render('journal.window.health.status.idle'),
         extract: () => {
           if (!tmux?.tmux) return null;
-          if (!tmux.tmux.capturing) return { status: 'idle' };
+          if (!tmux.tmux.capturing) return { status: window.JournalI18n.render('journal.window.health.status.idle') };
           const captures = tmux.tmux.captures || 0;
           const sessions = tmux.tmux.sessions || [];
           const elapsed = tmux.tmux.window_elapsed_seconds || 0;
           const mins = Math.max(1, Math.round(elapsed / 60));
           return {
-            status: `adding ${captures} ${captures === 1 ? 'snapshot' : 'snapshots'}, ~${mins} min`,
+            status: window.JournalI18n.render('journal.window.health.status.adding.value1.value2.value3.min', [['value1', String(captures)], ['value2', String(captures === 1 ? window.JournalI18n.render('journal.window.health.status.snapshot') : window.JournalI18n.render('journal.window.health.status.snapshots'))], ['value3', String(mins)]]),
             detail: sessions.length > 0 ? sessions.join(', ') : '',
           };
         },
@@ -2684,35 +2689,36 @@
       {
         statusEl: elements.audioStatus,
         detailEl: elements.audioDetail,
-        idleText: 'quiet',
+        idleText: window.JournalI18n.render('journal.window.health.status.quiet'),
         extract: () => {
           if (!primary?.audio) return null;
           const hits = primary.audio.threshold_hits || 0;
-          const willSave = primary.audio.will_save ? ' · saving' : '';
+          const willSave = primary.audio.will_save ? window.JournalI18n.render('journal.window.health.status.saving') : '';
           return {
-            status: hits > 0
-              ? `${hits} sound${hits === 1 ? '' : 's'} detected${willSave}`
-              : 'quiet',
+            status: hits === 0 ? window.JournalI18n.render('journal.window.health.status.quiet')
+              : hits === 1
+                ? window.JournalI18n.render('journal.window.health.audio.capture.status.sound.detected.value1', [['value1', String(willSave)]])
+                : window.JournalI18n.render('journal.window.health.audio.capture.status.value1.sounds.detected.value2', [['value1', String(hits)], ['value2', String(willSave)]]),
           };
         },
       },
       {
         statusEl: elements.activityStatus,
         detailEl: elements.activityDetail,
-        idleText: 'idle',
+        idleText: window.JournalI18n.render('journal.window.health.status.idle'),
         extract: () => {
           if (!primary?.activity) return null;
           const idleMs = primary.activity.idle_time_ms || 0;
-          if (primary.activity.power_save) return { status: 'power saving' };
-          if (primary.activity.screen_locked) return { status: 'screen locked' };
-          if (primary.activity.sink_muted) return { status: 'audio muted' };
-          return { status: `idle: ${Math.floor(idleMs/1000)}s` };
+          if (primary.activity.power_save) return { status: window.JournalI18n.render('journal.window.health.status.power.saving') };
+          if (primary.activity.screen_locked) return { status: window.JournalI18n.render('journal.window.health.status.screen.locked') };
+          if (primary.activity.sink_muted) return { status: window.JournalI18n.render('journal.window.health.status.audio.muted') };
+          return { status: window.JournalI18n.render('journal.window.health.status.idle.value1.s', [['value1', String(Math.floor(idleMs/1000))]]) };
         },
       },
       {
         statusEl: elements.describeStatus,
         detailEl: elements.describeDetail,
-        idleText: 'idle',
+        idleText: window.JournalI18n.render('journal.window.health.status.idle'),
         extract: () => {
           if (!primary?.describe) return null;
           return { processor: primary.describe };
@@ -2721,7 +2727,7 @@
       {
         statusEl: elements.transcribeStatus,
         detailEl: elements.transcribeDetail,
-        idleText: 'idle',
+        idleText: window.JournalI18n.render('journal.window.health.status.idle'),
         extract: () => {
           if (!primary?.transcribe) return null;
           return { processor: primary.transcribe };
@@ -2744,14 +2750,14 @@
         const queued = p.queued?.length || 0;
         if (isRunning && queued > 0) {
           ch.statusEl.textContent = running.length > 1
-            ? `running (${running.length}, +${queued} queued)`
-            : `running (+${queued} queued)`;
+            ? window.JournalI18n.render('journal.window.health.visible.text.running.value1.value2.queued', [['value1', String(running.length)], ['value2', String(queued)]])
+            : window.JournalI18n.render('journal.window.health.visible.text.running.value1.queued', [['value1', String(queued)]]);
         } else if (isRunning) {
-          ch.statusEl.textContent = running.length > 1 ? `running (${running.length})` : 'running';
+          ch.statusEl.textContent = running.length > 1 ? window.JournalI18n.render('journal.window.health.visible.text.running.value1', [['value1', String(running.length)]]) : window.JournalI18n.render('journal.window.health.visible.text.running');
         } else if (queued > 0) {
-          ch.statusEl.textContent = `queued: ${queued}`;
+          ch.statusEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.queued.value1', [['value1', String(queued)]]);
         } else {
-          ch.statusEl.textContent = 'idle';
+          ch.statusEl.textContent = ch.idleText;
         }
         if (isRunning && running[0]?.file) {
           ch.detailEl.textContent = truncate(running[0].file.split('/').pop(), 30);
@@ -2800,11 +2806,11 @@
 
       const nameEl = document.createElement('div');
       nameEl.className = 'client-host-name';
-      nameEl.textContent = streams[0]?.named || 'journal source';
+      nameEl.textContent = streams[0]?.named || window.JournalI18n.render('journal.window.health.visible.text.journal.source');
       nameEl.title = host;
       const statusIcon = document.createElement('span');
       statusIcon.className = 'status-indicator ' + (anyActive ? 'active' : 'stale');
-      statusIcon.setAttribute('aria-label', anyActive ? 'active' : 'stale');
+      statusIcon.setAttribute('aria-label', anyActive ? window.JournalI18n.render('journal.window.health.accessible.label.active') : window.JournalI18n.render('journal.window.health.accessible.label.stale'));
       nameEl.prepend(statusIcon);
       nameEl.style.display = 'flex';
       nameEl.style.alignItems = 'center';
@@ -2840,8 +2846,8 @@
         if (stale) {
           const badgeEl = document.createElement('span');
           badgeEl.className = 'stale-badge';
-          badgeEl.setAttribute('aria-label', 'stale, not responding');
-          badgeEl.textContent = 'stale';
+          badgeEl.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.accessible.label.stale.not.responding'));
+          badgeEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.stale');
           row.appendChild(badgeEl);
         }
 
@@ -2859,21 +2865,21 @@
 
 	  // Plural forms are real: '1 uploads turned away' was one of them.
 	  function uploadsTurnedAway(count) {
-	    return count === 1 ? '1 upload turned away' : count + ' uploads turned away';
+	    return count === 1 ? window.JournalI18n.render('journal.window.health.window.explanation.upload.turned.away') : count + window.JournalI18n.render('journal.window.health.status.uploads.turned.away');
 	  }
 
 	  function registeredClientMeta(client) {
 	    const lastCapture = client.last_accepted_ingest_at && Date.parse(client.last_accepted_ingest_at);
 	    if (Number.isFinite(lastCapture)) {
 	      const deltaMs = Date.now() - lastCapture;
-	      if (deltaMs < 0) return 'last added from future';
-	      return `last added ${ageAgo(deltaMs)}`;
+	      if (deltaMs < 0) return window.JournalI18n.render('journal.window.health.window.explanation.last.added.from.future');
+	      return window.JournalI18n.render('journal.window.health.status.last.added.value1', [['value1', String(ageAgo(deltaMs))]]);
 	    }
 	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
 	    if (Number.isFinite(lastSeen)) {
 	      const seenDelta = Date.now() - lastSeen;
-	      if (seenDelta < 0) return 'last seen from future';
-	      return `last reported ${ageAgo(seenDelta)}`;
+	      if (seenDelta < 0) return window.JournalI18n.render('journal.window.health.window.explanation.last.seen.from.future');
+	      return window.JournalI18n.render('journal.window.health.status.last.reported.value1', [['value1', String(ageAgo(seenDelta))]]);
 	    }
 	    // G3-208: a device that has never reported still has an age the owner can
 	    // judge staleness by — the day it was paired. Blank was the least useful
@@ -2881,10 +2887,10 @@
 	    const paired = client.paired_at && Date.parse(client.paired_at);
 	    if (Number.isFinite(paired)) {
 	      const pairedDelta = Date.now() - paired;
-	      if (pairedDelta < 0) return 'never reported';
-	      return `paired ${ageAgo(pairedDelta)}`;
+	      if (pairedDelta < 0) return window.JournalI18n.render('journal.window.health.status.never.reported');
+	      return window.JournalI18n.render('journal.window.health.status.paired.value1', [['value1', String(ageAgo(pairedDelta))]]);
 	    }
-	    return 'never reported';
+	    return window.JournalI18n.render('journal.window.health.status.never.reported');
 	  }
 
 	  async function requestBacklogReprocess(button) {
@@ -2920,7 +2926,7 @@
 	        buttons.forEach((rowButton) => { rowButton.disabled = false; });
 	        window.logError(err, { context: 'health: reprocess failed' });
 	        if (statusEl) {
-	          statusEl.textContent = err && err.serverMessage ? err.serverMessage : 'try again';
+	          statusEl.textContent = err && err.serverMessage ? err.serverMessage : window.JournalI18n.render('journal.window.health.visible.text.try.again');
 	        }
 	      });
 	  }
@@ -2947,9 +2953,9 @@
     const count = typeof rejection?.active_count === 'number' && Number.isFinite(rejection.active_count)
       ? rejection.active_count : null;
     const firstMs = typeof rejection?.first === 'string' ? Date.parse(rejection.first) : NaN;
-    const since = Number.isFinite(firstMs) ? ' since ' + sinceDay(firstMs) : '';
-    detail.textContent = (sourceName === null ? '' : (sourceName || 'default') + ': ')
-      + (count === null ? 'an upload was turned away' : uploadsTurnedAway(count)) + since;
+    const since = Number.isFinite(firstMs) ? window.JournalI18n.render('journal.window.health.status.since') + sinceDay(firstMs) : '';
+    detail.textContent = (sourceName === null ? '' : (sourceName || window.JournalI18n.render('journal.window.health.visible.text.default')) + ': ')
+      + (count === null ? window.JournalI18n.render('journal.window.health.visible.text.an.upload.was.turned.away') : uploadsTurnedAway(count)) + since;
     row.appendChild(detail);
     if (rejection?.reason_code) {
       const tech = document.createElement('details');
@@ -2957,10 +2963,10 @@
       tech.dataset.rejectionKey = key;
       tech.open = openKeys.has(key);
       const summary = document.createElement('summary');
-      summary.textContent = sourceName === null ? 'technical details' : `technical details: ${sourceName || 'default'}`;
+      summary.textContent = sourceName === null ? window.JournalI18n.render('journal.window.health.visible.text.technical.details') : window.JournalI18n.render('journal.window.health.visible.text.technical.details.value1', [['value1', String(sourceName || window.JournalI18n.render('journal.window.health.status.default'))]]);
       tech.appendChild(summary);
       const code = document.createElement('div');
-      code.textContent = 'reason code: ' + rejection.reason_code;
+      code.textContent = window.JournalI18n.render('journal.window.health.visible.text.reason.code') + rejection.reason_code;
       tech.appendChild(code);
       row.appendChild(tech);
     }
@@ -2994,10 +3000,10 @@
       const notice = document.createElement('p');
       notice.className = 'registered-client-recovery';
       notice.dataset.readState = 'unavailable';
-      notice.textContent = "delivery status couldn't be checked."
+      notice.textContent = window.JournalI18n.render('journal.window.health.visible.text.delivery.status.couldn.t.be.checked')
         + (state.registeredClientsObservedAt === null ? ''
-          : ` last successful check: ${new Date(state.registeredClientsObservedAt).toLocaleString()}.`)
-        + (attentionClients.length ? ' the rows below show that last check.' : '');
+          : window.JournalI18n.render('journal.window.health.visible.text.last.successful.check.value1', [['value1', String(new Date(state.registeredClientsObservedAt).toLocaleString())]]))
+        + (attentionClients.length ? window.JournalI18n.render('journal.window.health.visible.text.the.rows.below.show.that.last') : '');
       elements.registeredClientsStrip.appendChild(notice);
     } else if (list.length === 0) {
       const emptyP = document.createElement('p');
@@ -3034,13 +3040,13 @@
       if (client.capture_state === 'offline') stateClass = 'disconnected';
       if (needsAttention) {
         stateClass = 'failing';
-        labelText = 'uploads rejected';
+        labelText = window.JournalI18n.render('journal.window.health.status.uploads.rejected');
       } else if (client.capture_state === 'unknown') {
-        labelText = 'delivery unknown';
+        labelText = window.JournalI18n.render('journal.window.health.status.delivery.unknown');
       }
       if (state.registeredClientsFailed) {
         stateClass = 'disconnected';
-        labelText = 'last known: ' + labelText;
+        labelText = window.JournalI18n.render('journal.window.health.status.last.known') + labelText;
       }
       const row = document.createElement('div');
       row.className = 'registered-client-row';
@@ -3048,7 +3054,7 @@
 
       const nameEl = document.createElement('span');
       nameEl.className = 'registered-client-name';
-      nameEl.textContent = client.display_label || client.device_label || client.cid_short || client.cid || 'unnamed device';
+      nameEl.textContent = client.display_label || client.device_label || client.cid_short || client.cid || window.JournalI18n.render('journal.window.health.visible.text.unnamed.device');
       row.appendChild(nameEl);
 
       const labelEl = document.createElement('span');
@@ -3080,7 +3086,7 @@
       if (client.clock_skew) {
         const skewEl = document.createElement('span');
         skewEl.className = 'registered-client-skew';
-        skewEl.textContent = 'clock skew';
+        skewEl.textContent = window.JournalI18n.render('journal.window.health.visible.text.clock.skew');
         row.appendChild(skewEl);
       }
 
@@ -3171,7 +3177,7 @@
         const idEl = document.createElement('details');
         idEl.className = 'activity-card-id';
         const idSummary = document.createElement('summary');
-        idSummary.textContent = 'run id';
+        idSummary.textContent = window.JournalI18n.render('journal.window.health.visible.text.run.id');
         idEl.appendChild(idSummary);
         const idValue = document.createElement('code');
         idValue.className = 'activity-card-id-value';
@@ -3191,14 +3197,14 @@
         card.appendChild(providerEl);
         container.appendChild(card);
       }
-      const stateLabel = agent.event === 'thinking' ? 'working…' :
-                        (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
+      const stateLabel = agent.event === 'thinking' ? window.JournalI18n.render('journal.window.health.status.working') :
+                        (agent.event === 'tool_start' || agent.event === 'tool_end') ? window.JournalI18n.render('journal.window.health.status.working') : window.JournalI18n.render('journal.window.health.status.running.variant2');
       const elapsed = runningFor(Number(agent.elapsed_seconds) * 1000);
       card.children[0].querySelector('.activity-card-id-value').textContent = '…' + getAgentId(agent.use_id);
-      card.children[1].textContent = talentName(agent.name) || 'default';
+      card.children[1].textContent = talentName(agent.name) || window.JournalI18n.render('journal.window.health.visible.text.default');
       card.children[2].textContent = stateLabel;
       card.children[3].textContent = elapsed;
-      card.children[4].textContent = agent.provider || 'unknown';
+      card.children[4].textContent = agent.provider || window.JournalI18n.render('journal.window.health.visible.text.unknown');
     }
     updateAllQuiet();
     updateStatusSummary();
@@ -3251,7 +3257,7 @@
         const retryBtn = document.createElement('button');
         retryBtn.setAttribute('data-action', 'retry');
         retryBtn.className = 'import-retry-btn';
-        retryBtn.textContent = 'retry';
+        retryBtn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry');
         retryWrap.appendChild(retryBtn);
         card.appendChild(retryWrap);
         const progressWrap = document.createElement('div');
@@ -3275,9 +3281,9 @@
                       imp.stage === 'transcribing' ? 50 :
                       imp.stage === 'segmenting' ? 75 : 90;
       const elapsed = runningFor(Number(imp.elapsed_ms));
-      const humanStage = imp.stage === 'initialization' ? 'starting…' :
-                         imp.stage === 'transcribing' ? 'transcribing audio…' :
-                         imp.stage === 'segmenting' ? 'organizing segments…' : 'processing…';
+      const humanStage = imp.stage === 'initialization' ? window.JournalI18n.render('journal.window.health.status.starting') :
+                         imp.stage === 'transcribing' ? window.JournalI18n.render('journal.window.health.status.transcribing.audio') :
+                         imp.stage === 'segmenting' ? window.JournalI18n.render('journal.window.health.status.organizing.segments') : window.JournalI18n.render('journal.window.health.status.processing');
 
       if (isError && imp.error) {
         card.children[3].textContent = truncate(imp.error, 40);
@@ -3291,12 +3297,12 @@
       }
 
       card.children[0].textContent = '…' + getAgentId(imp.import_id);
-      card.children[1].textContent = truncate(imp.input_file || 'import', 20);
+      card.children[1].textContent = truncate(imp.input_file || window.JournalI18n.render('journal.window.health.status.import'), 20);
       card.children[2].textContent = (isError ? '! ' : '') + humanStage;
       card.children[2].setAttribute('data-internal-stage', imp.stage || 'processing');
       card.children[5].children[0].style.width = progress + '%';
       card.children[6].textContent = elapsed;
-      card.children[7].textContent = imp.file_type || 'unknown';
+      card.children[7].textContent = imp.file_type || window.JournalI18n.render('journal.window.health.visible.text.unknown');
     }
     updateAllQuiet();
     updateStatusSummary();
@@ -3331,19 +3337,19 @@
 
     // Info fields
     renderInfoItems(elements.thinkInfo, [
-      { label: 'mode', value: d.mode || null },
-      { label: 'day', value: d.day || null },
-      { label: 'facet', value: d.facet || null },
-      { label: 'segment', value: d.segment || null },
+      { label: window.JournalI18n.render('journal.window.health.status.mode'), value: d.mode || null },
+      { label: window.JournalI18n.render('journal.window.health.status.day'), value: d.day || null },
+      { label: window.JournalI18n.render('journal.window.health.status.facet'), value: d.facet || null },
+      { label: window.JournalI18n.render('journal.window.health.status.segment'), value: d.segment || null },
     ]);
 
     // Progress bars
     const progressItems = [];
     if (d.agents_total > 0) {
-      progressItems.push({ label: 'runs: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
+      progressItems.push({ label: window.JournalI18n.render('journal.window.health.status.runs') + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
     }
     if (d.segments_total > 0) {
-      progressItems.push({ label: 'segments: ' + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
+      progressItems.push({ label: window.JournalI18n.render('journal.window.health.status.segments.variant2') + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
     }
     const progContainer = elements.thinkProgress;
     while (progContainer.children.length > progressItems.length) {
@@ -3371,7 +3377,7 @@
 
     // Current agents
     if (d.current_agents && d.current_agents.length > 0) {
-      elements.thinkAgents.textContent = 'running: ' + d.current_agents.join(', ');
+      elements.thinkAgents.textContent = window.JournalI18n.render('journal.window.health.visible.text.running.variant2') + d.current_agents.join(', ');
     } else {
       elements.thinkAgents.textContent = '';
     }
@@ -3544,12 +3550,12 @@
       });
       elements.logsAnnouncer.textContent = stripLogPrefix(record.line);
       state.logErrorCount++;
-      elements.logErrorBadge.textContent = state.logErrorCount + ' error' + (state.logErrorCount > 1 ? 's' : '');
+      elements.logErrorBadge.textContent = state.logErrorCount + window.JournalI18n.render('journal.window.health.visible.text.error.variant2') + (state.logErrorCount > 1 ? 's' : '');
       elements.logErrorBadge.classList.remove('hidden');
       if (state.logsCollapsed) {
         state.logsCollapsed = false;
         document.querySelector('.logs-card').classList.remove('logs-collapsed');
-        elements.logsCollapseIndicator.textContent = '▼ hide';
+        elements.logsCollapseIndicator.textContent = window.JournalI18n.render('journal.window.health.visible.text.hide');
         document.querySelector('.logs-header').setAttribute('aria-expanded', 'true');
         renderLogs();
         state.lastLogFilter = null;
@@ -3899,7 +3905,7 @@
     const header = document.querySelector('.logs-header');
     card.classList.toggle('logs-collapsed', state.logsCollapsed);
     header.setAttribute('aria-expanded', String(!state.logsCollapsed));
-    elements.logsCollapseIndicator.textContent = state.logsCollapsed ? '▶ show' : '▼ hide';
+    elements.logsCollapseIndicator.textContent = state.logsCollapsed ? window.JournalI18n.render('journal.window.health.visible.text.show') : window.JournalI18n.render('journal.window.health.visible.text.hide');
     if (!state.logsCollapsed) renderLogs();
   }
   document.querySelector('.logs-header').addEventListener('click', (e) => {
@@ -3929,7 +3935,7 @@
     state.logCollapsedServices.clear();
     elements.logErrorBadge.textContent = '';
     elements.logErrorBadge.classList.add('hidden');
-    elements.logServiceFilter.innerHTML = '<option value="all">all services</option>';
+    elements.logServiceFilter.innerHTML = `<option value="all">${window.JournalI18n.renderHtml('journal.window.health.option.label.all.services')}</option>`;
     updateLogsBadge();
     renderLogs();
   });
@@ -3951,7 +3957,7 @@
   if (deepLinkLog) {
     state.logsCollapsed = false;
     document.querySelector('.logs-card').classList.remove('logs-collapsed');
-    elements.logsCollapseIndicator.textContent = '▼ hide';
+    elements.logsCollapseIndicator.textContent = window.JournalI18n.render('journal.window.health.visible.text.hide');
     document.querySelector('.logs-header').setAttribute('aria-expanded', 'true');
     const viewport = elements.logsViewport;
     const logsCard = viewport.closest('.logs-card');
@@ -3965,8 +3971,8 @@
     elements.logsSummaryBadge.style.display = 'none';
 
     // Replace header with log file context
-    logsTitle.textContent = 'log file';
-    logsControls.innerHTML = '<button id="logBackBtn">← back to dashboard</button>';
+    logsTitle.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.file');
+    logsControls.innerHTML = `<button id="logBackBtn">${window.JournalI18n.renderHtml('journal.window.health.button.label.back.to.dashboard')}</button>`;
     function parseDeepLinkLogLine(rawLine) {
       const prefixed = rawLine.match(/^\S+\s+\[([^\]]+)\]\s?(.*)$/) || rawLine.match(/^\[([^\]]+)\]\s?(.*)$/);
       if (!prefixed) return { stream: 'log', classifierLine: rawLine };
@@ -3988,7 +3994,7 @@
     }
 
     viewport.textContent = '';
-    appendDeepLinkLogLine(viewport, 'loading…', 'stdout');
+    appendDeepLinkLogLine(viewport, window.JournalI18n.render('journal.window.health.status.loading.variant2'), 'stdout');
 
     fetch('/app/health/api/log?path=' + encodeURIComponent(deepLinkLog))
       .then(r => r.json().then(data => ({ok: r.ok, data})))
@@ -3996,7 +4002,7 @@
         viewport.textContent = '';
         if (!ok) {
           const message = data.error || window.CONVEY_COPY.LOG_READ_FAILED;
-          appendDeepLinkLogLine(viewport, message, 'stderr', 'ERROR: ' + message);
+          appendDeepLinkLogLine(viewport, message, 'stderr', window.JournalI18n.render('journal.window.health.status.error') + message);
           return;
         }
         const pathHeader = document.createElement('div');
@@ -4009,7 +4015,7 @@
       })
       .catch(() => {
         viewport.textContent = '';
-        appendDeepLinkLogLine(viewport, 'network error loading log file', 'stderr', 'ERROR: network error loading log file');
+        appendDeepLinkLogLine(viewport, window.JournalI18n.render('journal.window.health.window.explanation.network.error.loading.log.file'), 'stderr', window.JournalI18n.render('journal.window.health.window.explanation.error.network.error.loading.log.file'));
       });
 
     document.addEventListener('click', function(e) {
@@ -4167,26 +4173,26 @@
     }
     const el = elements.connectionIndicator;
     if (!state.lastEventTs) {
-      el.textContent = 'waiting for live updates';
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.waiting.for.live.updates');
       el.className = 'connection-indicator';
-      elements.logsConnectionNote.textContent = 'log updates may be delayed';
+      elements.logsConnectionNote.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.updates.may.be.delayed');
       elements.logsConnectionNote.classList.remove('hidden');
       return;
     }
     const ageMs = Date.now() - state.lastEventTs;
     const ago = Math.floor(ageMs / 1000);
     if (ago >= 60) {
-      el.textContent = `no updates in ${relativeTime(ageMs)}`;
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.no.updates.in.value1', [['value1', String(relativeTime(ageMs))]]);
       el.className = 'connection-indicator disconnected';
-      elements.logsConnectionNote.textContent = 'log updates may be delayed';
+      elements.logsConnectionNote.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.updates.may.be.delayed');
       elements.logsConnectionNote.classList.remove('hidden');
     } else if (ago >= 30) {
-      el.textContent = 'updates are slow';
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.updates.are.slow');
       el.className = 'connection-indicator stale';
-      elements.logsConnectionNote.textContent = 'log updates may be delayed';
+      elements.logsConnectionNote.textContent = window.JournalI18n.render('journal.window.health.visible.text.log.updates.may.be.delayed');
       elements.logsConnectionNote.classList.remove('hidden');
     } else {
-      el.textContent = `updated ${ageAgo(ageMs)}`;
+      el.textContent = window.JournalI18n.render('journal.window.health.visible.text.updated.value1', [['value1', String(ageAgo(ageMs))]]);
       el.className = 'connection-indicator';
       elements.logsConnectionNote.textContent = '';
       elements.logsConnectionNote.classList.add('hidden');

@@ -7,33 +7,41 @@ use jiff::tz::Offset;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
 pub const FUTURE_SKEW_TOLERANCE_MS: i64 = 300_000;
 
 /// No usable backlog summary (none written yet, unreadable, or degraded). Nothing is
 /// checking in this state, so the verdict says what is known: it is unclear.
-pub const VERDICT_UNCLEAR_NOW: &str = "it's unclear whether your journal is caught up right now.";
-pub const VERDICT_ALL_CAUGHT_UP: &str = "your journal's all caught up.";
-pub const VERDICT_CAUGHT_UP: &str = "your journal's caught up.";
-pub const VERDICT_STUCK_ONLY_SINGULAR: &str = "caught up except 1 day that needs a hand.";
-pub const VERDICT_STUCK_ONLY_PLURAL: &str = "caught up except {n} days that need a hand.";
-pub const VERDICT_PENDING_ONLY_SINGULAR: &str = "1 day is still catching up.";
-pub const VERDICT_PENDING_ONLY_PLURAL: &str = "{n} days are still catching up.";
-pub const VERDICT_MIXED_STUCK_SINGULAR: &str = "1 day needs a hand";
-pub const VERDICT_MIXED_STUCK_PLURAL: &str = "{n} days need a hand";
-pub const VERDICT_MIXED_PENDING_SINGULAR: &str = "1 more day is still catching up";
-pub const VERDICT_MIXED_PENDING_PLURAL: &str = "{n} more days are still catching up";
-pub const VERDICT_AGE_UNKNOWN: &str =
-    "it's unclear whether your journal is caught up; the last update age is unknown.";
-pub const VERDICT_AGE_STALE_TEMPLATE: &str =
-    "it's unclear whether your journal is caught up; the last update was {age} ago.";
+const VERDICT_UNCLEAR_NOW_ID: &str = "journal.window.system.health.backlog.verdict.unclear.now";
+const VERDICT_ALL_CAUGHT_UP_ID: &str = "journal.window.system.health.backlog.verdict.all.caught.up";
+const VERDICT_CAUGHT_UP_ID: &str = "journal.window.system.health.backlog.verdict.caught.up";
+const VERDICT_STUCK_ONLY_SINGULAR_ID: &str =
+    "journal.window.system.health.backlog.verdict.stuck.only.singular";
+const VERDICT_STUCK_ONLY_PLURAL_ID: &str =
+    "journal.window.system.health.backlog.verdict.stuck.only.plural";
+const VERDICT_PENDING_ONLY_SINGULAR_ID: &str =
+    "journal.window.system.health.backlog.verdict.pending.only.singular";
+const VERDICT_PENDING_ONLY_PLURAL_ID: &str =
+    "journal.window.system.health.backlog.verdict.pending.only.plural";
+const VERDICT_MIXED_STUCK_SINGULAR_ID: &str =
+    "journal.window.system.health.backlog.verdict.mixed.stuck.singular";
+const VERDICT_MIXED_STUCK_PLURAL_ID: &str =
+    "journal.window.system.health.backlog.verdict.mixed.stuck.plural";
+const VERDICT_MIXED_PENDING_SINGULAR_ID: &str =
+    "journal.window.system.health.backlog.verdict.mixed.pending.singular";
+const VERDICT_MIXED_PENDING_PLURAL_ID: &str =
+    "journal.window.system.health.backlog.verdict.mixed.pending.plural";
+const VERDICT_AGE_UNKNOWN_ID: &str = "journal.window.system.health.backlog.verdict.age.unknown";
+const VERDICT_AGE_STALE_TEMPLATE_ID: &str =
+    "journal.window.system.health.backlog.verdict.age.stale.template";
 
-pub const UNFINISHED_TEMPLATE_ONE: &str = "an activity from {day} couldn't finish processing";
-pub const UNFINISHED_TEMPLATE_MANY_ONE_DAY: &str =
-    "{n} activities from {day} couldn't finish processing";
-pub const UNFINISHED_TEMPLATE_MANY_DAYS: &str =
-    "{n} activities couldn't finish processing. oldest: {day}";
+pub const UNFINISHED_TEMPLATE_ONE_ID: &str = "journal.window.system.health.unfinished.template.one";
+pub const UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID: &str =
+    "journal.window.system.health.unfinished.template.many.one.day";
+pub const UNFINISHED_TEMPLATE_MANY_DAYS_ID: &str =
+    "journal.window.system.health.unfinished.template.many.days";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SummaryFreshness {
@@ -90,28 +98,59 @@ pub fn summary_freshness(generated_at: Option<&str>, now: Timestamp) -> SummaryF
 }
 
 pub fn format_summary_age(delta: SignedDuration) -> String {
+    format_summary_age_in(delta, ENGLISH)
+}
+
+fn format_summary_age_in(delta: SignedDuration, locale: &str) -> String {
     let seconds = delta.as_secs().max(0);
     let minutes = (seconds / 60).max(1);
     let hours = seconds / 3600;
     let days = seconds / 86400;
     if hours < 1 {
-        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+        if minutes == 1 {
+            text(
+                locale,
+                "journal.window.system.health.backlog.age.minute.one",
+            )
+        } else {
+            strings(
+                locale,
+                "journal.window.system.health.backlog.age.minute.many",
+                [("n", &minutes.to_string())],
+            )
+        }
     } else if hours < 48 {
-        format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
+        if hours == 1 {
+            text(locale, "journal.window.system.health.backlog.age.hour.one")
+        } else {
+            strings(
+                locale,
+                "journal.window.system.health.backlog.age.hour.many",
+                [("n", &hours.to_string())],
+            )
+        }
     } else {
-        format!("{days} day{}", if days == 1 { "" } else { "s" })
+        if days == 1 {
+            text(locale, "journal.window.system.health.backlog.age.day.one")
+        } else {
+            strings(
+                locale,
+                "journal.window.system.health.backlog.age.day.many",
+                [("n", &days.to_string())],
+            )
+        }
     }
 }
 
-pub fn select_unfinished_template(activities: usize, day_count: usize) -> Option<&'static str> {
+pub fn select_unfinished_template(activities: usize, day_count: usize) -> Option<String> {
     if activities == 0 {
         None
     } else if activities == 1 {
-        Some(UNFINISHED_TEMPLATE_ONE)
+        Some(text(ENGLISH, UNFINISHED_TEMPLATE_ONE_ID))
     } else if day_count <= 1 {
-        Some(UNFINISHED_TEMPLATE_MANY_ONE_DAY)
+        Some(text(ENGLISH, UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID))
     } else {
-        Some(UNFINISHED_TEMPLATE_MANY_DAYS)
+        Some(text(ENGLISH, UNFINISHED_TEMPLATE_MANY_DAYS_ID))
     }
 }
 
@@ -212,14 +251,27 @@ pub struct BacklogStatusEvaluation {
     pub unfinished_activities: UnfinishedActivitiesAggregate,
 }
 
+pub fn backlog_unavailable() -> String {
+    text(ENGLISH, VERDICT_UNCLEAR_NOW_ID)
+}
+
 pub fn evaluate_backlog_status(
     backlog: Option<&Map<String, Value>>,
     generated_at: Option<&str>,
     now: Timestamp,
 ) -> BacklogStatusEvaluation {
+    evaluate_backlog_status_in(backlog, generated_at, now, ENGLISH)
+}
+
+pub fn evaluate_backlog_status_in(
+    backlog: Option<&Map<String, Value>>,
+    generated_at: Option<&str>,
+    now: Timestamp,
+    locale: &str,
+) -> BacklogStatusEvaluation {
     let Some(backlog) = backlog else {
         return BacklogStatusEvaluation {
-            verdict: VERDICT_UNCLEAR_NOW.to_owned(),
+            verdict: text(locale, VERDICT_UNCLEAR_NOW_ID),
             freshness: SummaryFreshness::Unknown,
             pending_days: 0,
             oldest_pending_day: None,
@@ -235,7 +287,7 @@ pub fn evaluate_backlog_status(
 
     if backlog.get("degraded") == Some(&Value::Bool(true)) {
         return BacklogStatusEvaluation {
-            verdict: VERDICT_UNCLEAR_NOW.to_owned(),
+            verdict: text(locale, VERDICT_UNCLEAR_NOW_ID),
             freshness,
             pending_days: 0,
             oldest_pending_day: None,
@@ -248,7 +300,7 @@ pub fn evaluate_backlog_status(
     }
     match freshness {
         SummaryFreshness::Unknown => BacklogStatusEvaluation {
-            verdict: VERDICT_AGE_UNKNOWN.to_owned(),
+            verdict: text(locale, VERDICT_AGE_UNKNOWN_ID),
             freshness,
             pending_days: 0,
             oldest_pending_day: None,
@@ -260,11 +312,11 @@ pub fn evaluate_backlog_status(
         },
         SummaryFreshness::Stale => {
             let age_str = parse_summary_time(generated_at.unwrap_or(""))
-                .map(|t| format_summary_age(now - t))
-                .unwrap_or_else(|| "unknown".to_owned());
-            let verdict = format!(
-                "it's unclear whether your journal is caught up; the last update was {age_str} ago."
-            );
+                .map(|t| format_summary_age_in(now - t, locale))
+                .unwrap_or_else(|| {
+                    text(locale, "journal.window.system.health.backlog.age.unknown")
+                });
+            let verdict = strings(locale, VERDICT_AGE_STALE_TEMPLATE_ID, [("age", &age_str)]);
             BacklogStatusEvaluation {
                 verdict,
                 freshness,
@@ -288,32 +340,48 @@ pub fn evaluate_backlog_status(
 
             let verdict = if pending == 0 && stuck == 0 {
                 if unfinished.activities > 0 {
-                    VERDICT_CAUGHT_UP.to_owned()
+                    text(locale, VERDICT_CAUGHT_UP_ID)
                 } else {
-                    VERDICT_ALL_CAUGHT_UP.to_owned()
+                    text(locale, VERDICT_ALL_CAUGHT_UP_ID)
                 }
             } else if stuck > 0 && pending == 0 {
                 if stuck == 1 {
-                    VERDICT_STUCK_ONLY_SINGULAR.to_owned()
+                    text(locale, VERDICT_STUCK_ONLY_SINGULAR_ID)
                 } else {
-                    format!("caught up except {stuck} days that need a hand.")
+                    strings(
+                        locale,
+                        VERDICT_STUCK_ONLY_PLURAL_ID,
+                        [("n", &stuck.to_string())],
+                    )
                 }
             } else if stuck == 0 {
                 if pending == 1 {
-                    VERDICT_PENDING_ONLY_SINGULAR.to_owned()
+                    text(locale, VERDICT_PENDING_ONLY_SINGULAR_ID)
                 } else {
-                    format!("{pending} days are still catching up.")
+                    strings(
+                        locale,
+                        VERDICT_PENDING_ONLY_PLURAL_ID,
+                        [("n", &pending.to_string())],
+                    )
                 }
             } else {
                 let stuck_str = if stuck == 1 {
-                    VERDICT_MIXED_STUCK_SINGULAR.to_owned()
+                    text(locale, VERDICT_MIXED_STUCK_SINGULAR_ID)
                 } else {
-                    format!("{stuck} days need a hand")
+                    strings(
+                        locale,
+                        VERDICT_MIXED_STUCK_PLURAL_ID,
+                        [("n", &stuck.to_string())],
+                    )
                 };
                 let pending_str = if pending == 1 {
-                    VERDICT_MIXED_PENDING_SINGULAR.to_owned()
+                    text(locale, VERDICT_MIXED_PENDING_SINGULAR_ID)
                 } else {
-                    format!("{pending} more days are still catching up")
+                    strings(
+                        locale,
+                        VERDICT_MIXED_PENDING_PLURAL_ID,
+                        [("n", &pending.to_string())],
+                    )
                 };
                 format!("{stuck_str}. {pending_str}.")
             };

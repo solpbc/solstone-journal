@@ -1,0 +1,16 @@
+{
+  "description": "Speech setup copy summary in the journal's health view.",
+  "context": "Journal window, health view. Speech setup copy summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3f8a177aabda0c2afb718089fe305374baffb1b350ef645e28142919b045559",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

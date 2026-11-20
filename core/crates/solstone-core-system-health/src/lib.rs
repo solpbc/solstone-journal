@@ -37,7 +37,7 @@ mod types;
 mod vocabulary;
 
 pub use backlog::{daily_failure_capped, read_backlog_view, read_backlog_view_with_roots};
-pub use backlog_copy::backlog_day_reason_copy;
+pub use backlog_copy::{backlog_day_reason_copy, backlog_day_reason_copy_in};
 pub use catchup_state::{
     read_backoff_summary, read_daily_catchup_finished, read_segment_repair_attempted,
     read_segment_repair_summary,
@@ -53,22 +53,17 @@ pub use error::HealthError;
 pub use event::{EventPayload, HealthEvent, RunLogRecord};
 pub use freshness::{
     BACKLOG_FRESHNESS_MAX_AGE_HOURS, BacklogStatusEvaluation, FUTURE_SKEW_TOLERANCE_MS,
-    SummaryFreshness, UNFINISHED_TEMPLATE_MANY_DAYS, UNFINISHED_TEMPLATE_MANY_ONE_DAY,
-    UNFINISHED_TEMPLATE_ONE, UnfinishedActivitiesAggregate, VERDICT_AGE_STALE_TEMPLATE,
-    VERDICT_AGE_UNKNOWN, VERDICT_ALL_CAUGHT_UP, VERDICT_CAUGHT_UP, VERDICT_MIXED_PENDING_PLURAL,
-    VERDICT_MIXED_PENDING_SINGULAR, VERDICT_MIXED_STUCK_PLURAL, VERDICT_MIXED_STUCK_SINGULAR,
-    VERDICT_PENDING_ONLY_PLURAL, VERDICT_PENDING_ONLY_SINGULAR, VERDICT_STUCK_ONLY_PLURAL,
-    VERDICT_STUCK_ONLY_SINGULAR, VERDICT_UNCLEAR_NOW, aggregate_unfinished_activities,
-    aggregate_unfinished_from_days, evaluate_backlog_status, format_summary_age,
-    parse_summary_time, select_unfinished_template, summary_freshness,
+    SummaryFreshness, UNFINISHED_TEMPLATE_MANY_DAYS_ID, UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID,
+    UNFINISHED_TEMPLATE_ONE_ID, UnfinishedActivitiesAggregate, aggregate_unfinished_activities,
+    aggregate_unfinished_from_days, backlog_unavailable, evaluate_backlog_status,
+    evaluate_backlog_status_in, format_summary_age, parse_summary_time, select_unfinished_template,
+    summary_freshness,
 };
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
 pub use index_health::{
-    INDEX_TEXT_BUILDING, INDEX_TEXT_CLASSIFICATION_STALLED, INDEX_TEXT_FAILED_FILES,
-    INDEX_TEXT_NEWER_GENERATION, INDEX_TEXT_OK, INDEX_TEXT_REPAIR, INDEX_TEXT_UNREADABLE,
     IndexFailure, IndexHealth, IndexHealthState, behind_text, evaluate_index_health,
-    evaluate_index_health_of, evaluate_index_health_recent, evaluate_index_health_with,
-    retained_text,
+    evaluate_index_health_of, evaluate_index_health_recent, evaluate_index_health_recent_in,
+    evaluate_index_health_with, retained_text,
 };
 pub use indexing_observation::{
     IndexingAttemptObservation, IndexingDiagnostics, IndexingObservations,
@@ -80,8 +75,8 @@ pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,
 };
 pub use not_yet::{
-    NOT_YET_ENGINE, NOT_YET_FIRST_NIGHT, NOT_YET_SEARCH, NotYet, OVERNIGHT_WINDOW_END_HOUR,
-    journal_not_yet, not_yet_evaluation, not_yet_rule, summary_not_yet,
+    NOT_YET_SEARCH_ID, NotYet, OVERNIGHT_WINDOW_END_HOUR, journal_not_yet, not_yet_evaluation,
+    not_yet_evaluation_in, not_yet_rule, summary_not_yet,
 };
 pub use progress::{read_pending_facet_routing, read_segment_progress};
 pub use safe_text::{

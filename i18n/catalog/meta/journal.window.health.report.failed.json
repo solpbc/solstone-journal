@@ -1,0 +1,16 @@
+{
+  "description": "Journal health error in the journal's health view.",
+  "context": "Journal window, health view. Journal health error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03f66218d1a5a0bee498c14beef09388237b001ef35217d3a0376df5d2a044af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

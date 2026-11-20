@@ -1,0 +1,23 @@
+{
+  "description": "Health glance copy \"health_devices_count_many\" in the journal's health view.",
+  "context": "Journal window, health view. Health glance copy \"health_devices_count_many\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e26249cfc971b50ab25254f80057653565ba7a651e6e46723cc0bf3e244b48c",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

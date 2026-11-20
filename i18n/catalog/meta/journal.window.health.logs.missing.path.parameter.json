@@ -1,0 +1,23 @@
+{
+  "description": "Log response detail in the journal's health view.",
+  "context": "Journal window, health view. Log response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25d3349fd8722c38a53b47c1414b940c98a82a6f7799babafc4ac5ed2f55e785",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "path"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Health logs copy \"logs_stream_filter_label\" in the journal's health view.",
+  "context": "Journal window, health view. Health logs copy \"logs_stream_filter_label\".",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c4c87d5465b060ada10097a99470e25143cf6cb7d63addcd7bd6dc6d1e8ed17",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

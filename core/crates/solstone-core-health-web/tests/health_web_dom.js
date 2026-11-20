@@ -454,7 +454,8 @@ function extractGlanceFunction(source) {
 
 function glanceFor(crashed, staleHeartbeats, searchIndex = null, attention = {}) {
   const context = vm.createContext({
-    reportHealthReady() {}, Array, Object, String, Number, Math, Set, Map });
+    reportHealthReady() {}, Array, Object, String, Number, Math, Set, Map, window: {} });
+  loadWindowCatalog(context);
   context.crashedEntries = crashed;
   context.staleHeartbeats = staleHeartbeats;
   context.searchIndex = searchIndex;
@@ -1152,6 +1153,14 @@ test('set-aside units share one list, retain focus, and render retry errors as t
   assert.strictEqual(button.disabled, false);
 });
 
+test('backlog guidance keeps the server wording when the locale uses no spaces', async () => {
+  const env = createHeldWorkEnvironment();
+  env.state.legacyHolds = [{ day: '20260101', reason: '再試行してください' }];
+  env.receive({ held: [], queues: {} });
+  const row = env.doc.querySelector('.held-work-row');
+  assert.ok(row.querySelector('p').textContent.endsWith('再試行してください'));
+});
+
 test('known service device brain and index faults retain priority over held work', async () => {
   const env = createHeldWorkEnvironment();
   env.receive({ held: [{ partition: 'daily', reasons: ['root_live'] }], queues: { daily: 1 } });
@@ -1602,6 +1611,7 @@ function createSpeechEnvironment(applicable = true) {
     }),
   });
 
+  loadWindowCatalog(context);
   context.state = {hostCapabilities: {terminal_speech_setup: true}};
   const speechCode = sourceBlock(source, 'const SPEECH_SETUP_COPY =', 'function clearHealthStateError(');
   vm.runInContext(speechCode, context);
@@ -2203,6 +2213,7 @@ function logFilterEnvironment() {
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, requestAnimationFrame: (fn) => fn(),
     fetch: ask, getJson: ask, updateLogsBadge() {},
   });
+  loadWindowCatalog(context);
   vm.runInContext(focusSource, context, { filename: 'focus.js' });
   vm.runInContext(sourceBlock(source, 'const HEALTH_LOGS_COPY =', 'const HEALTH_GLANCE_COPY ='), context);
   vm.runInContext(sourceBlock(source, 'const SERVICE_NAMES =', '// Readable names for talent ids'), context);

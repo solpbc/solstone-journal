@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'maintenance:speakers:discover-voices' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'maintenance:speakers:discover-voices'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55d9a5b99975d8e820ba3a0e46e76d7725370ad9495feed8ae5aec48d45ce047",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

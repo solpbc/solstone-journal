@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's health view.",
+  "context": "Journal window, health view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7215e891ee0ac9487df934369096303f5d87fab30aa95e28c5137596278ed109",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

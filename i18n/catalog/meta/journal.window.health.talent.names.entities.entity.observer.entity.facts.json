@@ -1,0 +1,16 @@
+{
+  "description": "Talent names 'entities:entity_observer' in the journal's health view.",
+  "context": "Journal window, health view. Talent names 'entities:entity_observer'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a1b0de2d3653b31ec1f40616422d6af044dd75d3d50b7908d824376b8e447fc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

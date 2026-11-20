@@ -10,7 +10,9 @@ use axum::{
     routing::{get, post},
 };
 use serde_json::json;
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::{response_locale, text};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -73,21 +75,33 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/health/static/{*name}", get(assets::static_asset))
         .route(
             "/app/health/api/state",
-            get(move || state(state_root.clone(), state_clock.clone()))
-                .layer(solstone_core_convey_http::coalesce::layer()),
+            get(move |locale| {
+                state(
+                    state_root.clone(),
+                    state_clock.clone(),
+                    response_locale(locale),
+                )
+            })
+            .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/health/api/media-backlog",
-            get(move || journal_data::media_backlog(media_root.clone(), media_clock.now()))
-                .layer(solstone_core_convey_http::coalesce::layer()),
+            get(move |locale| {
+                journal_data::media_backlog(
+                    media_root.clone(),
+                    media_clock.now(),
+                    response_locale(locale),
+                )
+            })
+            .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/health/api/log",
-            get(move |query| logs::get(log_root.clone(), query)),
+            get(move |locale, query| logs::get(log_root.clone(), query, response_locale(locale))),
         )
         .route(
             "/app/health/api/info",
-            get(move |basis| info(info_root.clone(), basis)),
+            get(move |basis, locale| info(info_root.clone(), basis, locale)),
         )
         .route(
             "/app/health/api/speech-setup",
@@ -95,16 +109,23 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
         )
         .route(
             "/app/health/api/brain/check",
-            post(move || actions::check_brain(brain_root.clone())),
+            post(move |locale| actions::check_brain(brain_root.clone(), response_locale(locale))),
         )
-        .route("/app/health/api/retry-import", post(actions::retry_import))
+        .route(
+            "/app/health/api/retry-import",
+            post(|locale, body| actions::retry_import(body, response_locale(locale))),
+        )
         .route(
             "/app/health/api/reprocess",
-            post(move |body| actions::reprocess(retry_root.clone(), body)),
+            post(move |locale, body| {
+                actions::reprocess(retry_root.clone(), body, response_locale(locale))
+            }),
         )
         .route(
             "/app/health/api/retry-work",
-            post(move |body| actions::retry_work(work_retry_root.clone(), body)),
+            post(move |locale, body| {
+                actions::retry_work(work_retry_root.clone(), body, response_locale(locale))
+            }),
         )
         .merge(api_router(journal_root))
 }
@@ -131,7 +152,7 @@ pub fn api_router(journal_root: PathBuf) -> Router {
     journal_data::api_router(journal_root)
 }
 
-async fn state(root: PathBuf, clock: Clock) -> Response {
+async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthState, move || {
         let now = clock.now();
         let (generated_at, backlog) = backlog::load(&root);
@@ -143,20 +164,21 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
                 .datetime(),
         );
         let eval = match not_yet {
-            Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
-            None => solstone_core_system_health::evaluate_backlog_status(
+            Some(not_yet) => solstone_core_system_health::not_yet_evaluation_in(not_yet, locale),
+            None => solstone_core_system_health::evaluate_backlog_status_in(
                 backlog.as_ref(),
                 generated_at.as_deref(),
                 now,
+                locale,
             ),
         };
         let mut search_index =
-            search_index::evaluate_search_index(&root, &search_index::FsIndexMetadata, now);
+            search_index::evaluate_search_index_in(&root, &search_index::FsIndexMetadata, now, locale);
         // Before the first night, search makes no claim unless it is failing.
         if search_index.state != "failing" {
             match not_yet {
                 Some(solstone_core_system_health::NotYet::FirstNight) => {
-                    search_index.text = solstone_core_system_health::NOT_YET_SEARCH.to_owned();
+                    search_index.text = text(locale, solstone_core_system_health::NOT_YET_SEARCH_ID);
                 }
                 // Nothing catches search up until processing is set up; the
                 // verdict above already says so.
@@ -184,7 +206,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
         #[cfg(any(unix, windows))]
-        let storage_privacy = storage_privacy::snapshot(&root);
+        let storage_privacy = storage_privacy::snapshot(&root, locale);
         #[cfg(not(any(unix, windows)))]
         let storage_privacy = serde_json::Value::Null;
         let mut payload = json!({
@@ -198,7 +220,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
             },
             "backlog": {
                 "verdict": eval.verdict,
-                "scope": "recent days",
+                "scope": text(locale, "journal.window.health.backlog.scope"),
                 "not_yet": not_yet.map(solstone_core_system_health::NotYet::as_str),
                 "pending_days": eval.pending_days,
                 "oldest_pending_day": eval.oldest_pending_day,
@@ -207,8 +229,8 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
                     "generated_at": generated_at,
                 },
                 "unfinished_activities": eval.unfinished_activities,
-                "stuck_rows": backlog::stuck_rows(backlog.as_ref()),
-                "copy": backlog::copy(),
+                "stuck_rows": backlog::stuck_rows(backlog.as_ref(), locale),
+                "copy": backlog::copy(locale),
             },
             "search_index": {
                 "state": search_index.state,
@@ -224,7 +246,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
                 "items": items,
                 "ok": ok,
                 "count": count,
-                "label": errors_today_label(count, ok),
+                "label": errors_today_label(count, ok, locale),
             },
         });
         if !storage_privacy.is_null() { payload["storage_privacy"] = storage_privacy; }
@@ -233,20 +255,22 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
     .await
 }
 
-fn errors_today_label(count: usize, ok: bool) -> &'static str {
+fn errors_today_label(count: usize, ok: bool, locale: &str) -> String {
     if ok && count == 1 {
-        "error today"
+        text(locale, "journal.window.health.agent.errors.one")
     } else {
-        "errors today"
+        text(locale, "journal.window.health.agent.errors.many")
     }
 }
 async fn info(
     root: PathBuf,
     basis: Option<Extension<solstone_core_convey_http::identity::AccessBasis>>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = response_locale(locale);
     spawn_blocking_response(OwnerReadRole::HealthInfo, move || {
         Json(
-            json!({"hostname":host::hostname(),"brain":brain::snapshot(&root),
+            json!({"hostname":host::hostname(),"brain":brain::snapshot(&root, locale),
             "local_tcp_programs": cfg!(any(target_os = "linux", target_os = "macos"))
                 && matches!(basis, Some(Extension(solstone_core_convey_http::identity::AccessBasis::Localhost))),
             "host_capabilities": solstone_core_system::owner_host::capabilities()}),

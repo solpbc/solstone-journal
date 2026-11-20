@@ -1,0 +1,16 @@
+{
+  "description": "Log response detail in the journal's health view.",
+  "context": "Journal window, health view. Log response detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0222d046de92aabe70b1b47ac36474efcb34935783d434b1238c36a58e9cfbc2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

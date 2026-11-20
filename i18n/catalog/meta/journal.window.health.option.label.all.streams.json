@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's health view.",
+  "context": "Journal window, health view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1627be45129fc0a79b6f41c46e0f17c3f645106fb6d29831257407ee030c5c22",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

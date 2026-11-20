@@ -1,0 +1,16 @@
+{
+  "description": "Schedule names 'heartbeat' in the journal's health view.",
+  "context": "Journal window, health view. Schedule names 'heartbeat'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "701bb476c3f88dab02c5fa0df308e6e9496054d9cd1ca8da2c03aa46f0cf35cc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -186,7 +186,10 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
             status.insert("not_yet".into(), Value::String("awaiting_engine".into()));
             status.insert(
                 "verdict".into(),
-                Value::String(solstone_core_system_health::NOT_YET_ENGINE.into()),
+                Value::String(
+                    "your journal starts catching up once you choose where the thinking happens."
+                        .into(),
+                ),
             );
         }
     }

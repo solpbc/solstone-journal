@@ -7,6 +7,8 @@
 //! doctor) reads this value; none derives its own. It measures the index against
 //! the disk through the read-only status and never writes.
 
+use solstone_core_window_catalog::{ENGLISH, strings, text};
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -21,19 +23,17 @@ use solstone_core_indexer_store::status::{
 
 use crate::indexing_observation::{IndexingObservations, read_indexing_observations};
 
-pub const INDEX_TEXT_OK: &str = "search is up to date with your journal.";
-pub const INDEX_TEXT_BUILDING: &str = "search is still being built.";
-pub const INDEX_TEXT_DAMAGE_CHECK: &str =
-    "search found a problem with its index and is checking it.";
-pub const INDEX_TEXT_REPEATED_REBUILD: &str = "search has had to rebuild itself more than once this week, which can mean the disk is failing.";
-pub const INDEX_TEXT_FAILED_FILES: &str = "some journal updates couldn't be added to search.";
-pub const INDEX_TEXT_UNREADABLE: &str = "search can't read its index right now.";
-pub const INDEX_TEXT_NEWER_GENERATION: &str =
-    "a newer version of solstone last updated search, so this version won't add new changes to it.";
-pub const INDEX_TEXT_REPAIR: &str = "search stopped updating and needs a repair.";
-pub const INDEX_TEXT_CHECK_OVERDUE: &str = "search's daily check hasn't finished in over two days, so some changes may be missing from search.";
-pub const INDEX_TEXT_CLASSIFICATION_STALLED: &str =
-    "search stopped sorting some older entries into your facets and needs a repair.";
+const INDEX_TEXT_OK: &str = "journal.window.system.health.index.ok";
+const INDEX_TEXT_BUILDING: &str = "journal.window.system.health.index.building";
+const INDEX_TEXT_DAMAGE_CHECK: &str = "journal.window.system.health.index.damage.check";
+const INDEX_TEXT_REPEATED_REBUILD: &str = "journal.window.system.health.index.repeated.rebuild";
+const INDEX_TEXT_FAILED_FILES: &str = "journal.window.system.health.index.failed.files";
+const INDEX_TEXT_UNREADABLE: &str = "journal.window.system.health.index.unreadable";
+const INDEX_TEXT_NEWER_GENERATION: &str = "journal.window.system.health.index.newer.generation";
+const INDEX_TEXT_REPAIR: &str = "journal.window.system.health.index.repair";
+const INDEX_TEXT_CHECK_OVERDUE: &str = "journal.window.system.health.index.check.overdue";
+const INDEX_TEXT_CLASSIFICATION_STALLED: &str =
+    "journal.window.system.health.index.classification.stalled";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -135,7 +135,7 @@ pub fn evaluate_index_health_with(
         Ok(status) => evaluate_index_health_of(journal, &status, observations),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
-            with_work_list(journal, unmeasured())
+            with_work_list(journal, unmeasured(ENGLISH), ENGLISH)
         }
     }
 }
@@ -203,6 +203,14 @@ pub fn evaluate_index_health_recent(
     journal: &Path,
     observations: &IndexingObservations,
 ) -> IndexHealth {
+    evaluate_index_health_recent_in(journal, observations, ENGLISH)
+}
+
+pub fn evaluate_index_health_recent_in(
+    journal: &Path,
+    observations: &IndexingObservations,
+    locale: &str,
+) -> IndexHealth {
     let reused = {
         let mut cache = measurements()
             .lock()
@@ -230,20 +238,20 @@ pub fn evaluate_index_health_recent(
         }
     };
     match reused.map_or_else(|| measure(journal), Ok) {
-        Ok(status) => evaluate_index_health_of(journal, &status, observations),
+        Ok(status) => evaluate_index_health_of_in(journal, &status, observations, locale),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
-            with_work_list(journal, unmeasured())
+            with_work_list(journal, unmeasured(locale), locale)
         }
     }
 }
 
 /// The journal walk itself failed; the scan's walk fails the same way.
-fn unmeasured() -> IndexHealth {
+fn unmeasured(locale: &str) -> IndexHealth {
     IndexHealth {
         state: IndexHealthState::Failing,
         failure: Some(IndexFailure::ScanFailed),
-        text: INDEX_TEXT_FAILED_FILES.to_owned(),
+        text: text(locale, INDEX_TEXT_FAILED_FILES),
         pending: 0,
         stale: 0,
         missing: 0,
@@ -273,12 +281,30 @@ pub fn evaluate_index_health_of(
     status: &IndexStatus,
     observations: &IndexingObservations,
 ) -> IndexHealth {
-    with_work_list(journal, index_health_from(status, observations))
+    evaluate_index_health_of_in(journal, status, observations, ENGLISH)
+}
+
+#[must_use]
+fn evaluate_index_health_of_in(
+    journal: &Path,
+    status: &IndexStatus,
+    observations: &IndexingObservations,
+    locale: &str,
+) -> IndexHealth {
+    with_work_list(
+        journal,
+        index_health_from(status, observations, locale),
+        locale,
+    )
 }
 
 /// The part of the health value that the measured status and the recorded
 /// update outcomes decide. Every surface also needs the work list.
-fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) -> IndexHealth {
+fn index_health_from(
+    status: &IndexStatus,
+    observations: &IndexingObservations,
+    locale: &str,
+) -> IndexHealth {
     let behind = |path: &String| {
         status.stale.contains(path) || status.missing.contains(path) || status.failed.contains(path)
     };
@@ -337,23 +363,25 @@ fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) 
     };
 
     let text = match (state, failure) {
-        (_, Some(IndexFailure::Unreadable)) => INDEX_TEXT_UNREADABLE.to_owned(),
-        (_, Some(IndexFailure::NewerGeneration)) => INDEX_TEXT_NEWER_GENERATION.to_owned(),
+        (_, Some(IndexFailure::Unreadable)) => text(locale, INDEX_TEXT_UNREADABLE),
+        (_, Some(IndexFailure::NewerGeneration)) => text(locale, INDEX_TEXT_NEWER_GENERATION),
         (_, Some(IndexFailure::MembershipsMissing | IndexFailure::StampUnreadable)) => {
-            INDEX_TEXT_REPAIR.to_owned()
+            text(locale, INDEX_TEXT_REPAIR)
         }
         (_, Some(IndexFailure::ClassificationStalled)) => {
-            INDEX_TEXT_CLASSIFICATION_STALLED.to_owned()
+            text(locale, INDEX_TEXT_CLASSIFICATION_STALLED)
         }
         (_, Some(IndexFailure::FailedFiles | IndexFailure::ScanFailed)) => {
-            INDEX_TEXT_FAILED_FILES.to_owned()
+            text(locale, INDEX_TEXT_FAILED_FILES)
         }
-        (IndexHealthState::Building, None) => INDEX_TEXT_BUILDING.to_owned(),
+        (IndexHealthState::Building, None) => text(locale, INDEX_TEXT_BUILDING),
         // Nothing the next scan does removes retained rows, so their line makes
         // no catching-up promise.
-        (IndexHealthState::Behind, None) if pending == 0 && retained > 0 => retained_text(retained),
-        (IndexHealthState::Behind, None) => behind_text(pending),
-        _ => INDEX_TEXT_OK.to_owned(),
+        (IndexHealthState::Behind, None) if pending == 0 && retained > 0 => {
+            retained_text_in(retained, locale)
+        }
+        (IndexHealthState::Behind, None) => behind_text_in(pending, locale),
+        _ => text(locale, INDEX_TEXT_OK),
     };
 
     IndexHealth {
@@ -383,7 +411,7 @@ fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) 
     }
 }
 
-fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
+fn with_work_list(journal: &Path, mut health: IndexHealth, locale: &str) -> IndexHealth {
     match solstone_core_indexer_store::todo::inspect(journal) {
         Ok(todo) => {
             // Queued connections refreshes are not search work: search can be
@@ -405,7 +433,10 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
             {
                 health.state = IndexHealthState::Failing;
                 health.failure = Some(IndexFailure::FailedDeletions);
-                health.text = "some removed entries couldn't be taken out of search.".to_owned();
+                health.text = text(
+                    locale,
+                    "journal.window.system.health.index.failed.deletions",
+                );
             } else if todo.failed_tokens > 0
                 && health.failure.is_none_or(|failure| {
                     matches!(
@@ -416,24 +447,27 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
             {
                 health.state = IndexHealthState::Failing;
                 health.failure = Some(IndexFailure::FailedWork);
-                health.text = INDEX_TEXT_FAILED_FILES.to_owned();
+                health.text = text(locale, INDEX_TEXT_FAILED_FILES);
             } else if health.queued > 0 && health.state == IndexHealthState::Ok {
                 health.state = IndexHealthState::Behind;
-                health.text = "search is catching up with your journal.".to_owned();
+                health.text = text(locale, "journal.window.system.health.index.catching.up");
             }
             // Ahead of whatever else the damage made it read as, because this one
             // says what's happening about it.
             if todo.index_check {
                 health.state = IndexHealthState::Failing;
                 health.failure = Some(IndexFailure::DamageCheck);
-                health.text = INDEX_TEXT_DAMAGE_CHECK.to_owned();
+                health.text = text(locale, INDEX_TEXT_DAMAGE_CHECK);
             }
         }
         Err(error) => {
             log::warn!("search work list could not be read: {error}");
             health.state = IndexHealthState::Failing;
             health.failure = Some(IndexFailure::ScanFailed);
-            health.text = "search can't check its queued updates right now.".to_owned();
+            health.text = text(
+                locale,
+                "journal.window.system.health.index.queued.unavailable",
+            );
         }
     }
     if let Ok(conn) = solstone_core_indexer_store::open_index_reader(journal) {
@@ -460,10 +494,14 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
         )
     {
         health.state = IndexHealthState::Behind;
-        health.text = INDEX_TEXT_CHECK_OVERDUE.to_owned();
+        health.text = text(locale, INDEX_TEXT_CHECK_OVERDUE);
     }
     if solstone_core_indexer_store::recovery::rebuilt_more_than_once_this_week(journal) {
-        health.text = format!("{} {INDEX_TEXT_REPEATED_REBUILD}", health.text);
+        health.text = format!(
+            "{} {}",
+            health.text,
+            text(locale, INDEX_TEXT_REPEATED_REBUILD)
+        );
     }
     health
 }
@@ -508,9 +546,17 @@ fn building(status: &IndexStatus) -> bool {
 /// The line for rows of removed entries that only a full rescan removes.
 #[must_use]
 pub fn retained_text(retained: usize) -> String {
+    retained_text_in(retained, ENGLISH)
+}
+
+fn retained_text_in(retained: usize, locale: &str) -> String {
     match retained {
-        1 => "search still shows 1 entry that is no longer in your journal.".to_owned(),
-        n => format!("search still shows {n} entries that are no longer in your journal."),
+        1 => text(locale, "journal.window.system.health.index.retained.one"),
+        n => strings(
+            locale,
+            "journal.window.system.health.index.retained.many",
+            [("count", &n.to_string())],
+        ),
     }
 }
 
@@ -518,10 +564,18 @@ pub fn retained_text(retained: usize) -> String {
 /// as catching up without a count.
 #[must_use]
 pub fn behind_text(pending: usize) -> String {
+    behind_text_in(pending, ENGLISH)
+}
+
+fn behind_text_in(pending: usize, locale: &str) -> String {
     match pending {
-        0 => "search is catching up with your journal.".to_owned(),
-        1 => "search is catching up with 1 change in your journal.".to_owned(),
-        n => format!("search is catching up with {n} changes in your journal."),
+        0 => text(locale, "journal.window.system.health.index.catching.up"),
+        1 => text(locale, "journal.window.system.health.index.behind.one"),
+        n => strings(
+            locale,
+            "journal.window.system.health.index.behind.many",
+            [("count", &n.to_string())],
+        ),
     }
 }
 
@@ -562,7 +616,10 @@ mod tests {
         let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.state, IndexHealthState::Failing);
         assert_eq!(health.failure, Some(IndexFailure::DamageCheck));
-        assert_eq!(health.text, INDEX_TEXT_DAMAGE_CHECK);
+        assert_eq!(
+            health.text,
+            "search found a problem with its index and is checking it."
+        );
         assert_eq!(health.queued, 0, "a check is not search work");
     }
 
@@ -594,7 +651,7 @@ mod tests {
         let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.failure, None, "{health:?}");
         assert_eq!(health.state, IndexHealthState::Ok);
-        assert_eq!(health.text, INDEX_TEXT_OK);
+        assert_eq!(health.text, "search is up to date with your journal.");
 
         let db = solstone_core_indexer_store::db::db_path(journal.path());
         rusqlite::Connection::open(&db)
@@ -606,7 +663,7 @@ mod tests {
         let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.state, IndexHealthState::Ok);
         assert!(
-            health.text.contains(INDEX_TEXT_REPEATED_REBUILD),
+            health.text.contains("search has had to rebuild itself more than once this week, which can mean the disk is failing."),
             "{health:?}"
         );
     }
@@ -717,10 +774,10 @@ mod tests {
         assert_eq!((health.queued, health.failed_deletions), (1, 1));
         assert!(health.last_finished_check_at_ms.is_some());
         assert_eq!(health.check_removed, 0);
-        let mut unreadable = unmeasured();
+        let mut unreadable = unmeasured(ENGLISH);
         unreadable.failure = Some(IndexFailure::Unreadable);
         assert_eq!(
-            with_work_list(journal.path(), unreadable).failure,
+            with_work_list(journal.path(), unreadable, ENGLISH).failure,
             Some(IndexFailure::Unreadable)
         );
     }
@@ -774,7 +831,10 @@ mod tests {
         let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert!(health.check_overdue);
         assert_eq!(health.state, IndexHealthState::Behind);
-        assert_eq!(health.text, INDEX_TEXT_CHECK_OVERDUE);
+        assert_eq!(
+            health.text,
+            "search's daily check hasn't finished in over two days, so some changes may be missing from search."
+        );
     }
 
     #[test]
@@ -858,7 +918,10 @@ mod tests {
         let health = evaluate_index_health(journal.path(), Timestamp::now());
         assert_eq!(health.failure, Some(IndexFailure::FailedWork));
         assert_eq!(health.state, IndexHealthState::Failing);
-        assert_eq!(health.text, INDEX_TEXT_FAILED_FILES);
+        assert_eq!(
+            health.text,
+            "some journal updates couldn't be added to search."
+        );
     }
 
     fn status() -> IndexStatus {
@@ -920,15 +983,18 @@ mod tests {
         behind.current = 9;
 
         // A failure the next scan repaired, or for a file now gone, is history.
-        let repaired = index_health_from(&status(), &observations(&["20261005/a.md"]));
+        let repaired = index_health_from(&status(), &observations(&["20261005/a.md"]), ENGLISH);
         assert_eq!((repaired.state, repaired.failed), (IndexHealthState::Ok, 0));
-        assert_eq!(repaired.text, INDEX_TEXT_OK);
+        assert_eq!(repaired.text, "search is up to date with your journal.");
 
-        let open = index_health_from(&behind, &observations(&["20261005/a.md"]));
+        let open = index_health_from(&behind, &observations(&["20261005/a.md"]), ENGLISH);
         assert_eq!(open.state, IndexHealthState::Failing);
         assert_eq!(open.failure, Some(IndexFailure::FailedFiles));
         assert_eq!(open.failed, 1);
-        assert_eq!(open.text, INDEX_TEXT_FAILED_FILES);
+        assert_eq!(
+            open.text,
+            "some journal updates couldn't be added to search."
+        );
     }
 
     #[test]
@@ -936,7 +1002,7 @@ mod tests {
         let mut pending = status();
         pending.missing = set(&["20261005/new.md"]);
         pending.orphaned = set(&["20261004/old.md"]);
-        let behind = index_health_from(&pending, &observations(&[]));
+        let behind = index_health_from(&pending, &observations(&[]), ENGLISH);
         assert_eq!(behind.state, IndexHealthState::Behind);
         assert_eq!(
             behind.text,
@@ -950,7 +1016,7 @@ mod tests {
         empty.indexed = 0;
         empty.missing = set(&["20261005/a.md"]);
         assert_eq!(
-            index_health_from(&empty, &observations(&[])).state,
+            index_health_from(&empty, &observations(&[]), ENGLISH).state,
             IndexHealthState::Building
         );
 
@@ -958,7 +1024,7 @@ mod tests {
         let mut stuck_flag = pending.clone();
         stuck_flag.build = Some(IndexBuildLifecycle::Building);
         assert_eq!(
-            index_health_from(&stuck_flag, &observations(&[])).state,
+            index_health_from(&stuck_flag, &observations(&[]), ENGLISH).state,
             IndexHealthState::Behind
         );
 
@@ -967,15 +1033,18 @@ mod tests {
             user_version: 2,
             ..IndexStamp::default()
         });
-        let refused = index_health_from(&newer, &observations(&[]));
+        let refused = index_health_from(&newer, &observations(&[]), ENGLISH);
         assert_eq!(refused.failure, Some(IndexFailure::NewerGeneration));
-        assert_eq!(refused.text, INDEX_TEXT_NEWER_GENERATION);
+        assert_eq!(
+            refused.text,
+            "a newer version of solstone last updated search, so this version won't add new changes to it."
+        );
 
         // Rows for a removed day that only a full rescan removes: behind, with
         // a line that promises no catching up.
         let mut kept = status();
         kept.retained = set(&["20261001/talents/gone.md"]);
-        let retained = index_health_from(&kept, &observations(&[]));
+        let retained = index_health_from(&kept, &observations(&[]), ENGLISH);
         assert_eq!(retained.state, IndexHealthState::Behind);
         assert_eq!(
             retained.text,
@@ -985,7 +1054,7 @@ mod tests {
         // A file the last scan could not index, and a scan that stopped.
         let mut scan_failed = status();
         scan_failed.failed = set(&["20261005/bad.md"]);
-        let failed = index_health_from(&scan_failed, &observations(&["20261005/bad.md"]));
+        let failed = index_health_from(&scan_failed, &observations(&["20261005/bad.md"]), ENGLISH);
         assert_eq!(
             (failed.failure, failed.failed),
             (Some(IndexFailure::FailedFiles), 1)
@@ -996,14 +1065,14 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(
-            index_health_from(&stopped, &observations(&[])).failure,
+            index_health_from(&stopped, &observations(&[]), ENGLISH).failure,
             Some(IndexFailure::ScanFailed)
         );
 
         let mut hard_stop = status();
         hard_stop.memberships_missing = true;
         assert_eq!(
-            index_health_from(&hard_stop, &observations(&[])).failure,
+            index_health_from(&hard_stop, &observations(&[]), ENGLISH).failure,
             Some(IndexFailure::MembershipsMissing)
         );
     }

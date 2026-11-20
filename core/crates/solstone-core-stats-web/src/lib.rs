@@ -230,9 +230,9 @@ async fn stats_data(
                     "oldest_pending_day": eval.oldest_pending_day,
                     "unfinished_activities": eval.unfinished_activities,
                     "copy": {
-                        "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
-                        "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
-                        "unfinished_template_many_days": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS,
+                        "unfinished_template_one": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_ONE_ID),
+                        "unfinished_template_many_one_day": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID),
+                        "unfinished_template_many_days": solstone_core_convey_http::window_catalog::text(solstone_core_convey_http::window_catalog::ENGLISH, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS_ID),
                     },
                 }),
             );
