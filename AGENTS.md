@@ -464,6 +464,12 @@ For localized copy, use `JournalI18n.render` for JavaScript text and
 in source English with `{{!journal.window.…}}`, `JournalI18n.renderEnglish`
 or `JournalI18n.renderEnglishHtml`.
 
+Keep each sentence whole in one catalog message. Pass named arguments directly
+and describe them in the message's sidecar. Use Fluent cardinal selectors for
+plural forms. Keep punctuation and word order in the catalog. A render call
+supplies the whole sentence without joining rendered messages, appending
+literal fragments, or filling tokens afterward.
+
 Give new messages stable IDs and sidecars in `i18n/catalog/meta/`. Register them with
 `cargo run --locked --manifest-path tools/i18n/Cargo.toml -- history i18n/catalog`.
 Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
