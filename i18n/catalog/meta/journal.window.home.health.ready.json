@@ -1,0 +1,16 @@
+{
+  "description": "Home health summary in the journal's home view.",
+  "context": "Journal window, home view. Home health summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "374bdeba380f4029f922e7d9ca83b59ec49de8ae54bd13bf52759542860d2805",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

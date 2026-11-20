@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection cell not ready in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection cell not ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c1894e85eaf21c7da6b60a35dfb0e7314c0cf60cca78202373da78709889313",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -154,17 +154,7 @@ fn redirect_to_init(locale: &str) -> Response {
         .expect("redirect response builds")
 }
 
-pub(crate) fn redirect_body(location: &str, locale: &str) -> String {
-    use crate::window_catalog::{escape_html, html, language_tag};
-    let lang = language_tag(locale);
-    let location = escape_html(location);
-    let title = html(locale, "journal.window.shell.redirect.title");
-    let detail = html(locale, "journal.window.shell.redirect.detail")
-        .replace("{link}", &format!("<a href=\"{location}\">{location}</a>"));
-    format!(
-        "<!doctype html>\n<html lang={lang}>\n<title>{title}</title>\n<h1>{title}</h1>\n<p>{detail}\n"
-    )
-}
+pub(crate) use solstone_core_convey_http::window_catalog::redirect_body;
 
 fn corrupt_response(path: &str, detail: String, locale: &str) -> Response {
     if path

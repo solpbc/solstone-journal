@@ -1,0 +1,28 @@
+{
+  "description": "Visible text in the journal's home view.",
+  "context": "Journal window, home view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5bd2996c4a88a6ed0b7b1b500ad4c7a24ffecbc12892fb4818e4af4c1c3f727d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

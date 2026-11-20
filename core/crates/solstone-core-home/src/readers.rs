@@ -15,7 +15,7 @@ use jiff::civil::{DateTime, Time};
 use jiff::tz::Offset;
 use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
+use solstone_core_brain::{inspect_brain_state, present_brain_inspection_in};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
 use solstone_core_facets::{
     list_declared_facet_names, load_activity_records, load_current, read_facet_declaration,
@@ -33,6 +33,7 @@ use solstone_core_sol_link::client_status::{
 use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, resolve_owner_tier};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 use solstone_core_time::Precision;
+use solstone_core_window_catalog::{strings, text};
 
 use crate::HomeContext;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
@@ -404,7 +405,12 @@ fn day_source_labels(
         .iter()
         .map(|(facet, record)| crate::sources::Placed { facet, record })
         .collect::<Vec<_>>();
-    crate::sources::concurrent_source_labels(context.journal_root(), day, &placed)
+    crate::sources::concurrent_source_labels_in(
+        context.journal_root(),
+        day,
+        &placed,
+        context.locale(),
+    )
 }
 
 /// Collect enabled-facet activity records and use the native duration estimator.
@@ -420,6 +426,7 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
         })
         .collect::<Vec<_>>();
     let source_labels = day_source_labels(context, &day, &day_records);
+    let fallback_title = "journal.window.home.activity.title.fallback";
     let mut rows = day_records
         .into_iter()
         .zip(source_labels)
@@ -445,8 +452,10 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
                         .and_then(Value::as_str)
                         .filter(|text| !text.trim().is_empty())
                         .map(|text| title_case(&text.replace('_', " ")))
-                })
-                .unwrap_or_else(|| "untitled activity".to_owned());
+                });
+            let untitled = title.is_none();
+            let title = title
+                .unwrap_or_else(|| text(solstone_core_window_catalog::ENGLISH, fallback_title));
             record.insert("facet".to_owned(), facet.into());
             record.insert("title".to_owned(), title.into());
             record.insert(
@@ -456,10 +465,10 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
             if let Some(label) = source_label {
                 record.insert("source_label".to_owned(), label.into());
             }
-            Value::Object(record)
+            (Value::Object(record), untitled)
         })
         .collect::<Vec<_>>();
-    rows.sort_by(|left, right| {
+    rows.sort_by(|(left, _), (right, _)| {
         right
             .get("duration_minutes")
             .and_then(Value::as_u64)
@@ -475,7 +484,14 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
                     .cmp(&right.get("facet").and_then(Value::as_str))
             })
     });
-    rows
+    rows.into_iter()
+        .map(|(mut row, untitled)| {
+            if untitled && context.locale() != solstone_core_window_catalog::ENGLISH {
+                row["title"] = text(context.locale(), fallback_title).into();
+            }
+            row
+        })
+        .collect()
 }
 
 /// Read the daily artifact that supplies the requested presentation day.
@@ -699,9 +715,41 @@ pub fn load_awareness(context: &HomeContext) -> Value {
     load_current(context.journal_root()).unwrap_or_else(|_| json!({}))
 }
 
+pub(crate) enum Attention {
+    AgentErrors { count: usize, context: String },
+    RecentImport { context: String },
+}
+
+impl Attention {
+    pub(crate) fn project(&self, locale: &str) -> Value {
+        let (label, context) = match self {
+            Self::AgentErrors { count, context } => {
+                let id = if *count == 1 {
+                    "journal.window.home.attention.agent.error.one"
+                } else {
+                    "journal.window.home.attention.agent.error.many"
+                };
+                (
+                    strings(locale, id, [("count", &count.to_string())]),
+                    context,
+                )
+            }
+            Self::RecentImport { context } => (
+                text(locale, "journal.window.home.attention.import.complete"),
+                context,
+            ),
+        };
+        json!({"placeholder_text": label, "context_lines": [context]})
+    }
+}
+
 /// Scan daily health logs for unresolved agent failures and return the highest-priority
 /// reference-compatible generic attention item.
 pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Value> {
+    read_attention(context, awareness).map(|notice| notice.project(context.locale()))
+}
+
+pub(crate) fn read_attention(context: &HomeContext, awareness: &Value) -> Option<Attention> {
     let day = context.today();
     let failures = think_oplogs(context, &day)
         .unwrap_or_default()
@@ -716,9 +764,13 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
             .filter_map(|row| row.get("name").and_then(Value::as_str))
             .collect::<std::collections::BTreeSet<_>>();
         let count = failures.len();
-        return Some(
-            json!({"placeholder_text":format!("{count} agent error{} today. ask what happened", if count == 1 { "" } else { "s" }),"context_lines":[format!("System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.", names.into_iter().take(3).collect::<Vec<_>>().join(", "))]}),
-        );
+        return Some(Attention::AgentErrors {
+            count,
+            context: format!(
+                "System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.",
+                names.into_iter().take(3).collect::<Vec<_>>().join(", ")
+            ),
+        });
     }
     let imports = awareness.get("imports")?.as_object()?;
     let (Some(completed), Some(summary)) = (
@@ -741,7 +793,9 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
                 .ok()
                 .map(|instant| instant.timestamp())
         })?;
-    (context.now_utc.duration_since(completed) < SignedDuration::from_hours(1)).then(|| json!({"placeholder_text":"import complete.".to_owned(),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
+    (context.now_utc.duration_since(completed) < SignedDuration::from_hours(1)).then(|| Attention::RecentImport {
+        context: format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import."),
+    })
 }
 
 /// Summarize one day of health JSONL without freshness gating. The terminal-state
@@ -1112,12 +1166,12 @@ pub fn connection_copy() -> Value {
 /// Build the injected-clock brain snapshot, using the health-web fallback contract on config failure.
 pub fn build_brain_snapshot(context: &HomeContext) -> Value {
     let Ok(config) = solstone_core_thinking::read_config(context.journal_root()) else {
-        return brain_fallback();
+        return brain_fallback(context.locale());
     };
     let inspection = inspect_brain_state(context.journal_root(), &config, context.now_utc);
-    let view = present_brain_inspection(&inspection, context.now_utc);
+    let view = present_brain_inspection_in(&inspection, context.now_utc, context.locale());
     let projection = &inspection.projection;
-    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":solstone_core_brain::owner_identity_model(&config, projection.active_lane.as_deref(), projection.active_model.as_deref())},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate")},"progressing":view.progressing})
+    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref(), context.locale()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":solstone_core_brain::owner_identity_model(&config, projection.active_lane.as_deref(), projection.active_model.as_deref())},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate", context.locale())},"progressing":view.progressing})
 }
 
 fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {
@@ -1196,23 +1250,23 @@ fn bump(summary: &mut Value, pointer: &str) {
         *value = value.as_i64().unwrap_or(0).saturating_add(1).into();
     }
 }
-fn brain_fallback() -> Value {
-    json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
+fn brain_fallback(locale: &str) -> Value {
+    json!({"state":"unknown","headline":text(locale, "journal.window.health.brain.thinking.status.unavailable"),"reason_code":"brain_record_unavailable","reason_text":text(locale, "journal.window.health.brain.brain.record.unavailable"),"failing_component":null,"action":{"label":text(locale, "journal.window.health.brain.check.again"),"refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":text(locale, "journal.window.health.brain.unknown"),"observed_at":null}},"progressing":false})
 }
-fn brain_component(record: Option<&Value>, name: &str) -> Value {
+fn brain_component(record: Option<&Value>, name: &str, locale: &str) -> Value {
     let value = record.and_then(|record| record.pointer(&format!("/evidence/{name}")));
     let reason = value
         .and_then(|item| item.get("reason_code"))
         .and_then(Value::as_str);
-    json!({"status":value.and_then(|item| item.get("status")).cloned().unwrap_or(Value::Null),"reason_code":reason,"reason_text":reason.map(|text| text.replace('_', " ")).unwrap_or_else(|| "unknown".to_owned()),"observed_at":value.and_then(|item| item.get("observed_at")).cloned().unwrap_or(Value::Null)})
+    json!({"status":value.and_then(|item| item.get("status")).cloned().unwrap_or(Value::Null),"reason_code":reason,"reason_text":reason.map(|text| text.replace('_', " ")).unwrap_or_else(|| text(locale, "journal.window.health.brain.unknown")),"observed_at":value.and_then(|item| item.get("observed_at")).cloned().unwrap_or(Value::Null)})
 }
-fn brain_action(state: &str, reason: Option<&str>) -> Value {
+fn brain_action(state: &str, reason: Option<&str>, locale: &str) -> Value {
     if state == "unknown" {
-        json!({"label":"check again","refresh":true})
+        json!({"label":text(locale, "journal.window.health.brain.check.again"),"refresh":true})
     } else if matches!(state, "blocked" | "unhealthy")
         || (state == "unknown" && reason == Some("configuration_invalid"))
     {
-        json!({"label":"open thinking","href":"/app/thinking/#main"})
+        json!({"label":text(locale, "journal.window.thinking.brain.action.open.thinking"),"href":"/app/thinking/#main"})
     } else {
         Value::Null
     }
@@ -1222,6 +1276,7 @@ pub(crate) fn transcription_processing_issue(
     journal: &Path,
     config: &Map<String, Value>,
     active_lane: Option<&str>,
+    locale: &str,
 ) -> Option<Value> {
     let view = solstone_core_thinking::brain::applicable_transcription_verification(
         journal,
@@ -1231,7 +1286,7 @@ pub(crate) fn transcription_processing_issue(
     if view.state != "failed" && view.state != "unreachable" {
         return None;
     }
-    let text = solstone_core_brain::processing_headline_for_reason(&view.reason)?;
+    let text = solstone_core_brain::processing_headline_for_reason_in(&view.reason, locale)?;
     Some(json!({
         "text": text,
         "severity": "amber",
@@ -2255,7 +2310,7 @@ mod tests {
         assert!(connection_copy().is_object());
         assert!(build_brain_snapshot(&context).is_object());
         assert_eq!(
-            brain_fallback(),
+            brain_fallback(solstone_core_window_catalog::ENGLISH),
             json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
         );
     }
@@ -2554,7 +2609,7 @@ mod tests {
     #[test]
     fn brain_fallback_is_the_health_web_partial_failure_contract() {
         assert_eq!(
-            brain_fallback(),
+            brain_fallback(solstone_core_window_catalog::ENGLISH),
             json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
         );
     }
@@ -2757,7 +2812,12 @@ mod tests {
         )
         .unwrap();
 
-        let issue1 = transcription_processing_issue(path1, &config_map, Some("byo-cloud"));
+        let issue1 = transcription_processing_issue(
+            path1,
+            &config_map,
+            Some("byo-cloud"),
+            solstone_core_window_catalog::ENGLISH,
+        );
         assert!(issue1.is_some());
         let expected_headline1 =
             solstone_core_brain::processing_headline_for_reason("attestation_rejected").unwrap();
@@ -2787,7 +2847,12 @@ mod tests {
         )
         .unwrap();
 
-        let issue2 = transcription_processing_issue(path2, &config_map, Some("byo-cloud"));
+        let issue2 = transcription_processing_issue(
+            path2,
+            &config_map,
+            Some("byo-cloud"),
+            solstone_core_window_catalog::ENGLISH,
+        );
         assert!(issue2.is_some());
         let expected_headline2 =
             solstone_core_brain::processing_headline_for_reason("attestation_not_verified")
@@ -2824,7 +2889,12 @@ mod tests {
         )
         .unwrap();
 
-        let issue3 = transcription_processing_issue(path3, &config_map, Some("byo-cloud"));
+        let issue3 = transcription_processing_issue(
+            path3,
+            &config_map,
+            Some("byo-cloud"),
+            solstone_core_window_catalog::ENGLISH,
+        );
         assert!(issue3.is_none());
 
         let glance3 = crate::health_glance::build_health_glance(
@@ -2880,11 +2950,27 @@ mod tests {
         let temp5 = tempfile::tempdir_in("/var/tmp").unwrap();
         let path5 = temp5.path();
         // Missing file
-        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+        assert!(
+            transcription_processing_issue(
+                path5,
+                &config_map,
+                Some("byo-cloud"),
+                solstone_core_window_catalog::ENGLISH
+            )
+            .is_none()
+        );
 
         // Array
         write(path5, "health/confidential-transcription.json", "[]");
-        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+        assert!(
+            transcription_processing_issue(
+                path5,
+                &config_map,
+                Some("byo-cloud"),
+                solstone_core_window_catalog::ENGLISH
+            )
+            .is_none()
+        );
 
         // Raw string
         write(
@@ -2892,7 +2978,15 @@ mod tests {
             "health/confidential-transcription.json",
             "\"raw string\"",
         );
-        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+        assert!(
+            transcription_processing_issue(
+                path5,
+                &config_map,
+                Some("byo-cloud"),
+                solstone_core_window_catalog::ENGLISH
+            )
+            .is_none()
+        );
 
         // Empty fields
         write(
@@ -2900,7 +2994,15 @@ mod tests {
             "health/confidential-transcription.json",
             r#"{"reason":"","endpoint":""}"#,
         );
-        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+        assert!(
+            transcription_processing_issue(
+                path5,
+                &config_map,
+                Some("byo-cloud"),
+                solstone_core_window_catalog::ENGLISH
+            )
+            .is_none()
+        );
     }
 
     #[test]

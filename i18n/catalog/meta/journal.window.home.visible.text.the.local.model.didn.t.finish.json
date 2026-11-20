@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's home view.",
+  "context": "Journal window, home view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67ac564048b4cdc9b6eb98216645933bc68bf2702090d7a32aad594444afa088",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

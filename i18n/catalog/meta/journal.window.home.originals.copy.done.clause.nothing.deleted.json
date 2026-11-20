@@ -1,0 +1,16 @@
+{
+  "description": "Originals done clause nothing deleted in the journal's home view.",
+  "context": "Journal window, home view. Originals done clause nothing deleted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3029ca56b4e0f1eda08aa1f1e2fe8cfa560e510cddcc8096035268f6b1743ce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

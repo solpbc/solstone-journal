@@ -1,0 +1,16 @@
+{
+  "description": "Originals done unknown in the journal's home view.",
+  "context": "Journal window, home view. Originals done unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13462e35b6cb0f3017ced71e97a53c5cd5ecada8aa7ddaedd4de633113f4a1c1",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

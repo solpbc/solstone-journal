@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you context in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32a5e74cfa99ee973de79c7d3bbe369d60f6d3e0fd3c2bc6ec32a046722af8db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

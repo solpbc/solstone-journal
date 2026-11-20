@@ -1,0 +1,16 @@
+{
+  "description": "Originals row keep in the journal's home view.",
+  "context": "Journal window, home view. Originals row keep.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54977a3bf85e09eb4a32da35dd1d0b864c49632a8f4e1f1686b44b41c86c27bf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

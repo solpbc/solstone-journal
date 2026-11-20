@@ -1,0 +1,16 @@
+{
+  "description": "Home display today activity one in the journal's home view.",
+  "context": "Journal window, home view. Home display today activity one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55cc7d9a8f210de45d4db4af071837b295d28573afca893f44dfcc93ef9bb139",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

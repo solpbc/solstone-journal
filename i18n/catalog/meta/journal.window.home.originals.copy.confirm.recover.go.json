@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm recover go in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm recover go.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da494b8a71b9049ed913b08ac267b2eb073bbcd0263ea60d5ea9129b8dbd538d",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

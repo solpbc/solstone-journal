@@ -1,0 +1,16 @@
+{
+  "description": "Originals done kept offload in the journal's home view.",
+  "context": "Journal window, home view. Originals done kept offload.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "589dabb0bd62c6dd419df90da2d9ca10d369244adb704b1474948bbb0c2f3581",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

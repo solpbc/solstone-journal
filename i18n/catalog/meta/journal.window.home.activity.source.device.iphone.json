@@ -1,0 +1,16 @@
+{
+  "description": "activity source device in the journal's home view.",
+  "context": "Journal window, home view. activity source device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d68039e02524ab6edfb35889a144a027ee07bdb3a2e5baf87b81389a3352b1b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

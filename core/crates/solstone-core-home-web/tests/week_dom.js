@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 const { runtime: viewRuntime } = require('./view_runtime');
 
 const crateDir = process.argv[2] || path.resolve(__dirname, '..');
@@ -639,6 +640,7 @@ function createEnvironment(pathname = '/app/home/week/20260308', evalWeek = true
     Promise: Promise
   };
   vm.createContext(sandbox);
+  loadWindowCatalog(sandbox);
   vm.runInContext(appJsCode, sandbox, { filename: 'app.js' });
   vm.runInContext(sourceLinkBackCode, sandbox, { filename: 'source_link_back.js' });
   if (evalWeek) {

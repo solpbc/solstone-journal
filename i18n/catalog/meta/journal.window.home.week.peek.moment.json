@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection peek moment in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection peek moment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79bab022fc862197684b86ea20ebb6b894883b21e630c5d14eafc24332f75b8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

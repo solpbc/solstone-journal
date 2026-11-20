@@ -1,0 +1,16 @@
+{
+  "description": "Home night notes not written in the journal's home view.",
+  "context": "Journal window, home view. Home night notes not written.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3d9d82ee7d8eabe2362f30566ab5b8c5c6cc1c021b932acf047a80cb80a21d2",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

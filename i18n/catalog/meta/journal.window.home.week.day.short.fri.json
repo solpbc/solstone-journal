@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection day short fri in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection day short fri.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0247bc257df2e6d35444c92f57a264ad5dd83009902d1a81bbf3ee8053832b08",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

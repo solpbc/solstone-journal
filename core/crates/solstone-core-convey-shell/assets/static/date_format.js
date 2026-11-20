@@ -313,9 +313,9 @@
   // The same segment prefix on the page's own clock. `formatSegmentTime` is
   // 24-hour and always carries seconds, which is right inside a disclosure and
   // wrong on a row that sits under a "10:55 PM". G1-202.
-  function formatSegmentTimeOfDay(segment) {
+  function formatSegmentTimeOfDay(segment, { omitMissing = false } = {}) {
     const clock = parseSegmentClock(segment);
-    if (!clock) return window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
+    if (!clock) return omitMissing ? null : window.JournalI18n.render('journal.window.shared.date.format.time.unavailable');
     return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]), Number(clock[3]))
       .toLocaleString(globalThis.window?.JournalI18n?.formatLocale, { hour: 'numeric', minute: '2-digit' });
   }

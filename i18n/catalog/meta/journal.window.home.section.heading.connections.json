@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's home view.",
+  "context": "Journal window, home view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "755b5609228c6594500505222497f3581268a96beaa7337490583ae78e414e95",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

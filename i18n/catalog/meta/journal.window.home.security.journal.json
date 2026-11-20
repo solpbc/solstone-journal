@@ -1,0 +1,33 @@
+{
+  "description": "Home display security journal in the journal's home view.",
+  "context": "Journal window, home view. Home display security journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e8073b37452b159ec1066d64464db5c71f700053ac058e9358ed8b0f69e1930",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -55,9 +55,9 @@ pub use freshness::{
     BACKLOG_FRESHNESS_MAX_AGE_HOURS, BacklogStatusEvaluation, FUTURE_SKEW_TOLERANCE_MS,
     SummaryFreshness, UNFINISHED_TEMPLATE_MANY_DAYS_ID, UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID,
     UNFINISHED_TEMPLATE_ONE_ID, UnfinishedActivitiesAggregate, aggregate_unfinished_activities,
-    aggregate_unfinished_from_days, backlog_unavailable, evaluate_backlog_status,
-    evaluate_backlog_status_in, format_summary_age, parse_summary_time, select_unfinished_template,
-    summary_freshness,
+    aggregate_unfinished_from_days, backlog_unavailable, backlog_unavailable_in,
+    evaluate_backlog_status, evaluate_backlog_status_in, format_summary_age, parse_summary_time,
+    select_unfinished_template, summary_freshness,
 };
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
 pub use index_health::{

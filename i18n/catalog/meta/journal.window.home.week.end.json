@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection end in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection end.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "837b16f595fbea6527c82baef9eef92a2f2635965ac5eaad5e5f9f875cf47cac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

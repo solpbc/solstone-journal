@@ -1,0 +1,16 @@
+{
+  "description": "Originals done recovered in the journal's home view.",
+  "context": "Journal window, home view. Originals done recovered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c261f1ab8d4326b966a33ba805e9776f234dce5b8a4576e3de4b79b38f6164f4",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

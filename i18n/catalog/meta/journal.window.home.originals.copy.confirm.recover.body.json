@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm recover body in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm recover body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf250c34ecf2e6241442fc9084a3c693708d8523efb9bf5e5616c47468bad69c",
+  "max_length": 223,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

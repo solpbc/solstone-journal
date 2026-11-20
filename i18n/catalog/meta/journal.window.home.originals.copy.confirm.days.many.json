@@ -1,0 +1,23 @@
+{
+  "description": "Originals confirm days many in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm days many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d8fdd704288134aa1dbf0c0b81aa95aa65adaa19c45c1f2ce0148eee9aacfa6",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

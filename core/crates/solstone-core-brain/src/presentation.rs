@@ -118,12 +118,16 @@ fn headline_message(state: &str, reason: Option<&str>, progressing: bool) -> &'s
 }
 
 pub fn processing_headline_for_reason(reason: &str) -> Option<String> {
+    processing_headline_for_reason_in(reason, ENGLISH)
+}
+
+pub fn processing_headline_for_reason_in(reason: &str, locale: &str) -> Option<String> {
     let aggregate = local_contract()
         .brain_state
         .reason_to_aggregate
         .get(reason)?;
     Some(text(
-        ENGLISH,
+        locale,
         headline_message(aggregate, Some(reason), false),
     ))
 }

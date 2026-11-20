@@ -1,0 +1,23 @@
+{
+  "description": "Home display originals failed review in the journal's home view.",
+  "context": "Journal window, home view. Home display originals failed review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dd51c581ebaf2bc51c4db5141eee2fb83ae033298bc9a83edd4feba00c97be7",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

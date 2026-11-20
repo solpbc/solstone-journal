@@ -11,20 +11,20 @@ use solstone_core_entity::read_journal_principal;
 use solstone_core_facets::{ConnectionsHorizon, read_connections_horizon};
 
 use crate::HomeContext;
-use crate::connections::build_connections_card;
-use crate::formatting::{format_gap_links, format_processing_summary, relative_time};
-use crate::health_glance::build_health_glance;
-use crate::needs_you::{classify_needs_you, classify_owner_voice_needs, needs_dedup_key};
+use crate::connections::build_connections_card_in;
+use crate::formatting::{format_gap_links_in, format_processing_summary_in, relative_time_ago};
+use crate::health_glance::build_health_glance_in;
+use crate::needs_you::{classify_needs_you, classify_owner_voice_needs_in, needs_dedup_key};
 use crate::readers::{
     briefing_freshness, briefing_lateness_state, collect_activities,
     collect_top_activities_yesterday, compute_briefing_phase, count_journal_age_days,
     get_capture_health, last_observe_relative_seconds, load_awareness, load_backlog_source,
     load_briefing, load_connections_network, load_flow_md, load_pulse_narrative,
     load_pulse_narrative_at, load_stats, load_yesterday_stats, overnight_window_passed,
-    render_briefing_sections, resolve_attention, resolve_owner_voice_tier, summarize_pipeline_day,
+    read_attention, render_briefing_sections, resolve_owner_voice_tier, summarize_pipeline_day,
 };
 
-const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
+const FIRST_WEEK_FRAMING_ID: &str = "journal.window.home.welcome.first.week.framing";
 
 /// Complete pre-route pulse context. The instant stays typed until projection.
 ///
@@ -59,8 +59,10 @@ fn build_pulse_context(
     context: &HomeContext,
     account_time: Option<jiff::Timestamp>,
 ) -> PulseContext {
-    let account = account_time
-        .map(|now| HomeContext::with_zone(context.journal_root(), now, context.zone().clone()));
+    let account = account_time.map(|now| {
+        HomeContext::with_zone(context.journal_root(), now, context.zone().clone())
+            .with_locale(context.locale())
+    });
     let account_context = account.as_ref().unwrap_or(context);
     let latest = account_time.map(|instant| instant.as_millisecond());
     let today = account_context.today();
@@ -68,7 +70,11 @@ fn build_pulse_context(
     let journal_age_days = count_journal_age_days(context);
     let capture_health = get_capture_health(context);
     let awareness = load_awareness(context);
-    let attention = resolve_attention(context, &awareness).unwrap_or(Value::Null);
+    let attention_source = read_attention(context, &awareness);
+    let attention = attention_source
+        .as_ref()
+        .map(|notice| notice.project(context.locale()))
+        .unwrap_or(Value::Null);
     let stats_data = load_stats(account_context, &today);
     let stats = stats_data
         .get("stats")
@@ -126,7 +132,7 @@ fn build_pulse_context(
     };
     let connections = load_connections_card(context, horizon, account_time);
     let last_observe_relative = last_observe_relative_seconds(context)
-        .map(|seconds| format!("{} ago", relative_time(seconds as f64)));
+        .map(|seconds| relative_time_ago(seconds as f64, context.locale()));
 
     let briefing = load_briefing(account_context, &today);
     let briefing_document = briefing.clone().unwrap_or(Value::Null);
@@ -189,8 +195,13 @@ fn build_pulse_context(
         && !(account_time.is_some() && connections["state"] == "ok");
 
     let mut needs_keys = BTreeSet::new();
-    if !attention.is_null() {
-        needs_keys.insert(needs_dedup_key(&attention));
+    if let Some(notice) = &attention_source {
+        let key = if context.locale() == solstone_core_window_catalog::ENGLISH {
+            needs_dedup_key(&attention)
+        } else {
+            needs_dedup_key(&notice.project(solstone_core_window_catalog::ENGLISH))
+        };
+        needs_keys.insert(key);
     }
     let mut deduped_pulse_needs = Vec::new();
     let live_pulse_needs = account.as_ref().map(|_| {
@@ -208,7 +219,7 @@ fn build_pulse_context(
     }
     let mut needs_you_items = classify_needs_you(&attention, &deduped_pulse_needs);
     if let Some(outcome) = resolve_owner_voice_tier(context)
-        && let Some(voice_item) = classify_owner_voice_needs(
+        && let Some(voice_item) = classify_owner_voice_needs_in(
             outcome,
             || {
                 solstone_core_speaker_resolve::owner_voice::owner_voice_setup(
@@ -218,10 +229,30 @@ fn build_pulse_context(
             // The date as the owner's clock will read it then, at that day's
             // own offset.
             |at| {
-                at.to_zoned_datetime(context.zone().clone())
-                    .strftime("%a %b %-d")
-                    .to_string()
+                let day = at.to_zoned_datetime(context.zone().clone()).date();
+                let locale = context.locale();
+                let weekday = format!(
+                    "journal.window.date.weekdays.short.{}",
+                    day.strftime("%a").to_string().to_ascii_lowercase()
+                );
+                let month = format!(
+                    "journal.window.date.months.short.{}",
+                    day.strftime("%b").to_string().to_ascii_lowercase()
+                );
+                solstone_core_window_catalog::strings(
+                    locale,
+                    "journal.window.home.needs.voice.next.look.date",
+                    [
+                        (
+                            "weekday",
+                            &solstone_core_window_catalog::text(locale, &weekday),
+                        ),
+                        ("month", &solstone_core_window_catalog::text(locale, &month)),
+                        ("day", &day.day().to_string()),
+                    ],
+                )
             },
+            context.locale(),
         )
     {
         let key = needs_dedup_key(&voice_item);
@@ -237,16 +268,18 @@ fn build_pulse_context(
                 context.journal_root(),
                 &config,
                 brain.pointer("/identity/lane").and_then(Value::as_str),
+                context.locale(),
             )
         });
     let backlog = load_backlog_source(context);
-    let health_glance = build_health_glance(
+    let health_glance = build_health_glance_in(
         &capture_health,
         last_observe_relative.as_deref(),
         &backlog,
         &brain,
         context.now_utc,
         transcription_issue.as_ref(),
+        context.locale(),
     );
     let yesterday_processing =
         summarize_yesterday_processing(context, journal_age_days).map(|mut summary| {
@@ -281,9 +314,12 @@ fn build_pulse_context(
     // The day's body lines, composed when read and never stored: a hide or a
     // late import shows at once, and the briefing stays as its model wrote it.
     // A read that fails leaves the section out, never the panel.
-    let briefing_body =
-        solstone_core_location::body_records::day_lines(context.journal_root(), &yesterday)
-            .unwrap_or_default();
+    let briefing_body = solstone_core_location::body_records::day_lines_in(
+        context.journal_root(),
+        &yesterday,
+        context.locale(),
+    )
+    .unwrap_or_default();
     fields.insert("briefing_body".to_owned(), Value::Array(briefing_body));
     fields.insert("briefing_meta".to_owned(), briefing_meta);
     fields.insert("briefing_phase".to_owned(), briefing_phase.into());
@@ -314,7 +350,10 @@ fn build_pulse_context(
     fields.insert(
         "welcome_framing".to_owned(),
         if show_welcome && journal_age_days <= 7 {
-            Value::String(FIRST_WEEK_FRAMING.to_owned())
+            Value::String(solstone_core_window_catalog::text(
+                context.locale(),
+                FIRST_WEEK_FRAMING_ID,
+            ))
         } else {
             Value::Null
         },
@@ -416,7 +455,7 @@ fn load_connections_card(
             })
             .map(|network| network.unwrap_or_else(|| json!({}))),
     };
-    build_connections_card(principal, network, horizon)
+    build_connections_card_in(principal, network, horizon, context.locale())
 }
 
 fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) -> Option<Value> {
@@ -490,8 +529,8 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     // sparse night is not a failure, whatever its reasons say.
     Some(json!({
         "mode": mode,
-        "summary_line": if pipeline_unavailable { "yesterday’s processing status is unavailable.".to_owned() } else { format_processing_summary(mode) },
-        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, overnight_passed)) } else { Value::Array(Vec::new()) },
+        "summary_line": if pipeline_unavailable { solstone_core_window_catalog::text(context.locale(), "journal.window.home.night.status.unavailable") } else { format_processing_summary_in(mode, context.locale()) },
+        "gap_links": if mode == "degraded" { Value::Array(format_gap_links_in(&pipeline, briefing_valid, &yesterday, overnight_passed, context.locale())) } else { Value::Array(Vec::new()) },
         "status_reasons": reasons,
     }))
 }
@@ -1406,9 +1445,15 @@ mod tests {
         assert_eq!(pipeline["talents"]["outstanding_failed"], 21);
         assert_eq!(pipeline["talents"]["failed_list_truncated"], true);
         assert!(
-            format_gap_links(&pipeline, true, "20260813", true)
-                .iter()
-                .any(|link| link["text"] == "…and 1 more didn't finish.")
+            format_gap_links_in(
+                &pipeline,
+                true,
+                "20260813",
+                true,
+                solstone_core_window_catalog::ENGLISH
+            )
+            .iter()
+            .any(|link| link["text"] == "…and 1 more didn't finish.")
         );
     }
 

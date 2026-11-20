@@ -1,0 +1,16 @@
+{
+  "description": "Link or button label in the journal's home view.",
+  "context": "Journal window, home view. Link or button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee8c2f3955dbad3f748bdbdb39c780aff1c7116434ae6022088a651eb8246265",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -11,12 +11,13 @@ use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use solstone_core_convey_http::cant_open_response;
+use solstone_core_convey_http::cant_open::cant_open_response_for;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::text;
 use solstone_core_format::content::week_left_out::{
     LeftOut, left_out_bytes, left_out_path, read_left_out,
 };
-use solstone_core_home::weekly::{Said, WeekJudgment, judge, page_model, week_day};
+use solstone_core_home::weekly::{Said, WeekJudgment, judge, page_model_in, week_day};
 
 use crate::Clock;
 
@@ -35,11 +36,16 @@ pub struct LeaveOutRequest {
     pub undo: bool,
 }
 
-pub async fn week_shell(AxumPath(week): AxumPath<String>, journal_root: PathBuf) -> Response {
+pub async fn week_shell(
+    AxumPath(week): AxumPath<String>,
+    journal_root: PathBuf,
+    locale: &'static str,
+) -> Response {
     if week_day(&week).is_none() {
-        return cant_open_response(
+        return cant_open_response_for(
+            locale,
             StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
+            &text(locale, "journal.window.link.invalid"),
         );
     }
 
@@ -53,16 +59,20 @@ pub async fn week_shell(AxumPath(week): AxumPath<String>, journal_root: PathBuf)
                     .body(axum::body::Body::from(bytes.as_slice()))
                     .expect("shell response")
             }
-            WeekJudgment::Absent => {
-                cant_open_response(StatusCode::NOT_FOUND, "it isn't in your journal.")
-            }
-            WeekJudgment::CantShow | WeekJudgment::Untrusted => cant_open_response(
+            WeekJudgment::Absent => cant_open_response_for(
+                locale,
                 StatusCode::NOT_FOUND,
-                "your journal can't show this kind of source.",
+                &text(locale, "journal.window.link.absent"),
             ),
-            WeekJudgment::CouldntCheck => cant_open_response(
+            WeekJudgment::CantShow | WeekJudgment::Untrusted => cant_open_response_for(
+                locale,
+                StatusCode::NOT_FOUND,
+                &text(locale, "journal.window.link.unsupported"),
+            ),
+            WeekJudgment::CouldntCheck => cant_open_response_for(
+                locale,
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "your journal couldn't check this source.",
+                &text(locale, "journal.window.link.read.error"),
             ),
         }
     })
@@ -74,29 +84,35 @@ pub async fn week_api(
     journal_root: PathBuf,
     clock: Clock,
     is_moment: fn(&str) -> bool,
+    locale: &'static str,
 ) -> Response {
     if week_day(&week).is_none() {
-        return cant_open_response(
+        return cant_open_response_for(
+            locale,
             StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
+            &text(locale, "journal.window.link.invalid"),
         );
     }
 
     spawn_blocking_response(OwnerReadRole::HomeWeek, move || {
         let now = clock.now();
         let year = owner_year(&journal_root, now);
-        match page_model(&journal_root, &week, year, &is_moment) {
+        match page_model_in(&journal_root, &week, year, &is_moment, locale) {
             Ok(model) => Json(model).into_response(),
-            Err(WeekJudgment::Absent) => {
-                cant_open_response(StatusCode::NOT_FOUND, "it isn't in your journal.")
-            }
-            Err(WeekJudgment::CantShow) | Err(WeekJudgment::Untrusted) => cant_open_response(
+            Err(WeekJudgment::Absent) => cant_open_response_for(
+                locale,
                 StatusCode::NOT_FOUND,
-                "your journal can't show this kind of source.",
+                &text(locale, "journal.window.link.absent"),
             ),
-            Err(WeekJudgment::CouldntCheck) | Err(WeekJudgment::Page(_)) => cant_open_response(
+            Err(WeekJudgment::CantShow) | Err(WeekJudgment::Untrusted) => cant_open_response_for(
+                locale,
+                StatusCode::NOT_FOUND,
+                &text(locale, "journal.window.link.unsupported"),
+            ),
+            Err(WeekJudgment::CouldntCheck) | Err(WeekJudgment::Page(_)) => cant_open_response_for(
+                locale,
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "your journal couldn't check this source.",
+                &text(locale, "journal.window.link.read.error"),
             ),
         }
     })
@@ -108,25 +124,27 @@ pub async fn week_leave_out(
     journal_root: PathBuf,
     clock: Clock,
     is_moment: fn(&str) -> bool,
+    locale: &'static str,
     Json(req): Json<LeaveOutRequest>,
 ) -> Response {
     if week_day(&week).is_none() {
-        return cant_open_response(
+        return cant_open_response_for(
+            locale,
             StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
+            &text(locale, "journal.window.link.invalid"),
         );
     }
 
     let join_fail_msg = if req.undo {
-        "couldn't bring this back. nothing changed."
+        "journal.window.home.week.leave.out.undo.failed"
     } else {
-        "couldn't leave this out. nothing changed."
+        "journal.window.home.week.leave.out.apply.failed"
     };
 
     let res = tokio::task::spawn_blocking(move || {
         let now = clock.now();
         let year = owner_year(&journal_root, now);
-        let saved = save_left_out(&journal_root, &week, req, year, is_moment);
+        let saved = save_left_out(&journal_root, &week, req, year, is_moment, locale);
         // Every call queues the page, changed or not, so a retry after a lost
         // queue puts search right.
         let queued = queue_week_page(&journal_root, &week);
@@ -141,10 +159,12 @@ pub async fn week_leave_out(
             }
             Json(model).into_response()
         }
-        Ok((Err((status, msg)), _)) => (status, Json(json!({ "error": msg }))).into_response(),
+        Ok((Err((status, msg)), _)) => {
+            (status, Json(json!({ "error": text(locale, msg) }))).into_response()
+        }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": join_fail_msg })),
+            Json(json!({ "error": text(locale, join_fail_msg) })),
         )
             .into_response(),
     }
@@ -189,11 +209,12 @@ pub fn save_left_out(
     req: LeaveOutRequest,
     current_year: i32,
     is_moment: fn(&str) -> bool,
+    locale: &str,
 ) -> Result<Value, (StatusCode, &'static str)> {
     let fail_msg = if req.undo {
-        "couldn't bring this back. nothing changed."
+        "journal.window.home.week.leave.out.undo.failed"
     } else {
-        "couldn't leave this out. nothing changed."
+        "journal.window.home.week.leave.out.apply.failed"
     };
 
     let trusted = match judge(journal_root, week) {
@@ -246,10 +267,10 @@ pub fn save_left_out(
 
     drop(guard);
 
-    page_model(journal_root, week, current_year, &is_moment).map_err(|_| {
+    page_model_in(journal_root, week, current_year, &is_moment, locale).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "your journal couldn't check this source.",
+            "journal.window.link.read.error",
         )
     })
 }

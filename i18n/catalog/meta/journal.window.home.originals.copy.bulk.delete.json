@@ -1,0 +1,16 @@
+{
+  "description": "Originals bulk delete in the journal's home view.",
+  "context": "Journal window, home view. Originals bulk delete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "510b45b23de6adf2c8753435aa66c8e65df467e37be2d8d8d372edccd1ffeeaa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

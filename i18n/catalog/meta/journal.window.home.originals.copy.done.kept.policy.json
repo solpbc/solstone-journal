@@ -1,0 +1,16 @@
+{
+  "description": "Originals done kept policy in the journal's home view.",
+  "context": "Journal window, home view. Originals done kept policy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b7fe7cb571cc62a89cd573d9f7071d331779f5bc6566cd07044491ee6d6ff43",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

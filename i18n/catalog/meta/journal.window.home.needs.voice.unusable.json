@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you voice unusable in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice unusable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0d9d51a3f5e21d54d956aefaa3878eb6a1ad83873c9628c2c294d2461b21f32",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

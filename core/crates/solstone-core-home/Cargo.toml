@@ -33,6 +33,7 @@ solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-thinking.workspace = true
 solstone-core-time.workspace = true
+solstone-core-window-catalog.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true

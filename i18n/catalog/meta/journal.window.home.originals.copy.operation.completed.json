@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation completed in the journal's home view.",
+  "context": "Journal window, home view. Originals operation completed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cd2e993d5dd196d802882a7440b0c476e9d639fc011f62ef20315583253bddd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

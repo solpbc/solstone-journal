@@ -1,0 +1,28 @@
+{
+  "description": "Originals card total many in the journal's home view.",
+  "context": "Journal window, home view. Originals card total many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "223f5d2441ea2035ee1d3fe6a5b5388e1b6b9dba40c106e5af964abac4e847e3",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{size}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation submitting in the journal's home view.",
+  "context": "Journal window, home view. Originals operation submitting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76a0b0ff9daa5c44f23c48a496af32282467ddfb6da13b46f8e05404b3c4d4b0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

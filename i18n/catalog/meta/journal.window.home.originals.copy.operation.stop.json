@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation stop in the journal's home view.",
+  "context": "Journal window, home view. Originals operation stop.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1509ebf10d5ebc66cbe6b8d24fc6f252db4997f5df1c1d32662c3adc1ab4add5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

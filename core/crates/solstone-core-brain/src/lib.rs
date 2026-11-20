@@ -46,7 +46,7 @@ pub use inspect::{
 pub use presentation::{
     BrainEvidencePresentation, BrainPresentation, brain_reason_text, brain_reason_text_in,
     lane_label, present_brain_inspection, present_brain_inspection_in,
-    processing_headline_for_reason, provider_model_text,
+    processing_headline_for_reason, processing_headline_for_reason_in, provider_model_text,
 };
 pub use record::{
     BrainStateRecord, CredentialRejectionHold, ValidationError, evidence_component_for_reason,

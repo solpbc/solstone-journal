@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection card empty in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection card empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "276cefdd01bab10d1ca3aea9e30c07e352d430025b234cec7d610678cd0f58a0",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

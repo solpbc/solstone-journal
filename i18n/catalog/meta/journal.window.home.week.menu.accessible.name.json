@@ -1,0 +1,28 @@
+{
+  "description": "Week row menu accessible label in the journal's home view.",
+  "context": "Journal window, home view. Week row menu accessible label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e8bbb14c36e6a7ca0805a84d78ccf482845b600aeb29890a11dec687c16369d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -7,7 +7,7 @@ use axum::http::HeaderMap;
 use serde_json::Value;
 
 pub(crate) use solstone_core_convey_http::window_catalog::{
-    ENGLISH, MissingPage, escape_html, html, language_tag, not_found, response_locale, text,
+    ENGLISH, MissingPage, html, language_tag, not_found, response_locale, text,
 };
 
 const LOCALE_HEADER: &str = "x-solstone-locale";

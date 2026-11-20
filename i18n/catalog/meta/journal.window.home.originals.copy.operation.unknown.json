@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation unknown in the journal's home view.",
+  "context": "Journal window, home view. Originals operation unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce0fbc66382a49e98f1a8da8df5bf69ff70df4a567ba80641a66d4ffa1bda5be",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

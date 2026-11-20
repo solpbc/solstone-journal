@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection said heading in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection said heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f907fdeafaff84c0011fed8569d08b5e3a55b84f0201c5840128a6761b54eb5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm mixed policy many nodays in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm mixed policy many nodays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0fd7c43dbad289da6bd1ab88ee34749cc7c9dd10d305958a902e00fd924e09e",
+  "max_length": 160,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

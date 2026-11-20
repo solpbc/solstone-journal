@@ -227,6 +227,10 @@ fn trim_proof_text(s: &str) -> String {
 }
 
 pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
+    project_first_minutes_in(input, solstone_core_window_catalog::ENGLISH)
+}
+
+fn project_first_minutes_in(input: &FirstMinutesInput, locale: &str) -> Value {
     let winner = winning_segment(input);
 
     let devices_known =
@@ -291,7 +295,7 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
 
                 let last_added_label = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
-                    format!("{} ago", crate::formatting::relative_time(seconds))
+                    crate::formatting::relative_time_ago(seconds, locale)
                 });
 
                 raw_devices.push(RawDevice {
@@ -348,7 +352,7 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
 
                 let last_added_label = parsed_time.map(|delivery_ms| {
                     let seconds = ((input.now_ms - delivery_ms) / 1000) as f64;
-                    format!("{} ago", crate::formatting::relative_time(seconds))
+                    crate::formatting::relative_time_ago(seconds, locale)
                 });
 
                 raw_devices.push(RawDevice {
@@ -633,12 +637,22 @@ fn project_setup(
     progress: Result<SetupProgress, SetupProgressError>,
     saved_choice: Option<&str>,
     actions: bool,
+    locale: &str,
 ) -> Value {
     let (downloads, capability) = match progress {
-        Ok(progress) => (
-            serde_json::to_value(progress.downloads).expect("setup downloads serialize"),
-            Value::String(progress.thinking.capability),
-        ),
+        Ok(mut progress) => {
+            if locale != solstone_core_window_catalog::ENGLISH
+                && let Some(error) = progress.downloads.speech.error.as_mut()
+                && error.code == "speech_package_unavailable"
+            {
+                error.detail =
+                    solstone_core_sol_link::setup_progress::packaged_speech_repair_guidance(locale);
+            }
+            (
+                serde_json::to_value(progress.downloads).expect("setup downloads serialize"),
+                Value::String(progress.thinking.capability),
+            )
+        }
         Err(error) => {
             log::warn!("getting started could not read setup progress: {error}");
             (Value::Null, Value::Null)
@@ -891,11 +905,12 @@ pub fn read_first_minutes_with(
         .get("setup")
         .and_then(|setup| setup.get("thinking_choice"))
         .and_then(Value::as_str);
-    let mut out = project_first_minutes(&input);
+    let mut out = project_first_minutes_in(&input, context.locale());
     out["setup"] = project_setup(
         read_progress(context.journal_root()),
         saved_choice,
         setup_actions,
+        context.locale(),
     );
     out
 }
@@ -949,7 +964,12 @@ mod tests {
 
     #[test]
     fn setup_projection_carries_progress_choice_and_actions() {
-        let out = project_setup(fixed_setup_progress(Path::new("/")), Some("byo"), true);
+        let out = project_setup(
+            fixed_setup_progress(Path::new("/")),
+            Some("byo"),
+            true,
+            solstone_core_window_catalog::ENGLISH,
+        );
         assert_eq!(
             out,
             json!({
@@ -975,7 +995,12 @@ mod tests {
         );
 
         // A failed read leaves progress unknown and still continues the saved choice.
-        let failed = project_setup(no_setup_progress(Path::new("/")), Some("spp"), false);
+        let failed = project_setup(
+            no_setup_progress(Path::new("/")),
+            Some("spp"),
+            false,
+            solstone_core_window_catalog::ENGLISH,
+        );
         assert_eq!(
             failed,
             json!({
@@ -993,7 +1018,12 @@ mod tests {
             (Some(""), Value::Null),
             (None, Value::Null),
         ] {
-            let out = project_setup(no_setup_progress(Path::new("/")), saved, false);
+            let out = project_setup(
+                no_setup_progress(Path::new("/")),
+                saved,
+                false,
+                solstone_core_window_catalog::ENGLISH,
+            );
             assert_eq!(out["thinking"]["choice"], expected, "{saved:?}");
         }
     }

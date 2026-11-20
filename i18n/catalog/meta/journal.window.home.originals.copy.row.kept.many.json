@@ -1,0 +1,16 @@
+{
+  "description": "Originals row kept many in the journal's home view.",
+  "context": "Journal window, home view. Originals row kept many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "515ffb9aa04ced71745e6fa15f51c9aa66c9040ae1af553043b8076cab564609",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

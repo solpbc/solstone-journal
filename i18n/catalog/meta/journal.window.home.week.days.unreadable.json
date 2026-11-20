@@ -1,0 +1,33 @@
+{
+  "description": "Weekly reflection days unreadable in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection days unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e3aea5c190b3a6cbb5ec1c72c07e858b1c3e64ee7cc6232c93531a4a61e2ab6",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

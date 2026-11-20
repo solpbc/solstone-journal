@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection said unreadable in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection said unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43e2cd7688a6e4a6820b4c7b851216cfffc53bbc6b50ee2a689e5424119bfaf8",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

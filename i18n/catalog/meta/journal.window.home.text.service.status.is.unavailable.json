@@ -1,0 +1,16 @@
+{
+  "description": "Text in the journal's home view.",
+  "context": "Journal window, home view. Text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fdb4f5b647bdea22c486e9ff967c57bb4b6e2791e89cd8d47663da2326e8b49",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

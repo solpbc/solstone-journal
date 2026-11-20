@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection month january in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection month january.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d50aabf00d03b986eab3c80f147e6b71900f3767857eb70684a6515b6f4d5e2d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

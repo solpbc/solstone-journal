@@ -1,0 +1,16 @@
+{
+  "description": "Originals done recovered leftover in the journal's home view.",
+  "context": "Journal window, home view. Originals done recovered leftover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb0e9c53fcfc7014ba3e461e7f6fac032ae2cd4bafd200aa9e36f67b33799270",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

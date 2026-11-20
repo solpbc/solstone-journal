@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation held in the journal's home view.",
+  "context": "Journal window, home view. Originals operation held.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c69731906e180b1234786072336e6b2c187cdac0bb229dfe0990510af940280",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

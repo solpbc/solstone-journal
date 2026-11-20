@@ -1,0 +1,16 @@
+{
+  "description": "Originals row delete in the journal's home view.",
+  "context": "Journal window, home view. Originals row delete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a412922bb794a052ed539ef3fcce9c2ff3a8bdff7b5224c61c7c6e70cf03bb4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

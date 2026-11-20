@@ -1,0 +1,16 @@
+{
+  "description": "Home display held activity in the journal's home view.",
+  "context": "Journal window, home view. Home display held activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2ad895dda025976de3c8f953cb10eb5e18df93c99a9372d2c97db6e9fe02473",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Home display vitals last known in the journal's home view.",
+  "context": "Journal window, home view. Home display vitals last known.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "issue",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "357786b38809d94eec1858307d429f722d2a7fc51e2153b0bbde1ec4abd60a33",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Home health summary in the journal's home view.",
+  "context": "Journal window, home view. Home health summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce6e3ff726a5f742b4bd47b7d379d7f91b45ed2009c6466c31055cb96182aef4",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

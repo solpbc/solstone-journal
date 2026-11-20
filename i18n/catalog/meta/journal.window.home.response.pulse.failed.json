@@ -1,0 +1,16 @@
+{
+  "description": "Home display response pulse failed in the journal's home view.",
+  "context": "Journal window, home view. Home display response pulse failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9b19699cdcb1e36df8379844a038d9264eb046a44ad4ce4604b6d3620ad9234",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

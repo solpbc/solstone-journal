@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection day long friday in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection day long friday.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "718f73fd9cb9f65f23bf092b55d087a7b6649407022c157c04acc5a65ab08eec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

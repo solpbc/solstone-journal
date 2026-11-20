@@ -1,0 +1,28 @@
+{
+  "description": "Home display connections event many in the journal's home view.",
+  "context": "Journal window, home view. Home display connections event many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2199a3cddba389d79fa49f21a335daa5ee91e789cfd816f7e675e477e667da68",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

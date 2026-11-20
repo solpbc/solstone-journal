@@ -1,0 +1,16 @@
+{
+  "description": "Home night work did not finish in the journal's home view.",
+  "context": "Journal window, home view. Home night work did not finish.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5670d585a73dea154378519842f5817c3dcf57b0234cf76bc8b4e7d9fa3c940d",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

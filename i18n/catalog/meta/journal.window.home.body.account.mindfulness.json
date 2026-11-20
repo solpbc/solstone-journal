@@ -1,0 +1,16 @@
+{
+  "description": "Home body account mindfulness in the journal's home view.",
+  "context": "Journal window, home view. Home body account mindfulness.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eefff432ca9f51e7e08eca0f02007132ff9259294d2e7dcb6e9fa61c698e0ae5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

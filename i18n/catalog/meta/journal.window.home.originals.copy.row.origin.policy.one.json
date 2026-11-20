@@ -1,0 +1,16 @@
+{
+  "description": "Originals row origin policy one in the journal's home view.",
+  "context": "Journal window, home view. Originals row origin policy one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5702ce09c37b7b6f4312ff01ae6ad3e049774de5fd5dedf05979330a56833364",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

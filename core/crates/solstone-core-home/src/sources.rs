@@ -18,8 +18,9 @@
 use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use crate::provenance::{LabelTableStatus, load_stream_labels, resolve_stream_label};
+use crate::provenance::{DeviceWord, LabelTableStatus, load_stream_labels, resolve_stream_label};
 
 /// One activity record as the source pass sees it: the facet it was read from
 /// and the record itself.
@@ -35,6 +36,15 @@ pub fn concurrent_source_labels(
     journal: &Path,
     day: &str,
     placed: &[Placed<'_>],
+) -> Vec<Option<String>> {
+    concurrent_source_labels_in(journal, day, placed, ENGLISH)
+}
+
+pub(crate) fn concurrent_source_labels_in(
+    journal: &Path,
+    day: &str,
+    placed: &[Placed<'_>],
+    locale: &str,
 ) -> Vec<Option<String>> {
     if placed.len() < 2 {
         return vec![None; placed.len()];
@@ -102,7 +112,11 @@ pub fn concurrent_source_labels(
                 false
             };
             let device = if show_parenthetical { this_id } else { None };
-            Some(source_phrase(device_word.as_str(), device))
+            Some(source_phrase_in(
+                locale,
+                localized_device_word(locale, device_word).as_str(),
+                device,
+            ))
         })
         .collect()
 }
@@ -110,10 +124,37 @@ pub fn concurrent_source_labels(
 /// The owner-facing phrase for a source: `from your watch`, or with the
 /// device's own name when two of one kind ran together.
 pub fn source_phrase(kind: &str, device: Option<&str>) -> String {
+    source_phrase_in(ENGLISH, kind, device)
+}
+
+fn source_phrase_in(locale: &str, kind: &str, device: Option<&str>) -> String {
     match device {
-        Some(device) => format!("from your {kind} ({device})"),
-        None => format!("from your {kind}"),
+        Some(device) => strings(
+            locale,
+            "journal.window.home.activity.source.phrase.named",
+            [("kind", kind), ("device", device)],
+        ),
+        None => strings(
+            locale,
+            "journal.window.home.activity.source.phrase",
+            [("kind", kind)],
+        ),
     }
+}
+
+fn localized_device_word(locale: &str, word: DeviceWord) -> String {
+    let id = match word {
+        DeviceWord::Watch => "journal.window.sources.source.or.date.unit.label.watch",
+        DeviceWord::Terminal => "journal.window.sources.source.or.date.unit.label.terminal",
+        DeviceWord::Phone => "journal.window.home.activity.source.device.phone",
+        DeviceWord::Tablet => "journal.window.home.activity.source.device.tablet",
+        DeviceWord::Computer => "journal.window.home.activity.source.device.computer",
+        DeviceWord::Mac => "journal.window.home.activity.source.device.mac",
+        DeviceWord::Iphone => "journal.window.home.activity.source.device.iphone",
+        DeviceWord::Ipad => "journal.window.home.activity.source.device.ipad",
+        DeviceWord::Browser => "journal.window.home.activity.source.device.browser",
+    };
+    text(locale, id)
 }
 
 #[cfg(test)]

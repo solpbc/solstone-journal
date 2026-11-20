@@ -98,11 +98,18 @@ pub fn project_thinking(
     )
 }
 
+pub fn packaged_speech_repair_guidance(locale: &str) -> String {
+    solstone_core_convey_http::window_catalog::text(
+        locale,
+        "journal.window.home.setup.speech.package.repair",
+    )
+}
+
 pub fn packaged_speech_retry(verified: Result<(), String>) -> Result<(), SetupRetryError> {
     verified.map_err(|_| SetupRetryError {
         code: "speech_package_unavailable",
         message: "speech recognition needs repair",
-        detail: "repair or reinstall the journal app, then restart your journal.".into(),
+        detail: packaged_speech_repair_guidance(solstone_core_convey_http::window_catalog::ENGLISH),
     })
 }
 

@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm heading one in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm heading one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44d025b0a8dac24e174049ec6f0d428f66b47f98e47b0d9361cb9907b26b43c0",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

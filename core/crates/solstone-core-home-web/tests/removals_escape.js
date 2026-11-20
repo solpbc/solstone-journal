@@ -96,10 +96,9 @@ function copyTable(source) {
   const [entries] = source
     .split('const COPY = Object.freeze({\n')[1]
     .split('  });\n\n  const LIST_URL');
-  return Object.fromEntries(entries.trim().split('\n').map((line) => {
-    const [, key, value] = line.match(/^\s*"([^"]+)": "([^"]+)",?$/);
-    return [key, value];
-  }));
+  const context = vm.createContext({ window: {} });
+  loadWindowCatalog(context);
+  return vm.runInContext('Object.freeze({' + entries + '})', context);
 }
 
 // The stream label comes from the one shared formatter, not a second copy of
@@ -353,7 +352,9 @@ async function assertStaysOff(source, pathname) {
     createElement() { return new Element(); },
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
-  vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
+  const context = vm.createContext({ document, Promise, setImmediate, window, Set });
+  loadWindowCatalog(context);
+  vm.runInContext(source, context, { filename: 'removals.js' });
   vm.runInNewContext(`${viewRuntime}\n${HOME_STANDIN}`, { window, document, Set, Map, Promise }, { filename: 'view-runtime.js' });
   mountView(window, document, 'home');
   await settle();

@@ -1,0 +1,16 @@
+{
+  "description": "Home display held daily in the journal's home view.",
+  "context": "Journal window, home view. Home display held daily.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a0676bb6ead09fb6a140afae36bd2979bc5ba2a5c3c2f3885dfecfda30fe077",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

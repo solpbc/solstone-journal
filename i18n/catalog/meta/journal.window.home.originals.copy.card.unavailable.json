@@ -1,0 +1,16 @@
+{
+  "description": "Originals card unavailable in the journal's home view.",
+  "context": "Journal window, home view. Originals card unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed288d950f942b0792e1fe1a62c0d18e63cd54936b0dd81b426de008e416abe4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

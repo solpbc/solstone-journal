@@ -1,0 +1,16 @@
+{
+  "description": "Week leave-out refusal in the journal's home view.",
+  "context": "Journal window, home view. Week leave-out refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bed15469b58e65c692689fa47066bb489836d2545a36037be0f593c2ca35c27a",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

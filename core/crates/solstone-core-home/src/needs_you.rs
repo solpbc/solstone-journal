@@ -4,22 +4,21 @@
 use serde_json::{Value, json};
 use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, OwnerTierReason};
 use solstone_core_speaker_resolve::owner_voice::{NotYetReason, OwnerVoiceSetup};
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 pub const SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED: &str = "owner_voice:not_established";
 pub const SOURCE_ID_OWNER_VOICE_CANDIDATE_READY: &str = "owner_voice:candidate_ready";
 pub const SOURCE_ID_OWNER_VOICE_DAMAGED: &str = "owner_voice:damaged";
 
-const COPY_OWNER_VOICE_CANDIDATE_READY: &str =
-    "your journal may have found your voice. play a few samples and say whether it's you.";
-const COPY_OWNER_VOICE_NEEDS_MORE_AUDIO: &str =
-    "your voice isn't set up yet. your journal looks for it each day, or you can teach it now.";
-const COPY_OWNER_VOICE_TOO_SHORT_OR_MIXED: &str = "your voice isn't set up yet. so far your statements are mostly short or mixed with other voices, so teaching it helps most.";
-const COPY_OWNER_VOICE_DECLINED_TEMPLATE: &str =
-    "your voice isn't set up yet. your journal looks again after {date}, or you can teach it now.";
-const COPY_OWNER_VOICE_DAMAGED: &str =
-    "your saved voice can't be read. remove it on the speakers page, then teach it again.";
-const COPY_OWNER_VOICE_UNUSABLE: &str =
-    "your voice can't be set up from what's there. teach it on the speakers page.";
+const COPY_OWNER_VOICE_CANDIDATE_READY_ID: &str = "journal.window.home.needs.voice.candidate.ready";
+const COPY_OWNER_VOICE_NEEDS_MORE_AUDIO_ID: &str =
+    "journal.window.home.needs.voice.needs.more.audio";
+const COPY_OWNER_VOICE_TOO_SHORT_OR_MIXED_ID: &str =
+    "journal.window.home.needs.voice.too.short.or.mixed";
+const COPY_OWNER_VOICE_DECLINED_TEMPLATE_ID: &str =
+    "journal.window.home.needs.voice.declined.template";
+const COPY_OWNER_VOICE_DAMAGED_ID: &str = "journal.window.home.needs.voice.damaged";
+const COPY_OWNER_VOICE_UNUSABLE_ID: &str = "journal.window.home.needs.voice.unusable";
 const SPEAKERS_APP_HREF: &str = "/app/speakers/";
 const SPEAKERS_YOUR_VOICE_HREF: &str = "/app/speakers/#your-voice";
 
@@ -72,46 +71,49 @@ pub fn needs_dedup_key(item: &Value) -> String {
 /// Health's strings are `HEALTH_GLANCE_DEVICE_FAILING` and
 /// `HEALTH_GLANCE_DEVICES_FAILING`; this echoes them.
 pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
+    format_degraded_capture_line_in(capture, ENGLISH)
+}
+
+pub(crate) fn format_degraded_capture_line_in(capture: &Value, locale: &str) -> Option<String> {
     (capture.is_object() && capture.get("status").and_then(Value::as_str) == Some("degraded")).then(
         || {
-            let (count, labels, named) = failing_clients(capture);
-            match (count, labels.as_slice(), named_attention_sources(capture)) {
-                (1, [label], _) => format!("{label} isn't reaching your journal."),
+            let (count, labels, named) = failing_client_names(capture, locale);
+            match (
+                count,
+                labels.as_slice(),
+                named_attention_sources(capture, locale),
+            ) {
+                (1, [label], _) => strings(
+                    locale,
+                    "journal.window.home.needs.device.one",
+                    [("name", label)],
+                ),
                 // Nameless devices are counted, never listed: "an unnamed
                 // device, an unnamed device" told the owner nothing twice.
-                (many, _, _) if many > 1 && !named => {
-                    format!("{many} devices aren't reaching your journal.")
-                }
-                (many, labels, _) if many > 1 => format!(
-                    "{many} devices aren't reaching your journal: {}.",
-                    labels.join(", ")
+                (many, _, _) if many > 1 && !named => strings(
+                    locale,
+                    "journal.window.home.needs.device.many.unnamed",
+                    [("count", &many.to_string())],
+                ),
+                (many, labels, _) if many > 1 => strings(
+                    locale,
+                    "journal.window.home.needs.device.many.named",
+                    [("count", &many.to_string()), ("names", &labels.join(", "))],
                 ),
                 // Nothing here names a device. The sources it is refusing are
                 // still more than "something is wrong", so they keep the line.
-                (_, _, Some(sources)) => format!(
-                    "the solstone app on one of your devices is having trouble adding {sources} to your journal."
+                (_, _, Some(sources)) => strings(
+                    locale,
+                    "journal.window.home.needs.sources.failing",
+                    [("sources", &sources)],
                 ),
-                _ => "a device isn't reaching your journal.".to_owned(),
+                _ => text(
+                    locale,
+                    "journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your",
+                ),
             }
         },
     )
-}
-
-/// Rewritten so the caller can count the devices separately from the labels it
-/// can print: a run of nameless devices is one label and several devices.
-fn failing_clients(capture: &Value) -> (usize, Vec<String>, bool) {
-    let labels = failing_client_names(capture);
-    let count = capture
-        .get("clients")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|client| client.get("failing").and_then(Value::as_bool) == Some(true))
-        .count();
-    let named = labels
-        .iter()
-        .any(|label| !label.ends_with("unnamed device") && !label.ends_with("unnamed devices"));
-    (count, labels, named)
 }
 
 /// The devices whose deliveries are being refused, named the way health names
@@ -120,7 +122,7 @@ fn failing_clients(capture: &Value) -> (usize, Vec<String>, bool) {
 /// name of its own is still one of the devices the sentence is about, so it
 /// counts even though it cannot be listed; several of them collapse into one
 /// count rather than repeating "an unnamed device, an unnamed device".
-fn failing_client_names(capture: &Value) -> Vec<String> {
+fn failing_client_names(capture: &Value, locale: &str) -> (usize, Vec<String>, bool) {
     let mut failing = capture
         .get("clients")
         .and_then(Value::as_array)
@@ -138,6 +140,7 @@ fn failing_client_names(capture: &Value) -> Vec<String> {
                 .unwrap_or(-1),
         )
     });
+    let count = failing.len();
     let mut names = Vec::new();
     let mut unnamed = 0usize;
     for client in failing {
@@ -151,19 +154,33 @@ fn failing_client_names(capture: &Value) -> Vec<String> {
             None => unnamed += 1,
         }
     }
+    let named = names
+        .iter()
+        .any(|label| !label.ends_with("unnamed device") && !label.ends_with("unnamed devices"));
     match unnamed {
         0 => {}
-        1 => names.push("an unnamed device".to_owned()),
-        many => names.push(format!("{many} unnamed devices")),
+        1 => names.push(text(
+            locale,
+            "journal.window.health.status.an.unnamed.device",
+        )),
+        many => names.push(strings(
+            locale,
+            "journal.window.home.needs.device.unnamed.many",
+            [("count", &many.to_string())],
+        )),
     }
-    names
+    (count, names, named)
 }
 
-pub(crate) fn source_display_name(source: &str) -> &str {
-    if source.is_empty() { "default" } else { source }
+pub(crate) fn source_display_name(source: &str, locale: &str) -> String {
+    if source.is_empty() {
+        text(locale, "journal.window.health.status.default")
+    } else {
+        source.to_owned()
+    }
 }
 
-pub(crate) fn named_attention_sources(capture: &Value) -> Option<String> {
+pub(crate) fn named_attention_sources(capture: &Value, locale: &str) -> Option<String> {
     let clients = capture.get("clients")?.as_array()?;
     let mut names = Vec::new();
     for client in clients {
@@ -175,7 +192,7 @@ pub(crate) fn named_attention_sources(capture: &Value) -> Option<String> {
         }
         for (source, row) in map {
             if row.get("state").and_then(Value::as_str) == Some("needs_attention") {
-                names.push(source_display_name(source).to_owned());
+                names.push(source_display_name(source, locale));
             }
         }
     }
@@ -261,6 +278,15 @@ pub fn classify_owner_voice_needs(
     setup: impl FnOnce() -> OwnerVoiceSetup,
     next_look_after: impl Fn(&jiff::Timestamp) -> String,
 ) -> Option<Value> {
+    classify_owner_voice_needs_in(outcome, setup, next_look_after, ENGLISH)
+}
+
+pub fn classify_owner_voice_needs_in(
+    outcome: OwnerTierOutcome,
+    setup: impl FnOnce() -> OwnerVoiceSetup,
+    next_look_after: impl Fn(&jiff::Timestamp) -> String,
+    locale: &str,
+) -> Option<Value> {
     match outcome {
         OwnerTierOutcome::Confirmed(_) | OwnerTierOutcome::IdentityInvalid => None,
         OwnerTierOutcome::None(reason)
@@ -270,11 +296,11 @@ pub fn classify_owner_voice_needs(
             let text = match reason {
                 OwnerTierReason::ConfirmedUnreadable
                 | OwnerTierReason::ConfirmedIncomplete
-                | OwnerTierReason::ConfirmedZeroNorm => COPY_OWNER_VOICE_DAMAGED,
-                _ => COPY_OWNER_VOICE_UNUSABLE,
+                | OwnerTierReason::ConfirmedZeroNorm => text(locale, COPY_OWNER_VOICE_DAMAGED_ID),
+                _ => text(locale, COPY_OWNER_VOICE_UNUSABLE_ID),
             };
             Some(route_item(
-                text,
+                &text,
                 SPEAKERS_APP_HREF,
                 SOURCE_ID_OWNER_VOICE_DAMAGED,
             ))
@@ -282,19 +308,25 @@ pub fn classify_owner_voice_needs(
         OwnerTierOutcome::None(_) | OwnerTierOutcome::Provisional(_) => match setup() {
             OwnerVoiceSetup::IdentityInvalid | OwnerVoiceSetup::Saved => None,
             OwnerVoiceSetup::CandidateReady => Some(route_item(
-                COPY_OWNER_VOICE_CANDIDATE_READY,
+                &text(locale, COPY_OWNER_VOICE_CANDIDATE_READY_ID),
                 SPEAKERS_YOUR_VOICE_HREF,
                 SOURCE_ID_OWNER_VOICE_CANDIDATE_READY,
             )),
             OwnerVoiceSetup::NotYet(reason) => {
                 let text = match reason {
-                    NotYetReason::NeedsMoreAudio => COPY_OWNER_VOICE_NEEDS_MORE_AUDIO.to_owned(),
-                    NotYetReason::TooShortOrMixed => COPY_OWNER_VOICE_TOO_SHORT_OR_MIXED.to_owned(),
+                    NotYetReason::NeedsMoreAudio => {
+                        text(locale, COPY_OWNER_VOICE_NEEDS_MORE_AUDIO_ID)
+                    }
+                    NotYetReason::TooShortOrMixed => {
+                        text(locale, COPY_OWNER_VOICE_TOO_SHORT_OR_MIXED_ID)
+                    }
                     NotYetReason::Declined {
                         next_look_after: at,
-                    } => {
-                        COPY_OWNER_VOICE_DECLINED_TEMPLATE.replace("{date}", &next_look_after(&at))
-                    }
+                    } => strings(
+                        locale,
+                        COPY_OWNER_VOICE_DECLINED_TEMPLATE_ID,
+                        [("date", &next_look_after(&at))],
+                    ),
                 };
                 Some(route_item(
                     &text,

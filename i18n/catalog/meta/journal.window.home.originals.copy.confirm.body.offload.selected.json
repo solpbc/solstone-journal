@@ -1,0 +1,23 @@
+{
+  "description": "Originals confirm body offload selected in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm body offload selected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94184cc7478ede621ae3ad5c27b4566997362136bcafed9cd67251f0a68cd630",
+  "max_length": 162,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

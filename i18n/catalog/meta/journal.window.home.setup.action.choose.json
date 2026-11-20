@@ -1,0 +1,16 @@
+{
+  "description": "getting started action in the journal's home view.",
+  "context": "Journal window, home view. getting started action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b636713f1e15973d9972d969fa0e4a5d8c970270f85ff2a068e7eef007e61f86",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

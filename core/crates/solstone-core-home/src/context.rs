@@ -20,6 +20,7 @@ pub struct HomeContext {
     pub journal_root: PathBuf,
     pub now_utc: Timestamp,
     zone: TimeZone,
+    locale: &'static str,
 }
 
 impl HomeContext {
@@ -37,7 +38,17 @@ impl HomeContext {
             journal_root: journal_root.into(),
             now_utc,
             zone,
+            locale: solstone_core_window_catalog::ENGLISH,
         }
+    }
+
+    pub fn with_locale(mut self, locale: &'static str) -> Self {
+        self.locale = locale;
+        self
+    }
+
+    pub fn locale(&self) -> &'static str {
+        self.locale
     }
 
     pub fn journal_root(&self) -> &Path {

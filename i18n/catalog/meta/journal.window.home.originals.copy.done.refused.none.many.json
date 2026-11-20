@@ -1,0 +1,16 @@
+{
+  "description": "Originals done refused none many in the journal's home view.",
+  "context": "Journal window, home view. Originals done refused none many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "014fa4f58baf06ca5e04afa3baf7a24bcdbfef44ca13245b78da89ef547a2297",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection day short sat in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection day short sat.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a76c0a170a9fea058952bdecf53b507b3ec577523b340d89a26f7c5ce1f9f0de",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

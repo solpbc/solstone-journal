@@ -1,0 +1,16 @@
+{
+  "description": "Home display held segment in the journal's home view.",
+  "context": "Journal window, home view. Home display held segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1130f0df6d6c9d6ab8f8cdce7f81ba323fe43297a86175a2db92d67b2de68d18",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

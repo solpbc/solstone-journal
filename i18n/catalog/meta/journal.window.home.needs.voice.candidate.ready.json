@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you voice candidate ready in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice candidate ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be7488305f727ab21857e29adde93bde96a636de850d57e575b38581226c3b78",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

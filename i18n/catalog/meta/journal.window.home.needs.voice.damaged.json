@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you voice damaged in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice damaged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fedd5f10d04e731c90d1af9f2a3ac9e255feaacbc39fbccc326180f6d385af8",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

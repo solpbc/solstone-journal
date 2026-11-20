@@ -1,0 +1,16 @@
+{
+  "description": "Originals page selection in the journal's home view.",
+  "context": "Journal window, home view. Originals page selection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f167308e1cd9251d1cb5345ea17bdd15275c4de7e8f77fd49719506ee6afd16a",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

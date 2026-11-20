@@ -16,6 +16,7 @@ workspace = true
 full-tests = []
 
 [dependencies]
+solstone-core-window-catalog.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 jiff.workspace = true

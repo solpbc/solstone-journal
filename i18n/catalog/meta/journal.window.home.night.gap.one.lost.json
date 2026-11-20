@@ -1,0 +1,33 @@
+{
+  "description": "Home night gap one lost in the journal's home view.",
+  "context": "Journal window, home view. Home night gap one lost.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "555e249ecf58236ddb38e1bdb601ea7afea768288dc5c6db65cd0f797465f8ec",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

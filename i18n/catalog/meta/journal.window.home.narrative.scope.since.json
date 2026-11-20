@@ -1,0 +1,33 @@
+{
+  "description": "Home display narrative scope since in the journal's home view.",
+  "context": "Journal window, home view. Home display narrative scope since.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2f148775d96354ef8f71c84b9a76dbb53b4a24b947bcf5c5db6e478eb42a942",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

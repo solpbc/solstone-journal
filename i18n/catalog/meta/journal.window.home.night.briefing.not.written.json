@@ -1,0 +1,16 @@
+{
+  "description": "Home night briefing not written in the journal's home view.",
+  "context": "Journal window, home view. Home night briefing not written.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cec29ebeed2e4b4934b831f8838d4eb9143cae03b54dac2af374b897dec39008",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

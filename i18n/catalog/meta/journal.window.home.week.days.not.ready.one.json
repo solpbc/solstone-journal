@@ -1,0 +1,28 @@
+{
+  "description": "Weekly reflection days not ready one in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection days not ready one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dcc58191e1c139b2274008690e8a974778ce579435e35d6022c8c787f8717dd",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

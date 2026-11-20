@@ -1,0 +1,16 @@
+{
+  "description": "Home display response briefing invalid in the journal's home view.",
+  "context": "Journal window, home view. Home display response briefing invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4d6ba43bcacbf94e576ae0926a5be1a7981824f3fa46d409f0bf194e0552210",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
