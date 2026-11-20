@@ -1143,11 +1143,27 @@ fn plain_name(name: &OsStr) -> io::Result<()> {
         .map_err(|_| invalid("invalid media basename"))
 }
 
+#[derive(Debug)]
+struct MediaChanged;
+
+impl std::fmt::Display for MediaChanged {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("retained media binding changed")
+    }
+}
+
+impl std::error::Error for MediaChanged {}
+
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 fn changed() -> io::Error {
-    invalid("retained media binding changed")
+    io::Error::new(io::ErrorKind::InvalidData, MediaChanged)
+}
+pub(crate) fn is_changed(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|source| source.is::<MediaChanged>())
 }
 #[cfg(windows)]
 fn unsupported() -> io::Error {

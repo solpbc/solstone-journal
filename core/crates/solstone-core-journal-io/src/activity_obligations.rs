@@ -40,6 +40,17 @@ pub struct RecoveryObservationError {
     pub source: Option<io::Error>,
 }
 
+impl RecoveryObservationError {
+    /// Whether this refusal came from a concurrent directory or entry change
+    /// during the observation's own two-pass listing (for example, a live
+    /// journal atomically replacing a status file under `health/`), rather than
+    /// a permanent I/O or naming failure.
+    pub fn is_media_changed(&self) -> bool {
+        self.failure == RecoveryObservationFailure::Io
+            && self.source.as_ref().is_some_and(crate::media::is_changed)
+    }
+}
+
 impl fmt::Display for RecoveryObservationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -47,7 +58,11 @@ impl fmt::Display for RecoveryObservationError {
             "recovery observation {:?} at {}",
             self.failure,
             self.relative.display()
-        )
+        )?;
+        if let Some(source) = &self.source {
+            write!(f, ": {source}")?;
+        }
+        Ok(())
     }
 }
 
@@ -1587,5 +1602,44 @@ mod tests {
                 fs::remove_dir_all(saved).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn atomic_replace_during_health_listing_marks_media_changed_and_displays_source() {
+        let f = Fixture::new();
+        f.directory("health");
+        let status = f.path("health/processing-display.json");
+        let staged = f.path("health/.processing-display.json.tmp");
+        fs::write(&status, b"{\"v\":1}").unwrap();
+
+        let dir = MediaDirectory::open(Arc::clone(&f.root), Path::new("health")).unwrap();
+        let (result, fired) = crate::media::run_with_media_hook(
+            crate::media::MediaPrimitive::AfterFirstEnumeration,
+            move || {
+                fs::write(&staged, b"{\"v\":2}")?;
+                fs::rename(&staged, &status)?;
+                Ok(())
+            },
+            || dir.census_entries(64, |entry| is_evidence(entry, Role::Health)),
+        );
+        assert!(fired);
+        let source = result.unwrap_err();
+        let err = io_error(Path::new("health"), source);
+        assert_eq!(err.failure, RecoveryObservationFailure::Io);
+        assert!(err.is_media_changed());
+        assert_eq!(
+            err.to_string(),
+            "recovery observation Io at health: retained media binding changed"
+        );
+
+        let perm = io_error(
+            Path::new("health"),
+            io::Error::new(io::ErrorKind::PermissionDenied, "denied"),
+        );
+        assert!(!perm.is_media_changed());
+        assert_eq!(
+            perm.to_string(),
+            "recovery observation Io at health: denied"
+        );
     }
 }

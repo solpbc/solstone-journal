@@ -167,7 +167,10 @@ pub fn release_raw(
         );
     }
     match admit_whole_segment_activity(journal) {
-        Ok(admitted) => release_raw_with_activity(&admitted.activity, None, proven, class, at),
+        Ok(admitted) => {
+            let guard = WholeSegmentActivity::admitted(&admitted);
+            release_raw_for_activity(&guard, proven, class, at)
+        }
         Err(reason) => release_raw_guarded(None, Some(reason), proven, class, at),
     }
 }
@@ -182,12 +185,21 @@ pub fn release_raw_with_activity(
     at: Timestamp,
 ) -> (Outcome, EvidenceTally) {
     let guard = WholeSegmentActivity::borrowed(activity, carrier);
+    release_raw_for_activity(&guard, proven, class, at)
+}
+
+fn release_raw_for_activity(
+    guard: &WholeSegmentActivity<'_>,
+    proven: &[ProvenRaw],
+    class: RawReleaseClass,
+    at: Timestamp,
+) -> (Outcome, EvidenceTally) {
     let refusal = if proven.is_empty() {
         None
     } else {
         guard.population().err()
     };
-    release_raw_guarded(Some(&guard), refusal, proven, class, at)
+    release_raw_guarded(Some(guard), refusal, proven, class, at)
 }
 
 fn release_raw_guarded(
@@ -1036,22 +1048,39 @@ fn binding_hold(during: &str, cause: impl std::fmt::Display) -> String {
     WHOLE_BINDING_HOLD.to_owned()
 }
 
-/// Repeat a census that saw a new directory arrive, such as the first folder of a
-/// new day, as its error invites. Only a complete census answers, and every other
-/// refusal stands.
+/// Repeat a census that saw a new directory arrive (such as the first folder of
+/// a new day) or a concurrent directory listing change under a live journal
+/// (such as atomic status-file replacement under `health/`). Only a fresh
+/// complete census answers; every other refusal (permanent I/O, changed
+/// evidence/frontier, non-directory, budget) stands immediately.
 fn settled_census<T>(
+    observe: impl FnMut() -> Result<T, RecoveryObservationError>,
+) -> Result<T, RecoveryObservationError> {
+    settled_census_with(observe, |error| {
+        let delay = if error.is_media_changed() {
+            std::time::Duration::from_millis(100)
+        } else {
+            std::time::Duration::from_millis(10)
+        };
+        std::thread::sleep(delay);
+    })
+}
+
+fn settled_census_with<T>(
     mut observe: impl FnMut() -> Result<T, RecoveryObservationError>,
+    mut pause: impl FnMut(&RecoveryObservationError),
 ) -> Result<T, RecoveryObservationError> {
     let mut attempt = 1;
     loop {
         match observe() {
             Err(error)
-                if error.failure == RecoveryObservationFailure::DirectoryAdded
+                if (error.failure == RecoveryObservationFailure::DirectoryAdded
+                    || error.is_media_changed())
                     && attempt < CENSUS_ATTEMPTS =>
             {
                 log::info!("journal census attempt {attempt} repeated: {error}");
                 attempt = attempt.saturating_add(1);
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                pause(&error);
             }
             other => return other,
         }
@@ -2087,23 +2116,30 @@ mod tests {
     }
 
     #[test]
-    fn a_census_repeats_only_for_a_new_directory_and_only_a_complete_one_answers() {
+    fn a_census_repeats_only_for_a_new_directory_or_live_listing_change_and_only_a_complete_one_answers()
+     {
         let mut calls = 0;
-        let settled = settled_census(|| {
-            calls += 1;
-            if calls < CENSUS_ATTEMPTS {
-                Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
-            } else {
-                Ok("complete")
-            }
-        });
+        let settled = settled_census_with(
+            || {
+                calls += 1;
+                if calls < CENSUS_ATTEMPTS {
+                    Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
+                } else {
+                    Ok("complete")
+                }
+            },
+            |_| {},
+        );
         assert_eq!(settled.unwrap(), "complete");
 
         let mut calls = 0;
-        let exhausted = settled_census::<()>(|| {
-            calls += 1;
-            Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
-        });
+        let exhausted = settled_census_with::<()>(
+            || {
+                calls += 1;
+                Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
+            },
+            |_| {},
+        );
         assert!(exhausted.is_err());
         assert_eq!(calls, CENSUS_ATTEMPTS);
 
@@ -2113,13 +2149,90 @@ mod tests {
             RecoveryObservationFailure::NotDirectory,
         ] {
             let mut calls = 0;
-            let refused = settled_census::<()>(|| {
-                calls += 1;
-                Err(census_failure(failure))
-            });
+            let refused = settled_census_with::<()>(
+                || {
+                    calls += 1;
+                    Err(census_failure(failure))
+                },
+                |_| {},
+            );
             assert!(refused.is_err());
             assert_eq!(calls, 1);
         }
+    }
+
+    #[test]
+    fn release_raw_settles_across_live_atomic_replace_and_reuses_admitted_census() {
+        use solstone_core_journal_io::media::{MediaPrimitive, run_with_media_hook};
+
+        // 1. Live atomic replacement during the first directory enumeration
+        // retries cleanly on a fresh complete census instead of holding.
+        let bed = Bed::new();
+        let seg = bed.segment("20261001", "import.audio", "120001_7");
+        let audio = seg.join("imported_audio.wav");
+        fs::write(&audio, b"wave-bytes").unwrap();
+        let status = bed.root.join("processing-display.json");
+        let staged = bed.root.join(".processing-display.json.tmp");
+        fs::write(&status, b"{\"v\":1}").unwrap();
+
+        let item = proof(
+            "20261001",
+            "import.audio",
+            "120001_7",
+            "imported_audio.wav",
+            10,
+        );
+        let ((outcome, _), fired) = run_with_media_hook(
+            MediaPrimitive::AfterFirstEnumeration,
+            move || {
+                fs::write(&staged, b"{\"v\":2}")?;
+                fs::rename(&staged, &status)?;
+                Ok(())
+            },
+            || release_raw(&bed.root, &[item], RawReleaseClass::Import, test_at()),
+        );
+        assert!(fired);
+        assert!(outcome.halted.is_none(), "{outcome:?}");
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
+        assert!(!audio.exists());
+
+        // 2. When admission already proved a clear census on an exclusive lease,
+        // release_raw_for_activity reuses `admitted.census_clear` with zero extra
+        // censuses, whereas a borrowed activity runs a fresh census.
+        let bed2 = Bed::new();
+        let seg2 = bed2.segment("20261001", "import.audio", "120002_7");
+        let audio2 = seg2.join("imported_audio.wav");
+        fs::write(&audio2, b"wave-bytes").unwrap();
+        let admitted = admit_whole_segment_activity(&bed2.root).unwrap();
+        assert!(admitted.census_clear);
+        let item2 = proof(
+            "20261001",
+            "import.audio",
+            "120002_7",
+            "imported_audio.wav",
+            10,
+        );
+        let ((outcome2, _), fired2) = run_with_media_hook(
+            MediaPrimitive::AfterFirstEnumeration,
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "no extra census",
+                ))
+            },
+            || {
+                let guard = WholeSegmentActivity::admitted(&admitted);
+                release_raw_for_activity(&guard, &[item2], RawReleaseClass::Import, test_at())
+            },
+        );
+        assert!(
+            !fired2,
+            "admitted clear census must not run a second census"
+        );
+        assert!(outcome2.targets[0].not_removed.is_empty(), "{outcome2:?}");
+        assert!(!audio2.exists());
     }
 
     #[test]
