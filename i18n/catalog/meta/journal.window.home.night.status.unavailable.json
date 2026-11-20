@@ -1,0 +1,16 @@
+{
+  "description": "Home night status unavailable in the journal's home view.",
+  "context": "Journal window, home view. Home night status unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90422958d3ded1ab3f49fbc6a2b9f7d87017364228f3eb0dd8f65a6b2ed0c6d5",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

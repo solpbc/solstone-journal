@@ -1,0 +1,16 @@
+{
+  "description": "Originals done recover failed in the journal's home view.",
+  "context": "Journal window, home view. Originals done recover failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6d694a1f94fd93ace76fb33b100ae5b10d7a182196363365b6cb258df341916",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

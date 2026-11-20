@@ -5306,6 +5306,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-thinking",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
 ]
 
@@ -5917,6 +5918,7 @@ dependencies = [
  "solstone-core-sol-link",
  "solstone-core-time",
  "solstone-core-trash",
+ "solstone-core-window-catalog",
  "tempfile",
 ]
 

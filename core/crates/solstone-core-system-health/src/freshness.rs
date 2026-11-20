@@ -252,7 +252,11 @@ pub struct BacklogStatusEvaluation {
 }
 
 pub fn backlog_unavailable() -> String {
-    text(ENGLISH, VERDICT_UNCLEAR_NOW_ID)
+    backlog_unavailable_in(ENGLISH)
+}
+
+pub fn backlog_unavailable_in(locale: &str) -> String {
+    text(locale, VERDICT_UNCLEAR_NOW_ID)
 }
 
 pub fn evaluate_backlog_status(

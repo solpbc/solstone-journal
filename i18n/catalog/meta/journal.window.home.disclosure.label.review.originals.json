@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's home view.",
+  "context": "Journal window, home view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "267167d9facf7cd568e70840c23fcc026ade656dd6200e19b1dd0999a8cd6b02",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

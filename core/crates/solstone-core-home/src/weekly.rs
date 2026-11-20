@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
@@ -558,15 +559,25 @@ pub fn has_page(journal: &Path, day: &str) -> bool {
 }
 
 pub fn format_week_intro(shown_memories: usize, shown_quotes: usize) -> Option<String> {
+    format_week_intro_in(shown_memories, shown_quotes, ENGLISH)
+}
+
+fn format_week_intro_in(
+    shown_memories: usize,
+    shown_quotes: usize,
+    locale: &str,
+) -> Option<String> {
     if shown_memories == 0 && shown_quotes == 0 {
-        Some("nothing from this week is on this page.".to_string())
+        Some(text(locale, "journal.window.home.week.intro.empty"))
     } else if shown_memories == 0 {
         None
     } else if shown_memories == 1 {
-        Some("your week, a memory from one day.".to_string())
+        Some(text(locale, "journal.window.home.week.intro.one"))
     } else {
-        Some(format!(
-            "your week, a memory from each of {shown_memories} days."
+        Some(strings(
+            locale,
+            "journal.window.home.week.intro.many",
+            [("count", &shown_memories.to_string())],
         ))
     }
 }
@@ -658,81 +669,127 @@ fn neighbors(journal: &Path, day: &str, require_readable_candidates: bool) -> We
 }
 
 // Private lowercase date formatting helpers
-fn month_name(month: i8) -> &'static str {
-    match month {
-        1 => "january",
-        2 => "february",
-        3 => "march",
-        4 => "april",
-        5 => "may",
-        6 => "june",
-        7 => "july",
-        8 => "august",
-        9 => "september",
-        10 => "october",
-        11 => "november",
-        12 => "december",
-        _ => "",
-    }
+fn month_name(month: i8, locale: &str) -> String {
+    let id = match month {
+        1 => "journal.window.home.week.month.january",
+        2 => "journal.window.home.week.month.february",
+        3 => "journal.window.home.week.month.march",
+        4 => "journal.window.home.week.month.april",
+        5 => "journal.window.home.week.month.may",
+        6 => "journal.window.home.week.month.june",
+        7 => "journal.window.home.week.month.july",
+        8 => "journal.window.home.week.month.august",
+        9 => "journal.window.home.week.month.september",
+        10 => "journal.window.home.week.month.october",
+        11 => "journal.window.home.week.month.november",
+        12 => "journal.window.home.week.month.december",
+        _ => return String::new(),
+    };
+    text(locale, id)
 }
 
-fn weekday_name(date: Date) -> &'static str {
-    match date.weekday() {
-        Weekday::Monday => "monday",
-        Weekday::Tuesday => "tuesday",
-        Weekday::Wednesday => "wednesday",
-        Weekday::Thursday => "thursday",
-        Weekday::Friday => "friday",
-        Weekday::Saturday => "saturday",
-        Weekday::Sunday => "sunday",
-    }
+fn weekday_name(date: Date, locale: &str) -> String {
+    text(
+        locale,
+        match date.weekday() {
+            Weekday::Monday => "journal.window.home.week.day.long.monday",
+            Weekday::Tuesday => "journal.window.home.week.day.long.tuesday",
+            Weekday::Wednesday => "journal.window.home.week.day.long.wednesday",
+            Weekday::Thursday => "journal.window.home.week.day.long.thursday",
+            Weekday::Friday => "journal.window.home.week.day.long.friday",
+            Weekday::Saturday => "journal.window.home.week.day.long.saturday",
+            Weekday::Sunday => "journal.window.home.week.day.long.sunday",
+        },
+    )
 }
 
-fn short_weekday(date: Date) -> &'static str {
-    match date.weekday() {
-        Weekday::Monday => "mon",
-        Weekday::Tuesday => "tue",
-        Weekday::Wednesday => "wed",
-        Weekday::Thursday => "thu",
-        Weekday::Friday => "fri",
-        Weekday::Saturday => "sat",
-        Weekday::Sunday => "sun",
-    }
+fn short_weekday(date: Date, locale: &str) -> String {
+    text(
+        locale,
+        match date.weekday() {
+            Weekday::Monday => "journal.window.home.week.day.short.mon",
+            Weekday::Tuesday => "journal.window.home.week.day.short.tue",
+            Weekday::Wednesday => "journal.window.home.week.day.short.wed",
+            Weekday::Thursday => "journal.window.home.week.day.short.thu",
+            Weekday::Friday => "journal.window.home.week.day.short.fri",
+            Weekday::Saturday => "journal.window.home.week.day.short.sat",
+            Weekday::Sunday => "journal.window.home.week.day.short.sun",
+        },
+    )
 }
 
-fn format_week_title(date: Date, current_year: i32) -> String {
-    let month = month_name(date.month());
-    let day = date.day();
+fn format_week_title(date: Date, current_year: i32, locale: &str) -> String {
+    let month = month_name(date.month(), locale);
+    let day = date.day().to_string();
     if i32::from(date.year()) == current_year {
-        format!("week of {month} {day}")
+        strings(
+            locale,
+            "journal.window.home.week.title.current",
+            [("month", &month), ("day", &day)],
+        )
     } else {
-        format!("week of {month} {day}, {}", date.year())
-    }
-}
-
-fn format_unreadable_line(date: Date, current_year: i32) -> String {
-    let month = month_name(date.month());
-    let day = date.day();
-    if i32::from(date.year()) == current_year {
-        format!("the week of {month} {day} couldn't be read.")
-    } else {
-        format!(
-            "the week of {month} {day}, {}, couldn't be read.",
-            date.year()
+        strings(
+            locale,
+            "journal.window.home.week.title.with.year",
+            [
+                ("month", &month),
+                ("day", &day),
+                ("year", &date.year().to_string()),
+            ],
         )
     }
 }
 
-fn format_days_conjunction(days: &[&str]) -> String {
-    match days.len() {
-        0 => String::new(),
-        1 => days[0].to_string(),
-        2 => format!("{} and {}", days[0], days[1]),
-        _ => {
-            let (last, rest) = days.split_last().unwrap();
-            format!("{} and {}", rest.join(", "), last)
+fn format_unreadable_line(date: Date, current_year: i32, locale: &str) -> String {
+    let month = month_name(date.month(), locale);
+    let day = date.day().to_string();
+    if i32::from(date.year()) == current_year {
+        strings(
+            locale,
+            "journal.window.home.week.unreadable.current",
+            [("month", &month), ("day", &day)],
+        )
+    } else {
+        strings(
+            locale,
+            "journal.window.home.week.unreadable.with.year",
+            [
+                ("month", &month),
+                ("day", &day),
+                ("year", &date.year().to_string()),
+            ],
+        )
+    }
+}
+
+fn format_days_conjunction(days: &[impl AsRef<str>], locale: &str) -> String {
+    match days {
+        [] => String::new(),
+        [only] => only.as_ref().to_owned(),
+        [rest @ .., last] => {
+            let leading = rest
+                .iter()
+                .map(AsRef::as_ref)
+                .collect::<Vec<_>>()
+                .join(", ");
+            strings(
+                locale,
+                "journal.window.home.week.days.conjunction",
+                [("leading", &leading), ("last", last.as_ref())],
+            )
         }
     }
+}
+
+fn short_day_label(date: Date, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.home.week.day.short.with.number",
+        [
+            ("weekday", &short_weekday(date, locale)),
+            ("day", &date.day().to_string()),
+        ],
+    )
 }
 
 fn encode_uri_ref(uri: &str) -> String {
@@ -977,12 +1034,6 @@ fn memory_activity(journal: &Path, memory: &TrustedMemory) -> Option<MemoryActiv
     })
 }
 
-const SAID_HEADING: &str = "said by you";
-const SAID_LINK_LABEL: &str = "open where you said it →";
-const SAID_LEAVE_OUT_HINT: &str = "only this week changes. what you said stays in your journal.";
-const SAID_UNREADABLE_LINE: &str = "the \"said by you\" list couldn't be read.";
-const NOT_ON_PAGE_LABEL: &str = "in your journal, no memory on this page";
-
 fn shown_quote_count(said: &Said, left_out_keys: &BTreeSet<String>) -> usize {
     match said {
         Said::Unreadable => 0,
@@ -993,10 +1044,17 @@ fn shown_quote_count(said: &Said, left_out_keys: &BTreeSet<String>) -> usize {
     }
 }
 
-fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: Date) -> Value {
+fn said_model(
+    said: &Said,
+    left_out_keys: &BTreeSet<String>,
+    start_date: Date,
+    locale: &str,
+) -> Value {
     match said {
         Said::Entries(entries) if entries.is_empty() => Value::Null,
-        Said::Unreadable => json!({ "unreadable": SAID_UNREADABLE_LINE }),
+        Said::Unreadable => {
+            json!({ "unreadable": text(locale, "journal.window.home.week.said.unreadable") })
+        }
         Said::Entries(entries) => {
             let mut groups: Vec<(&str, Vec<Value>)> = Vec::new();
             for entry in entries {
@@ -1010,7 +1068,7 @@ fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: Date) -
                         "key": entry.key,
                         "quote": entry.quote,
                         "href": format!("/source?ref={}", encode_uri_ref(&entry.uri)),
-                        "link_label": SAID_LINK_LABEL,
+                        "link_label": text(locale, "journal.window.home.week.said.open"),
                         "left_out": false,
                     })
                 };
@@ -1025,14 +1083,14 @@ fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: Date) -
                 .map(|(day, rows)| {
                     let date = week_day(day).unwrap_or(start_date);
                     json!({
-                        "day_label": format!("{} {}", short_weekday(date), date.day()),
+                        "day_label": short_day_label(date, locale),
                         "rows": rows,
                     })
                 })
                 .collect::<Vec<_>>();
             json!({
-                "heading": SAID_HEADING,
-                "leave_out_hint": SAID_LEAVE_OUT_HINT,
+                "heading": text(locale, "journal.window.home.week.said.heading"),
+                "leave_out_hint": text(locale, "!journal.window.home.week.said.leave.out.scope"),
                 "days": days,
             })
         }
@@ -1049,19 +1107,31 @@ pub fn page_model(
     current_year: i32,
     is_moment: &dyn Fn(&str) -> bool,
 ) -> Result<Value, WeekJudgment> {
+    page_model_in(journal, day, current_year, is_moment, ENGLISH)
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "The refusal is the judged page itself, returned once per page read."
+)]
+pub fn page_model_in(
+    journal: &Path,
+    day: &str,
+    current_year: i32,
+    is_moment: &dyn Fn(&str) -> bool,
+    locale: &str,
+) -> Result<Value, WeekJudgment> {
     let trusted = match judge(journal, day) {
         WeekJudgment::Page(t) => t,
         other => return Err(other),
     };
 
     let start_date = week_day(day).ok_or(WeekJudgment::CouldntCheck)?;
-    let title = format_week_title(start_date, current_year);
+    let title = format_week_title(start_date, current_year, locale);
 
     let left_out = read_left_out(journal);
     let left_out_notice = match &left_out {
-        LeftOut::Unreadable => {
-            Some("your left-out memories couldn't be checked, so everything is showing.")
-        }
+        LeftOut::Unreadable => Some(text(locale, "journal.window.home.week.left.out.unreadable")),
         _ => None,
     };
     let empty_set = BTreeSet::new();
@@ -1094,15 +1164,23 @@ pub fn page_model(
             } else {
                 shown_count += 1;
                 let mem_date = week_day(&mem.day).unwrap_or(start_date);
-                let day_label = format!("{} {}", short_weekday(mem_date), mem_date.day());
+                let day_label = short_day_label(mem_date, locale);
 
                 let (peek_ref, peek_label) = mem
                     .source
                     .refs
                     .iter()
                     .find(|r| is_moment(r.as_str()))
-                    .map(|r| (r.as_str(), "open that moment →"))
-                    .unwrap_or((mem.source.uri.as_str(), "open it in thinking →"));
+                    .map(|r| {
+                        (
+                            r.as_str(),
+                            text(locale, "journal.window.home.week.peek.moment"),
+                        )
+                    })
+                    .unwrap_or((
+                        mem.source.uri.as_str(),
+                        text(locale, "journal.window.home.week.peek.thinking"),
+                    ));
 
                 let about = memory_activity(journal, mem);
                 // A moment opens on its activity, where "that's not right" is.
@@ -1128,10 +1206,10 @@ pub fn page_model(
                     .and_then(week_day)
                     .unwrap_or(mem_date);
                 // Dated by the day the briefing covers, as home dates it.
-                let peek_caption = format!(
-                    "from the daily briefing for {} {}",
-                    short_weekday(briefing_date),
-                    briefing_date.day()
+                let peek_caption = strings(
+                    locale,
+                    "journal.window.home.week.peek.briefing",
+                    [("day", &short_day_label(briefing_date, locale))],
                 );
 
                 rows.push(json!({
@@ -1150,10 +1228,10 @@ pub fn page_model(
     }
 
     let shown_quotes = shown_quote_count(&trusted.said, left_out_keys);
-    let intro = format_week_intro(shown_count, shown_quotes)
+    let intro = format_week_intro_in(shown_count, shown_quotes, locale)
         .map(Value::String)
         .unwrap_or(Value::Null);
-    let said_model = said_model(&trusted.said, left_out_keys, start_date);
+    let said_model = said_model(&trusted.said, left_out_keys, start_date, locale);
 
     let mut present_states = BTreeSet::new();
     let mut cells = Vec::with_capacity(7);
@@ -1163,7 +1241,7 @@ pub fn page_model(
 
     for d in &trusted.days {
         let date = week_day(&d.day).unwrap_or(start_date);
-        let weekday = weekday_name(date);
+        let weekday = weekday_name(date, locale);
         let day_num = date.day();
 
         let memory_key = d
@@ -1177,69 +1255,86 @@ pub fn page_model(
 
         let phrase = match cell_state {
             "memory" => {
-                memory_day_names.push(weekday);
-                "a memory from this day"
+                memory_day_names.push(weekday.clone());
+                "journal.window.home.week.cell.memory"
             }
-            "not_on_page" => NOT_ON_PAGE_LABEL,
-            "nothing_shared" => "nothing in your journal",
+            "not_on_page" => "journal.window.home.week.cell.left.out",
+            "nothing_shared" => "journal.window.home.week.cell.nothing.shared",
             "unreadable" => {
-                unreadable_day_names.push(weekday);
-                "couldn't be read"
+                unreadable_day_names.push(weekday.clone());
+                "journal.window.home.week.cell.unreadable"
             }
             "not_ready" => {
-                not_ready_day_names.push(weekday);
-                "wasn't ready in time"
+                not_ready_day_names.push(weekday.clone());
+                "journal.window.home.week.cell.not.ready"
             }
             _ => "",
         };
 
+        let phrase = if phrase.is_empty() {
+            String::new()
+        } else {
+            text(locale, phrase)
+        };
         cells.push(json!({
             "day": d.day,
             "state": cell_state,
             "day_number": day_num.to_string(),
-            "weekday": short_weekday(date),
-            "accessible_name": format!("{weekday} {day_num}, {phrase}"),
+            "weekday": short_weekday(date, locale),
+            "accessible_name": strings(locale, "journal.window.home.week.cell.accessible.name", [("weekday", &weekday), ("day", &day_num.to_string()), ("summary", &phrase)]),
         }));
     }
 
     let mut legend = Vec::new();
     for (state, label) in [
-        ("memory", "a memory from this day"),
-        ("not_on_page", NOT_ON_PAGE_LABEL),
-        ("nothing_shared", "nothing in your journal"),
-        ("unreadable", "couldn't be read"),
-        ("not_ready", "wasn't ready in time"),
+        ("memory", "journal.window.home.week.cell.memory"),
+        ("not_on_page", "journal.window.home.week.cell.left.out"),
+        (
+            "nothing_shared",
+            "journal.window.home.week.cell.nothing.shared",
+        ),
+        ("unreadable", "journal.window.home.week.cell.unreadable"),
+        ("not_ready", "journal.window.home.week.cell.not.ready"),
     ] {
         if present_states.contains(state) {
             legend.push(json!({
                 "state": state,
-                "label": label,
+                "label": text(locale, label),
             }));
         }
     }
 
     let mut from_parts = Vec::new();
     if !memory_day_names.is_empty() {
-        from_parts.push(format!(
-            "from {}.",
-            format_days_conjunction(&memory_day_names)
+        from_parts.push(strings(
+            locale,
+            "journal.window.home.week.days.from",
+            [("days", &format_days_conjunction(&memory_day_names, locale))],
         ));
     }
     if !unreadable_day_names.is_empty() {
-        from_parts.push(format!(
-            "something from {} couldn't be read.",
-            format_days_conjunction(&unreadable_day_names)
+        from_parts.push(strings(
+            locale,
+            "journal.window.home.week.days.unreadable",
+            [(
+                "days",
+                &format_days_conjunction(&unreadable_day_names, locale),
+            )],
         ));
     }
     if !not_ready_day_names.is_empty() {
-        let (verb, _) = if not_ready_day_names.len() == 1 {
-            ("wasn't", "")
+        let id = if not_ready_day_names.len() == 1 {
+            "journal.window.home.week.days.not.ready.one"
         } else {
-            ("weren't", "")
+            "journal.window.home.week.days.not.ready.many"
         };
-        from_parts.push(format!(
-            "{} {verb} ready in time.",
-            format_days_conjunction(&not_ready_day_names)
+        from_parts.push(strings(
+            locale,
+            id,
+            [(
+                "days",
+                &format_days_conjunction(&not_ready_day_names, locale),
+            )],
         ));
     }
 
@@ -1255,7 +1350,10 @@ pub fn page_model(
         && let Some(p_date) = week_day(p_stem)
     {
         (
-            Value::String(format!("← {}", format_week_title(p_date, current_year))),
+            Value::String(format!(
+                "← {}",
+                format_week_title(p_date, current_year, locale)
+            )),
             Value::String(format!("/app/home/week/{p_stem}")),
         )
     } else {
@@ -1266,7 +1364,10 @@ pub fn page_model(
         && let Some(n_date) = week_day(n_stem)
     {
         (
-            Value::String(format!("{} →", format_week_title(n_date, current_year))),
+            Value::String(format!(
+                "{} →",
+                format_week_title(n_date, current_year, locale)
+            )),
             Value::String(format!("/app/home/week/{n_stem}")),
         )
     } else {
@@ -1287,7 +1388,7 @@ pub fn page_model(
         "prev_href": prev_href,
         "next_label": next_label,
         "next_href": next_href,
-        "end_line": "that's the week.",
+        "end_line": text(locale, "journal.window.home.week.end"),
     }))
 }
 
@@ -1299,7 +1400,7 @@ pub fn card(context: &HomeContext) -> Value {
             return first_card(context);
         }
         Err(_) => {
-            return unchecked_card();
+            return unchecked_card(context.locale());
         }
     };
 
@@ -1309,13 +1410,13 @@ pub fn card(context: &HomeContext) -> Value {
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => return unchecked_card(),
+            Err(_) => return unchecked_card(context.locale()),
         };
         let path = entry.path();
         let metadata = match fs::metadata(&path) {
             Ok(m) => m,
             Err(err) if err.kind() == ErrorKind::NotFound => continue,
-            Err(_) => return unchecked_card(),
+            Err(_) => return unchecked_card(context.locale()),
         };
         if !metadata.is_file() {
             continue;
@@ -1347,7 +1448,7 @@ pub fn card(context: &HomeContext) -> Value {
         match judge(context.journal_root(), &newest) {
             WeekJudgment::Page(trusted) => week_card(context, stem_date, trusted),
             WeekJudgment::CantShow | WeekJudgment::Untrusted | WeekJudgment::CouldntCheck => {
-                let line = format_unreadable_line(stem_date, current_year);
+                let line = format_unreadable_line(stem_date, current_year, context.locale());
                 json!({
                     "state": "unreadable",
                     "title": Value::Null,
@@ -1377,11 +1478,11 @@ pub(crate) fn card_at(context: &HomeContext) -> Value {
     let journal = context.journal_root();
     let entries = match weekly_dir_entries(journal) {
         WeeklyDirResult::Absent => return first_card(context),
-        WeeklyDirResult::Unreadable => return unchecked_card(),
+        WeeklyDirResult::Unreadable => return unchecked_card(context.locale()),
         WeeklyDirResult::Entries(entries) => entries,
     };
     let Ok(root) = JournalRoot::open(journal) else {
-        return unchecked_card();
+        return unchecked_card(context.locale());
     };
     let today = context.local_date();
     let mut weeks = entries
@@ -1405,7 +1506,8 @@ pub(crate) fn card_at(context: &HomeContext) -> Value {
 }
 
 fn week_card(context: &HomeContext, stem_date: Date, trusted: TrustedWeek) -> Value {
-    let title = format_week_title(stem_date, i32::from(context.local_date().year()));
+    let locale = context.locale();
+    let title = format_week_title(stem_date, i32::from(context.local_date().year()), locale);
     let day = solstone_core_time::day_key(stem_date);
     let url = format!("/app/home/week/{day}");
 
@@ -1439,7 +1541,7 @@ fn week_card(context: &HomeContext, stem_date: Date, trusted: TrustedWeek) -> Va
             None if quote_showing => (Value::Null, Value::Null),
             None => (
                 Value::Null,
-                Value::String("nothing from this week is showing.".to_string()),
+                Value::String(text(locale, "journal.window.home.week.card.empty")),
             ),
         },
     };
@@ -1455,12 +1557,23 @@ fn week_card(context: &HomeContext, stem_date: Date, trusted: TrustedWeek) -> Va
 }
 
 fn next_week_card(context: &HomeContext) -> Value {
+    let locale = context.locale();
     let line = if solstone_core_journal_config::no_thinking_engine_chosen(context.journal_root()) {
-        "your next week comes once you choose where the thinking happens.".to_string()
+        text(locale, "journal.window.home.week.card.next.choose")
     } else {
         let weekday =
             solstone_core_system::schedule::configured_weekly_day_name(context.journal_root());
-        format!("your next week comes on {weekday}.")
+        strings(
+            locale,
+            "journal.window.home.week.card.next.due",
+            [(
+                "weekday",
+                &text(
+                    locale,
+                    &format!("journal.window.home.week.day.long.{weekday}"),
+                ),
+            )],
+        )
     };
 
     json!({
@@ -1473,24 +1586,35 @@ fn next_week_card(context: &HomeContext) -> Value {
     })
 }
 
-fn unchecked_card() -> Value {
+fn unchecked_card(locale: &str) -> Value {
     json!({
         "state": "unchecked",
         "title": Value::Null,
         "url": Value::Null,
         "memory": Value::Null,
         "empty": Value::Null,
-        "line": "your week couldn't be checked.",
+        "line": text(locale, "journal.window.home.week.card.unchecked"),
     })
 }
 
 fn first_card(context: &HomeContext) -> Value {
+    let locale = context.locale();
     let line = if solstone_core_journal_config::no_thinking_engine_chosen(context.journal_root()) {
-        "your first week comes once you choose where the thinking happens.".to_string()
+        text(locale, "journal.window.home.week.card.first.choose")
     } else {
         let weekday =
             solstone_core_system::schedule::configured_weekly_day_name(context.journal_root());
-        format!("your first week comes on {weekday}.")
+        strings(
+            locale,
+            "journal.window.home.week.card.first.due",
+            [(
+                "weekday",
+                &text(
+                    locale,
+                    &format!("journal.window.home.week.day.long.{weekday}"),
+                ),
+            )],
+        )
     };
 
     json!({
@@ -1651,13 +1775,13 @@ mod tests {
 
     #[test]
     fn from_line_conjunctions_and_omission() {
-        assert_eq!(format_days_conjunction(&["sunday"]), "sunday");
+        assert_eq!(format_days_conjunction(&["sunday"], ENGLISH), "sunday");
         assert_eq!(
-            format_days_conjunction(&["sunday", "monday"]),
+            format_days_conjunction(&["sunday", "monday"], ENGLISH),
             "sunday and monday"
         );
         assert_eq!(
-            format_days_conjunction(&["sunday", "monday", "thursday", "saturday"]),
+            format_days_conjunction(&["sunday", "monday", "thursday", "saturday"], ENGLISH),
             "sunday, monday, thursday and saturday"
         );
     }

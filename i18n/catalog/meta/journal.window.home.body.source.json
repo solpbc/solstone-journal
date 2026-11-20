@@ -1,0 +1,28 @@
+{
+  "description": "Home display body source in the journal's home view.",
+  "context": "Journal window, home view. Home display body source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a9b7b48b5df1170af376959c618199b989a95ac196e2da3258d551bc651b577",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

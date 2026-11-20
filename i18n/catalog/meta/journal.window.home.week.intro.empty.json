@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection intro empty in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection intro empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f30d38713f92e03afd9ff0772248483ebad7dbd3f268bd4d40e857662859f45f",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

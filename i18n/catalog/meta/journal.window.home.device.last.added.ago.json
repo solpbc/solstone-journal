@@ -1,0 +1,28 @@
+{
+  "description": "Time since a device last added to the journal in the journal's home view.",
+  "context": "Journal window, home view. Time since a device last added to the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e2d132b7d334d4f26bce3bd9f00473b8682aceb9e602d690a342b6af5192504",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

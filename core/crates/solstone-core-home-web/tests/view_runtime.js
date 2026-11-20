@@ -13,11 +13,16 @@ const runtime = ['store.js', 'views.js']
   .map((name) => fs.readFileSync(path.join(shellStatic, name), 'utf8'))
   .join('\n');
 
+const catalog = [
+  path.join(__dirname, '../../../../i18n/generated/window/classic/journal-window/api.js'),
+  path.join(shellStatic, 'convey_copy.js'),
+].map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+
 // Where home's code hands its functions to a harness.
 const EXPORT_ANCHOR = "    ctx.global('selectAccountSide', selectAccountSide);\n";
 
 function withViewRuntime(source, view = 'home') {
-  return `${runtime}\n${source}\nwindow.SolViews.mount(${JSON.stringify(view)});\n`;
+  return `${catalog}\n${runtime}\n${source}\nwindow.SolViews.mount(${JSON.stringify(view)});\n`;
 }
 
 module.exports = { withViewRuntime, EXPORT_ANCHOR, runtime };

@@ -1,0 +1,16 @@
+{
+  "description": "First-week welcome framing in the journal's home view.",
+  "context": "Journal window, home view. First-week welcome framing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "870642fc2683139f3bb2eb0d1747a838f7146d03513c7ad92f8cb4f378fbf070",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

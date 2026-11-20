@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection said open in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection said open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "011246e913ef55f663fbdffd777a5db609d08ba0c0ac8722fdfd5473df9ce106",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

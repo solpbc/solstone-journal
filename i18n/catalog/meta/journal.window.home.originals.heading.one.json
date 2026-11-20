@@ -1,0 +1,16 @@
+{
+  "description": "Home display originals heading one in the journal's home view.",
+  "context": "Journal window, home view. Home display originals heading one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7fde890dcc1a8fd47b2e89db1dd0ced7763d4757483a7e7b3df98d1ddf4285a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

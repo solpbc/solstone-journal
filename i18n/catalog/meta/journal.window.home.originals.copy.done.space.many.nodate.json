@@ -1,0 +1,16 @@
+{
+  "description": "Originals done space many nodate in the journal's home view.",
+  "context": "Journal window, home view. Originals done space many nodate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dedfdf4165f8d5984017246708123c635c0538caaa350be5affa33968555b957",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

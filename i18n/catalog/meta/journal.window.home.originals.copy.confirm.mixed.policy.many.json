@@ -1,0 +1,23 @@
+{
+  "description": "Originals confirm mixed policy many in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm mixed policy many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "722ebaf6d4fb08676b9829ba11bbb42e287db57f7609df6e2ebb8fe755b39b21",
+  "max_length": 151,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{days}"
+    }
+  ]
+}

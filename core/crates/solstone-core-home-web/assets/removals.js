@@ -7,108 +7,108 @@
   let reportHomeReady = function () {};
   let originalsCtx = null;
   const COPY = Object.freeze({
-    "card.heading": "originals waiting on you",
-    "card.subhead": "original audio and video marked for deletion, plus anything a deletion left unfinished. nothing marked here is deleted until you say so.",
-    "card.empty": "nothing is waiting on you.",
-    "card.unavailable": "the list couldn't be loaded.",
-    "card.loading": "loading originals…",
-    "card.too_large": "this item's deletion details are too large to review here.",
-    "card.support": "contact support for help",
-    "page.range": "items {first}–{last} of {total}",
-    "page.selection": "selection applies to this page and clears when you change pages.",
-    "operation.submitting": "sending your deletion request.",
-    "operation.running": "deletion is in progress.",
-    "operation.stop_pending": "requesting a stop.",
-    "operation.stopping": "stop requested. waiting for the work to finish.",
-    "operation.stop": "stop deleting",
-    "operation.held": "deleting hasn't fully finished.",
-    "operation.completed": "deletion finished.",
-    "operation.refused": "deletion didn't start.",
-    "operation.unknown": "it's unclear what was deleted and what wasn't.",
-    "operation.unavailable": "the current result couldn't be checked.",
-    "operation.record_unavailable": "the deletion record isn't available.",
-    "card.total_one": "on this page: 1 original · {size}",
-    "card.total_many": "on this page: {n} originals · {size}",
-    "row.identity": "{date} · {stream}",
-    "row.origin_policy_one": "1 original marked by your retention settings. this part of the list rebuilds every day.",
-    "row.origin_policy_many": "{n} originals marked by your retention settings. this part of the list rebuilds every day.",
-    "row.origin_offload_one": "1 original copied off your device by your backup. there's no way to check it's still there.",
-    "row.origin_offload_many": "{n} originals copied off your device by your backup. there's no way to check they're still there.",
-    "row.what_one": "1 original · {size}",
-    "row.what_many": "{n} originals · {size}",
-    "row.kept_one": "nothing else goes with it.",
-    "row.kept_many": "nothing else goes with them.",
-    "row.delete": "delete originals",
-    "row.keep": "keep for now",
-    "bulk.select_all": "select this page",
-    "bulk.clear": "clear selection",
-    "bulk.selected_one": "1 selected",
-    "bulk.selected_many": "{n} selected",
-    "bulk.selected_over_cap": "{n} selected. one action covers up to {max}.",
-    "bulk.delete": "delete selected",
-    "bulk.keep": "keep selected",
-    "confirm.heading_one": "delete this original?",
-    "confirm.heading_many": "delete these originals?",
-    "confirm.days_one": "1 day",
-    "confirm.days_many": "{n} days",
-    "confirm.body_policy_one": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. the trash erases it after {days}, and its space comes back then. you can recover it until then.",
-    "confirm.body_policy_many": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
-    "confirm.body_policy_one_nodays": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. it waits in the trash, then the trash erases it and its space comes back. you can recover it until then.",
-    "confirm.body_policy_many_nodays": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
-    "confirm.body_offload_one": "this deletes 1 original from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with it. it can't be undone.",
-    "confirm.body_offload_many": "this deletes {n} originals from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
-    "confirm.body_policy_selected": "this moves {n} originals to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
-    "confirm.body_policy_selected_nodays": "this moves {n} originals to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
-    "confirm.body_offload_selected": "this deletes {n} originals. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
-    "confirm.mixed_lead": "this deletes {o} of these originals and moves {p} to the trash. nothing else goes with them.",
-    "confirm.mixed_offload_one": "the one it deletes was copied off your device by your backup. your backup has a copy that can't be checked from here. deleting it can't be undone.",
-    "confirm.mixed_offload_many": "the ones it deletes were copied off your device by your backup. your backup has a copy that can't be checked from here. deleting them can't be undone.",
-    "confirm.mixed_policy_one": "the one it moves to the trash is erased after {days}, and its space comes back then. you can recover it until then.",
-    "confirm.mixed_policy_many": "the ones it moves to the trash are erased after {days}, and their space comes back then. you can recover them until then.",
-    "confirm.mixed_policy_one_nodays": "the one it moves to the trash waits there, then the trash erases it and its space comes back. you can recover it until then.",
-    "confirm.mixed_policy_many_nodays": "the ones it moves to the trash wait there, then the trash erases them and their space comes back. you can recover them until then.",
-    "confirm.go_trash": "move to trash",
-    "confirm.go_one": "delete it",
-    "confirm.go_many": "delete them",
-    "confirm.cancel": "cancel",
-    "confirm.recover.heading": "finish the deletions that stopped?",
-    "confirm.recover.body": "this finishes every deletion that stopped partway. any original it hadn't deleted yet goes back in its segment. the rest stay deleted, and those your retention settings marked are in the trash.",
-    "confirm.recover.go": "finish them",
-    "done.clause_deleted_one": "deleted 1 original.",
-    "done.clause_deleted_many": "deleted {n} originals.",
-    "done.clause_trashed_one": "moved 1 original to the trash.",
-    "done.clause_trashed_many": "moved {n} originals to the trash.",
-    "done.space_one": "it's erased {erase}, and its space comes back then. you can erase it sooner from the trash.",
-    "done.space_many": "they're erased {erase}, and their space comes back then. you can erase them sooner from the trash.",
-    "done.space_one_nodate": "its space comes back when it's erased from the trash.",
-    "done.space_many_nodate": "their space comes back when they're erased from the trash.",
-    "done.open_trash": "open trash",
-    "done.clause_not_removed_one": "1 more couldn't be deleted.",
-    "done.clause_not_removed_many": "{m} more couldn't be deleted.",
-    "done.clause_halted": "it stopped there.",
-    "done.refused_none_one": "it couldn't be deleted. nothing was deleted.",
-    "done.refused_none_many": "they couldn't be deleted. nothing was deleted.",
-    "done.refused_item": "{name}: {reason}",
-    "done.refused_item_unnamed": "{reason}",
-    "done.unknown": "deleting stopped before what happened could be confirmed. it's unclear what was deleted and what wasn't.",
-    "done.kept_policy": "kept for now. it'll be back the next time this part of the list rebuilds.",
-    "done.kept_offload": "kept for now. it'll be back after your next backup.",
-    "done.too_many": "choose up to {n} items at a time. nothing was deleted.",
-    "done.declined_failed": "it couldn't be taken off the list, so it stays. nothing was deleted.",
-    "done.clause_kept_one": "kept 1 for now.",
-    "done.clause_kept_many": "kept {n} for now.",
-    "done.clause_not_kept_one": "1 more couldn't be taken off the list, so it stays.",
-    "done.clause_not_kept_many": "{m} more couldn't be taken off the list, so they stay.",
-    "done.clause_nothing_deleted": "nothing was deleted.",
-    "done.declined_unknown": "nothing was deleted. it's unclear whether it's still on the list.",
-    "done.recovered": "the deletions that had stopped are now finished.",
-    "done.recovered_none": "there was nothing left to finish.",
-    "done.recovered_leftover": "some finished. at least one deletion that stopped is still waiting.",
-    "done.recover_failed": "they couldn't be finished. what's left is still there.",
-    "done.recover_unknown": "finishing stopped before what happened could be confirmed. it's unclear what was completed.",
-    "failed.badge": "didn't finish",
-    "failed.body": "a deletion you started stopped partway. finishing it puts back any original it hadn't deleted yet, and the rest stay deleted.",
-    "failed.finish": "finish the deletion"
+    "card.heading": window.JournalI18n.render('journal.window.home.originals.copy.card.heading'),
+    "card.subhead": window.JournalI18n.render('journal.window.home.originals.copy.card.subhead'),
+    "card.empty": window.JournalI18n.render('journal.window.home.originals.copy.card.empty'),
+    "card.unavailable": window.JournalI18n.render('journal.window.home.originals.copy.card.unavailable'),
+    "card.loading": window.JournalI18n.render('journal.window.home.originals.copy.card.loading'),
+    "card.too_large": window.JournalI18n.render('journal.window.home.originals.copy.card.too.large'),
+    "card.support": window.JournalI18n.render('journal.window.home.originals.copy.card.support'),
+    "page.range": window.JournalI18n.render('journal.window.home.originals.copy.page.range'),
+    "page.selection": window.JournalI18n.render('journal.window.home.originals.copy.page.selection'),
+    "operation.submitting": window.JournalI18n.render('journal.window.home.originals.copy.operation.submitting'),
+    "operation.running": window.JournalI18n.render('journal.window.home.originals.copy.operation.running'),
+    "operation.stop_pending": window.JournalI18n.render('journal.window.home.originals.copy.operation.stop.pending'),
+    "operation.stopping": window.JournalI18n.render('journal.window.home.originals.copy.operation.stopping'),
+    "operation.stop": window.JournalI18n.render('journal.window.home.originals.copy.operation.stop'),
+    "operation.held": window.JournalI18n.render('journal.window.home.originals.copy.operation.held'),
+    "operation.completed": window.JournalI18n.render('journal.window.home.originals.copy.operation.completed'),
+    "operation.refused": window.JournalI18n.render('journal.window.home.originals.copy.operation.refused'),
+    "operation.unknown": window.JournalI18n.render('journal.window.home.originals.copy.operation.unknown'),
+    "operation.unavailable": window.JournalI18n.render('journal.window.home.originals.copy.operation.unavailable'),
+    "operation.record_unavailable": window.JournalI18n.render('journal.window.home.originals.copy.operation.record.unavailable'),
+    "card.total_one": window.JournalI18n.render('journal.window.home.originals.copy.card.total.one'),
+    "card.total_many": window.JournalI18n.render('journal.window.home.originals.copy.card.total.many'),
+    "row.identity": window.JournalI18n.render('journal.window.home.originals.copy.row.identity'),
+    "row.origin_policy_one": window.JournalI18n.render('journal.window.home.originals.copy.row.origin.policy.one'),
+    "row.origin_policy_many": window.JournalI18n.render('journal.window.home.originals.copy.row.origin.policy.many'),
+    "row.origin_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.row.origin.offload.one'),
+    "row.origin_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.row.origin.offload.many'),
+    "row.what_one": window.JournalI18n.render('journal.window.home.originals.copy.row.what.one'),
+    "row.what_many": window.JournalI18n.render('journal.window.home.originals.copy.row.what.many'),
+    "row.kept_one": window.JournalI18n.render('journal.window.home.originals.copy.row.kept.one'),
+    "row.kept_many": window.JournalI18n.render('journal.window.home.originals.copy.row.kept.many'),
+    "row.delete": window.JournalI18n.render('journal.window.home.originals.copy.row.delete'),
+    "row.keep": window.JournalI18n.render('journal.window.home.originals.copy.row.keep'),
+    "bulk.select_all": window.JournalI18n.render('journal.window.home.originals.copy.bulk.select.all'),
+    "bulk.clear": window.JournalI18n.render('journal.window.home.originals.copy.bulk.clear'),
+    "bulk.selected_one": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.one'),
+    "bulk.selected_many": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.many'),
+    "bulk.selected_over_cap": window.JournalI18n.render('journal.window.home.originals.copy.bulk.selected.over.cap'),
+    "bulk.delete": window.JournalI18n.render('journal.window.home.originals.copy.bulk.delete'),
+    "bulk.keep": window.JournalI18n.render('journal.window.home.originals.copy.bulk.keep'),
+    "confirm.heading_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.heading.one'),
+    "confirm.heading_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.heading.many'),
+    "confirm.days_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.days.one'),
+    "confirm.days_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.days.many'),
+    "confirm.body_policy_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.one'),
+    "confirm.body_policy_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.many'),
+    "confirm.body_policy_one_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.one.nodays'),
+    "confirm.body_policy_many_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.many.nodays'),
+    "confirm.body_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.one'),
+    "confirm.body_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.many'),
+    "confirm.body_policy_selected": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.selected'),
+    "confirm.body_policy_selected_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.policy.selected.nodays'),
+    "confirm.body_offload_selected": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.body.offload.selected'),
+    "confirm.mixed_lead": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.lead'),
+    "confirm.mixed_offload_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.offload.one'),
+    "confirm.mixed_offload_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.offload.many'),
+    "confirm.mixed_policy_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.one'),
+    "confirm.mixed_policy_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.many'),
+    "confirm.mixed_policy_one_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.one.nodays'),
+    "confirm.mixed_policy_many_nodays": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.mixed.policy.many.nodays'),
+    "confirm.go_trash": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.trash'),
+    "confirm.go_one": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.one'),
+    "confirm.go_many": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.go.many'),
+    "confirm.cancel": window.JournalI18n.render('journal.window.home.originals.copy.confirm.cancel'),
+    "confirm.recover.heading": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.heading'),
+    "confirm.recover.body": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.body'),
+    "confirm.recover.go": window.JournalI18n.renderEnglish('journal.window.home.originals.copy.confirm.recover.go'),
+    "done.clause_deleted_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.deleted.one'),
+    "done.clause_deleted_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.deleted.many'),
+    "done.clause_trashed_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.trashed.one'),
+    "done.clause_trashed_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.trashed.many'),
+    "done.space_one": window.JournalI18n.render('journal.window.home.originals.copy.done.space.one'),
+    "done.space_many": window.JournalI18n.render('journal.window.home.originals.copy.done.space.many'),
+    "done.space_one_nodate": window.JournalI18n.render('journal.window.home.originals.copy.done.space.one.nodate'),
+    "done.space_many_nodate": window.JournalI18n.render('journal.window.home.originals.copy.done.space.many.nodate'),
+    "done.open_trash": window.JournalI18n.render('journal.window.home.originals.copy.done.open.trash'),
+    "done.clause_not_removed_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.removed.one'),
+    "done.clause_not_removed_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.removed.many'),
+    "done.clause_halted": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.halted'),
+    "done.refused_none_one": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.none.one'),
+    "done.refused_none_many": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.none.many'),
+    "done.refused_item": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.item'),
+    "done.refused_item_unnamed": window.JournalI18n.render('journal.window.home.originals.copy.done.refused.item.unnamed'),
+    "done.unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.unknown'),
+    "done.kept_policy": window.JournalI18n.render('journal.window.home.originals.copy.done.kept.policy'),
+    "done.kept_offload": window.JournalI18n.render('journal.window.home.originals.copy.done.kept.offload'),
+    "done.too_many": window.JournalI18n.render('journal.window.home.originals.copy.done.too.many'),
+    "done.declined_failed": window.JournalI18n.render('journal.window.home.originals.copy.done.declined.failed'),
+    "done.clause_kept_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.kept.one'),
+    "done.clause_kept_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.kept.many'),
+    "done.clause_not_kept_one": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.kept.one'),
+    "done.clause_not_kept_many": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.not.kept.many'),
+    "done.clause_nothing_deleted": window.JournalI18n.render('journal.window.home.originals.copy.done.clause.nothing.deleted'),
+    "done.declined_unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.declined.unknown'),
+    "done.recovered": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered'),
+    "done.recovered_none": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered.none'),
+    "done.recovered_leftover": window.JournalI18n.render('journal.window.home.originals.copy.done.recovered.leftover'),
+    "done.recover_failed": window.JournalI18n.render('journal.window.home.originals.copy.done.recover.failed'),
+    "done.recover_unknown": window.JournalI18n.render('journal.window.home.originals.copy.done.recover.unknown'),
+    "failed.badge": window.JournalI18n.render('journal.window.home.originals.copy.failed.badge'),
+    "failed.body": window.JournalI18n.render('journal.window.home.originals.copy.failed.body'),
+    "failed.finish": window.JournalI18n.render('journal.window.home.originals.copy.failed.finish')
   });
 
   const LIST_URL = '/app/home/api/removals';
@@ -216,8 +216,8 @@
   // made the list read like a log file. G1-202.
   function identityLabel(row) {
     const date = window.JournalFormat.dayFull(row.day);
-    const time = window.JournalFormat.segmentTimeOfDay(row.dir);
-    return time === 'time unavailable' ? date : date + ' ' + time;
+    const time = window.JournalFormat.segmentTimeOfDay(row.dir, { omitMissing: true });
+    return time === null ? date : date + ' ' + time;
   }
 
   function identityText(row) {
@@ -264,7 +264,7 @@
     const checked = selected.has(row.id) ? ' checked' : '';
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row), row)
-      + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '> select this item</label>'
+      + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + `>${window.JournalI18n.renderHtml('journal.window.home.originals.select.item')}</label>`
       + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
       + '<button type="button" data-removal-action="approve" data-mark-id="' + escapeHtml(row.id) + '">'
       + copy("row.delete")
@@ -421,11 +421,11 @@
   }
 
   function pagesHtml() {
-    return '<nav class="removals-card-pages" aria-label="originals pages"><button type="button" data-removal-action="previous"'
-      + (previousOffsets.length === 0 ? ' disabled' : '') + '>previous</button><span>'
+    return `<nav class="removals-card-pages" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.originals.pages')}"><button type="button" data-removal-action="previous"`
+      + (previousOffsets.length === 0 ? ' disabled' : '') + `>${window.JournalI18n.renderHtml('journal.window.home.visible.text.previous')}</button><span>`
       + copy('page.range', { first: pageOffset + 1, last: pageOffset + rows.length, total: totalRows })
       + '</span><button type="button" data-removal-action="next"'
-      + (nextOffset === null ? ' disabled' : '') + '>next</button></nav>';
+      + (nextOffset === null ? ' disabled' : '') + `>${window.JournalI18n.renderHtml('journal.window.home.visible.text.next')}</button></nav>`;
   }
 
   function render() {
@@ -440,7 +440,7 @@
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
-        + '</p><details class="removals-review"' + (expanded ? ' open' : '') + '><summary>review originals' + (rows.some(row => row.state === 'failed') ? ' · unfinished deletions need review' : '') + '</summary>'
+        + '</p><details class="removals-review"' + (expanded ? ' open' : '') + `><summary>${window.JournalI18n.renderHtml('journal.window.home.disclosure.label.review.originals')}` + (rows.some(row => row.state === 'failed') ? window.JournalI18n.renderHtml('journal.window.home.originals.failed.review') : '') + '</summary>'
         + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">' + copy('page.selection') + '</p>' + cardRows()
         + pagesHtml()
         + finishHtml() + '</details>' + confirmationHtml() + outcomeHtml + operationHtml() + '</section>';

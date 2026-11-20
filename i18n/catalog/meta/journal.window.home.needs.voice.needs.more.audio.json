@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you voice needs more audio in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice needs more audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "139688dc22d02b2fc3d21b32f6e3f9815b5b4eb533f33bfd03abb62163f736f2",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

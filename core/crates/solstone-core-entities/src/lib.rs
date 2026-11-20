@@ -14,7 +14,10 @@ mod tidy;
 mod trash_delete;
 mod voice_samples;
 
-pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note, edge_aliases};
+pub use model::{
+    ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note, connections_horizon_note,
+    edge_aliases, entities_copy,
+};
 pub use router::api_router;
 #[cfg(test)]
 pub(crate) use router::router;

@@ -1,0 +1,16 @@
+{
+  "description": "Originals card subhead in the journal's home view.",
+  "context": "Journal window, home view. Originals card subhead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc4bfd848913995dcd39746dcce9f113bf67e160972db3a7b067cb705e60d8e2",
+  "max_length": 166,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

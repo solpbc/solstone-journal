@@ -1,0 +1,16 @@
+{
+  "description": "Originals card too large in the journal's home view.",
+  "context": "Journal window, home view. Originals card too large.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d474aec22f7ddba33d3c8cf54a1e09db8329956f1191b6df30f19105ca0d2478",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -22,7 +22,7 @@
     const AGENTS_STATE_URL = '/app/agents/api/state';
     const SETUP_ACTION_URL = '/init/api/action';
     const ORIGINALS_PAGE = '/app/home/originals/';
-    const WAITING_HEADING = 'waiting on you';
+    const WAITING_HEADING = window.JournalI18n.render('journal.window.home.attention.heading');
     // The page's sections in the order they stand. A live refresh that brings a
     // section back inserts it after whichever of these is already there.
     const SURFACE_ORDER = ['vitals', 'getting-started', 'account', 'pair', 'welcome'];
@@ -127,7 +127,7 @@
       return '<div class="surface-state surface-state--loading" role="status">'
         + '<div class="surface-state-spinner" aria-hidden="true"></div>'
         + '<span class="surface-state-text" data-role="loading-status">' + esc(text) + '</span>'
-        + '<span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>'
+        + `<span class="surface-state-still" data-role="still-working" aria-hidden="true">${window.JournalI18n.renderHtml('journal.window.chrome.still.working')}</span>`
         + '</div>';
     }
 
@@ -135,7 +135,7 @@
       if (window.SurfaceState && typeof window.SurfaceState.error === 'function') {
         return window.SurfaceState.error({
           heading,
-          desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
+          desc: window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.home.window.explanation.reload.to.try.again'),
           retry: true,
           serverMessage: window.SurfaceState.serverMessageFrom(error),
           detail: error
@@ -143,7 +143,7 @@
       }
       return '<div class="surface-state surface-state--error" role="alert">'
         + '<h2 class="surface-state-heading">' + esc(heading) + '</h2>'
-        + '<button type="button" class="surface-state-retry">Try again</button>'
+        + `<button type="button" class="surface-state-retry">${window.JournalI18n.renderHtml('journal.window.home.button.label.try.again')}</button>`
         + '</div>';
     }
 
@@ -169,22 +169,22 @@
 
     function validatePulse(data) {
       if (!isPlainObject(data) || !isPlainObject(data.health_glance)) {
-        throw malformedHomeResponse(PULSE_URL, 'Malformed pulse response');
+        throw malformedHomeResponse(PULSE_URL, window.JournalI18n.render('journal.window.home.response.pulse.invalid'));
       }
       if (!Object.prototype.hasOwnProperty.call(data, 'narrative_content')) {
-        throw malformedHomeResponse(PULSE_URL, 'Malformed pulse response');
+        throw malformedHomeResponse(PULSE_URL, window.JournalI18n.render('journal.window.home.response.pulse.invalid'));
       }
       if (!Array.isArray(data.needs_you_items)) {
-        throw malformedHomeResponse(PULSE_URL, 'Malformed pulse response');
+        throw malformedHomeResponse(PULSE_URL, window.JournalI18n.render('journal.window.home.response.pulse.invalid'));
       }
     }
 
     function validateBriefing(data) {
       if (!isPlainObject(data) || typeof data.exists !== 'boolean' || typeof data.phase !== 'string') {
-        throw malformedHomeResponse(BRIEFING_URL, 'Malformed briefing response');
+        throw malformedHomeResponse(BRIEFING_URL, window.JournalI18n.render('journal.window.home.response.briefing.invalid'));
       }
       if (data.exists && !isPlainObject(data.sections)) {
-        throw malformedHomeResponse(BRIEFING_URL, 'Malformed briefing response');
+        throw malformedHomeResponse(BRIEFING_URL, window.JournalI18n.render('journal.window.home.response.briefing.invalid'));
       }
     }
 
@@ -239,7 +239,7 @@
         '<div class="surface-state-refresh-error">'
         + window.SurfaceState.error({
           heading,
-          desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
+          desc: window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.home.window.explanation.reload.to.try.again'),
           serverMessage: window.SurfaceState.serverMessageFrom(error),
           detail: error
         })
@@ -258,7 +258,7 @@
 
     function loadPulse() {
       if (!surface) return;
-      surface.innerHTML = surfaceLoading('loading your day…');
+      surface.innerHTML = surfaceLoading(window.JournalI18n.render('journal.window.loading.home'));
       const read = ++pulseReadVersion;
       return readPulse()
         .then(function (data) {
@@ -274,7 +274,7 @@
           // fresh one rather than draw what was read before the failure.
           earlyBriefing = null;
           logError(error, 'home: loadPulse failed');
-          surface.innerHTML = surfaceError(error, "Couldn't load pulse");
+          surface.innerHTML = surfaceError(error, window.JournalI18n.render('journal.window.home.response.pulse.failed'));
           bindSurfaceRetry();
           reportHomeReady('error');
         });
@@ -324,15 +324,15 @@
     function heldWorkIssues() {
       if (!heldWorkSnapshot) return [];
       const queues = heldWorkSnapshot.queues;
-      const names = { daily: 'daily processing', activity: 'activity processing',
-        segment: 'segment processing', flush: 'finishing activities', weekly: 'weekly reflection',
-        indexer: 'search updates' };
+      const names = { daily: window.JournalI18n.render('journal.window.home.held.daily'), activity: window.JournalI18n.render('journal.window.home.held.activity'),
+        segment: window.JournalI18n.render('journal.window.home.held.segment'), flush: window.JournalI18n.render('journal.window.home.held.flush'), weekly: window.JournalI18n.render('journal.window.home.held.weekly'),
+        indexer: window.JournalI18n.render('journal.window.home.held.search') };
       const scopes = heldWorkSnapshot.held.filter(hold => queues[hold.partition] > 0)
-        .map(hold => names[hold.partition] || 'queued processing');
+        .map(hold => names[hold.partition] || window.JournalI18n.render('journal.window.home.held.queued'));
       if (heldWorkSnapshot.queue_hold && Object.values(queues).some(count => count > 0)) {
-        scopes.unshift('all queued work');
+        scopes.unshift(window.JournalI18n.render('journal.window.home.held.all'));
       }
-      return scopes.map(scope => ({ text: scope + ' is on hold for a safety check.',
+      return scopes.map(scope => ({ text: window.JournalI18n.render('journal.window.home.held.reason', [['scope', String(scope)]]),
         severity: 'amber', href: '/app/health/#processingHolds' }));
     }
 
@@ -340,7 +340,7 @@
       if (pulse.backup?.available !== true || typeof pulse.backup.issue !== 'boolean') return;
       backupObservedAt = Date.now();
       lastBackupIssue = pulse.backup.issue === true
-        ? { text: "the backup key couldn't open your backup destination. check backup in health.",
+        ? { text: window.JournalI18n.render('journal.window.home.text.the.backup.key.couldn.t.open'),
             severity: 'amber', href: '/app/health/#backup' } : null;
     }
 
@@ -355,26 +355,26 @@
       const backupIssues = lastBackupIssue ? [lastBackupIssue] : [];
       const current = (pulseReadFailed ? [] : baseIssues).concat(workCurrent ? holds : [])
         .concat(backupCurrent ? backupIssues : []);
-      const retained = issue => Object.assign({}, issue, { text: 'last known: ' + issue.text, severity: 'amber' });
+      const retained = issue => Object.assign({}, issue, { text: window.JournalI18n.render('journal.window.home.vitals.last.known', [['issue', String(issue.text)]]), severity: 'amber' });
       g.issues = baseIssues.map(issue => pulseReadFailed ? retained(issue) : issue)
         .concat(holds.map(issue => workCurrent ? issue : retained(issue)))
         .concat(backupIssues.map(issue => backupCurrent ? issue : retained(issue)));
       const notes = [];
-      const checked = at => at ? ' last check: ' + new Date(at).toLocaleString() + '.' : '';
-      if (pulseReadFailed) notes.push({text:'service status is unavailable.' + checked(pulseObservedAt), href:'/app/health/'});
+      const checked = at => at ? window.JournalI18n.render('journal.window.home.vitals.last.check', [['stamp', String(new Date(at).toLocaleString(window.JournalI18n.formatLocale))]]) : '';
+      if (pulseReadFailed) notes.push({text:window.JournalI18n.render('journal.window.home.text.service.status.is.unavailable') + checked(pulseObservedAt), href:'/app/health/'});
       const workGrace = !queuedWorkAuthoritySeen && Date.now() - pageLoadedAt < 15000;
-      if (!workCurrent && !workGrace) notes.push({text:'queued work status is unavailable.' + checked(heldWorkSnapshot?.observedAt), href:'/app/health/#processingHolds'});
+      if (!workCurrent && !workGrace) notes.push({text:window.JournalI18n.render('journal.window.home.text.queued.work.status.is.unavailable') + checked(heldWorkSnapshot?.observedAt), href:'/app/health/#processingHolds'});
       const backupUnavailable = !backupCurrent && (pulse.backup || backupObservedAt);
-      if (backupUnavailable) notes.push({text:'backup status is unavailable.' + checked(backupObservedAt), href:'/app/health/#backup'});
+      if (backupUnavailable) notes.push({text:window.JournalI18n.render('journal.window.home.text.backup.status.is.unavailable') + checked(backupObservedAt), href:'/app/health/#backup'});
       if (current.length) {
         g.verdict = 'attention';
         g.severity = current.some(issue => issue.severity === 'red') ? 'red' : 'amber';
-        g.headline = current.length === 1 ? '1 thing needs your attention' : current.length + ' things need your attention';
+        g.headline = current.length === 1 ? window.JournalI18n.render('journal.window.home.window.explanation.thing.needs.your.attention') : current.length + window.JournalI18n.render('journal.window.home.window.explanation.things.need.your.attention');
       } else if (notes.length) {
         g.verdict = 'unavailable';
         g.severity = 'amber';
-        g.headline = pulseReadFailed ? 'service status is unavailable right now.'
-          : (!workCurrent && !workGrace) ? 'queued work status is unavailable right now.' : 'backup status is unavailable right now.';
+        g.headline = pulseReadFailed ? window.JournalI18n.render('journal.window.home.window.explanation.service.status.is.unavailable.right.now')
+          : (!workCurrent && !workGrace) ? window.JournalI18n.render('journal.window.home.window.explanation.queued.work.status.is.unavailable.right') : window.JournalI18n.render('journal.window.home.window.explanation.backup.status.is.unavailable.right.now');
         g.last_observation = null;
         g.cta = null;
       }
@@ -429,9 +429,9 @@
     function originalsRow() {
       if (originalsTotal === undefined || originalsTotal === 0) return null;
       if (originalsTotal === null) {
-        return { text: "originals · the list couldn't be loaded.", href: ORIGINALS_PAGE };
+        return { text: window.JournalI18n.render('journal.window.home.text.originals.the.list.couldn.t.be'), href: ORIGINALS_PAGE };
       }
-      return { text: 'originals · ' + plural(originalsTotal, 'item', 'items'), href: ORIGINALS_PAGE };
+      return { text: (originalsTotal === 1 ? window.JournalI18n.render('journal.window.home.originals.heading.one') : window.JournalI18n.render('journal.window.home.originals.heading.many', [['count', String(originalsTotal)]])), href: ORIGINALS_PAGE };
     }
 
     function waitingRows(pulse, glance) {
@@ -470,11 +470,11 @@
       const attention = g.verdict === 'attention' && rows.length > 0;
       let html = '<div class="pulse-status" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
         + '<div class="pulse-vitals">'
-        + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + '" aria-hidden="true"></span>'
+        + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + `" aria-hidden="true"></span>`
         + '<span class="pulse-vitals-verdict ' + esc(severity) + '" id="pulse-status-headline">'
         + esc(attention ? WAITING_HEADING : (g.headline || '')) + '</span></div>';
       if (!g.issues?.length && g.last_observation) {
-        html += '<div class="pulse-vitals-sep"></div><div class="pulse-vitals-item">last reached your journal ' + esc(g.last_observation) + '</div>';
+        html += `<div class="pulse-vitals-sep"></div><div class="pulse-vitals-item">${window.JournalI18n.renderHtml('journal.window.home.visible.text.last.reached.your.journal')} ` + esc(g.last_observation) + '</div>';
       }
       // The way to add a device stays beside any count: a journal with no
       // devices needs it most on its first day.
@@ -485,7 +485,7 @@
       notes.forEach(note => {
         html += '<a class="pulse-vitals-note" href="' + esc(note.href) + '">' + esc(note.text) + ' →</a>';
       });
-      html += '<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">health →</a>';
+      html += `<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">${window.JournalI18n.renderHtml('journal.window.home.link.label.health')}</a>`;
       // Not yet, and that's fine: a calm row on any verdict, never a chip and
       // never in the count (the day-0 rule).
       const note = isPlainObject(g.note) ? g.note : null;
@@ -524,7 +524,7 @@
 
     function renderWelcomeHtml() {
       return '<p class="pulse-welcome" data-home-surface="welcome">'
-        + 'this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.'
+        + window.JournalI18n.renderHtml('journal.window.home.window.explanation.this.is.where.your.day.comes')
         + '</p>';
     }
 
@@ -534,7 +534,7 @@
       }
       const doneGb = (done / 1e9).toFixed(1);
       const totalGb = (total / 1e9).toFixed(1);
-      return ' · ' + doneGb + ' GB of ' + totalGb + ' GB';
+      return window.JournalI18n.render('journal.window.home.download.quantity', [['done', String(doneGb)], ['total', String(totalGb)]]);
     }
 
     function renderDownloadBar(kind, done, total) {
@@ -558,28 +558,28 @@
 
       let innerHtml = '';
       if (state !== 'heard') {
-        innerHtml += '<h4>say a sentence out loud</h4>'
-          + '<p>it appears here as text.</p>';
+        innerHtml += `<h4>${window.JournalI18n.renderHtml('journal.window.home.visible.text.say.a.sentence.out.loud')}</h4>`
+          + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.it.appears.here.as.text')}</p>`;
       }
 
       if (state === 'waiting') {
-        innerHtml += '<p>waiting for the next segment. this can take a few minutes.</p>';
+        innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.waiting.for.the.next.segment.this')}</p>`;
       } else if (state === 'no_audio') {
-        innerHtml += '<p>nothing with sound has reached your journal yet. turn on the microphone in the solstone app to try this.</p>';
+        innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.nothing.with.sound.has.reached.your')}</p>`;
       } else if (state === 'transcribing') {
-        innerHtml += '<p>the segment from ' + escTime + ' hasn\'t been written out yet.</p>';
+        innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.the.segment.from')} ` + escTime + ` ${window.JournalI18n.renderHtml('journal.window.home.visible.text.hasn.t.been.written.out.yet')}</p>`;
       } else if (state === 'nothing_heard') {
-        innerHtml += '<p>no speech was found in the segment from ' + escTime + '. say something, and it shows up in the next one.</p>';
+        innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.speech.was.found.in.the')} ` + escTime + '. say something, and it shows up in the next one.</p>';
       } else if (state === 'failed') {
-        innerHtml += '<p>the segment from ' + escTime + ' couldn\'t be written out.</p>'
-          + '<a href="' + esc(proof.href || '/app/health/') + '">see health →</a>';
+        innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.the.segment.from')} ` + escTime + ` ${window.JournalI18n.renderHtml('journal.window.home.visible.text.couldn.t.be.written.out')}</p>`
+          + '<a href="' + esc(proof.href || '/app/health/') + `">${window.JournalI18n.renderHtml('journal.window.home.action.see.health')}</a>`;
       } else if (state === 'heard') {
         if (proof.fresh === true) {
-          innerHtml += '<p>from ' + escTime + ': <q>' + esc(proof.text || '') + '</q></p>'
-            + '<a href="' + esc(proof.href || '#') + '">open it →</a>';
+          innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.from')} ` + escTime + ': <q>' + esc(proof.text || '') + '</q></p>'
+            + '<a href="' + esc(proof.href || '#') + `">${window.JournalI18n.renderHtml('journal.window.home.action.open.it')}</a>`;
         } else {
-          innerHtml += '<p>speech from ' + escTime + ' was written out.</p>'
-            + '<a href="' + esc(proof.href || '#') + '">open it →</a>';
+          innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.speech.from')} ` + escTime + ` ${window.JournalI18n.renderHtml('journal.window.home.visible.text.was.written.out')}</p>`
+            + '<a href="' + esc(proof.href || '#') + `">${window.JournalI18n.renderHtml('journal.window.home.action.open.it')}</a>`;
         }
       }
 
@@ -622,18 +622,17 @@
 
     function renderDeviceLine(device) {
       const state = device.state || 'other';
-      const name = esc(device.name || '');
       let copy = '';
       if (state === 'awaiting_first') {
-        copy = 'the solstone app on ' + name + ' is paired. what you share with it arrives in your journal about every 5 minutes.';
+        copy = window.JournalI18n.renderHtml('journal.window.home.device.paired.awaiting', [['name', String(device.name || '')]]);
       } else if (state === 'receiving' || state === 'quiet') {
         if (device.last_added_label) {
-          copy = 'the solstone app on ' + name + ' last added to your journal ' + esc(device.last_added_label) + '.';
+          copy = window.JournalI18n.renderHtml('journal.window.home.device.paired.added', [['name', String(device.name || '')], ['duration', String(device.last_added_label)]]);
         } else {
-          copy = 'the solstone app on ' + name + ' is paired.';
+          copy = window.JournalI18n.renderHtml('journal.window.home.device.paired', [['name', String(device.name || '')]]);
         }
       } else {
-        copy = 'the solstone app on ' + name + ' is paired.';
+        copy = window.JournalI18n.renderHtml('journal.window.home.device.paired', [['name', String(device.name || '')]]);
       }
       return '<div class="pulse-device-line" data-device-state="' + esc(state) + '">'
         + '<p>' + copy + '</p>'
@@ -647,25 +646,25 @@
         const address = door.address;
         const cmd = 'claude mcp add --transport http journal "' + address + '"';
         commandBlock = '<div class="pulse-agent-command" data-agent-command>'
-          + '<p>on your journal\'s computer, run:</p>'
+          + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.on.your.journal.s.computer.run')}</p>`
           + '<pre><code>' + esc(cmd) + '</code></pre>'
-          + '<button type="button" class="pulse-copy-button" data-copy-agent-command data-command="' + esc(cmd) + '">copy</button>'
-          + '<p>then type <code>/mcp</code> in Claude Code, choose <code>journal</code> and authenticate.</p>'
+          + '<button type="button" class="pulse-copy-button" data-copy-agent-command data-command="' + esc(cmd) + `">${window.JournalI18n.renderHtml('journal.window.home.action.copy')}</button>`
+          + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.then.type')} <code>/mcp</code> ${window.JournalI18n.renderHtml('journal.window.home.setup.agent.choose.connector', [['agent', 'Claude Code']])} <code>journal</code> ${window.JournalI18n.renderHtml('journal.window.home.visible.text.and.authenticate')}</p>`
           + '</div>';
       }
       return '<div class="pulse-getting-started-step" data-agent-step>'
-        + '<h4>connect an agent</h4>'
-        + '<p>let Claude Code or another agent read your journal.</p>'
+        + `<h4>${window.JournalI18n.renderHtml('journal.window.home.visible.text.connect.an.agent')}</h4>`
+        + `<p>${window.JournalI18n.renderHtml('journal.window.home.setup.agent.description', [['agent', 'Claude Code']])}</p>`
         + commandBlock
-        + '<a href="/app/agents/">other agents and pairing codes →</a>'
+        + `<a href="/app/agents/">${window.JournalI18n.renderHtml('journal.window.home.link.label.other.agents.and.pairing.codes')}</a>`
         + '</div>';
     }
 
     function renderPhoneStepHtml() {
       return '<div class="pulse-getting-started-step" data-phone-step>'
-        + '<h4>add your phone</h4>'
-        + '<p>get solstone on your phone at solstone.app/mobile, then pair it with your journal.</p>'
-        + '<a href="/app/network/#devices">pair a device →</a>'
+        + `<h4>${window.JournalI18n.renderHtml('journal.window.home.visible.text.add.your.phone')}</h4>`
+        + `<p>${window.JournalI18n.renderHtml('journal.window.home.setup.phone.download', [['site', 'solstone.app/mobile']])}</p>`
+        + `<a href="/app/network/#devices">${window.JournalI18n.renderHtml('journal.window.home.link.label.pair.a.device')}</a>`
         + '</div>';
     }
 
@@ -675,27 +674,27 @@
       let href = '';
       let linkText = '';
       if (step === 'choose') {
-        title = 'choose where the thinking happens';
-        body = '<p>your journal keeps everything until you do.</p>';
+        title = window.JournalI18n.render('journal.window.home.window.explanation.choose.where.the.thinking.happens');
+        body = `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.your.journal.keeps.everything.until.you')}</p>`;
         href = '/app/thinking/';
-        linkText = 'choose →';
+        linkText = window.JournalI18n.render('journal.window.home.setup.action.choose');
       } else if (step === 'cant_run') {
-        title = 'your journal\'s computer can\'t run local thinking';
-        body = '<p>choose another way when you\'re ready. your journal keeps everything until then.</p>';
+        title = window.JournalI18n.render('journal.window.home.window.explanation.your.journal.s.computer.can.t');
+        body = `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.choose.another.way.when.you.re')}</p>`;
         href = '/app/thinking/';
-        linkText = 'choose →';
+        linkText = window.JournalI18n.render('journal.window.home.setup.action.choose');
       } else if (step === 'byo') {
-        title = 'finish setting up your own model';
+        title = window.JournalI18n.render('journal.window.home.window.explanation.finish.setting.up.your.own.model');
         href = '/app/thinking/#byo-setup';
-        linkText = 'finish →';
+        linkText = window.JournalI18n.render('journal.window.home.setup.action.finish');
       } else if (step === 'confidential') {
-        title = 'finish setting up confidential processing';
+        title = window.JournalI18n.render('journal.window.home.window.explanation.finish.setting.up.confidential.processing');
         href = '/app/thinking/#confidential-setup';
-        linkText = 'finish →';
+        linkText = window.JournalI18n.render('journal.window.home.setup.action.finish');
       } else if (step === 'local') {
-        title = 'finish setting up local thinking';
+        title = window.JournalI18n.render('journal.window.home.window.explanation.finish.setting.up.local.thinking');
         href = '/app/thinking/#local-setup';
-        linkText = 'finish →';
+        linkText = window.JournalI18n.render('journal.window.home.setup.action.finish');
       } else {
         return '';
       }
@@ -710,7 +709,7 @@
       if (!firstMinutesPayload) return '';
 
       let html = '<div class="pulse-getting-started" id="getting-started" data-home-surface="getting-started">'
-        + '<h2>getting started</h2>';
+        + `<h2>${window.JournalI18n.renderHtml('journal.window.home.section.heading.getting.started')}</h2>`;
 
       if (firstMinutesPayload.devices_known !== false && Array.isArray(firstMinutesPayload.devices)) {
         firstMinutesPayload.devices.forEach(function (device) {
@@ -726,14 +725,14 @@
             const qty = formatDownloadQuantity(dl.thinking.bytes_done, dl.thinking.bytes_total);
             const bar = renderDownloadBar('thinking', dl.thinking.bytes_done, dl.thinking.bytes_total);
             html += '<div class="pulse-download" data-download="thinking" data-download-state="downloading">'
-              + '<p>downloading the local model' + qty + '</p>'
+              + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.downloading.the.local.model')}` + qty + '</p>'
               + bar
-              + '<a href="/app/thinking/#local-setup">cancel on the thinking page →</a>'
+              + `<a href="/app/thinking/#local-setup">${window.JournalI18n.renderHtml('journal.window.home.link.label.cancel.on.the.thinking.page')}</a>`
               + '</div>';
           } else if ((state === 'error' || state === 'cancelled') && setupPayload?.thinking?.capability !== 'blocked') {
             html += '<div class="pulse-download" data-download="thinking" data-download-state="' + esc(state) + '">'
-              + '<p>the local model didn&#39;t finish downloading.</p>'
-              + '<a href="/app/thinking/#local-setup">try again on the thinking page →</a>'
+              + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.the.local.model.didn.t.finish')}</p>`
+              + `<a href="/app/thinking/#local-setup">${window.JournalI18n.renderHtml('journal.window.home.link.label.try.again.on.the.thinking.page')}</a>`
               + '</div>';
           }
         }
@@ -743,7 +742,7 @@
             const qty = formatDownloadQuantity(dl.speech.bytes_done, dl.speech.bytes_total);
             const bar = renderDownloadBar('speech', dl.speech.bytes_done, dl.speech.bytes_total);
             html += '<div class="pulse-download" data-download="speech" data-download-state="downloading">'
-              + '<p>downloading the speech model' + qty + '</p>'
+              + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.downloading.the.speech.model')}` + qty + '</p>'
               + bar
               + '</div>';
           } else if (state === 'error' || state === 'cancelled') {
@@ -764,10 +763,10 @@
               // Setup actions answer only on the journal's own computer, so a
               // linked device sees the line without a button it can't use.
               const retry = setupPayload.actions === true
-                ? '<button type="button" data-speech-retry' + (speechRetryInFlight ? ' disabled' : '') + '>try again</button>'
+                ? '<button type="button" data-speech-retry' + (speechRetryInFlight ? ' disabled' : '') + `>${window.JournalI18n.renderHtml('journal.window.home.visible.text.try.again')}</button>`
                 : '';
               html += '<div class="pulse-download" data-download="speech" data-download-state="' + esc(state) + '">'
-                + '<p>the speech model didn&#39;t finish downloading.</p>'
+                + `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.the.speech.model.didn.t.finish')}</p>`
                 + retry
                 + '</div>';
             }
@@ -780,15 +779,15 @@
         const time = window.JournalFormat ? window.JournalFormat.timestamp(seg.start_at) : seg.start_at;
         let text = '';
         if (seg.thinking === 'read') {
-          text = 'your first segment, from ' + esc(time) + ', has arrived, and thinking has read it.';
+          text = window.JournalI18n.renderHtml('journal.window.home.first.segment.read', [['time', String(time)]]);
         } else if (seg.thinking === 'pending') {
-          text = 'your first segment, from ' + esc(time) + ', has arrived. thinking hasn\'t caught up with it yet.';
+          text = window.JournalI18n.renderHtml('journal.window.home.first.segment.pending', [['time', String(time)]]);
         } else {
-          text = 'your first segment, from ' + esc(time) + ', has arrived.';
+          text = window.JournalI18n.renderHtml('journal.window.home.first.segment.arrived', [['time', String(time)]]);
         }
         html += '<div class="pulse-first-segment" data-segment-thinking="' + esc(seg.thinking || 'none') + '">'
           + '<p>' + text + '</p>'
-          + '<a href="' + esc(seg.href || '#') + '">open it →</a>'
+          + '<a href="' + esc(seg.href || '#') + `">${window.JournalI18n.renderHtml('journal.window.home.action.open.it')}</a>`
           + '</div>';
       }
 
@@ -829,7 +828,7 @@
       }
 
       if (stepsHtml.length > 0) {
-        html += '<h3 data-getting-started-next>next</h3>' + stepsHtml.join('');
+        html += `<h3 data-getting-started-next>${window.JournalI18n.renderHtml('journal.window.home.section.heading.next')}</h3>` + stepsHtml.join('');
       }
 
       html += '</div>';
@@ -1000,16 +999,15 @@
       const scope = pulse.narrative_window;
       const keys = ['segments', 'activities', 'input_segments', 'input_activities'];
       if (!scope || !keys.every(key => Number.isSafeInteger(scope[key]) && scope[key] >= 0)) {
-        return '<p class="pulse-narrative-meta" data-narrative-scope="unknown">what this summary covers wasn\'t saved with it.</p>';
+        return `<p class="pulse-narrative-meta" data-narrative-scope="unknown">${window.JournalI18n.renderHtml('journal.window.home.visible.text.what.this.summary.covers.wasn.t')}</p>`;
       }
-      let text = 'based on ' + scope.segments + ' of ' + scope.input_segments + ' processed segments and '
-        + scope.activities + ' of ' + scope.input_activities + ' activity entries in this batch. entries may overlap; this isn\'t a whole-day summary.';
+      let text = window.JournalI18n.render('journal.window.home.narrative.scope', [['segments', String(scope.segments)], ['expectedsegments', String(scope.input_segments)], ['activities', String(scope.activities)], ['expectedactivities', String(scope.input_activities)]]);
       if (scope.since_ms > 0 && Number.isFinite(scope.since_ms) && Math.abs(scope.since_ms) <= 8640000000000000) {
-        text += ' processing window starts at ' + window.JournalFormat.timestamp(new Date(scope.since_ms).toISOString()) + '. this is processing time, not when the activity happened.';
+        text += window.JournalI18n.render('journal.window.home.narrative.scope.since', [['time', String(window.JournalFormat.timestamp(new Date(scope.since_ms).toISOString()))]]);
       }
       const gaps = Array.isArray(scope.gaps) ? scope.gaps : [];
-      return '<details class="pulse-narrative-meta"><summary>what this summary covers</summary><p>' + esc(text) + '</p>'
-        + (gaps.length ? '<p>some source material was unavailable:</p><ul>' + gaps.map(gap => '<li>' + esc(gap) + '</li>').join('') + '</ul>' : '') + '</details>';
+      return `<details class="pulse-narrative-meta"><summary>${window.JournalI18n.renderHtml('journal.window.home.disclosure.label.what.this.summary.covers')}</summary><p>` + esc(text) + '</p>'
+        + (gaps.length ? `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.some.source.material.was.unavailable')}</p><ul>` + gaps.map(gap => '<li>' + esc(gap) + '</li>').join('') + '</ul>' : '') + '</details>';
     }
 
     // The today side's written account. The tab is its heading, so it carries
@@ -1017,19 +1015,19 @@
     function renderNarrativeHtml(pulse) {
       if (pulse.narrative_content !== null && pulse.narrative_content !== undefined) {
         const updated = pulse.narrative_updated_at
-          ? '<span>updated at ' + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</span>'
+          ? `<span>${window.JournalI18n.renderHtml('journal.window.home.visible.text.updated.at')} ` + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</span>'
           : '';
         return '<div class="pulse-narrative" id="pulse-narrative">'
           + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
           + '<div class="pulse-account-meta">' + updated
-          + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">how this was written →</a>'
+          + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + `">${window.JournalI18n.renderHtml('journal.window.home.action.how.this.was.written')}</a>`
           + '</div>'
           + narrativeScope(pulse)
           + '</div>';
       }
       const empty = Number(pulse.segment_count || 0) > 0
-        ? 'analysis will be available after the next processing cycle.'
-        : 'no narrative yet. one will appear after some audio goes into your journal.';
+        ? window.JournalI18n.render('journal.window.home.window.explanation.analysis.will.be.available.after.the')
+        : window.JournalI18n.render('journal.window.home.window.explanation.no.narrative.yet.one.will.appear');
       return '<div class="pulse-narrative" id="pulse-narrative">'
         + '<div class="pulse-narrative-empty">' + esc(empty) + '</div>'
         + '</div>';
@@ -1044,7 +1042,7 @@
       if (!reflection || typeof reflection !== 'object') return '';
       if (reflection.state === 'week' && typeof reflection.url === 'string' && reflection.url) {
         let html = '<div class="pulse-reflection" data-home-surface="reflection">'
-          + '<h2 class="pulse-section-header">your week</h2>'
+          + `<h2 class="pulse-section-header">${window.JournalI18n.renderHtml('journal.window.home.section.heading.your.week')}</h2>`
           + '<div class="pulse-reflection-title">' + esc(reflection.title || '') + '</div>';
         if (typeof reflection.memory === 'string' && reflection.memory) {
           html += '<div class="pulse-reflection-memory">' + markdown(reflection.memory) + '</div>';
@@ -1052,7 +1050,7 @@
         if (typeof reflection.empty === 'string' && reflection.empty) {
           html += '<div class="pulse-reflection-empty">' + esc(reflection.empty) + '</div>';
         }
-        html += '<a class="pulse-reflection-link" href="' + esc(reflection.url) + '">open your week →</a>'
+        html += '<a class="pulse-reflection-link" href="' + esc(reflection.url) + `">${window.JournalI18n.renderHtml('journal.window.home.action.open.your.week')}</a>`
           + '</div>';
         return html;
       }
@@ -1064,9 +1062,6 @@
       return '';
     }
 
-    function plural(count, one, many) {
-      return count + ' ' + (count === 1 ? one : many);
-    }
 
     // The day's stats file measures time for the segments it managed to measure,
     // which is not the same set as the activity list. Every facet the list holds
@@ -1090,8 +1085,10 @@
     function hoursAndMinutes(minutes) {
       const hours = Math.floor(minutes / 60);
       const rest = minutes % 60;
-      if (!hours) return rest + 'm';
-      return rest ? hours + 'h ' + rest + 'm' : hours + 'h';
+      if (!hours) return window.JournalI18n.render('journal.window.home.today.duration.minutes', [['minutes', String(rest)]]);
+      return rest
+        ? window.JournalI18n.render('journal.window.home.today.duration.hours.minutes', [['hours', String(hours)], ['minutes', String(rest)]])
+        : window.JournalI18n.render('journal.window.home.today.duration.hours', [['hours', String(hours)]]);
     }
 
     function facetChipRows(pulse, activities) {
@@ -1107,7 +1104,7 @@
         const minutes = isPlainObject(data) ? (parseInt(data.minutes || 0, 10) || 0) : 0;
         // No `count` here on purpose: facet_data counts the whole day, and the
         // label beside these chips counts the window the card shows.
-        return { name: name, text: isPlainObject(data) ? hoursAndMinutes(minutes) : 'no time measured' };
+        return { name: name, text: isPlainObject(data) ? hoursAndMinutes(minutes) : window.JournalI18n.render('journal.window.home.text.no.time.measured') };
       });
     }
 
@@ -1115,10 +1112,10 @@
       const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
       const day = accountTime && pulse.now?.slice(0, 16) === accountTime ? pulse.today : '';
       const allActivities = '<a class="pulse-today-link" href="/app/activities/' + esc(day)
-        + '" data-copy-key="home-today-link">all of today\'s activities →</a>';
+        + `" data-copy-key="home-today-link">${window.JournalI18n.renderHtml('journal.window.home.action.all.of.todays.activities')}</a>`;
       if (!activities.length) {
         return '<div class="pulse-today" id="pulse-today">'
-          + '<div class="pulse-narrative-empty">no recent activity yet today.</div>'
+          + `<div class="pulse-narrative-empty">${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.recent.activity.yet.today')}</div>`
           + allActivities
           + '</div>';
       }
@@ -1129,11 +1126,11 @@
         // the rest of the list is one click away instead of gone. G1-101.
         const shown = todayActivitiesExpanded ? activities : activities.slice(0, ACTIVITY_PREVIEW);
         const label = shown.length === activities.length
-          ? plural(activities.length, 'activity', 'activities')
-          : shown.length + ' of ' + plural(activities.length, 'activity', 'activities');
+          ? (activities.length === 1 ? window.JournalI18n.render('journal.window.home.today.activity.one') : window.JournalI18n.render('journal.window.home.today.activity.many', [['total', String(activities.length)]]))
+          : window.JournalI18n.render('journal.window.home.today.activity.preview', [['shown', String(shown.length)], ['total', String(activities.length)]]);
         const showAll = shown.length === activities.length
           ? ''
-          : '<button type="button" class="pulse-activities-more" data-activities-show-all>show all →</button>';
+          : `<button type="button" class="pulse-activities-more" data-activities-show-all>${window.JournalI18n.renderHtml('journal.window.home.button.label.show.all')}</button>`;
         html += '<div class="pulse-activities-label">' + esc(label) + showAll + '</div><div class="pulse-activities">';
         shown.forEach(function (activity) {
           const description = activity.description || activity.activity || '';
@@ -1172,8 +1169,8 @@
         }).length;
         // Only a partial measure needs its count: "5 of 5" says nothing.
         const chipLabel = activities.length && measured < activities.length
-          ? 'time in each facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')
-          : 'time in each facet';
+          ? (activities.length === 1 ? window.JournalI18n.render('journal.window.home.today.facets.measured.one', [['measured', String(measured)]]) : window.JournalI18n.render('journal.window.home.today.facets.measured.many', [['measured', String(measured)], ['total', String(activities.length)]]))
+          : window.JournalI18n.render('journal.window.home.window.explanation.time.in.each.facet');
         html += '<div class="pulse-activities-label">' + esc(chipLabel) + '</div><div class="pulse-facet-dist">';
         facetChips.forEach(function (chip) {
           html += '<span class="pulse-facet-chip">' + esc(chip.name) + ' · ' + esc(chip.text) + '</span>';
@@ -1237,13 +1234,14 @@
       const tab = side => '<button type="button" role="tab" class="pulse-account-tab"'
         + ' id="pulse-account-tab-' + side + '" aria-controls="pulse-account-panel-' + side + '"'
         + ' aria-selected="' + (selectedSide === side) + '" tabindex="' + (selectedSide === side ? '0' : '-1') + '"'
-        + ' data-account-tab="' + side + '">' + side + '</button>';
+        + ' data-account-tab="' + side + '">' + window.JournalI18n.renderHtml(side === 'today'
+          ? 'journal.window.home.account.tab.today' : 'journal.window.home.account.tab.yesterday') + '</button>';
       const panel = (side, inner) => '<div class="pulse-account-panel" role="tabpanel"'
         + ' id="pulse-account-panel-' + side + '" aria-labelledby="pulse-account-tab-' + side + '"'
         + ' data-account-panel="' + side + '"' + (selectedSide === side ? '' : ' hidden') + '>' + inner + '</div>';
       return '<section class="pulse-account" id="pulse-account" data-home-surface="account">'
         + '<div class="pulse-account-head">'
-        + '<div class="pulse-account-tabs" role="tablist" aria-label="which day">' + ACCOUNT_SIDES.map(tab).join('') + '</div>'
+        + `<div class="pulse-account-tabs" role="tablist" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.which.day')}">` + ACCOUNT_SIDES.map(tab).join('') + '</div>'
         + '<span class="pulse-account-day" data-account-day><span data-account-day-text>' + esc(accountDayText(selectedSide, pulse)) + '</span></span>'
         + '</div>'
         + panel('yesterday', renderYesterdaySideHtml(briefingData, pulse))
@@ -1276,8 +1274,10 @@
     // deictic words go lowercase mid-sentence; a weekday is a proper noun and
     // keeps its capital, as does an absolute day ("Thu Sep 3").
     const RELATIVE_DAY_WORDS = new Set([
-      'today', 'yesterday', 'tomorrow'
-    ]);
+      window.JournalI18n.render('journal.window.date.today'),
+      window.JournalI18n.render('journal.window.date.yesterday'),
+      window.JournalI18n.render('journal.window.date.tomorrow')
+    ].map(word => word.toLocaleLowerCase(window.JournalI18n.formatLocale)));
 
     function formatConnectionDay(day) {
       const asOf = accountTime && lastPulse?.now?.slice(0, 16) === accountTime
@@ -1288,7 +1288,8 @@
 
     function midSentenceDay(day) {
       const text = String(day === null || day === undefined ? '' : day);
-      return RELATIVE_DAY_WORDS.has(text.toLowerCase()) ? text.toLowerCase() : text;
+      const lower = text.toLocaleLowerCase(window.JournalI18n.formatLocale);
+      return RELATIVE_DAY_WORDS.has(lower) ? lower : text;
     }
 
     function connectionEntityHref(entityId) {
@@ -1320,9 +1321,9 @@
     // beside it says which end of the window it is. G1-102.
     function connectionRowMeta(neighbor) {
       const count = Number(neighbor.count || 0);
-      const moments = count === 1 ? '1 moment' : count.toLocaleString('en-US') + ' moments';
+      const moments = count === 1 ? window.JournalI18n.render('journal.window.home.connections.moment.one') : window.JournalI18n.render('journal.window.home.connections.moment.many', [['count', String(count.toLocaleString('en-US'))]]);
       const day = formatConnectionDay(neighbor.last_seen);
-      return day ? moments + ' · most recently ' + midSentenceDay(day) : moments;
+      return day ? window.JournalI18n.render('journal.window.home.connections.moment.recent', [['moments', String(moments)], ['day', String(midSentenceDay(day))]]) : moments;
     }
 
     // The evidence line repeated the name back under itself on every row but one,
@@ -1331,7 +1332,7 @@
       const label = typeof neighbor.latest_label === 'string' ? neighbor.latest_label.trim() : '';
       if (!label || label.toLowerCase() === String(name || '').trim().toLowerCase()) return '';
       if (neighbor.latest_kind !== 'mentioned') return '';
-      return '<span class="pulse-connections-evidence">transcribed as “' + esc(label) + '”</span>';
+      return `<span class="pulse-connections-evidence">${window.JournalI18n.renderHtml('journal.window.home.visible.text.transcribed.as')}` + esc(label) + '”</span>';
     }
 
     function connectionRowHtml(neighbor, connections) {
@@ -1351,7 +1352,7 @@
       const name = typeof neighbor.name === 'string' && neighbor.name ? neighbor.name : entityId;
       if (!entityId || !name) return '';
       const count = Number(neighbor.count || 0);
-      const eventCount = count === 1 ? '1 event' : String(count) + ' events';
+      const eventCount = count === 1 ? window.JournalI18n.render('journal.window.home.connections.event.one') : window.JournalI18n.render('journal.window.home.connections.event.many', [['count', String(count)]]);
       return '<a href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>'
         + ' <span class="pulse-connections-cluster-count">' + esc(eventCount) + '</span>';
     }
@@ -1372,16 +1373,16 @@
         // Every neighbor the index had was an unnamed voice cluster. Say that,
         // and point at the one place it can be fixed. X-02.
         return '<div class="pulse-empty-state" data-home-surface="connections">'
-          + '<h2 class="pulse-section-header">connections</h2>'
-          + '<div class="pulse-empty-message">no named connections yet. '
-          + '<a href="/app/speakers/">name voices in speakers →</a></div>'
+          + `<h2 class="pulse-section-header">${window.JournalI18n.renderHtml('journal.window.home.section.heading.connections')}</h2>`
+          + `<div class="pulse-empty-message">${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.named.connections.yet')} `
+          + `<a href="/app/speakers/">${window.JournalI18n.renderHtml('journal.window.home.link.label.name.voices.in.speakers')}</a></div>`
           + '</div>';
       }
       if (connections.state === 'unavailable') {
         return '<div class="pulse-empty-state" data-home-surface="connections">'
-          + '<h2 class="pulse-section-header">connections</h2>'
-          + '<div class="pulse-empty-message">connections are unavailable right now. '
-          + '<a href="/app/health">check system health →</a></div>'
+          + `<h2 class="pulse-section-header">${window.JournalI18n.renderHtml('journal.window.home.section.heading.connections')}</h2>`
+          + `<div class="pulse-empty-message">${window.JournalI18n.renderHtml('journal.window.home.visible.text.connections.are.unavailable.right.now')} `
+          + `<a href="/app/health">${window.JournalI18n.renderHtml('journal.window.home.link.label.check.system.health')}</a></div>`
           + '</div>';
       }
       if (connections.state !== 'ok' || !Array.isArray(connections.neighbors)) return '';
@@ -1404,13 +1405,13 @@
       const attendanceItems = attendanceRows.map(connectionAttendanceItemHtml).filter(Boolean);
       const calendarItems = calendarRows.map(connectionCalendarItemHtml).filter(Boolean);
       let html = '<div class="pulse-connections" data-home-surface="connections">'
-        + '<h2 class="pulse-section-header">connections</h2>';
+        + `<h2 class="pulse-section-header">${window.JournalI18n.renderHtml('journal.window.home.section.heading.connections')}</h2>`;
 
       if (relationshipItems.length) {
         // The shelf label only tells the owner anything when a second shelf is
         // there to tell it apart from. Alone it is the card heading again. G1-28.
         const shelfLabel = attendanceItems.length || calendarItems.length
-          ? '<div class="pulse-connections-shelf-label">connections found in your journal</div>'
+          ? `<div class="pulse-connections-shelf-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.connections.found.in.your.journal')}</div>`
           : '';
         html += '<div class="pulse-connections-shelf" data-shelf="journal">'
           + shelfLabel
@@ -1421,19 +1422,19 @@
         // Nothing to show is one line, not four blocks. The shelves below state
         // their own kind, so the note only earns its space when it is the only
         // thing the section has to say. G1-107, X-04.
-        html += '<div class="pulse-connections-note">no direct connections yet.</div>';
+        html += `<div class="pulse-connections-note">${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.direct.connections.yet')}</div>`;
       }
 
       if (attendanceItems.length) {
         html += '<div class="pulse-connections-shelf" data-shelf="attendance">'
-          + '<div class="pulse-connections-shelf-label">often around, events only</div>'
+          + `<div class="pulse-connections-shelf-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.often.around.events.only')}</div>`
           + '<div class="pulse-connections-cluster">' + attendanceItems.join(' · ') + '</div>'
           + '</div>';
       }
 
       if (calendarItems.length) {
         html += '<div class="pulse-connections-shelf" data-shelf="calendar">'
-          + '<div class="pulse-connections-shelf-label">on your calendar only</div>'
+          + `<div class="pulse-connections-shelf-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.on.your.calendar.only')}</div>`
           + '<div class="pulse-connections-cluster">' + calendarItems.join(' · ') + '</div>'
           + '</div>';
       }
@@ -1442,8 +1443,8 @@
         // The summary says how many rows the disclosure holds, so it stays useful
         // as the only shelf on the card rather than restating the section. G1-28.
         const mentionSummary = mentionRows.length === 1
-          ? '1 name mentioned in your journal'
-          : mentionRows.length + ' names mentioned in your journal';
+          ? window.JournalI18n.render('journal.window.home.window.explanation.name.mentioned.in.your.journal')
+          : mentionRows.length + window.JournalI18n.render('journal.window.home.window.explanation.names.mentioned.in.your.journal');
         html += '<details class="pulse-connections-shelf"><summary>' + esc(mentionSummary) + '</summary><div class="pulse-connections-list">'
           + mentionRows.map(neighbor => connectionRowHtml(neighbor, connections)).join('') + '</div></details>';
       }
@@ -1451,7 +1452,7 @@
       // The coverage note and the way out of the section are one block, not two.
       // G1-107.
       const moreLink = Number(connections.total || 0) > rendered
-        ? '<a class="pulse-connections-more" href="/app/entities">all connections →</a>'
+        ? `<a class="pulse-connections-more" href="/app/entities">${window.JournalI18n.renderHtml('journal.window.home.link.label.all.connections')}</a>`
         : '';
       if (typeof connections.horizon_note === 'string' && connections.horizon_note
           && typeof connections.horizon_day === 'string' && connections.horizon_day) {
@@ -1511,7 +1512,7 @@
       const match = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
       if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return '';
       return new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
-        .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' })
+        .toLocaleString(window.JournalI18n.formatLocale, { hour: 'numeric', minute: '2-digit' })
         .toLowerCase();
     }
 
@@ -1523,15 +1524,15 @@
     // Before the nightly run has had its first chance, say when the first
     // account is due rather than calling it late or missing.
     const BRIEFING_NOT_YET = Object.assign(Object.create(null), {
-      awaiting_engine: 'yesterday shows here once you choose where the thinking happens.',
-      first_night: "your first day shows here by 10 am, after your journal's first night.",
-      first_night_empty: 'yesterday shows here the morning after something goes into your journal.'
+      awaiting_engine: window.JournalI18n.render('journal.window.home.window.explanation.yesterday.shows.here.once.you.choose'),
+      first_night: window.JournalI18n.render('journal.window.home.window.explanation.your.first.day.shows.here.by'),
+      first_night_empty: window.JournalI18n.render('journal.window.home.window.explanation.yesterday.shows.here.the.morning.after')
     });
 
     const BRIEFING_AWAITING_ENGINE_LANES = Object.assign(Object.create(null), {
-      byo: 'yesterday shows here once your own model is set up.',
-      spp: 'yesterday shows here once confidential processing is set up.',
-      local: 'yesterday shows here once local thinking is set up.'
+      byo: window.JournalI18n.render('journal.window.home.window.explanation.yesterday.shows.here.once.your.own'),
+      spp: window.JournalI18n.render('journal.window.home.window.explanation.yesterday.shows.here.once.confidential.processing'),
+      local: window.JournalI18n.render('journal.window.home.window.explanation.yesterday.shows.here.once.local.thinking')
     });
 
     function briefingRunHref(data, pulseContext) {
@@ -1545,7 +1546,7 @@
       // lines stand alone; with none, say only that.
       if (data.phase === 'none_owed') {
         if (Array.isArray(data.body) && data.body.length) return '';
-        return '<div class="pulse-briefing-placeholder">nothing from yesterday to write up.</div>';
+        return `<div class="pulse-briefing-placeholder">${window.JournalI18n.renderHtml('journal.window.home.visible.text.nothing.from.yesterday.to.write.up')}</div>`;
       }
       const run = esc(briefingRunHref(data, pulseContext));
       if (data.phase === 'awaiting_engine') {
@@ -1558,16 +1559,16 @@
         const lateness = pulseContext?.briefing_lateness || {};
         if (lateness.late) {
           return '<div class="pulse-briefing-placeholder">'
-            + "yesterday is usually written up by 10 am. it's " + esc(lateness.late_hours || 0) + 'h late.'
-            + '<a class="pulse-briefing-status-link" href="' + run + '">check status</a>'
+            + window.JournalI18n.renderHtml('journal.window.home.briefing.late', [['hours', String(lateness.late_hours || 0)]])
+            + '<a class="pulse-briefing-status-link" href="' + run + `">${window.JournalI18n.renderHtml('journal.window.home.action.check.status')}</a>`
             + '</div>';
         }
-        return '<div class="pulse-briefing-placeholder">yesterday is being written up…</div>';
+        return `<div class="pulse-briefing-placeholder">${window.JournalI18n.renderHtml('journal.window.home.visible.text.yesterday.is.being.written.up')}</div>`;
       }
       // Missing, and any hour with no account that no not-yet state explains.
       return '<div class="pulse-briefing-placeholder">'
-        + "yesterday wasn't written up. "
-        + '<a class="pulse-briefing-status-link" href="' + run + '">see the run →</a>'
+        + window.JournalI18n.renderHtml('journal.window.home.window.explanation.yesterday.wasn.t.written.up')
+        + '<a class="pulse-briefing-status-link" href="' + run + `">${window.JournalI18n.renderHtml('journal.window.home.action.see.the.run')}</a>`
         + '</div>';
     }
 
@@ -1580,14 +1581,14 @@
       const date = /^(\d{4})(\d{2})(\d{2})$/.exec(String(at.date || ''));
       if (!date) return time;
       const day = new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]))
-        .toLocaleString(undefined, { month: 'short', day: 'numeric' })
+        .toLocaleString(window.JournalI18n.formatLocale, { month: 'short', day: 'numeric' })
         .toLowerCase();
-      return time + ' on ' + day;
+      return window.JournalI18n.render('journal.window.home.body.time.with.day', [['time', String(time)], ['day', String(day)]]);
     }
 
     function listed(names) {
       if (names.length < 2) return names.join('');
-      return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+      return window.JournalI18n.render('journal.window.home.body.sources.and', [['start', String(names.slice(0,-1).join(', '))], ['last', String(names[names.length - 1])]]);
     }
 
     // One workout, night or session, in plain words: what, when, how far, and
@@ -1596,13 +1597,13 @@
       const parts = [String(line.name || '')];
       const start = bodyMoment(line.start);
       const end = bodyMoment(line.end);
-      if (start && end) parts.push(start + ' to ' + end);
-      else if (start) parts.push('from ' + start);
+      if (start && end) parts.push(window.JournalI18n.render('journal.window.home.body.time.start.end', [['start', String(start)], ['end', String(end)]]));
+      else if (start) parts.push(window.JournalI18n.render('journal.window.home.body.time.start', [['start', String(start)]]));
       if (typeof line.distance === 'string' && line.distance) parts.push(line.distance);
       const from = Array.isArray(line.from) ? line.from.filter((name) => typeof name === 'string' && name) : [];
-      if (line.logged) parts.push('which you logged');
-      else if (from.length) parts.push('from ' + listed(from));
-      if (line.part_removed) parts.push('part of it removed');
+      if (line.logged) parts.push(window.JournalI18n.render('journal.window.home.body.logged'));
+      else if (from.length) parts.push(window.JournalI18n.render('journal.window.home.body.source', [['sources', String(listed(from))]]));
+      if (line.part_removed) parts.push(window.JournalI18n.render('journal.window.home.window.explanation.part.of.it.removed'));
       return parts.join(', ') + '.';
     }
 
@@ -1610,7 +1611,7 @@
     // when read. They sit apart from the briefing, which never wrote them.
     function bodyLinesHtml(lines) {
       if (!Array.isArray(lines) || !lines.length) return '';
-      return '<div class="pulse-activities-label">from your devices and apps</div>'
+      return `<div class="pulse-activities-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.from.your.devices.and.apps')}</div>`
         + '<div class="pulse-briefing-body"><ul>'
         + lines.map((line) => '<li>' + esc(bodyLineText(line)) + '</li>').join('')
         + '</ul></div>';
@@ -1626,10 +1627,10 @@
         const time = raw ? writtenAtTime(data.meta?.generated) : '';
         body = (raw
           ? '<div class="pulse-briefing-body" id="pulse-briefing-body">' + markdown(raw) + '</div>'
-          : '<div class="pulse-briefing-placeholder">nothing from yesterday was written up.</div>')
+          : `<div class="pulse-briefing-placeholder">${window.JournalI18n.renderHtml('journal.window.home.visible.text.nothing.from.yesterday.was.written.up')}</div>`)
           + '<div class="pulse-account-meta">'
-          + (time ? '<span>written at ' + esc(time) + '</span>' : '')
-          + '<a class="pulse-tell-more" href="' + esc(briefingRunHref(data, pulseContext)) + '">how this was written →</a>'
+          + (time ? `<span>${window.JournalI18n.renderHtml('journal.window.home.visible.text.written.at')} ` + esc(time) + '</span>' : '')
+          + '<a class="pulse-tell-more" href="' + esc(briefingRunHref(data, pulseContext)) + `">${window.JournalI18n.renderHtml('journal.window.home.action.how.this.was.written')}</a>`
           + '</div>';
       } else {
         body = briefingPlaceholderHtml(data, pulseContext);
@@ -1656,7 +1657,7 @@
       const panel = yesterdayPanel();
       if (!panel) return;
       replaceAccountContent(panel, '<div class="pulse-briefing" id="pulse-briefing" data-phase="error">'
-        + surfaceError(error, "couldn't load yesterday.")
+        + surfaceError(error, window.JournalI18n.render('journal.window.home.response.yesterday.failed'))
         + '</div>');
       const retry = panel.querySelector('.surface-state-retry');
       if (retry) {
@@ -1712,13 +1713,13 @@
           pulseAppliedVersion = read;
           pulseReadFailed = true;
           if (!lastPulse && surface) {
-            surface.innerHTML = surfaceError(error, "Couldn't load pulse");
+            surface.innerHTML = surfaceError(error, window.JournalI18n.render('journal.window.home.response.pulse.failed'));
             bindSurfaceRetry();
             reportHomeReady('error');
           }
           if (lastPulse) renderVitals(lastPulse);
           logError(error, 'home: refreshVitals failed');
-          renderRefreshError('pulse-vitals', error, "couldn't refresh service status. showing last known state.");
+          renderRefreshError('pulse-vitals', error, window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.refresh.service.status.showing'));
         });
     }
 
@@ -1757,13 +1758,13 @@
           pulseAppliedVersion = read;
           pulseReadFailed = true;
           if (!lastPulse && surface) {
-            surface.innerHTML = surfaceError(error, "Couldn't load pulse");
+            surface.innerHTML = surfaceError(error, window.JournalI18n.render('journal.window.home.response.pulse.failed'));
             bindSurfaceRetry();
             reportHomeReady('error');
           }
           if (lastPulse) renderVitals(lastPulse);
           logError(error, 'home: refreshNarrative failed');
-          renderRefreshError('pulse-narrative', error, "couldn't refresh narrative. showing last known state.");
+          renderRefreshError('pulse-narrative', error, window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.refresh.narrative.showing.last'));
         });
     }
 
@@ -2037,11 +2038,10 @@
     function securityLineHtml(flag) {
       const fixedIn = typeof flag.fixed_in === 'string' ? flag.fixed_in : '';
       const text = flag.subject === 'journal'
-        ? 'your journal is missing a security fix. update it to ' + fixedIn + ' or later.'
-        : 'the solstone app on ' + (typeof flag.device === 'string' && flag.device ? flag.device : 'one of your devices')
-          + ' is missing a security fix. update it to ' + fixedIn + ' or later.';
+        ? window.JournalI18n.render('journal.window.home.security.journal', [['version', String(fixedIn)]])
+        : window.JournalI18n.render('journal.window.home.security.device', [['device', String(typeof flag.device === 'string' && flag.device ? flag.device : window.JournalI18n.render('journal.window.home.window.explanation.one.of.your.devices'))], ['version', String(fixedIn)]]);
       const notes = typeof flag.notes === 'string' && flag.notes.startsWith('https://') ? flag.notes : null;
-      const link = notes ? ' <a href="' + esc(notes) + '" target="_blank" rel="noreferrer" referrerpolicy="no-referrer">what it fixes ↗</a>' : '';
+      const link = notes ? ' <a href="' + esc(notes) + `" target="_blank" rel="noreferrer" referrerpolicy="no-referrer">${window.JournalI18n.renderHtml('journal.window.home.action.what.it.fixes')}</a>` : '';
       return '<p>' + esc(text) + link + '</p>';
     }
 

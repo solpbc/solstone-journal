@@ -1,0 +1,16 @@
+{
+  "description": "Home display attention heading in the journal's home view.",
+  "context": "Journal window, home view. Home display attention heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f2385439d5a66ab3c84908379cb32012182891291cd4fdcf1eed816555a54e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

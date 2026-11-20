@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm recover heading in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm recover heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "790b2b81c92498457d657971a2d2bcdb62e4fe70fd602eb24339028bdba03f3b",
+  "max_length": 64,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

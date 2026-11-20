@@ -79,18 +79,18 @@
       (day.rows || []).forEach(function (row) {
         if (row.left_out) {
           html += '<div class="week-row week-row--left-out" data-memory-key="' + esc(row.key) + '">';
-          html += '<span class="week-left-out-text">left out of this week · </span>';
-          html += '<button type="button" class="week-undo-btn" data-action="undo" data-key="' + esc(row.key) + '">undo</button>';
+          html += `<span class="week-left-out-text">${window.JournalI18n.renderHtml('journal.window.home.visible.text.left.out.of.this.week')} </span>`;
+          html += '<button type="button" class="week-undo-btn" data-action="undo" data-key="' + esc(row.key) + `">${window.JournalI18n.renderHtml('journal.window.home.action.undo')}</button>`;
           html += '</div>';
         } else {
           html += '<div class="week-row" data-memory-key="' + esc(row.key) + '">';
           html += '<div class="week-row-header">';
           html += '<div class="week-row-actions">';
           html += '<div class="week-menu-wrapper">';
-          html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="more for ' + esc(day.day_label) + '">···</button>';
+          html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="' + window.JournalI18n.renderHtml('journal.window.home.week.menu.accessible.name', [['day', String(day.day_label)]]) + '">···</button>';
           html += '<div class="week-menu-dropdown" hidden style="display:none;">';
-          html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(row.key) + '"><span class="week-menu-item-label">leave out of this week</span><span class="week-menu-hint">' + esc(said.leave_out_hint) + '</span></button>';
-          html += '<a class="week-menu-item" href="' + esc(row.href) + '"><span class="week-menu-item-label">this isn\'t right</span><span class="week-menu-hint">opens where it came from, so you can check it.</span></a>';
+          html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(row.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">` + esc(said.leave_out_hint) + '</span></button>';
+          html += '<a class="week-menu-item" href="' + esc(row.href) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.this.isn.t.right')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.opens.where.it.came.from.so')}</span></a>`;
           html += '</div>';
           html += '</div>';
           html += '</div>';
@@ -130,12 +130,12 @@
     html += '</div>';
 
     // Grid
-    html += '<div class="week-grid" role="group" aria-label="days of the week">';
+    html += `<div class="week-grid" role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.days.of.the.week')}">`;
     (model.cells || []).forEach(function (c) {
       html += '<div class="week-cell ' + esc(c.state) + '" role="img" aria-label="' + esc(c.accessible_name) + '">';
       html += '<span class="week-cell-weekday">' + esc(c.weekday) + '</span>';
       html += '<span class="week-cell-day">' + esc(c.day_number) + '</span>';
-      html += '<span class="week-cell-mark ' + esc(c.state) + '" aria-hidden="true"></span>';
+      html += '<span class="week-cell-mark ' + esc(c.state) + `" aria-hidden="true"></span>`;
       html += '</div>';
     });
     html += '</div>';
@@ -145,7 +145,7 @@
       html += '<div class="week-legend">';
       model.legend.forEach(function (l) {
         html += '<div class="week-legend-item">';
-        html += '<span class="week-cell-mark ' + esc(l.state) + '" aria-hidden="true"></span>';
+        html += '<span class="week-cell-mark ' + esc(l.state) + `" aria-hidden="true"></span>`;
         html += '<span>' + esc(l.label) + '</span>';
         html += '</div>';
       });
@@ -167,8 +167,8 @@
     (model.rows || []).forEach(function (r) {
       if (r.left_out) {
         html += '<div class="week-row week-row--left-out" data-memory-key="' + esc(r.key) + '">';
-        html += '<span class="week-left-out-text">left out of this week · </span>';
-        html += '<button type="button" class="week-undo-btn" data-action="undo" data-key="' + esc(r.key) + '">undo</button>';
+        html += `<span class="week-left-out-text">${window.JournalI18n.renderHtml('journal.window.home.visible.text.left.out.of.this.week')} </span>`;
+        html += '<button type="button" class="week-undo-btn" data-action="undo" data-key="' + esc(r.key) + `">${window.JournalI18n.renderHtml('journal.window.home.action.undo')}</button>`;
         html += '</div>';
       } else {
         html += '<div class="week-row" data-memory-key="' + esc(r.key) + '">';
@@ -176,10 +176,10 @@
         html += '<span class="week-row-day">' + esc(r.day_label) + '</span>';
         html += '<div class="week-row-actions">';
         html += '<div class="week-menu-wrapper">';
-        html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="more for ' + esc(r.day_label) + '">···</button>';
+        html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="' + window.JournalI18n.renderHtml('journal.window.home.week.menu.accessible.name', [['day', String(r.day_label)]]) + '">···</button>';
         html += '<div class="week-menu-dropdown" hidden style="display:none;">';
-        html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + '"><span class="week-menu-item-label">leave out of this week</span><span class="week-menu-hint">only this week changes. the memory stays in your journal.</span></button>';
-        html += '<a class="week-menu-item" href="' + esc(r.menu_href) + '"><span class="week-menu-item-label">this isn\'t right</span><span class="week-menu-hint">opens where it came from, so you can check it.</span></a>';
+        html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">${window.JournalI18n.renderEnglishHtml('journal.window.home.visible.text.only.this.week.changes.the.memory')}</span></button>`;
+        html += '<a class="week-menu-item" href="' + esc(r.menu_href) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.this.isn.t.right')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.opens.where.it.came.from.so')}</span></a>`;
         html += '</div>';
         html += '</div>'; // week-menu-wrapper
         html += '</div>'; // week-row-actions
@@ -195,7 +195,7 @@
 
     html += renderSaidHtml(model.said);
 
-    html += '<p class="week-end-line">' + esc(model.end_line || "that's the week.") + '</p>';
+    html += '<p class="week-end-line">' + esc(model.end_line || window.JournalI18n.render('journal.window.home.week.end')) + '</p>';
 
     if (model.prev_href) {
       html += '<p class="week-prev-repeat"><a href="' + esc(model.prev_href) + '">' + esc(model.prev_label) + '</a></p>';
@@ -246,9 +246,9 @@
         .then(function (res) {
           if (!res.ok) {
             return res.json().then(function (data) {
-              throw new Error(data.error || (undo ? "couldn't bring this back. nothing changed." : "couldn't leave this out. nothing changed."));
+              throw new Error(data.error || (undo ? window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.bring.this.back.nothing') : window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.leave.this.out.nothing')));
             }).catch(function (err) {
-              throw new Error(err.message || (undo ? "couldn't bring this back. nothing changed." : "couldn't leave this out. nothing changed."));
+              throw new Error(err.message || (undo ? window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.bring.this.back.nothing') : window.JournalI18n.render('journal.window.home.window.explanation.couldn.t.leave.this.out.nothing')));
             });
           }
           return res.json();
@@ -269,7 +269,7 @@
           read('/app/home/api/week/' + encodeURIComponent(day))
             .then(function (res) {
               if (!res.ok) {
-                throw new Error("couldn't load this week. reload to try again.");
+                throw new Error(window.JournalI18n.render('journal.window.home.week.load.failed'));
               }
               return res.json();
             })
@@ -294,7 +294,7 @@
                   const errP = document.createElement('p');
                   errP.className = 'week-row-error';
                   errP.setAttribute('role', 'alert');
-                  errP.textContent = undo ? "couldn't bring this back. nothing changed." : "couldn't leave this out. nothing changed.";
+                  errP.textContent = undo ? window.JournalI18n.render('journal.window.home.week.leave.out.undo.failed') : window.JournalI18n.render('journal.window.home.week.leave.out.apply.failed');
                   targetRow.appendChild(errP);
                 }
                 if (triggerBtn) triggerBtn.focus();
@@ -302,7 +302,7 @@
             })
             .catch(function () {
               container.innerHTML = '<div class="surface-state surface-state--error" role="alert">'
-                + '<h2 class="surface-state-heading">couldn\'t load this week. reload to try again.</h2>'
+                + `<h2 class="surface-state-heading">${window.JournalI18n.renderHtml('journal.window.home.week.load.failed')}</h2>`
                 + '</div>';
             });
         });
@@ -335,13 +335,13 @@
     if (!surface) return;
     surface.innerHTML = '<div class="surface-state surface-state--loading" role="status">'
       + '<div class="surface-state-spinner" aria-hidden="true"></div>'
-      + '<span class="surface-state-text">loading your week…</span>'
-      + '<span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>'
+      + `<span class="surface-state-text">${window.JournalI18n.renderHtml('journal.window.home.visible.text.loading.your.week')}</span>`
+      + `<span class="surface-state-still" data-role="still-working" aria-hidden="true">${window.JournalI18n.renderHtml('journal.window.chrome.still.working')}</span>`
       + '</div>';
     read('/app/home/api/week/' + encodeURIComponent(stem))
       .then(function (res) {
         if (!res.ok) {
-          throw new Error("couldn't load this week. reload to try again.");
+          throw new Error(window.JournalI18n.render('journal.window.home.week.load.failed'));
         }
         return res.json();
       })
@@ -351,7 +351,7 @@
       })
       .catch(function () {
         surface.innerHTML = '<div class="surface-state surface-state--error" role="alert">'
-          + '<h2 class="surface-state-heading">couldn\'t load this week. reload to try again.</h2>'
+          + `<h2 class="surface-state-heading">${window.JournalI18n.renderHtml('journal.window.home.week.load.failed')}</h2>`
           + '</div>';
         reportHomeReady('error');
       });

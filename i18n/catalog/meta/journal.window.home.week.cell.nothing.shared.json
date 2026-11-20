@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection cell nothing shared in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection cell nothing shared.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b0a68d0db1e6364425ba7565b2e08ddf4a7c0d7f375899c4b53c1980bce3924",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

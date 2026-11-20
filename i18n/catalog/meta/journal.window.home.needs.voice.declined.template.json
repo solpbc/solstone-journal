@@ -1,0 +1,28 @@
+{
+  "description": "Waiting-on-you voice declined template in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice declined template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34eedcba9f9f5d96b03c41a07e7fb297df8a79025728e8a2568c7f2e44f54172",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

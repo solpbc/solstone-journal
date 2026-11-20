@@ -1,0 +1,33 @@
+{
+  "description": "Waiting-on-you sources failing in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you sources failing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb8b66c09f6da1889ce4bdd2c088335740424e2fe27e828c96feea1d9ef344ab",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

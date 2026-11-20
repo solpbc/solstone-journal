@@ -1,0 +1,16 @@
+{
+  "description": "Originals card heading in the journal's home view.",
+  "context": "Journal window, home view. Originals card heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e4831ad6759f47a9cfdb3eb200d249254ab0308f6bae5d0718e6f1ef00f08e7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

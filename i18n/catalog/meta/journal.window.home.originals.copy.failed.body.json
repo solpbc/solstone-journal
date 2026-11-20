@@ -1,0 +1,16 @@
+{
+  "description": "Originals failed body in the journal's home view.",
+  "context": "Journal window, home view. Originals failed body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "134415d01de07165df980412dd2838a59582b1879f82c480da3d9306e71a7802",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

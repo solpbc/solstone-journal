@@ -1,0 +1,16 @@
+{
+  "description": "Home display body logged in the journal's home view.",
+  "context": "Journal window, home view. Home display body logged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f058357f161adc95155c8bd2ae0f31d8a0bcadb564daf709125635ae84b4a91b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

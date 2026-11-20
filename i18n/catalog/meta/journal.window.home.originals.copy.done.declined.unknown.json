@@ -1,0 +1,16 @@
+{
+  "description": "Originals done declined unknown in the journal's home view.",
+  "context": "Journal window, home view. Originals done declined unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86545aa725ed42e156b8010d4e1351061b871c6cc82f9f1f2eb463cddfccd7cb",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

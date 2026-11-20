@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm go trash in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm go trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6a70a12fb99e453a3114672c921d9e1cc3fecc56bc3e9b191403925a03aff45",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

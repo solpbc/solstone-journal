@@ -1,0 +1,28 @@
+{
+  "description": "Waiting-on-you context in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "39ef0526454294f616ba02073fad74e866689e01abd77f82684cff78433a1042",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

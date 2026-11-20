@@ -1,0 +1,16 @@
+{
+  "description": "Originals bulk keep in the journal's home view.",
+  "context": "Journal window, home view. Originals bulk keep.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c862c9c5214eee4e5882201321b9e0a4362f0ab4fcad96887ca2d2713b64b9c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

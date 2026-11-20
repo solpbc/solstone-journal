@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection card first choose in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection card first choose.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5e74109d101742563c844cb4387a565027eeedda638f737d219f3e89f773361",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

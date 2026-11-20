@@ -10,6 +10,8 @@
 //! served as it stands, and a facet change or a narrower grant can't widen what
 //! is read.
 
+use solstone_core_window_catalog::{ENGLISH, text as catalog_text};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -1309,6 +1311,10 @@ fn clock_time(text: Option<&str>, zone: &TimeZone, day: &str) -> Option<Value> {
 /// title keeps theirs.
 #[must_use]
 pub fn face_line(face: &Face, zone: &TimeZone, day: &str) -> Option<Value> {
+    face_line_in(face, zone, day, ENGLISH)
+}
+
+fn face_line_in(face: &Face, zone: &TimeZone, day: &str, locale: &str) -> Option<Value> {
     let there = face
         .members
         .iter()
@@ -1329,8 +1335,10 @@ pub fn face_line(face: &Face, zone: &TimeZone, day: &str) -> Option<Value> {
         .filter(|title| !title.is_empty());
     let name = match (title, face.anchor.activity.as_str()) {
         (Some(title), _) => title.to_owned(),
-        (None, "sleep") => "sleep".to_owned(),
-        (None, "mindfulness") => "mindfulness".to_owned(),
+        (None, "sleep") => catalog_text(locale, "journal.window.home.body.account.sleep"),
+        (None, "mindfulness") => {
+            catalog_text(locale, "journal.window.home.body.account.mindfulness")
+        }
         (None, _) => first.label.to_lowercase(),
     };
     let logged = there.iter().all(|(row, _)| user_entered(row));
@@ -1373,6 +1381,10 @@ pub fn face_line(face: &Face, zone: &TimeZone, day: &str) -> Option<Value> {
 ///
 /// Any read error while gathering: the caller leaves the section out.
 pub fn day_lines(journal: &Path, day: &str) -> Result<Vec<Value>, ComposeError> {
+    day_lines_in(journal, day, ENGLISH)
+}
+
+pub fn day_lines_in(journal: &Path, day: &str, locale: &str) -> Result<Vec<Value>, ComposeError> {
     let faces = day_faces(journal, day)?;
     if faces.is_empty() {
         return Ok(Vec::new());
@@ -1380,7 +1392,7 @@ pub fn day_lines(journal: &Path, day: &str) -> Result<Vec<Value>, ComposeError> 
     let zone = solstone_core_journal_config::owner_zone(journal);
     Ok(faces
         .iter()
-        .filter_map(|face| face_line(face, &zone, day))
+        .filter_map(|face| face_line_in(face, &zone, day, locale))
         .collect())
 }
 

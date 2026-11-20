@@ -234,6 +234,9 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
     let mut speakers = HashSet::new();
     let mut turns = 0;
     let mut timed_turns = 0;
+    let mut round_15_wall_clocks = 0usize;
+    let mut sentence_turns = 0usize;
+    let mut turn_has_sentence = false;
     let mut words = 0;
     let mut first_bodies = HashSet::new();
     let mut unmatched = 0;
@@ -267,15 +270,22 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
                 .or_else(|| matched.name("clock_first"))?;
             let speaker = speaker_label(label.as_str())?;
             let body = matched.name("body").map_or("", |body| body.as_str());
-            let timed = matched.name("prefix_clock").is_some()
-                || matched.name("paren_clock").is_some()
+            let clock_text = matched
+                .name("prefix_clock")
+                .or_else(|| matched.name("paren_clock"))
+                .map(|m| m.as_str());
+            let timed = clock_text.is_some()
                 || matched.name("stacked").is_some()
                 || matched.name("clock_first").is_some();
-            Some((speaker, body, timed))
+            let round_15_wall = clock_text.is_some_and(|raw| schedule_clock_flags(raw).1);
+            Some((speaker, body, timed, round_15_wall))
         });
-        if let Some((speaker, body, timed)) = found {
+        if let Some((speaker, body, timed, round_15_wall)) = found {
             if !has_body {
                 return None;
+            }
+            if turns > 0 && turn_has_sentence {
+                sentence_turns += 1;
             }
             let speaker = speaker.to_lowercase();
             if turns > 0 && opening_speaker.as_ref() == Some(&speaker) {
@@ -286,23 +296,30 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
             speakers.insert(speaker);
             turns += 1;
             timed_turns += usize::from(timed);
+            round_15_wall_clocks += usize::from(round_15_wall);
             has_body = !body.is_empty();
             stacked = !has_body;
+            turn_has_sentence = has_body && has_sentence(body);
             words += body.split_whitespace().count();
             if has_body && first_bodies.len() < 3 {
                 first_bodies.insert(body);
             }
         } else if stacked && !line.starts_with(['#', '-', '>']) {
             has_body = true;
+            turn_has_sentence |= has_sentence(line);
             words += line.split_whitespace().count();
             if first_bodies.len() < 3 {
                 first_bodies.insert(line);
             }
         } else if turns > 0 {
             unmatched += 1;
+            turn_has_sentence |= has_sentence(line);
         } else {
             return None;
         }
+    }
+    if turns > 0 && turn_has_sentence {
+        sentence_turns += 1;
     }
 
     let single_speaker_transcription = header.transcription_model
@@ -325,7 +342,11 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
         && (header.transcript
             || fathom
             || single_speaker_transcription
-            || changes >= 2 && speakers.len() < turns);
+            || changes >= 2
+                && speakers.len() < turns
+                && sentence_turns * 2 >= turns
+                && sentence_turns >= 2
+                && !(timed_turns == turns && round_15_wall_clocks == turns));
     is_export.then_some(if words > header.summary_words + action_words {
         Transcripts
     } else {
@@ -582,7 +603,11 @@ pub(super) fn signal_dated(lines: &[&str]) -> bool {
             unmatched += 1;
         }
     }
-    speakers.len() >= 2 && matched >= 2 && unmatched <= matched && annotations <= matched * 3
+    speakers.len() >= 2
+        && matched >= 2
+        && unmatched <= matched
+        && annotations <= matched * 3
+        && !speakers.iter().all(|speaker| reserved_label(speaker))
 }
 
 fn is_signal_annotation(line: &str) -> bool {
@@ -592,32 +617,6 @@ fn is_signal_annotation(line: &str) -> bool {
     let quote = line.starts_with("> ");
     let attachment = line.starts_with("![") && line.contains("](") && line.ends_with(')');
     reaction || quote || attachment
-}
-
-fn parse_clock_seconds(text: &str) -> Option<u64> {
-    let parse_part = |part: &str, min_len: usize, max_len: usize| -> Option<u64> {
-        ((min_len..=max_len).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))
-            .then(|| part.parse::<u64>().ok())
-            .flatten()
-    };
-    let mut parts = text.split(':');
-    let first = parse_part(parts.next()?, 1, 3)?;
-    let second = parse_part(parts.next()?, 2, 2)?;
-    match (parts.next(), parts.next()) {
-        (None, None) if second < 60 => first.checked_mul(60)?.checked_add(second),
-        (Some(third), None) => {
-            let third = parse_part(third, 2, 2)?;
-            (second < 60 && third < 60)
-                .then(|| {
-                    first
-                        .checked_mul(3600)?
-                        .checked_add(second.checked_mul(60)?)?
-                        .checked_add(third)
-                })
-                .flatten()
-        }
-        _ => None,
-    }
 }
 
 fn bold_speaker_line(line: &str) -> Option<&str> {
@@ -662,6 +661,8 @@ pub(super) fn macwhisper_stacked(lines: &[&str]) -> bool {
     let mut pending_speaker = None;
     let mut continuations = 0usize;
     let mut turn_words = 0usize;
+    let mut sentence_turns = 0usize;
+    let mut turn_has_sentence = false;
     let mut has_body = true;
     while idx < rows.len() {
         if let Some(speaker) = bold_speaker_line(rows[idx])
@@ -670,10 +671,14 @@ pub(super) fn macwhisper_stacked(lines: &[&str]) -> bool {
             if !has_body {
                 return false;
             }
+            if !speakers.is_empty() && turn_has_sentence {
+                sentence_turns += 1;
+            }
             speakers.push(speaker.to_lowercase());
             pending_speaker = Some(speaker);
             clocks.push(clock);
             has_body = false;
+            turn_has_sentence = false;
             idx += 2;
         } else if speakers.is_empty() {
             return false;
@@ -688,17 +693,23 @@ pub(super) fn macwhisper_stacked(lines: &[&str]) -> bool {
                 utterances.insert((speaker, line));
             }
             has_body = true;
+            turn_has_sentence |= has_sentence(line);
             continuations += 1;
             turn_words += line.split_whitespace().count();
             idx += 1;
         }
+    }
+    if !speakers.is_empty() && turn_has_sentence {
+        sentence_turns += 1;
     }
     let turns = speakers.len();
     if turns < 2
         || !has_body
         || continuations > turns * 4
         || (header.summary_words != 0 && turn_words <= header.summary_words)
-        || !clocks.windows(2).all(|pair| pair[1] >= pair[0])
+        || !is_recording_offset_clocks(&clocks)
+        || sentence_turns * 2 < turns
+        || sentence_turns < 2
     {
         return false;
     }
@@ -717,9 +728,124 @@ pub(super) fn macwhisper_stacked(lines: &[&str]) -> bool {
         distinct.len() >= 2 && distinct.len() < turns && changes >= 2
     } else {
         // Two-turn exports (e.g., short clips) need an explicit 00:00 audio origin
-        // and advancing clock so two-item schedules (09:00 / 10:30) stay notes.
+        // in addition to the recording-offset and spoken-sentence checks.
         distinct.len() == 2 && clocks[0] == 0 && clocks[1] > 0
     }
+}
+
+pub(super) fn dated_bold_speaker(lines: &[&str]) -> bool {
+    static TURN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"^[-*]\s+(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})\s+(?P<time>[0-9]{2}:[0-9]{2}:[0-9]{2})\s+\*\*(?P<speaker>[^*:：]{1,60})(?:[:：]\*\*|\*\*[:：])\s+(?P<body>\S.*)$",
+        )
+        .unwrap()
+    });
+    const MAX_TURN_GAP_SECS: i64 = 30 * 60;
+    const MAX_RECORDING_SPAN_SECS: i64 = 6 * 60 * 60;
+
+    let header = meeting_header(lines);
+    let mut has_title = header.rows > 0;
+    let mut allow_underline = false;
+    let mut in_turn = false;
+    let mut speakers = Vec::new();
+    let mut timestamps = Vec::new();
+    let mut round_schedule_clocks = 0usize;
+    let mut utterances = HashSet::new();
+    let mut sentence_turns = 0usize;
+    let mut turn_has_sentence = false;
+    let mut matched = 0usize;
+    let mut unmatched = 0usize;
+    let mut turn_words = 0usize;
+
+    for line in nonblank(lines).skip(header.rows) {
+        let captured = TURN.captures(line).and_then(|c| {
+            let speaker = speaker_label(c.name("speaker")?.as_str())?;
+            let date = jiff::civil::Date::strptime("%Y-%m-%d", c.name("date")?.as_str()).ok()?;
+            let time = jiff::civil::Time::strptime("%H:%M:%S", c.name("time")?.as_str()).ok()?;
+            let dt = date.to_datetime(time);
+            let epoch = jiff::tz::Offset::UTC.to_timestamp(dt).ok()?.as_second();
+            let round_clock = dt.second() == 0 && dt.minute() % 5 == 0;
+            let body = c.name("body")?.as_str();
+            Some((speaker, epoch, round_clock, body))
+        });
+        if let Some((speaker, epoch, round_clock, body)) = captured {
+            if in_turn && turn_has_sentence {
+                sentence_turns += 1;
+            }
+            matched += 1;
+            if header.summary_words != 0 {
+                turn_words += body.split_whitespace().count();
+            }
+            speakers.push(speaker.to_lowercase());
+            timestamps.push(epoch);
+            round_schedule_clocks += usize::from(round_clock);
+            if utterances.len() < 5 {
+                utterances.insert((speaker, body));
+            }
+            turn_has_sentence = has_sentence(body);
+            in_turn = true;
+        } else if !in_turn {
+            if is_export_notice(line) {
+                allow_underline = false;
+                continue;
+            }
+            if allow_underline
+                && line.len() >= 3
+                && (line.bytes().all(|b| b == b'=') || line.bytes().all(|b| b == b'-'))
+            {
+                allow_underline = false;
+                continue;
+            }
+            if !has_title && short_title(line) {
+                has_title = true;
+                allow_underline = markdown_title(line).is_none();
+                continue;
+            }
+            return false;
+        } else if !is_export_notice(line) {
+            if markdown_title(line).is_some() {
+                return false;
+            }
+            unmatched += 1;
+            turn_has_sentence |= has_sentence(line);
+        }
+    }
+    if in_turn && turn_has_sentence {
+        sentence_turns += 1;
+    }
+    if matched < 3
+        || unmatched > matched
+        || (header.summary_words != 0 && turn_words <= header.summary_words)
+        || round_schedule_clocks == matched
+        || sentence_turns * 2 < matched
+        || sentence_turns < 2
+    {
+        return false;
+    }
+    let continuous_recording = timestamps
+        .windows(2)
+        .all(|pair| pair[1] >= pair[0] && pair[1] - pair[0] <= MAX_TURN_GAP_SECS)
+        && timestamps
+            .last()
+            .zip(timestamps.first())
+            .is_some_and(|(last, first)| last > first && last - first <= MAX_RECORDING_SPAN_SECS);
+    if !continuous_recording {
+        return false;
+    }
+    let distinct: HashSet<_> = speakers.iter().collect();
+    if distinct.len() < 2
+        || distinct.len() >= matched
+        || distinct.iter().all(|speaker| reserved_label(speaker))
+        || repeats_in_order(&speakers, distinct.len())
+        || utterances.len() < matched.min(5)
+    {
+        return false;
+    }
+    let changes = speakers
+        .windows(2)
+        .filter(|pair| pair[0] != pair[1])
+        .count();
+    changes >= 2
 }
 
 fn transcript_heading(line: &str) -> bool {
@@ -764,6 +890,12 @@ fn transcript_heading(line: &str) -> bool {
                 | "about"
                 | "my"
                 | "our"
+                | "schedule"
+                | "plan"
+                | "itinerary"
+                | "roster"
+                | "changelog"
+                | "log"
         )
     }) {
         return false;

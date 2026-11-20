@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation record unavailable in the journal's home view.",
+  "context": "Journal window, home view. Originals operation record unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "097c9f1d5a7d262477e018bdf20582b9d74867095087d83db5dcc998f811dad0",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

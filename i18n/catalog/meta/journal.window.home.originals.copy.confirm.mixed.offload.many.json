@@ -1,0 +1,16 @@
+{
+  "description": "Originals confirm mixed offload many in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm mixed offload many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b3ae523720637ca619a2a0a41a212e59e30bb34885a31f130d59accbe85762c",
+  "max_length": 180,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

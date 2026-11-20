@@ -1,0 +1,28 @@
+{
+  "description": "Weekly reflection days from in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection days from.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3035839b19f09319d945b5a4940d1639c1793c4e54f80c11004b4cfc9ff7c0ac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

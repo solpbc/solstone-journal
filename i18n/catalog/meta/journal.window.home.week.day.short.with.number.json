@@ -1,0 +1,32 @@
+{
+  "description": "Weekly reflection day short with number in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection day short with number.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3e338596b3afd8a978b8949900bd79af008e79ac8143c5fd8a555e1811cacd4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

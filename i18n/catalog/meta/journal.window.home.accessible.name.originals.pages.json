@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's home view.",
+  "context": "Journal window, home view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86b990857524eb36a355b6a5d049f4957b8c68d2aea188c7daef7255e54532d9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

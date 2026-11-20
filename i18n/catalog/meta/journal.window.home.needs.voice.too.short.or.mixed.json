@@ -1,0 +1,16 @@
+{
+  "description": "Waiting-on-you voice too short or mixed in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you voice too short or mixed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19a64dc2081185a2b77406cd7b6b505bbda6a2b3c9959e77db6427598de08182",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

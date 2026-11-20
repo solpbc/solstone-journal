@@ -1,0 +1,28 @@
+{
+  "description": "Waiting-on-you device one in the journal's home view.",
+  "context": "Journal window, home view. Waiting-on-you device one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e289af1859ba32b0980262e985f6e330fc52351b0bdd3bb522acd2d633fe7ab9",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

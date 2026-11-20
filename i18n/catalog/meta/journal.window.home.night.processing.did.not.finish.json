@@ -1,0 +1,16 @@
+{
+  "description": "Home night processing did not finish in the journal's home view.",
+  "context": "Journal window, home view. Home night processing did not finish.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81069c6ad9063e3ab2772ab0f073ea9d7def27168b93950070f2efa04fdbb6b2",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

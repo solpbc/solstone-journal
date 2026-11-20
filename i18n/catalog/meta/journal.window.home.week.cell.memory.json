@@ -1,0 +1,16 @@
+{
+  "description": "Weekly reflection cell memory in the journal's home view.",
+  "context": "Journal window, home view. Weekly reflection cell memory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8e2f2bc3d535a7ee35535e1bcc6526f6be50e8bf958599b89a044c77a5545d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

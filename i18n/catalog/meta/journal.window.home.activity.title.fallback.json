@@ -1,0 +1,16 @@
+{
+  "description": "activity title fallback in the journal's home view.",
+  "context": "Journal window, home view. activity title fallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f4715f67d27dea8d749f342e64fcbbc83521d2758790704e3bdc15d01fa7488",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

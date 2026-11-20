@@ -48,3 +48,14 @@ pub fn not_found_response() -> Response {
         .body(Body::from(english_not_found()))
         .expect("not found response builds")
 }
+
+pub fn redirect_body(location: &str, locale: &str) -> String {
+    let lang = language_tag(locale);
+    let location = escape_html(location);
+    let title = html(locale, "journal.window.shell.redirect.title");
+    let detail = html(locale, "journal.window.shell.redirect.detail")
+        .replace("{link}", &format!("<a href=\"{location}\">{location}</a>"));
+    format!(
+        "<!doctype html>\n<html lang={lang}>\n<title>{title}</title>\n<h1>{title}</h1>\n<p>{detail}\n"
+    )
+}

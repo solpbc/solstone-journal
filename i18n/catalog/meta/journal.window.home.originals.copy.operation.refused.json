@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation refused in the journal's home view.",
+  "context": "Journal window, home view. Originals operation refused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da116680784825ddc9ef4be832ce3d3322174b20a181c6a0a14bc6a9a03672e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

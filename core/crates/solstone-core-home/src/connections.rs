@@ -4,8 +4,13 @@
 //! Pure connections-card projection.
 
 use serde_json::{Value, json};
-use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note};
+use std::borrow::Cow;
+
+use solstone_core_entities::{
+    ATTENDANCE_KINDS, ENTITIES_COPY, connections_horizon_note, entities_copy,
+};
 use solstone_core_facets::ConnectionsHorizon;
+use solstone_core_window_catalog::ENGLISH;
 
 const CONNECTION_KIND_KEYS: [&str; 13] = [
     "works-with",
@@ -27,6 +32,15 @@ pub fn build_connections_card(
     principal: Result<Option<Value>, ()>,
     network: Result<Value, ()>,
     horizon: Option<ConnectionsHorizon>,
+) -> Value {
+    build_connections_card_in(principal, network, horizon, ENGLISH)
+}
+
+pub fn build_connections_card_in(
+    principal: Result<Option<Value>, ()>,
+    network: Result<Value, ()>,
+    horizon: Option<ConnectionsHorizon>,
+    locale: &str,
 ) -> Value {
     let Ok(principal) = principal else {
         return json!({"state":"unavailable"});
@@ -72,25 +86,30 @@ pub fn build_connections_card(
     }
     let mut attendance_kinds = ATTENDANCE_KINDS.to_vec();
     attendance_kinds.sort_unstable();
-    let mut card = json!({"state":"ok","neighbors":named.iter().copied().map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(),"attendance_kinds":attendance_kinds});
+    let mut card = json!({"state":"ok","neighbors":named.iter().copied().map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(locale),"attendance_kinds":attendance_kinds});
     if let Some(horizon) = horizon {
         let object = card.as_object_mut().expect("ok card is an object");
         object.insert("horizon_day".to_owned(), Value::String(horizon.day));
         object.insert(
             "horizon_note".to_owned(),
-            Value::String(compose_connections_horizon_note(horizon.earlier_days)),
+            Value::String(connections_horizon_note(locale, horizon.earlier_days)),
         );
     }
     card
 }
 
-fn kind_words() -> Value {
-    let mut composed = ENTITIES_COPY
+fn kind_words(locale: &str) -> Value {
+    let copy = if locale == ENGLISH {
+        Cow::Borrowed(&*ENTITIES_COPY)
+    } else {
+        Cow::Owned(entities_copy(locale))
+    };
+    let mut composed = copy
         .get("ENT_CONN_KIND_WORDS")
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    if let Some(chips) = ENTITIES_COPY
+    if let Some(chips) = copy
         .get("ENT_CONN_KIND_CHIP_WORDS")
         .and_then(Value::as_object)
     {
@@ -393,7 +412,10 @@ mod tests {
         assert_eq!(card["state"], "ok");
         assert_eq!(card.as_object().unwrap().len(), 7);
         assert_eq!(card["horizon_day"], "20260301");
-        assert_eq!(card["horizon_note"], compose_connections_horizon_note(3));
+        assert_eq!(
+            card["horizon_note"],
+            connections_horizon_note(solstone_core_window_catalog::ENGLISH, 3)
+        );
         assert!(card["horizon_note"].as_str().unwrap().contains("{day}"));
         assert!(!card["horizon_note"].as_str().unwrap().contains("{n}"));
     }
@@ -411,7 +433,7 @@ mod tests {
             );
             assert_eq!(
                 card["horizon_note"].as_str().unwrap(),
-                compose_connections_horizon_note(earlier_days)
+                connections_horizon_note(solstone_core_window_catalog::ENGLISH, earlier_days)
             );
         }
     }

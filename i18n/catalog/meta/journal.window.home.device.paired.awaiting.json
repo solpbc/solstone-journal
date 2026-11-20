@@ -1,0 +1,33 @@
+{
+  "description": "Home display device paired awaiting in the journal's home view.",
+  "context": "Journal window, home view. Home display device paired awaiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba16d7b1d52d56682668fa67fe53d86a29fb5a9e14460bfd1d6028fe963d1fe8",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

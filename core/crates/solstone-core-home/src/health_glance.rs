@@ -7,27 +7,24 @@ use jiff::tz::Offset;
 use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 
-use crate::formatting::relative_time;
+use crate::formatting::{relative_time_in, time_count};
 use crate::model::{BacklogSource, BacklogValidity};
-use crate::needs_you::format_degraded_capture_line;
+use crate::needs_you::format_degraded_capture_line_in;
 use solstone_core_system_health::NotYet;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-const UNAVAILABLE_HEADLINE: &str = "your devices' status is unclear right now.";
-const EMPTY_REGISTRY_HEADLINE: &str =
-    "no devices are running the solstone app yet. set one up to start your journal.";
-const AWAITING_FIRST_HEADLINE: &str =
-    "the solstone app on one of your devices hasn't added anything to your journal yet.";
-const RESIDUE_HEADLINE: &str = "nothing needs your attention right now.";
-const NO_ELIGIBLE_HEADLINE: &str =
-    "none of your devices have the solstone app set up to add to your journal right now.";
+const UNAVAILABLE_HEADLINE_ID: &str = "journal.window.home.health.unavailable.headline";
+const EMPTY_REGISTRY_HEADLINE_ID: &str = "journal.window.home.health.empty.registry.headline";
+const AWAITING_FIRST_HEADLINE_ID: &str = "journal.window.home.health.awaiting.first.headline";
+const RESIDUE_HEADLINE_ID: &str = "journal.window.home.health.residue.headline";
+const NO_ELIGIBLE_HEADLINE_ID: &str = "journal.window.home.health.no.eligible.headline";
 // An idle device is a device with no new material. Reachability is a heartbeat
 // window, not something the journal measures for its own host, so the line says
 // what is known — nothing was added, and when the last thing was — and stops.
 // Day 0 with a device already delivering: things are arriving, and the summary
 // that could prove the rest hasn't had its first chance yet. Calm, never green.
-const NOT_YET_ACTIVE_HEADLINE: &str = "the solstone app is adding to your journal.";
-const UNNAMED_IDLE_ISSUE: &str =
-    "the solstone app on one of your devices hasn't added anything to your journal recently.";
+const NOT_YET_ACTIVE_HEADLINE_ID: &str = "journal.window.home.health.not.yet.active.headline";
+const UNNAMED_IDLE_ISSUE_ID: &str = "journal.window.home.health.unnamed.idle.issue";
 
 #[derive(Clone, Copy)]
 enum CalmKind {
@@ -53,6 +50,26 @@ pub fn build_health_glance(
     now: Timestamp,
     transcription_issue: Option<&Value>,
 ) -> Value {
+    build_health_glance_in(
+        capture,
+        last_observe,
+        backlog,
+        brain,
+        now,
+        transcription_issue,
+        ENGLISH,
+    )
+}
+
+pub fn build_health_glance_in(
+    capture: &Value,
+    last_observe: Option<&str>,
+    backlog: &BacklogSource,
+    brain: &Value,
+    now: Timestamp,
+    transcription_issue: Option<&Value>,
+    locale: &str,
+) -> Value {
     let mut glance = derive_glance(
         capture,
         last_observe,
@@ -60,11 +77,12 @@ pub fn build_health_glance(
         brain,
         now,
         transcription_issue,
+        locale,
     );
     // A journal with no devices always keeps its way to add one, whatever else
     // the glance is saying: a new journal is exactly when it's needed.
     if glance["cta"].is_null() && is_empty_registry(capture) {
-        glance["cta"] = empty_registry_cta();
+        glance["cta"] = empty_registry_cta(locale);
     }
     let not_yet = match backlog.validity {
         BacklogValidity::NotYet(not_yet) => Some(not_yet),
@@ -79,9 +97,9 @@ pub fn build_health_glance(
         if glance["verdict"] == "ok" {
             glance["verdict"] = json!("calm");
             glance["severity"] = json!("neutral");
-            glance["headline"] = json!(NOT_YET_ACTIVE_HEADLINE);
+            glance["headline"] = json!(text(locale, NOT_YET_ACTIVE_HEADLINE_ID));
         }
-        glance["note"] = json!({"text": not_yet.text(), "href": not_yet.href()});
+        glance["note"] = json!({"text": not_yet.text_in(locale), "href": not_yet.href()});
     }
     glance
 }
@@ -93,9 +111,10 @@ fn derive_glance(
     brain: &Value,
     now: Timestamp,
     transcription_issue: Option<&Value>,
+    locale: &str,
 ) -> Value {
-    let mut issues = backlog_issues(backlog, now);
-    if let Some(issue) = capture_issue(capture) {
+    let mut issues = backlog_issues(backlog, now, locale);
+    if let Some(issue) = capture_issue(capture, locale) {
         issues.push(issue);
     }
     if let Some(issue) = brain_issue(brain) {
@@ -111,15 +130,19 @@ fn derive_glance(
         };
         let count = issues.len();
         let headline = if count == 1 {
-            "1 thing needs your attention".to_owned()
+            text(locale, "journal.window.home.health.attention.one")
         } else {
-            format!("{count} things need your attention")
+            strings(
+                locale,
+                "journal.window.home.health.attention.many",
+                [("count", &count.to_string())],
+            )
         };
         return json!({"verdict":"attention","severity":severity,"headline":headline,"last_observation":null,"cta":null,"issues":issues});
     }
     let disposition = capture_disposition(capture);
     if matches!(disposition, CaptureDisposition::Unavailable) {
-        return unavailable_json();
+        return unavailable_json(locale);
     }
     if brain.get("state").and_then(Value::as_str) == Some("checking") {
         return json!({"verdict":"checking","severity":"amber","headline":brain.get("headline").cloned().unwrap_or(Value::Null),"last_observation":null,"cta":null,"issues":[]});
@@ -131,14 +154,14 @@ fn derive_glance(
     }
     match disposition {
         CaptureDisposition::Quiet => {
-            let summary = quiet_capture_summary(capture, now);
+            let summary = quiet_capture_summary(capture, now, locale);
             json!({"verdict":"calm","severity":"neutral","headline":summary,"last_observation":last_observe,"cta":{"text":"view devices →","href":"/app/health/#registeredClientsCard"},"issues":[]})
         }
         CaptureDisposition::Active => {
-            json!({"verdict":"ok","severity":"green","headline":"everything's working","last_observation":last_observe,"cta":null,"issues":[]})
+            json!({"verdict":"ok","severity":"green","headline":text(locale, "journal.window.home.health.ready"),"last_observation":last_observe,"cta":null,"issues":[]})
         }
-        CaptureDisposition::Calm(kind) => calm_json(kind),
-        CaptureDisposition::Unavailable => unavailable_json(),
+        CaptureDisposition::Calm(kind) => calm_json(kind, locale),
+        CaptureDisposition::Unavailable => unavailable_json(locale),
     }
 }
 
@@ -222,8 +245,8 @@ fn is_empty_registry(capture: &Value) -> bool {
     )
 }
 
-fn empty_registry_cta() -> Value {
-    json!({"text": "set one up →", "href": "/app/network/#devices"})
+fn empty_registry_cta(locale: &str) -> Value {
+    json!({"text": text(locale, "journal.window.home.health.device.setup"), "href": "/app/network/#devices"})
 }
 
 /// The brain reason for a journal with no way to think chosen yet.
@@ -231,24 +254,24 @@ fn engine_not_chosen(brain: &Value) -> bool {
     brain.get("reason_code").and_then(Value::as_str) == Some("thinking_engine_not_chosen")
 }
 
-fn unavailable_json() -> Value {
-    json!({"verdict":"unavailable","severity":"amber","headline":UNAVAILABLE_HEADLINE,"last_observation":null,"cta":null,"issues":[]})
+fn unavailable_json(locale: &str) -> Value {
+    json!({"verdict":"unavailable","severity":"amber","headline":text(locale, UNAVAILABLE_HEADLINE_ID),"last_observation":null,"cta":null,"issues":[]})
 }
 
-fn calm_json(kind: CalmKind) -> Value {
+fn calm_json(kind: CalmKind, locale: &str) -> Value {
     match kind {
         CalmKind::EmptyRegistry => json!({
             "verdict": "calm",
             "severity": "neutral",
-            "headline": EMPTY_REGISTRY_HEADLINE,
+            "headline": text(locale, EMPTY_REGISTRY_HEADLINE_ID),
             "last_observation": null,
-            "cta": empty_registry_cta(),
+            "cta": empty_registry_cta(locale),
             "issues": [],
         }),
         CalmKind::AwaitingFirst => json!({
             "verdict": "calm",
             "severity": "neutral",
-            "headline": AWAITING_FIRST_HEADLINE,
+            "headline": text(locale, AWAITING_FIRST_HEADLINE_ID),
             "last_observation": null,
             "cta": null,
             "issues": [],
@@ -256,7 +279,7 @@ fn calm_json(kind: CalmKind) -> Value {
         CalmKind::Residue => json!({
             "verdict": "calm",
             "severity": "neutral",
-            "headline": RESIDUE_HEADLINE,
+            "headline": text(locale, RESIDUE_HEADLINE_ID),
             "last_observation": null,
             "cta": null,
             "issues": [],
@@ -264,7 +287,7 @@ fn calm_json(kind: CalmKind) -> Value {
         CalmKind::NoEligible => json!({
             "verdict": "calm",
             "severity": "neutral",
-            "headline": NO_ELIGIBLE_HEADLINE,
+            "headline": text(locale, NO_ELIGIBLE_HEADLINE_ID),
             "last_observation": null,
             "cta": null,
             "issues": [],
@@ -272,19 +295,19 @@ fn calm_json(kind: CalmKind) -> Value {
     }
 }
 
-fn backlog_issues(source: &BacklogSource, now: Timestamp) -> Vec<Value> {
+fn backlog_issues(source: &BacklogSource, now: Timestamp, locale: &str) -> Vec<Value> {
     if matches!(source.validity, BacklogValidity::NotYet(_)) {
         return Vec::new();
     }
     if source.validity != BacklogValidity::Valid {
-        return vec![unknown_backlog()];
+        return vec![unknown_backlog(locale)];
     }
     let Some(backlog) = &source.backlog else {
-        return vec![unknown_backlog()];
+        return vec![unknown_backlog(locale)];
     };
     let mut issues = Vec::new();
     if backlog.get("degraded").and_then(Value::as_bool) == Some(true) {
-        issues.push(unknown_backlog());
+        issues.push(unknown_backlog(locale));
     }
     match solstone_core_system_health::summary_freshness(source.generated_at.as_deref(), now) {
         solstone_core_system_health::SummaryFreshness::Fresh => {}
@@ -294,17 +317,14 @@ fn backlog_issues(source: &BacklogSource, now: Timestamp) -> Vec<Value> {
             )
             .unwrap();
             issues.push(json!({
-                "text": format!(
-                    "it's unclear whether your journal is caught up; the last update was {} ago.",
-                    age(now - generated)
-                ),
+                "text": strings(locale, "journal.window.system.health.backlog.verdict.age.stale.template", [("age",&age(now - generated, locale))]),
                 "severity": "amber",
                 "href": "/app/health"
             }));
         }
         solstone_core_system_health::SummaryFreshness::Unknown => {
             issues.push(json!({
-                "text": "it's unclear whether your journal is caught up; the last update age is unknown.",
+                "text": text(locale, "journal.window.system.health.backlog.verdict.age.unknown"),
                 "severity": "amber",
                 "href": "/app/health"
             }));
@@ -324,26 +344,27 @@ fn backlog_issues(source: &BacklogSource, now: Timestamp) -> Vec<Value> {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|text| !text.is_empty())
-            .unwrap_or("a journal day needs a hand.");
+            .map(str::to_owned)
+            .unwrap_or_else(|| text(locale, "journal.window.home.health.backlog.day.needs.help"));
         issues.push(json!({"text":text,"severity":"red","href":"/app/health"}));
     }
     issues
 }
-fn unknown_backlog() -> Value {
-    json!({"text":solstone_core_system_health::backlog_unavailable(),"severity":"amber","href":"/app/health"})
+fn unknown_backlog(locale: &str) -> Value {
+    json!({"text":solstone_core_system_health::backlog_unavailable_in(locale),"severity":"amber","href":"/app/health"})
 }
-fn rejected_sources(client: &Value) -> Vec<&str> {
+fn rejected_sources(client: &Value, locale: &str) -> Vec<String> {
     client
         .get("source_delivery")
         .and_then(Value::as_object)
         .into_iter()
         .flatten()
         .filter(|(_, row)| row.get("state").and_then(Value::as_str) == Some("needs_attention"))
-        .map(|(source, _)| crate::needs_you::source_display_name(source))
+        .map(|(source, _)| crate::needs_you::source_display_name(source, locale))
         .collect()
 }
 
-fn capture_issue(capture: &Value) -> Option<Value> {
+fn capture_issue(capture: &Value, locale: &str) -> Option<Value> {
     // The same authority as Health: an explicit source refusal survives a
     // sibling source succeeding. Count devices, not their source rows.
     let mut affected = capture
@@ -351,10 +372,10 @@ fn capture_issue(capture: &Value) -> Option<Value> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|client| client["failing"] == true || !rejected_sources(client).is_empty())
+        .filter(|client| client["failing"] == true || !rejected_sources(client, locale).is_empty())
         .collect::<Vec<_>>();
     if affected.is_empty() {
-        return format_degraded_capture_line(capture).map(|text| {
+        return format_degraded_capture_line_in(capture, locale).map(|text| {
             json!({
                 "text": text, "severity": "red", "href": "/app/health"
             })
@@ -376,8 +397,9 @@ fn capture_issue(capture: &Value) -> Option<Value> {
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|name| !name.is_empty())
-                .unwrap_or("an unnamed device");
-            let sources = rejected_sources(client);
+                .map(str::to_owned)
+                .unwrap_or_else(|| text(locale, "journal.window.health.status.an.unnamed.device"));
+            let sources = rejected_sources(client, locale);
             if sources.is_empty() {
                 name.to_owned()
             } else {
@@ -386,12 +408,19 @@ fn capture_issue(capture: &Value) -> Option<Value> {
         })
         .collect::<Vec<_>>();
     let text = if affected.len() == 1 {
-        format!("your journal couldn't accept uploads from {}.", labels[0])
+        strings(
+            locale,
+            "journal.window.home.health.upload.one",
+            [("device", &labels[0])],
+        )
     } else {
-        format!(
-            "your journal couldn't accept uploads from {} devices: {}.",
-            affected.len(),
-            labels.join(", ")
+        strings(
+            locale,
+            "journal.window.home.health.upload.many",
+            [
+                ("count", &affected.len().to_string()),
+                ("devices", &labels.join(", ")),
+            ],
         )
     };
     let severity = if affected.iter().any(|client| client["failing"] == true) {
@@ -404,28 +433,43 @@ fn capture_issue(capture: &Value) -> Option<Value> {
 /// Health's `describeRegisteredClient` and its `HEALTH_GLANCE_DEVICE*_SILENT`
 /// strings are the single source for this sentence; home echoes them, in
 /// health's order (the quietest device first). X-03.
-fn quiet_capture_summary(capture: &Value, now: Timestamp) -> String {
-    let idle = idle_clients(capture, now);
+fn quiet_capture_summary(capture: &Value, now: Timestamp, locale: &str) -> String {
+    let idle = idle_clients(capture, now, locale);
     match idle.as_slice() {
-        [] => UNNAMED_IDLE_ISSUE.to_owned(),
-        [(name, Some(age))] => format!("{name} hasn't added to your journal in {age}."),
-        [(name, None)] => format!("{name} hasn't added to your journal recently."),
-        rows => format!(
-            "{} devices haven't added to your journal recently: {}.",
-            rows.len(),
-            rows.iter()
-                .map(|(name, age)| match age {
-                    Some(age) => format!("{name} ({age})"),
-                    None => name.clone(),
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
+        [] => text(locale, UNNAMED_IDLE_ISSUE_ID),
+        [(name, Some(age))] => strings(
+            locale,
+            "journal.window.home.health.quiet.one.known",
+            [("device", name), ("age", age)],
+        ),
+        [(name, None)] => strings(
+            locale,
+            "journal.window.home.health.quiet.one.unknown",
+            [("device", name)],
+        ),
+        rows => strings(
+            locale,
+            "journal.window.home.health.quiet.many",
+            [
+                ("count", &rows.len().to_string()),
+                (
+                    "devices",
+                    &rows
+                        .iter()
+                        .map(|(name, age)| match age {
+                            Some(age) => format!("{name} ({age})"),
+                            None => name.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            ],
         ),
     }
 }
 // The names the owner sees decide the number the sentence is written in, so the
 // devices are collected before the line is composed rather than after.
-fn idle_clients(capture: &Value, now: Timestamp) -> Vec<(String, Option<String>)> {
+fn idle_clients(capture: &Value, now: Timestamp, locale: &str) -> Vec<(String, Option<String>)> {
     let mut rows = capture
         .get("clients")
         .and_then(Value::as_array)
@@ -456,7 +500,12 @@ fn idle_clients(capture: &Value, now: Timestamp) -> Vec<(String, Option<String>)
             .then_with(|| left.0.cmp(&right.0))
     });
     rows.into_iter()
-        .map(|(name, seconds)| (name, seconds.map(format_idle_age)))
+        .map(|(name, seconds)| {
+            (
+                name,
+                seconds.map(|seconds| format_idle_age(seconds, locale)),
+            )
+        })
         .collect()
 }
 fn idle_seconds(client: &Value, now: Timestamp) -> Option<i64> {
@@ -467,11 +516,11 @@ fn idle_seconds(client: &Value, now: Timestamp) -> Option<i64> {
     let seconds = (now - last).as_secs();
     (seconds >= 0).then_some(seconds)
 }
-fn format_idle_age(seconds: i64) -> String {
+fn format_idle_age(seconds: i64, locale: &str) -> String {
     if seconds < 45 {
-        "just now".to_owned()
+        text(locale, "journal.window.home.health.age.just.now")
     } else {
-        relative_time(seconds as f64)
+        relative_time_in(seconds as f64, locale)
     }
 }
 fn brain_issue(brain: &Value) -> Option<Value> {
@@ -504,14 +553,14 @@ fn parse_time(value: &str) -> Option<Timestamp> {
                 .and_then(|time| Offset::UTC.to_timestamp(time).ok())
         })
 }
-fn age(delta: SignedDuration) -> String {
+fn age(delta: SignedDuration, locale: &str) -> String {
     let seconds = delta.as_secs().max(0);
     let hours = seconds / 3600;
     if hours >= 1 {
-        format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
+        time_count(locale, "hour", hours)
     } else {
         let minutes = (seconds / 60).max(1);
-        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+        time_count(locale, "minute", minutes)
     }
 }
 
@@ -1060,7 +1109,10 @@ mod tests {
         );
 
         let corpus_shaped = json!({"status": "stale", "clients": [{"name": "laptop"}]});
-        assert_eq!(glance(&corpus_shaped)["headline"], UNNAMED_IDLE_ISSUE);
+        assert_eq!(
+            glance(&corpus_shaped)["headline"],
+            text(ENGLISH, UNNAMED_IDLE_ISSUE_ID)
+        );
         assert_eq!(
             glance(&corpus_shaped)["cta"]["href"],
             "/app/health/#registeredClientsCard"
@@ -1206,7 +1258,10 @@ mod tests {
         let delivering = not_yet_glance(&active, &Value::Null, &not_yet(NotYet::FirstNight));
         assert_eq!(delivering["verdict"], "calm");
         assert_eq!(delivering["severity"], "neutral");
-        assert_eq!(delivering["headline"], NOT_YET_ACTIVE_HEADLINE);
+        assert_eq!(
+            delivering["headline"],
+            text(ENGLISH, NOT_YET_ACTIVE_HEADLINE_ID)
+        );
         assert_eq!(delivering["last_observation"], "2 minutes ago");
         assert!(delivering["issues"].as_array().unwrap().is_empty());
         assert_eq!(
@@ -1285,7 +1340,10 @@ mod tests {
         // No devices, thinking set up: the first-run invite comes back.
         let first_run = not_yet_glance(&empty, &Value::Null, &not_yet(NotYet::FirstNight));
         assert_eq!(first_run["verdict"], "calm");
-        assert_eq!(first_run["headline"], EMPTY_REGISTRY_HEADLINE);
+        assert_eq!(
+            first_run["headline"],
+            text(ENGLISH, EMPTY_REGISTRY_HEADLINE_ID)
+        );
         assert_eq!(first_run["cta"]["text"], "set one up →");
         assert_eq!(
             note(&first_run).as_deref(),

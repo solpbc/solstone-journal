@@ -1,0 +1,33 @@
+{
+  "description": "Home display today facets measured one in the journal's home view.",
+  "context": "Journal window, home view. Home display today facets measured one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "measured",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "25f24333a746f8b8855c6790369f40f1eb5ebda9a9f155a747cdfd4f3d50f4b2",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Originals confirm body offload many in the journal's home view.",
+  "context": "Journal window, home view. Originals confirm body offload many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e9118d00e5434c576075c667e05bbbc895f8c31d07ed4f7b756a5497768a539",
+  "max_length": 185,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{date}"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "{stream}"
+    }
+  ]
+}

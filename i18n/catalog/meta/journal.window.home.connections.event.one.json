@@ -1,0 +1,16 @@
+{
+  "description": "Home display connections event one in the journal's home view.",
+  "context": "Journal window, home view. Home display connections event one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45fde7b4a5fa3de186e302f2d330d171a7cf2c3bac2304731820e5e0e66b4b7e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

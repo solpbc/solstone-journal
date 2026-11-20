@@ -1,0 +1,28 @@
+{
+  "description": "Home display first segment pending in the journal's home view.",
+  "context": "Journal window, home view. Home display first segment pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f925803377d5d6536936a47f04101565c86e4162f0785af5e72008ff57cd2f9",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Home night talent daily briefing in the journal's home view.",
+  "context": "Journal window, home view. Home night talent daily briefing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdaac04edc2b73d6ecd6013b23526a60a66b23bf2d6a1dd21bdaa08ae0814554",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

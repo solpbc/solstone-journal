@@ -11,8 +11,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_convey_http::window_catalog::{redirect_body, response_locale};
 use solstone_core_home::HomeContext;
 use solstone_core_home::first_minutes::SetupProgressReader;
 
@@ -53,30 +55,32 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
         .route("/app/home/static/week.js", get(assets::week_js))
         .route(
             "/app/home/week/{week}",
-            get(move |week: axum::extract::Path<String>| {
-                week::week_shell(week, week_shell_root.clone())
+            get(move |week: axum::extract::Path<String>, locale: Option<Extension<ResponseLocale>>| {
+                week::week_shell(week, week_shell_root.clone(), response_locale(locale))
             }),
         )
         .route(
             "/app/home/api/week/{week}",
-            get(move |week: axum::extract::Path<String>| {
+            get(move |week: axum::extract::Path<String>, locale: Option<Extension<ResponseLocale>>| {
                 week::week_api(
                     week,
                     week_api_root.clone(),
                     week_api_clock.clone(),
                     is_moment,
+                    response_locale(locale),
                 )
             }),
         )
         .route(
             "/app/home/api/week/{week}/leave-out",
             post(
-                move |week: axum::extract::Path<String>, req: Json<week::LeaveOutRequest>| {
+                move |week: axum::extract::Path<String>, locale: Option<Extension<ResponseLocale>>, req: Json<week::LeaveOutRequest>| {
                     week::week_leave_out(
                         week,
                         week_leave_out_root.clone(),
                         week_leave_out_clock.clone(),
                         is_moment,
+                        response_locale(locale),
                         req,
                     )
                 },
@@ -98,12 +102,14 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
             "/app/home/api/pulse",
             get(
                 move |RawQuery(query): RawQuery,
+                      locale: Option<Extension<ResponseLocale>>,
                       deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>| {
                     pulse(
                         pulse_root.clone(),
                         pulse_clock.clone(),
                         query,
                         deps.map(|Extension(deps)| deps),
+                        response_locale(locale),
                     )
                 },
             ),
@@ -112,20 +118,22 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
             "/app/home/api/first-minutes",
             get(
                 move |basis: Option<Extension<AccessBasis>>,
-                      setup_reader: Option<Extension<SetupProgressReader>>| {
+                      setup_reader: Option<Extension<SetupProgressReader>>,
+                      locale: Option<Extension<ResponseLocale>>| {
                     first_minutes(
                         first_minutes_root.clone(),
                         first_minutes_clock.clone(),
                         basis.map(|Extension(basis)| basis),
                         setup_reader.map(|Extension(reader)| reader),
+                        response_locale(locale),
                     )
                 },
             ),
         )
         .route(
             "/app/home/api/briefing",
-            get(move |RawQuery(query): RawQuery| {
-                briefing(briefing_root.clone(), clock.clone(), query)
+            get(move |RawQuery(query): RawQuery, locale: Option<Extension<ResponseLocale>>| {
+                briefing(briefing_root.clone(), clock.clone(), query, response_locale(locale))
             }),
         )
         .layer(Extension(removal_clock))
@@ -137,13 +145,14 @@ async fn first_minutes(
     clock: Clock,
     basis: Option<AccessBasis>,
     setup_reader: Option<SetupProgressReader>,
+    locale: &'static str,
 ) -> Response {
     let now = clock.now();
     // Setup actions answer only on the journal's own computer, the same rule
     // `/init/api/action` applies; a linked device sees progress and no action.
     let setup_actions = matches!(basis, Some(AccessBasis::Localhost));
     spawn_blocking_response(OwnerReadRole::HomeFirstMinutes, move || {
-        let context = solstone_core_home::HomeContext::new(journal_root, now);
+        let context = solstone_core_home::HomeContext::new(journal_root, now).with_locale(locale);
         let value = match setup_reader {
             Some(reader) => solstone_core_home::first_minutes::read_first_minutes_with(
                 &context,
@@ -162,11 +171,12 @@ async fn pulse(
     clock: Clock,
     query: Option<String>,
     backup: Option<solstone_core_backup_web::BackupWebDeps>,
+    locale: &'static str,
 ) -> Response {
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomePulse, move || {
         let originals_total = removals::originals_total(&journal_root);
-        let context = HomeContext::new(journal_root, now);
+        let context = HomeContext::new(journal_root, now).with_locale(locale);
         let account_time = requested_account_time(&context, query.as_deref());
         let mut payload = solstone_core_home::pulse::pulse_payload_at(&context, account_time);
         payload["originals_total"] = originals_total;
@@ -178,10 +188,15 @@ async fn pulse(
     .await
 }
 
-async fn briefing(journal_root: PathBuf, clock: Clock, query: Option<String>) -> Response {
+async fn briefing(
+    journal_root: PathBuf,
+    clock: Clock,
+    query: Option<String>,
+    locale: &'static str,
+) -> Response {
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomeBriefing, move || {
-        let context = HomeContext::new(journal_root, now);
+        let context = HomeContext::new(journal_root, now).with_locale(locale);
         let account_time = requested_account_time(&context, query.as_deref());
         Json(solstone_core_home::pulse::briefing_payload_at(
             &context,
@@ -209,15 +224,13 @@ fn requested_account_time(context: &HomeContext, query: Option<&str>) -> Option<
     (instant <= context.now_utc).then_some(instant)
 }
 
-async fn shell_redirect() -> Response {
+async fn shell_redirect(locale: Option<Extension<ResponseLocale>>) -> Response {
     let location = "/app/home/";
     Response::builder()
         .status(StatusCode::PERMANENT_REDIRECT)
         .header(header::LOCATION, location)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(format!(
-            "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
-        )))
+        .body(Body::from(redirect_body(location, response_locale(locale))))
         .expect("redirect response builds")
 }
 

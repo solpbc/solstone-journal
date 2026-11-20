@@ -5863,6 +5863,806 @@ journal.window.health.window.explanation.waiting.for.the.recordings.on.this = wa
 
 journal.window.health.window.explanation.your.requests.and.yesterday = your requests and yesterday
 
+journal.window.home.accessible.name.days.of.the.week = days of the week
+
+journal.window.home.accessible.name.originals.pages = originals pages
+
+journal.window.home.accessible.name.which.day = which day
+
+journal.window.home.account.tab.today = today
+
+journal.window.home.account.tab.yesterday = yesterday
+
+journal.window.home.action.all.of.todays.activities = all of today's activities →
+
+journal.window.home.action.check.status = check status
+
+journal.window.home.action.copy = copy
+
+journal.window.home.action.how.this.was.written = how this was written →
+
+journal.window.home.action.open.it = open it →
+
+journal.window.home.action.open.your.week = open your week →
+
+journal.window.home.action.see.health = see health →
+
+journal.window.home.action.see.the.run = see the run →
+
+journal.window.home.action.undo = undo
+
+journal.window.home.action.what.it.fixes = what it fixes ↗
+
+journal.window.home.activity.source.device.browser = browser
+
+journal.window.home.activity.source.device.computer = computer
+
+journal.window.home.activity.source.device.ipad = ipad
+
+journal.window.home.activity.source.device.iphone = iphone
+
+journal.window.home.activity.source.device.mac = mac
+
+journal.window.home.activity.source.device.phone = phone
+
+journal.window.home.activity.source.device.tablet = tablet
+
+journal.window.home.activity.source.phrase = from your{ $slot1 }{ $kind }
+
+journal.window.home.activity.source.phrase.named = from your{ $slot1 }{ $kind }{ $slot2 }({ $device })
+
+journal.window.home.activity.title.fallback = untitled activity
+
+journal.window.home.attention.agent.error.many = { $count }{ $slot1 }agent errors today. ask what happened
+
+journal.window.home.attention.agent.error.one = { $count }{ $slot1 }agent error today. ask what happened
+
+journal.window.home.attention.heading = waiting on you
+
+journal.window.home.attention.import.complete = import complete.
+
+journal.window.home.body.account.mindfulness = mindfulness
+
+journal.window.home.body.account.sleep = sleep
+
+journal.window.home.body.logged = which you logged
+
+journal.window.home.body.source = from{ $slot1 }{ $sources }
+
+journal.window.home.body.sources.and = { $start }{ $slot1 }and{ $slot2 }{ $last }
+
+journal.window.home.body.time.start = from{ $slot1 }{ $start }
+
+journal.window.home.body.time.start.end = { $start }{ $slot1 }to{ $slot2 }{ $end }
+
+journal.window.home.body.time.with.day = { $time }{ $slot1 }on{ $slot2 }{ $day }
+
+journal.window.home.briefing.late = yesterday is usually written up by 10 am. it's{ $slot1 }{ $hours }h late.
+
+journal.window.home.button.label.show.all = show all →
+
+journal.window.home.button.label.try.again = Try again
+
+journal.window.home.connections.event.many = { $count }{ $slot1 }events
+
+journal.window.home.connections.event.one = 1 event
+
+journal.window.home.connections.moment.many = { $count }{ $slot1 }moments
+
+journal.window.home.connections.moment.one = 1 moment
+
+journal.window.home.connections.moment.recent = { $moments }{ $slot1 }· most recently{ $slot2 }{ $day }
+
+journal.window.home.device.last.added.ago = { $duration }{ $slot1 }ago
+
+journal.window.home.device.paired = the solstone app on{ $slot1 }{ $name }{ $slot2 }is paired.
+
+journal.window.home.device.paired.added = the solstone app on{ $slot1 }{ $name }{ $slot2 }last added to your journal{ $slot3 }{ $duration }.
+
+journal.window.home.device.paired.awaiting = the solstone app on{ $slot1 }{ $name }{ $slot2 }is paired. what you share with it arrives in your journal about every 5 minutes.
+
+journal.window.home.disclosure.label.review.originals = review originals
+
+journal.window.home.disclosure.label.what.this.summary.covers = what this summary covers
+
+journal.window.home.download.quantity = { $slot1 }·{ $slot2 }{ $done }{ $slot3 }GB of{ $slot4 }{ $total }{ $slot5 }GB
+
+journal.window.home.first.segment.arrived = your first segment, from{ $slot1 }{ $time }, has arrived.
+
+journal.window.home.first.segment.pending = your first segment, from{ $slot1 }{ $time }, has arrived. thinking hasn't caught up with it yet.
+
+journal.window.home.first.segment.read = your first segment, from{ $slot1 }{ $time }, has arrived, and thinking has read it.
+
+journal.window.home.health.age.just.now = just now
+
+journal.window.home.health.attention.many = { $count }{ $slot1 }things need your attention
+
+journal.window.home.health.attention.one = 1 thing needs your attention
+
+journal.window.home.health.awaiting.first.headline = the solstone app on one of your devices hasn't added anything to your journal yet.
+
+journal.window.home.health.backlog.day.needs.help = a journal day needs a hand.
+
+journal.window.home.health.device.setup = set one up →
+
+journal.window.home.health.devices.view = view devices →
+
+journal.window.home.health.empty.registry.headline = no devices are running the solstone app yet. set one up to start your journal.
+
+journal.window.home.health.no.eligible.headline = none of your devices have the solstone app set up to add to your journal right now.
+
+journal.window.home.health.not.yet.active.headline = the solstone app is adding to your journal.
+
+journal.window.home.health.quiet.many = { $count }{ $slot1 }devices haven't added to your journal recently:{ $slot2 }{ $devices }.
+
+journal.window.home.health.quiet.one.known = { $device }{ $slot1 }hasn't added to your journal in{ $slot2 }{ $age }.
+
+journal.window.home.health.quiet.one.unknown = { $device }{ $slot1 }hasn't added to your journal recently.
+
+journal.window.home.health.ready = everything's working
+
+journal.window.home.health.residue.headline = nothing needs your attention right now.
+
+journal.window.home.health.unavailable.headline = your devices' status is unclear right now.
+
+journal.window.home.health.unnamed.idle.issue = the solstone app on one of your devices hasn't added anything to your journal recently.
+
+journal.window.home.health.upload.many = your journal couldn't accept uploads from{ $slot1 }{ $count }{ $slot2 }devices:{ $slot3 }{ $devices }.
+
+journal.window.home.health.upload.one = your journal couldn't accept uploads from{ $slot1 }{ $device }.
+
+journal.window.home.held.activity = activity processing
+
+journal.window.home.held.all = all queued work
+
+journal.window.home.held.daily = daily processing
+
+journal.window.home.held.flush = finishing activities
+
+journal.window.home.held.queued = queued processing
+
+journal.window.home.held.reason = { $scope }{ $slot1 }is on hold for a safety check.
+
+journal.window.home.held.search = search updates
+
+journal.window.home.held.segment = segment processing
+
+journal.window.home.held.weekly = weekly reflection
+
+journal.window.home.link.label.all.connections = all connections →
+
+journal.window.home.link.label.cancel.on.the.thinking.page = cancel on the thinking page →
+
+journal.window.home.link.label.check.system.health = check system health →
+
+journal.window.home.link.label.health = health →
+
+journal.window.home.link.label.name.voices.in.speakers = name voices in speakers →
+
+journal.window.home.link.label.other.agents.and.pairing.codes = other agents and pairing codes →
+
+journal.window.home.link.label.pair.a.device = pair a device →
+
+journal.window.home.link.label.try.again.on.the.thinking.page = try again on the thinking page →
+
+journal.window.home.narrative.scope = based on{ $slot1 }{ $segments }{ $slot2 }of{ $slot3 }{ $expectedsegments }{ $slot4 }processed segments and{ $slot5 }{ $activities }{ $slot6 }of{ $slot7 }{ $expectedactivities }{ $slot8 }activity entries in this batch. entries may overlap; this isn't a whole-day summary.
+
+journal.window.home.narrative.scope.since = { $slot1 }processing window starts at{ $slot2 }{ $time }. this is processing time, not when the activity happened.
+
+journal.window.home.needs.device.many.named = { $count }{ $slot1 }devices aren't reaching your journal:{ $slot2 }{ $names }.
+
+journal.window.home.needs.device.many.unnamed = { $count }{ $slot1 }devices aren't reaching your journal.
+
+journal.window.home.needs.device.one = { $name }{ $slot1 }isn't reaching your journal.
+
+journal.window.home.needs.device.unnamed.many = { $count }{ $slot1 }unnamed devices
+
+journal.window.home.needs.sources.failing = the solstone app on one of your devices is having trouble adding{ $slot1 }{ $sources }{ $slot2 }to your journal.
+
+journal.window.home.needs.voice.candidate.ready = your journal may have found your voice. play a few samples and say whether it's you.
+
+journal.window.home.needs.voice.damaged = your saved voice can't be read. remove it on the speakers page, then teach it again.
+
+journal.window.home.needs.voice.declined.template = your voice isn't set up yet. your journal looks again after{ $slot1 }{ $date }, or you can teach it now.
+
+journal.window.home.needs.voice.needs.more.audio = your voice isn't set up yet. your journal looks for it each day, or you can teach it now.
+
+journal.window.home.needs.voice.next.look.date = { $weekday }{ $slot1 }{ $month }{ $slot2 }{ $day }
+
+journal.window.home.needs.voice.too.short.or.mixed = your voice isn't set up yet. so far your statements are mostly short or mixed with other voices, so teaching it helps most.
+
+journal.window.home.needs.voice.unusable = your voice can't be set up from what's there. teach it on the speakers page.
+
+journal.window.home.night.briefing.not.written = yesterday wasn't written up.
+
+journal.window.home.night.gap.many.failed = { $count }{ $slot1 }{ $label }{ $slot2 }runs didn't finish.
+
+journal.window.home.night.gap.many.lost = { $count }{ $slot1 }{ $label }{ $slot2 }runs couldn't start.
+
+journal.window.home.night.gap.more = …and{ $slot1 }{ $count }{ $slot2 }more didn't finish.
+
+journal.window.home.night.gap.one.failed = the{ $slot1 }{ $label }{ $slot2 }run didn't finish.
+
+journal.window.home.night.gap.one.lost = the{ $slot1 }{ $label }{ $slot2 }run couldn't start.
+
+journal.window.home.night.notes.not.written = yesterday's notes weren't all written.
+
+journal.window.home.night.processing.did.not.finish = some overnight processing didn't finish.
+
+journal.window.home.night.review.did.not.finish = the overnight review didn't finish.
+
+journal.window.home.night.status.unavailable = yesterday’s processing status is unavailable.
+
+journal.window.home.night.talent.daily.briefing = daily briefing
+
+journal.window.home.night.talent.document = document
+
+journal.window.home.night.work.did.not.finish = some overnight work didn't finish.
+
+journal.window.home.originals.copy.bulk.clear = clear selection
+
+journal.window.home.originals.copy.bulk.delete = delete selected
+
+journal.window.home.originals.copy.bulk.keep = keep selected
+
+journal.window.home.originals.copy.bulk.select.all = select this page
+
+journal.window.home.originals.copy.bulk.selected.many = { $slot1 } selected
+
+journal.window.home.originals.copy.bulk.selected.one = 1 selected
+
+journal.window.home.originals.copy.bulk.selected.over.cap = { $slot1 } selected. one action covers up to { $slot2 }.
+
+journal.window.home.originals.copy.card.empty = nothing is waiting on you.
+
+journal.window.home.originals.copy.card.heading = originals waiting on you
+
+journal.window.home.originals.copy.card.loading = loading originals…
+
+journal.window.home.originals.copy.card.subhead = original audio and video marked for deletion, plus anything a deletion left unfinished. nothing marked here is deleted until you say so.
+
+journal.window.home.originals.copy.card.support = contact support for help
+
+journal.window.home.originals.copy.card.too.large = this item's deletion details are too large to review here.
+
+journal.window.home.originals.copy.card.total.many = on this page: { $slot1 } originals · { $slot2 }
+
+journal.window.home.originals.copy.card.total.one = on this page: 1 original · { $slot1 }
+
+journal.window.home.originals.copy.card.unavailable = the list couldn't be loaded.
+
+journal.window.home.originals.copy.confirm.body.offload.many = this deletes { $slot1 } originals from { $slot2 } · { $slot3 }. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.
+
+journal.window.home.originals.copy.confirm.body.offload.one = this deletes 1 original from { $slot1 } · { $slot2 }. your backup has a copy that can't be checked from here. nothing else goes with it. it can't be undone.
+
+journal.window.home.originals.copy.confirm.body.offload.selected = this deletes { $slot1 } originals. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.
+
+journal.window.home.originals.copy.confirm.body.policy.many = this moves { $slot1 } originals from { $slot2 } · { $slot3 } to the trash. nothing else goes with them. the trash erases them after { $slot4 }, and their space comes back then. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.body.policy.many.nodays = this moves { $slot1 } originals from { $slot2 } · { $slot3 } to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.body.policy.one = this moves 1 original from { $slot1 } · { $slot2 } to the trash. nothing else goes with it. the trash erases it after { $slot3 }, and its space comes back then. you can recover it until then.
+
+journal.window.home.originals.copy.confirm.body.policy.one.nodays = this moves 1 original from { $slot1 } · { $slot2 } to the trash. nothing else goes with it. it waits in the trash, then the trash erases it and its space comes back. you can recover it until then.
+
+journal.window.home.originals.copy.confirm.body.policy.selected = this moves { $slot1 } originals to the trash. nothing else goes with them. the trash erases them after { $slot2 }, and their space comes back then. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.body.policy.selected.nodays = this moves { $slot1 } originals to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.cancel = cancel
+
+journal.window.home.originals.copy.confirm.days.many = { $slot1 } days
+
+journal.window.home.originals.copy.confirm.days.one = 1 day
+
+journal.window.home.originals.copy.confirm.go.many = delete them
+
+journal.window.home.originals.copy.confirm.go.one = delete it
+
+journal.window.home.originals.copy.confirm.go.trash = move to trash
+
+journal.window.home.originals.copy.confirm.heading.many = delete these originals?
+
+journal.window.home.originals.copy.confirm.heading.one = delete this original?
+
+journal.window.home.originals.copy.confirm.mixed.lead = this deletes { $slot1 } of these originals and moves { $slot2 } to the trash. nothing else goes with them.
+
+journal.window.home.originals.copy.confirm.mixed.offload.many = the ones it deletes were copied off your device by your backup. your backup has a copy that can't be checked from here. deleting them can't be undone.
+
+journal.window.home.originals.copy.confirm.mixed.offload.one = the one it deletes was copied off your device by your backup. your backup has a copy that can't be checked from here. deleting it can't be undone.
+
+journal.window.home.originals.copy.confirm.mixed.policy.many = the ones it moves to the trash are erased after { $slot1 }, and their space comes back then. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.mixed.policy.many.nodays = the ones it moves to the trash wait there, then the trash erases them and their space comes back. you can recover them until then.
+
+journal.window.home.originals.copy.confirm.mixed.policy.one = the one it moves to the trash is erased after { $slot1 }, and its space comes back then. you can recover it until then.
+
+journal.window.home.originals.copy.confirm.mixed.policy.one.nodays = the one it moves to the trash waits there, then the trash erases it and its space comes back. you can recover it until then.
+
+journal.window.home.originals.copy.confirm.recover.body = this finishes every deletion that stopped partway. any original it hadn't deleted yet goes back in its segment. the rest stay deleted, and those your retention settings marked are in the trash.
+
+journal.window.home.originals.copy.confirm.recover.go = finish them
+
+journal.window.home.originals.copy.confirm.recover.heading = finish the deletions that stopped?
+
+journal.window.home.originals.copy.done.clause.deleted.many = deleted { $slot1 } originals.
+
+journal.window.home.originals.copy.done.clause.deleted.one = deleted 1 original.
+
+journal.window.home.originals.copy.done.clause.halted = it stopped there.
+
+journal.window.home.originals.copy.done.clause.kept.many = kept { $slot1 } for now.
+
+journal.window.home.originals.copy.done.clause.kept.one = kept 1 for now.
+
+journal.window.home.originals.copy.done.clause.not.kept.many = { $slot1 } more couldn't be taken off the list, so they stay.
+
+journal.window.home.originals.copy.done.clause.not.kept.one = 1 more couldn't be taken off the list, so it stays.
+
+journal.window.home.originals.copy.done.clause.not.removed.many = { $slot1 } more couldn't be deleted.
+
+journal.window.home.originals.copy.done.clause.not.removed.one = 1 more couldn't be deleted.
+
+journal.window.home.originals.copy.done.clause.nothing.deleted = nothing was deleted.
+
+journal.window.home.originals.copy.done.clause.trashed.many = moved { $slot1 } originals to the trash.
+
+journal.window.home.originals.copy.done.clause.trashed.one = moved 1 original to the trash.
+
+journal.window.home.originals.copy.done.declined.failed = it couldn't be taken off the list, so it stays. nothing was deleted.
+
+journal.window.home.originals.copy.done.declined.unknown = nothing was deleted. it's unclear whether it's still on the list.
+
+journal.window.home.originals.copy.done.kept.offload = kept for now. it'll be back after your next backup.
+
+journal.window.home.originals.copy.done.kept.policy = kept for now. it'll be back the next time this part of the list rebuilds.
+
+journal.window.home.originals.copy.done.open.trash = open trash
+
+journal.window.home.originals.copy.done.recover.failed = they couldn't be finished. what's left is still there.
+
+journal.window.home.originals.copy.done.recover.unknown = finishing stopped before what happened could be confirmed. it's unclear what was completed.
+
+journal.window.home.originals.copy.done.recovered = the deletions that had stopped are now finished.
+
+journal.window.home.originals.copy.done.recovered.leftover = some finished. at least one deletion that stopped is still waiting.
+
+journal.window.home.originals.copy.done.recovered.none = there was nothing left to finish.
+
+journal.window.home.originals.copy.done.refused.item = { $slot1 }: { $slot2 }
+
+journal.window.home.originals.copy.done.refused.item.unnamed = { $slot1 }
+
+journal.window.home.originals.copy.done.refused.none.many = they couldn't be deleted. nothing was deleted.
+
+journal.window.home.originals.copy.done.refused.none.one = it couldn't be deleted. nothing was deleted.
+
+journal.window.home.originals.copy.done.space.many = they're erased { $slot1 }, and their space comes back then. you can erase them sooner from the trash.
+
+journal.window.home.originals.copy.done.space.many.nodate = their space comes back when they're erased from the trash.
+
+journal.window.home.originals.copy.done.space.one = it's erased { $slot1 }, and its space comes back then. you can erase it sooner from the trash.
+
+journal.window.home.originals.copy.done.space.one.nodate = its space comes back when it's erased from the trash.
+
+journal.window.home.originals.copy.done.too.many = choose up to { $slot1 } items at a time. nothing was deleted.
+
+journal.window.home.originals.copy.done.unknown = deleting stopped before what happened could be confirmed. it's unclear what was deleted and what wasn't.
+
+journal.window.home.originals.copy.failed.badge = didn't finish
+
+journal.window.home.originals.copy.failed.body = a deletion you started stopped partway. finishing it puts back any original it hadn't deleted yet, and the rest stay deleted.
+
+journal.window.home.originals.copy.failed.finish = finish the deletion
+
+journal.window.home.originals.copy.operation.completed = deletion finished.
+
+journal.window.home.originals.copy.operation.held = deleting hasn't fully finished.
+
+journal.window.home.originals.copy.operation.record.unavailable = the deletion record isn't available.
+
+journal.window.home.originals.copy.operation.refused = deletion didn't start.
+
+journal.window.home.originals.copy.operation.running = deletion is in progress.
+
+journal.window.home.originals.copy.operation.stop = stop deleting
+
+journal.window.home.originals.copy.operation.stop.pending = requesting a stop.
+
+journal.window.home.originals.copy.operation.stopping = stop requested. waiting for the work to finish.
+
+journal.window.home.originals.copy.operation.submitting = sending your deletion request.
+
+journal.window.home.originals.copy.operation.unavailable = the current result couldn't be checked.
+
+journal.window.home.originals.copy.operation.unknown = it's unclear what was deleted and what wasn't.
+
+journal.window.home.originals.copy.page.range = items { $slot1 }–{ $slot2 } of { $slot3 }
+
+journal.window.home.originals.copy.page.selection = selection applies to this page and clears when you change pages.
+
+journal.window.home.originals.copy.row.delete = delete originals
+
+journal.window.home.originals.copy.row.identity = { $slot1 } · { $slot2 }
+
+journal.window.home.originals.copy.row.keep = keep for now
+
+journal.window.home.originals.copy.row.kept.many = nothing else goes with them.
+
+journal.window.home.originals.copy.row.kept.one = nothing else goes with it.
+
+journal.window.home.originals.copy.row.origin.offload.many = { $slot1 } originals copied off your device by your backup. there's no way to check they're still there.
+
+journal.window.home.originals.copy.row.origin.offload.one = 1 original copied off your device by your backup. there's no way to check it's still there.
+
+journal.window.home.originals.copy.row.origin.policy.many = { $slot1 } originals marked by your retention settings. this part of the list rebuilds every day.
+
+journal.window.home.originals.copy.row.origin.policy.one = 1 original marked by your retention settings. this part of the list rebuilds every day.
+
+journal.window.home.originals.copy.row.what.many = { $slot1 } originals · { $slot2 }
+
+journal.window.home.originals.copy.row.what.one = 1 original · { $slot1 }
+
+journal.window.home.originals.failed.review = { $slot1 }· unfinished deletions need review
+
+journal.window.home.originals.heading.many = originals ·{ $slot1 }{ $count }{ $slot2 }items
+
+journal.window.home.originals.heading.one = originals · 1 item
+
+journal.window.home.originals.select.item = { $slot1 }select this item
+
+journal.window.home.response.briefing.invalid = Malformed briefing response
+
+journal.window.home.response.pulse.failed = Couldn't load pulse
+
+journal.window.home.response.pulse.invalid = Malformed pulse response
+
+journal.window.home.response.yesterday.failed = couldn't load yesterday.
+
+journal.window.home.section.heading.connections = connections
+
+journal.window.home.section.heading.getting.started = getting started
+
+journal.window.home.section.heading.next = next
+
+journal.window.home.section.heading.your.week = your week
+
+journal.window.home.security.device = the solstone app on{ $slot1 }{ $device }{ $slot2 }is missing a security fix. update it to{ $slot3 }{ $version }{ $slot4 }or later.
+
+journal.window.home.security.journal = your journal is missing a security fix. update it to{ $slot1 }{ $version }{ $slot2 }or later.
+
+journal.window.home.setup.action.choose = choose →
+
+journal.window.home.setup.action.finish = finish →
+
+journal.window.home.setup.agent.choose.connector = in{ $slot1 }{ $agent }, choose
+
+journal.window.home.setup.agent.description = let{ $slot1 }{ $agent }{ $slot2 }or another agent read your journal.
+
+journal.window.home.setup.phone.download = get solstone on your phone at{ $slot1 }{ $site }, then pair it with your journal.
+
+journal.window.home.setup.speech.package.repair = repair or reinstall the journal app, then restart your journal.
+
+journal.window.home.text.backup.status.is.unavailable = backup status is unavailable.
+
+journal.window.home.text.no.time.measured = no time measured
+
+journal.window.home.text.originals = originals ·{ $slot1 }
+
+journal.window.home.text.originals.the.list.couldn.t.be = originals · the list couldn't be loaded.
+
+journal.window.home.text.queued.work.status.is.unavailable = queued work status is unavailable.
+
+journal.window.home.text.service.status.is.unavailable = service status is unavailable.
+
+journal.window.home.text.the.backup.key.couldn.t.open = the backup key couldn't open your backup destination. check backup in health.
+
+journal.window.home.today.activity.many = { $total }{ $slot1 }activities
+
+journal.window.home.today.activity.one = 1 activity
+
+journal.window.home.today.activity.preview = { $shown }{ $slot1 }of{ $slot2 }{ $total }{ $slot3 }activities
+
+journal.window.home.today.duration.hours = { $hours }h
+
+journal.window.home.today.duration.hours.minutes = { $hours }h{ $slot1 }{ $minutes }m
+
+journal.window.home.today.duration.minutes = { $minutes }m
+
+journal.window.home.today.facets.measured.many = time in each facet · measured for{ $slot1 }{ $measured }{ $slot2 }of{ $slot3 }{ $total }{ $slot4 }activities
+
+journal.window.home.today.facets.measured.one = time in each facet · measured for{ $slot1 }{ $measured }{ $slot2 }of 1 activity
+
+journal.window.home.visible.text.add.your.phone = add your phone
+
+journal.window.home.visible.text.and.authenticate = and authenticate.
+
+journal.window.home.visible.text.choose.another.way.when.you.re = choose another way when you're ready. your journal keeps everything until then.
+
+journal.window.home.visible.text.connect.an.agent = connect an agent
+
+journal.window.home.visible.text.connections.are.unavailable.right.now = connections are unavailable right now.
+
+journal.window.home.visible.text.connections.found.in.your.journal = connections found in your journal
+
+journal.window.home.visible.text.couldn.t.be.written.out = couldn't be written out.
+
+journal.window.home.visible.text.downloading.the.local.model = downloading the local model
+
+journal.window.home.visible.text.downloading.the.speech.model = downloading the speech model
+
+journal.window.home.visible.text.from = from
+
+journal.window.home.visible.text.from.your.devices.and.apps = from your devices and apps
+
+journal.window.home.visible.text.hasn.t.been.written.out.yet = hasn't been written out yet.
+
+journal.window.home.visible.text.it.appears.here.as.text = it appears here as text.
+
+journal.window.home.visible.text.last.reached.your.journal = last reached your journal
+
+journal.window.home.visible.text.leave.out.of.this.week = leave out of this week
+
+journal.window.home.visible.text.left.out.of.this.week = left out of this week ·
+
+journal.window.home.visible.text.loading.your.week = loading your week…
+
+journal.window.home.visible.text.next = next
+
+journal.window.home.visible.text.no.direct.connections.yet = no direct connections yet.
+
+journal.window.home.visible.text.no.named.connections.yet = no named connections yet.
+
+journal.window.home.visible.text.no.recent.activity.yet.today = no recent activity yet today.
+
+journal.window.home.visible.text.no.speech.was.found.in.the = no speech was found in the segment from
+
+journal.window.home.visible.text.nothing.from.yesterday.to.write.up = nothing from yesterday to write up.
+
+journal.window.home.visible.text.nothing.from.yesterday.was.written.up = nothing from yesterday was written up.
+
+journal.window.home.visible.text.nothing.with.sound.has.reached.your = nothing with sound has reached your journal yet. turn on the microphone in the solstone app to try this.
+
+journal.window.home.visible.text.often.around.events.only = often around, events only
+
+journal.window.home.visible.text.on.your.calendar.only = on your calendar only
+
+journal.window.home.visible.text.on.your.journal.s.computer.run = on your journal's computer, run:
+
+journal.window.home.visible.text.only.this.week.changes.the.memory = only this week changes. the memory stays in your journal.
+
+journal.window.home.visible.text.opens.where.it.came.from.so = opens where it came from, so you can check it.
+
+journal.window.home.visible.text.previous = previous
+
+journal.window.home.visible.text.say.a.sentence.out.loud = say a sentence out loud
+
+journal.window.home.visible.text.some.source.material.was.unavailable = some source material was unavailable:
+
+journal.window.home.visible.text.speech.from = speech from
+
+journal.window.home.visible.text.the.local.model.didn.t.finish = the local model didn't finish downloading.
+
+journal.window.home.visible.text.the.segment.from = the segment from
+
+journal.window.home.visible.text.the.speech.model.didn.t.finish = the speech model didn't finish downloading.
+
+journal.window.home.visible.text.then.type = then type
+
+journal.window.home.visible.text.this.isn.t.right = this isn't right
+
+journal.window.home.visible.text.transcribed.as = transcribed as “
+
+journal.window.home.visible.text.try.again = try again
+
+journal.window.home.visible.text.updated.at = updated at
+
+journal.window.home.visible.text.waiting.for.the.next.segment.this = waiting for the next segment. this can take a few minutes.
+
+journal.window.home.visible.text.was.written.out = was written out.
+
+journal.window.home.visible.text.what.this.summary.covers.wasn.t = what this summary covers wasn't saved with it.
+
+journal.window.home.visible.text.written.at = written at
+
+journal.window.home.visible.text.yesterday.is.being.written.up = yesterday is being written up…
+
+journal.window.home.visible.text.your.journal.keeps.everything.until.you = your journal keeps everything until you do.
+
+journal.window.home.vitals.last.check = { $slot1 }last check:{ $slot2 }{ $stamp }.
+
+journal.window.home.vitals.last.known = last known:{ $slot1 }{ $issue }
+
+journal.window.home.week.card.empty = nothing from this week is showing.
+
+journal.window.home.week.card.first.choose = your first week comes once you choose where the thinking happens.
+
+journal.window.home.week.card.first.due = your first week comes on{ $slot1 }{ $weekday }.
+
+journal.window.home.week.card.next.choose = your next week comes once you choose where the thinking happens.
+
+journal.window.home.week.card.next.due = your next week comes on{ $slot1 }{ $weekday }.
+
+journal.window.home.week.card.unchecked = your week couldn't be checked.
+
+journal.window.home.week.cell.accessible.name = { $weekday }{ $slot1 }{ $day },{ $slot2 }{ $summary }
+
+journal.window.home.week.cell.left.out = in your journal, no memory on this page
+
+journal.window.home.week.cell.memory = a memory from this day
+
+journal.window.home.week.cell.not.ready = wasn't ready in time
+
+journal.window.home.week.cell.nothing.shared = nothing in your journal
+
+journal.window.home.week.cell.unreadable = couldn't be read
+
+journal.window.home.week.day.long.friday = friday
+
+journal.window.home.week.day.long.monday = monday
+
+journal.window.home.week.day.long.saturday = saturday
+
+journal.window.home.week.day.long.sunday = sunday
+
+journal.window.home.week.day.long.thursday = thursday
+
+journal.window.home.week.day.long.tuesday = tuesday
+
+journal.window.home.week.day.long.wednesday = wednesday
+
+journal.window.home.week.day.short.fri = fri
+
+journal.window.home.week.day.short.mon = mon
+
+journal.window.home.week.day.short.sat = sat
+
+journal.window.home.week.day.short.sun = sun
+
+journal.window.home.week.day.short.thu = thu
+
+journal.window.home.week.day.short.tue = tue
+
+journal.window.home.week.day.short.wed = wed
+
+journal.window.home.week.day.short.with.number = { $weekday }{ $slot1 }{ $day }
+
+journal.window.home.week.days.conjunction = { $leading }{ $slot1 }and{ $slot2 }{ $last }
+
+journal.window.home.week.days.from = from{ $slot1 }{ $days }.
+
+journal.window.home.week.days.not.ready.many = { $days }{ $slot1 }weren't ready in time.
+
+journal.window.home.week.days.not.ready.one = { $days }{ $slot1 }wasn't ready in time.
+
+journal.window.home.week.days.unreadable = something from{ $slot1 }{ $days }{ $slot2 }couldn't be read.
+
+journal.window.home.week.end = that's the week.
+
+journal.window.home.week.intro.empty = nothing from this week is on this page.
+
+journal.window.home.week.intro.many = your week, a memory from each of{ $slot1 }{ $count }{ $slot2 }days.
+
+journal.window.home.week.intro.one = your week, a memory from one day.
+
+journal.window.home.week.leave.out.apply.failed = couldn't leave this out. nothing changed.
+
+journal.window.home.week.leave.out.undo.failed = couldn't bring this back. nothing changed.
+
+journal.window.home.week.left.out.unreadable = your left-out memories couldn't be checked, so everything is showing.
+
+journal.window.home.week.load.failed = couldn't load this week. reload to try again.
+
+journal.window.home.week.menu.accessible.name = more for{ $slot1 }{ $day }
+
+journal.window.home.week.month.april = april
+
+journal.window.home.week.month.august = august
+
+journal.window.home.week.month.december = december
+
+journal.window.home.week.month.february = february
+
+journal.window.home.week.month.january = january
+
+journal.window.home.week.month.july = july
+
+journal.window.home.week.month.june = june
+
+journal.window.home.week.month.march = march
+
+journal.window.home.week.month.may = may
+
+journal.window.home.week.month.november = november
+
+journal.window.home.week.month.october = october
+
+journal.window.home.week.month.september = september
+
+journal.window.home.week.peek.briefing = from the daily briefing for{ $slot1 }{ $day }
+
+journal.window.home.week.peek.moment = open that moment →
+
+journal.window.home.week.peek.thinking = open it in thinking →
+
+journal.window.home.week.said.heading = said by you
+
+journal.window.home.week.said.leave.out.scope = only this week changes. what you said stays in your journal.
+
+journal.window.home.week.said.open = open where you said it →
+
+journal.window.home.week.said.unreadable = the "said by you" list couldn't be read.
+
+journal.window.home.week.title.current = week of{ $slot1 }{ $month }{ $slot2 }{ $day }
+
+journal.window.home.week.title.with.year = week of{ $slot1 }{ $month }{ $slot2 }{ $day },{ $slot3 }{ $year }
+
+journal.window.home.week.unreadable.current = the week of{ $slot1 }{ $month }{ $slot2 }{ $day }{ $slot3 }couldn't be read.
+
+journal.window.home.week.unreadable.with.year = the week of{ $slot1 }{ $month }{ $slot2 }{ $day },{ $slot3 }{ $year }, couldn't be read.
+
+journal.window.home.welcome.first.week.framing = most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:
+
+journal.window.home.window.explanation.analysis.will.be.available.after.the = analysis will be available after the next processing cycle.
+
+journal.window.home.window.explanation.backup.status.is.unavailable.right.now = backup status is unavailable right now.
+
+journal.window.home.window.explanation.choose.where.the.thinking.happens = choose where the thinking happens
+
+journal.window.home.window.explanation.couldn.t.bring.this.back.nothing = couldn't bring this back. nothing changed.
+
+journal.window.home.window.explanation.couldn.t.leave.this.out.nothing = couldn't leave this out. nothing changed.
+
+journal.window.home.window.explanation.couldn.t.refresh.narrative.showing.last = couldn't refresh narrative. showing last known state.
+
+journal.window.home.window.explanation.couldn.t.refresh.service.status.showing = couldn't refresh service status. showing last known state.
+
+journal.window.home.window.explanation.finish.setting.up.confidential.processing = finish setting up confidential processing
+
+journal.window.home.window.explanation.finish.setting.up.local.thinking = finish setting up local thinking
+
+journal.window.home.window.explanation.finish.setting.up.your.own.model = finish setting up your own model
+
+journal.window.home.window.explanation.name.mentioned.in.your.journal = 1 name mentioned in your journal
+
+journal.window.home.window.explanation.names.mentioned.in.your.journal = { $slot1 }names mentioned in your journal
+
+journal.window.home.window.explanation.no.narrative.yet.one.will.appear = no narrative yet. one will appear after some audio goes into your journal.
+
+journal.window.home.window.explanation.one.of.your.devices = one of your devices
+
+journal.window.home.window.explanation.part.of.it.removed = part of it removed
+
+journal.window.home.window.explanation.queued.work.status.is.unavailable.right = queued work status is unavailable right now.
+
+journal.window.home.window.explanation.reload.to.try.again = reload to try again.
+
+journal.window.home.window.explanation.service.status.is.unavailable.right.now = service status is unavailable right now.
+
+journal.window.home.window.explanation.thing.needs.your.attention = 1 thing needs your attention
+
+journal.window.home.window.explanation.things.need.your.attention = { $slot1 }things need your attention
+
+journal.window.home.window.explanation.this.is.where.your.day.comes = this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.
+
+journal.window.home.window.explanation.time.in.each.facet = time in each facet
+
+journal.window.home.window.explanation.yesterday.shows.here.once.confidential.processing = yesterday shows here once confidential processing is set up.
+
+journal.window.home.window.explanation.yesterday.shows.here.once.local.thinking = yesterday shows here once local thinking is set up.
+
+journal.window.home.window.explanation.yesterday.shows.here.once.you.choose = yesterday shows here once you choose where the thinking happens.
+
+journal.window.home.window.explanation.yesterday.shows.here.once.your.own = yesterday shows here once your own model is set up.
+
+journal.window.home.window.explanation.yesterday.shows.here.the.morning.after = yesterday shows here the morning after something goes into your journal.
+
+journal.window.home.window.explanation.yesterday.wasn.t.written.up = yesterday wasn't written up.{ $slot1 }
+
+journal.window.home.window.explanation.your.first.day.shows.here.by = your first day shows here by 10 am, after your journal's first night.
+
+journal.window.home.window.explanation.your.journal.s.computer.can.t = your journal's computer can't run local thinking
+
 journal.window.link.absent = it isn't in your journal.
 
 journal.window.link.back = ← back

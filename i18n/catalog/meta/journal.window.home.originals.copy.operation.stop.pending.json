@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation stop pending in the journal's home view.",
+  "context": "Journal window, home view. Originals operation stop pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6c0ea38f9c32346ec200b2992ba75bec8c06d6bf75f0add47877b02b4227b02",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Originals operation unavailable in the journal's home view.",
+  "context": "Journal window, home view. Originals operation unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9545bf0d90b69f126be3961fb40f0ad4aa5f409646ae8c85ba7ff9d61f1567de",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

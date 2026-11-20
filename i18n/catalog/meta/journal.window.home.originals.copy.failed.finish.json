@@ -1,0 +1,16 @@
+{
+  "description": "Originals failed finish in the journal's home view.",
+  "context": "Journal window, home view. Originals failed finish.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "926d0ae1b745bc2f7efae301d00efc9cc5a02ca60b07feac42245bfbc8d3e444",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

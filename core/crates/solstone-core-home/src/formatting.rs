@@ -4,6 +4,7 @@
 //! Pure presentation helpers for the home surface.
 
 use serde_json::{Value, json};
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 pub fn format_date(day: &str) -> String {
     let Some(date) = solstone_core_time::parse_day(day) else {
@@ -28,33 +29,54 @@ pub fn format_date(day: &str) -> String {
 }
 
 pub fn relative_time(seconds: f64) -> String {
+    relative_time_in(seconds, ENGLISH)
+}
+
+pub fn relative_time_in(seconds: f64, locale: &str) -> String {
     let seconds = if seconds.is_finite() && seconds >= 0.0 {
         seconds as i64
     } else {
         0
     };
     if seconds < 60 {
-        return plural(seconds, "second");
+        return time_count(locale, "second", seconds);
     }
     let minutes = seconds / 60;
     if minutes < 60 {
-        return plural(minutes, "minute");
+        return time_count(locale, "minute", minutes);
     }
     let hours = minutes / 60;
     if hours < 24 {
-        return plural(hours, "hour");
+        return time_count(locale, "hour", hours);
     }
     let days = hours / 24;
     if days < 7 {
-        return plural(days, "day");
+        return time_count(locale, "day", days);
     }
     if days < 28 {
-        return plural(days / 7, "week");
+        return time_count(locale, "week", days / 7);
     }
     if days < 60 {
-        return "1 month".to_owned();
+        return time_count(locale, "month", 1);
     }
-    plural(days / 30, "month")
+    time_count(locale, "month", days / 30)
+}
+
+pub(crate) fn time_count(locale: &str, unit: &str, count: i64) -> String {
+    let form = if count == 1 { "one" } else { "other" };
+    strings(
+        locale,
+        &format!("journal.window.time.duration.{unit}.{form}"),
+        [("value", &count.to_string())],
+    )
+}
+
+pub(crate) fn relative_time_ago(seconds: f64, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.home.device.last.added.ago",
+        [("duration", &relative_time_in(seconds, locale))],
+    )
 }
 
 pub fn format_duration(minutes: f64) -> String {
@@ -160,8 +182,15 @@ pub fn format_activity_label(activity: &Value) -> String {
 }
 
 pub fn format_processing_summary(mode: &str) -> String {
+    format_processing_summary_in(mode, ENGLISH)
+}
+
+pub fn format_processing_summary_in(mode: &str, locale: &str) -> String {
     if mode == "degraded" {
-        return "some overnight processing didn't finish.".to_owned();
+        return text(
+            locale,
+            "journal.window.home.night.processing.did.not.finish",
+        );
     }
     String::new()
 }
@@ -222,6 +251,22 @@ pub fn format_gap_links(
     yesterday: &str,
     overnight_passed: bool,
 ) -> Vec<Value> {
+    format_gap_links_in(
+        pipeline,
+        briefing_valid,
+        yesterday,
+        overnight_passed,
+        ENGLISH,
+    )
+}
+
+pub fn format_gap_links_in(
+    pipeline: &Value,
+    briefing_valid: bool,
+    yesterday: &str,
+    overnight_passed: bool,
+    locale: &str,
+) -> Vec<Value> {
     let anomalies = pipeline
         .get("anomalies")
         .and_then(Value::as_array)
@@ -239,10 +284,10 @@ pub fn format_gap_links(
         .collect::<Vec<_>>();
     let mut links = Vec::new();
     if has_daily && overnight_passed {
-        links.push(json!({"text":"the overnight review didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
+        links.push(json!({"text":text(locale, "journal.window.home.night.review.did.not.finish"),"href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if has_activity {
-        links.push(json!({"text":"yesterday's notes weren't all written.","href":format!("/app/thinking/#runs/{yesterday}")}));
+        links.push(json!({"text":text(locale, "journal.window.home.night.notes.not.written"),"href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     let mut groups = std::collections::BTreeMap::<String, Vec<&Value>>::new();
     for failure in &failures {
@@ -267,28 +312,31 @@ pub fn format_gap_links(
         // Talent names are internal identifiers and can be namespaced with a
         // colon (e.g. "entities:detection"); sanitize both separators so the
         // raw identifier never leaks into owner-facing copy.
-        let label = singularize_talent_label(&name.replace(['_', ':'], " "));
+        let label = singularize_talent_label(&name.replace(['_', ':'], " "), locale);
         let lost = rows
             .iter()
             .all(|row| row.get("state").and_then(Value::as_str) == Some("request_lost"));
-        let text = if count == 1 {
-            format!(
-                "the {label} run {}.",
-                if lost {
-                    "couldn't start"
-                } else {
-                    "didn't finish"
-                }
-            )
-        } else {
-            format!(
-                "{count} {label} runs {}.",
-                if lost {
-                    "couldn't start"
-                } else {
-                    "didn't finish"
-                }
-            )
+        let text = match (count == 1, lost) {
+            (true, true) => strings(
+                locale,
+                "journal.window.home.night.gap.one.lost",
+                [("label", &label)],
+            ),
+            (true, false) => strings(
+                locale,
+                "journal.window.home.night.gap.one.failed",
+                [("label", &label)],
+            ),
+            (false, true) => strings(
+                locale,
+                "journal.window.home.night.gap.many.lost",
+                [("count", &count.to_string()), ("label", &label)],
+            ),
+            (false, false) => strings(
+                locale,
+                "journal.window.home.night.gap.many.failed",
+                [("count", &count.to_string()), ("label", &label)],
+            ),
         };
         let use_id = rows[0]
             .get("use_id")
@@ -313,14 +361,14 @@ pub fn format_gap_links(
             .unwrap_or(0)
             - failures.len() as i64;
         if more > 0 {
-            links.push(json!({"text":format!("…and {more} more didn't finish."),"href":format!("/app/thinking/#runs/{yesterday}")}));
+            links.push(json!({"text":strings(locale, "journal.window.home.night.gap.more", [("count", &more.to_string())]),"href":format!("/app/thinking/#runs/{yesterday}")}));
         }
     }
     if !failures.is_empty() && !has_daily && !has_activity && !has_named_failures {
-        links.push(json!({"text":"some overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
+        links.push(json!({"text":text(locale, "journal.window.home.night.work.did.not.finish"),"href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if !briefing_valid && overnight_passed {
-        links.push(json!({"text":"yesterday wasn't written up.","href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
+        links.push(json!({"text":text(locale, "journal.window.home.night.briefing.not.written"),"href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
     }
     links
 }
@@ -330,19 +378,16 @@ pub fn format_gap_links(
 /// top, so an already-plural label produces "documents runs". Known cases are
 /// singularized for display only — the raw identifier (used for hrefs) is
 /// untouched.
-fn singularize_talent_label(label: &str) -> String {
+fn singularize_talent_label(label: &str, locale: &str) -> String {
     match label {
-        "documents" => "document".to_owned(),
+        "documents" => text(locale, "journal.window.home.night.talent.document"),
         // The briefing's identifier keeps its old name; owners know it as the
         // daily briefing.
-        "morning briefing" => "daily briefing".to_owned(),
+        "morning briefing" => text(locale, "journal.window.home.night.talent.daily.briefing"),
         other => other.to_owned(),
     }
 }
 
-fn plural(value: i64, unit: &str) -> String {
-    format!("{value} {unit}{}", if value == 1 { "" } else { "s" })
-}
 fn round_half_even(value: f64) -> f64 {
     let floor = value.floor();
     let fraction = value - floor;

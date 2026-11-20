@@ -1,0 +1,16 @@
+{
+  "description": "Originals card empty in the journal's home view.",
+  "context": "Journal window, home view. Originals card empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecf532e41c9e83764211793bdaea3d760fb3cfa7aab0a73aecb489eb80b8a969",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

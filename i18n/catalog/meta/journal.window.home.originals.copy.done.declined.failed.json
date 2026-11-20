@@ -1,0 +1,16 @@
+{
+  "description": "Originals done declined failed in the journal's home view.",
+  "context": "Journal window, home view. Originals done declined failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9524eca3edfeeb11ceb16b84a3bf959f18a375aa3aa2b42c5d5aa04820925a03",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Home display week load failed in the journal's home view.",
+  "context": "Journal window, home view. Home display week load failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "410ee252d1022a7a282c0f14b99d70e8bf494bd008af5eba234db946eb5e0c6f",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

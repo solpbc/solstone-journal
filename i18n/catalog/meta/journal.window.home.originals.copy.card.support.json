@@ -1,0 +1,16 @@
+{
+  "description": "Originals card support in the journal's home view.",
+  "context": "Journal window, home view. Originals card support.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f429510cf3b2e705fe2464eda692ef5c020a06dff78ca5b6c942fed0b37bd863",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
